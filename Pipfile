@@ -1,0 +1,30 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[[source]]
+url = "http://gbi-ml-user:ml1234@nexus.boosted.ai:8081/repository/pypi-internal/simple"
+verify_ssl = false
+name = "gbi"
+
+[dev-packages]
+black = {version = "~=24.4.0", index = "pypi"}
+flake8 = {version = "~=7.0.0", index = "pypi"}
+invoke = {version = "~=2.2.0", index = "pypi"}
+isort = {version = "~=5.13.0", index="pypi"}
+mypy = {version = "~=1.10.0", index="pypi"}
+
+[packages]
+pydantic = {version = "~=2.7.0", index = "pypi"}
+prefect = {version = "~=2.18.0", index = "pypi"}
+
+# External services
+gpt-service-proto-v1 = {version = "==1.4.0", index = "gbi"}
+nlp_service_proto_v1 = {version = "==1.125.0", index = "gbi"}
+
+[requires]
+python_version = "3.8"
+
+[pipenv]
+allow_prereleases = false
