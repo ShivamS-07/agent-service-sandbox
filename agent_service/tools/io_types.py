@@ -1,7 +1,8 @@
 import enum
-from typing import List, Literal, Optional, Tuple, Type, Union
+from abc import ABC, abstractmethod
+from typing import Generic, List, Literal, Optional, Tuple, Type, TypeVar, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic.type_adapter import TypeAdapter
 from typing_extensions import Annotated
 
@@ -19,6 +20,12 @@ def _get_all_subclasses(cls: Type) -> Tuple[Type]:
 
 
 class IOTypeEnum(str, enum.Enum):
+    """
+    Enum of labels for ALL IOType's. When creating a new IOType, a new entry
+    must be added here to be used in the `io_type` property. This will allow
+    pydantic to serialize and deserialize to the correct subclass automatically.
+    """
+
     INTEGER = "integer"
     STRING = "string"
     BOOL = "bool"
@@ -26,8 +33,12 @@ class IOTypeEnum(str, enum.Enum):
     LIST = "list"
 
 
-class IOBase(BaseModel):
+class IOBase(BaseModel, ABC):
     io_type: IOTypeEnum
+
+    @abstractmethod
+    def to_gpt_input(self) -> str:
+        raise NotImplementedError()
 
 
 #################################
@@ -39,13 +50,43 @@ class IntIO(IOBase):
     io_type: Literal[IOTypeEnum.INTEGER] = IOTypeEnum.INTEGER
     val: int
 
+    def to_gpt_input(self) -> str:
+        return str(self.val)
 
-class ListIO(IOBase):
+
+class StrIO(IOBase):
+    io_type: Literal[IOTypeEnum.STRING] = IOTypeEnum.STRING
+    val: str
+
+    def to_gpt_input(self) -> str:
+        return self.val
+
+
+class FloatIO(IOBase):
+    io_type: Literal[IOTypeEnum.FLOAT] = IOTypeEnum.FLOAT
+    val: float
+
+    def to_gpt_input(self) -> str:
+        return str(self.val)
+
+
+class BoolIO(IOBase):
+    io_type: Literal[IOTypeEnum.BOOL] = IOTypeEnum.BOOL
+    val: bool
+
+    def to_gpt_input(self) -> str:
+        return str(self.val)
+
+
+T = TypeVar("T", bound=PrimitiveType)
+
+
+class ListIO(IOBase, Generic[T]):
     io_type: Literal[IOTypeEnum.LIST] = IOTypeEnum.LIST
-    vals: List[PrimitiveType]
+    vals: List[T]
 
-    def get_list_type(self) -> Optional[Type]:
-        return type(self.vals[0]) if self.vals else None
+    def to_gpt_input(self) -> str:
+        return str(self.vals)
 
 
 #################################

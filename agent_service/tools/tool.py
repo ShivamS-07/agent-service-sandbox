@@ -1,32 +1,35 @@
+"""
+A tool represents a 'function' that can be included in an execution plan by an
+LLM. Tools are essentially python functions wrapped in a decorator. For example:
+
+class MyToolInput(ToolArgs):
+    arg1: IntIO
+    arg2: ListIO[int]
+
+@tool(description="My tool does XYZ")
+def my_tool(args: MyToolInput, context: PlanRunContext) -> IntIO:
+    ...
+
+
+"""
+
 import datetime
 import functools
 import inspect
+from abc import ABC
 from dataclasses import dataclass
-from typing import Callable, Optional, Protocol, Type, TypeVar, get_args
+from typing import Any, Callable, Dict, Optional, Protocol, Type, TypeVar, get_args
 
 from prefect.tasks import Task
-from pydantic.main import BaseModel
+from pydantic import BaseModel, model_validator
 
-from agent_service.tools.io_types import IOType, IntIO, ListIO
+from agent_service.tools.io_types import BoolIO, FloatIO, IntIO, IOType, StrIO
 from agent_service.types import PlanRunContext
-
-"""
-A Tool:
-    knows its input types
-    knows its output types
-    knows its caching strategies
-    knows its retries
-    knows if visible
-
-A ToolCallTask:
-    knows its INPUTS
-    knows its TOOL
-"""
 
 CacheKeyType = str
 
 
-class ToolArgs(BaseModel):
+class ToolArgs(BaseModel, ABC):
     """
     Generic class for tool args. Note that ALL member variables of this class
     MUST be variants of IOType. This will be checked by the @tool decorator.
@@ -48,6 +51,23 @@ class ToolArgs(BaseModel):
                     )
                 )
 
+    @model_validator(mode="before")
+    @classmethod
+    def convert_to_io_types(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        for key, val in data.items():
+            if isinstance(val, int):
+                data[key] = IntIO(val=val)
+            elif isinstance(val, str):
+                data[key] = StrIO(val=val)
+            elif isinstance(val, bool):
+                data[key] = BoolIO(val=val)
+            elif isinstance(val, float):
+                data[key] = FloatIO(val=val)
+
+        return data
+
 
 # See https://mypy.readthedocs.io/en/stable/generics.html#variance-of-generic-types
 # Note that this is actually slightly incorrect, this time is actually NOT
@@ -61,7 +81,7 @@ class ToolFunc(Protocol[T]):
     """
     Represents the type of a function that looks like this:
 
-    def func(args: BaseModelSubclass, context: PlanRunContext) -> IOType
+    def func(args: ToolArgsSubclass, context: PlanRunContext) -> IOType
 
     Names of arguments must be the same. Note that args can be any subclass of
     BaseModel.
@@ -75,39 +95,121 @@ class ToolFunc(Protocol[T]):
 
 @dataclass(frozen=True)
 class Tool:
+    name: str
     func: ToolFunc
-    input_type: Type[ToolArgs]
+    input_type: Type
+    return_type: Type
 
 
 class ToolRegistry:
-    _REGISTRY_MAP = {}
+    _REGISTRY_MAP: Dict[str, Tool] = {}
 
     @classmethod
-    def register_tool(cls, tool: ToolFunc) -> None:
-        pass
+    def register_tool(cls, tool: Tool) -> None:
+        cls._REGISTRY_MAP[tool.name] = tool
+
+    @classmethod
+    def get_tool(cls, tool_name: str) -> Tool:
+        return cls._REGISTRY_MAP[tool_name]
+
+
+class ToolCall(BaseModel):
+    tool_name: str
+    input_val: ToolArgs
+
+    async def execute(self, context: PlanRunContext) -> IOType:
+        tool = ToolRegistry.get_tool(self.tool_name)
+        return await tool.func(args=self.input_val, context=context)
 
 
 def tool(
+    description: str,
     readable_name: Optional[str] = None,
-    description: Optional[str] = None,
-    use_cache: bool = False,
-    use_cache_fn: Optional[Callable[[T, PlanRunContext], bool]] = None,
-    cache_key_fn: Optional[Callable[[T, PlanRunContext], CacheKeyType]] = None,
-    cache_expiration: Optional[datetime.timedelta] = None,
-    retries: int = 0,
-    timeout_seconds: int = 6000,  # or whatever
+    use_cache: bool = True,
+    use_cache_fn: Optional[Callable[[T, PlanRunContext], bool]] = None,  # TODO default
+    cache_key_fn: Optional[Callable[[T, PlanRunContext], CacheKeyType]] = None,  # TODO default
+    cache_expiration: Optional[
+        datetime.timedelta
+    ] = None,  # TODO default + how to handle with postgres?
+    retries: int = 0,  # TODO default
+    timeout_seconds: int = 6000,  # TODO default
     create_prefect_task: bool = True,
+    is_visible: bool = True,
 ) -> Callable[[ToolFunc], ToolFunc]:
+    """
+    Decorator to register a function as a Tool usable by GPT. This can only decorate a function of the format:
+        def func(args: ToolArgsSubclass, context: PlanRunContext) -> IOType
+
+    description: A description of the tool. This is required, as it is used in
+      addition to the function's signature to explain to GPT what the tool does.
+
+    readable_name: A readable name that can be presented to the end user
+      explaining what the task does. If absent, defaults to the function's name.
+
+    use_cache: If true, tool output is cached.
+
+    use_cache_fn: Function of the inputs. If it evaluates to true, tool output is cached.
+
+    cache_key_fn: Function of the inputs. Evaluates to a string cache key to
+      potentially retrieve cached values. If caching is disabled, this is ignored.
+
+    cache_expiration: Timedelta representing amount of time the output should
+      exist in the cache.
+
+    retries: An integer number of retries in case the task fails. NOTE: Only
+      respected when `create_prefect_task` is also True.
+
+    timeout_seconds: An integer number of seconds, after which the tool run
+      times out. NOTE: only respected when `create_prefect_task` is True.
+
+    create_prefect_task: If true, wraps the tool run in a prefect
+      task. Otherwise run locally without prefect.
+
+    is_visible: If true, the task is visible to the end user.
+    """
+
     def tool_deco(func: ToolFunc) -> ToolFunc:
-        # Inspect the function's arguments at runtime, to ensure the ToolArgs
-        # parameter is valid.
+        # Inspect the function's arguments and return type to ensure they are
+        # all valid.
         sig = inspect.signature(func)
+        if sig.return_annotation not in get_args(IOType):
+            raise ValueError(
+                (
+                    f"Tool function f'{func.__name__}' has invalid return type "
+                    f"{str(sig.return_annotation)}. Return type must be an 'IOType'."
+                )
+            )
+        tool_args_type = None
         for param in sig.parameters.values():
             typ = param.annotation
             # If the parameter is a subclass of ToolArgs, make sure all
             # properties are IOType using the validate_types class method.
             if issubclass(typ, ToolArgs):
                 typ.validate_types()
+                tool_args_type = typ
+            elif not issubclass(typ, PlanRunContext):
+                raise ValueError(
+                    (
+                        f"Tool function f'{func.__name__}' has argument "
+                        f"'{param.name}' with invalid type {str(typ)}. "
+                        "Tool functions must accept only a 'ToolArgs'"
+                        " argument and a 'PlanRunContext' argument."
+                    )
+                )
+
+        if tool_args_type is None:
+            raise ValueError(
+                f"Tool function f'{func.__name__}' is missing argument of type 'ToolArgs'."
+            )
+        # Add the tool to the registry
+        ToolRegistry.register_tool(
+            Tool(
+                name=func.__name__,
+                func=func,
+                input_type=tool_args_type,
+                return_type=sig.return_annotation,
+            )
+        )
 
         @functools.wraps(func)
         async def wrapper(args: ToolArgs, context: PlanRunContext) -> IOType:
@@ -123,12 +225,16 @@ def tool(
             # Create a prefect task that wraps the function with its caching
             # logic. This will ensure that retried tasks will include caching.
             if create_prefect_task:
+                tags = None
+                if not is_visible:
+                    tags = ["hidden", "minitool"]
                 task = Task(
                     name=readable_name or func.__name__,  # TODO
                     fn=sub_wrapper,
                     description=description or "",
                     retries=retries,
                     timeout_seconds=timeout_seconds,
+                    tags=tags,
                 )
 
                 value = await task(args, context)
@@ -139,18 +245,3 @@ def tool(
         return wrapper
 
     return tool_deco
-
-
-class MyToolInput(ToolArgs):
-    x: int
-    y: str
-
-
-class MyToolInput2(ToolArgs):
-    x: IntIO
-    y: ListIO
-
-
-@tool()
-async def my_tool_2(args: MyToolInput2, context: PlanRunContext) -> IOType:
-    return args  # Placeholder logic for demonstration purposes
