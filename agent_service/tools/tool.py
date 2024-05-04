@@ -18,31 +18,13 @@ import functools
 import inspect
 from abc import ABC
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Protocol,
-    Type,
-    TypeVar,
-    get_args,
-)
+from typing import Callable, Dict, List, Optional, Protocol, Type, TypeVar, get_args
 
 from prefect.tasks import Task
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-from agent_service.tools.io_types import (
-    BoolIO,
-    FloatIO,
-    IntIO,
-    IntList,
-    IOType,
-    StringList,
-    StrIO,
-)
+from agent_service.tools.io_types import IOType, PrimitiveType
 from agent_service.types import PlanRunContext
 
 CacheKeyType = str
@@ -58,42 +40,21 @@ class ToolArgs(BaseModel, ABC):
     def validate_types(cls) -> None:
         """
         This iterates through the model's fields and checks their types. If any
-        field's type is not in the IOType enum, raise an error.
+        field's type is not a primitive type or in the IOType enum, raise an
+        error.
         """
         for var, info in cls.model_fields.items():
             var_type = info.annotation
+            if var_type in get_args(PrimitiveType):
+                continue
+
             if not var_type in get_args(IOType):
                 raise ValueError(
                     (
                         f"Property '{var}' in class '{cls.__name__}'"
-                        f" must be IOType, not {str(var_type)}."
+                        f" must be PrimitiveType or IOType, not {str(var_type)}."
                     )
                 )
-
-    @model_validator(mode="before")
-    @classmethod
-    def convert_to_io_types(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
-        for key, val in data.items():
-            if isinstance(val, int):
-                data[key] = IntIO(val=val)
-            elif isinstance(val, str):
-                data[key] = StrIO(val=val)
-            elif isinstance(val, bool):
-                data[key] = BoolIO(val=val)
-            elif isinstance(val, float):
-                data[key] = FloatIO(val=val)
-            elif isinstance(val, list):
-                if not val:
-                    # Can only do this for lists with some values
-                    continue
-                if isinstance(val[0], int):
-                    data[key] = IntList(vals=val)
-                elif isinstance(val[0], str):
-                    data[key] = StringList(vals=val)
-
-        return data
 
 
 # See https://mypy.readthedocs.io/en/stable/generics.html#variance-of-generic-types
@@ -146,7 +107,7 @@ class Tool:
             if not info.default or info.default is PydanticUndefined:
                 args.append(f"{var}: {info.annotation.gpt_type_name()}")  # type: ignore
             else:
-                args.append(f"{var}: {info.annotation.gpt_type_name()} = {info.default.unwrap()}")  # type: ignore
+                args.append(f"{var}: {info.annotation.gpt_type_name()} = {info.default}")  # type: ignore
 
         args_str = ", ".join(args)
         return f"def {self.name}({args_str}) -> {self.return_type.gpt_type_name()}"

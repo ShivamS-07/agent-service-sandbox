@@ -1,12 +1,13 @@
 import enum
 from abc import ABC, abstractmethod
-from typing import List, Literal, Tuple, Type, Union
+from typing import Any, List, Literal, Tuple, Type, Union
 
 from pydantic import BaseModel, Field
+from pydantic.config import ConfigDict
 from pydantic.type_adapter import TypeAdapter
 from typing_extensions import Annotated
 
-PrimitiveType = Union[int, str, bool, float]
+PrimitiveType = Union[int, str, bool, float, List[int], List[str]]
 
 
 def _get_all_subclasses(cls: Type) -> Tuple[Type]:
@@ -39,7 +40,10 @@ class IOBase(BaseModel, ABC):
     Parent class of ALL types that may act as inputs or outputs to tools.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     io_type: IOTypeEnum
+    val: Any
 
     @abstractmethod
     def to_gpt_input(self) -> str:
@@ -52,17 +56,9 @@ class IOBase(BaseModel, ABC):
         """
         return cls.__name__
 
-    def unwrap(self) -> "IOBase":
-        return self
-
-
 #################################
 # PRIMITIVE IO TYPES START HERE
 #################################
-
-# Primitive IO types are a bit special, in that they are automatically converted
-# from primitive python types when present in ToolArgs. This is done with
-# pydantic validator ToolArgs.convert_to_io_types.
 
 
 class IntIO(IOBase):
@@ -76,9 +72,6 @@ class IntIO(IOBase):
     def gpt_type_name(cls) -> str:
         return "int"
 
-    def unwrap(self) -> int:
-        return self.val
-
 
 class StrIO(IOBase):
     io_type: Literal[IOTypeEnum.STRING] = IOTypeEnum.STRING
@@ -90,9 +83,6 @@ class StrIO(IOBase):
     @classmethod
     def gpt_type_name(cls) -> str:
         return "str"
-
-    def unwrap(self) -> str:
-        return self.val
 
 
 class FloatIO(IOBase):
@@ -106,9 +96,6 @@ class FloatIO(IOBase):
     def gpt_type_name(cls) -> str:
         return "float"
 
-    def unwrap(self) -> float:
-        return self.val
-
 
 class BoolIO(IOBase):
     io_type: Literal[IOTypeEnum.BOOL] = IOTypeEnum.BOOL
@@ -121,38 +108,29 @@ class BoolIO(IOBase):
     def gpt_type_name(cls) -> str:
         return "bool"
 
-    def unwrap(self) -> bool:
-        return self.val
-
 
 class StringList(IOBase):
     io_type: Literal[IOTypeEnum.STRING_LIST] = IOTypeEnum.STRING_LIST
-    vals: List[str]
+    val: List[str]
 
     def to_gpt_input(self) -> str:
-        return str(self.vals)
+        return str(self.val)
 
     @classmethod
     def gpt_type_name(cls) -> str:
         return "List[str]"
 
-    def unwrap(self) -> List[str]:
-        return self.vals
-
 
 class IntList(IOBase):
     io_type: Literal[IOTypeEnum.INT_LIST] = IOTypeEnum.INT_LIST
-    vals: List[int]
+    val: List[int]
 
     def to_gpt_input(self) -> str:
-        return str(self.vals)
+        return str(self.val)
 
     @classmethod
     def gpt_type_name(cls) -> str:
         return "List[int]"
-
-    def unwrap(self) -> List[int]:
-        return self.vals
 
 
 #################################
