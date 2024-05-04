@@ -3,11 +3,11 @@ A tool represents a 'function' that can be included in an execution plan by an
 LLM. Tools are essentially python functions wrapped in a decorator. For example:
 
 class MyToolInput(ToolArgs):
-    arg1: IntIO = 1  # For primitives, you can assign directly instead of IntIO(val=1)
-    arg2: ListIO[int] = ListIO[int](vals=[1, 2, 3])
+    arg1: int = 1
+    arg2: List[int] = [1, 2, 3]
 
 @tool(description="My tool does XYZ")
-def my_tool(args: MyToolInput, context: PlanRunContext) -> IntIO:
+def my_tool(args: MyToolInput, context: PlanRunContext) -> int:
     ...
 
 
@@ -18,13 +18,24 @@ import functools
 import inspect
 from abc import ABC
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Protocol, Type, TypeVar, get_args
+from typing import (
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    Type,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+)
 
 from prefect.tasks import Task
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-from agent_service.tools.io_types import IOType, PrimitiveType
+from agent_service.tools.io_type_utils import IOType, type_is_primitive
 from agent_service.types import PlanRunContext
 
 CacheKeyType = str
@@ -45,7 +56,11 @@ class ToolArgs(BaseModel, ABC):
         """
         for var, info in cls.model_fields.items():
             var_type = info.annotation
-            if var_type in get_args(PrimitiveType):
+            if get_origin(var_type) is Union:
+                # Unwrap optionals to type check
+                var_type = get_args(var_type)[0]
+
+            if type_is_primitive(var_type):
                 continue
 
             if not var_type in get_args(IOType):
