@@ -3,8 +3,8 @@ A tool represents a 'function' that can be included in an execution plan by an
 LLM. Tools are essentially python functions wrapped in a decorator. For example:
 
 class MyToolInput(ToolArgs):
-    arg1: IntIO
-    arg2: ListIO[int]
+    arg1: IntIO = 1  # For primitives, you can assign directly instead of IntIO(val=1)
+    arg2: ListIO[int] = ListIO[int](vals=[1, 2, 3])
 
 @tool(description="My tool does XYZ")
 def my_tool(args: MyToolInput, context: PlanRunContext) -> IntIO:
@@ -18,12 +18,31 @@ import functools
 import inspect
 from abc import ABC
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Protocol, Type, TypeVar, get_args
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    Type,
+    TypeVar,
+    get_args,
+)
 
 from prefect.tasks import Task
 from pydantic import BaseModel, model_validator
+from pydantic_core import PydanticUndefined
 
-from agent_service.tools.io_types import BoolIO, FloatIO, IntIO, IOType, StrIO
+from agent_service.tools.io_types import (
+    BoolIO,
+    FloatIO,
+    IntIO,
+    IntList,
+    IOType,
+    StringList,
+    StrIO,
+)
 from agent_service.types import PlanRunContext
 
 CacheKeyType = str
@@ -65,6 +84,14 @@ class ToolArgs(BaseModel, ABC):
                 data[key] = BoolIO(val=val)
             elif isinstance(val, float):
                 data[key] = FloatIO(val=val)
+            elif isinstance(val, list):
+                if not val:
+                    # Can only do this for lists with some values
+                    continue
+                if isinstance(val[0], int):
+                    data[key] = IntList(vals=val)
+                elif isinstance(val[0], str):
+                    data[key] = StringList(vals=val)
 
         return data
 
@@ -95,13 +122,41 @@ class ToolFunc(Protocol[T]):
 
 @dataclass(frozen=True)
 class Tool:
+    """
+    Represents a tool as an input to an LLM. After an execution plan is
+    validated, a ToolCallTask is created to represent the actual 'call' of the
+    tool. Note that this class is only for in memory use, and cannot be serialized.
+    """
+
     name: str
+    readable_name: str
     func: ToolFunc
-    input_type: Type
+    input_type: Type[ToolArgs]
     return_type: Type
+
+    def to_function_header(self) -> str:
+        """
+        Returns the tool as a function header for use by an LLM. E.g.
+
+        'def my_func(x: int, y: int = 2)'
+
+        """
+        args = []
+        for var, info in self.input_type.model_fields.items():
+            if not info.default or info.default is PydanticUndefined:
+                args.append(f"{var}: {info.annotation.gpt_type_name()}")  # type: ignore
+            else:
+                args.append(f"{var}: {info.annotation.gpt_type_name()} = {info.default.unwrap()}")  # type: ignore
+
+        args_str = ", ".join(args)
+        return f"def {self.name}({args_str}) -> {self.return_type.gpt_type_name()}"
 
 
 class ToolRegistry:
+    """
+    Stores all tools using a mapping from tool name to tool.
+    """
+
     _REGISTRY_MAP: Dict[str, Tool] = {}
 
     @classmethod
@@ -112,13 +167,27 @@ class ToolRegistry:
     def get_tool(cls, tool_name: str) -> Tool:
         return cls._REGISTRY_MAP[tool_name]
 
+    @classmethod
+    def get_all_tools(cls) -> List[Tool]:
+        return list(cls._REGISTRY_MAP.values())
 
-class ToolCall(BaseModel):
+
+class ToolTask(BaseModel):
+    """
+    Represents a tool run in an execution plan. Execution plans that are
+    serialized are composed of a graph of ToolTasks.
+
+    Note: any additional info about the tool may be fetched from the
+    ToolRegistry using the tool_name.
+    """
+
     tool_name: str
     input_val: ToolArgs
 
-    async def execute(self, context: PlanRunContext) -> IOType:
-        tool = ToolRegistry.get_tool(self.tool_name)
+    async def execute(
+        self, context: PlanRunContext, registry: Type[ToolRegistry] = ToolRegistry
+    ) -> IOType:
+        tool = registry.get_tool(self.tool_name)
         return await tool.func(args=self.input_val, context=context)
 
 
@@ -135,6 +204,7 @@ def tool(
     timeout_seconds: int = 6000,  # TODO default
     create_prefect_task: bool = True,
     is_visible: bool = True,
+    enabled: bool = True,
 ) -> Callable[[ToolFunc], ToolFunc]:
     """
     Decorator to register a function as a Tool usable by GPT. This can only decorate a function of the format:
@@ -166,6 +236,8 @@ def tool(
       task. Otherwise run locally without prefect.
 
     is_visible: If true, the task is visible to the end user.
+
+    enabled: If false, the tool is not registered for use.
     """
 
     def tool_deco(func: ToolFunc) -> ToolFunc:
@@ -202,36 +274,39 @@ def tool(
                 f"Tool function f'{func.__name__}' is missing argument of type 'ToolArgs'."
             )
         # Add the tool to the registry
-        ToolRegistry.register_tool(
-            Tool(
-                name=func.__name__,
-                func=func,
-                input_type=tool_args_type,
-                return_type=sig.return_annotation,
+        if enabled:
+            ToolRegistry.register_tool(
+                Tool(
+                    name=func.__name__,
+                    readable_name=readable_name or func.__name__,
+                    func=func,
+                    input_type=tool_args_type,
+                    return_type=sig.return_annotation,
+                )
             )
-        )
 
         @functools.wraps(func)
         async def wrapper(args: ToolArgs, context: PlanRunContext) -> IOType:
             # Wrap any logic in another function. This will ensure e.g. caching
             # is executed as part of the prefect task, and not before the task
             # runs.
-            async def sub_wrapper(args: ToolArgs, context: PlanRunContext) -> IOType:
+            async def main_func(args: ToolArgs, context: PlanRunContext) -> IOType:
                 if use_cache or (use_cache_fn and use_cache_fn(args, context)):
                     # TODO: HANDLE CACHING
                     return await func(args, context)
                 return await func(args, context)
 
-            # Create a prefect task that wraps the function with its caching
-            # logic. This will ensure that retried tasks will include caching.
             if create_prefect_task:
+                # Create a prefect task that wraps the function with its caching
+                # logic. This will ensure that retried tasks will include caching.
                 tags = None
                 if not is_visible:
                     tags = ["hidden", "minitool"]
                 task = Task(
-                    name=readable_name or func.__name__,  # TODO
-                    fn=sub_wrapper,
-                    description=description or "",
+                    name=func.__name__,
+                    task_run_name=context.task_id,
+                    fn=main_func,
+                    description=description,
                     retries=retries,
                     timeout_seconds=timeout_seconds,
                     tags=tags,
@@ -239,7 +314,7 @@ def tool(
 
                 value = await task(args, context)
             else:
-                value = await sub_wrapper(args, context)
+                value = await main_func(args, context)
             return value
 
         return wrapper
