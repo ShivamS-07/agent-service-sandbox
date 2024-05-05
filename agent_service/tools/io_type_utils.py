@@ -1,13 +1,13 @@
 import enum
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Literal, Tuple, Type, Union, get_args
+from typing import Any, Dict, List, Tuple, Type, Union, get_args
 
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 from pydantic.type_adapter import TypeAdapter
 from typing_extensions import Annotated
 
-PrimitiveType = Union[int, str, bool, float, List[str]]
+PrimitiveType = Union[int, str, bool, float, List["PrimitiveType"]]
 
 
 def _get_all_subclasses(cls: Type) -> Tuple[Type]:
@@ -32,9 +32,10 @@ class IOTypeEnum(str, enum.Enum):
     BOOL = "bool"
     FLOAT = "float"
     LIST = "list"
+    STOCK_TIMESERIES = "stock_timeseries"
 
 
-class IOBase(BaseModel, ABC):
+class ComplexIOBase(BaseModel, ABC):
     """
     Parent class of ALL types that may act as inputs or outputs to tools.
     """
@@ -49,61 +50,9 @@ class IOBase(BaseModel, ABC):
         raise NotImplementedError()
 
 
-#################################
-# PRIMITIVE IO TYPES
-#################################
+ComplexIOType = Union[_get_all_subclasses(ComplexIOBase)]  # type: ignore
 
-# These IO Types should not be used directly. They are simply wrappers around
-# some python primitives so that everything can be serialized in a consistent
-# way.
-
-class _IntIO(IOBase):
-    io_type: Literal[IOTypeEnum.INTEGER] = IOTypeEnum.INTEGER
-    val: int
-
-    def to_gpt_input(self) -> str:
-        return str(self.val)
-
-
-class _StrIO(IOBase):
-    io_type: Literal[IOTypeEnum.STRING] = IOTypeEnum.STRING
-    val: str
-
-    def to_gpt_input(self) -> str:
-        return self.val
-
-
-class _FloatIO(IOBase):
-    io_type: Literal[IOTypeEnum.FLOAT] = IOTypeEnum.FLOAT
-    val: float
-
-    def to_gpt_input(self) -> str:
-        return str(self.val)
-
-
-class _BoolIO(IOBase):
-    io_type: Literal[IOTypeEnum.BOOL] = IOTypeEnum.BOOL
-    val: bool
-
-    def to_gpt_input(self) -> str:
-        return str(self.val)
-
-
-class _ListIO(IOBase):
-    """
-    Stores list literals. For simplicity, all lists are represented as lists of
-    strings. Tools that take lists can convert the types as needed.
-    """
-
-    io_type: Literal[IOTypeEnum.LIST] = IOTypeEnum.LIST
-    val: List[str]
-
-    def to_gpt_input(self) -> str:
-        return str(self.val)
-
-ComplexIOType = Union[_get_all_subclasses(IOBase)]  # type: ignore
-
-IOType = Union[PrimitiveType, ComplexIOType]  # type: ignore
+IOType = Union[PrimitiveType, ComplexIOType]
 
 
 def type_is_primitive(typ: Type) -> bool:
@@ -120,23 +69,15 @@ def get_clean_type_name(typ: Type[IOType]) -> str:
 io_adapter = TypeAdapter(Annotated[IOType, Field(discriminator="io_type")])
 
 
-def dump_io_type(val: IOType) -> Dict[str, Any]:
-    if isinstance(val, int):
-        val = _IntIO(val=val)
-    elif isinstance(val, str):
-        val = _StrIO(val=val)
-    elif isinstance(val, bool):
-        val = _BoolIO(val=val)
-    elif isinstance(val, float):
-        val = _FloatIO(val=val)
-    elif isinstance(val, list):
-        val = _ListIO(val=val)
+# Use these to dump and load supported primitive types, as well as more complex IO Types.
+def dump_io_type(val: IOType) -> Union[PrimitiveType, Dict[str, Any]]:
+    if type_is_primitive(type(val)):
+        return val
 
     return io_adapter.dump_python(val)
 
 
-def parse_io_type(val: Dict[str, Any]) -> IOType:
-    io_type = io_adapter.validate_python(val)
-    if issubclass(io_type, (_IntIO, _StrIO, _BoolIO, _FloatIO, _ListIO)):
-        return io_type.val
-    return io_type
+def parse_io_type(val: Union[PrimitiveType, Dict[str, Any]]) -> IOType:
+    if type_is_primitive(type(val)):
+        return val
+    return io_adapter.validate_python(val)

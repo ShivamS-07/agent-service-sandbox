@@ -3,8 +3,9 @@ A tool represents a 'function' that can be included in an execution plan by an
 LLM. Tools are essentially python functions wrapped in a decorator. For example:
 
 class MyToolInput(ToolArgs):
-    arg1: int = 1
-    arg2: List[int] = [1, 2, 3]
+    arg1: StockTimeseriesTable
+    arg2: int = 1
+    arg3: List[int] = [1, 2, 3]
 
 @tool(description="My tool does XYZ")
 def my_tool(args: MyToolInput, context: PlanRunContext) -> int:
@@ -14,6 +15,7 @@ def my_tool(args: MyToolInput, context: PlanRunContext) -> int:
 """
 
 import datetime
+import enum
 import functools
 import inspect
 from abc import ABC
@@ -35,7 +37,11 @@ from prefect.tasks import Task
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-from agent_service.tools.io_type_utils import IOType, type_is_primitive
+from agent_service.tools.io_type_utils import (
+    IOType,
+    get_clean_type_name,
+    type_is_primitive,
+)
 from agent_service.types import PlanRunContext
 
 CacheKeyType = str
@@ -114,38 +120,44 @@ class Tool:
         """
         Returns the tool as a function header for use by an LLM. E.g.
 
-        'def my_func(x: int, y: int = 2)'
+        'def my_func(t: StockTimeseriesTable, x: int, y: int = 2)'
 
         """
         args = []
         for var, info in self.input_type.model_fields.items():
-            if not info.default or info.default is PydanticUndefined:
-                args.append(f"{var}: {info.annotation.gpt_type_name()}")  # type: ignore
+            clean_type_name = get_clean_type_name(info.annotation)
+            if info.default is PydanticUndefined:
+                args.append(f"{var}: {clean_type_name}")  # type: ignore
             else:
-                args.append(f"{var}: {info.annotation.gpt_type_name()} = {info.default}")  # type: ignore
+                args.append(f"{var}: {clean_type_name} = {info.default}")  # type: ignore
 
         args_str = ", ".join(args)
-        return f"def {self.name}({args_str}) -> {self.return_type.gpt_type_name()}"
+        return f"def {self.name}({args_str}) -> {get_clean_type_name(self.return_type)}"
+
+
+class ToolCategory(str, enum.Enum):
+    DEFAULT = "default"
 
 
 class ToolRegistry:
     """
-    Stores all tools using a mapping from tool name to tool.
+    Stores all tools using a mapping from tool name to tool. Contains a map per
+    tool category.
     """
 
-    _REGISTRY_MAP: Dict[str, Tool] = {}
+    _REGISTRY_MAP: Dict[ToolCategory, Dict[str, Tool]] = {}
 
     @classmethod
-    def register_tool(cls, tool: Tool) -> None:
-        cls._REGISTRY_MAP[tool.name] = tool
+    def register_tool(cls, tool: Tool, category: ToolCategory = ToolCategory.DEFAULT) -> None:
+        cls._REGISTRY_MAP[category][tool.name] = tool
 
     @classmethod
-    def get_tool(cls, tool_name: str) -> Tool:
-        return cls._REGISTRY_MAP[tool_name]
+    def get_tool(cls, tool_name: str, category: ToolCategory = ToolCategory.DEFAULT) -> Tool:
+        return cls._REGISTRY_MAP[category][tool_name]
 
     @classmethod
-    def get_all_tools(cls) -> List[Tool]:
-        return list(cls._REGISTRY_MAP.values())
+    def get_all_tools(cls, category: ToolCategory = ToolCategory.DEFAULT) -> List[Tool]:
+        return list(cls._REGISTRY_MAP[category].values())
 
 
 class ToolTask(BaseModel):
@@ -169,6 +181,7 @@ class ToolTask(BaseModel):
 
 def tool(
     description: str,
+    category: ToolCategory = ToolCategory.DEFAULT,
     readable_name: Optional[str] = None,
     use_cache: bool = True,
     use_cache_fn: Optional[Callable[[T, PlanRunContext], bool]] = None,  # TODO default
@@ -188,6 +201,8 @@ def tool(
 
     description: A description of the tool. This is required, as it is used in
       addition to the function's signature to explain to GPT what the tool does.
+
+    category: A way to group tools into categories, useful for GPT.
 
     readable_name: A readable name that can be presented to the end user
       explaining what the task does. If absent, defaults to the function's name.
@@ -258,7 +273,8 @@ def tool(
                     func=func,
                     input_type=tool_args_type,
                     return_type=sig.return_annotation,
-                )
+                ),
+                category=category,
             )
 
         @functools.wraps(func)
