@@ -1,13 +1,23 @@
-from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Type, Union, cast, get_args
+from abc import ABC
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+    get_args,
+)
 
-from pydantic import BaseModel, model_serializer
+import pandas as pd
+from pydantic import BaseModel, field_validator
 from pydantic.config import ConfigDict
+from pydantic.functional_serializers import model_serializer
 
-# Recursive type defs don't work, so need to split over two lines.
-_PrimitiveTypeBase = Union[int, str, bool, float]
-PrimitiveType = Union[_PrimitiveTypeBase, List[_PrimitiveTypeBase]]
-
+PrimitiveType = Union[int, str, bool, float, List[int], List[str], List[bool], List[float]]
 
 _IO_TYPE_NAME_KEY = "_io_type"
 
@@ -17,21 +27,32 @@ class ComplexIOBase(BaseModel, ABC):
     Parent class of ALL types that may act as inputs or outputs to tools.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
     val: Any
 
-    @abstractmethod
     def to_gpt_input(self) -> str:
-        raise NotImplementedError()
+        return str(self.val)
 
     @classmethod
     def name(cls) -> str:
         return cls.__name__
 
-    @model_serializer
-    def serialize_model(self) -> Dict[str, Any]:
-        ser_dict = self.model_dump()
+    @field_validator("val", mode="before")
+    @classmethod
+    def _deserializer(cls, val):
+        val_field = cls.model_fields["val"]
+        if isinstance(val, dict) and val_field.annotation is pd.DataFrame:
+            val = pd.DataFrame.from_dict(val)
+        return val
+
+    @model_serializer(mode="wrap")
+    def _serialize_io_base(self, dumper: Callable) -> Dict[str, Any]:
+        if isinstance(self.val, pd.DataFrame):
+            self.val = self.val.to_dict()
+
+        # This calls the default pydantic serializer
+        ser_dict = dumper(self)
         ser_dict[_IO_TYPE_NAME_KEY] = self.name()
         return ser_dict
 
@@ -70,11 +91,14 @@ class IOTypeSerializer:
             return val
         val = cast(Dict[str, Any], val)
         cls_name = val[_IO_TYPE_NAME_KEY]
-        typ = cls._COMPLEX_TYPE_DICT[cls_name]
+        typ = cls._COMPLEX_TYPE_DICT.pop(cls_name)
         return typ(**val)
 
 
-def io_type(cls: Type[ComplexIOBase]) -> Type[ComplexIOBase]:
+T = TypeVar("T", bound=ComplexIOBase)
+
+
+def io_type(cls: Type[T]) -> Type[T]:
     """
     Simple decorator to store a mapping from class name to class.
     """

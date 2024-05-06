@@ -17,6 +17,7 @@ import enum
 import functools
 import inspect
 from abc import ABC
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import (
     Callable,
@@ -143,7 +144,7 @@ class ToolRegistry:
     tool category.
     """
 
-    _REGISTRY_MAP: Dict[ToolCategory, Dict[str, Tool]] = {}
+    _REGISTRY_MAP: Dict[ToolCategory, Dict[str, Tool]] = defaultdict(dict)
 
     @classmethod
     def register_tool(cls, tool: Tool, category: ToolCategory = ToolCategory.DEFAULT) -> None:
