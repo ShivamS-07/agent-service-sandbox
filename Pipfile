@@ -15,6 +15,9 @@ invoke = {version = "~=2.2.0", index = "pypi"}
 isort = {version = "~=5.13.0", index="pypi"}
 mypy = {version = "~=1.10.0", index="pypi"}
 
+# Types
+pandas-stubs = "*"
+
 [packages]
 pydantic = {version = "~=2.7.0", index = "pypi"}
 prefect = {version = "~=2.18.0", index = "pypi"}

@@ -1,17 +1,19 @@
 import enum
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple, Type, Union, get_args
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args
 
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 from pydantic.type_adapter import TypeAdapter
 from typing_extensions import Annotated
 
-PrimitiveType = Union[int, str, bool, float, List["PrimitiveType"]]
+# Recursive type defs don't work, so need to split over two lines.
+_PrimitiveTypeBase = Union[int, str, bool, float]
+PrimitiveType = Union[_PrimitiveTypeBase, List[_PrimitiveTypeBase]]
 
 
-def _get_all_subclasses(cls: Type) -> Tuple[Type]:
-    all_subclasses = []
+def _get_all_subclasses(cls: Type) -> Tuple[Type, ...]:
+    all_subclasses: List[Type] = []
 
     for subclass in cls.__subclasses__():
         all_subclasses.append(subclass)
@@ -52,15 +54,18 @@ class ComplexIOBase(BaseModel, ABC):
 
 ComplexIOType = Union[_get_all_subclasses(ComplexIOBase)]  # type: ignore
 
-IOType = Union[PrimitiveType, ComplexIOType]
+IOType = Union[PrimitiveType, ComplexIOType]  # type: ignore
 
 
-def type_is_primitive(typ: Type) -> bool:
+def type_is_primitive(typ: Optional[Type]) -> bool:
     return typ in get_args(PrimitiveType)
 
 
-def get_clean_type_name(typ: Type[IOType]) -> str:
-    return typ.__name__
+def get_clean_type_name(typ: Optional[Type]) -> str:
+    try:
+        return typ.__name__  # type: ignore
+    except AttributeError:
+        return str(typ)
 
 
 # We do a bit of fancy metaprogramming to be able to do this. Essentially this
@@ -70,14 +75,14 @@ io_adapter = TypeAdapter(Annotated[IOType, Field(discriminator="io_type")])
 
 
 # Use these to dump and load supported primitive types, as well as more complex IO Types.
-def dump_io_type(val: IOType) -> Union[PrimitiveType, Dict[str, Any]]:
+def dump_io_type_dict(val: IOType) -> Union[PrimitiveType, Dict[str, Any]]:
     if type_is_primitive(type(val)):
         return val
 
-    return io_adapter.dump_python(val)
+    return io_adapter.dump_python(val)  # type: ignore
 
 
-def parse_io_type(val: Union[PrimitiveType, Dict[str, Any]]) -> IOType:
+def parse_io_type_dict(val: Union[PrimitiveType, Dict[str, Any]]) -> IOType:
     if type_is_primitive(type(val)):
         return val
-    return io_adapter.validate_python(val)
+    return io_adapter.validate_python(val)  # type: ignore

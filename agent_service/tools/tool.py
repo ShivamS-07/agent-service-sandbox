@@ -10,8 +10,6 @@ class MyToolInput(ToolArgs):
 @tool(description="My tool does XYZ")
 def my_tool(args: MyToolInput, context: PlanRunContext) -> int:
     ...
-
-
 """
 
 import datetime
@@ -69,7 +67,7 @@ class ToolArgs(BaseModel, ABC):
             if type_is_primitive(var_type):
                 continue
 
-            if not var_type in get_args(IOType):
+            if var_type not in get_args(IOType):
                 raise ValueError(
                     (
                         f"Property '{var}' in class '{cls.__name__}'"
@@ -96,7 +94,7 @@ class ToolFunc(Protocol[T]):
     BaseModel.
     """
 
-    __name__ = ""
+    __name__: str = ""
 
     async def __call__(self, args: T, context: PlanRunContext) -> IOType:
         raise NotImplementedError()
@@ -127,9 +125,9 @@ class Tool:
         for var, info in self.input_type.model_fields.items():
             clean_type_name = get_clean_type_name(info.annotation)
             if info.default is PydanticUndefined:
-                args.append(f"{var}: {clean_type_name}")  # type: ignore
+                args.append(f"{var}: {clean_type_name}")
             else:
-                args.append(f"{var}: {clean_type_name} = {info.default}")  # type: ignore
+                args.append(f"{var}: {clean_type_name} = {info.default}")
 
         args_str = ", ".join(args)
         return f"def {self.name}({args_str}) -> {get_clean_type_name(self.return_type)}"
@@ -278,11 +276,11 @@ def tool(
             )
 
         @functools.wraps(func)
-        async def wrapper(args: ToolArgs, context: PlanRunContext) -> IOType:
+        async def wrapper(args: T, context: PlanRunContext) -> IOType:
             # Wrap any logic in another function. This will ensure e.g. caching
             # is executed as part of the prefect task, and not before the task
             # runs.
-            async def main_func(args: ToolArgs, context: PlanRunContext) -> IOType:
+            async def main_func(args: T, context: PlanRunContext) -> IOType:
                 if use_cache or (use_cache_fn and use_cache_fn(args, context)):
                     # TODO: HANDLE CACHING
                     return await func(args, context)
