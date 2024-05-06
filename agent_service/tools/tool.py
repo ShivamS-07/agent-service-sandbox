@@ -193,6 +193,7 @@ def tool(
     create_prefect_task: bool = True,
     is_visible: bool = True,
     enabled: bool = True,
+    tool_registry: Type[ToolRegistry] = ToolRegistry,
 ) -> Callable[[ToolFunc], ToolFunc]:
     """
     Decorator to register a function as a Tool usable by GPT. This can only decorate a function of the format:
@@ -225,6 +226,8 @@ def tool(
     is_visible: If true, the task is visible to the end user.
 
     enabled: If false, the tool is not registered for use.
+
+    tool_registry: A class type for the registry. Useful for testing or tiered registries.
     """
 
     def tool_deco(func: ToolFunc) -> ToolFunc:
@@ -262,7 +265,7 @@ def tool(
             )
         # Add the tool to the registry
         if enabled:
-            ToolRegistry.register_tool(
+            tool_registry.register_tool(
                 Tool(
                     name=func.__name__,
                     func=func,
