@@ -12,7 +12,6 @@ def my_tool(args: MyToolInput, context: PlanRunContext) -> int:
     ...
 """
 
-import datetime
 import enum
 import functools
 import inspect
