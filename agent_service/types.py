@@ -1,5 +1,3 @@
-import datetime
-
 from pydantic import BaseModel
 
 
@@ -16,4 +14,3 @@ class PlanRunContext(BaseModel):
     task_id: str
 
     chat: ChatContext
-    current_date: datetime.date

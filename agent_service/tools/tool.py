@@ -134,7 +134,13 @@ class Tool:
 
 
 class ToolCategory(str, enum.Enum):
-    DEFAULT = "default"
+    MISC = "misc"
+
+    def get_description(self) -> str:
+        if self == ToolCategory.MISC:
+            "A miscellaneous set of tools."
+
+        return ""
 
 
 class ToolRegistry:
@@ -146,15 +152,15 @@ class ToolRegistry:
     _REGISTRY_MAP: Dict[ToolCategory, Dict[str, Tool]] = defaultdict(dict)
 
     @classmethod
-    def register_tool(cls, tool: Tool, category: ToolCategory = ToolCategory.DEFAULT) -> None:
+    def register_tool(cls, tool: Tool, category: ToolCategory = ToolCategory.MISC) -> None:
         cls._REGISTRY_MAP[category][tool.name] = tool
 
     @classmethod
-    def get_tool(cls, tool_name: str, category: ToolCategory = ToolCategory.DEFAULT) -> Tool:
+    def get_tool(cls, tool_name: str, category: ToolCategory = ToolCategory.MISC) -> Tool:
         return cls._REGISTRY_MAP[category][tool_name]
 
     @classmethod
-    def get_all_tools(cls, category: ToolCategory = ToolCategory.DEFAULT) -> List[Tool]:
+    def get_all_tools(cls, category: ToolCategory = ToolCategory.MISC) -> List[Tool]:
         return list(cls._REGISTRY_MAP[category].values())
 
 
@@ -179,7 +185,7 @@ class ToolTask(BaseModel):
 
 def tool(
     description: str,
-    category: ToolCategory = ToolCategory.DEFAULT,
+    category: ToolCategory = ToolCategory.MISC,
     use_cache: bool = True,
     use_cache_fn: Optional[Callable[[T, PlanRunContext], bool]] = None,  # TODO default
     cache_key_fn: Optional[Callable[[T, PlanRunContext], CacheKeyType]] = None,  # TODO default
