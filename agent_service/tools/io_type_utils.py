@@ -1,3 +1,4 @@
+import json
 from abc import ABC
 from typing import (
     Any,
@@ -86,6 +87,26 @@ class IOTypeSerializer:
 
     @classmethod
     def parse_io_type_dict(cls, val: Union[PrimitiveType, Dict[str, Any]]) -> IOType:
+        if type_is_primitive(type(val)):
+            val = cast(PrimitiveType, val)
+            return val
+        val = cast(Dict[str, Any], val)
+        cls_name = val[_IO_TYPE_NAME_KEY]
+        typ = cls._COMPLEX_TYPE_DICT.pop(cls_name)
+        return typ(**val)
+
+    @classmethod
+    def dump_io_type_json(cls, val: IOType) -> str:
+        if type_is_primitive(type(val)):
+            val = cast(PrimitiveType, val)
+            return json.dumps(val)
+
+        val = cast(ComplexIOBase, val)
+        return val.model_dump_json()
+
+    @classmethod
+    def parse_io_type_json(cls, val_str: str) -> IOType:
+        val = json.loads(val_str)
         if type_is_primitive(type(val)):
             val = cast(PrimitiveType, val)
             return val
