@@ -110,7 +110,6 @@ class Tool:
     """
 
     name: str
-    readable_name: str
     func: ToolFunc
     input_type: Type[ToolArgs]
     return_type: Type
@@ -181,7 +180,6 @@ class ToolTask(BaseModel):
 def tool(
     description: str,
     category: ToolCategory = ToolCategory.DEFAULT,
-    readable_name: Optional[str] = None,
     use_cache: bool = True,
     use_cache_fn: Optional[Callable[[T, PlanRunContext], bool]] = None,  # TODO default
     cache_key_fn: Optional[Callable[[T, PlanRunContext], CacheKeyType]] = None,  # TODO default
@@ -202,9 +200,6 @@ def tool(
       addition to the function's signature to explain to GPT what the tool does.
 
     category: A way to group tools into categories, useful for GPT.
-
-    readable_name: A readable name that can be presented to the end user
-      explaining what the task does. If absent, defaults to the function's name.
 
     use_cache: If true, tool output is cached.
 
@@ -268,7 +263,6 @@ def tool(
             ToolRegistry.register_tool(
                 Tool(
                     name=func.__name__,
-                    readable_name=readable_name or func.__name__,
                     func=func,
                     input_type=tool_args_type,
                     return_type=sig.return_annotation,
