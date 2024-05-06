@@ -189,9 +189,6 @@ def tool(
     use_cache: bool = True,
     use_cache_fn: Optional[Callable[[T, PlanRunContext], bool]] = None,  # TODO default
     cache_key_fn: Optional[Callable[[T, PlanRunContext], CacheKeyType]] = None,  # TODO default
-    cache_expiration: Optional[
-        datetime.timedelta
-    ] = None,  # TODO default + how to handle with postgres?
     retries: int = 0,  # TODO default
     timeout_seconds: int = 6000,  # TODO default
     create_prefect_task: bool = True,
