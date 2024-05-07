@@ -37,8 +37,8 @@ from pydantic_core import PydanticUndefined
 
 from agent_service.tools.io_type_utils import (
     IOType,
+    check_type_is_io_type,
     get_clean_type_name,
-    type_is_primitive,
 )
 from agent_service.types import PlanRunContext
 
@@ -64,10 +64,7 @@ class ToolArgs(BaseModel, ABC):
                 # Unwrap optionals to type check
                 var_type = get_args(var_type)[0]
 
-            if type_is_primitive(var_type):
-                continue
-
-            if var_type not in get_args(IOType):
+            if not check_type_is_io_type(var_type):
                 raise ValueError(
                     (
                         f"Property '{var}' in class '{cls.__name__}'"
@@ -112,6 +109,7 @@ class Tool:
     func: ToolFunc
     input_type: Type[ToolArgs]
     return_type: Type
+    description: str
 
     def to_function_header(self) -> str:
         """
@@ -134,10 +132,30 @@ class Tool:
 
 class ToolCategory(str, enum.Enum):
     MISC = "misc"
+    STOCK = "stocks"
+    LIST = "lists"
+    DATES = "dates"
+    LLM_ANALYSIS = "LLM analysis"
+    DATA_RETRIEVAL_INT = "Data retrieval internal"
 
     def get_description(self) -> str:
         if self == ToolCategory.MISC:
-            "A miscellaneous set of tools."
+            return "Other tools"
+
+        if self == ToolCategory.STOCK:
+            return "Tools for stock lookup"
+
+        if self == ToolCategory.LIST:
+            return "Tools for manipulating lists"
+
+        if self == ToolCategory.DATES:
+            return "Tools related to dates"
+
+        if self == ToolCategory.LLM_ANALYSIS:
+            return "Tools that use LLMs to analyze data"
+
+        if self == ToolCategory.DATA_RETRIEVAL_INT:
+            return "Tools that retrieve data using internal APIs"
 
         return ""
 
@@ -161,6 +179,16 @@ class ToolRegistry:
     @classmethod
     def get_all_tools(cls, category: ToolCategory = ToolCategory.MISC) -> List[Tool]:
         return list(cls._REGISTRY_MAP[category].values())
+
+    @classmethod
+    def get_tool_str(cls) -> str:
+        output = []
+        for tool_category, tool_dict in cls._REGISTRY_MAP.items():
+            output.append(f"## {tool_category.get_description()}")
+            for tool in tool_dict.values():
+                output.append(tool.to_function_header())
+                output.append(f"# {tool.description}")
+        return "\n".join(output)
 
 
 class ToolTask(BaseModel):
@@ -234,10 +262,10 @@ def tool(
         # Inspect the function's arguments and return type to ensure they are
         # all valid.
         sig = inspect.signature(func)
-        if sig.return_annotation not in get_args(IOType):
+        if not check_type_is_io_type(sig.return_annotation):
             raise ValueError(
                 (
-                    f"Tool function f'{func.__name__}' has invalid return type "
+                    f"Tool function '{func.__name__}' has invalid return type "
                     f"{str(sig.return_annotation)}. Return type must be an 'IOType'."
                 )
             )
@@ -252,7 +280,7 @@ def tool(
             elif not issubclass(typ, PlanRunContext):
                 raise ValueError(
                     (
-                        f"Tool function f'{func.__name__}' has argument "
+                        f"Tool function '{func.__name__}' has argument "
                         f"'{param.name}' with invalid type {str(typ)}. "
                         "Tool functions must accept only a 'ToolArgs'"
                         " argument and a 'PlanRunContext' argument."
@@ -261,7 +289,7 @@ def tool(
 
         if tool_args_type is None:
             raise ValueError(
-                f"Tool function f'{func.__name__}' is missing argument of type 'ToolArgs'."
+                f"Tool function '{func.__name__}' is missing argument of type 'ToolArgs'."
             )
         # Add the tool to the registry
         if enabled:
@@ -271,6 +299,7 @@ def tool(
                     func=func,
                     input_type=tool_args_type,
                     return_type=sig.return_annotation,
+                    description=description,
                 ),
                 category=category,
             )
