@@ -1,8 +1,8 @@
-from typing import Dict, List, Union
+from typing import Dict, List
 
 import pandas as pd
 
-from agent_service.tools.io_type_utils import ComplexIOBase, SimpleType, io_type
+from agent_service.tools.io_type_utils import ComplexIOBase, IOType, SimpleType, io_type
 
 
 @io_type
@@ -25,4 +25,4 @@ class ListofLists(ComplexIOBase):
 
 @io_type
 class Mapping(ComplexIOBase):
-    val: Dict[str, Union[SimpleType, List[SimpleType]]]
+    val: Dict[str, IOType]

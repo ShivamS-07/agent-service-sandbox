@@ -52,4 +52,6 @@ def mypy(c):
         )
         print(f"will run mypy with {disable_for_unpublished_proto_changes}")
 
-    c.run(f"mypy {disable_for_unpublished_proto_changes} --config-file pyproject.toml .")
+    c.run(
+        f"mypy --no-incremental {disable_for_unpublished_proto_changes} --config-file pyproject.toml ."
+    )

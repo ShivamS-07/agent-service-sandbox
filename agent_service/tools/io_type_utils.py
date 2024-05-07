@@ -1,23 +1,14 @@
 import datetime
 import json
 from abc import ABC
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Type,
-    TypeVar,
-    Union,
-    cast,
-    get_args,
-)
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, get_args
 
 import pandas as pd
 from pydantic import BaseModel, field_validator
 from pydantic.config import ConfigDict
 from pydantic.functional_serializers import model_serializer
+from pydantic.functional_validators import model_validator
+from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandler
 
 SimpleType = Union[int, str, bool, float]
 
@@ -78,6 +69,34 @@ class ComplexIOBase(BaseModel, ABC):
         ser_dict[IO_TYPE_NAME_KEY] = self.name()
         return ser_dict
 
+    @model_validator(mode="wrap")
+    @classmethod
+    def _model_deserializer(
+        cls, data: Any, handler: ValidatorFunctionWrapHandler, _info: ValidationInfo
+    ) -> Any:
+        if isinstance(data, dict) and IO_TYPE_NAME_KEY in data:
+            return cls.load(data)
+        return handler(data)
+
+    @classmethod
+    def load(cls, data: Any) -> "ComplexIOBase":
+        if isinstance(data, dict) and IO_TYPE_NAME_KEY in data:
+            # If we get here, then we're looking at a ComplexIOType that's been
+            # serialized. We want to return the actual type we want, so we check
+            # the map.
+            typ_name = data.pop(IO_TYPE_NAME_KEY)
+            typ = _COMPLEX_TYPE_DICT[typ_name]
+            return typ(**data)
+
+        raise ValueError(f"Cannot load data without key {IO_TYPE_NAME_KEY}: {data}")
+
+    @classmethod
+    def load_json(cls, data: str) -> "ComplexIOBase":
+        vals = json.loads(data)
+        return cls.load(vals)
+
+
+_COMPLEX_TYPE_DICT: Dict[str, Type[ComplexIOBase]] = {}
 
 IOType = Union[PrimitiveType, ComplexIOBase]
 
@@ -93,57 +112,6 @@ def get_clean_type_name(typ: Optional[Type]) -> str:
         return str(typ)
 
 
-class IOTypeSerializer:
-    _COMPLEX_TYPE_DICT: Dict[str, Type[ComplexIOBase]] = {}
-
-    @classmethod
-    def dump_io_type_dict(cls, val: IOType) -> Union[PrimitiveType, Dict[str, Any]]:
-        if type_is_primitive(type(val)):
-            if isinstance(val, datetime.datetime):
-                val = _DatetimeIOType(val=val)
-            elif isinstance(val, datetime.date):
-                val = _DateIOType(val=val)
-            else:
-                val = cast(PrimitiveType, val)
-                return val
-
-        val = cast(ComplexIOBase, val)
-        return val.model_dump()
-
-    @classmethod
-    def dump_io_type_json(cls, val: IOType) -> str:
-        if type_is_primitive(type(val)):
-            if isinstance(val, datetime.datetime):
-                val = _DatetimeIOType(val=val)
-            elif isinstance(val, datetime.date):
-                val = _DateIOType(val=val)
-            else:
-                val = cast(PrimitiveType, val)
-                return json.dumps(val)
-
-        val = cast(ComplexIOBase, val)
-        return val.model_dump_json()
-
-    @classmethod
-    def load_io_type_json(cls, val_str: str) -> IOType:
-        val = json.loads(val_str)
-        return cls.load_io_type_dict(val)
-
-    @classmethod
-    def load_io_type_dict(cls, serialized: Union[PrimitiveType, Dict[str, Any]]) -> IOType:
-        if type_is_primitive(type(serialized)):
-            serialized = cast(PrimitiveType, serialized)
-            return serialized
-        serialized = cast(Dict[str, Any], serialized)
-        cls_name = serialized.pop(IO_TYPE_NAME_KEY)
-        typ = cls._COMPLEX_TYPE_DICT[cls_name]
-        val = serialized["val"]
-        ret = typ(val=val)
-        if isinstance(ret, (_DateIOType, _DatetimeIOType)):
-            return ret.val
-        return ret
-
-
 T = TypeVar("T", bound=ComplexIOBase)
 
 
@@ -151,7 +119,7 @@ def io_type(cls: Type[T]) -> Type[T]:
     """
     Simple decorator to store a mapping from class name to class.
     """
-    IOTypeSerializer._COMPLEX_TYPE_DICT[cls.name()] = cls
+    _COMPLEX_TYPE_DICT[cls.name()] = cls
     return cls
 
 
@@ -166,25 +134,3 @@ def check_type_is_io_type(typ: Optional[Type]) -> bool:
     except TypeError:
         return False
     return False
-
-
-# Utility classes for wrapping dates. This will allow us to easily identify date
-# strings without having to parse every string we encounter.
-
-
-@io_type
-class _DateIOType(ComplexIOBase):
-    val: datetime.date
-
-    @classmethod
-    def name(cls) -> str:
-        return "Date"
-
-
-@io_type
-class _DatetimeIOType(ComplexIOBase):
-    val: datetime.datetime
-
-    @classmethod
-    def name(cls) -> str:
-        return "DateTime"
