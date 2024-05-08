@@ -145,6 +145,49 @@ def io_type(cls: Type[T]) -> Type[T]:
     return cls
 
 
+def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> bool:
+    if actual is None and expected is None:
+        return True
+
+    if not get_origin(expected) and not get_origin(actual):
+        return actual is expected
+
+    # Origin of generic types like List[str] -> list. For types like int, will
+    # be None.
+    orig_actual = get_origin(actual)
+    orig_expected = get_origin(expected)
+
+    # Args of generic types like List[str] -> str.
+    params_actual = get_args(actual)
+    params_expected = get_args(expected)
+
+    if orig_actual is Union and orig_expected is Union:
+        # This really should be "all" instead of "any", but that would
+        # require doing some nonsense with generics. This is good enough for
+        # now, other issues can be discovered at runtime.
+        return any((val in params_expected for val in params_actual))
+    elif orig_expected is Union and orig_actual is None:
+        # int is valid if we expect Union[int, str]
+        return actual in params_expected
+    elif orig_actual is Union and orig_expected is None:
+        # This technically also is always incorrect, but again without nasty
+        # generic stuff we need to just handle it anyway. E.g. Union[str, int]
+        # should not type check for just str, but it does now for simplicity.
+        return expected in params_actual
+
+    # In any case other than above, origin types must match
+    if orig_actual is not orig_expected:
+        return False
+
+    # Now, we know that the origin types are the same, and they're not unions so
+    # they're either Dict or List. We can recusrively check.
+    for p1, p2 in zip(params_actual, params_expected):
+        if not check_type_is_valid(p1, p2):
+            return False
+
+    return True
+
+
 def check_type_is_io_type(typ: Optional[Type]) -> bool:
     if not typ:
         return False

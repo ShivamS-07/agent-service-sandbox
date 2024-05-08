@@ -35,7 +35,3 @@ class PlanRunContext(BaseModel):
     task_id: str
 
     chat: ChatContext
-
-
-class ExecutionPlan(BaseModel):
-    pass

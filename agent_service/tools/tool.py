@@ -108,7 +108,7 @@ class Tool:
     name: str
     func: ToolFunc
     input_type: Type[ToolArgs]
-    return_type: Type
+    return_type: Type[IOType]
     description: str
 
     def to_function_header(self) -> str:
@@ -166,24 +166,36 @@ class ToolRegistry:
     tool category.
     """
 
-    _REGISTRY_MAP: Dict[ToolCategory, Dict[str, Tool]] = defaultdict(dict)
+    _REGISTRY_CATEGORY_MAP: Dict[ToolCategory, Dict[str, Tool]] = defaultdict(dict)
+    _REGISTRY_ALL_TOOLS_MAP: Dict[str, Tool] = {}
 
     @classmethod
     def register_tool(cls, tool: Tool, category: ToolCategory = ToolCategory.MISC) -> None:
-        cls._REGISTRY_MAP[category][tool.name] = tool
+        cls._REGISTRY_CATEGORY_MAP[category][tool.name] = tool
+        cls._REGISTRY_ALL_TOOLS_MAP[tool.name] = tool
 
     @classmethod
-    def get_tool(cls, tool_name: str, category: ToolCategory = ToolCategory.MISC) -> Tool:
-        return cls._REGISTRY_MAP[category][tool_name]
+    def get_tool_in_category(
+        cls, tool_name: str, category: ToolCategory = ToolCategory.MISC
+    ) -> Tool:
+        return cls._REGISTRY_CATEGORY_MAP[category][tool_name]
 
     @classmethod
-    def get_all_tools(cls, category: ToolCategory = ToolCategory.MISC) -> List[Tool]:
-        return list(cls._REGISTRY_MAP[category].values())
+    def get_all_tools_in_category(cls, category: ToolCategory = ToolCategory.MISC) -> List[Tool]:
+        return list(cls._REGISTRY_CATEGORY_MAP[category].values())
+
+    @classmethod
+    def get_tool(cls, tool_name: str) -> Tool:
+        return cls._REGISTRY_ALL_TOOLS_MAP[tool_name]
+
+    @classmethod
+    def is_tool_registered(cls, tool_name: str) -> bool:
+        return tool_name in cls._REGISTRY_ALL_TOOLS_MAP
 
     @classmethod
     def get_tool_str(cls) -> str:
         output = []
-        for tool_category, tool_dict in cls._REGISTRY_MAP.items():
+        for tool_category, tool_dict in cls._REGISTRY_CATEGORY_MAP.items():
             output.append(f"## {tool_category.get_description()}")
             for tool in tool_dict.values():
                 output.append(tool.to_function_header())
@@ -191,23 +203,14 @@ class ToolRegistry:
         return "\n".join(output)
 
 
-class ToolTask(BaseModel):
-    """
-    Represents a tool run in an execution plan. Execution plans that are
-    serialized are composed of a graph of ToolTasks.
+@dataclass(frozen=True, eq=True)
+class Variable:
+    var_name: str
 
-    Note: any additional info about the tool may be fetched from the
-    ToolRegistry using the tool_name.
-    """
 
-    tool_name: str
-    input_val: ToolArgs
-
-    async def execute(
-        self, context: PlanRunContext, registry: Type[ToolRegistry] = ToolRegistry
-    ) -> IOType:
-        tool = registry.get_tool(self.tool_name)
-        return await tool.func(args=self.input_val, context=context)
+# Represents a tool's arguments that have had the literals resolved. Variable
+# arguments cannot be resolved until the execution plan is run.
+PartialToolArgs = Dict[str, Union[IOType, Variable]]
 
 
 def tool(

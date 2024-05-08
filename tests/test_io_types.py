@@ -9,6 +9,7 @@ from agent_service.tools.io_type_utils import (
     IOType,
     IOTypeAdapter,
     check_type_is_io_type,
+    check_type_is_valid,
     io_type,
 )
 from agent_service.tools.io_types import StockTable, StockTimeseriesTable
@@ -116,3 +117,28 @@ class TestIOType(unittest.TestCase):
 
         for typ, expected in cases:
             self.assertEqual(check_type_is_io_type(typ), expected)
+
+    def test_check_type_is_valid(self):
+        class BadClass:
+            x: int
+
+        cases = [
+            (int, int, True),
+            (str, str, True),
+            (bool, bool, True),
+            (List[int], List[int], True),
+            (List[int], Dict[int, str], False),
+            (List[int], List[Union[int, str]], True),
+            (List[Union[int, str]], List[Union[int, str]], True),
+            (Dict[int, Union[int, str]], Dict[int, Union[int, str]], True),
+            (Dict[int, int], Dict[int, Union[int, str]], True),
+            (TestComplexType, TestComplexType, True),
+            (TestComplexType, BadClass, False),
+            (BadClass, TestComplexType, False),
+            (Union[int, str], Union[int, str, float], True),
+            (int, Union[int, str], True),
+            (Union[int, str], Union[int, str], True),
+        ]
+
+        for typ1, typ2, expected in cases:
+            self.assertEqual(check_type_is_valid(typ1, typ2), expected, f"{typ1} and {typ2} error")

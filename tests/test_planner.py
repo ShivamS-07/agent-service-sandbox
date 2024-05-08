@@ -1,11 +1,19 @@
 import datetime
 import unittest
 import warnings
-from typing import List, Type, Union
+from typing import Any, List, Type, Union
 from unittest import IsolatedAsyncioTestCase
+from unittest.case import TestCase
 
 from agent_service.planner.planner import Planner
-from agent_service.tools.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.planner.planner_types import ParsedStep, ToolExecutionNode
+from agent_service.tools.tool import (
+    ToolArgs,
+    ToolCategory,
+    ToolRegistry,
+    Variable,
+    tool,
+)
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 
@@ -64,7 +72,7 @@ def get_test_registry() -> Type[ToolRegistry]:
         return [[]]
 
     class CollapseListsInput(ToolArgs):
-        lists_of_lists: List[List[int]]
+        lists_of_lists: List[List[Union[str, int, float, bool]]]
 
     @tool(
         description="This function collapses a list of lists into a list",
@@ -155,3 +163,123 @@ class TestPlanner(IsolatedAsyncioTestCase):
         chat_context = ChatContext(messages=[user_message])
         planner = Planner("", tool_registry=self.tool_registry)
         await planner.create_initial_plan(chat_context)
+
+
+class TestPlanConstructionValidation(TestCase):
+    def setUp(self) -> None:
+        self.tool_registry = get_test_registry()
+
+    def test_literal_parsing(self):
+        planner = Planner(agent_id="TEST")
+        cases = [
+            ("True", True),
+            ("False", False),
+            ("'Test one'", "Test one"),
+            ('"Test"', "Test"),
+            ("32520", 32520),
+            ("3252.42", 3252.42),
+            ("-32520", -32520),
+            ("-3252.42", -3252.42),
+        ]
+        for in_str, expected in cases:
+            self.assertEqual(
+                expected, planner._try_parse_primitive_literal(in_str, expected_type=Any)
+            )
+
+    def test_list_parsing(self):
+        planner = Planner(agent_id="TEST")
+        cases = [
+            ("[True]", [True], List[bool]),
+            ("[True, False]", [True, False], List[bool]),
+            ("[True,False]", [True, False], List[bool]),
+            ("[True, 123,123.1]", [True, 123, 123.1], List[Union[bool, int, float]]),
+            (
+                "[True, 123,123.1, 'Hi']",
+                [True, 123, 123.1, "Hi"],
+                List[Union[bool, int, float, str]],
+            ),
+        ]
+        for in_str, expected, typ in cases:
+            self.assertEqual(expected, planner._try_parse_list_literal(in_str, expected_type=typ))
+
+    def test_validate_construct_plan(self):
+        planner = Planner(agent_id="TEST")
+        example_input = [
+            ParsedStep(
+                output_var="start_date",
+                function="get_date_from_date_str",
+                arguments={"time_str": '"1 month ago"'},
+                description='Convert the string "1 month ago" to a date representing one month ago',
+            ),
+            ParsedStep(
+                output_var="company_ids",
+                function="stock_identifier_lookup_multi",
+                arguments={"stock_strs": '["Meta", "Apple", "Microsoft"]'},
+                description="Convert the company names Meta, Apple, and Microsoft into their integer identifiers",
+            ),
+            ParsedStep(
+                output_var="news_articles",
+                function="get_news_about_companies",
+                arguments={
+                    "topic": '"machine learning"',
+                    "company_identifiers": "company_ids",
+                    "start_date": "start_date",
+                },
+                description=(
+                    "Retrieve news articles published in the last month about "
+                    "machine learning related to Meta, Apple, and Microsoft"
+                ),
+            ),
+            ParsedStep(
+                output_var="collapsed_news",
+                function="collapse_lists",
+                arguments={"lists_of_lists": "news_articles"},
+                description="Collapse the list of lists of news articles into a single list",
+            ),
+            ParsedStep(
+                output_var="summary",
+                function="summarize_texts",
+                arguments={"texts": "collapsed_news"},
+                description="Summarize the collapsed list of news articles into a single summary",
+            ),
+        ]
+        execution_plan = planner._validate_and_construct_plan(example_input)
+
+        expected_output = [
+            ToolExecutionNode(
+                tool_name="get_date_from_date_str",
+                args={"time_str": "1 month ago"},
+                output_variable_name="start_date",
+                is_output_node=False,
+            ),
+            ToolExecutionNode(
+                tool_name="stock_identifier_lookup_multi",
+                args={"stock_strs": ["Meta", "Apple", "Microsoft"]},
+                output_variable_name="company_ids",
+                is_output_node=False,
+            ),
+            ToolExecutionNode(
+                tool_name="get_news_about_companies",
+                args={
+                    "topic": "machine learning",
+                    "company_identifiers": Variable(var_name="company_ids"),
+                    "start_date": Variable(var_name="start_date"),
+                },
+                output_variable_name="news_articles",
+                is_output_node=False,
+            ),
+            ToolExecutionNode(
+                tool_name="collapse_lists",
+                args={"lists_of_lists": Variable(var_name="news_articles")},
+                output_variable_name="collapsed_news",
+                is_output_node=False,
+            ),
+            ToolExecutionNode(
+                tool_name="summarize_texts",
+                args={"texts": Variable(var_name="collapsed_news")},
+                output_variable_name="summary",
+                is_output_node=True,
+            ),
+        ]
+
+        self.assertEqual(execution_plan.nodes, expected_output)
