@@ -1,14 +1,26 @@
 import datetime
 import json
 from abc import ABC
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, get_args
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+)
 
 import pandas as pd
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, TypeAdapter, field_validator
 from pydantic.config import ConfigDict
-from pydantic.functional_serializers import model_serializer
+from pydantic.functional_serializers import field_serializer, model_serializer
 from pydantic.functional_validators import model_validator
 from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandler
+from typing_extensions import TypeAliasType
 
 SimpleType = Union[int, str, bool, float]
 
@@ -17,11 +29,6 @@ PrimitiveType = Union[
     str,
     bool,
     float,
-    List[int],
-    List[str],
-    List[bool],
-    List[float],
-    List[Union[str, int, float, bool]],
     datetime.date,
     datetime.datetime,
 ]
@@ -56,16 +63,20 @@ class ComplexIOBase(BaseModel, ABC):
             val = pd.DataFrame.from_dict(val)
         return val
 
+    @field_serializer("val", mode="wrap")
+    @classmethod
+    def _field_serializer(cls, val: Any, dumper: Callable) -> Any:
+        if isinstance(val, pd.DataFrame):
+            val = val.to_dict()
+        return dumper(val)
+
     @model_serializer(mode="wrap")
-    def _serialize_io_base(self, dumper: Callable) -> Dict[str, Any]:
-        orig_val = self.val
-        if isinstance(self.val, pd.DataFrame):
-            self.val = self.val.to_dict()
+    def _serialize_io_base(self, dumper: Callable) -> Any:
+        if not issubclass(type(self), ComplexIOBase):
+            return self
 
         # This calls the default pydantic serializer
         ser_dict: Dict[str, Any] = dumper(self)
-        # Don't overwrite in the class itself, only for serialization purposes
-        self.val = orig_val
         ser_dict[IO_TYPE_NAME_KEY] = self.name()
         return ser_dict
 
@@ -98,11 +109,22 @@ class ComplexIOBase(BaseModel, ABC):
 
 _COMPLEX_TYPE_DICT: Dict[str, Type[ComplexIOBase]] = {}
 
-IOType = Union[PrimitiveType, ComplexIOBase]
+IOType = TypeAliasType(  # type: ignore[misc]
+    "IOType",
+    Union[PrimitiveType, List["IOType"], ComplexIOBase, "IOTypeDict"],  # type: ignore[misc]
+)
+# Need to do this due to limits of mypy and pydantic.
+IOTypeDict = Union[  # type: ignore[misc]
+    Dict[str, IOType],
+    Dict[bool, IOType],
+    Dict[float, IOType],
+    Dict[int, IOType],
+    Dict[SimpleType, IOType],
+]
 
-
-def type_is_primitive(typ: Optional[Type]) -> bool:
-    return typ in get_args(PrimitiveType) or typ is list
+# A type adapter is a pydantic object used to dump and load objects that are not
+# necessarily basemodels.
+IOTypeAdapter = TypeAdapter(IOType)
 
 
 def get_clean_type_name(typ: Optional[Type]) -> str:
@@ -126,11 +148,40 @@ def io_type(cls: Type[T]) -> Type[T]:
 def check_type_is_io_type(typ: Optional[Type]) -> bool:
     if not typ:
         return False
-    if typ in get_args(IOType):
+
+    # Simple case
+    primitive_types = set(get_args(PrimitiveType))
+    if typ in primitive_types:
         return True
+
+    if get_origin(typ) is Union:
+        union_vals = get_args(typ)
+        return all((val in primitive_types for val in union_vals))
+
+    # Subclass case
     try:
         if issubclass(typ, ComplexIOBase):
             return True
     except TypeError:
-        return False
+        pass
+
+    # List case, get_origin returns the base type without any type params
+    # (e.g. List[int] -> list)
+    if get_origin(typ) is list:
+        elem_type_tup = get_args(typ)
+        if not elem_type_tup:
+            return False
+        elem_type = elem_type_tup[0]
+        # Using recursion here, TODO at some point maybe add a recursion limit?
+        return check_type_is_io_type(elem_type)
+
+    elif get_origin(typ) is dict:
+        elem_type_tup = get_args(typ)
+        if not elem_type_tup:
+            return False
+        key_type, elem_type = elem_type_tup
+        if key_type not in get_args(SimpleType):
+            return False
+        return check_type_is_io_type(elem_type)
+
     return False

@@ -1,8 +1,6 @@
-from typing import Dict, List
-
 import pandas as pd
 
-from agent_service.tools.io_type_utils import ComplexIOBase, IOType, SimpleType, io_type
+from agent_service.tools.io_type_utils import ComplexIOBase, io_type
 
 
 @io_type
@@ -15,14 +13,3 @@ class StockTimeseriesTable(ComplexIOBase):
 class StockTable(ComplexIOBase):
     # A dataframe with GBI ID row index and arbitrary columns.
     val: pd.DataFrame
-
-
-@io_type
-class ListofLists(ComplexIOBase):
-    # List of lists of (int, float, bool, str)
-    val: List[List[SimpleType]]
-
-
-@io_type
-class Mapping(ComplexIOBase):
-    val: Dict[str, IOType]

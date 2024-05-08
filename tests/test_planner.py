@@ -5,7 +5,6 @@ from typing import List, Type, Union
 from unittest import IsolatedAsyncioTestCase
 
 from agent_service.planner.planner import Planner
-from agent_service.tools.io_types import ListofLists
 from agent_service.tools.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
@@ -61,11 +60,11 @@ def get_test_registry() -> Type[ToolRegistry]:
     )
     async def get_news_about_companies(
         args: GetNewsaboutCompaniesInput, context: PlanRunContext
-    ) -> ListofLists:
-        return ListofLists(val=[[]])
+    ) -> List[List[int]]:
+        return [[]]
 
     class CollapseListsInput(ToolArgs):
-        lists_of_lists: ListofLists
+        lists_of_lists: List[List[int]]
 
     @tool(
         description="This function collapses a list of lists into a list",
@@ -142,6 +141,9 @@ class TestPlanner(IsolatedAsyncioTestCase):
 
     def setUp(self) -> None:
         self.tool_registry = get_test_registry()
+
+    async def test_tool_registry_works(self) -> None:
+        get_test_registry()
 
     @unittest.skip("Takes too long to run")
     async def test_planner(self) -> None:
