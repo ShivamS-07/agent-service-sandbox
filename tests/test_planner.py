@@ -7,13 +7,7 @@ from unittest.case import TestCase
 
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import ParsedStep, ToolExecutionNode
-from agent_service.tools.tool import (
-    ToolArgs,
-    ToolCategory,
-    ToolRegistry,
-    Variable,
-    tool,
-)
+from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, Variable, tool
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 

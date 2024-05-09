@@ -1,6 +1,6 @@
 import pandas as pd
 
-from agent_service.tools.io_type_utils import ComplexIOBase, io_type
+from agent_service.io_type_utils import ComplexIOBase, io_type
 
 
 @io_type

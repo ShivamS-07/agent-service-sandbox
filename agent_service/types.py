@@ -3,7 +3,7 @@ from typing import List
 
 from pydantic import BaseModel
 
-from agent_service.tools.io_type_utils import IOType
+from agent_service.io_type_utils import IOType
 
 GPT_USER_TAG = "User"
 GPT_AGENT_TAG = "You"

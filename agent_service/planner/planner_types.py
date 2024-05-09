@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
-from agent_service.tools.tool import PartialToolArgs
+from agent_service.tool import PartialToolArgs
 
 
 @dataclass(frozen=True)

@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, get_args, get_origin
 
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
+from agent_service.io_type_utils import IOType, PrimitiveType, check_type_is_valid
 from agent_service.planner.constants import ARGUMENT_RE, ASSIGNMENT_RE
 from agent_service.planner.planner_types import (
     ExecutionPlan,
@@ -16,8 +17,7 @@ from agent_service.planner.prompts import (
     PLANNER_MAIN_PROMPT,
     PLANNER_SYS_PROMPT,
 )
-from agent_service.tools.io_type_utils import IOType, PrimitiveType, check_type_is_valid
-from agent_service.tools.tool import PartialToolArgs, Tool, ToolRegistry, Variable
+from agent_service.tool import PartialToolArgs, Tool, ToolRegistry, Variable
 from agent_service.types import ChatContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 

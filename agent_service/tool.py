@@ -35,7 +35,7 @@ from prefect.tasks import Task
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-from agent_service.tools.io_type_utils import (
+from agent_service.io_type_utils import (
     IOType,
     check_type_is_io_type,
     get_clean_type_name,

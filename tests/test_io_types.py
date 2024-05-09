@@ -4,7 +4,7 @@ from typing import Dict, List, Union
 
 import pandas as pd
 
-from agent_service.tools.io_type_utils import (
+from agent_service.io_type_utils import (
     ComplexIOBase,
     IOType,
     IOTypeAdapter,
@@ -12,7 +12,7 @@ from agent_service.tools.io_type_utils import (
     check_type_is_valid,
     io_type,
 )
-from agent_service.tools.io_types import StockTable, StockTimeseriesTable
+from agent_service.io_types import StockTable, StockTimeseriesTable
 from agent_service.types import ChatContext, Message
 
 
