@@ -182,6 +182,7 @@ class TestPlanConstructionValidation(TestCase):
 
     def test_list_parsing(self):
         planner = Planner(agent_id="TEST")
+        variable_lookup = {"test1": int, "test2": str}
         cases = [
             ("[True]", [True], List[bool]),
             ("[True, False]", [True, False], List[bool]),
@@ -192,9 +193,16 @@ class TestPlanConstructionValidation(TestCase):
                 [True, 123, 123.1, "Hi"],
                 List[Union[bool, int, float, str]],
             ),
+            ("[1, 2, test1]", [1, 2, Variable(var_name="test1")], List[int]),
+            ("['1', '2', test2]", ["1", "2", Variable(var_name="test2")], List[str]),
         ]
         for in_str, expected, typ in cases:
-            self.assertEqual(expected, planner._try_parse_list_literal(in_str, expected_type=typ))
+            self.assertEqual(
+                expected,
+                planner._try_parse_list_literal(
+                    in_str, expected_type=typ, variable_lookup=variable_lookup
+                ),
+            )
 
     def test_validate_construct_plan(self):
         planner = Planner(agent_id="TEST")

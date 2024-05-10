@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple, Type, get_args, get_origin
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
 
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
@@ -50,7 +50,8 @@ class Planner:
 
         plan_str = await self._query_GPT_for_initial_plan(chat_context.get_gpt_input())
 
-        plan = self._parse_plan_str(plan_str)
+        steps = self._parse_plan_str(plan_str)
+        plan = self._validate_and_construct_plan(steps)
 
         return plan
 
@@ -120,7 +121,34 @@ class Planner:
 
         return parsed_val
 
-    def _try_parse_list_literal(self, val: str, expected_type: Optional[Type]) -> Optional[List]:
+    def _try_parse_variable_or_literal(
+        self,
+        val_or_name: str,
+        expected_type: Optional[Type],
+        variable_lookup: Dict[str, Type[IOType]],
+    ) -> Optional[Union[IOType, Variable]]:
+        # First try to parse as a literal
+        output = self._try_parse_primitive_literal(val=val_or_name, expected_type=expected_type)
+        if output is None:
+            var_type = self._try_parse_variable(
+                var_name=val_or_name, variable_lookup=variable_lookup
+            )
+            if var_type is None:
+                return None
+            if not check_type_is_valid(var_type, expected_type):
+                raise ExecutionPlanParsingError(
+                    f"Variable {val_or_name} is invalid type, got {var_type}, expecting {expected_type}."
+                )
+            output = Variable(var_name=val_or_name)
+
+        return output
+
+    def _try_parse_list_literal(
+        self,
+        val: str,
+        expected_type: Optional[Type],
+        variable_lookup: Dict[str, Type[IOType]],
+    ) -> Optional[List[Union[IOType, Variable]]]:
         if (not val.startswith("[")) or (not val.endswith("]")):
             return None
         contents_str = val[1:-1]
@@ -134,7 +162,9 @@ class Planner:
         output = []
         for i, elem in enumerate(elements):
             elem = elem.strip()
-            parsed = self._try_parse_primitive_literal(elem, expected_type=list_type)
+            parsed = self._try_parse_variable_or_literal(
+                elem, expected_type=list_type, variable_lookup=variable_lookup
+            )
             if parsed is None:
                 raise ExecutionPlanParsingError(
                     f"Element {i} of list {val} is invalid type, expecting {expected_type}"
@@ -167,7 +197,9 @@ class Planner:
             # For literals, we can parse out an actual value at "compile" time
             parsed_val = self._try_parse_primitive_literal(val, expected_type=arg_info.annotation)
             if parsed_val is None:
-                parsed_val = self._try_parse_list_literal(val, arg_info.annotation)
+                parsed_val = self._try_parse_list_literal(
+                    val, arg_info.annotation, variable_lookup=variable_lookup
+                )
 
             if parsed_val:
                 literal_typ: Type = type(parsed_val)
@@ -224,10 +256,12 @@ class Planner:
 
         return ExecutionPlan(nodes=plan_nodes)
 
-    def _parse_plan_str(self, plan_str: str) -> ExecutionPlan:
+    def _parse_plan_str(self, plan_str: str) -> List[ParsedStep]:
         plan_steps: List[ParsedStep] = []
         for line in plan_str.split("\n"):
             if line.startswith("```"):  # GPT likes to add this to Python code
+                continue
+            if not line.strip():
                 continue
 
             match = ASSIGNMENT_RE.match(line)
@@ -246,4 +280,4 @@ class Planner:
                 )
             )
 
-        return self._validate_and_construct_plan(plan_steps)
+        return plan_steps

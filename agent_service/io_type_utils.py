@@ -192,6 +192,9 @@ def check_type_is_io_type(typ: Optional[Type]) -> bool:
     if not typ:
         return False
 
+    if typ is IOType:
+        return True
+
     # Simple case
     primitive_types = set(get_args(PrimitiveType))
     if typ in primitive_types:
