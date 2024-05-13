@@ -23,6 +23,8 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 
 
 def get_arg_dict(arg_str: str) -> Dict[str, str]:
+    if len(arg_str) == 0:
+        return {}
     arg_indicies = [0, *[match.start() for match in ARGUMENT_RE.finditer(arg_str)], len(arg_str)]
     arg_dict = {}
     for i in range(len(arg_indicies) - 1):
@@ -51,6 +53,7 @@ class Planner:
         plan_str = await self._query_GPT_for_initial_plan(chat_context.get_gpt_input())
 
         steps = self._parse_plan_str(plan_str)
+
         plan = self._validate_and_construct_plan(steps)
 
         return plan
@@ -62,6 +65,7 @@ class Planner:
             example=PLAN_EXAMPLE,
             tools=self.tool_string,
         )
+
         main_prompt = PLANNER_MAIN_PROMPT.format(message=user_input)
         return await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt)
 
@@ -184,6 +188,7 @@ class Planner:
         """
         expected_args = tool.input_type.model_fields
         parsed_args: PartialToolArgs = {}
+
         for arg, val in args.items():
             if not val:
                 raise ExecutionPlanParsingError(
@@ -201,7 +206,7 @@ class Planner:
                     val, arg_info.annotation, variable_lookup=variable_lookup
                 )
 
-            if parsed_val:
+            if parsed_val is not None:
                 literal_typ: Type = type(parsed_val)
                 expected = get_origin(arg_info.annotation) or arg_info.annotation
                 if not check_type_is_valid(actual=literal_typ, expected=expected):
@@ -259,6 +264,8 @@ class Planner:
     def _parse_plan_str(self, plan_str: str) -> List[ParsedStep]:
         plan_steps: List[ParsedStep] = []
         for line in plan_str.split("\n"):
+            if line.startswith("#"):  # allow initial comment line
+                continue
             if line.startswith("```"):  # GPT likes to add this to Python code
                 continue
             if not line.strip():

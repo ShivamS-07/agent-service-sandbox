@@ -15,4 +15,4 @@ class FlattenListsInput(ToolArgs):
     tool_registry=ToolRegistry,
 )
 async def flatten_lists_of_lists(args: FlattenListsInput, context: PlanRunContext) -> List[IOType]:
-    return [item for inner_list in FlattenListsInput.lists_of_lists for item in inner_list]
+    return [item for inner_list in args.lists_of_lists for item in inner_list]

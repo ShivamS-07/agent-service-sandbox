@@ -150,7 +150,12 @@ def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> boo
         return True
 
     if not get_origin(expected) and not get_origin(actual):
-        return actual is expected
+        return (
+            actual is expected
+            or expected is IOType
+            or actual is IOType
+            or (actual is not None and expected in actual.__bases__)
+        )
 
     # Origin of generic types like List[str] -> list. For types like int, will
     # be None.
@@ -168,12 +173,12 @@ def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> boo
         return any((val in params_expected for val in params_actual))
     elif orig_expected is Union and orig_actual is None:
         # int is valid if we expect Union[int, str]
-        return actual in params_expected
+        return actual in params_expected or params_expected is IOType
     elif orig_actual is Union and orig_expected is None:
         # This technically also is always incorrect, but again without nasty
         # generic stuff we need to just handle it anyway. E.g. Union[str, int]
         # should not type check for just str, but it does now for simplicity.
-        return expected in params_actual
+        return expected in params_actual or params_expected is IOType
 
     # In any case other than above, origin types must match
     if orig_actual is not orig_expected:

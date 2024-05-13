@@ -12,7 +12,7 @@ from agent_service.io_type_utils import (
     check_type_is_valid,
     io_type,
 )
-from agent_service.io_types import StockTable, StockTimeseriesTable
+from agent_service.io_types import StockTable, StockTimeSeriesTable
 from agent_service.types import ChatContext, Message
 
 
@@ -50,7 +50,7 @@ class TestIOType(unittest.TestCase):
     def test_dataframe_serialization(self):
         df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], index=["a", "b"], columns=["x", "y", "z"])
 
-        cases = [StockTimeseriesTable(val=df), StockTable(val=df), [StockTable(val=df), 1]]
+        cases = [StockTimeSeriesTable(val=df), StockTable(val=df), [StockTable(val=df), 1]]
         for arg in cases:
             res = IOTypeAdapter.dump_python(arg)
             loaded = IOTypeAdapter.validate_python(res)

@@ -132,11 +132,17 @@ class Tool:
 
 class ToolCategory(str, enum.Enum):
     MISC = "misc"
+    NEWS = "news"
     STOCK = "stocks"
     LIST = "lists"
     DATES = "dates"
     LLM_ANALYSIS = "LLM analysis"
-    DATA_RETRIEVAL_INT = "Data retrieval internal"
+    USER = "user"
+    EARNINGS = "earnings"
+    STATISTICS = "statistics"
+    TABLE = "table"
+    OUTPUT = "output"
+    THEME = "theme"
 
     def get_description(self) -> str:
         if self == ToolCategory.MISC:
@@ -154,8 +160,26 @@ class ToolCategory(str, enum.Enum):
         if self == ToolCategory.LLM_ANALYSIS:
             return "Tools that use LLMs to analyze data"
 
-        if self == ToolCategory.DATA_RETRIEVAL_INT:
-            return "Tools that retrieve data using internal APIs"
+        if self == ToolCategory.USER:
+            return "Tools that get information about the user"
+
+        if self == ToolCategory.EARNINGS:
+            return "Tools that involve earnings calls"
+
+        if self == ToolCategory.STATISTICS:
+            return "Tools that work with the database of stock statistics"
+
+        if self == ToolCategory.TABLE:
+            return "Tools that do operations over tables"
+
+        if self == ToolCategory.OUTPUT:
+            return "Tools that prepare final outputs for visualization"
+
+        if self == ToolCategory.NEWS:
+            return "Tools that involve news"
+
+        if self == ToolCategory.THEME:
+            return "Tools that involve macroeconomic themes"
 
         return ""
 
