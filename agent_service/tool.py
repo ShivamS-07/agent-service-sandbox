@@ -337,7 +337,9 @@ def tool(
             # is executed as part of the prefect task, and not before the task
             # runs.
             async def main_func(args: T, context: PlanRunContext) -> IOType:
-                if use_cache or (use_cache_fn and use_cache_fn(args, context)):
+                if (
+                    use_cache or (use_cache_fn and use_cache_fn(args, context))
+                ) and not context.skip_task_cache:
                     # TODO: HANDLE CACHING
                     return await func(args, context)
                 return await func(args, context)

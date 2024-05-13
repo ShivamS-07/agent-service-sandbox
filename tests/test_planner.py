@@ -4,6 +4,7 @@ import warnings
 from typing import Any, List, Optional, Type, Union
 from unittest import IsolatedAsyncioTestCase
 from unittest.case import TestCase
+from uuid import uuid4
 
 import pandas as pd
 
@@ -13,8 +14,13 @@ from agent_service.io_types import (
     TimeSeriesLineGraph,
     TimeSeriesTable,
 )
+from agent_service.planner.executor import run_execution_plan_local
 from agent_service.planner.planner import Planner
-from agent_service.planner.planner_types import ParsedStep, ToolExecutionNode
+from agent_service.planner.planner_types import (
+    ExecutionPlan,
+    ParsedStep,
+    ToolExecutionNode,
+)
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, Variable, tool
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
@@ -40,7 +46,7 @@ def get_test_registry() -> Type[ToolRegistry]:
         tool_registry=TestRegistry,
     )
     async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> str:
-        return ""
+        return "A summarized text!"
 
     class FilterTextsByTopicInput(ToolArgs):
         topic: str
@@ -164,8 +170,8 @@ def get_test_registry() -> Type[ToolRegistry]:
 
     @tool(
         description=(
-            "This function returns a list of stock identifiers for all stocks in the provided ",
-            "users portfolios or all portfolios if portfolio_name is None",
+            "This function returns a list of stock identifiers for all stocks in the provided "
+            "users portfolios or all portfolios if portfolio_name is None"
         ),
         category=ToolCategory.USER,
         tool_registry=TestRegistry,
@@ -199,9 +205,9 @@ def get_test_registry() -> Type[ToolRegistry]:
 
     @tool(
         description=(
-            "This returns a list of lists of earnings call summary ids, each inner list corresponds to all the",
+            "This returns a list of lists of earnings call summary ids, each inner list corresponds to all the"
             " earnings calls for the corresponding stock that were published between start_date and end_date. "
-            "start_date or end_date being None indicates the range is unbounded",
+            "start_date or end_date being None indicates the range is unbounded"
         ),
         category=ToolCategory.EARNINGS,
         tool_registry=TestRegistry,
@@ -245,8 +251,8 @@ def get_test_registry() -> Type[ToolRegistry]:
 
     @tool(
         description=(
-            "This function takes a text reference to some statistic and converts it to an identifier",
-            " which can be used to look it up in the database",
+            "This function takes a text reference to some statistic and converts it to an identifier"
+            " which can be used to look it up in the database"
         ),
         category=ToolCategory.STATISTICS,
         tool_registry=TestRegistry,
@@ -422,7 +428,7 @@ def get_test_registry() -> Type[ToolRegistry]:
         tool_registry=TestRegistry,
     )
     async def get_macroeconomic_theme(args: GetMacroeconomicTheme, context: PlanRunContext) -> str:
-        return []
+        return ""
 
     class GetStocksAffectedByTheme(ToolArgs):
         theme_id: str
@@ -459,7 +465,7 @@ def get_test_registry() -> Type[ToolRegistry]:
     return TestRegistry
 
 
-class TestPlanner(IsolatedAsyncioTestCase):
+class TestPlans(IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
         warnings.filterwarnings(
@@ -503,6 +509,65 @@ class TestPlanner(IsolatedAsyncioTestCase):
         chat_context = ChatContext(messages=[user_message])
         planner = Planner("", tool_registry=self.tool_registry)
         await planner.create_initial_plan(chat_context)
+
+    async def test_executor(self):
+        plan = ExecutionPlan(
+            nodes=[
+                ToolExecutionNode(
+                    tool_name="get_date_from_date_str",
+                    args={"time_str": "1 month ago"},
+                    output_variable_name="start_date",
+                    is_output_node=False,
+                ),
+                ToolExecutionNode(
+                    tool_name="stock_identifier_lookup_multi",
+                    args={"stock_strs": ["Meta", "Apple", "Microsoft"]},
+                    output_variable_name="stock_ids",
+                    is_output_node=False,
+                ),
+                ToolExecutionNode(
+                    tool_name="get_news_developments_about_companies",
+                    args={
+                        "stock_ids": Variable(var_name="stock_ids"),
+                        "start_date": Variable(var_name="start_date"),
+                    },
+                    output_variable_name="news_developments",
+                    is_output_node=False,
+                ),
+                ToolExecutionNode(
+                    tool_name="collapse_lists",
+                    args={"lists_of_lists": Variable(var_name="news_developments")},
+                    output_variable_name="collapsed_news_ids",
+                    is_output_node=False,
+                ),
+                ToolExecutionNode(
+                    tool_name="get_news_development_descriptions",
+                    args={"development_ids": Variable(var_name="collapsed_news_ids")},
+                    output_variable_name="news_descriptions",
+                    is_output_node=False,
+                ),
+                ToolExecutionNode(
+                    tool_name="summarize_texts",
+                    args={"texts": Variable(var_name="news_descriptions")},
+                    output_variable_name="summary",
+                    is_output_node=True,
+                ),
+            ]
+        )
+        context = PlanRunContext(
+            agent_id=str(uuid4()),
+            plan_id=str(uuid4()),
+            plan_run_id=str(uuid4()),
+            user_id=str(uuid4()),
+            chat=ChatContext(messages=[]),
+            skip_db_commit=True,
+            skip_task_cache=True,
+        )
+        result = await run_execution_plan_local(
+            plan,
+            context,
+        )
+        self.assertEqual(result, "A summarized text!")
 
 
 class TestPlanConstructionValidation(TestCase):
@@ -691,4 +756,8 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
             ),
         ]
 
-        self.assertEqual(execution_plan.nodes, expected_output)
+        for in_node, out_node in zip(execution_plan.nodes, expected_output):
+            self.assertEqual(in_node.tool_name, out_node.tool_name)
+            self.assertEqual(in_node.args, out_node.args)
+            self.assertEqual(in_node.is_output_node, out_node.is_output_node)
+            self.assertEqual(in_node.output_variable_name, out_node.output_variable_name)

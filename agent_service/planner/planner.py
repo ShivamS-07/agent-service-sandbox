@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
+from uuid import uuid4
 
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
@@ -253,7 +254,10 @@ class Planner:
             variable_lookup[step.output_var] = tool.return_type
 
             node = ToolExecutionNode(
-                tool_name=step.function, args=partial_args, output_variable_name=step.output_var
+                tool_name=step.function,
+                args=partial_args,
+                output_variable_name=step.output_var,
+                tool_task_id=str(uuid4()),
             )
             plan_nodes.append(node)
         if plan_nodes:

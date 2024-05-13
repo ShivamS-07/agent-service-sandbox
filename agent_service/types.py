@@ -1,5 +1,5 @@
 import datetime
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -32,6 +32,12 @@ class PlanRunContext(BaseModel):
     plan_id: str
     user_id: str
     plan_run_id: str
-    task_id: str
 
     chat: ChatContext
+
+    # Only populated before each task run
+    task_id: Optional[str] = None
+
+    # Useful for testing, etc.
+    skip_db_commit: bool = False
+    skip_task_cache: bool = False

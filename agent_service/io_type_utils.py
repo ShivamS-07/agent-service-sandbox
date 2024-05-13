@@ -128,10 +128,21 @@ IOTypeAdapter = TypeAdapter(IOType)
 
 
 def get_clean_type_name(typ: Optional[Type]) -> str:
-    try:
-        return typ.__name__  # type: ignore
-    except AttributeError:
+    if not typ:
         return str(typ)
+
+    try:
+        if issubclass(typ, ComplexIOBase):
+            return typ.__name__
+    except TypeError:
+        pass
+    name = str(typ)
+
+    # Cleanup
+    name = name.replace("agent_service.io_types.", "")
+    name = name.replace("typing.", "")
+    name = name.replace("IOType", "Any")
+    return name
 
 
 T = TypeVar("T", bound=ComplexIOBase)
@@ -147,6 +158,9 @@ def io_type(cls: Type[T]) -> Type[T]:
 
 def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> bool:
     if actual is None and expected is None:
+        return True
+
+    if expected in (IOType, Any):
         return True
 
     if not get_origin(expected) and not get_origin(actual):
@@ -200,14 +214,13 @@ def check_type_is_io_type(typ: Optional[Type]) -> bool:
     if typ is IOType:
         return True
 
-    # Simple case
     primitive_types = set(get_args(PrimitiveType))
     if typ in primitive_types:
         return True
 
     if get_origin(typ) is Union:
         union_vals = get_args(typ)
-        return all((val in primitive_types for val in union_vals))
+        return all((check_type_is_io_type(val) for val in union_vals))
 
     # Subclass case
     try:
