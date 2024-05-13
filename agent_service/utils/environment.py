@@ -49,7 +49,7 @@ def _get_llm_config(llm_config_file: Optional[str]) -> dict:
         return {}
     try:
         with open(llm_config_file, "r") as file:
-            return json.load(file)  # type: ignore
+            return json.load(file)
     except Exception as e:
         raise Exception("Unable to retrieve llm configuration from file") from e
 
