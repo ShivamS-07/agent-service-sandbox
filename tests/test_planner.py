@@ -1,5 +1,4 @@
 import datetime
-import unittest
 import warnings
 from typing import Any, List, Optional, Type, Union
 from unittest import IsolatedAsyncioTestCase
@@ -484,7 +483,9 @@ class TestPlans(IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.tool_registry = get_test_registry()
 
-    @unittest.skip("Takes too long to run")
+    async def test_tool_registry_works(self) -> None:
+        get_test_registry()
+
     async def test_planner(self) -> None:
         input_text = (
             "Can you give me a single summary of news published in the last month "
