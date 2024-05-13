@@ -9,7 +9,9 @@ from agent_service.planner.planner_types import (
     ExecutionPlan,
     ExecutionPlanParsingError,
     ParsedStep,
+    PartialToolArgs,
     ToolExecutionNode,
+    Variable,
 )
 from agent_service.planner.prompts import (
     PLAN_EXAMPLE,
@@ -18,7 +20,7 @@ from agent_service.planner.prompts import (
     PLANNER_MAIN_PROMPT,
     PLANNER_SYS_PROMPT,
 )
-from agent_service.tool import PartialToolArgs, Tool, ToolRegistry, Variable
+from agent_service.tool import Tool, ToolRegistry
 from agent_service.types import ChatContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 

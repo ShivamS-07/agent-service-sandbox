@@ -33,7 +33,8 @@ class PlanRunContext(BaseModel):
     user_id: str
     plan_run_id: str
 
-    chat: ChatContext
+    # Can be filled in by whoever needs to avoid passing around large data
+    chat: Optional[ChatContext] = None
 
     # Only populated before each task run
     task_id: Optional[str] = None

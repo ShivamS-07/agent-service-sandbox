@@ -4,6 +4,9 @@ from typing import List, Optional
 from gbi_common_py_utils.utils.postgres import PostgresBase
 
 from agent_service.endpoints.models import AgentMetadata
+from agent_service.io_type_utils import IOType, dump_io_type
+from agent_service.planner.planner_types import ExecutionPlan
+from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.environment import EnvironmentUtils
 
 PSQL_CONN = None
@@ -99,6 +102,78 @@ class Postgres(PostgresBase):
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
         return rows[0]["user_id"] if rows else None
+
+    def get_chat(self, agent_id: str) -> ChatContext:
+        sql = """
+        SELECT message AS content, message_time AS timestamp, is_user_message AS is_user
+        FROM agent.chat_messages
+        WHERE agent_id = %(agent_id)s
+        ORDER BY timestamp
+        """
+        rows = self.generic_read(sql, {"agent_id": agent_id})
+        return ChatContext(messages=[Message(**row) for row in rows])
+
+    ################################################################################################
+    # Tools and Execution Plans
+    ################################################################################################
+    def write_execution_plan(self, plan_id: str, agent_id: str, plan: ExecutionPlan) -> None:
+        sql = """
+        INSERT INTO agent.execution_plans (plan_id, agent_id, plan)
+        VALUES (
+          %(plan_id)s, %(agent_id)s, %(plan)s
+        )
+        ON CONFLICT (plan_id) DO UPDATE SET
+          agent_id = EXCLUDED.agent_id,
+          plan = EXCLUDED.plan,
+          last_updated = NOW()
+        """
+        self.generic_write(
+            sql, params={"plan_id": plan_id, "agent_id": agent_id, "plan": plan.model_dump_json()}
+        )
+
+    def write_tool_log(
+        self, log: IOType, context: PlanRunContext, associated_data: Optional[IOType] = None
+    ) -> None:
+        sql = """
+        INSERT INTO agent.work_logs
+          (agent_id, plan_id, plan_run_id, task_id, log_message, log_data)
+        VALUES
+          (
+             %(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(task_id)s,
+             %(log_message)s, %(log_data)s
+          )
+        """
+        self.generic_write(
+            sql,
+            params={
+                "agent_id": context.agent_id,
+                "plan_id": context.plan_id,
+                "plan_run_id": context.plan_run_id,
+                "task_id": context.task_id,
+                "log_message": dump_io_type(log),
+                "log_data": dump_io_type(associated_data) if associated_data else None,
+            },
+        )
+
+    def write_tool_output(self, output: IOType, context: PlanRunContext) -> None:
+        sql = """
+        INSERT INTO agent.work_logs
+          (agent_id, plan_id, plan_run_id, task_id, log_data)
+        VALUES
+          (
+             %(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(task_id)s, %(log_data)s
+          )
+        """
+        self.generic_write(
+            sql,
+            params={
+                "agent_id": context.agent_id,
+                "plan_id": context.plan_id,
+                "plan_run_id": context.plan_run_id,
+                "task_id": context.task_id,
+                "log_data": dump_io_type(output),
+            },
+        )
 
 
 def get_psql(skip_commit: bool = False) -> Postgres:

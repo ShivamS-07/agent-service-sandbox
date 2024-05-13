@@ -20,8 +20,9 @@ from agent_service.planner.planner_types import (
     ExecutionPlan,
     ParsedStep,
     ToolExecutionNode,
+    Variable,
 )
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, Variable, tool
+from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 

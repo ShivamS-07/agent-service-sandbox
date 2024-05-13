@@ -127,6 +127,14 @@ IOTypeDict = Union[  # type: ignore[misc]
 IOTypeAdapter = TypeAdapter(IOType)
 
 
+def dump_io_type(val: IOType) -> str:
+    return json.dumps(IOTypeAdapter.dump_python(val, mode="json"))
+
+
+def load_io_type(val: str) -> IOType:
+    return IOTypeAdapter.validate_json(val)
+
+
 def get_clean_type_name(typ: Optional[Type]) -> str:
     if not typ:
         return str(typ)
