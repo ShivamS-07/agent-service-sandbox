@@ -3,6 +3,8 @@ from unittest import IsolatedAsyncioTestCase
 
 from agent_service.tools.stock_identifier_lookup import (
     StockIdentifierLookupInput,
+    StockIDsToTickerInput,
+    convert_stock_identifiers_to_tickers,
     stock_identifier_lookup,
 )
 from agent_service.types import ChatContext, Message, PlanRunContext
@@ -14,7 +16,6 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
             plan_id="test",
             plan_run_id="test",
             user_id="test",
-            user_email="test",
             task_id="test",
             agent_id="test",
             chat=ChatContext(
@@ -33,7 +34,7 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
         self.assertEqual(result, 25508)
 
     async def test_stock_identifier_lookup_apple(self):
-        self.args = StockIdentifierLookupInput(stock_str="Apple")
+        self.args = StockIdentifierLookupInput(stock_str="AAPL")
         result = await stock_identifier_lookup(self.args, self.context)
         self.assertEqual(result, 714)
 
@@ -46,3 +47,10 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
         self.args = StockIdentifierLookupInput(stock_str="Netflix Inc")
         result = await stock_identifier_lookup(self.args, self.context)
         self.assertEqual(result, 7558)
+
+    async def test_convert_stock_identifiers_to_tickers(self):
+        result = await convert_stock_identifiers_to_tickers(
+            args=StockIDsToTickerInput(stock_ids=[714, 715, 716]),
+            context=PlanRunContext.get_dummy(),
+        )
+        self.assertEqual(result, ["AAPL", "APOG", "ANSS"])

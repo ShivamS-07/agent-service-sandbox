@@ -1,5 +1,6 @@
 import datetime
 from typing import List, Optional
+from uuid import uuid4
 
 from pydantic import BaseModel
 
@@ -42,3 +43,15 @@ class PlanRunContext(BaseModel):
     # Useful for testing, etc.
     skip_db_commit: bool = False
     skip_task_cache: bool = False
+
+    @staticmethod
+    def get_dummy() -> "PlanRunContext":
+        return PlanRunContext(
+            agent_id=str(uuid4()),
+            plan_id=str(uuid4()),
+            user_id=str(uuid4()),
+            task_id=str(uuid4()),
+            plan_run_id=str(uuid4()),
+            skip_db_commit=True,
+            skip_task_cache=True,
+        )

@@ -1,3 +1,5 @@
+from typing import List
+
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
@@ -9,8 +11,10 @@ class StockIdentifierLookupInput(ToolArgs):
 
 
 @tool(
-    description="""This function takes a string (microsoft, apple, AAPL, TESLA, META, e.g.) which refers to a stock,
-    and converts it to an integer identifier""",
+    description=(
+        "This function takes a string (microsoft, apple, AAPL, TESLA, META, e.g.) "
+        "which refers to a stock, and converts it to an integer identifier."
+    ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
 )
@@ -82,3 +86,28 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
         return rows[0]["gbi_security_id"]
 
     raise ValueError(f"Could not find the stock {args.stock_str}")
+
+
+class StockIDsToTickerInput(ToolArgs):
+    stock_ids: List[int]
+
+
+@tool(
+    description=(
+        "This converts a list of uninterpretable stock identifiers to a list of human readable tickers"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+)
+async def convert_stock_identifiers_to_tickers(
+    args: StockIDsToTickerInput, context: PlanRunContext
+) -> List[str]:
+    db = get_psql()
+    sql = """
+    SELECT gbi_security_id AS gbi_id, symbol FROM master_security
+    WHERE gbi_security_id = ANY(%(gbi_ids)s)
+    """
+    rows = db.generic_read(sql, {"gbi_ids": args.stock_ids})
+    # Map to make sure they're in the same order
+    mapping = {row["gbi_id"]: row["symbol"] for row in rows}
+    return [mapping[stock_id] for stock_id in args.stock_ids]

@@ -13,6 +13,22 @@ class FlattenListsInput(ToolArgs):
     description="This function flattens a list of lists into a list",
     category=ToolCategory.LIST,
     tool_registry=ToolRegistry,
+    is_visible=False,
 )
-async def flatten_lists_of_lists(args: FlattenListsInput, context: PlanRunContext) -> List[IOType]:
+async def collapse_lists(args: FlattenListsInput, context: PlanRunContext) -> List[IOType]:
     return [item for inner_list in args.lists_of_lists for item in inner_list]
+
+
+class GetIndexInput(ToolArgs):
+    list: List[IOType]
+    index: int
+
+
+@tool(
+    description="Get the nth element of a list. You must use this instead of the Python indexing ([])",
+    category=ToolCategory.LIST,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_element_from_list(args: GetIndexInput, context: PlanRunContext) -> IOType:
+    return args.list[args.index]
