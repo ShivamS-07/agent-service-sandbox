@@ -31,6 +31,7 @@ gbi_common_py_utils = {version = "==1.0.98", index = "gbi"}
 openai = { version = "~=0.27.6", index = "pypi"}
 tiktoken = { version = "~=0.3.3", index = "pypi"}
 PyJWT = {version = "==2.5.0", index = "pypi"}
+boosted-data-access-layer = {version = ">=0.0.277", index = "gbi"}
 dateparser = {version = "~=1.2.0", index = "pypi"}
 
 # External services
