@@ -59,8 +59,7 @@ async def run_execution_plan(plan: ExecutionPlan, context: PlanRunContext) -> Op
             variable_lookup[step.output_variable_name] = tool_output
 
         # Update the chat context in case of new messages
-        chat_context = db.get_chat(agent_id=context.agent_id)
-        context.chat = chat_context
+        context.chat = db.get_chats_history_for_agent(agent_id=context.agent_id)
 
     return tool_output
 
@@ -76,7 +75,9 @@ async def create_execution_plan(
 ) -> ExecutionPlan:
     planner = Planner(agent_id=agent_id)
     db = get_psql(skip_commit=skip_db_commit)
-    plan = await planner.create_initial_plan(chat_context=db.get_chat(agent_id=agent_id))
+    plan = await planner.create_initial_plan(
+        chat_context=db.get_chats_history_for_agent(agent_id=agent_id)
+    )
     db.write_execution_plan(plan_id=plan_id, agent_id=agent_id, plan=plan)
 
     if not run_plan_immediately:

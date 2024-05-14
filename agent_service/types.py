@@ -2,22 +2,25 @@ import datetime
 from typing import List, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent_service.io_type_utils import IOType
+from agent_service.utils.date_utils import get_now_utc
 
 GPT_USER_TAG = "Client"
 GPT_AGENT_TAG = "You"
 
 
 class Message(BaseModel):
-    content: IOType
-    is_user: bool
-    timestamp: datetime.datetime
+    agent_id: str = Field(default_factory=lambda: str(uuid4()))  # default is for testing only
+    message_id: str = Field(default_factory=lambda: str(uuid4()))
+    message: IOType
+    is_user_message: bool
+    message_time: datetime.datetime = Field(default_factory=get_now_utc)
 
     def get_gpt_input(self) -> str:
-        tag = GPT_USER_TAG if self.is_user else GPT_AGENT_TAG
-        return f"{tag}: {self.content}"
+        tag = GPT_USER_TAG if self.is_user_message else GPT_AGENT_TAG
+        return f"{tag}: {self.message}"
 
 
 class ChatContext(BaseModel):

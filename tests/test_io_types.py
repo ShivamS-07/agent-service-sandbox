@@ -1,4 +1,3 @@
-import datetime
 import unittest
 from typing import Dict, List, Union
 
@@ -75,7 +74,7 @@ class TestIOType(unittest.TestCase):
             "2": [[1, 2, 3], [4, 5, 6], ["a", 1, True]],
             "3": table,
         }
-        m = Message(content=content, is_user=True, timestamp=datetime.datetime.now())
+        m = Message(message=content, is_user_message=True)
         res = m.model_dump()
         loaded = Message(**res)
         self.assertEqual(loaded, m)

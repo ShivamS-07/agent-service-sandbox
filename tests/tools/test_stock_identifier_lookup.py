@@ -1,4 +1,3 @@
-import datetime
 from unittest import IsolatedAsyncioTestCase
 
 from agent_service.tools.stock_identifier_lookup import (
@@ -18,9 +17,7 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
             user_id="test",
             task_id="test",
             agent_id="test",
-            chat=ChatContext(
-                messages=[Message(content="test", is_user=True, timestamp=datetime.datetime.now())]
-            ),
+            chat=ChatContext(messages=[Message(message="test", is_user_message=True)]),
         )
 
     async def test_stock_identifier_lookup_meta(self):

@@ -19,6 +19,8 @@ COGNITO_URLS = [
 ]
 SSM_KEYS = ["token/services/jwk"]
 
+COGNITO_PREFIX = "Cognito "
+
 logger = logging.getLogger(__name__)
 
 
@@ -103,8 +105,8 @@ def parse_header(auth_token: Optional[str] = Header(None, alias="Authorization")
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing JWT token in header"
         )
 
-    if auth_token.startswith("Cognito "):
-        auth_token = auth_token[7:]
+    if auth_token.startswith(COGNITO_PREFIX):
+        auth_token = auth_token[len(COGNITO_PREFIX) :]
 
     user = extract_user_from_jwt(auth_token)
     if not user:

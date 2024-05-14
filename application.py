@@ -14,7 +14,6 @@ from agent_service.endpoints.authz_helper import (
     validate_user_agent_access,
 )
 from agent_service.endpoints.models import (
-    ChatMessage,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     CreateAgentRequest,
@@ -27,6 +26,7 @@ from agent_service.endpoints.models import (
     UpdateAgentRequest,
     UpdateAgentResponse,
 )
+from agent_service.types import Message
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.logs import init_stdout_logging
@@ -81,7 +81,7 @@ async def create_agent(
 
     db.insert_chat_messages(  # insert user's input immediately for polling
         messages=[
-            ChatMessage(
+            Message(
                 agent_id=agent_id,
                 message=req.first_prompt,
                 is_user_message=True,
@@ -94,7 +94,7 @@ async def create_agent(
     await asyncio.sleep(0.1)
     db.insert_chat_messages(
         messages=[
-            ChatMessage(
+            Message(
                 agent_id=agent_id,
                 message=DUMMY_RESP_FROM_GPT,
                 is_user_message=False,
@@ -149,7 +149,7 @@ async def chat_with_agent(
     db = get_psql()
     db.insert_chat_messages(  # insert user's input immediately for polling
         messages=[
-            ChatMessage(
+            Message(
                 agent_id=req.agent_id,
                 message=req.prompt,
                 is_user_message=True,
@@ -162,7 +162,7 @@ async def chat_with_agent(
     await asyncio.sleep(0.1)
     db.insert_chat_messages(
         messages=[
-            ChatMessage(
+            Message(
                 agent_id=req.agent_id,
                 message=DUMMY_RESP_FROM_GPT,
                 is_user_message=False,
@@ -182,10 +182,8 @@ def get_chat_history(
     req: GetChatHistoryRequest, user: User = Depends(parse_header)
 ) -> GetChatHistoryResponse:
     validate_user_agent_access(user.user_id, req.agent_id)
-
-    return GetChatHistoryResponse(
-        messages=get_psql().get_chats_history_for_agent(req.agent_id, req.start, req.end)
-    )
+    chat_context = get_psql().get_chats_history_for_agent(req.agent_id, req.start, req.end)
+    return GetChatHistoryResponse(messages=chat_context.messages)
 
 
 def parse_args() -> argparse.Namespace:

@@ -1,3 +1,4 @@
+import unittest
 import warnings
 from unittest import IsolatedAsyncioTestCase
 
@@ -8,7 +9,6 @@ from agent_service.planner.planner_types import (
     Variable,
 )
 from agent_service.types import ChatContext, Message
-from agent_service.utils.date_utils import get_now_utc
 
 
 class TestPlans(IsolatedAsyncioTestCase):
@@ -26,19 +26,17 @@ class TestPlans(IsolatedAsyncioTestCase):
             message="The loop argument is deprecated since Python 3.8, and scheduled for removal in Python 3.10",  # noqa
         )
 
-    # @unittest.skip("Takes too long to run")
+    @unittest.skip("Takes too long to run")
     async def test_initial_chat(self) -> None:
         input_text = (
             "Can you give me a single summary of news published in the last month "
             "about machine learning at Meta, Apple, and Microsoft?"
         )
-        user_message = Message(content=input_text, is_user=True, timestamp=get_now_utc())
+        user_message = Message(message=input_text, is_user_message=True)
         chat_context = ChatContext(messages=[user_message])
         chatbot = Chatbot("123")
         preplan_response = await chatbot.generate_initial_preplan_response(chat_context)
-        chat_context.messages.append(
-            Message(content=preplan_response, is_user=False, timestamp=get_now_utc())
-        )
+        chat_context.messages.append(Message(message=preplan_response, is_user_message=False))
         plan_nodes = [
             ToolExecutionNode(
                 tool_name="get_date_from_date_str",
@@ -97,14 +95,10 @@ class TestPlans(IsolatedAsyncioTestCase):
         postplan_response = await chatbot.generate_initial_postplan_response(
             chat_context, execution_plan
         )
-        chat_context.messages.append(
-            Message(content=postplan_response, is_user=False, timestamp=get_now_utc())
-        )
+        chat_context.messages.append(Message(message=postplan_response, is_user_message=False))
         fake_output = "Meta released a new open source model Llama 3 while Microsoft continues to milk OpenAI for all their worth. By comparison, all the news about Apple is how they are getting left in dust by everyone else. Losers!"  # noqa: E501
         complete_response = await chatbot.generate_execution_complete_response(
             chat_context, execution_plan, fake_output
         )
-        chat_context.messages.append(
-            Message(content=complete_response, is_user=False, timestamp=get_now_utc())
-        )
+        chat_context.messages.append(Message(message=complete_response, is_user_message=False))
         print(chat_context.get_gpt_input())

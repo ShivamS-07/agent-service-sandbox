@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from gbi_common_py_utils.utils.postgres import PostgresBase
 
-from agent_service.endpoints.models import AgentMetadata, ChatMessage
+from agent_service.endpoints.models import AgentMetadata
 from agent_service.io_type_utils import IOType, dump_io_type
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message, PlanRunContext
@@ -12,6 +12,8 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 
 PSQL_CONN = None
+
+DEFAULT_AGENT_NAME = "New Chat"
 
 
 class Postgres(PostgresBase):
@@ -29,7 +31,7 @@ class Postgres(PostgresBase):
     ################################################################################################
     # Agent Service
     ################################################################################################
-    def create_agent_for_user(self, user_id: str, agent_name: str = "New Chat") -> str:
+    def create_agent_for_user(self, user_id: str, agent_name: str = DEFAULT_AGENT_NAME) -> str:
         """
         This function creates an agent for a given user.
 
@@ -48,7 +50,7 @@ class Postgres(PostgresBase):
         return rows[0]["agent_id"]
 
     def delete_agent_by_id(self, agent_id: str) -> None:
-        self.delete_from_table_where(table_name="agent.agents", where={"agent_id": agent_id})
+        self.delete_from_table_where(table_name="agent.agents", agent_id=agent_id)
 
     def update_agent_name(self, agent_id: str, agent_name: str) -> None:
         return self.generic_update(
@@ -102,7 +104,7 @@ class Postgres(PostgresBase):
         rows = self.generic_read(sql, params={"agent_id": agent_id})
         return rows[0]["user_id"] if rows else None
 
-    def insert_chat_messages(self, messages: List[ChatMessage]) -> None:
+    def insert_chat_messages(self, messages: List[Message]) -> None:
         self.multi_row_insert(
             table_name="agent.chat_messages", rows=[msg.model_dump() for msg in messages]
         )
@@ -112,7 +114,7 @@ class Postgres(PostgresBase):
         agent_id: str,
         start: Optional[datetime.datetime] = None,
         end: Optional[datetime.datetime] = None,
-    ) -> List[ChatMessage]:
+    ) -> ChatContext:
         """
         Get chat history for an agent
         """
@@ -133,17 +135,7 @@ class Postgres(PostgresBase):
             ORDER BY message_time ASC;
         """
         rows = self.generic_read(sql, params=params)
-        return [ChatMessage(agent_id=agent_id, **row) for row in rows]
-
-    def get_chat(self, agent_id: str) -> ChatContext:
-        sql = """
-        SELECT message AS content, message_time AS timestamp, is_user_message AS is_user
-        FROM agent.chat_messages
-        WHERE agent_id = %(agent_id)s
-        ORDER BY timestamp
-        """
-        rows = self.generic_read(sql, {"agent_id": agent_id})
-        return ChatContext(messages=[Message(**row) for row in rows])
+        return ChatContext(messages=[Message(agent_id=agent_id, **row) for row in rows])
 
     ################################################################################################
     # Tools and Execution Plans

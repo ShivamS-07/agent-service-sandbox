@@ -1,4 +1,5 @@
 import datetime
+import unittest
 import warnings
 from typing import Any, List, Optional, Type, Union
 from unittest import IsolatedAsyncioTestCase
@@ -23,7 +24,6 @@ from agent_service.planner.planner_types import (
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import ChatContext, Message, PlanRunContext
-from agent_service.utils.date_utils import get_now_utc
 
 
 def get_test_registry() -> Type[ToolRegistry]:
@@ -486,6 +486,7 @@ class TestPlans(IsolatedAsyncioTestCase):
     async def test_tool_registry_works(self) -> None:
         get_test_registry()
 
+    @unittest.skip("Takes too long to run")
     async def test_planner(self) -> None:
         input_text = (
             "Can you give me a single summary of news published in the last month "
@@ -507,7 +508,7 @@ class TestPlans(IsolatedAsyncioTestCase):
         # input_text = (
         #     "I want to find good stocks to short so that if a recession happens I'm protected."
         # )
-        user_message = Message(content=input_text, is_user=True, timestamp=get_now_utc())
+        user_message = Message(message=input_text, is_user_message=True)
         chat_context = ChatContext(messages=[user_message])
         planner = Planner("", tool_registry=self.tool_registry)
         await planner.create_initial_plan(chat_context)

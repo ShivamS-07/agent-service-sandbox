@@ -1,10 +1,9 @@
 import datetime
 from typing import List, Optional
-from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from agent_service.utils.date_utils import get_now_utc
+from agent_service.types import Message
 
 
 ####################################################################################################
@@ -78,13 +77,5 @@ class GetChatHistoryRequest(BaseModel):
     end: Optional[datetime.datetime] = None  # if None, end at the current time
 
 
-class ChatMessage(BaseModel):
-    agent_id: str
-    message_id: str = Field(default_factory=lambda: str(uuid4()))
-    message: str
-    is_user_message: bool
-    message_time: datetime.datetime = Field(default_factory=get_now_utc)
-
-
 class GetChatHistoryResponse(BaseModel):
-    messages: List[ChatMessage]  # sorted by message_time ASC
+    messages: List[Message]  # sorted by message_time ASC
