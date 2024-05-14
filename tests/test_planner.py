@@ -4,7 +4,6 @@ import warnings
 from typing import Any, List, Optional, Type, Union
 from unittest import IsolatedAsyncioTestCase
 from unittest.case import TestCase
-from uuid import uuid4
 
 import pandas as pd
 
@@ -573,18 +572,9 @@ class TestPlans(IsolatedAsyncioTestCase):
                 ),
             ]
         )
-        context = PlanRunContext(
-            agent_id=str(uuid4()),
-            plan_id=str(uuid4()),
-            plan_run_id=str(uuid4()),
-            user_id=str(uuid4()),
-            chat=ChatContext(messages=[]),
-            skip_db_commit=True,
-            skip_task_cache=True,
-        )
         result = await run_execution_plan_local(
             plan,
-            context,
+            PlanRunContext.get_dummy(),
         )
         self.assertEqual(result, "A summarized text!")
 

@@ -334,7 +334,7 @@ def tool(
                     return await func(args, context)
                 return await func(args, context)
 
-            if create_prefect_task:
+            if create_prefect_task and not context.run_tasks_without_prefect:
                 # Create a prefect task that wraps the function with its caching
                 # logic. This will ensure that retried tasks will include caching.
                 tags = None
@@ -352,6 +352,7 @@ def tool(
 
                 value = await task(args, context)
             else:
+                # Otherwise, run locally without prefect running at all
                 value = await main_func(args, context)
             return value
 

@@ -2,7 +2,6 @@ from typing import Dict, Optional
 from uuid import uuid4
 
 from prefect import flow
-from prefect.testing.utilities import prefect_test_harness
 
 from agent_service.io_type_utils import IOType
 from agent_service.planner.constants import (
@@ -72,6 +71,7 @@ async def create_execution_plan(
     skip_db_commit: bool = False,
     skip_task_cache: bool = False,
     run_plan_immediately: bool = True,
+    run_tasks_without_prefect: bool = False,
 ) -> ExecutionPlan:
     planner = Planner(agent_id=agent_id)
     db = get_psql(skip_commit=skip_db_commit)
@@ -90,6 +90,7 @@ async def create_execution_plan(
         plan_run_id=str(uuid4()),
         skip_db_commit=skip_db_commit,
         skip_task_cache=skip_task_cache,
+        run_tasks_without_prefect=run_tasks_without_prefect,
     )
     # TODO once prefect is setup
     # kickoff_execution_plan(plan, context)
@@ -101,8 +102,8 @@ async def create_execution_plan(
 async def run_execution_plan_local(
     plan: ExecutionPlan, context: PlanRunContext
 ) -> Optional[IOType]:
-    with prefect_test_harness():
-        return await run_execution_plan(plan, context)
+    context.run_tasks_without_prefect = True
+    return await run_execution_plan.fn(plan, context)
 
 
 async def create_execution_plan_local(
@@ -112,13 +113,14 @@ async def create_execution_plan_local(
     skip_db_commit: bool = False,
     skip_task_cache: bool = False,
     run_plan_immediately: bool = True,
+    run_tasks_without_prefect: bool = True,
 ) -> ExecutionPlan:
-    with prefect_test_harness():
-        return await create_execution_plan(
-            agent_id=agent_id,
-            plan_id=plan_id,
-            user_id=user_id,
-            skip_db_commit=skip_db_commit,
-            skip_task_cache=skip_task_cache,
-            run_plan_immediately=run_plan_immediately,
-        )
+    return await create_execution_plan.fn(
+        agent_id=agent_id,
+        plan_id=plan_id,
+        user_id=user_id,
+        skip_db_commit=skip_db_commit,
+        skip_task_cache=skip_task_cache,
+        run_plan_immediately=run_plan_immediately,
+        run_tasks_without_prefect=run_tasks_without_prefect,
+    )

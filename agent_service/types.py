@@ -46,6 +46,7 @@ class PlanRunContext(BaseModel):
     # Useful for testing, etc.
     skip_db_commit: bool = False
     skip_task_cache: bool = False
+    run_tasks_without_prefect: bool = False
 
     @staticmethod
     def get_dummy() -> "PlanRunContext":
@@ -57,4 +58,5 @@ class PlanRunContext(BaseModel):
             plan_run_id=str(uuid4()),
             skip_db_commit=True,
             skip_task_cache=True,
+            run_tasks_without_prefect=True,
         )

@@ -12,7 +12,7 @@ def verify(c):
 
 @task
 def test(c):
-    c.run("python -m unittest discover -v")
+    c.run("python -W ignore -m unittest discover -v")
 
 
 @task
