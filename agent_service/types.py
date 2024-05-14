@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from agent_service.io_type_utils import IOType
 
-GPT_USER_TAG = "User"
+GPT_USER_TAG = "Client"
 GPT_AGENT_TAG = "You"
 
 

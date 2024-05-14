@@ -258,6 +258,7 @@ class Planner:
             node = ToolExecutionNode(
                 tool_name=step.function,
                 args=partial_args,
+                description=step.description,
                 output_variable_name=step.output_var,
                 tool_task_id=str(uuid4()),
             )

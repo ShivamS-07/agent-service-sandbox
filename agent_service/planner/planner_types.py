@@ -30,12 +30,19 @@ class ToolExecutionNode(BaseModel):
     # For all executions of the plan, nodes use consistent ID's.
     tool_task_id: str = Field(default_factory=lambda: str(uuid4()))
     args: PartialToolArgs
+    description: str
     output_variable_name: Optional[str] = None
     is_output_node: bool = False
 
 
 class ExecutionPlan(BaseModel):
     nodes: List[ToolExecutionNode]
+
+    def get_plan_steps_for_gpt(self) -> str:
+        output = []
+        for i, node in enumerate(self.nodes):
+            output.append(f"{i +1}. {node.description}")
+        return "\n".join(output)
 
 
 class ExecutionPlanParsingError(RuntimeError):

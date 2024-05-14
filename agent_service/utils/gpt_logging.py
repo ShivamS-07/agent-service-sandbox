@@ -5,6 +5,7 @@ from uuid import uuid4
 
 class GptJobType:
     AGENT_PLANNER = "agent_planner"
+    AGENT_CHATBOT = "agent_chatbot"
 
 
 class GptJobIdType:

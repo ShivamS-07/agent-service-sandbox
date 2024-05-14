@@ -8,6 +8,9 @@ class Table(ComplexIOBase):
     # A dataframe wrapper
     val: pd.DataFrame
 
+    def to_gpt_input(self) -> str:
+        return f"[Table with {self.val.shape[0]} rows and {self.val.shape[0]} columns]"
+
 
 @io_type
 class TimeSeriesTable(Table):
@@ -31,6 +34,9 @@ class StockTable(Table):
 class Graph(ComplexIOBase):
     # TODO: figure out how we are going to represent a graph, now just a table
     val: Table
+
+    def to_gpt_input(self) -> str:
+        return f"[Graph based on table with {self.val.val.shape[0]} rows and {self.val.val.shape[0]} columns]"
 
 
 @io_type
