@@ -1,3 +1,5 @@
+from agent_service.utils.prompt_utils import Prompt
+
 GPT35_TURBO = "gpt-3.5-turbo-0125"
 GPT4_TURBO = "gpt-4-turbo-preview"
 GPT4 = "gpt-4"
@@ -24,3 +26,5 @@ TIMEOUTS = {GPT4O: 90, GPT4_TURBO: 90, GPT35_TURBO: 60}
 
 JSON_RESPONSE_FORMAT = {"type": "json_object"}
 TEXT_RESPONSE_FORMAT = {"type": "text"}
+
+NO_PROMPT = Prompt(name="", template="").format()
