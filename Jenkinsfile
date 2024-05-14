@@ -19,7 +19,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 script {
-                    if (false)  // TODO: change this back when ready to start building "env.BRANCH_NAME == env.MASTER_BRANCH"
+                    if (env.BRANCH_NAME == env.MASTER_BRANCH)
                     {
                         withCredentials([gitUsernamePassword(credentialsId: 'GitHub', gitToolName: 'Default')]) {
                                                 sh "whoami"
@@ -53,23 +53,5 @@ pipeline {
             }
         }
 
-        stage('SonarQube Analysis') {
-            steps {
-                script {
-                    if (env.BRANCH_NAME == env.MASTER_BRANCH) {
-                        checkout scm
-                        sh "pipenv install --dev --skip-lock"
-                        sh "pipenv install coverage --skip-lock"
-                        sh "pipenv run invoke coverage"
-                        def coverageReportPath = 'coverage.xml'
-                        def scannerHome = tool 'SonarScanner';
-                        withSonarQubeEnv() {
-                            sh "${scannerHome}/bin/sonar-scanner -Dsonar.python.coverage.reportPaths=${coverageReportPath}"
-                        }
-                        sh 'rm coverage.xml'
-                    }
-                }
-            }
-        }
     }
 }

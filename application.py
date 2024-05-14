@@ -28,10 +28,8 @@ from agent_service.endpoints.models import (
 )
 from agent_service.types import Message
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import get_psql
-from agent_service.utils.sentry_utils import init_sentry
 
 DEFAULT_IP = "0.0.0.0"
 DEFAULT_DAL_PORT = 8000
@@ -211,7 +209,6 @@ if __name__ == "__main__":
     args = parse_args()
 
     init_stdout_logging()
-    init_sentry(disable_sentry=not EnvironmentUtils.is_deployed)
 
     logger.info("Warming up DB connection and JWT key map...")
     get_psql()

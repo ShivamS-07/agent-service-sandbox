@@ -7,7 +7,5 @@ WORKDIR /service
 COPY Pipfile.lock Pipfile ./
 RUN pipenv install
 COPY agent_service/ ./agent_service
-COPY jobs/ .
-COPY application_grpc.py .
-EXPOSE 50051
-CMD ["pipenv", "run", "python", "application_grpc.py"]
+COPY application.py .
+CMD ["pipenv", "run", "python", "application.py"]
