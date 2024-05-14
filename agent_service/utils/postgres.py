@@ -1,12 +1,14 @@
+import datetime
 from functools import lru_cache
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from gbi_common_py_utils.utils.postgres import PostgresBase
 
-from agent_service.endpoints.models import AgentMetadata
+from agent_service.endpoints.models import AgentMetadata, ChatMessage
 from agent_service.io_type_utils import IOType, dump_io_type
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 
 PSQL_CONN = None
@@ -46,17 +48,14 @@ class Postgres(PostgresBase):
         return rows[0]["agent_id"]
 
     def delete_agent_by_id(self, agent_id: str) -> None:
-        """
-        This function deletes an agent.
+        self.delete_from_table_where(table_name="agent.agents", where={"agent_id": agent_id})
 
-        Args:
-            agent_id: The agent id to delete.
-        """
-        sql = """
-            DELETE FROM agent.agents
-            WHERE agent_id = %(agent_id)s;
-        """
-        self.generic_write(sql, params={"agent_id": agent_id})
+    def update_agent_name(self, agent_id: str, agent_name: str) -> None:
+        return self.generic_update(
+            table_name="agent.agents",
+            where={"agent_id": agent_id},
+            values_to_update={"agent_name": agent_name, "last_updated": get_now_utc()},
+        )
 
     def get_user_all_agents(self, user_id: str) -> List[AgentMetadata]:
         """
@@ -102,6 +101,39 @@ class Postgres(PostgresBase):
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
         return rows[0]["user_id"] if rows else None
+
+    def insert_chat_messages(self, messages: List[ChatMessage]) -> None:
+        self.multi_row_insert(
+            table_name="agent.chat_messages", rows=[msg.model_dump() for msg in messages]
+        )
+
+    def get_chats_history_for_agent(
+        self,
+        agent_id: str,
+        start: Optional[datetime.datetime] = None,
+        end: Optional[datetime.datetime] = None,
+    ) -> List[ChatMessage]:
+        """
+        Get chat history for an agent
+        """
+        params: Dict[str, Any] = {"agent_id": agent_id}
+
+        dt_filter = ""
+        if start:
+            dt_filter += " AND message_time >= %(start)s"
+            params["start"] = start
+        if end:
+            dt_filter += " AND message_time <= %(end)s"
+            params["end"] = end
+
+        sql = f"""
+            SELECT message_id::VARCHAR, message, is_user_message, message_time
+            FROM agent.chat_messages
+            WHERE agent_id = %(agent_id)s{dt_filter}
+            ORDER BY message_time ASC;
+        """
+        rows = self.generic_read(sql, params=params)
+        return [ChatMessage(agent_id=agent_id, **row) for row in rows]
 
     def get_chat(self, agent_id: str) -> ChatContext:
         sql = """

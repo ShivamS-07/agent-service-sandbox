@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import logging
 
 import uvicorn
@@ -13,12 +14,20 @@ from agent_service.endpoints.authz_helper import (
     validate_user_agent_access,
 )
 from agent_service.endpoints.models import (
+    ChatMessage,
+    ChatWithAgentRequest,
+    ChatWithAgentResponse,
     CreateAgentRequest,
     CreateAgentResponse,
     DeleteAgentRequest,
     DeleteAgentResponse,
     GetAllAgentsResponse,
+    GetChatHistoryRequest,
+    GetChatHistoryResponse,
+    UpdateAgentRequest,
+    UpdateAgentResponse,
 )
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import get_psql
@@ -40,6 +49,9 @@ application.add_middleware(
 )
 
 
+DUMMY_RESP_FROM_GPT = "This is a dummy response from GPT"  # TODO: Remove this once we have GPT
+
+
 ####################################################################################################
 # Test endpoints
 ####################################################################################################
@@ -59,15 +71,36 @@ def health() -> str:
 @application.post(
     "/agent/create-agent", response_model=CreateAgentResponse, status_code=status.HTTP_201_CREATED
 )
-def create_agent(
+async def create_agent(
     req: CreateAgentRequest, user: User = Depends(parse_header)
 ) -> CreateAgentResponse:
-    agent_id = get_psql().create_agent_for_user(user.user_id)
+    now = get_now_utc()
 
-    # TODO: placeholder
-    # 1. connect to GPT to get response
-    # 2. store user's prompt and gpt response in db
+    db = get_psql()
+    agent_id = db.create_agent_for_user(user.user_id)
 
+    db.insert_chat_messages(  # insert user's input immediately for polling
+        messages=[
+            ChatMessage(
+                agent_id=agent_id,
+                message=req.first_prompt,
+                is_user_message=True,
+                message_time=now,
+            )
+        ]
+    )
+
+    # TODO:
+    await asyncio.sleep(0.1)
+    db.insert_chat_messages(
+        messages=[
+            ChatMessage(
+                agent_id=agent_id,
+                message=DUMMY_RESP_FROM_GPT,
+                is_user_message=False,
+            )
+        ]
+    )
     return CreateAgentResponse(agent_id=agent_id)
 
 
@@ -83,11 +116,76 @@ def delete_agent(
     return DeleteAgentResponse(success=True)
 
 
+@application.put(
+    "/agent/update-agent", response_model=UpdateAgentResponse, status_code=status.HTTP_200_OK
+)
+def update_agent(
+    req: UpdateAgentRequest, user: User = Depends(parse_header)
+) -> UpdateAgentResponse:
+    # NOTE: currently only allow updating agent name
+    validate_user_agent_access(user.user_id, req.agent_id)
+
+    get_psql().update_agent_name(req.agent_id, req.agent_name)
+    return UpdateAgentResponse(success=True)
+
+
 @application.get(
     "/agent/get-all-agents", response_model=GetAllAgentsResponse, status_code=status.HTTP_200_OK
 )
 def get_all_agents(user: User = Depends(parse_header)) -> GetAllAgentsResponse:
     return GetAllAgentsResponse(agents=get_psql().get_user_all_agents(user.user_id))
+
+
+@application.post(
+    "/agent/chat-with-agent", response_model=ChatWithAgentResponse, status_code=status.HTTP_200_OK
+)
+async def chat_with_agent(
+    req: ChatWithAgentRequest, user: User = Depends(parse_header)
+) -> ChatWithAgentResponse:
+    now = get_now_utc()
+
+    validate_user_agent_access(user.user_id, req.agent_id)
+
+    db = get_psql()
+    db.insert_chat_messages(  # insert user's input immediately for polling
+        messages=[
+            ChatMessage(
+                agent_id=req.agent_id,
+                message=req.prompt,
+                is_user_message=True,
+                message_time=now,
+            )
+        ]
+    )
+
+    # TODO:
+    await asyncio.sleep(0.1)
+    db.insert_chat_messages(
+        messages=[
+            ChatMessage(
+                agent_id=req.agent_id,
+                message=DUMMY_RESP_FROM_GPT,
+                is_user_message=False,
+            )
+        ]
+    )
+
+    return ChatWithAgentResponse(success=True)
+
+
+@application.get(
+    "/agent/get-chat-history",
+    response_model=GetChatHistoryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_chat_history(
+    req: GetChatHistoryRequest, user: User = Depends(parse_header)
+) -> GetChatHistoryResponse:
+    validate_user_agent_access(user.user_id, req.agent_id)
+
+    return GetChatHistoryResponse(
+        messages=get_psql().get_chats_history_for_agent(req.agent_id, req.start, req.end)
+    )
 
 
 def parse_args() -> argparse.Namespace:
