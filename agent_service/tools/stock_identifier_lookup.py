@@ -22,7 +22,7 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     """Returns the integer identifier of a stock given its name or symbol (microsoft, apple, AAPL, TESLA, META, e.g.).
 
     This function performs a series of queries to find the stock's identifier. It starts with an exact symbol match,
-    then a name match, followed by a word similarity name match, and finally a word similarity symbol match. It only
+    followed by a word similarity name match, and finally a word similarity symbol match. It only
     proceeds to the next query if the previous one returns no results.
 
 
@@ -46,6 +46,7 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     sql = """
     SELECT gbi_security_id FROM master_security ms
     WHERE lower(ms.symbol) = lower(%s)
+    AND ms.is_public
     AND ms.asset_type = 'Common Stock'
     AND ms.is_primary_trading_item = true
     AND ms.region = 'United States'
@@ -58,15 +59,15 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     # Word similarity name match
     sql = """
     SELECT gbi_security_id FROM master_security ms
-    WHERE word_similarity(lower(ms.name), lower(%s)) > 0.2
-    AND ms.asset_type = 'Common Stock'
+    WHERE ms.asset_type = 'Common Stock'
+    AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.region = 'United States'
     AND ms.to_z is null
     ORDER BY word_similarity(lower(ms.name), lower(%s)) DESC
     LIMIT 1
     """
-    rows = db.generic_read(sql, [args.stock_str, args.stock_str])
+    rows = db.generic_read(sql, [args.stock_str])
     if rows:
         return rows[0]["gbi_security_id"]
 
@@ -74,6 +75,7 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     sql = """
     SELECT gbi_security_id FROM master_security ms
     WHERE word_similarity(lower(ms.symbol), lower(%s)) > 0.2
+    AND ms.is_public
     AND ms.asset_type = 'Common Stock'
     AND ms.is_primary_trading_item = true
     AND ms.region = 'United States'

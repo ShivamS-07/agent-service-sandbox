@@ -28,13 +28,13 @@ class FeatureDataInput(ToolArgs):
 
 
 @tool(
-    description="""
-    This function returns the time series of data associated with the data field_id
-    and for each stock in the list of stocks_ids
-    Optionally a start_date and end_date may be provided to specify a date range
-    To get a specific date only set both inputs to the same date
-    If neither date is provided then it will assume the request is for the most recent date for which data exists
-    """,
+    description=(
+        "This function returns the time series of data associated with the data field_id"
+        "and for each stock in the list of stocks_ids"
+        "Optionally a start_date and end_date may be provided to specify a date range"
+        "To get a specific date only set both inputs to the same date"
+        "If neither date is provided then it will assume the request is for the most recent date for which data exists"
+    ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
 )
