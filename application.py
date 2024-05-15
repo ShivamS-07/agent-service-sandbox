@@ -1,12 +1,15 @@
 import argparse
-import asyncio
+import datetime
 import logging
+from typing import Optional
+from uuid import uuid4
 
 import uvicorn
 from fastapi import Depends, FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
+from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.authz_helper import (
     User,
     get_keyid_to_key_map,
@@ -14,22 +17,21 @@ from agent_service.endpoints.authz_helper import (
     validate_user_agent_access,
 )
 from agent_service.endpoints.models import (
+    AgentMetadata,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     CreateAgentRequest,
     CreateAgentResponse,
-    DeleteAgentRequest,
     DeleteAgentResponse,
     GetAllAgentsResponse,
-    GetChatHistoryRequest,
     GetChatHistoryResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
 )
-from agent_service.types import Message
+from agent_service.types import ChatContext, Message
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import init_stdout_logging
-from agent_service.utils.postgres import get_psql
+from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
 
 DEFAULT_IP = "0.0.0.0"
 DEFAULT_DAL_PORT = 8000
@@ -45,9 +47,6 @@ application.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-DUMMY_RESP_FROM_GPT = "This is a dummy response from GPT"  # TODO: Remove this once we have GPT
 
 
 ####################################################################################################
@@ -74,56 +73,71 @@ async def create_agent(
 ) -> CreateAgentResponse:
     now = get_now_utc()
 
-    db = get_psql()
-    agent_id = db.create_agent_for_user(user.user_id)
+    try:
+        logger.info("Generating initial response from GPT...")
+        agent = AgentMetadata(
+            agent_id=str(uuid4()),
+            user_id=user.user_id,
+            agent_name=DEFAULT_AGENT_NAME,
+            created_at=now,
+            last_updated=now,
+        )
+        user_msg = Message(
+            agent_id=agent.agent_id,
+            message=req.first_prompt,
+            is_user_message=True,
+            message_time=now,
+        )
+        chatbot = Chatbot(agent.agent_id)
+        gpt_resp = await chatbot.generate_initial_preplan_response(
+            chat_context=ChatContext(messages=[user_msg])
+        )
+        gpt_msg = Message(
+            agent_id=agent.agent_id,
+            message=gpt_resp,
+            is_user_message=False,
+        )
+    except Exception as e:
+        # FE should retry if this fails
+        logger.exception(f"Failed to generate initial response from GPT with exception: {e}")
+        return CreateAgentResponse(success=False, allow_retry=True)
 
-    db.insert_chat_messages(  # insert user's input immediately for polling
-        messages=[
-            Message(
-                agent_id=agent_id,
-                message=req.first_prompt,
-                is_user_message=True,
-                message_time=now,
-            )
-        ]
-    )
+    try:
+        logger.info(f"Inserting agent and messages into DB for agent {agent.agent_id}...")
+        get_psql().insert_agent_and_messages(agent_metadata=agent, messages=[user_msg, gpt_msg])
+    except Exception as e:
+        logger.exception(f"Failed to insert agent and messages into DB with exception: {e}")
+        return CreateAgentResponse(success=False, allow_retry=True)
 
-    # TODO:
-    await asyncio.sleep(0.1)
-    db.insert_chat_messages(
-        messages=[
-            Message(
-                agent_id=agent_id,
-                message=DUMMY_RESP_FROM_GPT,
-                is_user_message=False,
-            )
-        ]
-    )
-    return CreateAgentResponse(agent_id=agent_id)
+    # TODO: kick off Prefect job -> retry is forbidden
+
+    return CreateAgentResponse(success=True, allow_retry=False, agent_id=agent.agent_id)
 
 
 @application.delete(
-    "/agent/delete-agent", response_model=DeleteAgentResponse, status_code=status.HTTP_200_OK
+    "/agent/delete-agent/{agent_id}",
+    response_model=DeleteAgentResponse,
+    status_code=status.HTTP_200_OK,
 )
-def delete_agent(
-    req: DeleteAgentRequest, user: User = Depends(parse_header)
-) -> DeleteAgentResponse:
-    validate_user_agent_access(user.user_id, req.agent_id)
+def delete_agent(agent_id: str, user: User = Depends(parse_header)) -> DeleteAgentResponse:
+    validate_user_agent_access(user.user_id, agent_id)
 
-    get_psql().delete_agent_by_id(req.agent_id)
+    get_psql().delete_agent_by_id(agent_id)
     return DeleteAgentResponse(success=True)
 
 
 @application.put(
-    "/agent/update-agent", response_model=UpdateAgentResponse, status_code=status.HTTP_200_OK
+    "/agent/update-agent/{agent_id}",
+    response_model=UpdateAgentResponse,
+    status_code=status.HTTP_200_OK,
 )
 def update_agent(
-    req: UpdateAgentRequest, user: User = Depends(parse_header)
+    agent_id: str, req: UpdateAgentRequest, user: User = Depends(parse_header)
 ) -> UpdateAgentResponse:
     # NOTE: currently only allow updating agent name
-    validate_user_agent_access(user.user_id, req.agent_id)
+    validate_user_agent_access(user.user_id, agent_id)
 
-    get_psql().update_agent_name(req.agent_id, req.agent_name)
+    get_psql().update_agent_name(agent_id, req.agent_name)
     return UpdateAgentResponse(success=True)
 
 
@@ -142,45 +156,55 @@ async def chat_with_agent(
 ) -> ChatWithAgentResponse:
     now = get_now_utc()
 
+    logger.info(f"Validating if user {user.user_id} has access to agent {req.agent_id}.")
     validate_user_agent_access(user.user_id, req.agent_id)
 
-    db = get_psql()
-    db.insert_chat_messages(  # insert user's input immediately for polling
-        messages=[
-            Message(
-                agent_id=req.agent_id,
-                message=req.prompt,
-                is_user_message=True,
-                message_time=now,
-            )
-        ]
-    )
+    try:
+        logger.info("Generating initial response from GPT...")
+        user_msg = Message(
+            agent_id=req.agent_id,
+            message=req.prompt,
+            is_user_message=True,
+            message_time=now,
+        )
+        chatbot = Chatbot(req.agent_id)
+        gpt_resp = await chatbot.generate_initial_preplan_response(
+            chat_context=ChatContext(messages=[user_msg])
+        )
+        gpt_msg = Message(
+            agent_id=req.agent_id,
+            message=gpt_resp,
+            is_user_message=False,
+        )
+    except Exception as e:
+        logger.exception(f"Failed to generate initial response from GPT with exception: {e}")
+        return ChatWithAgentResponse(success=False, allow_retry=True)
 
-    # TODO:
-    await asyncio.sleep(0.1)
-    db.insert_chat_messages(
-        messages=[
-            Message(
-                agent_id=req.agent_id,
-                message=DUMMY_RESP_FROM_GPT,
-                is_user_message=False,
-            )
-        ]
-    )
+    try:
+        logger.info(f"Inserting user message and GPT response into DB for agent {req.agent_id}...")
+        get_psql().insert_chat_messages(messages=[user_msg, gpt_msg])
+    except Exception as e:
+        logger.exception(f"Failed to insert messages into DB with exception: {e}")
+        return ChatWithAgentResponse(success=False, allow_retry=True)
 
-    return ChatWithAgentResponse(success=True)
+    # TODO: kick off Prefect job -> retry is forbidden
+
+    return ChatWithAgentResponse(success=True, allow_retry=False)
 
 
 @application.get(
-    "/agent/get-chat-history",
+    "/agent/get-chat-history/{agent_id}",
     response_model=GetChatHistoryResponse,
     status_code=status.HTTP_200_OK,
 )
 def get_chat_history(
-    req: GetChatHistoryRequest, user: User = Depends(parse_header)
+    agent_id: str,
+    start: Optional[datetime.datetime] = None,
+    end: Optional[datetime.datetime] = None,
+    user: User = Depends(parse_header),
 ) -> GetChatHistoryResponse:
-    validate_user_agent_access(user.user_id, req.agent_id)
-    chat_context = get_psql().get_chats_history_for_agent(req.agent_id, req.start, req.end)
+    validate_user_agent_access(user.user_id, agent_id)
+    chat_context = get_psql().get_chats_history_for_agent(agent_id, start, end)
     return GetChatHistoryResponse(messages=chat_context.messages)
 
 

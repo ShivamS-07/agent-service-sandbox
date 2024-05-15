@@ -49,6 +49,23 @@ class Postgres(PostgresBase):
         rows = self.generic_read(sql, params={"user_id": user_id, "agent_name": agent_name})
         return rows[0]["agent_id"]
 
+    def insert_agent_and_messages(
+        self, agent_metadata: AgentMetadata, messages: List[Message]
+    ) -> None:
+        sql1 = """
+            INSERT INTO agent.agents (agent_id, user_id, agent_name, created_at, last_updated)
+            VALUES (%(agent_id)s, %(user_id)s, %(agent_name)s, %(created_at)s, %(last_updated)s)
+        """
+        sql2 = """
+            INSERT INTO agent.chat_messages
+            (agent_id, message_id, message, is_user_message, message_time)
+            VALUES (%(agent_id)s, %(message_id)s, %(message)s, %(is_user_message)s,
+                %(message_time)s)
+        """
+        with self.transaction_cursor() as cursor:
+            cursor.execute(sql1, agent_metadata.model_dump())
+            cursor.executemany(sql2, [msg.model_dump() for msg in messages])
+
     def delete_agent_by_id(self, agent_id: str) -> None:
         self.delete_from_table_where(table_name="agent.agents", agent_id=agent_id)
 

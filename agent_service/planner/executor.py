@@ -1,8 +1,10 @@
+from logging import getLogger
 from typing import Dict, Optional
 from uuid import uuid4
 
 from prefect import flow
 
+from agent_service.chatbot.chatbot import Chatbot
 from agent_service.io_type_utils import IOType
 from agent_service.planner.constants import (
     CREATE_EXECUTION_PLAN_FLOW_NAME,
@@ -11,12 +13,16 @@ from agent_service.planner.constants import (
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import ExecutionPlan, Variable
 from agent_service.tool import ToolRegistry
-from agent_service.types import PlanRunContext
+from agent_service.types import Message, PlanRunContext
 from agent_service.utils.postgres import get_psql
+
+logger = getLogger(__name__)
 
 
 @flow(name=RUN_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{context.plan_run_id}")
-async def run_execution_plan(plan: ExecutionPlan, context: PlanRunContext) -> Optional[IOType]:
+async def run_execution_plan(
+    plan: ExecutionPlan, context: PlanRunContext, send_chat_when_finished: bool = True
+) -> Optional[IOType]:
     # Maps variables to their resolved values
     variable_lookup: Dict[str, IOType] = {}
     db = get_psql(skip_commit=context.skip_db_commit)
@@ -60,6 +66,21 @@ async def run_execution_plan(plan: ExecutionPlan, context: PlanRunContext) -> Op
         # Update the chat context in case of new messages
         context.chat = db.get_chats_history_for_agent(agent_id=context.agent_id)
 
+    # TODO right now we don't handle output tools, and we just output the last
+    # thing. Should fix that.
+
+    logger.info(f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=}")
+    chatbot = Chatbot(agent_id=context.agent_id)
+    message = await chatbot.generate_execution_complete_response(
+        chat_context=db.get_chats_history_for_agent(agent_id=context.agent_id),
+        execution_plan=plan,
+        output=tool_output,
+    )
+    if send_chat_when_finished:
+        db.insert_chat_messages(
+            messages=[Message(agent_id=context.agent_id, message=message, is_user_message=False)]
+        )
+
     return tool_output
 
 
@@ -95,15 +116,23 @@ async def create_execution_plan(
     # TODO once prefect is setup
     # kickoff_execution_plan(plan, context)
 
+    chatbot = Chatbot(agent_id=agent_id)
+    message = await chatbot.generate_initial_postplan_response(
+        chat_context=db.get_chats_history_for_agent(agent_id=agent_id), execution_plan=plan
+    )
+    db.insert_chat_messages(
+        messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
+    )
+
     return plan
 
 
 # Run these in tests or if you don't want to connect to the prefect server.
 async def run_execution_plan_local(
-    plan: ExecutionPlan, context: PlanRunContext
+    plan: ExecutionPlan, context: PlanRunContext, send_chat_when_finished: bool = False
 ) -> Optional[IOType]:
     context.run_tasks_without_prefect = True
-    return await run_execution_plan.fn(plan, context)
+    return await run_execution_plan.fn(plan, context, send_chat_when_finished)
 
 
 async def create_execution_plan_local(

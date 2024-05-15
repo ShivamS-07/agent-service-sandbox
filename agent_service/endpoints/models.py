@@ -14,14 +14,14 @@ class CreateAgentRequest(BaseModel):
 
 
 class CreateAgentResponse(BaseModel):
-    agent_id: str
+    success: bool
+    allow_retry: bool
+    agent_id: Optional[str] = None  # only set if success is True
 
 
 ####################################################################################################
 # DeleteAgent
 ####################################################################################################
-class DeleteAgentRequest(BaseModel):
-    agent_id: str
 
 
 class DeleteAgentResponse(BaseModel):
@@ -32,7 +32,6 @@ class DeleteAgentResponse(BaseModel):
 # UpdateAgent
 ####################################################################################################
 class UpdateAgentRequest(BaseModel):
-    agent_id: str
     agent_name: str
 
 
@@ -65,17 +64,11 @@ class ChatWithAgentRequest(BaseModel):
 
 class ChatWithAgentResponse(BaseModel):
     success: bool
+    allow_retry: bool
 
 
 ####################################################################################################
 # GetChatHistory
 ####################################################################################################
-class GetChatHistoryRequest(BaseModel):
-    agent_id: str
-    # time window for the chat history
-    start: Optional[datetime.datetime] = None  # if None, start from the beginning
-    end: Optional[datetime.datetime] = None  # if None, end at the current time
-
-
 class GetChatHistoryResponse(BaseModel):
     messages: List[Message]  # sorted by message_time ASC

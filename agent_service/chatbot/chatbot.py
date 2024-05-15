@@ -16,7 +16,6 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 
 
 class Chatbot:
-
     def __init__(
         self,
         agent_id: str,

@@ -575,6 +575,7 @@ class TestPlans(IsolatedAsyncioTestCase):
         result = await run_execution_plan_local(
             plan,
             PlanRunContext.get_dummy(),
+            send_chat_when_finished=False,
         )
         self.assertEqual(result, "A summarized text!")
 
