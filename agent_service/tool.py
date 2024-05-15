@@ -41,6 +41,7 @@ from agent_service.io_type_utils import (
     get_clean_type_name,
 )
 from agent_service.types import PlanRunContext
+from agent_service.utils.prefect import get_task_run_name
 
 CacheKeyType = str
 
@@ -342,7 +343,7 @@ def tool(
                     tags = ["hidden", "minitool"]
                 task = Task(
                     name=func.__name__,
-                    task_run_name=context.task_id,
+                    task_run_name=get_task_run_name(ctx=context),
                     fn=main_func,
                     description=description,
                     retries=retries,
