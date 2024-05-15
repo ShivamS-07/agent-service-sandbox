@@ -167,7 +167,7 @@ class ToolCategory(str, enum.Enum):
             return "Tools that involve earnings calls"
 
         if self == ToolCategory.STATISTICS:
-            return "Tools that work with the database of stock statistics"
+            return "Tools that work with the database of stock statistic"
 
         if self == ToolCategory.TABLE:
             return "Tools that do operations over tables"

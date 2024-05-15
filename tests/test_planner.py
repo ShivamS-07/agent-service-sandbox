@@ -391,7 +391,7 @@ def get_test_registry() -> Type[ToolRegistry]:
         category=ToolCategory.STATISTICS,
         tool_registry=TestRegistry,
     )
-    async def filter_stocks_by_statistics(
+    async def filter_stocks_by_statistic(
         args: FilterStocksByStatisticsInput, context: PlanRunContext
     ) -> List[int]:
         return []
