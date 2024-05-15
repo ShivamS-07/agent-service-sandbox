@@ -47,7 +47,7 @@ class TestPlans(IsolatedAsyncioTestCase):
             ),
             ToolExecutionNode(
                 tool_name="stock_identifier_lookup_multi",
-                args={"stock_strs": ["Meta", "Apple", "Microsoft"]},
+                args={"stock_names": ["Meta", "Apple", "Microsoft"]},
                 description="Convert company names to stock identifiers",
                 output_variable_name="stock_ids",
                 is_output_node=False,

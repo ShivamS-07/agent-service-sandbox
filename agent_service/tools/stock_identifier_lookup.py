@@ -7,7 +7,7 @@ from agent_service.utils.postgres import get_psql
 
 class StockIdentifierLookupInput(ToolArgs):
     # name or symbole of the stock to lookup
-    stock_str: str
+    stock_name: str
 
 
 @tool(
@@ -52,7 +52,7 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     AND ms.region = 'United States'
     AND ms.to_z is null
     """
-    rows = db.generic_read(sql, [args.stock_str])
+    rows = db.generic_read(sql, [args.stock_name])
     if rows:
         return rows[0]["gbi_security_id"]
 
@@ -67,7 +67,7 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     ORDER BY word_similarity(lower(ms.name), lower(%s)) DESC
     LIMIT 1
     """
-    rows = db.generic_read(sql, [args.stock_str])
+    rows = db.generic_read(sql, [args.stock_name])
     if rows:
         return rows[0]["gbi_security_id"]
 
@@ -83,11 +83,11 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     ORDER BY word_similarity(lower(ms.symbol), lower(%s)) DESC
     LIMIT 1
     """
-    rows = db.generic_read(sql, [args.stock_str, args.stock_str])
+    rows = db.generic_read(sql, [args.stock_name, args.stock_name])
     if rows:
         return rows[0]["gbi_security_id"]
 
-    raise ValueError(f"Could not find the stock {args.stock_str}")
+    raise ValueError(f"Could not find the stock {args.stock_name}")
 
 
 class StockIDsToTickerInput(ToolArgs):

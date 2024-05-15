@@ -9,12 +9,7 @@ from agent_service.types import PlanRunContext
 
 class TestFeatureIdentifierLookup(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.context = PlanRunContext(
-            plan_id="test",
-            plan_run_id="test",
-            user_id="test",
-            agent_id="test",
-        )
+        self.context = PlanRunContext.get_dummy()
 
     async def test_feature_identifier_lookup_highprice(self):
         self.args = FeatureIdentifierLookupInput(feature_str="High Price")

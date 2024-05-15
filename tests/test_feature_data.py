@@ -6,7 +6,7 @@ from agent_service.tools.feature_data import (
     get_feature_data,
     get_latest_date,
 )
-from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.types import PlanRunContext
 
 AAPL = 714
 AMZN = 149
@@ -17,15 +17,7 @@ CLOSE_PRICE = "spiq_close"
 
 class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.context = PlanRunContext(
-            plan_id="test",
-            plan_run_id="test",
-            user_id="test",
-            user_email="test",
-            task_id="test",
-            agent_id="test",
-            chat=ChatContext(messages=[Message(message="test", is_user_message=True)]),
-        )
+        self.context = PlanRunContext.get_dummy()
 
     async def test_feature_data_3_stock(self):
         args = FeatureDataInput(stock_ids=[AAPL, AMZN, MSFT], field_id=CLOSE_PRICE)
