@@ -8,4 +8,5 @@ COPY Pipfile.lock Pipfile ./
 RUN pipenv install
 COPY agent_service/ ./agent_service
 COPY application.py .
+COPY prefect_serve.py .
 CMD ["pipenv", "run", "python", "application.py"]

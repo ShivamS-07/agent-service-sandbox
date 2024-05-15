@@ -192,7 +192,7 @@ async def main() -> None:
     )  # Get the date for one month ago
     print(start_date)
     stock_ids = [
-        await stock_identifier_lookup(StockIdentifierLookupInput(stock_str=stock), plan_context)
+        await stock_identifier_lookup(StockIdentifierLookupInput(stock_name=stock), plan_context)
         for stock in ["Meta", "Apple", "Microsoft"]
     ]  # Convert stock names to identifiers
     print(stock_ids)

@@ -1,6 +1,6 @@
 dist/
 .idea/
-.dit/
+.git/
 node_modules/
 Dockerfile
 build_and_push_image.sh

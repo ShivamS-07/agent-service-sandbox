@@ -1,0 +1,9 @@
+dist/
+.idea/
+.git/
+node_modules/
+Dockerfile
+build_and_push_image.sh
+pull_request_template.md
+README.md
+.mypy_cache/
