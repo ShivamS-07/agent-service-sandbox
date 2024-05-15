@@ -6,7 +6,7 @@ import pandas as pd
 from agent_service.io_types import TimeSeriesTable
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.lists import (
-    FlattenListsInput,
+    CollapseListsInput,
     GetIndexInput,
     collapse_lists,
     get_element_from_list,
@@ -18,7 +18,7 @@ from agent_service.types import PlanRunContext
 class TestUtilityTools(IsolatedAsyncioTestCase):
     # LISTS
     async def test_collapse_lists(self):
-        args = FlattenListsInput(lists_of_lists=[[1, 2, 3], [4, 5, 6], ["a", "b"]])
+        args = CollapseListsInput(lists_of_lists=[[1, 2, 3], [4, 5, 6], ["a", "b"]])
         res = await collapse_lists(args, context=PlanRunContext.get_dummy())
         self.assertEqual(res, [1, 2, 3, 4, 5, 6, "a", "b"])
 

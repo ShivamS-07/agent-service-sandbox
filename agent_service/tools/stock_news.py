@@ -10,7 +10,7 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import get_psql
 
 
-class GetNewsDevelopmentsInput(ToolArgs):
+class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
     stock_ids: List[int]
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
@@ -28,7 +28,7 @@ class GetNewsDevelopmentsInput(ToolArgs):
     tool_registry=ToolRegistry,
 )
 async def get_news_developments_about_companies(
-    args: GetNewsDevelopmentsInput, context: PlanRunContext
+    args: GetNewsDevelopmentsAboutCompaniesInput, context: PlanRunContext
 ) -> List[List[str]]:
     response = await get_multi_companies_news_topics(
         user_id=context.user_id, gbi_ids=args.stock_ids
@@ -62,7 +62,7 @@ async def get_news_developments_about_companies(
 
 
 class GetNewsDevelopmentDescriptionsInput(ToolArgs):
-    topic_ids: List[str]
+    development_ids: List[str]
 
 
 @tool(
@@ -73,6 +73,7 @@ class GetNewsDevelopmentDescriptionsInput(ToolArgs):
 async def get_news_development_descriptions(
     args: GetNewsDevelopmentDescriptionsInput, context: PlanRunContext
 ) -> List[str]:
+    # We use developments with the agent, but topics internally
     # TODO FIXME
     # WE SHOULD HAVE AN ENDPOINT THAT DOES THIS!!!!
     sql = """
@@ -81,8 +82,10 @@ async def get_news_development_descriptions(
     WHERE topic_id = ANY(%(topic_ids)s)
     """
     db = get_psql()
-    rows = db.generic_read(sql, {"topic_ids": args.topic_ids})
+    rows = db.generic_read(sql, {"topic_ids": args.development_ids})
     topic_id_desc_map = {row["topic_id"]: row["description"] for row in rows}
     return [
-        topic_id_desc_map[topic_id] for topic_id in args.topic_ids if topic_id in topic_id_desc_map
+        topic_id_desc_map[topic_id]
+        for topic_id in args.development_ids
+        if topic_id in topic_id_desc_map
     ]

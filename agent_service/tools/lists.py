@@ -5,7 +5,7 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 
 
-class FlattenListsInput(ToolArgs):
+class CollapseListsInput(ToolArgs):
     lists_of_lists: List[List[IOType]]
 
 
@@ -15,7 +15,7 @@ class FlattenListsInput(ToolArgs):
     tool_registry=ToolRegistry,
     is_visible=False,
 )
-async def collapse_lists(args: FlattenListsInput, context: PlanRunContext) -> List[IOType]:
+async def collapse_lists(args: CollapseListsInput, context: PlanRunContext) -> List[IOType]:
     return [item for inner_list in args.lists_of_lists for item in inner_list]
 
 
