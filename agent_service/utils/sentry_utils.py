@@ -6,7 +6,7 @@ import sentry_sdk
 from gbi_common_py_utils.utils.environment import get_environment_tag
 
 EVENTS = []  # type: ignore
-SERVICE_SENTRY_DSN = "FIXME:"
+SERVICE_SENTRY_DSN = "https://a571d1cbf1f90b72451e3328c17a9514@sentry.boosted.ai/26"
 
 logger = logging.getLogger(__name__)
 

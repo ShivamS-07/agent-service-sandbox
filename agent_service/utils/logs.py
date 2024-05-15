@@ -9,7 +9,11 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-def init_logging(log_handler: logging.Handler, log_level: int = logging.INFO) -> None:
+def init_logging(
+    log_handler: logging.Handler,
+    log_level: int = logging.INFO,
+    disable_prefect_logging: bool = True,
+) -> None:
     """Initialize logging with the specified log handler."""
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
@@ -19,13 +23,19 @@ def init_logging(log_handler: logging.Handler, log_level: int = logging.INFO) ->
         fmt="%(asctime)s %(process)8d %(thread)d %(levelname)8s  %(name)s : %(message)s"
     )
     log_handler.setFormatter(formatter)
+    if disable_prefect_logging:
+        # Remove the prefect handler
+        root_logger.handlers = []
     root_logger.addHandler(log_handler)
     logger.info("Initialized logging")
 
 
-def init_stdout_logging(log_level: int = logging.INFO) -> None:
+def init_stdout_logging(
+    log_level: int = logging.INFO,
+    disable_prefect_logging: bool = True,
+) -> None:
     handler = logging.StreamHandler(sys.stdout)
-    init_logging(handler, log_level)
+    init_logging(handler, log_level, disable_prefect_logging=disable_prefect_logging)
 
 
 def async_perf_logger(func: Callable[..., T], level: int = logging.INFO) -> Callable[..., T]:

@@ -21,8 +21,12 @@ from agent_service.planner.prompts import (
     PLANNER_SYS_PROMPT,
 )
 from agent_service.tool import Tool, ToolRegistry
+
+# Make sure all tools are imported for the planner
+from agent_service.tools import *  # noqa
 from agent_service.types import ChatContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.logs import async_perf_logger
 
 
 def get_arg_dict(arg_str: str) -> Dict[str, str]:
@@ -49,6 +53,7 @@ class Planner:
         self.tool_registry = tool_registry
         self.tool_string = tool_registry.get_tool_str()
 
+    @async_perf_logger
     async def create_initial_plan(self, chat_context: ChatContext) -> ExecutionPlan:
         # TODO: put this in a loop where if the parse fails, we query GPT with
         # two additional messages: the GPT response and the parse exception

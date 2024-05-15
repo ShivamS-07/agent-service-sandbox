@@ -44,6 +44,12 @@ class ExecutionPlan(BaseModel):
             output.append(f"{i +1}. {node.description}")
         return "\n".join(output)
 
+    def get_formatted_plan(self) -> str:
+        str_list = []
+        for node in self.nodes:
+            str_list.append(f"{node.output_variable_name} = {node.tool_name}({node.args})")
+        return "\n".join(str_list)
+
 
 class ExecutionPlanParsingError(RuntimeError):
     pass

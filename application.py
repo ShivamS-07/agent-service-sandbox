@@ -32,12 +32,15 @@ from agent_service.types import ChatContext, Message
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
+from agent_service.utils.sentry_utils import init_sentry
 
 DEFAULT_IP = "0.0.0.0"
 DEFAULT_DAL_PORT = 8000
 SERVICE_NAME = "AgentService"
 
 logger = logging.getLogger(__name__)
+
+init_sentry()
 
 application = FastAPI(title="Agent Service")
 application.add_middleware(
