@@ -309,18 +309,6 @@ def tool(
             raise ValueError(
                 f"Tool function '{func.__name__}' is missing argument of type 'ToolArgs'."
             )
-        # Add the tool to the registry
-        if enabled:
-            tool_registry.register_tool(
-                Tool(
-                    name=func.__name__,
-                    func=func,
-                    input_type=tool_args_type,
-                    return_type=sig.return_annotation,
-                    description=description,
-                ),
-                category=category,
-            )
 
         @functools.wraps(func)
         async def wrapper(args: T, context: PlanRunContext) -> IOType:
@@ -357,6 +345,18 @@ def tool(
                 value = await main_func(args, context)
             return value
 
+        # Add the tool to the registry
+        if enabled:
+            tool_registry.register_tool(
+                Tool(
+                    name=func.__name__,
+                    func=wrapper,
+                    input_type=tool_args_type,
+                    return_type=sig.return_annotation,
+                    description=description,
+                ),
+                category=category,
+            )
         return wrapper
 
     return tool_deco
