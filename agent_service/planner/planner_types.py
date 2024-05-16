@@ -26,11 +26,11 @@ class ParsedStep:
 
 
 class ToolExecutionNode(BaseModel):
-    tool_name: str
+    tool_name: str  # The name of the tool to be executed, for GPT
     # For all executions of the plan, nodes use consistent ID's.
     tool_task_id: str = Field(default_factory=lambda: str(uuid4()))
     args: PartialToolArgs
-    description: str
+    description: str  # A human-readable description of the node's purpose.
     output_variable_name: Optional[str] = None
     is_output_node: bool = False
 
@@ -40,8 +40,8 @@ class ExecutionPlan(BaseModel):
 
     def get_plan_steps_for_gpt(self) -> str:
         output = []
-        for i, node in enumerate(self.nodes):
-            output.append(f"{i +1}. {node.description}")
+        for i, node in enumerate(self.nodes, start=1):
+            output.append(f"{i}. {node.description}")
         return "\n".join(output)
 
     def get_formatted_plan(self) -> str:

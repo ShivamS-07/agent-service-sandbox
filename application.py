@@ -5,7 +5,7 @@ from typing import Optional
 from uuid import uuid4
 
 import uvicorn
-from fastapi import Depends, FastAPI, status
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
@@ -23,11 +23,16 @@ from agent_service.endpoints.models import (
     CreateAgentRequest,
     CreateAgentResponse,
     DeleteAgentResponse,
+    ExecutionPlanTemplate,
+    GetAgentWorklogBoardResponse,
+    GetAgentWorklogOutputResponse,
     GetAllAgentsResponse,
     GetChatHistoryResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
 )
+from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
+from agent_service.io_type_utils import load_io_type
 from agent_service.types import ChatContext, Message
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import init_stdout_logging
@@ -74,6 +79,13 @@ def health() -> str:
 async def create_agent(
     req: CreateAgentRequest, user: User = Depends(parse_header)
 ) -> CreateAgentResponse:
+    """Create an agent - Client should send the first prompt from user
+    1. Generate initial response from GPT -> Allow retry if fails
+    2. Insert agent and messages into DB -> Allow retry if fails
+    3. TODO: Kick off Prefect job -> retry is forbidden since it's a major system issue
+    4. Return success or failure to client. If success, return agent ID
+    """
+
     now = get_now_utc()
 
     try:
@@ -157,6 +169,14 @@ def get_all_agents(user: User = Depends(parse_header)) -> GetAllAgentsResponse:
 async def chat_with_agent(
     req: ChatWithAgentRequest, user: User = Depends(parse_header)
 ) -> ChatWithAgentResponse:
+    """Chat with agent - Client should send a prompt from user
+    1. Validate user has access to agent
+    2. Generate initial response from GPT -> Allow retry if fails
+    3. Insert user message and GPT response into DB -> Allow retry if fails
+    4. TODO: Kick off Prefect job -> retry is forbidden since it's a major system issue
+    5. Return success or failure to client
+    """
+
     now = get_now_utc()
 
     logger.info(f"Validating if user {user.user_id} has access to agent {req.agent_id}.")
@@ -206,9 +226,80 @@ def get_chat_history(
     end: Optional[datetime.datetime] = None,
     user: User = Depends(parse_header),
 ) -> GetChatHistoryResponse:
+    """Get chat history for an agent
+
+    Args:
+        agent_id (str): agent ID
+        start (Optional[datetime.datetime]): start time to filter messages, inclusive
+        end (Optional[datetime.datetime]): end time to filter messages, inclusive
+        user (User): User object from `parse_header`
+    """
     validate_user_agent_access(user.user_id, agent_id)
     chat_context = get_psql().get_chats_history_for_agent(agent_id, start, end)
     return GetChatHistoryResponse(messages=chat_context.messages)
+
+
+@application.get(
+    "/agent/get-agent-worklog-board/{agent_id}",
+    response_model=GetAgentWorklogBoardResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_agent_worklog_board(
+    agent_id: str,
+    start_date: Optional[datetime.date] = None,
+    end_date: Optional[datetime.date] = None,
+    most_recent_num_run: Optional[int] = None,
+    user: User = Depends(parse_header),
+) -> GetAgentWorklogBoardResponse:
+    """Get agent worklogs to build the Work Log Board
+    Except `agent_id`, all other arguments are optional and can be used to filter the work log, but
+    strongly recommend to have at least 1 filter to avoid returning too many entries.
+    NOTE: If any of `start_date` or `end_date` is provided, and `most_recent_num` is also provided,
+    it will be most recent N entries within the date range.
+
+    Args:
+        agent_id (str): agent ID
+        start (Optional[datetime.date]): start DATE to filter work log, inclusive
+        end (Optional[datetime.date]): end DATE to filter work log, inclusive
+        most_recent_num_run (Optional[int]): number of most recent plan runs to return
+    """
+    logger.info(f"Validating if user {user.user_id} has access to agent {agent_id}.")
+    validate_user_agent_access(user.user_id, agent_id)
+
+    run_history = await get_agent_hierarchical_worklogs(
+        agent_id, start_date, end_date, most_recent_num_run
+    )
+
+    # TODO: For now just get the latest plan. Later we can switch to LIVE plan
+    plan_id, execution_plan = get_psql().get_latest_execution_plan(agent_id)
+    if plan_id is None or execution_plan is None:
+        execution_plan_template = None
+    else:
+        execution_plan_template = ExecutionPlanTemplate(
+            plan_id=plan_id, task_names=[node.description for node in execution_plan.nodes]
+        )
+
+    return GetAgentWorklogBoardResponse(
+        run_history=run_history, execution_plan_template=execution_plan_template
+    )
+
+
+@application.get(
+    "/agent/get-agent-worklog-output/{agent_id}/{log_id}",
+    response_model=GetAgentWorklogOutputResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_agent_worklog_output(
+    agent_id: str, log_id: str, user: User = Depends(parse_header)
+) -> GetAgentWorklogOutputResponse:
+    validate_user_agent_access(user.user_id, agent_id)
+    rows = get_psql().get_log_data_from_log_id(agent_id, log_id)
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{log_id} not found")
+    log_data = rows[0]["log_data"]
+    output = load_io_type(log_data) if log_data is not None else None
+
+    return GetAgentWorklogOutputResponse(output=output)
 
 
 def parse_args() -> argparse.Namespace:

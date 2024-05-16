@@ -1,13 +1,13 @@
 import datetime
 from dataclasses import dataclass
-from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
 from prefect import get_client
+from prefect.client.schemas import TaskRun
 from prefect.client.schemas.filters import FlowRunFilter, FlowRunFilterName
-from prefect.client.schemas.objects import StateType
 from prefect.deployments import run_deployment
 
+from agent_service.endpoints.models import Status
 from agent_service.planner.constants import (
     CREATE_EXECUTION_PLAN_FLOW_NAME,
     RUN_EXECUTION_PLAN_FLOW_NAME,
@@ -61,28 +61,6 @@ def get_task_run_name(ctx: PlanRunContext) -> str:
     return f"{ctx.plan_run_id}:{ctx.task_id}"
 
 
-# TODO resolve conflict here
-class Status(str, Enum):
-    NOT_STARTED = "NOT_STARTED"
-    RUNNING = "RUNNING"
-    COMPLETE = "COMPLETE"
-    CANCELLED = "CANCELLED"
-    ERROR = "ERROR"
-
-
-def _map_prefect_state_to_status(prefect_state: Optional[StateType]) -> Status:
-    if prefect_state == StateType.RUNNING:
-        return Status.RUNNING
-    elif prefect_state == StateType.COMPLETED:
-        return Status.COMPLETE
-    elif prefect_state in (StateType.FAILED, StateType.CRASHED):
-        return Status.ERROR
-    elif prefect_state in (StateType.CANCELLING, StateType.CANCELLED):
-        return Status.CANCELLED
-    else:
-        return Status.NOT_STARTED
-
-
 @dataclass(frozen=True)
 class PrefectStatus:
     status: Status
@@ -93,39 +71,42 @@ class PrefectStatus:
 @async_perf_logger
 async def get_prefect_task_statuses(
     plan_run_ids: List[str],
-) -> Dict[Tuple[str, str], PrefectStatus]:
+) -> Dict[Tuple[str, str], TaskRun]:
     """
     Given a list of plan run ID's, returns a mapping from (plan_run_id, task_id)
     to a on object holding prefect-related info.
+
+    TaskRun.state_type: Optional[StateType]
+    TaskRun.start_time: Optional[datetime.datetime]
+    TaskRun.end_time: Optional[datetime.datetime]
     """
+    if not plan_run_ids:
+        return {}
+
     async with get_client() as client:
-        runs = await client.read_task_runs(
+        runs: List[TaskRun] = await client.read_task_runs(
             flow_run_filter=FlowRunFilter(name=FlowRunFilterName(any_=plan_run_ids))
         )
     output = {}
     for run in runs:
         plan_run_id, task_id = run.name.split(":")
-        output[(plan_run_id, task_id)] = PrefectStatus(
-            status=_map_prefect_state_to_status(run.state_type),
-            start_time=run.start_time,
-            end_time=run.end_time,
-        )
+        output[(plan_run_id, task_id)] = run
 
     return output
 
 
 @async_perf_logger
-async def get_prefect_plan_run_statuses(plan_run_ids: List[str]) -> Dict[str, PrefectStatus]:
+async def get_prefect_plan_run_statuses(plan_run_ids: List[str]) -> Dict[str, TaskRun]:
+    """
+    TaskRun.state_type: Optional[StateType]
+    TaskRun.start_time: Optional[datetime.datetime]
+    TaskRun.end_time: Optional[datetime.datetime]
+    """
+    if not plan_run_ids:
+        return {}
+
     async with get_client() as client:
         runs = await client.read_flow_runs(
             flow_run_filter=FlowRunFilter(name=FlowRunFilterName(any_=plan_run_ids))
         )
-    output = {}
-    for run in runs:
-        output[run.name] = PrefectStatus(
-            status=_map_prefect_state_to_status(run.state_type),
-            start_time=run.start_time,
-            end_time=run.end_time,
-        )
-
-    return output
+    return {run.name: run for run in runs}

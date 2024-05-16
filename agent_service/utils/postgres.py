@@ -1,6 +1,6 @@
 import datetime
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from gbi_common_py_utils.utils.postgres import PostgresBase
 
@@ -154,6 +154,87 @@ class Postgres(PostgresBase):
         rows = self.generic_read(sql, params=params)
         return ChatContext(messages=[Message(agent_id=agent_id, **row) for row in rows])
 
+    def get_latest_execution_plan(
+        self, agent_id: str
+    ) -> Tuple[Optional[str], Optional[ExecutionPlan]]:
+        sql = """
+            SELECT plan_id, plan
+            FROM agent.execution_plans
+            WHERE agent_id = %(agent_id)s
+            ORDER BY last_updated DESC
+            LIMIT 1;
+        """
+        rows = self.generic_read(sql, params={"agent_id": agent_id})
+        if not rows:
+            return None, None
+        return rows[0]["plan_id"], ExecutionPlan.model_validate(rows[0]["plan"])
+
+    def get_agent_plan_runs(self, agent_id: str, limit_num: Optional[int] = None) -> List[str]:
+        if not limit_num:
+            sql = """
+                SELECT DISTINCT plan_run_id::VARCHAR
+                FROM agent.work_logs
+                WHERE agent_id = %(agent_id)s
+            """
+            rows = self.generic_read(sql, params={"agent_id": agent_id})
+        else:
+            sql = """
+                WITH t AS (
+                    SELECT plan_run_id::VARCHAR, MAX(created_at) AS created_at
+                    FROM agent.work_logs wl
+                    WHERE agent_id = %(agent_id)s
+                    GROUP BY plan_run_id
+                )
+                SELECT plan_run_id
+                FROM t
+                ORDER BY created_at DESC
+                LIMIT %(limit_num)s
+            """
+            rows = self.generic_read(sql, params={"agent_id": agent_id, "limit_num": limit_num})
+
+        return [row["plan_run_id"] for row in rows]
+
+    def get_agent_worklogs(
+        self,
+        agent_id: str,
+        start_date: Optional[datetime.date] = None,  # inclusive
+        end_date: Optional[datetime.date] = None,  # exclusive
+        plan_run_ids: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        params: Dict[str, Any] = {"agent_id": agent_id}
+        filters = ""
+        if start_date:
+            filters += " AND created_at >= %(start_date)s"
+            params["start_date"] = start_date
+        if end_date:
+            filters += " AND created_at < %(end_date)s"
+            params["end_date"] = end_date
+        if plan_run_ids:
+            filters += " AND plan_run_id = ANY(%(plan_run_ids)s)"
+            params["plan_run_ids"] = plan_run_ids
+
+        sql1 = f"""
+            SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, task_id::VARCHAR, log_id::VARCHAR,
+                log_message, created_at
+            FROM agent.work_logs
+            WHERE agent_id = %(agent_id)s AND is_task_output IS FALSE {filters}
+            ORDER BY created_at DESC;
+        """
+        return get_psql().generic_read(sql1, params=params)
+
+    def get_log_data_from_log_id(self, agent_id: str, log_id: str) -> List[Dict]:
+        # NOTE: the reason to not return the `log_data` directly is because we can't distinguish
+        # 1) if there's no such entry in the table
+        # 2) if the entry exists but the `log_data` is None
+        # these two cases will be handled differently so just return `rows`
+        sql = """
+            SELECT log_data
+            FROM agent.work_logs
+            WHERE agent_id = %(agent_id)s AND log_id = %(log_id)s
+        """
+        rows = self.generic_read(sql, {"agent_id": agent_id, "log_id": log_id})
+        return rows
+
     ################################################################################################
     # Tools and Execution Plans
     ################################################################################################
@@ -171,6 +252,15 @@ class Postgres(PostgresBase):
         self.generic_write(
             sql, params={"plan_id": plan_id, "agent_id": agent_id, "plan": plan.model_dump_json()}
         )
+
+    def get_execution_plans(self, plan_ids: List[str]) -> Dict[str, ExecutionPlan]:
+        sql = """
+            SELECT plan_id::VARCHAR, plan
+            FROM agent.execution_plans
+            WHERE plan_id = ANY(%(plan_ids)s)
+        """
+        rows = self.generic_read(sql, params={"plan_ids": plan_ids})
+        return {row["plan_id"]: ExecutionPlan.model_validate(row["plan"]) for row in rows}
 
     def write_tool_log(
         self, log: IOType, context: PlanRunContext, associated_data: Optional[IOType] = None

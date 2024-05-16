@@ -1,8 +1,11 @@
 import datetime
+from enum import Enum
 from typing import List, Optional
 
+from prefect.client.schemas.objects import StateType
 from pydantic import BaseModel
 
+from agent_service.io_type_utils import IOType
 from agent_service.types import Message
 
 
@@ -72,3 +75,76 @@ class ChatWithAgentResponse(BaseModel):
 ####################################################################################################
 class GetChatHistoryResponse(BaseModel):
     messages: List[Message]  # sorted by message_time ASC
+
+
+####################################################################################################
+# GetAgentWorklogBoard
+####################################################################################################
+class Status(str, Enum):
+    NOT_STARTED = "NOT_STARTED"
+    RUNNING = "RUNNING"
+    COMPLETE = "COMPLETE"
+    CANCELLED = "CANCELLED"
+    ERROR = "ERROR"
+
+    @classmethod
+    def from_prefect_state(cls, prefect_state: Optional[StateType]) -> "Status":
+        if prefect_state == StateType.RUNNING:
+            return cls.RUNNING
+        elif prefect_state == StateType.COMPLETED:
+            return cls.COMPLETE
+        elif prefect_state in (StateType.FAILED, StateType.CRASHED):
+            return cls.ERROR
+        elif prefect_state in (StateType.CANCELLING, StateType.CANCELLED):
+            return cls.CANCELLED
+        else:
+            return cls.NOT_STARTED
+
+
+class PlanRunTaskLog(BaseModel):
+    """Referring to a single log item under a task. A task can have multiple logs."""
+
+    log_id: str
+    log_message: str  # user-faced log item under each task
+    created_at: datetime.datetime
+
+
+class PlanRunTask(BaseModel):
+    """Referring to a **started** task within a Prefect run. A task can have multiple worklogs."""
+
+    task_id: str
+    task_name: str
+    status: Status
+    start_time: datetime.datetime
+    end_time: Optional[datetime.datetime]
+    logs: List[PlanRunTaskLog]  # sorted by start_time ASC
+
+
+class PlanRun(BaseModel):
+    """Referring to a **started** Prefect run which can have multiple tasks."""
+
+    plan_id: str  # which execution plan is this associated with
+    status: Status
+    plan_run_id: str  # the actual run ID from Prefect
+    start_time: datetime.datetime
+    end_time: Optional[datetime.datetime]
+    tasks: List[PlanRunTask]  # sorted by start_time ASC
+
+
+class ExecutionPlanTemplate(BaseModel):
+    """A template for the next run including the tasks that will be run."""
+
+    plan_id: str
+    task_names: List[str]
+
+
+class GetAgentWorklogBoardResponse(BaseModel):
+    run_history: List[PlanRun]  # sorted by time ASC, all the runs that have happened
+    execution_plan_template: Optional[ExecutionPlanTemplate] = None
+
+
+####################################################################################################
+# GetAgentWorklogOutput
+####################################################################################################
+class GetAgentWorklogOutputResponse(BaseModel):
+    output: Optional[IOType]
