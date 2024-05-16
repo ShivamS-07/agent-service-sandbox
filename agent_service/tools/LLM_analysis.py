@@ -111,7 +111,7 @@ async def topic_filter_helper(
     if counts[3] > len(texts) * LLM_FILTER_MAX_PERCENT:
         # If there are lot of 3s, only include 3
         cutoff = 3
-    elif counts[3] + counts[2] < len(text) * LLM_FILTER_MAX_PERCENT:
+    elif counts[3] + counts[2] < len(texts) * LLM_FILTER_MAX_PERCENT:
         # If there are hardly any 3 + 2, include 1s
         cutoff = 1
     else:

@@ -3,8 +3,8 @@ from unittest import IsolatedAsyncioTestCase
 
 from agent_service.tools.feature_data import (
     FeatureDataInput,
-    get_feature_data,
     get_latest_date,
+    get_statistic_data_for_companies,
 )
 from agent_service.types import PlanRunContext
 
@@ -21,7 +21,7 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
 
     async def test_feature_data_3_stock(self):
         args = FeatureDataInput(stock_ids=[AAPL, AMZN, MSFT], field_id=CLOSE_PRICE)
-        result = await get_feature_data(args, self.context)
+        result = await get_statistic_data_for_companies(args, self.context)
         self.assertEqual(result.val.shape[1], 3)  # num_stocks
         self.assertEqual(result.val.shape[0], 1)  # num_dates
 
@@ -32,7 +32,7 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
             start_date=datetime.date(2020, 1, 1),
             end_date=datetime.date(2020, 3, 1),
         )
-        result = await get_feature_data(args, self.context)
+        result = await get_statistic_data_for_companies(args, self.context)
         self.assertEqual(result.val.shape[1], 1)  # num_stocks
         self.assertGreater(result.val.shape[0], 20)  # num_dates
 
