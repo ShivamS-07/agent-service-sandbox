@@ -21,6 +21,8 @@ CHAT_MESSAGE = "This is a test message, just give me a response."
 
 logger = logging.getLogger(__name__)
 
+OK_CODES = (200, 201, 202, 204)
+
 
 @unittest.skip("Hangs forever, perhaps due to some async issue")
 class TestAgentService(unittest.TestCase):
@@ -50,11 +52,15 @@ class TestAgentService(unittest.TestCase):
         self.extract_user_patch = patch(
             "agent_service.endpoints.authz_helper.extract_user_from_jwt"
         ).start()
+        self.prefect_patch = patch(
+            "agent_service.utils.prefect.prefect_create_execution_plan"
+        ).start()
         self.extract_user_patch.return_value = ""
         self.extract_user_patch.start()
 
     def tearDown(self) -> None:
         self.extract_user_patch.stop()
+        self.prefect_patch.stop()
         for active_patch in self.patches:
             active_patch.stop()
         self.pg.close()
@@ -108,7 +114,7 @@ class TestAgentService(unittest.TestCase):
         return resp
 
     def assert_resp_ok(self, resp: Response) -> None:
-        assert resp.status_code in (200, 201), f"Response status code is {resp.status_code}"
+        assert resp.status_code in OK_CODES, f"Response status code is {resp.status_code}"
 
     ############################################################################
     # Tests
@@ -121,14 +127,14 @@ class TestAgentService(unittest.TestCase):
         user = self.create_random_user()
 
         # Create an agent
-        resp1 = self.post(user, "/agent/create-agent", {"first_prompt": FIRST_PROMPT})
+        resp1 = self.post(user, "/api/agent/create-agent", {"first_prompt": FIRST_PROMPT})
         resp_json = resp1.json()
         self.assertTrue(resp_json["success"])
         agent_id: str = resp_json["agent_id"]
         self.assertIsNotNone(agent_id)
 
         # Get all agents
-        resp2 = self.get(user, "/agent/get-all-agents")
+        resp2 = self.get(user, "/api/agent/get-all-agents")
         agents = resp2.json()["agents"]
         self.assertEqual(len(agents), 1)
         self.assertEqual(agents[0]["agent_id"], agent_id)
@@ -136,21 +142,23 @@ class TestAgentService(unittest.TestCase):
 
         # Update agent name
         new_agent_name = "New Agent Name"
-        resp3 = self.put(user, f"/agent/update-agent/{agent_id}", {"agent_name": new_agent_name})
+        resp3 = self.put(
+            user, f"/api/agent/update-agent/{agent_id}", {"agent_name": new_agent_name}
+        )
         self.assertTrue(resp3.json()["success"])
 
         # Get again
-        resp4 = self.get(user, "/agent/get-all-agents")
+        resp4 = self.get(user, "/api/agent/get-all-agents")
         agents = resp4.json()["agents"]
         self.assertEqual(len(agents), 1)
         self.assertEqual(agents[0]["agent_name"], new_agent_name)
 
         # Delete
-        resp5 = self.delete(user, f"/agent/delete-agent/{agent_id}")
+        resp5 = self.delete(user, f"/api/agent/delete-agent/{agent_id}")
         self.assertTrue(resp5.json()["success"])
 
         # Get again
-        resp6 = self.get(user, "/agent/get-all-agents")
+        resp6 = self.get(user, "/api/agent/get-all-agents")
         self.assertEqual(len(resp6.json()["agents"]), 0)
 
     @patch("application.Chatbot", autospec=True)
@@ -161,14 +169,14 @@ class TestAgentService(unittest.TestCase):
         user = self.create_random_user()
 
         # Create an agent
-        resp1 = self.post(user, "/agent/create-agent", {"first_prompt": FIRST_PROMPT})
+        resp1 = self.post(user, "/api/agent/create-agent", {"first_prompt": FIRST_PROMPT})
         resp_json = resp1.json()
         self.assertTrue(resp_json["success"])
         agent_id: str = resp_json["agent_id"]
         self.assertIsNotNone(agent_id)
 
         # Get all chats
-        resp2 = self.get(user, f"/agent/get-chat-history/{agent_id}")
+        resp2 = self.get(user, f"/api/agent/get-chat-history/{agent_id}")
         messages = resp2.json()["messages"]
         self.assertEqual(len(messages), 2)
         self.assertEqual(messages[0]["message"], FIRST_PROMPT)
@@ -178,7 +186,7 @@ class TestAgentService(unittest.TestCase):
         # NOTE: dates filter doesn't work when `skip_commit=True` because the time is the same
         resp3 = self.post(
             user,
-            "/agent/chat-with-agent",
+            "/api/agent/chat-with-agent",
             {"agent_id": agent_id, "prompt": CHAT_MESSAGE},
         )
         self.assertTrue(resp3.json()["success"])
@@ -186,7 +194,9 @@ class TestAgentService(unittest.TestCase):
         # Get all chats again
         start_time = parse(messages[1]["message_time"]) + datetime.timedelta(milliseconds=1)
         start_time = start_time.replace(tzinfo=None)  # pydantic can't handle timezone
-        resp4 = self.get(user, f"/agent/get-chat-history/{agent_id}?start={start_time.isoformat()}")
+        resp4 = self.get(
+            user, f"/api/agent/get-chat-history/{agent_id}?start={start_time.isoformat()}"
+        )
         new_messages = resp4.json()["messages"]
         self.assertEqual(len(new_messages), 2)
         self.assertEqual(new_messages[0]["message"], CHAT_MESSAGE)

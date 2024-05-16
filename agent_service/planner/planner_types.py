@@ -1,8 +1,9 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+from pydantic.functional_validators import field_validator
 
 from agent_service.io_type_utils import IOType
 
@@ -14,7 +15,7 @@ class Variable:
 
 # Represents a tool's arguments that have had the literals resolved. Variable
 # arguments cannot be resolved until the execution plan is run.
-PartialToolArgs = Dict[str, Union[IOType, Variable, List[Union[IOType, Variable]]]]
+PartialToolArgs = Dict[str, Union[Variable, IOType, List[Union[Variable, IOType]]]]
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,23 @@ class ToolExecutionNode(BaseModel):
     description: str  # A human-readable description of the node's purpose.
     output_variable_name: Optional[str] = None
     is_output_node: bool = False
+
+    @field_validator("args", mode="before")
+    @classmethod
+    def _deserialize_args(cls, args: Any) -> Any:
+        # TODO clean this up, it's a bit hacky and annoying right now
+        if not isinstance(args, dict):
+            return args
+        # Make sure to load variables into their proper class
+        for key, val in args.items():
+            if isinstance(val, dict) and "var_name" in val:
+                args[key] = Variable(var_name=val["var_name"])
+            elif isinstance(val, list):
+                for i, elem in enumerate(val):
+                    if isinstance(elem, dict) and "var_name" in elem:
+                        args[key][i] = Variable(var_name=elem["var_name"])
+
+        return args
 
 
 class ExecutionPlan(BaseModel):

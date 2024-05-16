@@ -31,6 +31,11 @@ async def run_execution_plan(
     variable_lookup: Dict[str, IOType] = {}
     db = get_psql(skip_commit=context.skip_db_commit)
 
+    if not context.skip_db_commit:
+        db.insert_plan_run(
+            agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
+        )
+
     tool_output = None
     for step in plan.nodes:
         logger.info(f"Running step '{step.tool_name}'")

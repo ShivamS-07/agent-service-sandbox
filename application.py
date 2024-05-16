@@ -8,6 +8,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.routing import APIRouter
 
 from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.authz_helper import (
@@ -35,8 +36,10 @@ from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.io_type_utils import load_io_type
 from agent_service.types import ChatContext, Message
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
+from agent_service.utils.prefect import prefect_create_execution_plan
 from agent_service.utils.sentry_utils import init_sentry
 
 DEFAULT_IP = "0.0.0.0"
@@ -45,9 +48,10 @@ SERVICE_NAME = "AgentService"
 
 logger = logging.getLogger(__name__)
 
-init_sentry()
+init_sentry(disable_sentry=not EnvironmentUtils.is_deployed)
 
 application = FastAPI(title="Agent Service")
+router = APIRouter(prefix="/api")
 application.add_middleware(
     CORSMiddleware,  # Add CORS middleware
     allow_origins=["*"],
@@ -60,12 +64,12 @@ application.add_middleware(
 ####################################################################################################
 # Test endpoints
 ####################################################################################################
-@application.get("/", response_class=HTMLResponse, status_code=200)
+@router.get("/", response_class=HTMLResponse, status_code=200)
 def confirm_working() -> str:
     return "<html>Agent Service is online</html>"
 
 
-@application.get("/health")
+@router.get("/health")
 def health() -> str:
     return "OK"
 
@@ -73,7 +77,7 @@ def health() -> str:
 ####################################################################################################
 # Agent endpoints
 ####################################################################################################
-@application.post(
+@router.post(
     "/agent/create-agent", response_model=CreateAgentResponse, status_code=status.HTTP_201_CREATED
 )
 async def create_agent(
@@ -82,16 +86,16 @@ async def create_agent(
     """Create an agent - Client should send the first prompt from user
     1. Generate initial response from GPT -> Allow retry if fails
     2. Insert agent and messages into DB -> Allow retry if fails
-    3. TODO: Kick off Prefect job -> retry is forbidden since it's a major system issue
+    3. Kick off Prefect job -> retry is forbidden since it's a major system issue
     4. Return success or failure to client. If success, return agent ID
     """
 
     now = get_now_utc()
-
+    agent_id = str(uuid4())
     try:
         logger.info("Generating initial response from GPT...")
         agent = AgentMetadata(
-            agent_id=str(uuid4()),
+            agent_id=agent_id,
             user_id=user.user_id,
             agent_name=DEFAULT_AGENT_NAME,
             created_at=now,
@@ -124,12 +128,20 @@ async def create_agent(
         logger.exception(f"Failed to insert agent and messages into DB with exception: {e}")
         return CreateAgentResponse(success=False, allow_retry=True)
 
-    # TODO: kick off Prefect job -> retry is forbidden
+    plan_id = str(uuid4())
+    logger.info(f"Creating execution plan {plan_id} for {agent_id=}")
+    try:
+        await prefect_create_execution_plan(
+            agent_id=agent_id, plan_id=plan_id, user_id=user.user_id, run_plan_immediately=True
+        )
+    except Exception:
+        logger.exception("Failed to kick off execution plan creation")
+        return CreateAgentResponse(success=False, allow_retry=False)
 
     return CreateAgentResponse(success=True, allow_retry=False, agent_id=agent.agent_id)
 
 
-@application.delete(
+@router.delete(
     "/agent/delete-agent/{agent_id}",
     response_model=DeleteAgentResponse,
     status_code=status.HTTP_200_OK,
@@ -141,7 +153,7 @@ def delete_agent(agent_id: str, user: User = Depends(parse_header)) -> DeleteAge
     return DeleteAgentResponse(success=True)
 
 
-@application.put(
+@router.put(
     "/agent/update-agent/{agent_id}",
     response_model=UpdateAgentResponse,
     status_code=status.HTTP_200_OK,
@@ -156,14 +168,14 @@ def update_agent(
     return UpdateAgentResponse(success=True)
 
 
-@application.get(
+@router.get(
     "/agent/get-all-agents", response_model=GetAllAgentsResponse, status_code=status.HTTP_200_OK
 )
 def get_all_agents(user: User = Depends(parse_header)) -> GetAllAgentsResponse:
     return GetAllAgentsResponse(agents=get_psql().get_user_all_agents(user.user_id))
 
 
-@application.post(
+@router.post(
     "/agent/chat-with-agent", response_model=ChatWithAgentResponse, status_code=status.HTTP_200_OK
 )
 async def chat_with_agent(
@@ -173,7 +185,7 @@ async def chat_with_agent(
     1. Validate user has access to agent
     2. Generate initial response from GPT -> Allow retry if fails
     3. Insert user message and GPT response into DB -> Allow retry if fails
-    4. TODO: Kick off Prefect job -> retry is forbidden since it's a major system issue
+    4. Kick off Prefect job -> retry is forbidden since it's a major system issue
     5. Return success or failure to client
     """
 
@@ -210,12 +222,22 @@ async def chat_with_agent(
         logger.exception(f"Failed to insert messages into DB with exception: {e}")
         return ChatWithAgentResponse(success=False, allow_retry=True)
 
-    # TODO: kick off Prefect job -> retry is forbidden
+    # kick off Prefect job -> retry is forbidden
+    # TODO we should check if we NEED to create a new plan
+    plan_id = str(uuid4())
+    logger.info(f"Creating execution plan {plan_id} for {req.agent_id=}")
+    try:
+        await prefect_create_execution_plan(
+            agent_id=req.agent_id, plan_id=plan_id, user_id=user.user_id, run_plan_immediately=True
+        )
+    except Exception:
+        logger.exception("Failed to kick off execution plan creation")
+        return ChatWithAgentResponse(success=False, allow_retry=False)
 
     return ChatWithAgentResponse(success=True, allow_retry=False)
 
 
-@application.get(
+@router.get(
     "/agent/get-chat-history/{agent_id}",
     response_model=GetChatHistoryResponse,
     status_code=status.HTTP_200_OK,
@@ -239,7 +261,7 @@ def get_chat_history(
     return GetChatHistoryResponse(messages=chat_context.messages)
 
 
-@application.get(
+@router.get(
     "/agent/get-agent-worklog-board/{agent_id}",
     response_model=GetAgentWorklogBoardResponse,
     status_code=status.HTTP_200_OK,
@@ -284,7 +306,7 @@ async def get_agent_worklog_board(
     )
 
 
-@application.get(
+@router.get(
     "/agent/get-agent-worklog-output/{agent_id}/{log_id}",
     response_model=GetAgentWorklogOutputResponse,
     status_code=status.HTTP_200_OK,
@@ -300,6 +322,9 @@ def get_agent_worklog_output(
     output = load_io_type(log_data) if log_data is not None else None
 
     return GetAgentWorklogOutputResponse(output=output)
+
+
+application.include_router(router)
 
 
 def parse_args() -> argparse.Namespace:

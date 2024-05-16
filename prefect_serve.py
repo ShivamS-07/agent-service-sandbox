@@ -7,6 +7,7 @@ from agent_service.planner.constants import (
     RUN_EXECUTION_PLAN_FLOW_NAME,
 )
 from agent_service.planner.executor import create_execution_plan, run_execution_plan
+from agent_service.utils.logs import init_stdout_logging
 
 
 async def run() -> None:
@@ -23,4 +24,5 @@ async def run() -> None:
 
 
 if __name__ == "__main__":
+    init_stdout_logging(disable_prefect_logging=False)
     asyncio.run(run())

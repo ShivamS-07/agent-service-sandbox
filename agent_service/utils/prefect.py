@@ -37,7 +37,7 @@ async def prefect_create_execution_plan(
             "user_id": user_id,
             "skip_db_commit": skip_db_commit,
             "skip_task_cache": skip_task_cache,
-            "run_plan_immediately": run_plan_immediately,
+            "run_plan_in_prefect_immediately": run_plan_immediately,
         },
     )
 

@@ -170,29 +170,29 @@ class Postgres(PostgresBase):
         return rows[0]["plan_id"], ExecutionPlan.model_validate(rows[0]["plan"])
 
     def get_agent_plan_runs(self, agent_id: str, limit_num: Optional[int] = None) -> List[str]:
-        if not limit_num:
-            sql = """
-                SELECT DISTINCT plan_run_id::VARCHAR
-                FROM agent.work_logs
-                WHERE agent_id = %(agent_id)s
-            """
-            rows = self.generic_read(sql, params={"agent_id": agent_id})
-        else:
-            sql = """
-                WITH t AS (
-                    SELECT plan_run_id::VARCHAR, MAX(created_at) AS created_at
-                    FROM agent.work_logs wl
-                    WHERE agent_id = %(agent_id)s
-                    GROUP BY plan_run_id
-                )
-                SELECT plan_run_id
-                FROM t
-                ORDER BY created_at DESC
-                LIMIT %(limit_num)s
-            """
-            rows = self.generic_read(sql, params={"agent_id": agent_id, "limit_num": limit_num})
+        limit_sql = ""
+        params: Dict[str, Any] = {"agent_id": agent_id}
+        if limit_num:
+            limit_sql = "LIMIT %(limit_num)s"
+            params["limit_num"] = limit_num
+
+        sql = f"""
+        SELECT plan_run_id::VARCHAR FROM agent.plan_runs
+        WHERE agent_id = %(agent_id)s
+        ORDER BY created_at DESC
+        {limit_sql}
+        """
+        rows = self.generic_read(sql, params=params)
 
         return [row["plan_run_id"] for row in rows]
+
+    def insert_plan_run(self, agent_id: str, plan_id: str, plan_run_id: str) -> None:
+        self.insert_into_table(
+            table_name="agent.plan_runs",
+            agent_id=agent_id,
+            plan_id=plan_id,
+            plan_run_id=plan_run_id,
+        )
 
     def get_agent_worklogs(
         self,
