@@ -13,9 +13,10 @@ from agent_service.utils.postgres import get_psql
 KEY_ID = "kid"
 RS_256 = "RS256"
 SUBJECT = "sub"
+AUD = "o601d0dtctfaidudcanl2f3tt"
 
 COGNITO_URLS = [
-    "https://cognito-idp.us-west-2.amazonaws.com///us-west-2_FLDNRtKO3/.well-known/jwks.json"
+    "https://cognito-idp.us-west-2.amazonaws.com///us-west-2_csB4xjtUm/.well-known/jwks.json"
 ]
 SSM_KEYS = ["token/services/jwk"]
 
@@ -82,9 +83,11 @@ def extract_user_from_jwt(auth_token: str) -> Optional[User]:
         data = jwt.decode(
             auth_token,
             signing_key.key,
+            audience=AUD,
             algorithms=[RS_256],
         )
-        user_id = data.get(SUBJECT, None)
+        sub = data.get(SUBJECT, None)
+        user_id = data.get("custom:user_id", sub)
         groups = data.get("cognito:groups", [])
         is_super_admin = "super-admin" in groups
         is_admin = "admin" in groups
