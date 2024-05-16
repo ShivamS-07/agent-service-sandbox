@@ -1,5 +1,4 @@
 import datetime
-import unittest
 import warnings
 from typing import Any, List, Optional, Type, Union
 from unittest import IsolatedAsyncioTestCase
@@ -7,6 +6,7 @@ from unittest.case import TestCase
 
 import pandas as pd
 
+from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_type_utils import IOType
 from agent_service.io_types import (
     StockTimeSeriesTable,
@@ -467,6 +467,7 @@ def get_test_registry() -> Type[ToolRegistry]:
 class TestPlans(IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        set_use_global_stub(False)
         warnings.filterwarnings(
             "ignore", category=ResourceWarning, message="unclosed.*<ssl.SSLSocket.*>"
         )
@@ -485,7 +486,6 @@ class TestPlans(IsolatedAsyncioTestCase):
     async def test_tool_registry_works(self) -> None:
         get_test_registry()
 
-    @unittest.skip("Takes too long to run")
     async def test_planner(self) -> None:
         input_text = (
             "Can you give me a single summary of news published in the last month "

@@ -62,10 +62,24 @@ CLIENT_NAMESPACE = get_client_namespace()
 DEFAULT_PRIORITY = os.getenv("GPT_SERVICE_DEFAULT_PRIORITY", "LOW")
 STUB = None
 
+# unit tests that inherit from IsolatedAsyncioTestCase broken by this stub cache because
+# IsolatedAsyncioTestCase creates a new event loop for each test case and thus we need a new
+# connection for each test case
+USE_GLOBAL_STUB = True
+
+
+def use_global_stub() -> bool:
+    return USE_GLOBAL_STUB
+
+
+def set_use_global_stub(val: bool) -> None:
+    global USE_GLOBAL_STUB
+    USE_GLOBAL_STUB = val
+
 
 def _get_gpt_service_stub() -> GPTServiceStub:
     global STUB
-    if STUB:
+    if STUB and use_global_stub():
         return STUB
     url = os.getenv("GPT_SERVICE_URL", "gpt-service-2.boosted.ai:50051")
     host, port = url.split(":")
