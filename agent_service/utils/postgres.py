@@ -158,7 +158,7 @@ class Postgres(PostgresBase):
         self, agent_id: str
     ) -> Tuple[Optional[str], Optional[ExecutionPlan]]:
         sql = """
-            SELECT plan_id, plan
+            SELECT plan_id::VARCHAR, plan
             FROM agent.execution_plans
             WHERE agent_id = %(agent_id)s
             ORDER BY last_updated DESC
@@ -303,6 +303,28 @@ class Postgres(PostgresBase):
                 "plan_run_id": context.plan_run_id,
                 "task_id": context.task_id,
                 "log_data": dump_io_type(output),
+            },
+        )
+
+    def write_agent_output(
+        self, output: IOType, context: PlanRunContext, is_intermediate: bool = False
+    ) -> None:
+        sql = """
+        INSERT INTO agent.agent_outputs
+          (agent_id, plan_id, plan_run_id, output, is_intermediate)
+        VALUES
+          (
+             %(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(output)s, %(is_intermediate)s
+          )
+        """
+        self.generic_write(
+            sql,
+            params={
+                "agent_id": context.agent_id,
+                "plan_id": context.plan_id,
+                "plan_run_id": context.plan_run_id,
+                "output": dump_io_type(output),
+                "is_intermediate": is_intermediate,
             },
         )
 

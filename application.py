@@ -19,12 +19,15 @@ from agent_service.endpoints.authz_helper import (
 )
 from agent_service.endpoints.models import (
     AgentMetadata,
+    AgentOutput,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     CreateAgentRequest,
     CreateAgentResponse,
     DeleteAgentResponse,
     ExecutionPlanTemplate,
+    GetAgentOutputResponse,
+    GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
     GetAgentWorklogOutputResponse,
     GetAllAgentsResponse,
@@ -322,6 +325,84 @@ def get_agent_worklog_output(
     output = load_io_type(log_data) if log_data is not None else None
 
     return GetAgentWorklogOutputResponse(output=output)
+
+
+@router.get(
+    "/agent/get-agent-task-output/{agent_id}/{plan_run_id}/{task_id}",
+    response_model=GetAgentTaskOutputResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_agent_task_output(
+    agent_id: str, plan_run_id: str, task_id: str, user: User = Depends(parse_header)
+) -> GetAgentTaskOutputResponse:
+    """Get the final outputs of a task once it's completed for Work Log Board
+
+    Args:
+        agent_id (str): agent ID
+        plan_run_id (str): the run ID from Prefect
+        task_id (str): the task ID of a run from Prefect
+    """
+    validate_user_agent_access(user.user_id, agent_id)
+
+    # move to `postgres.py` if reusable
+    # there will be only 1 output for a task
+    sql = """
+        SELECT log_data
+        FROM agent.work_logs
+        WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s AND task_id = %(task_id)s
+            AND is_task_output AND log_data NOTNULL
+        ORDER BY created_at DESC
+        LIMIT 1;
+    """
+    rows = get_psql().generic_read(
+        sql, {"agent_id": agent_id, "plan_run_id": plan_run_id, "task_id": task_id}
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No output found for {agent_id=}/{plan_run_id=}/{task_id=}",
+        )
+
+    return GetAgentTaskOutputResponse(log_data=load_io_type(rows[0]))
+
+
+@router.get(
+    "/agent/get-agent-output/{agent_id}",
+    response_model=GetAgentOutputResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_agent_output(agent_id: str, user: User = Depends(parse_header)) -> GetAgentOutputResponse:
+    """Get agent's LATEST output - An agent can have many runs and we always want the latest output
+
+    Args:
+        agent_id (str): agent ID
+    """
+    validate_user_agent_access(user.user_id, agent_id)
+    # move to `postgres.py` if reusable
+    # For now, we are only returning the final outputs
+    sql = """
+        SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, output_id::VARCHAR, is_intermediate,
+            "output", created_at
+        FROM agent.agent_outputs ao
+        WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
+            AND plan_run_id IN (
+                SELECT plan_run_id FROM agent.agent_outputs ORDER BY created_at LIMIT 1
+            )
+        ORDER BY created_at ASC;
+    """
+    rows = get_psql().generic_read(sql, {"agent_id": agent_id})
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"No output found for {agent_id=}"
+        )
+
+    final_outputs = [row for row in rows if not row["is_intermediate"]]
+    if final_outputs:
+        return GetAgentOutputResponse(
+            outputs=[AgentOutput(agent_id=agent_id, **row) for row in final_outputs]
+        )
+
+    return GetAgentOutputResponse(outputs=[AgentOutput(agent_id=agent_id, **row) for row in rows])
 
 
 application.include_router(router)

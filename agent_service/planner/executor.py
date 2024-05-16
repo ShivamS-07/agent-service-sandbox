@@ -95,6 +95,9 @@ async def run_execution_plan(
             messages=[Message(agent_id=context.agent_id, message=message, is_user_message=False)]
         )
 
+    if not context.skip_db_commit:
+        db.write_agent_output(output=tool_output, context=context)
+
     return tool_output
 
 

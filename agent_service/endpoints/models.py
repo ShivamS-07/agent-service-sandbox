@@ -148,3 +148,28 @@ class GetAgentWorklogBoardResponse(BaseModel):
 ####################################################################################################
 class GetAgentWorklogOutputResponse(BaseModel):
     output: Optional[IOType]
+
+
+####################################################################################################
+# GetAgentTaskOutput
+####################################################################################################
+class GetAgentTaskOutputResponse(BaseModel):
+    # it's very likely that the schema will change. For now we are just returning the output
+    log_data: IOType
+
+
+####################################################################################################
+# GetAgentOutput
+####################################################################################################
+class AgentOutput(BaseModel):
+    agent_id: str
+    plan_id: str  # which execution plan is this associated with
+    plan_run_id: str  # which run is the output generated from
+    is_intermediate: bool  # whether this is an intermediate output or the final output
+    output: IOType
+    created_at: datetime.datetime
+
+
+class GetAgentOutputResponse(BaseModel):
+    # it'll be only intermediate outputs OR the final outputs, sorted by time ASC
+    outputs: List[AgentOutput]
