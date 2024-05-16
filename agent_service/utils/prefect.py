@@ -1,11 +1,14 @@
 import datetime
+import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from logging import Logger, LoggerAdapter
+from typing import Dict, List, Optional, Tuple, Union
 
 from prefect import get_client
 from prefect.client.schemas import TaskRun
 from prefect.client.schemas.filters import FlowRunFilter, FlowRunFilterName
 from prefect.deployments import run_deployment
+from prefect.logging.loggers import get_run_logger
 
 from agent_service.endpoints.models import Status
 from agent_service.planner.constants import (
@@ -110,3 +113,10 @@ async def get_prefect_plan_run_statuses(plan_run_ids: List[str]) -> Dict[str, Ta
             flow_run_filter=FlowRunFilter(name=FlowRunFilterName(any_=plan_run_ids))
         )
     return {run.name: run for run in runs}
+
+
+def get_prefect_logger(name: str) -> Union[Logger, LoggerAdapter]:
+    try:
+        return get_run_logger()
+    except Exception:
+        return logging.getLogger(name)

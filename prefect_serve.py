@@ -24,5 +24,5 @@ async def run() -> None:
 
 
 if __name__ == "__main__":
-    init_stdout_logging(disable_prefect_logging=False)
+    init_stdout_logging()
     asyncio.run(run())

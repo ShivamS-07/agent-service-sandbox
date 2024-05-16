@@ -1,4 +1,3 @@
-from logging import getLogger
 from typing import Dict, Optional
 from uuid import uuid4
 
@@ -15,9 +14,7 @@ from agent_service.planner.planner_types import ExecutionPlan, Variable
 from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.postgres import get_psql
-from agent_service.utils.prefect import prefect_run_execution_plan
-
-logger = getLogger(__name__)
+from agent_service.utils.prefect import get_prefect_logger, prefect_run_execution_plan
 
 
 @flow(name=RUN_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{context.plan_run_id}")
@@ -27,6 +24,7 @@ async def run_execution_plan(
     send_chat_when_finished: bool = True,
     log_all_outputs: bool = False,
 ) -> Optional[IOType]:
+    logger = get_prefect_logger(__name__)
     # Maps variables to their resolved values
     variable_lookup: Dict[str, IOType] = {}
     db = get_psql(skip_commit=context.skip_db_commit)
@@ -84,6 +82,7 @@ async def run_execution_plan(
     # thing. Should fix that.
 
     logger.info(f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=}")
+    logger.info("Generating chat message...")
     if send_chat_when_finished and not context.skip_db_commit:
         chatbot = Chatbot(agent_id=context.agent_id)
         message = await chatbot.generate_execution_complete_response(
@@ -95,9 +94,11 @@ async def run_execution_plan(
             messages=[Message(agent_id=context.agent_id, message=message, is_user_message=False)]
         )
 
+    logger.info("Finished generating chat message, storing output in DB...")
     if not context.skip_db_commit:
         db.write_agent_output(output=tool_output, context=context)
 
+    logger.info("Finished run!")
     return tool_output
 
 
@@ -113,6 +114,7 @@ async def create_execution_plan(
     send_chat_when_finished: bool = True,
     chat_context: Optional[ChatContext] = None,
 ) -> ExecutionPlan:
+    logger = get_prefect_logger(__name__)
     planner = Planner(agent_id=agent_id)
     db = get_psql(skip_commit=skip_db_commit)
 
@@ -122,7 +124,7 @@ async def create_execution_plan(
     if not skip_db_commit:
         db.write_execution_plan(plan_id=plan_id, agent_id=agent_id, plan=plan)
     logger.info(f"Finished creating execution plan for {agent_id=}")
-
+    logger.info(f"Execution Plan\n:{plan.get_formatted_plan()}")
     if not run_plan_in_prefect_immediately:
         return plan
 
