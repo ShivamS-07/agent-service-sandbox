@@ -75,7 +75,7 @@ class Planner:
         )
 
         main_prompt = PLANNER_MAIN_PROMPT.format(message=user_input)
-        return await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt)
+        return await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     def _try_parse_str_literal(self, val: str) -> Optional[str]:
         if (val.startswith('"') and val.endswith('"')) or (

@@ -26,6 +26,17 @@ class ParsedStep:
     description: str
 
 
+def convert_arg(arg: Union[IOType, Variable, List[Union[IOType, Variable]]]) -> str:
+    if isinstance(arg, list):
+        return f"[{', '.join(convert_arg(item) for item in arg)}]"
+    elif isinstance(arg, Variable):
+        return arg.var_name
+    elif isinstance(arg, str):
+        return f'"{arg}"'
+    else:
+        return str(arg)
+
+
 class ToolExecutionNode(BaseModel):
     tool_name: str  # The name of the tool to be executed, for GPT
     # For all executions of the plan, nodes use consistent ID's.
@@ -34,6 +45,9 @@ class ToolExecutionNode(BaseModel):
     description: str  # A human-readable description of the node's purpose.
     output_variable_name: Optional[str] = None
     is_output_node: bool = False
+
+    def convert_args(self) -> str:
+        return ", ".join(f"{key}={convert_arg(value)}" for key, value in self.args.items())
 
     @field_validator("args", mode="before")
     @classmethod
@@ -62,10 +76,16 @@ class ExecutionPlan(BaseModel):
             output.append(f"{i}. {node.description}")
         return "\n".join(output)
 
-    def get_formatted_plan(self) -> str:
+    def get_formatted_plan(self, numbered: bool = False) -> str:
         str_list = []
-        for node in self.nodes:
-            str_list.append(f"{node.output_variable_name} = {node.tool_name}({node.args})")
+        for i, node in enumerate(self.nodes, start=1):
+            arguments = node.convert_args()
+            prefix = ""
+            if numbered:
+                prefix = f"{i}. "
+            str_list.append(
+                f"{prefix}{node.output_variable_name} = {node.tool_name}({arguments})  # {node.description}"
+            )
         return "\n".join(str_list)
 
 

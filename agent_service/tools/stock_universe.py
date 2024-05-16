@@ -12,9 +12,11 @@ class GetStockUniverseInput(ToolArgs):
 
 @tool(
     description=(
-        "This function takes a string (S&P500 e.g.)"
-        "which refers to a stock universe, converts it to a string identifier "
-        " and return the list of stock identifiers in the universe."
+        "This function takes a string"
+        "which refers to a stock universe, and converts it to a string identifier "
+        " and returns the list of stock identifiers in the universe."
+        "Stock universes are generally major market indexes like the S&P 500 or the"
+        "Stoxx 600"
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

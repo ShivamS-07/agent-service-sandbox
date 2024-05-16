@@ -99,6 +99,7 @@ async def query_gpt_worker(
     retry_num: int = 1,
     max_retries: int = 3,
     request_id: Optional[str] = None,
+    no_cache: bool = False,
 ) -> str:
     if not request_id:
         request_id = str(uuid.uuid4())
@@ -114,6 +115,7 @@ async def query_gpt_worker(
             output_json=output_json,
             request_id=request_id,
             client_timestamp=client_timestamp,
+            no_cache=no_cache,
         )
     except Exception as e:
         exception_text = traceback.format_exc()
@@ -143,6 +145,7 @@ async def query_gpt_worker(
                 retry_num=retry_num + 1,
                 max_retries=max_retries,
                 request_id=request_id,
+                no_cache=no_cache,
             )
 
 
@@ -156,6 +159,7 @@ async def _query_gpt_worker(
     output_json: bool = False,
     request_id: str = "",
     client_timestamp: Optional[str] = None,
+    no_cache: bool = False,
 ) -> str:
     if not client_timestamp:
         client_timestamp = datetime.utcnow().isoformat()
@@ -184,15 +188,17 @@ async def _query_gpt_worker(
         extra_params=extra_params,
     )
     stub = _get_gpt_service_stub()
+    metadata = [
+        ("clienttimestamp", client_timestamp),
+        ("clientname", CLIENT_NAME),
+        ("clientnamespace", CLIENT_NAMESPACE),
+        ("clientrequestid", request_id),
+    ]
+
+    if no_cache or os.environ.get("NO_GPT_CACHE", "0") == "1":
+        metadata.append(("nocache", "true"))
     result: QueryGPTResponse = await stub.QueryGPT(
-        request,
-        timeout=MAX_GPT_WORKER_TIMEOUT,
-        metadata=[
-            ("clienttimestamp", client_timestamp),
-            ("clientname", CLIENT_NAME),
-            ("clientnamespace", CLIENT_NAMESPACE),
-            ("clientrequestid", request_id),
-        ],
+        request, timeout=MAX_GPT_WORKER_TIMEOUT, metadata=metadata
     )
     if result.status.code != 0:
         raise RuntimeError(f"Error response from GPT service: {result.status.message}")
@@ -217,6 +223,7 @@ class GPT:
         task_type: Optional[str] = None,
         additional_context: Optional[Dict[str, Any]] = None,
         output_json: bool = False,
+        no_cache: bool = False,
     ) -> str:
         context_with_task_type = copy.deepcopy(self.context) if self.context is not None else None
         if context_with_task_type is not None:
@@ -262,4 +269,5 @@ class GPT:
             max_tokens=max_tokens,
             context=context_with_task_type,
             output_json=output_json,
+            no_cache=no_cache,
         )

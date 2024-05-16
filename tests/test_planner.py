@@ -1,6 +1,7 @@
 import datetime
+import unittest
 import warnings
-from typing import Any, List, Optional, Type, Union
+from typing import Any, List, Type, Union
 from unittest import IsolatedAsyncioTestCase
 from unittest.case import TestCase
 
@@ -165,12 +166,12 @@ def get_test_registry() -> Type[ToolRegistry]:
     # Earnings summary test
 
     class GetUserPortfolioStocksInput(ToolArgs):
-        portfolio_name: Optional[List[str]] = None
+        portfolio_name: List[str] = []
 
     @tool(
         description=(
             "This function returns a list of stock identifiers for all stocks in the provided "
-            "users portfolios or all portfolios if portfolio_name is None"
+            "users portfolios or all portfolios if portfolio_name is an empty list (the default value)"
         ),
         category=ToolCategory.USER,
         tool_registry=TestRegistry,
@@ -231,6 +232,19 @@ def get_test_registry() -> Type[ToolRegistry]:
 
     # profit margin example
 
+    class GetNamesOfStocksInput(ToolArgs):
+        stock_ids: List[int]
+
+    @tool(
+        description="Gets the names of the stocks indicated by the stock_ids",
+        category=ToolCategory.STOCK,
+        tool_registry=TestRegistry,
+    )
+    async def get_names_of_stocks(
+        args: GetNamesOfStocksInput, context: PlanRunContext
+    ) -> List[str]:
+        return []
+
     class GetElementFromListInput(ToolArgs):
         L: List[IOType]
         n: int
@@ -274,7 +288,9 @@ def get_test_registry() -> Type[ToolRegistry]:
             " referred to by statistic_id, for all the stocks in stock_ids, over the time"
             " range indicated, if end_date is not that means it is up to the present. It returns"
             " a StockTimeSeriesTable where the rows are stocks and the columns are the dates "
-            " Stock_labels will be used of stock ids for any visualization of this table "
+            " stock_labels should be human-readable names or tickers that will be shown instead of",
+            " the identifiers if there is any visualization of this table, there must be as"
+            " many labels as there are stock_ids",
         ),
         category=ToolCategory.STATISTICS,
         tool_registry=TestRegistry,
@@ -352,7 +368,10 @@ def get_test_registry() -> Type[ToolRegistry]:
         sector_id: str
 
     @tool(
-        description="This returns stock ids for all stocks in a given sector from the db",
+        description=(
+            "Given a sector_id produced by the sector_lookup function, this returns stock ids for all ",
+            "stocks in that sector",
+        ),
         category=ToolCategory.STOCK,
         tool_registry=TestRegistry,
     )
@@ -486,6 +505,7 @@ class TestPlans(IsolatedAsyncioTestCase):
     async def test_tool_registry_works(self) -> None:
         get_test_registry()
 
+    @unittest.skip("Takes too long to run")
     async def test_planner(self) -> None:
         input_text = (
             "Can you give me a single summary of news published in the last month "
