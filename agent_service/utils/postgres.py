@@ -289,10 +289,10 @@ class Postgres(PostgresBase):
     def write_tool_output(self, output: IOType, context: PlanRunContext) -> None:
         sql = """
         INSERT INTO agent.work_logs
-          (agent_id, plan_id, plan_run_id, task_id, log_data)
+          (agent_id, plan_id, plan_run_id, task_id, log_data, is_task_output)
         VALUES
           (
-             %(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(task_id)s, %(log_data)s
+             %(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(task_id)s, %(log_data)s, TRUE
           )
         """
         self.generic_write(
