@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Type, Union
 import pandas as pd
 
 from agent_service.io_type_utils import ComplexIOBase, io_type
-from agent_service.utils.postgres import get_psql
 
 
 @io_type
@@ -103,6 +102,8 @@ class NewsDevelopmentText(Text):
         FROM nlp_service.stock_news_topics
         WHERE topic_id = ANY(%(topic_ids)s)
         """
+        from agent_service.utils.postgres import get_psql
+
         db = get_psql()
         rows = db.generic_read(sql, {"topic_ids": [topic.id for topic in news_topics]})
         return {row["topic_id"]: row["description"] for row in rows}
@@ -120,6 +121,8 @@ class EarningsSummaryText(Text):
         FROM nlp_service.earnings_call_summaries
         WHERE summary_id = ANY(%(earnings_ids)s)
         """
+
+        from agent_service.utils.postgres import get_psql
 
         db = get_psql()
         rows = db.generic_read(
