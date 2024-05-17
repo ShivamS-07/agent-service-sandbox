@@ -124,7 +124,7 @@ async def create_execution_plan(
     if not skip_db_commit:
         db.write_execution_plan(plan_id=plan_id, agent_id=agent_id, plan=plan)
     logger.info(f"Finished creating execution plan for {agent_id=}")
-    logger.info(f"Execution Plan\n:{plan.get_formatted_plan()}")
+    logger.info(f"Execution Plan:\n{plan.get_formatted_plan()}")
     if not run_plan_in_prefect_immediately:
         return plan
 

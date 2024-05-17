@@ -65,7 +65,7 @@ STUB = None
 # unit tests that inherit from IsolatedAsyncioTestCase broken by this stub cache because
 # IsolatedAsyncioTestCase creates a new event loop for each test case and thus we need a new
 # connection for each test case
-USE_GLOBAL_STUB = True
+USE_GLOBAL_STUB = False
 
 
 def use_global_stub() -> bool:
