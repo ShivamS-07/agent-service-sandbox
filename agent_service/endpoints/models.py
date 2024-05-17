@@ -155,7 +155,7 @@ class GetAgentWorklogOutputResponse(BaseModel):
 ####################################################################################################
 class GetAgentTaskOutputResponse(BaseModel):
     # it's very likely that the schema will change. For now we are just returning the output
-    log_data: IOType
+    log_data: Optional[IOType]
 
 
 ####################################################################################################

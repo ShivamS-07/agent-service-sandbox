@@ -4,8 +4,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from gbi_common_py_utils.utils.postgres import PostgresBase
 
-from agent_service.endpoints.models import AgentMetadata
-from agent_service.io_type_utils import IOType, dump_io_type
+from agent_service.endpoints.models import AgentMetadata, AgentOutput
+from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
+
+# Make sure all io_types are registered
+from agent_service.io_types import *  # noqa
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
@@ -234,6 +237,46 @@ class Postgres(PostgresBase):
         """
         rows = self.generic_read(sql, {"agent_id": agent_id, "log_id": log_id})
         return rows
+
+    def get_agent_outputs(self, agent_id: str) -> List[AgentOutput]:
+        sql = """
+        SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, output_id::VARCHAR, is_intermediate,
+            "output", created_at
+        FROM agent.agent_outputs ao
+        WHERE plan_run_id IN (
+            SELECT plan_run_id FROM agent.agent_outputs
+            WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
+            ORDER BY created_at LIMIT 1
+        )
+        ORDER BY created_at ASC;
+        """
+        rows = get_psql().generic_read(sql, {"agent_id": agent_id})
+        if not rows:
+            return []
+
+        outputs = []
+        for row in rows:
+            output = row["output"]
+            row["output"] = load_io_type(output) if output else output
+            outputs.append(AgentOutput(agent_id=agent_id, **row))
+
+        return outputs
+
+    def get_task_output(self, agent_id: str, plan_run_id: str, task_id: str) -> Optional[IOType]:
+        sql = """
+        SELECT log_data
+        FROM agent.work_logs
+        WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s AND task_id = %(task_id)s
+            AND is_task_output AND log_data NOTNULL
+        ORDER BY created_at DESC
+        LIMIT 1;
+        """
+        rows = get_psql().generic_read(
+            sql, {"agent_id": agent_id, "plan_run_id": plan_run_id, "task_id": task_id}
+        )
+        if not rows:
+            return None
+        return load_io_type(rows[0]["log_data"])
 
     ################################################################################################
     # Tools and Execution Plans

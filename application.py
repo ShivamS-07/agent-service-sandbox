@@ -19,7 +19,6 @@ from agent_service.endpoints.authz_helper import (
 )
 from agent_service.endpoints.models import (
     AgentMetadata,
-    AgentOutput,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     CreateAgentRequest,
@@ -344,26 +343,11 @@ def get_agent_task_output(
     """
     validate_user_agent_access(user.user_id, agent_id)
 
-    # move to `postgres.py` if reusable
-    # there will be only 1 output for a task
-    sql = """
-        SELECT log_data
-        FROM agent.work_logs
-        WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s AND task_id = %(task_id)s
-            AND is_task_output AND log_data NOTNULL
-        ORDER BY created_at DESC
-        LIMIT 1;
-    """
-    rows = get_psql().generic_read(
-        sql, {"agent_id": agent_id, "plan_run_id": plan_run_id, "task_id": task_id}
+    task_output = get_psql().get_task_output(
+        agent_id=agent_id, plan_run_id=plan_run_id, task_id=task_id
     )
-    if not rows:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No output found for {agent_id=}/{plan_run_id=}/{task_id=}",
-        )
 
-    return GetAgentTaskOutputResponse(log_data=load_io_type(rows[0]["log_data"]))
+    return GetAgentTaskOutputResponse(log_data=task_output)
 
 
 @router.get(
@@ -378,37 +362,17 @@ def get_agent_output(agent_id: str, user: User = Depends(parse_header)) -> GetAg
         agent_id (str): agent ID
     """
     validate_user_agent_access(user.user_id, agent_id)
-    # move to `postgres.py` if reusable
-    # For now, we are only returning the final outputs
-    sql = """
-        SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, output_id::VARCHAR, is_intermediate,
-            "output", created_at
-        FROM agent.agent_outputs ao
-        WHERE plan_run_id IN (
-            SELECT plan_run_id FROM agent.agent_outputs
-            WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
-            ORDER BY created_at LIMIT 1
-        )
-        ORDER BY created_at ASC;
-    """
-    rows = get_psql().generic_read(sql, {"agent_id": agent_id})
-    if not rows:
+    outputs = get_psql().get_agent_outputs(agent_id=agent_id)
+    if not outputs:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"No output found for {agent_id=}"
         )
 
-    final_outputs = []
-    for row in rows:
-        output = row["output"]
-        row["output"] = load_io_type(output) if output else output
-        if not row["is_intermediate"]:
-            final_outputs.append(row)
+    final_outputs = [output for output in outputs if not output.is_intermediate]
     if final_outputs:
-        return GetAgentOutputResponse(
-            outputs=[AgentOutput(agent_id=agent_id, **row) for row in final_outputs]
-        )
+        return GetAgentOutputResponse(outputs=final_outputs)
 
-    return GetAgentOutputResponse(outputs=[AgentOutput(agent_id=agent_id, **row) for row in rows])
+    return GetAgentOutputResponse(outputs=outputs)
 
 
 application.include_router(router)
