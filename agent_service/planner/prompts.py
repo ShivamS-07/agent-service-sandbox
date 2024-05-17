@@ -14,7 +14,7 @@ PLAN_RULES = """- Your output script must be valid Python code
 - The function used must come from the provided list of tools, you must not use any other standard Python functions
 - You must not use any Python operators other than the assignment operator, you must the provided functions to carry out any required operations
 - In particular, you absolutely must not use the Python indexes [], e.g. you must not write anything involving the characters `[]` that is not a definiing a list. This includes inside a function argument, e.g. func(a=b[0]) is not allowed. Instead use the provided function which does the same thing.
-- Any arguments to the function must match the provided function headers in type
+- Any arguments to the function must match the provided function headers in type. Be careful about inheritance, note that any type whose name ends with Text is a subclass of Text, any types whose name ends with Table is a subclass of Table, etc.
 - You must include all required arguments, though you can exclude those with defaults if you are not changing them
 - If values for any of the optional arguments (those with defaults) are mentioned or implied by the user input and different from the default, include those optional arguments.
 - If an argument has a default value according to the function definition, you must not pass that default value as an argument, you must leave it out.

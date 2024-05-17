@@ -1,10 +1,12 @@
 import asyncio
 from collections import defaultdict
 from typing import Dict, List, Tuple
+from uuid import uuid4
 
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL, FILTER_CONCURRENCY
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import IOType
+from agent_service.io_types import SummaryText, Text
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.lists import CollapseListsInput, collapse_lists
@@ -13,9 +15,7 @@ from agent_service.tools.stock_identifier_lookup import (
     stock_identifier_lookup,
 )
 from agent_service.tools.stock_news import (
-    GetNewsDevelopmentDescriptionsInput,
     GetNewsDevelopmentsAboutCompaniesInput,
-    get_news_development_descriptions,
     get_news_developments_about_companies,
 )
 from agent_service.types import ChatContext, Message, PlanRunContext
@@ -53,7 +53,7 @@ LLM_FILTER_MIN_PERCENT = 0.05
 
 
 class SummarizeTextInput(ToolArgs):
-    texts: List[str]
+    texts: List[Text]
 
 
 @tool(
@@ -65,9 +65,10 @@ class SummarizeTextInput(ToolArgs):
     ),
     category=ToolCategory.LLM_ANALYSIS,
 )
-async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> str:
+async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> SummaryText:
     if context.chat is None:
-        return ""
+        # just for mypy, shouldn't happen
+        return SummaryText(id=str(uuid4()), val="")
     # TODO we need guardrails on this
     gpt_context = create_gpt_context(
         GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
@@ -75,23 +76,25 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
     result = await llm.do_chat_w_sys_prompt(
         SUMMARIZE_PROMPT_MAIN.format(
-            texts="\n***\n".join(args.texts), chat_context=context.chat.get_gpt_input()
+            texts="\n***\n".join(Text.get_all_strs(args.texts)),
+            chat_context=context.chat.get_gpt_input(),
         ),
         SUMMARIZE_SYS_PROMPT.format(),
     )
-    return result
+    return SummaryText(id=str(uuid4()), val=result)
 
 
 async def topic_filter_helper(
-    texts: List[str], topic: str, agent_id: str
+    texts: List[Text], topic: str, agent_id: str
 ) -> List[Tuple[bool, str]]:
     gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
     llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
     tasks = []
-    for text in texts:
+    text_strs = Text.get_all_strs(texts)
+    for text_str in text_strs:
         tasks.append(
             llm.do_chat_w_sys_prompt(
-                TOPIC_FILTER_MAIN_PROMPT.format(text=text, topic=topic),
+                TOPIC_FILTER_MAIN_PROMPT.format(text=text_str, topic=topic),
                 TOPIC_FILTER_SYS_PROMPT.format(),
             )
         )
@@ -123,7 +126,7 @@ async def topic_filter_helper(
 
 class FilterTextsByTopicInput(ToolArgs):
     topic: str
-    texts: List[str]
+    texts: List[Text]
 
 
 @tool(
@@ -139,7 +142,7 @@ class FilterTextsByTopicInput(ToolArgs):
 )
 async def filter_texts_by_topic(
     args: FilterTextsByTopicInput, context: PlanRunContext
-) -> List[str]:
+) -> List[Text]:
     # not currently returning rationale, but will probably want it
     return [
         text
@@ -153,7 +156,7 @@ async def filter_texts_by_topic(
 class FilterItemsByTopicInput(ToolArgs):
     topic: str
     items: List[IOType]
-    texts: List[str]
+    texts: List[Text]
 
 
 @tool(
@@ -196,25 +199,21 @@ async def main() -> None:
         for stock in ["Meta", "Apple", "Microsoft"]
     ]  # Convert stock names to identifiers
     print(stock_ids)
-    news_developments = await get_news_developments_about_companies(
+    news_developments_lists = await get_news_developments_about_companies(
         GetNewsDevelopmentsAboutCompaniesInput(stock_ids=stock_ids, start_date=start_date),  # type: ignore
         plan_context,
     )  # Get news developments for the last month for Meta, Apple, and Microsoft
-    print(len(news_developments[0]))  # type: ignore
-    print(len(news_developments[1]))  # type: ignore
-    print(len(news_developments[2]))  # type: ignore
-    collapsed_news_ids = await collapse_lists(
-        CollapseListsInput(lists_of_lists=news_developments), plan_context  # type: ignore
+    print(len(news_developments_lists[0]))  # type: ignore
+    print(len(news_developments_lists[1]))  # type: ignore
+    print(len(news_developments_lists[2]))  # type: ignore
+    news_developments = await collapse_lists(
+        CollapseListsInput(lists_of_lists=news_developments_lists), plan_context  # type: ignore
     )  # Collapse the list of lists of news ids into a single list
-    print(len(collapsed_news_ids))  # type: ignore
-    news_descriptions = await get_news_development_descriptions(
-        GetNewsDevelopmentDescriptionsInput(development_ids=collapsed_news_ids), plan_context  # type: ignore
-    )  # Retrieve the text descriptions of the news developments
+    print(len(news_developments))  # type: ignore
     filtered_news = await filter_texts_by_topic(
-        FilterTextsByTopicInput(topic="machine learning", texts=news_descriptions), plan_context  # type: ignore
+        FilterTextsByTopicInput(topic="machine learning", texts=news_developments), plan_context  # type: ignore
     )  # Filter the news descriptions to only those relevant to machine learning
     print(len(filtered_news))  # type: ignore
-    print(filtered_news[0])  # type: ignore
     summary = await summarize_texts(
         SummarizeTextInput(texts=filtered_news), plan_context  # type: ignore
     )  # Summarize the filtered news texts into a single summary

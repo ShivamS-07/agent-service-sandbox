@@ -1,7 +1,7 @@
 import datetime
 import unittest
 import warnings
-from typing import Any, List, Type, Union
+from typing import Any, List, Text, Type, Union
 from unittest import IsolatedAsyncioTestCase
 from unittest.case import TestCase
 
@@ -10,7 +10,9 @@ import pandas as pd
 from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_type_utils import IOType
 from agent_service.io_types import (
+    NewsDevelopmentText,
     StockTimeSeriesTable,
+    SummaryText,
     TimeSeriesLineGraph,
     TimeSeriesTable,
 )
@@ -33,7 +35,7 @@ def get_test_registry() -> Type[ToolRegistry]:
     # Stock news summary test
 
     class SummarizeTextInput(ToolArgs):
-        texts: List[str]
+        texts: List[Text]
 
     @tool(
         description=(
@@ -45,12 +47,12 @@ def get_test_registry() -> Type[ToolRegistry]:
         category=ToolCategory.LLM_ANALYSIS,
         tool_registry=TestRegistry,
     )
-    async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> str:
-        return "A summarized text!"
+    async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> Text:
+        return SummaryText(id="1", val="A summarized text!")
 
     class FilterTextsByTopicInput(ToolArgs):
         topic: str
-        texts: List[str]
+        texts: List[Text]
 
     @tool(
         description=(
@@ -66,7 +68,7 @@ def get_test_registry() -> Type[ToolRegistry]:
     )
     async def filter_texts_by_topic(
         args: FilterTextsByTopicInput, context: PlanRunContext
-    ) -> List[str]:
+    ) -> List[Text]:
         return []
 
     class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
@@ -86,23 +88,8 @@ def get_test_registry() -> Type[ToolRegistry]:
     )
     async def get_news_developments_about_companies(
         args: GetNewsDevelopmentsAboutCompaniesInput, context: PlanRunContext
-    ) -> List[List[str]]:
-        return [[""]]
-
-    class GetNewsDevelopmentDescriptions(ToolArgs):
-        development_ids: List[str]
-
-    @tool(
-        description=(
-            "This function retrieves the text descriptions for a list of news developments"
-        ),
-        category=ToolCategory.NEWS,
-        tool_registry=TestRegistry,
-    )
-    async def get_news_development_descriptions(
-        args: GetNewsDevelopmentDescriptions, context: PlanRunContext
-    ) -> List[str]:
-        return [""]
+    ) -> List[List[NewsDevelopmentText]]:
+        return [[NewsDevelopmentText(id="1")]]
 
     class CollapseListsInput(ToolArgs):
         lists_of_lists: List[List[IOType]]
@@ -205,7 +192,7 @@ def get_test_registry() -> Type[ToolRegistry]:
 
     @tool(
         description=(
-            "This returns a list of lists of earnings call summary ids, each inner list corresponds to all the"
+            "This returns a list of lists of earnings call summary texts, each inner list corresponds to all the"
             " earnings calls for the corresponding stock that were published between start_date and end_date. "
             "start_date or end_date being None indicates the range is unbounded"
         ),
@@ -214,21 +201,8 @@ def get_test_registry() -> Type[ToolRegistry]:
     )
     async def get_earnings_call_summaries(
         args: GetEarningsCallSummaries, context: PlanRunContext
-    ) -> List[List[str]]:
+    ) -> List[List[Text]]:
         return [[]]
-
-    class GetTextForEarningsCallSummariesInput(ToolArgs):
-        earnings_call_summary_ids: List[str]
-
-    @tool(
-        description=("This gets the full text for each of a group of earnings call summaries"),
-        category=ToolCategory.EARNINGS,
-        tool_registry=TestRegistry,
-    )
-    async def get_text_for_earnings_call_summaries(
-        args: GetTextForEarningsCallSummariesInput, context: PlanRunContext
-    ) -> List[str]:
-        return []
 
     # profit margin example
 
@@ -418,7 +392,7 @@ def get_test_registry() -> Type[ToolRegistry]:
     class FilterItemsByTopicInput(ToolArgs):
         topic: str
         items: List[IOType]
-        texts: List[str]
+        texts: List[Text]
 
     @tool(
         description=(
@@ -563,21 +537,14 @@ class TestPlans(IsolatedAsyncioTestCase):
                     tool_name="collapse_lists",
                     args={"lists_of_lists": Variable(var_name="news_developments")},
                     description="Collapse the list of lists of news developments into a single list",
-                    output_variable_name="collapsed_news_ids",
-                    is_output_node=False,
-                ),
-                ToolExecutionNode(
-                    tool_name="get_news_development_descriptions",
-                    args={"development_ids": Variable(var_name="collapsed_news_ids")},
-                    description="Retrieve the text descriptions of the news developments",
-                    output_variable_name="news_descriptions",
+                    output_variable_name="collapsed_news_developments",
                     is_output_node=False,
                 ),
                 ToolExecutionNode(
                     tool_name="filter_texts_by_topic",
                     args={
                         "topic": "machine learning",
-                        "texts": Variable(var_name="news_descriptions"),
+                        "texts": Variable(var_name="collapsed_news_developments"),
                     },
                     description="Filter news descriptions to only those related to machine learning",
                     output_variable_name="filtered_texts",
@@ -597,7 +564,7 @@ class TestPlans(IsolatedAsyncioTestCase):
             PlanRunContext.get_dummy(),
             send_chat_when_finished=False,
         )
-        self.assertEqual(result, "A summarized text!")
+        self.assertEqual(result.val, "A summarized text!")
 
 
 class TestPlanConstructionValidation(TestCase):
@@ -650,9 +617,8 @@ class TestPlanConstructionValidation(TestCase):
         example_input = """start_date = get_date_from_date_str(time_str="1 month ago")  # Convert "1 month ago" to a date to use as the start date for news search
 stock_ids = stock_identifier_lookup_multi(stock_names=["Meta", "Apple", "Microsoft"])  # Look up stock identifiers for Meta, Apple, and Microsoft
 news_developments = get_news_developments_about_companies(stock_ids=stock_ids, start_date=start_date)  # Get news developments in the last month for Meta, Apple, and Microsoft
-collapsed_news_ids = collapse_lists(lists_of_lists=news_developments)  # Collapse the list of lists of news development IDs into a single list
-news_descriptions = get_news_development_descriptions(development_ids=collapsed_news_ids)  # Get the text descriptions of the news developments
-filtered_news = filter_texts_by_topic(topic="machine learning", texts=news_descriptions)  # Filter news descriptions to only those related to machine learning
+collapsed_news_developments = collapse_lists(lists_of_lists=news_developments)  # Collapse the list of lists of news development IDs into a single list
+filtered_news = filter_texts_by_topic(topic="machine learning", texts=collapsed_news_developments)  # Filter news descriptions to only those related to machine learning
 summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning related news into a single text"""  # noqa: E501
         steps = planner._parse_plan_str(example_input)
 
@@ -676,21 +642,15 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
                 description="Get news developments in the last month for Meta, Apple, and Microsoft",
             ),
             ParsedStep(
-                output_var="collapsed_news_ids",
+                output_var="collapsed_news_developments",
                 function="collapse_lists",
                 arguments={"lists_of_lists": "news_developments"},
                 description="Collapse the list of lists of news development IDs into a single list",
             ),
             ParsedStep(
-                output_var="news_descriptions",
-                function="get_news_development_descriptions",
-                arguments={"development_ids": "collapsed_news_ids"},
-                description="Get the text descriptions of the news developments",
-            ),
-            ParsedStep(
                 output_var="filtered_news",
                 function="filter_texts_by_topic",
-                arguments={"topic": '"machine learning"', "texts": "news_descriptions"},
+                arguments={"topic": '"machine learning"', "texts": "collapsed_news_developments"},
                 description="Filter news descriptions to only those related to machine learning",
             ),
             ParsedStep(
@@ -724,21 +684,15 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
                 description="Get news developments for Meta, Apple, and Microsoft since last month",
             ),
             ParsedStep(
-                output_var="collapsed_news_ids",
+                output_var="collapsed_news_developments",
                 function="collapse_lists",
                 arguments={"lists_of_lists": "news_developments"},
                 description="Collapse the list of lists of news developments into a single list",
             ),
             ParsedStep(
-                output_var="news_descriptions",
-                function="get_news_development_descriptions",
-                arguments={"development_ids": "collapsed_news_ids"},
-                description="Retrieve the text descriptions of the news developments",
-            ),
-            ParsedStep(
                 output_var="filtered_news",
                 function="filter_texts_by_topic",
-                arguments={"topic": '"machine learning"', "texts": "news_descriptions"},
+                arguments={"topic": '"machine learning"', "texts": "collapsed_news_developments"},
                 description="Filter news descriptions to only those related to machine learning",
             ),
             ParsedStep(
@@ -779,19 +733,15 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
                 tool_name="collapse_lists",
                 args={"lists_of_lists": Variable(var_name="news_developments")},
                 description="Collapse the list of lists of news developments into a single list",
-                output_variable_name="collapsed_news_ids",
-                is_output_node=False,
-            ),
-            ToolExecutionNode(
-                tool_name="get_news_development_descriptions",
-                args={"development_ids": Variable(var_name="collapsed_news_ids")},
-                description="Retrieve the text descriptions of the news developments",
-                output_variable_name="news_descriptions",
+                output_variable_name="collapsed_news_developments",
                 is_output_node=False,
             ),
             ToolExecutionNode(
                 tool_name="filter_texts_by_topic",
-                args={"topic": "machine learning", "texts": Variable(var_name="news_descriptions")},
+                args={
+                    "topic": "machine learning",
+                    "texts": Variable(var_name="collapsed_news_developments"),
+                },
                 description="Filter news descriptions to only those related to machine learning",
                 output_variable_name="filtered_news",
                 is_output_node=False,

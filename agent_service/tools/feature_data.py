@@ -34,7 +34,8 @@ class FeatureDataInput(ToolArgs):
         " Optionally a start_date and end_date may be provided to specify a date range"
         " to get a specific date only set both inputs to the same date."
         " If neither date is provided then it will assume the request "
-        "is for the most recent date for which data exists."
+        "is for the most recent date for which data exists. The statistic_id MUST be "
+        "fetched with the lookup function, it cannot be an arbitrary string."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

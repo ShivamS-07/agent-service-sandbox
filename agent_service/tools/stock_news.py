@@ -4,10 +4,10 @@ from typing import Dict, List, Optional
 
 from agent_service.external.grpc_utils import timestamp_to_datetime
 from agent_service.external.nlp_svc_client import get_multi_companies_news_topics
+from agent_service.io_types import NewsDevelopmentText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.postgres import get_psql
 
 
 class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
@@ -29,7 +29,7 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
 )
 async def get_news_developments_about_companies(
     args: GetNewsDevelopmentsAboutCompaniesInput, context: PlanRunContext
-) -> List[List[str]]:
+) -> List[List[NewsDevelopmentText]]:
     response = await get_multi_companies_news_topics(
         user_id=context.user_id, gbi_ids=args.stock_ids
     )
@@ -45,7 +45,7 @@ async def get_news_developments_about_companies(
     if not end_date:
         # Add an extra day to be sure we don't miss anything with timezone weirdness
         end_date = get_now_utc().date() + datetime.timedelta(days=1)
-    outputs = []
+    outputs: List[List[NewsDevelopmentText]] = []
     for gbi_id in args.stock_ids:
         topics = stock_to_topics_map[gbi_id]
         topic_list = []
@@ -55,37 +55,7 @@ async def get_news_developments_about_companies(
                 # Filter topics not in the time window
                 continue
             # Only return ID's
-            topic_list.append(topic.topic_id.id)
+            topic_list.append(NewsDevelopmentText(id=topic.topic_id.id))
         outputs.append(topic_list)
 
     return outputs
-
-
-class GetNewsDevelopmentDescriptionsInput(ToolArgs):
-    development_ids: List[str]
-
-
-@tool(
-    description=("This function retrieves the text descriptions for a list of news developments."),
-    category=ToolCategory.NEWS,
-    tool_registry=ToolRegistry,
-)
-async def get_news_development_descriptions(
-    args: GetNewsDevelopmentDescriptionsInput, context: PlanRunContext
-) -> List[str]:
-    # We use developments with the agent, but topics internally
-    # TODO FIXME
-    # WE SHOULD HAVE AN ENDPOINT THAT DOES THIS!!!!
-    sql = """
-    SELECT topic_id::TEXT, (topic_descriptions->-1->0)::TEXT AS description
-    FROM nlp_service.stock_news_topics
-    WHERE topic_id = ANY(%(topic_ids)s)
-    """
-    db = get_psql()
-    rows = db.generic_read(sql, {"topic_ids": args.development_ids})
-    topic_id_desc_map = {row["topic_id"]: row["description"] for row in rows}
-    return [
-        topic_id_desc_map[topic_id]
-        for topic_id in args.development_ids
-        if topic_id in topic_id_desc_map
-    ]

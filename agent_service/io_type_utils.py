@@ -41,7 +41,7 @@ class ComplexIOBase(BaseModel, ABC):
     Parent class of non-primitive types that may act as inputs or outputs to tools.
     """
 
-    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     val: Any
 
