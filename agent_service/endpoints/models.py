@@ -117,15 +117,15 @@ class PlanRunTask(BaseModel):
     status: Status
     start_time: datetime.datetime
     end_time: Optional[datetime.datetime]
-    logs: List[PlanRunTaskLog]  # sorted by start_time ASC
+    logs: List[PlanRunTaskLog]  # sorted by start_time ASC, could be empty
 
 
 class PlanRun(BaseModel):
     """Referring to a **started** Prefect run which can have multiple tasks."""
 
-    plan_id: str  # which execution plan is this associated with
-    status: Status
     plan_run_id: str  # the actual run ID from Prefect
+    status: Status
+    plan_id: str  # which execution plan is this associated with
     start_time: datetime.datetime
     end_time: Optional[datetime.datetime]
     tasks: List[PlanRunTask]  # sorted by start_time ASC

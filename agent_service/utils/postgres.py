@@ -214,10 +214,10 @@ class Postgres(PostgresBase):
             params["plan_run_ids"] = plan_run_ids
 
         sql1 = f"""
-            SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, task_id::VARCHAR, log_id::VARCHAR,
-                log_message, created_at
+            SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, task_id::VARCHAR, is_task_output,
+                log_id::VARCHAR, log_message, created_at
             FROM agent.work_logs
-            WHERE agent_id = %(agent_id)s AND is_task_output IS FALSE {filters}
+            WHERE agent_id = %(agent_id)s {filters}
             ORDER BY created_at DESC;
         """
         return get_psql().generic_read(sql1, params=params)
