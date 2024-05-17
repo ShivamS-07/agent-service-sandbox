@@ -32,3 +32,28 @@ class GetIndexInput(ToolArgs):
 )
 async def get_element_from_list(args: GetIndexInput, context: PlanRunContext) -> IOType:
     return args.list[args.index]
+
+
+class GetListNInput(ToolArgs):
+    list: List[IOType]
+    n: int
+
+
+@tool(
+    description="Get the first N elements of a list. You must use this instead of the Python indexing ([])",
+    category=ToolCategory.LIST,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_first_n_from_list(args: GetListNInput, context: PlanRunContext) -> IOType:
+    return args.list[: args.n]
+
+
+@tool(
+    description="Get the last N elements of a list. You must use this instead of the Python indexing ([])",
+    category=ToolCategory.LIST,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_last_n_from_list(args: GetListNInput, context: PlanRunContext) -> IOType:
+    return args.list[-args.n :]

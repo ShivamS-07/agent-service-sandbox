@@ -160,6 +160,7 @@ class EarningsSummaryText(Text):
 
 @io_type
 class SummaryText(Text):
+    id: str = ""
     val: str
 
     @classmethod
