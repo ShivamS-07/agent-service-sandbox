@@ -8,7 +8,7 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.lists import CollapseListsInput, collapse_lists
 from agent_service.tools.LLM_analysis import SummarizeTextInput, summarize_texts
-from agent_service.tools.stock_universe import GetStockUniverseInput, get_stock_universe
+from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import get_psql

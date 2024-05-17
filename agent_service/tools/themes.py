@@ -3,7 +3,12 @@ from typing import Dict, List, Tuple
 
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.tool import ToolArgs, ToolCategory, tool
+from agent_service.io_types import (
+    ThemeNewsDevelopmentArticlesText,
+    ThemeNewsDevelopmentText,
+    ThemeText,
+)
+from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
@@ -63,11 +68,13 @@ class GetMacroeconomicThemeInput(ToolArgs):
 
 @tool(
     description="This searches for an existing analysis of a macroeconomic theme and its effects "
-    "on stocks. The search is based on a string reference to the theme. An theme identifier"
+    "on stocks. The search is based on a string reference to the theme. A theme text object"
     " is returned",
     category=ToolCategory.THEME,
 )
-async def get_macroeconomic_theme(args: GetMacroeconomicThemeInput, context: PlanRunContext) -> str:
+async def get_macroeconomic_theme(
+    args: GetMacroeconomicThemeInput, context: PlanRunContext
+) -> ThemeText:
     db = ThemePostgres()
     gpt_context = create_gpt_context(
         GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
@@ -79,14 +86,14 @@ async def get_macroeconomic_theme(args: GetMacroeconomicThemeInput, context: Pla
         NO_PROMPT,
     )
     if result in theme_id_lookup:
-        return theme_id_lookup[result]
+        return ThemeText(id=theme_id_lookup[result])
     else:
         # TODO we should actually throw an error and use it to revise the plan
-        return ""
+        return ThemeText(id="-1")
 
 
 class GetStocksAffectedByThemeInput(ToolArgs):
-    theme_id: str
+    theme: ThemeText
     positive: bool
 
 
@@ -107,7 +114,7 @@ async def get_stocks_affected_by_theme(
         GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=DEFAULT_CHEAP_MODEL)
-    pos_trend, neg_trend = db.get_theme_outlooks(args.theme_id)
+    pos_trend, neg_trend = db.get_theme_outlooks(args.theme.id)
     result = await llm.do_chat_w_sys_prompt(
         OUTLOOK_PROMPT.format(
             chat_context=context.chat.get_gpt_input(), pos_trend=pos_trend, neg_trend=neg_trend
@@ -115,7 +122,7 @@ async def get_stocks_affected_by_theme(
         NO_PROMPT,
     )
     is_neg_trend = result == "2"
-    stock_polarity_lookup = db.get_theme_stock_polarity_lookup(args.theme_id)
+    stock_polarity_lookup = db.get_theme_stock_polarity_lookup(args.theme.id)
     final_stocks: List[int] = []
     for stock, polarity in stock_polarity_lookup.items():
         if is_neg_trend:
@@ -123,6 +130,85 @@ async def get_stocks_affected_by_theme(
         if polarity == args.positive:  # matches the desired polarity
             final_stocks.append(stock)
     return final_stocks
+
+
+class GetThemeDevelopmentNewsInput(ToolArgs):
+    # the theme text object to get the news for
+    theme: ThemeText
+
+
+@tool(
+    description=(
+        "This function takes a theme text object"
+        " and returns the development news for that theme."
+    ),
+    category=ToolCategory.THEME,
+    tool_registry=ToolRegistry,
+)
+async def get_news_developments_about_theme(
+    args: GetThemeDevelopmentNewsInput, context: PlanRunContext
+) -> List[ThemeNewsDevelopmentText]:
+    """
+    This function takes a theme and returns the development news for that theme.
+
+    Args:
+        args (GetThemeDevelopmentNewsInput): The theme to get the news for.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        List[ThemeNewsDevelopmentText]: List of news for the theme.
+    """
+    sql = """
+    SELECT development_id::TEXT
+    FROM nlp_service.theme_developments
+    WHERE theme_id = %s
+    """
+    db = get_psql()
+    rows = db.generic_read(sql, [args.theme.id])
+    development_ids = [row["development_id"] for row in rows]
+    if not development_ids:
+        raise ValueError(f"No developments found for theme {args.theme.id}")
+    return [ThemeNewsDevelopmentText(id=id) for id in development_ids]
+
+
+class GetThemeDevelopmentNewsArticlesInput(ToolArgs):
+    # the theme development news to get the articles for
+    development: ThemeNewsDevelopmentText
+
+
+@tool(
+    description=(
+        "This function takes a theme news development text object"
+        " and returns the news articles text object for that theme news development."
+    ),
+    category=ToolCategory.THEME,
+    tool_registry=ToolRegistry,
+)
+async def get_news_articles_for_theme_developments(
+    args: GetThemeDevelopmentNewsArticlesInput, context: PlanRunContext
+) -> List[ThemeNewsDevelopmentArticlesText]:
+    """
+    This function takes a theme news development text object
+    and returns the article text object for that theme.
+
+    Args:
+        args (GetThemeDevelopmentNewsInput): The theme text object to get the news for.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        ThemeNewsDevelopmentArticlesText: The article text object for the theme news development.
+    """
+    sql = """
+    SELECT news_id::TEXT
+    FROM nlp_service.theme_news
+    WHERE development_id = %s
+    """
+    db = get_psql()
+    rows = db.generic_read(sql, [args.development.id])
+    news_ids = [row["news_id"] for row in rows]
+    if not news_ids:
+        raise ValueError(f"No developments found for theme {args.development.id}")
+    return [ThemeNewsDevelopmentArticlesText(id=id) for id in news_ids]
 
 
 async def main() -> None:
@@ -137,11 +223,11 @@ async def main() -> None:
         chat=chat_context,
         run_tasks_without_prefect=True,
     )
-    theme_id: str = await get_macroeconomic_theme(  # type: ignore
+    theme: ThemeText = await get_macroeconomic_theme(  # type: ignore
         args=GetMacroeconomicThemeInput(theme_ref="recession"), context=plan_context
     )
     stocks = await get_stocks_affected_by_theme(
-        GetStocksAffectedByThemeInput(theme_id=theme_id, positive=False), context=plan_context
+        GetStocksAffectedByThemeInput(theme=theme, positive=False), context=plan_context
     )
     print(stocks)
 

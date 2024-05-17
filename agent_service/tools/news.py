@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 
 from agent_service.external.grpc_utils import timestamp_to_datetime
 from agent_service.external.nlp_svc_client import get_multi_companies_news_topics
-from agent_service.io_types import NewsDevelopmentText
+from agent_service.io_types import StockNewsDevelopmentText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
@@ -29,7 +29,7 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
 )
 async def get_news_developments_about_companies(
     args: GetNewsDevelopmentsAboutCompaniesInput, context: PlanRunContext
-) -> List[List[NewsDevelopmentText]]:
+) -> List[List[StockNewsDevelopmentText]]:
     response = await get_multi_companies_news_topics(
         user_id=context.user_id, gbi_ids=args.stock_ids
     )
@@ -45,7 +45,7 @@ async def get_news_developments_about_companies(
     if not end_date:
         # Add an extra day to be sure we don't miss anything with timezone weirdness
         end_date = get_now_utc().date() + datetime.timedelta(days=1)
-    outputs: List[List[NewsDevelopmentText]] = []
+    outputs: List[List[StockNewsDevelopmentText]] = []
     for gbi_id in args.stock_ids:
         topics = stock_to_topics_map[gbi_id]
         topic_list = []
@@ -55,7 +55,7 @@ async def get_news_developments_about_companies(
                 # Filter topics not in the time window
                 continue
             # Only return ID's
-            topic_list.append(NewsDevelopmentText(id=topic.topic_id.id))
+            topic_list.append(StockNewsDevelopmentText(id=topic.topic_id.id))
         outputs.append(topic_list)
 
     return outputs

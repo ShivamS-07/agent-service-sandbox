@@ -110,9 +110,11 @@ class Text(ComplexIOBase):
 
 
 @io_type
-class NewsDevelopmentText(Text):
+class StockNewsDevelopmentText(Text):
+    id: str
+
     @classmethod
-    def get_strs_lookup(cls, news_topics: List[NewsDevelopmentText]) -> Dict[str, str]:  # type: ignore
+    def get_strs_lookup(cls, news_topics: List[StockNewsDevelopmentText]) -> Dict[str, str]:  # type: ignore
         sql = """
         SELECT topic_id::TEXT, (topic_descriptions->-1->0)::TEXT AS description
         FROM nlp_service.stock_news_topics
@@ -126,6 +128,63 @@ class NewsDevelopmentText(Text):
 
 
 @io_type
+class ThemeText(Text):
+    id: str
+    val: Any = None
+
+    @classmethod
+    def get_strs_lookup(cls, themes: List[ThemeText]) -> Dict[str, str]:  # type: ignore
+        sql = """
+        SELECT theme_id::TEXT, theme_descriptions::TEXT AS description
+        FROM nlp_service.themes
+        WHERE theme_id = ANY(%(theme_id)s)
+        """
+        from agent_service.utils.postgres import get_psql
+
+        db = get_psql()
+        rows = db.generic_read(sql, {"theme_id": [topic.id for topic in themes]})
+        return {row["theme_id"]: row["description"] for row in rows}
+
+
+@io_type
+class ThemeNewsDevelopmentText(Text):
+    id: str
+    val: Any = None
+
+    @classmethod
+    def get_strs_lookup(cls, themes: List[ThemeNewsDevelopmentText]) -> Dict[str, str]:  # type: ignore
+        sql = """
+        SELECT development_id::TEXT, label::TEXT, description::TEXT
+        FROM nlp_service.theme_developments
+        WHERE development_id = ANY(%(development_id)s)
+        """
+        from agent_service.utils.postgres import get_psql
+
+        db = get_psql()
+        rows = db.generic_read(sql, {"development_id": [topic.id for topic in themes]})
+        return {row["development_id"]: row["label"] + "\n" + row["description"] for row in rows}
+
+
+@io_type
+class ThemeNewsDevelopmentArticlesText(Text):
+    id: str
+    val: Any = None
+
+    @classmethod
+    def get_strs_lookup(cls, developments: List[ThemeNewsDevelopmentArticlesText]) -> Dict[str, str]:  # type: ignore
+        sql = """
+        SELECT news_id::TEXT, headline::TEXT, summary::TEXT
+        FROM nlp_service.theme_news
+        WHERE news_id = ANY(%(news_id)s)
+        """
+        from agent_service.utils.postgres import get_psql
+
+        db = get_psql()
+        rows = db.generic_read(sql, {"news_id": [topic.id for topic in developments]})
+        return {row["news_id"]: row["headline"] + "\n" + row["summary"] for row in rows}
+
+
+@io_type
 class EarningsSummaryText(Text):
     @classmethod
     def get_strs_lookup(cls, earnings_summaries: List[EarningsSummaryText]) -> Dict[str, str]:  # type: ignore
@@ -134,7 +193,6 @@ class EarningsSummaryText(Text):
         FROM nlp_service.earnings_call_summaries
         WHERE summary_id = ANY(%(earnings_ids)s)
         """
-
         from agent_service.utils.postgres import get_psql
 
         db = get_psql()

@@ -10,13 +10,13 @@ from agent_service.io_types import SummaryText, Text
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.lists import CollapseListsInput, collapse_lists
-from agent_service.tools.stock_identifier_lookup import (
-    StockIdentifierLookupInput,
-    stock_identifier_lookup,
-)
-from agent_service.tools.stock_news import (
+from agent_service.tools.news import (
     GetNewsDevelopmentsAboutCompaniesInput,
     get_news_developments_about_companies,
+)
+from agent_service.tools.stocks import (
+    StockIdentifierLookupInput,
+    stock_identifier_lookup,
 )
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency

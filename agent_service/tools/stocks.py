@@ -114,3 +114,110 @@ async def convert_stock_identifiers_to_tickers(
     # Map to make sure they're in the same order
     mapping = {row["gbi_id"]: row["symbol"] for row in rows}
     return [mapping[stock_id] for stock_id in args.stock_ids]
+
+
+class StatisticsIdentifierLookupInput(ToolArgs):
+    # name of the statistic to lookup
+    statistic_name: str
+
+
+@tool(
+    description=(
+        "This function takes a string (Churn low, Market Capitalization, Coppock Curve, e.g.)"
+        "which refers to a statistic, and converts it to a string identifier"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def statistic_identifier_lookup(
+    args: StatisticsIdentifierLookupInput, context: PlanRunContext
+) -> str:
+    """Returns the string identifier of a statistic given its name (Churn low, Market Capitalization, e.g.)
+
+    This function performs word similarity name match to find the statistic's identifier.
+
+
+    Args:
+        args (StatisticsIdentifierLookupInput): The input arguments for the statistic lookup.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        str: The integer identifier of the statistic.
+    """
+    db = get_psql()
+    # TODO :
+    # 1. Add more filtering or new column (agent_supported) to table
+    # 2. implement solar solution
+
+    # Word similarity name match
+    sql = """
+    SELECT id FROM public.features feat
+    WHERE feat.data_provider = 'SPIQ'
+    ORDER BY word_similarity(lower(feat.name), lower(%s)) DESC
+    LIMIT 1
+    """
+    rows = db.generic_read(sql, [args.statistic_name])
+    if rows:
+        return rows[0]["id"]
+
+    raise ValueError(f"Could not find the stock {args.statistic_name}")
+
+
+class GetStockUniverseInput(ToolArgs):
+    # name of the universe to lookup
+    universe_name: str
+
+
+@tool(
+    description=(
+        "This function takes a string"
+        "which refers to a stock universe, and converts it to a string identifier "
+        " and returns the list of stock identifiers in the universe."
+        "Stock universes are generally major market indexes like the S&P 500 or the"
+        "Stoxx 600"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContext) -> List[int]:
+    """Returns the list of stock identifiers given a stock universe name.
+
+    Args:
+        args (GetStockUniverseInput): The input arguments for the stock universe lookup.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        list[int]: The list of stock identifiers in the universe.
+    """
+    db = get_psql()
+    # TODO :
+    # add a cache for the stock universe
+    # switch to using GetEtfHoldingsForDate not db
+
+    # Find the universe id/name
+    sql = """
+    SELECT spiq_company_id, name
+    FROM "data".etf_universes
+    WHERE gbi_id IN (
+        SELECT (ingestion_configuration->'benchmark')::INT
+        FROM gbi_stock_universe
+    )
+    ORDER BY word_similarity(lower(name), lower(%s)) DESC
+    LIMIT 1
+    """
+    rows = db.generic_read(sql, [args.universe_name])
+    universe_spiq_company_id = rows[0]["spiq_company_id"]
+    # universe_name = rows[0]["name"]
+
+    # Find the stocks in the universe
+    sql = """
+    SELECT DISTINCT gbi_id
+    FROM "data".etf_universe_holdings
+    WHERE spiq_company_id = %s
+    AND to_z > NOW()
+    """
+    rows = db.generic_read(sql, [universe_spiq_company_id])
+
+    return [row["gbi_id"] for row in rows]

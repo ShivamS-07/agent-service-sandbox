@@ -10,7 +10,7 @@ import pandas as pd
 from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_type_utils import IOType
 from agent_service.io_types import (
-    NewsDevelopmentText,
+    StockNewsDevelopmentText,
     StockTimeSeriesTable,
     SummaryText,
     TimeSeriesLineGraph,
@@ -89,8 +89,8 @@ def get_test_registry() -> Type[ToolRegistry]:
     )
     async def get_news_developments_about_companies(
         args: GetNewsDevelopmentsAboutCompaniesInput, context: PlanRunContext
-    ) -> List[List[NewsDevelopmentText]]:
-        return [[NewsDevelopmentText(id="1")]]
+    ) -> List[List[StockNewsDevelopmentText]]:
+        return [[StockNewsDevelopmentText(id="1")]]
 
     class CollapseListsInput(ToolArgs):
         lists_of_lists: List[List[IOType]]
