@@ -363,7 +363,7 @@ def get_agent_task_output(
             detail=f"No output found for {agent_id=}/{plan_run_id=}/{task_id=}",
         )
 
-    return GetAgentTaskOutputResponse(log_data=load_io_type(rows[0]))
+    return GetAgentTaskOutputResponse(log_data=load_io_type(rows[0]["log_data"]))
 
 
 @router.get(
@@ -384,10 +384,11 @@ def get_agent_output(agent_id: str, user: User = Depends(parse_header)) -> GetAg
         SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, output_id::VARCHAR, is_intermediate,
             "output", created_at
         FROM agent.agent_outputs ao
-        WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
-            AND plan_run_id IN (
-                SELECT plan_run_id FROM agent.agent_outputs ORDER BY created_at LIMIT 1
-            )
+        WHERE plan_run_id IN (
+            SELECT plan_run_id FROM agent.agent_outputs
+            WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
+            ORDER BY created_at LIMIT 1
+        )
         ORDER BY created_at ASC;
     """
     rows = get_psql().generic_read(sql, {"agent_id": agent_id})
