@@ -1,3 +1,4 @@
+from logging import getLogger
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
 from uuid import uuid4
 
@@ -40,6 +41,9 @@ def get_arg_dict(arg_str: str) -> Dict[str, str]:
     return arg_dict
 
 
+logger = getLogger(__name__)
+
+
 class Planner:
     def __init__(
         self,
@@ -62,7 +66,11 @@ class Planner:
 
         steps = self._parse_plan_str(plan_str)
 
-        plan = self._validate_and_construct_plan(steps)
+        try:
+            plan = self._validate_and_construct_plan(steps)
+        except Exception:
+            logger.warning(f"Failed to validate plan with steps: {steps}")
+            raise
 
         return plan
 

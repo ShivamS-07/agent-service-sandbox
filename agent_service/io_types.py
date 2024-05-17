@@ -3,8 +3,10 @@ from __future__ import annotations
 from abc import abstractmethod
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Type, Union
+from uuid import uuid4
 
 import pandas as pd
+from pydantic import Field
 from pydantic.functional_serializers import field_serializer
 from pydantic.functional_validators import field_validator
 
@@ -69,7 +71,7 @@ class TimeSeriesLineGraph(Graph):
 
 @io_type
 class Text(ComplexIOBase):
-    id: str
+    id: str = Field(default_factory=lambda: str(uuid4()))
 
     @classmethod
     def get_all_strs(cls, text: Union[Text, List[Any]]) -> Union[str, List[Any]]:
@@ -109,8 +111,6 @@ class Text(ComplexIOBase):
 
 @io_type
 class NewsDevelopmentText(Text):
-    id: str
-
     @classmethod
     def get_strs_lookup(cls, news_topics: List[NewsDevelopmentText]) -> Dict[str, str]:  # type: ignore
         sql = """
@@ -127,8 +127,6 @@ class NewsDevelopmentText(Text):
 
 @io_type
 class EarningsSummaryText(Text):
-    id: str
-
     @classmethod
     def get_strs_lookup(cls, earnings_summaries: List[EarningsSummaryText]) -> Dict[str, str]:  # type: ignore
         sql = """
@@ -160,7 +158,6 @@ class EarningsSummaryText(Text):
 
 @io_type
 class SummaryText(Text):
-    id: str = ""
     val: str
 
     @classmethod

@@ -201,10 +201,10 @@ def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> boo
         # require doing some nonsense with generics. This is good enough for
         # now, other issues can be discovered at runtime.
         return any((val in params_expected for val in params_actual))
-    elif orig_expected is Union and orig_actual is None:
+    elif orig_expected is Union and orig_actual in (None, list, dict):
         # int is valid if we expect Union[int, str]
         return actual in params_expected or params_expected is IOType
-    elif orig_actual is Union and orig_expected is None:
+    elif orig_actual is Union and orig_expected in (None, list, dict):
         # This technically also is always incorrect, but again without nasty
         # generic stuff we need to just handle it anyway. E.g. Union[str, int]
         # should not type check for just str, but it does now for simplicity.
