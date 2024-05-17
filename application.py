@@ -397,7 +397,12 @@ def get_agent_output(agent_id: str, user: User = Depends(parse_header)) -> GetAg
             status_code=status.HTTP_404_NOT_FOUND, detail=f"No output found for {agent_id=}"
         )
 
-    final_outputs = [row for row in rows if not row["is_intermediate"]]
+    final_outputs = []
+    for row in rows:
+        output = row["output"]
+        row["output"] = load_io_type(output) if output else output
+        if not row["is_intermediate"]:
+            final_outputs.append(row)
     if final_outputs:
         return GetAgentOutputResponse(
             outputs=[AgentOutput(agent_id=agent_id, **row) for row in final_outputs]

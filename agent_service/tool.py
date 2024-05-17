@@ -15,6 +15,7 @@ def my_tool(args: MyToolInput, context: PlanRunContext) -> int:
 import enum
 import functools
 import inspect
+import logging
 from abc import ABC
 from collections import defaultdict
 from dataclasses import dataclass
@@ -41,9 +42,16 @@ from agent_service.io_type_utils import (
     get_clean_type_name,
 )
 from agent_service.types import PlanRunContext
+from agent_service.utils.cache_utils import (
+    DEFAULT_CACHE_TTL,
+    CacheBackend,
+    RedisCacheBackend,
+)
 from agent_service.utils.prefect import get_task_run_name
 
 CacheKeyType = str
+
+logger = logging.getLogger(__name__)
 
 
 class ToolArgs(BaseModel, ABC):
@@ -228,14 +236,21 @@ class ToolRegistry:
         return "\n".join(output)
 
 
+def default_cache_key_func(tool_name: str, args: ToolArgs, _context: PlanRunContext) -> str:
+    args_str = args.model_dump_json()
+    return f"{tool_name}-{args_str}"
+
+
 def tool(
     description: str,
     category: ToolCategory = ToolCategory.MISC,
-    use_cache: bool = True,
-    use_cache_fn: Optional[Callable[[T, PlanRunContext], bool]] = None,  # TODO default
-    cache_key_fn: Optional[Callable[[T, PlanRunContext], CacheKeyType]] = None,  # TODO default
-    retries: int = 0,  # TODO default
-    timeout_seconds: int = 6000,  # TODO default
+    use_cache: bool = False,
+    use_cache_fn: Optional[Callable[[T, PlanRunContext], bool]] = None,
+    cache_key_fn: Callable[[str, T, PlanRunContext], CacheKeyType] = default_cache_key_func,
+    cache_backend: Optional[CacheBackend] = None,
+    cache_ttl: int = DEFAULT_CACHE_TTL,
+    retries: int = 0,
+    timeout_seconds: int = 6000,
     create_prefect_task: bool = True,
     is_visible: bool = True,
     enabled: bool = True,
@@ -254,8 +269,15 @@ def tool(
 
     use_cache_fn: Function of the inputs. If it evaluates to true, tool output is cached.
 
-    cache_key_fn: Function of the inputs. Evaluates to a string cache key to
-      potentially retrieve cached values. If caching is disabled, this is ignored.
+    cache_key_fn: Function of the tool's name and its two inputs. Evaluates to a
+      string cache key to potentially retrieve cached values. If caching is
+      disabled, this is ignored.
+
+    cache_backend: The backend for caching, defaults to redis if None. If caching is
+      disabled, this is ignored.
+
+    cache_ttl: Integer number of seconds for the cached value's TTL. NOTE:
+      if postgres is is used as the cache, this value is NOT USED.
 
     cache_expiration: Timedelta representing amount of time the output should
       exist in the cache.
@@ -315,13 +337,31 @@ def tool(
             # Wrap any logic in another function. This will ensure e.g. caching
             # is executed as part of the prefect task, and not before the task
             # runs.
+            tool_name = func.__name__
+
             async def main_func(args: T, context: PlanRunContext) -> IOType:
                 if (
                     use_cache or (use_cache_fn and use_cache_fn(args, context))
                 ) and not context.skip_task_cache:
-                    # TODO: HANDLE CACHING
+                    new_val = None
+                    try:
+                        cache_client = cache_backend if cache_backend else RedisCacheBackend()
+                        key = cache_key_fn(tool_name, args, context)
+                        cached_val = await cache_client.get(key)
+                        if cached_val:
+                            return cached_val
+
+                        new_val = await func(args, context)
+                        await cache_client.set(key=key, val=new_val, ttl=cache_ttl)
+                        return new_val
+                    except Exception:
+                        logger.exception(f"Cache check failed for {(tool_name, args, context)}")
+                        if new_val is not None:
+                            return new_val
+                        return await func(args, context)
+                else:
+                    # Caching not enabled
                     return await func(args, context)
-                return await func(args, context)
 
             if create_prefect_task and not context.run_tasks_without_prefect:
                 # Create a prefect task that wraps the function with its caching
@@ -330,7 +370,7 @@ def tool(
                 if not is_visible:
                     tags = ["hidden", "minitool"]
                 task = Task(
-                    name=func.__name__,
+                    name=tool_name,
                     task_run_name=get_task_run_name(ctx=context),
                     fn=main_func,
                     description=description,

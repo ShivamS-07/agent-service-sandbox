@@ -25,7 +25,6 @@ disable_error_code = ["import-untyped"]
 [[tool.mypy.overrides]]
 module = [
     "tasks",
-    "setup",
     "tests.*",
 ]
 ignore_errors = true

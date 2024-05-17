@@ -4,7 +4,8 @@ from functools import lru_cache
 from typing import Any, Dict, Optional
 
 import jwt
-from fastapi import Header, HTTPException, status
+from fastapi import HTTPException, Security, status
+from fastapi.security.api_key import APIKeyHeader
 from gbi_common_py_utils.utils.ssm import get_param
 
 from agent_service.utils.environment import EnvironmentUtils
@@ -102,7 +103,7 @@ def extract_user_from_jwt(auth_token: str) -> Optional[User]:
         return None
 
 
-def parse_header(auth_token: Optional[str] = Header(None, alias="Authorization")) -> User:
+def parse_header(auth_token: Optional[str] = Security(APIKeyHeader(name="Authorization"))) -> User:
     if not auth_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing JWT token in header"
