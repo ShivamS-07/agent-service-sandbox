@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from collections import defaultdict
-from typing import Any, Dict, List, Type, Union
+from typing import Any, Callable, Dict, List, Type, Union
 
 import pandas as pd
+from pydantic.functional_serializers import field_serializer
+from pydantic.functional_validators import field_validator
 
 from agent_service.io_type_utils import ComplexIOBase, io_type
 
@@ -16,6 +18,21 @@ class Table(ComplexIOBase):
 
     def to_gpt_input(self) -> str:
         return f"[Table with {self.val.shape[0]} rows and {self.val.shape[0]} columns]"
+
+    @field_validator("val", mode="before")
+    @classmethod
+    def _deserializer(cls, val: Any) -> Any:
+        val_field = cls.model_fields["val"]
+        if isinstance(val, dict) and val_field.annotation is pd.DataFrame:
+            val = pd.DataFrame.from_dict(val)
+        return val
+
+    @field_serializer("val", mode="wrap")
+    @classmethod
+    def _field_serializer(cls, val: Any, dumper: Callable) -> Any:
+        if isinstance(val, pd.DataFrame):
+            val = val.to_dict()
+        return dumper(val)
 
 
 @io_type
@@ -93,7 +110,6 @@ class Text(ComplexIOBase):
 @io_type
 class NewsDevelopmentText(Text):
     id: str
-    val: Any = None
 
     @classmethod
     def get_strs_lookup(cls, news_topics: List[NewsDevelopmentText]) -> Dict[str, str]:  # type: ignore
@@ -112,7 +128,6 @@ class NewsDevelopmentText(Text):
 @io_type
 class EarningsSummaryText(Text):
     id: str
-    val: Any = None
 
     @classmethod
     def get_strs_lookup(cls, earnings_summaries: List[EarningsSummaryText]) -> Dict[str, str]:  # type: ignore

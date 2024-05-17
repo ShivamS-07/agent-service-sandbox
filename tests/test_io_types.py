@@ -6,61 +6,57 @@ import pandas as pd
 from agent_service.io_type_utils import (
     ComplexIOBase,
     IOType,
-    IOTypeAdapter,
     check_type_is_io_type,
     check_type_is_valid,
+    dump_io_type,
     io_type,
+    load_io_type,
 )
 from agent_service.io_types import StockTable, StockTimeSeriesTable
 from agent_service.types import ChatContext, Message
 
 
 @io_type
+class TestComplex1(ComplexIOBase):
+    val: int
+    another: str = "3"
+
+
+@io_type
 class TestComplexType(ComplexIOBase):
     val: int
+    another: str = "3"
+    x: TestComplex1 = TestComplex1(val=2)
 
 
 class TestIOType(unittest.TestCase):
     def test_collection_serialization(self):
         table = TestComplexType(val=2)
         cases = [
-            [[1, 2, 3], [4, 5, 6], ["a", 1, True], table],
-            {"1": 2, "a": "b"},
-            {"1": [1, 2, 3, "a", True], "2": [2.4]},
             # Super nested!
             {
                 "1": {"1": {"1": [1, 2, 3, "a", True], "2": [2.4]}, "2": [2.4]},
                 "2": [[1, 2, 3], [4, 5, 6], ["a", 1, True]],
                 "3": table,
             },
+            [[1, 2, 3], [4, 5, 6], ["a", 1, True], table],
+            {"1": 2, "a": "b"},
+            {"1": [1, 2, 3, "a", True], "2": [2.4]},
         ]
 
         for arg in cases:
-            res = IOTypeAdapter.dump_python(arg)
-            loaded = IOTypeAdapter.validate_python(res)
-            self.assertEqual(type(loaded), type(arg))
-            self.assertEqual(loaded, arg)
-
-            res_j = IOTypeAdapter.dump_json(arg)
-            loaded = IOTypeAdapter.validate_json(res_j)
+            res = dump_io_type(arg)
+            loaded = load_io_type(res)
             self.assertEqual(type(loaded), type(arg))
             self.assertEqual(loaded, arg)
 
     def test_dataframe_serialization(self):
         df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], index=["a", "b"], columns=["x", "y", "z"])
 
-        cases = [StockTimeSeriesTable(val=df), StockTable(val=df), [StockTable(val=df), 1]]
+        cases = [[StockTable(val=df), 1], StockTimeSeriesTable(val=df), StockTable(val=df)]
         for arg in cases:
-            res = IOTypeAdapter.dump_python(arg)
-            loaded = IOTypeAdapter.validate_python(res)
-            self.assertEqual(type(loaded), type(arg))
-            if isinstance(arg, list):
-                pd.testing.assert_frame_equal(loaded[0].val, arg[0].val)
-            else:
-                pd.testing.assert_frame_equal(loaded.val, arg.val)  # type: ignore
-
-            res_j = IOTypeAdapter.dump_json(arg)
-            loaded = IOTypeAdapter.validate_json(res_j)
+            res = dump_io_type(arg)
+            loaded = load_io_type(res)
             self.assertEqual(type(loaded), type(arg))
             if isinstance(arg, list):
                 pd.testing.assert_frame_equal(loaded[0].val, arg[0].val)

@@ -14,13 +14,12 @@ from typing import (
     get_origin,
 )
 
-import pandas as pd
-from pydantic import BaseModel, TypeAdapter, field_validator
+from pydantic import BaseModel, TypeAdapter
 from pydantic.config import ConfigDict
-from pydantic.functional_serializers import field_serializer, model_serializer
-from pydantic.functional_validators import model_validator
+from pydantic.functional_serializers import WrapSerializer, model_serializer
+from pydantic.functional_validators import PlainValidator, model_validator
 from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandler
-from typing_extensions import TypeAliasType
+from typing_extensions import Annotated, TypeAliasType
 
 SimpleType = Union[int, str, bool, float]
 
@@ -43,32 +42,12 @@ class ComplexIOBase(BaseModel, ABC):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    val: Any
-
     def to_gpt_input(self) -> str:
-        return str(self.val)
-
-    def __str__(self) -> str:
-        return self.to_gpt_input()
+        return str(self.__class__)
 
     @classmethod
     def name(cls) -> str:
         return cls.__name__
-
-    @field_validator("val", mode="before")
-    @classmethod
-    def _deserializer(cls, val: Any) -> Any:
-        val_field = cls.model_fields["val"]
-        if isinstance(val, dict) and val_field.annotation is pd.DataFrame:
-            val = pd.DataFrame.from_dict(val)
-        return val
-
-    @field_serializer("val", mode="wrap")
-    @classmethod
-    def _field_serializer(cls, val: Any, dumper: Callable) -> Any:
-        if isinstance(val, pd.DataFrame):
-            val = val.to_dict()
-        return dumper(val)
 
     @model_serializer(mode="wrap")
     def _serialize_io_base(self, dumper: Callable) -> Any:
@@ -109,30 +88,59 @@ class ComplexIOBase(BaseModel, ABC):
 
 _COMPLEX_TYPE_DICT: Dict[str, Type[ComplexIOBase]] = {}
 
-IOType = TypeAliasType(  # type: ignore[misc]
+IOTypeBase = TypeAliasType(  # type: ignore
+    "IOTypeBase",
+    Union[PrimitiveType, List["IOTypeBase"], ComplexIOBase, "IOTypeDict"],  # type: ignore
+)
+IOType = TypeAliasType(  # type: ignore
     "IOType",
-    Union[PrimitiveType, List["IOType"], ComplexIOBase, "IOTypeDict"],  # type: ignore[misc]
+    Annotated[
+        IOTypeBase,
+        PlainValidator(lambda v: _load_io_type_helper(v)),
+        WrapSerializer(lambda v, _: _dump_io_type_helper(v)),
+    ],
 )
 # Need to do this due to limits of mypy and pydantic.
-IOTypeDict = Union[  # type: ignore[misc]
-    Dict[str, IOType],
-    Dict[bool, IOType],
-    Dict[float, IOType],
-    Dict[int, IOType],
-    Dict[SimpleType, IOType],
+IOTypeDict = Union[  # type: ignore
+    Dict[str, IOTypeBase],
+    Dict[bool, IOTypeBase],
+    Dict[float, IOTypeBase],
+    Dict[int, IOTypeBase],
+    Dict[SimpleType, IOTypeBase],
 ]
 
 # A type adapter is a pydantic object used to dump and load objects that are not
 # necessarily basemodels.
-IOTypeAdapter = TypeAdapter(IOType)
+IOTypeAdapter = TypeAdapter(IOTypeBase)
+
+
+def _dump_io_type_helper(val: IOTypeBase) -> Any:
+    if isinstance(val, ComplexIOBase):
+        return val.model_dump(mode="json")
+    if isinstance(val, list):
+        return [_dump_io_type_helper(elem) for elem in val]
+    if isinstance(val, dict):
+        return {k: _dump_io_type_helper(v) for k, v in val.items()}
+    return IOTypeAdapter.dump_python(val, mode="json")
+
+
+def _load_io_type_helper(val: Any) -> IOTypeBase:
+    if isinstance(val, dict) and IO_TYPE_NAME_KEY in val:
+        return ComplexIOBase.load(val)
+    if isinstance(val, list):
+        return [_load_io_type_helper(elem) for elem in val]
+    if isinstance(val, dict):
+        return {k: _load_io_type_helper(v) for k, v in val.items()}
+    return IOTypeAdapter.validate_python(val)
 
 
 def dump_io_type(val: IOType) -> str:
-    return json.dumps(IOTypeAdapter.dump_python(val, mode="json"))
+    return json.dumps(_dump_io_type_helper(val))
 
 
 def load_io_type(val: str) -> IOType:
-    return IOTypeAdapter.validate_json(val)
+    loaded = json.loads(val)
+    return _load_io_type_helper(loaded)
 
 
 def get_clean_type_name(typ: Optional[Type]) -> str:
