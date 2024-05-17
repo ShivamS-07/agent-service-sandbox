@@ -72,11 +72,12 @@ async def get_agent_hierarchical_worklogs(
     run_history: List[PlanRun] = []
     for plan_id, plan_run_ids in plan_id_to_plan_run_ids.items():
         logger.info(f"Processing {plan_id=}, found {len(plan_run_ids)} runs...")
+        plan_nodes = plan_id_to_plan[plan_id].nodes
 
         for plan_run_id in plan_run_ids:
             prefect_flow_run = plan_run_id_to_status.get(plan_run_id, None)
             if prefect_flow_run is None:
-                plan_run_status = Status.COMPLETE
+                plan_run_status = Status.NOT_STARTED
                 plan_run_start = None
                 plan_run_end = None
             else:
@@ -85,32 +86,32 @@ async def get_agent_hierarchical_worklogs(
                 plan_run_end = prefect_flow_run.end_time
 
             # we want each run to have the full list of tasks with different statuses
-            not_started_tasks: List[PlanRunTask] = []
-            started_tasks: List[PlanRunTask] = []
-            for node in plan_id_to_plan[plan_id].nodes:
+            incomplete_tasks: List[PlanRunTask] = []
+            complete_tasks: List[PlanRunTask] = []
+            for node in plan_nodes:
                 task_id = node.tool_task_id
-                if task_id not in task_id_to_task_output and task_id not in task_id_to_logs:
-                    not_started_tasks.append(
-                        PlanRunTask(
-                            task_id=task_id,
-                            task_name=node.description,
-                            status=Status.NOT_STARTED,
-                            start_time=None,
-                            end_time=None,
-                            logs=[],
-                        )
-                    )
-                    continue
-
                 prefect_task_run = run_task_pair_to_status.get((plan_run_id, task_id), None)
                 if prefect_task_run is None:
-                    task_status = Status.COMPLETE  # for now we assume it's complete
+                    task_status = Status.NOT_STARTED
                     task_start = None
                     task_end = None
                 else:
                     task_status = Status.from_prefect_state(prefect_task_run.state_type)
                     task_start = prefect_task_run.start_time
                     task_end = prefect_task_run.end_time
+
+                if task_id not in task_id_to_task_output and task_id not in task_id_to_logs:
+                    incomplete_tasks.append(
+                        PlanRunTask(
+                            task_id=task_id,
+                            task_name=node.description,
+                            status=task_status,
+                            start_time=task_start,
+                            end_time=task_end,
+                            logs=[],
+                        )
+                    )
+                    continue
 
                 if task_id in task_id_to_logs:  # this is a task that has logs
                     logs = task_id_to_logs[task_id]
@@ -133,10 +134,10 @@ async def get_agent_hierarchical_worklogs(
                         end_time=task_end or log_time,
                         logs=[],
                     )
-                started_tasks.append(task)
+                complete_tasks.append(task)
 
             full_tasks: List[PlanRunTask] = (
-                sorted(started_tasks, key=lambda x: x.start_time) + not_started_tasks  # type: ignore # noqa
+                sorted(complete_tasks, key=lambda x: x.start_time) + incomplete_tasks  # type: ignore # noqa
             )
 
             # reset plan status if any task is not COMPLETE
