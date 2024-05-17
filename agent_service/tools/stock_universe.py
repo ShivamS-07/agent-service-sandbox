@@ -38,7 +38,7 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
 
     # Find the universe id/name
     sql = """
-    SELECT id, name
+    SELECT spiq_company_id, name
     FROM "data".etf_universes
     WHERE gbi_id IN (
         SELECT (ingestion_configuration->'benchmark')::INT
@@ -48,16 +48,16 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
     LIMIT 1
     """
     rows = db.generic_read(sql, [args.universe_name])
-    universe_id = rows[0]["id"]
+    universe_spiq_company_id = rows[0]["spiq_company_id"]
     # universe_name = rows[0]["name"]
 
     # Find the stocks in the universe
     sql = """
     SELECT DISTINCT gbi_id
     FROM "data".etf_universe_holdings
-    WHERE etf_id = %s
+    WHERE spiq_company_id = %s
     AND to_z > NOW()
     """
-    rows = db.generic_read(sql, [universe_id])
+    rows = db.generic_read(sql, [universe_spiq_company_id])
 
     return [row["gbi_id"] for row in rows]

@@ -14,3 +14,8 @@ class TestStockUniverse(IsolatedAsyncioTestCase):
         self.args = GetStockUniverseInput(universe_name="S&P 500")
         result = await get_stock_universe(self.args, self.context)
         self.assertEqual(len(result), 503)
+
+    async def test_get_stock_universe_tsx(self):
+        self.args = GetStockUniverseInput(universe_name="TSX")
+        result = await get_stock_universe(self.args, self.context)
+        self.assertEqual(len(result), 60)
