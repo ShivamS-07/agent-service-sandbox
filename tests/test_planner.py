@@ -26,6 +26,7 @@ from agent_service.planner.planner_types import (
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.utils.logs import init_stdout_logging
 
 
 def get_test_registry() -> Type[ToolRegistry]:
@@ -472,6 +473,8 @@ class TestPlans(IsolatedAsyncioTestCase):
             category=DeprecationWarning,
             message="The loop argument is deprecated since Python 3.8, and scheduled for removal in Python 3.10",  # noqa
         )
+
+        init_stdout_logging()
 
     def setUp(self) -> None:
         self.tool_registry = get_test_registry()

@@ -10,6 +10,7 @@ from httpx import Response
 
 from agent_service.endpoints.authz_helper import User
 from agent_service.utils.environment import EnvironmentUtils
+from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
 from application import application
 
@@ -24,14 +25,10 @@ logger = logging.getLogger(__name__)
 OK_CODES = (200, 201, 202, 204)
 
 
-@unittest.skip("Hangs forever, perhaps due to some async issue")
 class TestAgentService(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        )
+        init_stdout_logging()
 
         cls.header = {"Authorization": "test token"}
 
@@ -52,15 +49,11 @@ class TestAgentService(unittest.TestCase):
         self.extract_user_patch = patch(
             "agent_service.endpoints.authz_helper.extract_user_from_jwt"
         ).start()
-        self.prefect_patch = patch(
-            "agent_service.utils.prefect.prefect_create_execution_plan"
-        ).start()
         self.extract_user_patch.return_value = ""
         self.extract_user_patch.start()
 
     def tearDown(self) -> None:
         self.extract_user_patch.stop()
-        self.prefect_patch.stop()
         for active_patch in self.patches:
             active_patch.stop()
         self.pg.close()
@@ -119,10 +112,24 @@ class TestAgentService(unittest.TestCase):
     ############################################################################
     # Tests
     ############################################################################
-    @patch("agent_service.chatbot.chatbot.Chatbot", autospec=True)
-    def test_create_get_update_delete_agent(self, MockChatBot: MagicMock) -> None:
+    @patch("application.prefect_create_execution_plan", autospec=True)
+    @patch("application.Chatbot", autospec=True)
+    def test_create_get_update_delete_agent(
+        self, MockChatBot: MagicMock, mock_planner: MagicMock
+    ) -> None:
         mock_chatbot = MockChatBot.return_value
-        mock_chatbot.generate_initial_preplan_response.return_value = MOCK_PREPLAN_GPT_RESPONSE
+
+        async def generate_initial_preplan_response(chat_context):
+            return MOCK_PREPLAN_GPT_RESPONSE
+
+        mock_chatbot.generate_initial_preplan_response.side_effect = (
+            generate_initial_preplan_response
+        )
+
+        async def prefect_create_execution_plan(*args, **kwargs):
+            return None
+
+        mock_planner.side_effect = prefect_create_execution_plan
 
         user = self.create_random_user()
 
@@ -161,10 +168,22 @@ class TestAgentService(unittest.TestCase):
         resp6 = self.get(user, "/api/agent/get-all-agents")
         self.assertEqual(len(resp6.json()["agents"]), 0)
 
+    @patch("application.prefect_create_execution_plan", autospec=True)
     @patch("application.Chatbot", autospec=True)
-    def test_chat_with_agent(self, MockChatBot: MagicMock) -> None:
+    def test_chat_with_agent(self, MockChatBot: MagicMock, mock_planner: MagicMock) -> None:
         mock_chatbot = MockChatBot.return_value
-        mock_chatbot.generate_initial_preplan_response.return_value = MOCK_PREPLAN_GPT_RESPONSE
+
+        async def generate_initial_preplan_response(chat_context):
+            return MOCK_PREPLAN_GPT_RESPONSE
+
+        mock_chatbot.generate_initial_preplan_response.side_effect = (
+            generate_initial_preplan_response
+        )
+
+        async def prefect_create_execution_plan(*args, **kwargs):
+            return None
+
+        mock_planner.side_effect = prefect_create_execution_plan
 
         user = self.create_random_user()
 

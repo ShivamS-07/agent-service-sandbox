@@ -9,6 +9,7 @@ from agent_service.planner.planner_types import (
     Variable,
 )
 from agent_service.types import ChatContext, Message
+from agent_service.utils.logs import init_stdout_logging
 
 
 class TestPlans(IsolatedAsyncioTestCase):
@@ -25,6 +26,8 @@ class TestPlans(IsolatedAsyncioTestCase):
             category=DeprecationWarning,
             message="The loop argument is deprecated since Python 3.8, and scheduled for removal in Python 3.10",  # noqa
         )
+
+        init_stdout_logging()
 
     @unittest.skip("Takes too long to run")
     async def test_initial_chat(self) -> None:
