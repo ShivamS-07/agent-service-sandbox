@@ -6,7 +6,7 @@ import os
 import traceback
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
@@ -77,7 +77,7 @@ def set_use_global_stub(val: bool) -> None:
     USE_GLOBAL_STUB = val
 
 
-def _get_gpt_service_stub() -> GPTServiceStub:
+def _get_gpt_service_stub() -> Tuple[GPTServiceStub, Channel]:
     global STUB
     if STUB and use_global_stub():
         return STUB
@@ -85,7 +85,7 @@ def _get_gpt_service_stub() -> GPTServiceStub:
     host, port = url.split(":")
     channel = Channel(host=host, port=int(port))
     STUB = GPTServiceStub(channel)
-    return STUB
+    return STUB, channel
 
 
 async def query_gpt_worker(
@@ -161,6 +161,7 @@ async def _query_gpt_worker(
     client_timestamp: Optional[str] = None,
     no_cache: bool = False,
 ) -> str:
+
     if not client_timestamp:
         client_timestamp = datetime.utcnow().isoformat()
     priority = DEFAULT_PRIORITY
@@ -187,7 +188,7 @@ async def _query_gpt_worker(
         request_priority=f"GPT_SVC_PRIORITY_{priority}",
         extra_params=extra_params,
     )
-    stub = _get_gpt_service_stub()
+
     metadata = [
         ("clienttimestamp", client_timestamp),
         ("clientname", CLIENT_NAME),
@@ -197,11 +198,19 @@ async def _query_gpt_worker(
 
     if no_cache or os.environ.get("NO_GPT_CACHE", "0") == "1":
         metadata.append(("nocache", "true"))
+
+    stub, channel = _get_gpt_service_stub()
     result: QueryGPTResponse = await stub.QueryGPT(
         request, timeout=MAX_GPT_WORKER_TIMEOUT, metadata=metadata
     )
+
+    if not use_global_stub():
+        # explicitly close the channel after each call during unittests
+        channel.close()
+
     if result.status.code != 0:
         raise RuntimeError(f"Error response from GPT service: {result.status.message}")
+
     return result.response
 
 

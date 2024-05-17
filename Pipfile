@@ -37,6 +37,7 @@ dateparser = {version = "~=1.2.0", index = "pypi"}
 # External services
 gpt-service-proto-v1 = {version = "==1.4.0", index = "gbi"}
 nlp_service_proto_v1 = {version = "==1.125.0", index = "gbi"}
+stock-universe-service-proto-v1 = {version = "==0.37.0", index = "gbi"}
 
 [requires]
 python_version = "3.8"

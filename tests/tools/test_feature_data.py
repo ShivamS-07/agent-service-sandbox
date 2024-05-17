@@ -15,7 +15,7 @@ MSFT = 6963
 CLOSE_PRICE = "spiq_close"
 
 
-class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
+class TestFeatureDataLookup(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
 
