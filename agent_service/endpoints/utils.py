@@ -73,10 +73,6 @@ async def get_agent_hierarchical_worklogs(
     for plan_id, plan_run_ids in plan_id_to_plan_run_ids.items():
         logger.info(f"Processing {plan_id=}, found {len(plan_run_ids)} runs...")
 
-        # get plan nodes for tasks' names
-        plan_nodes = plan_id_to_plan[plan_id].nodes
-        task_id_to_node = {node.tool_task_id: node for node in plan_nodes}
-
         for plan_run_id in plan_run_ids:
             prefect_flow_run = plan_run_id_to_status.get(plan_run_id, None)
             if prefect_flow_run is None:
@@ -88,9 +84,24 @@ async def get_agent_hierarchical_worklogs(
                 plan_run_start = prefect_flow_run.start_time
                 plan_run_end = prefect_flow_run.end_time
 
-            # Gather all tasks under this plan run
-            tasks: List[PlanRunTask] = []
-            for task_id in plan_run_id_to_task_ids[plan_run_id]:
+            # we want each run to have the full list of tasks with different statuses
+            not_started_tasks: List[PlanRunTask] = []
+            started_tasks: List[PlanRunTask] = []
+            for node in plan_id_to_plan[plan_id].nodes:
+                task_id = node.tool_task_id
+                if task_id not in task_id_to_task_output and task_id not in task_id_to_logs:
+                    not_started_tasks.append(
+                        PlanRunTask(
+                            task_id=task_id,
+                            task_name=node.description,
+                            status=Status.NOT_STARTED,
+                            start_time=None,
+                            end_time=None,
+                            logs=[],
+                        )
+                    )
+                    continue
+
                 prefect_task_run = run_task_pair_to_status.get((plan_run_id, task_id), None)
                 if prefect_task_run is None:
                     task_status = Status.COMPLETE  # for now we assume it's complete
@@ -106,7 +117,7 @@ async def get_agent_hierarchical_worklogs(
                     logs.sort(key=lambda x: x.created_at)
                     task = PlanRunTask(
                         task_id=task_id,
-                        task_name=task_id_to_node[task_id].description,
+                        task_name=node.description,
                         status=task_status,
                         start_time=task_start or logs[0].created_at,
                         end_time=task_end or logs[-1].created_at,
@@ -116,22 +127,24 @@ async def get_agent_hierarchical_worklogs(
                     log_time = task_id_to_task_output[task_id]["created_at"]
                     task = PlanRunTask(
                         task_id=task_id,
-                        task_name=task_id_to_node[task_id].description,
+                        task_name=node.description,
                         status=task_status,
                         start_time=task_start or log_time,
                         end_time=task_end or log_time,
                         logs=[],
                     )
-                tasks.append(task)
+                started_tasks.append(task)
 
-            tasks.sort(key=lambda x: x.start_time)
+            full_tasks: List[PlanRunTask] = (
+                sorted(started_tasks, key=lambda x: x.start_time) + not_started_tasks  # type: ignore # noqa
+            )
 
             # reset plan status if any task is not COMPLETE
-            if any(task.status == Status.ERROR for task in tasks):
+            if any(task.status == Status.ERROR for task in full_tasks):
                 plan_run_status = Status.ERROR
-            elif any(task.status == Status.CANCELLED for task in tasks):
+            elif any(task.status == Status.CANCELLED for task in full_tasks):
                 plan_run_status = Status.CANCELLED
-            elif any(task.status == Status.RUNNING for task in tasks):
+            elif any(task.status == Status.RUNNING for task in full_tasks):
                 plan_run_status = Status.RUNNING
 
             run_history.append(
@@ -139,11 +152,12 @@ async def get_agent_hierarchical_worklogs(
                     plan_id=plan_id,
                     plan_run_id=plan_run_id,
                     status=plan_run_status,
-                    start_time=plan_run_start or tasks[0].start_time,
-                    end_time=plan_run_end or tasks[-1].end_time,
-                    tasks=tasks,
+                    start_time=plan_run_start or full_tasks[0].start_time,  # type: ignore # noqa
+                    end_time=plan_run_end or full_tasks[-1].end_time,
+                    tasks=full_tasks,
                 )
             )
+
     if most_recent_num_runs:
         # if it errors here it means the db query is wrong
         error_msg = f"Got {len(run_history)} runs than required {most_recent_num_runs=}"
