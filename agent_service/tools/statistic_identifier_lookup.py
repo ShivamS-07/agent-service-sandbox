@@ -15,6 +15,7 @@ class StatisticsIdentifierLookupInput(ToolArgs):
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
+    is_visible=False,
 )
 async def statistic_identifier_lookup(
     args: StatisticsIdentifierLookupInput, context: PlanRunContext

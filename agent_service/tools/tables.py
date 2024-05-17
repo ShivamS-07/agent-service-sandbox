@@ -40,6 +40,7 @@ class ConcatTimeseriesInput(ToolArgs):
     ),
     category=ToolCategory.TABLE,
     tool_registry=ToolRegistry,
+    is_visible=False,
 )
 async def concat_time_series_tables(
     args: ConcatTimeseriesInput, context: PlanRunContext

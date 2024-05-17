@@ -17,6 +17,7 @@ class StockIdentifierLookupInput(ToolArgs):
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
+    is_visible=False,
 )
 async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: PlanRunContext) -> int:
     """Returns the integer identifier of a stock given its name or symbol (microsoft, apple, AAPL, TESLA, META, e.g.).

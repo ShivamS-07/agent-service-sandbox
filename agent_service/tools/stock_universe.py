@@ -20,6 +20,7 @@ class GetStockUniverseInput(ToolArgs):
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
+    is_visible=False,
 )
 async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContext) -> List[int]:
     """Returns the list of stock identifiers given a stock universe name.
