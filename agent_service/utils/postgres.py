@@ -246,7 +246,7 @@ class Postgres(PostgresBase):
         WHERE plan_run_id IN (
             SELECT plan_run_id FROM agent.agent_outputs
             WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
-            ORDER BY created_at LIMIT 1
+            ORDER BY created_at DESC LIMIT 1
         )
         ORDER BY created_at ASC;
         """
