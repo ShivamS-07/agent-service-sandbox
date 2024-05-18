@@ -1,12 +1,11 @@
 import asyncio
 from collections import defaultdict
 from typing import Dict, List, Tuple
-from uuid import uuid4
 
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL, FILTER_CONCURRENCY
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import IOType
-from agent_service.io_types import SummaryText, Text
+from agent_service.io_types import Text
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.lists import CollapseListsInput, collapse_lists
@@ -65,10 +64,10 @@ class SummarizeTextInput(ToolArgs):
     ),
     category=ToolCategory.LLM_ANALYSIS,
 )
-async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> SummaryText:
+async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> Text:
     if context.chat is None:
         # just for mypy, shouldn't happen
-        return SummaryText(id=str(uuid4()), val="")
+        return Text(val="")
     # TODO we need guardrails on this
     gpt_context = create_gpt_context(
         GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
@@ -81,7 +80,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         ),
         SUMMARIZE_SYS_PROMPT.format(),
     )
-    return SummaryText(id=str(uuid4()), val=result)
+    return Text(val=result)
 
 
 async def topic_filter_helper(

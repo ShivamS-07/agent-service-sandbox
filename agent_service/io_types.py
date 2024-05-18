@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from abc import abstractmethod
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Type, Union
 from uuid import uuid4
@@ -69,9 +68,13 @@ class TimeSeriesLineGraph(Graph):
     pass
 
 
+TextIDType = Union[str, int]
+
+
 @io_type
 class Text(ComplexIOBase):
-    id: str = Field(default_factory=lambda: str(uuid4()))
+    id: TextIDType = Field(default_factory=lambda: str(uuid4()))
+    val: str = ""
 
     @classmethod
     def get_all_strs(cls, text: Union[Text, List[Any]]) -> Union[str, List[Any]]:
@@ -80,33 +83,53 @@ class Text(ComplexIOBase):
 
         def convert_to_ids_and_categorize(
             text: Union[Text, List[Any]], categories: Dict[Type[Text], List[Text]]
-        ) -> Union[str, List[Any]]:
+        ) -> Union[TextIDType, List[Any]]:
+            """
+            Convert a structure of texts (e.g. nested lists, etc.) into an
+            identical structure of text ID's, while also keeping track of all
+            texts of each type.
+            """
             if not isinstance(text, list):
                 categories[type(text)].append(text)
                 return text.id
             else:
                 return [convert_to_ids_and_categorize(sub_text, categories) for sub_text in text]
 
-        categories: Dict[Type, List[Text]] = defaultdict(list)
-        id_rep = convert_to_ids_and_categorize(text, categories)
+        categories: Dict[Type[Text], List[Text]] = defaultdict(list)
+        # identical structure to input texts, but as IDs
+        texts_as_ids = convert_to_ids_and_categorize(text, categories)
         strs_lookup = {}
+        # For every subclass of Text, fetch data
         for textclass, texts in categories.items():
             strs_lookup.update(textclass.get_strs_lookup(texts))
 
         def convert_ids_to_strs(
-            strs_lookup: Dict[str, str], id_rep: Union[str, List[Any]]
+            strs_lookup: Dict[TextIDType, str], id_rep: Union[TextIDType, List[Any]]
         ) -> Union[str, List[Any]]:
-            if isinstance(id_rep, str):
-                return strs_lookup[id_rep]
-            else:
+            """
+            Take the structure of ID lists, and map back into actual strings.
+            """
+            if isinstance(id_rep, list):
                 return [convert_ids_to_strs(strs_lookup, sub_id_rep) for sub_id_rep in id_rep]
+            else:
+                return strs_lookup[id_rep]
 
-        return convert_ids_to_strs(strs_lookup, id_rep)
+        return convert_ids_to_strs(strs_lookup, texts_as_ids)
 
     @classmethod
-    @abstractmethod
-    def get_strs_lookup(cls, texts: List[Text]) -> Dict[str, str]:
-        pass
+    def get_strs_lookup(cls, texts: List[Text]) -> Dict[TextIDType, str]:
+        return {text.id: text.val for text in texts}
+
+    def get(self) -> Text:
+        """
+        For an instance of a 'Text' subclass, resolve and return it as a standard Text object.
+        """
+        if not self.val:
+            # resolve the text if necessary
+            lookup = self.get_strs_lookup([self])
+            return Text(val=lookup[self.id])
+        else:
+            return Text(val=self.val)
 
 
 @io_type
@@ -114,7 +137,7 @@ class StockNewsDevelopmentText(Text):
     id: str
 
     @classmethod
-    def get_strs_lookup(cls, news_topics: List[StockNewsDevelopmentText]) -> Dict[str, str]:  # type: ignore
+    def get_strs_lookup(cls, news_topics: List[StockNewsDevelopmentText]) -> Dict[TextIDType, str]:  # type: ignore
         sql = """
         SELECT topic_id::TEXT, (topic_descriptions->-1->0)::TEXT AS description
         FROM nlp_service.stock_news_topics
@@ -187,7 +210,9 @@ class ThemeNewsDevelopmentArticlesText(Text):
 @io_type
 class EarningsSummaryText(Text):
     @classmethod
-    def get_strs_lookup(cls, earnings_summaries: List[EarningsSummaryText]) -> Dict[str, str]:  # type: ignore
+    def get_strs_lookup(
+        cls, earnings_summaries: List[EarningsSummaryText]  # type: ignore
+    ) -> Dict[TextIDType, str]:
         sql = """
         SELECT summary_id::TEXT, summary
         FROM nlp_service.earnings_call_summaries
@@ -215,9 +240,22 @@ class EarningsSummaryText(Text):
 
 
 @io_type
-class SummaryText(Text):
-    val: str
+class CompanyDescriptionText(Text):
+    id: int  # gbi_id
 
     @classmethod
-    def get_strs_lookup(cls, earnings_summaries: List[SummaryText]) -> Dict[str, str]:  # type: ignore
-        return {summary.id: summary.val for summary in earnings_summaries}
+    def get_strs_lookup(
+        cls, company_descriptions: List[CompanyDescriptionText]  # type: ignore
+    ) -> Dict[TextIDType, str]:
+        sql = """
+        SELECT ssm.gbi_id, cds.company_description_short
+        FROM spiq_security_mapping ssm
+        JOIN nlp_service.company_descriptions_short cds
+        ON cds.spiq_company_id = ssm.spiq_company_id
+        WHERE ssm.gbi_id = ANY(%(stocks)s)
+        """
+        from agent_service.utils.postgres import get_psql
+
+        db = get_psql()
+        rows = db.generic_read(sql, {"stocks": [desc.id for desc in company_descriptions]})
+        return {row["gbi_id"]: row["company_description_short"] for row in rows}

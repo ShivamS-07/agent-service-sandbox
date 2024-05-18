@@ -1,7 +1,7 @@
 import datetime
 import unittest
 import warnings
-from typing import Any, List, Text, Type, Union
+from typing import Any, List, Type, Union
 from unittest import IsolatedAsyncioTestCase
 from unittest.case import TestCase
 
@@ -12,7 +12,7 @@ from agent_service.io_type_utils import IOType
 from agent_service.io_types import (
     StockNewsDevelopmentText,
     StockTimeSeriesTable,
-    SummaryText,
+    Text,
     TimeSeriesLineGraph,
     TimeSeriesTable,
 )
@@ -49,7 +49,7 @@ def get_test_registry() -> Type[ToolRegistry]:
         tool_registry=TestRegistry,
     )
     async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> Text:
-        return SummaryText(id="1", val="A summarized text!")
+        return Text(id="1", val="A summarized text!")
 
     class FilterTextsByTopicInput(ToolArgs):
         topic: str
