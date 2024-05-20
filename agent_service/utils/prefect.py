@@ -19,6 +19,8 @@ from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import PlanRunContext
 from agent_service.utils.logs import async_perf_logger
 
+logger = logging.getLogger(__name__)
+
 
 @async_perf_logger
 async def prefect_create_execution_plan(
@@ -92,7 +94,14 @@ async def get_prefect_task_statuses(
         )
     output = {}
     for run in runs:
-        plan_run_id, task_id = run.name.split(":")
+        # We split by a colon since we used one in "get_task_run_name"
+        try:
+            plan_run_id, task_id = run.name.split(":")
+        except ValueError:
+            logger.warning(
+                f"Failed to split ID string: '{run.name}', got pieces: {run.name.split(':')}"
+            )
+            raise
         output[(plan_run_id, task_id)] = run
 
     return output
