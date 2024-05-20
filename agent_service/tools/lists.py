@@ -18,6 +18,7 @@ class AddListsInput(ToolArgs):
     category=ToolCategory.LIST,
     tool_registry=ToolRegistry,
     is_visible=False,
+    enabled=False,
 )
 async def add_lists(args: AddListsInput, context: PlanRunContext) -> List[IOType]:
     return args.list1 + args.list2
@@ -33,6 +34,7 @@ class GetIndexInput(ToolArgs):
     category=ToolCategory.LIST,
     tool_registry=ToolRegistry,
     is_visible=False,
+    enabled=False,
 )
 async def get_element_from_list(args: GetIndexInput, context: PlanRunContext) -> IOType:
     return args.list[args.index]
@@ -48,6 +50,7 @@ class GetListNInput(ToolArgs):
     category=ToolCategory.LIST,
     tool_registry=ToolRegistry,
     is_visible=False,
+    enabled=False,
 )
 async def get_first_n_from_list(args: GetListNInput, context: PlanRunContext) -> IOType:
     return args.list[: args.n]
@@ -58,6 +61,7 @@ async def get_first_n_from_list(args: GetListNInput, context: PlanRunContext) ->
     category=ToolCategory.LIST,
     tool_registry=ToolRegistry,
     is_visible=False,
+    enabled=False,
 )
 async def get_last_n_from_list(args: GetListNInput, context: PlanRunContext) -> IOType:
     return args.list[-args.n :]
