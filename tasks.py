@@ -2,11 +2,21 @@ from invoke import task
 
 
 @task
-def verify(c):
+def checkformat(c):
     c.run("black --check .")
     c.run("isort --profile black --check .")
     c.run("flake8")
+
+
+@task
+def check(c):
+    checkformat(c)
     mypy(c)
+
+
+@task
+def verify(c):
+    check(c)
     test(c)
 
 

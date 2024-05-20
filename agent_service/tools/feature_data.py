@@ -2,7 +2,9 @@ import datetime
 from threading import Lock
 from typing import List, Optional
 
+import pandas as pd
 from cachetools import TTLCache, cached
+from data_access_layer.core.dao.features.feature_utils import get_feature_metadata
 from data_access_layer.core.dao.features.features_dao import FeaturesDAO
 
 from agent_service.io_types import StockTimeSeriesTable
@@ -114,6 +116,31 @@ def _async_get_feature_data(
 
 
 def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> StockTimeSeriesTable:
+
+    features_metadata = get_feature_metadata(feature_ids=[args.field_id])
+    metadata = features_metadata.get(args.field_id, None)
+    # print("--")
+    # print("metadata", metadata)
+    source = metadata.source if metadata else "NO_SUCH_SOURCE"
+    supported_sources = ["SPIQ_DAILY", "SPIQ_DIVIDEND", "SPIQ_TARGET", "SPIQ_QUARTERLY"]
+    if source not in supported_sources:
+        raise ValueError(f"Data field: {args.field_id} is from an unsupported source: {source}")
+
+    if source == "SPIQ_DAILY":
+        return get_daily_feature_data(args, context)
+
+    if source in ["SPIQ_DIVIDEND", "SPIQ_TARGET"]:
+        return get_non_daily_data(args, context)
+
+    if source == "SPIQ_QUARTERLY":
+        return get_quarterly_data(args, context)
+
+    raise ValueError(
+        f"code path missing: Data field: {args.field_id} is from an unsupported source: {source}"
+    )
+
+
+def get_daily_feature_data(args: FeatureDataInput, context: PlanRunContext) -> StockTimeSeriesTable:
     # if no dates are given assume they just want the latest value
     LATEST_DATE = get_latest_date()
     start_date = LATEST_DATE
@@ -134,15 +161,134 @@ def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> S
     # TODO: validate start <= end
     # dates are not in the future, etc
 
+    FORWARD_FILL_LOOKBACK = datetime.timedelta(days=14)
+    lookup_start_date = start_date - FORWARD_FILL_LOOKBACK
     feature_value_map = FEATURES_DAO.get_feature_data(
         gbi_ids=args.stock_ids,
         features=[args.field_id],
-        start_date=start_date,
+        start_date=lookup_start_date,
         end_date=end_date,
         # currency=output_currency,
     ).get()
 
-    return StockTimeSeriesTable(val=feature_value_map[args.field_id])
+    raw_df = feature_value_map[args.field_id]
+    # print("raw_df", raw_df)
+    idx_daily = pd.date_range(start=lookup_start_date, end=end_date, freq="D")
+    df = raw_df.reindex(idx_daily, method="ffill")
+    df.index.names = ["date"]
+
+    # cut it back down to the requested time range
+    df = df.loc[pd.to_datetime(start_date) : pd.to_datetime(end_date)]
+    # print("final df", df)
+    return StockTimeSeriesTable(val=df)
+
+
+def get_non_daily_data(args: FeatureDataInput, context: PlanRunContext) -> StockTimeSeriesTable:
+    # if no dates are given assume they just want the latest value
+    LATEST_DATE = get_latest_date()
+    start_date = LATEST_DATE
+    end_date = LATEST_DATE
+
+    # if only 1 date is given use that as start & end
+    if args.start_date is None and args.end_date is not None:
+        start_date = args.end_date
+        end_date = start_date
+    elif args.start_date is not None and args.end_date is None:
+        start_date = args.start_date
+        end_date = start_date
+    elif args.start_date is not None and args.end_date is not None:
+        # if both dates are given use as is
+        start_date = args.start_date
+        end_date = args.end_date
+
+    # TODO: validate start <= end
+    # dates are not in the future, etc
+
+    FORWARD_FILL_LOOKBACK = datetime.timedelta(days=366)
+    lookup_start_date = start_date - FORWARD_FILL_LOOKBACK
+    feature_value_map = FEATURES_DAO.get_feature_data(
+        gbi_ids=args.stock_ids,
+        features=[args.field_id],
+        start_date=lookup_start_date,
+        end_date=end_date,
+        # currency=output_currency,
+    ).get()
+
+    raw_df = feature_value_map[args.field_id]
+    # print("raw_df", raw_df)
+
+    df = raw_df
+
+    if start_date == end_date:
+        # get the latest
+        df = df.iloc[[-1]]
+    else:
+        # get only the range they asked for
+        df = df.loc[pd.to_datetime(start_date) : pd.to_datetime(end_date)]
+
+    # print("final df", df)
+    return StockTimeSeriesTable(val=df)
+
+
+# this might need a separate tool for addressing the data via relative and absolute periods
+def get_quarterly_data(args: FeatureDataInput, context: PlanRunContext) -> StockTimeSeriesTable:
+    # if no dates are given assume they just want the latest value
+    LATEST_DATE = get_latest_date()
+    start_date = LATEST_DATE
+    end_date = LATEST_DATE
+
+    # if only 1 date is given use that as start & end
+    if args.start_date is None and args.end_date is not None:
+        start_date = args.end_date
+        end_date = start_date
+    elif args.start_date is not None and args.end_date is None:
+        start_date = args.start_date
+        end_date = start_date
+    elif args.start_date is not None and args.end_date is not None:
+        # if both dates are given use as is
+        start_date = args.start_date
+        end_date = args.end_date
+
+    if start_date != end_date:
+        raise ValueError(
+            "Quarterly Data is currently only available for single points"
+            f" in time field: {args.field_id}"
+        )
+    # TODO: validate start <= end
+    # dates are not in the future, etc
+
+    LOOKBACK = datetime.timedelta(days=366)
+    lookup_start_date = start_date - LOOKBACK
+    feature_value_map = FEATURES_DAO.get_feature_data(
+        gbi_ids=args.stock_ids,
+        features=[args.field_id],
+        start_date=lookup_start_date,
+        end_date=end_date,
+        # currency=output_currency,
+    ).get()
+
+    raw_df = feature_value_map[args.field_id]
+    # print("raw_df", raw_df)
+
+    df = raw_df
+
+    if start_date == end_date:
+        # get the latest
+        df = df.iloc[[-1]]
+    else:
+        # this is not yet supported
+        # we will need new DAL apis to get the data indexed by calendar quarter
+        # and pick the latest value for each one
+        pass
+
+    rel_per = -1
+    idx = pd.IndexSlice
+    # grab all the rows "idx[:] ..."
+    # grab only the -1 relperiod column "... idx[rel_per:-1, ..."
+    # grab all the gbiids "... :]"
+    df = df.loc[idx[:], idx[rel_per:-1, :]]  # type: ignore
+    # print("final df", df)
+    return StockTimeSeriesTable(val=df)
 
 
 # TODO in the future we need a latest date per region
