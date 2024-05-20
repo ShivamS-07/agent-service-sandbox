@@ -10,7 +10,11 @@ class GetStockDescriptionInput(ToolArgs):
 
 
 @tool(
-    description="Given a list of stock ID's, return a list of descriptions for the stocks.",
+    description=(
+        "Given a list of stock ID's, return a list of descriptions for the stocks."
+        "A stock description generally contains basic, general information about the company's"
+        "operations, including major products, services, and holdings, the regions they operate in, etc."
+    ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
 )

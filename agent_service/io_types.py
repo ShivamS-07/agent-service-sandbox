@@ -78,20 +78,26 @@ class Text(ComplexIOBase):
 
     @classmethod
     def get_all_strs(cls, text: Union[Text, List[Any]]) -> Union[str, List[Any]]:
-        # For any possible configuration of Texts in Lists, this converts that
+        # For any possible configuration of Texts or TextGroups in Lists, this converts that
         # configuration to the corresponding strings in list, in class specific batches
+        # TextGroups become a single string here
 
         def convert_to_ids_and_categorize(
-            text: Union[Text, List[Any]], categories: Dict[Type[Text], List[Text]]
-        ) -> Union[TextIDType, List[Any]]:
+            text: Union[Text, TextGroup, List[Any]], categories: Dict[Type[Text], List[Text]]
+        ) -> Union[TextIDType, TextGroup, List[Any]]:
             """
             Convert a structure of texts (e.g. nested lists, etc.) into an
             identical structure of text ID's, while also keeping track of all
             texts of each type.
             """
             if not isinstance(text, list):
-                categories[type(text)].append(text)
-                return text.id
+                if isinstance(text, TextGroup):
+                    for subtext in text.val:
+                        categories[type(subtext)].append(subtext)
+                    return text
+                else:
+                    categories[type(text)].append(text)
+                    return text.id
             else:
                 return [convert_to_ids_and_categorize(sub_text, categories) for sub_text in text]
 
@@ -104,13 +110,15 @@ class Text(ComplexIOBase):
             strs_lookup.update(textclass.get_strs_lookup(texts))
 
         def convert_ids_to_strs(
-            strs_lookup: Dict[TextIDType, str], id_rep: Union[TextIDType, List[Any]]
+            strs_lookup: Dict[TextIDType, str], id_rep: Union[TextIDType, TextGroup, List[Any]]
         ) -> Union[str, List[Any]]:
             """
             Take the structure of ID lists, and map back into actual strings.
             """
             if isinstance(id_rep, list):
                 return [convert_ids_to_strs(strs_lookup, sub_id_rep) for sub_id_rep in id_rep]
+            if isinstance(id_rep, TextGroup):
+                return id_rep.convert_to_str(strs_lookup)
             else:
                 return strs_lookup[id_rep]
 
@@ -259,3 +267,15 @@ class CompanyDescriptionText(Text):
         db = get_psql()
         rows = db.generic_read(sql, {"stocks": [desc.id for desc in company_descriptions]})
         return {row["gbi_id"]: row["company_description_short"] for row in rows}
+
+
+@io_type
+class TextGroup(ComplexIOBase):
+    val: List[Text]
+
+    @staticmethod
+    def join(group1: TextGroup, group2: TextGroup) -> TextGroup:
+        return TextGroup(val=group1.val + group2.val)
+
+    def convert_to_str(self, id_to_str: Dict[TextIDType, str]) -> str:
+        return "\n***\n".join(id_to_str[text.id] for text in self.val)

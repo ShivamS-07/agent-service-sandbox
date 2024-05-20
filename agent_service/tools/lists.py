@@ -5,18 +5,22 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 
 
-class CollapseListsInput(ToolArgs):
-    lists_of_lists: List[List[IOType]]
+class AddListsInput(ToolArgs):
+    list1: List[IOType]
+    list2: List[IOType]
 
 
 @tool(
-    description="This function flattens a list of lists into a list",
+    description=(
+        "This function forms a single list from the elements of two lists. "
+        "For example, [1, 2, 3] and [4, 5, 6] would add to [1, 2, 3, 4, 5, 6]."
+    ),
     category=ToolCategory.LIST,
     tool_registry=ToolRegistry,
     is_visible=False,
 )
-async def collapse_lists(args: CollapseListsInput, context: PlanRunContext) -> List[IOType]:
-    return [item for inner_list in args.lists_of_lists for item in inner_list]
+async def add_lists(args: AddListsInput, context: PlanRunContext) -> List[IOType]:
+    return args.list1 + args.list2
 
 
 class GetIndexInput(ToolArgs):

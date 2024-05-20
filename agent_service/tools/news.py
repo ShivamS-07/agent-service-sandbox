@@ -21,8 +21,9 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         "This function calls an internal API which provides all the news developments "
         "with articles between the start date and the end date that are relevant to the"
         " provided list of stocks,the output is a list of list of news development identifiers, "
-        "each internal list corresponds to an input company. If end_date is left out, "
-        "the current date is used. If start_date is left out, 1 week ago is used."
+        "each internal list corresponds to the news for one input stock. If end_date is left out, "
+        "the current date is used. If start_date is left out, 1 week ago is used. The"
+        "length of the returned list of lists is the same as stock_ids."
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,

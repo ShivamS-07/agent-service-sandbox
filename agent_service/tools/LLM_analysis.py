@@ -5,10 +5,9 @@ from typing import Dict, List, Tuple
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL, FILTER_CONCURRENCY
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import IOType
-from agent_service.io_types import Text
+from agent_service.io_types import Text, TextGroup
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
-from agent_service.tools.lists import CollapseListsInput, collapse_lists
 from agent_service.tools.news import (
     GetNewsDevelopmentsAboutCompaniesInput,
     get_news_developments_about_companies,
@@ -27,12 +26,12 @@ from agent_service.utils.prompt_utils import Prompt
 
 SUMMARIZE_SYS_PROMPT = Prompt(
     name="LLM_SUMMARIZE_SYS_PROMPT",
-    template="You are a financial analyst tasked with summarizing one or more texts according to the instructions of an important client. You will be provided with the texts as well as transcript of your conversation with the client. If the client has provided you with any specifics about the format or content of the summary, you must follow those instructions. Otherwise, you should write a normal prose summary that touches on what you be to be the most important points that you see across all the text you have been provided on. The most important points are those which are highlighted, repeated, or otherwise appear most relevant to the user's expressed interest, if any. If none of these criteria seem to apply, use your best judgment on what seems to be important. Unless the user says otherwise, your output should be must smaller (a small fraction) of all the text provided. For example, if the input is involves several news summaries, a single sentence or two would be appropriate. Individual texts in your collection are delimited by ***",  # noqa: E501
+    template="You are a financial analyst tasked with summarizing one or more texts according to the instructions of an important client. You will be provided with the texts as well as transcript of your conversation with the client. If the client has provided you with any specifics about the format or content of the summary, you must follow those instructions. If a specific topic is mentioned, you must only include information about that topic. Otherwise, you should write a normal prose summary that touches on what you be to be the most important points that you see across all the text you have been provided on. The most important points are those which are highlighted, repeated, or otherwise appear most relevant to the user's expressed interest, if any. If none of these criteria seem to apply, use your best judgment on what seems to be important. Unless the user says otherwise, your output should be must smaller (a small fraction) of all the text provided. For example, if the input is involves several news summaries, a single sentence or two would be appropriate. Individual texts in your collection are delimited by ***",  # noqa: E501
 )
 
 SUMMARIZE_PROMPT_MAIN = Prompt(
     name="LLM_SUMMARIZE_MAIN_PROMPT",
-    template="Summarize the following text(s) based on the needs of the client. Here are the documents, delimited by -----:\n-----\n{texts}\n-----\nHere is the transcript of your interaction with the client, delimited by ----:\n----\n{chat_context}\n----\nNow write your summary",  # noqa: E501
+    template="Summarize the following text(s) based on the needs of the client. Here are the documents, delimited by -----:\n-----\n{texts}\n-----\nHere is the transcript of your interaction with the client, delimited by ----:\n----\n{chat_context}\n----\n{topic_phrase}Now write your summary",  # noqa: E501
 )
 
 TOPIC_FILTER_SYS_PROMPT = Prompt(
@@ -45,22 +44,85 @@ TOPIC_FILTER_MAIN_PROMPT = Prompt(
     template="Decide to what degree the following text is relevant to the provided topic. Here is the text, delimited by ---:\n---\n{text}\n---\n. The topic is: {topic}. Write your discussion, followed by your relevant rating between 0 and 3: ",  # noqa: E501
 )
 
+TOPIC_TEMPLATE = "The topic the user is interested in is {topic}. "
 
 # These are to try to force the filter to allow some hits but not too many
 LLM_FILTER_MAX_PERCENT = 0.2
 LLM_FILTER_MIN_PERCENT = 0.05
 
 
-class SummarizeTextInput(ToolArgs):
+class ConvertTextsToGroupInput(ToolArgs):
     texts: List[Text]
 
 
 @tool(
     description=(
-        "This function takes a list of texts and uses an LLM to summarize them into a single text "
-        "based on the instructions provided by the user in their input. Note: before you run this"
-        " function you must make sure to apply all relevant filters on the texts, do not use "
-        " this function to filter large quantities of text"
+        "This function takes a list of Text items and converts it to a list of Text Groups"
+        " One text is put in each group"
+        " This conversion is needed to apply LLM analysis functions."
+    ),
+    category=ToolCategory.LLM_ANALYSIS,
+)
+async def convert_list_of_texts_to_groups(
+    args: ConvertTextsToGroupInput, context: PlanRunContext
+) -> List[TextGroup]:
+    return [TextGroup(val=[text]) for text in args.texts]
+
+
+class ConvertListofListsToGroupInput(ToolArgs):
+    list_of_lists_of_texts: List[List[Text]]
+
+
+@tool(
+    description=(
+        "This function takes a list of list of Text items and converts it to a list of Text Groups"
+        " Each inner list is converted to a single text group"
+        " This conversion is needed to apply LLM analysis functions."
+    ),
+    category=ToolCategory.LLM_ANALYSIS,
+)
+async def convert_list_of_lists_of_texts_to_groups(
+    args: ConvertListofListsToGroupInput, context: PlanRunContext
+) -> List[TextGroup]:
+    return [TextGroup(val=text_list) for text_list in args.list_of_lists_of_texts]
+
+
+class CombineListsOfTextGroupsInput(ToolArgs):
+    text_groups1: List[TextGroup]
+    text_groups2: List[TextGroup]
+
+
+@tool(
+    description=(
+        "This function combines two lists of TextGroups of the same length by joining the paired TextGroups "
+        "across the two lists."
+        "Use this function when combining the output of different data retrieval functions called over the same ids. "
+        "In particular, if you want to apply filter or search and the request mentions two possible "
+        "data sources, you should combine using this function before calling the LLM. The output list of TextGroups "
+        "will be the same as the inputs"
+    ),
+    category=ToolCategory.LLM_ANALYSIS,
+    is_visible=False,
+)
+async def combine_lists_of_text_groups(
+    args: CombineListsOfTextGroupsInput, context: PlanRunContext
+) -> List[TextGroup]:
+    return [
+        TextGroup.join(group1, group2)
+        for group1, group2 in zip(args.text_groups1, args.text_groups2)
+    ]
+
+
+class SummarizeTextInput(ToolArgs):
+    texts: List[TextGroup]
+    topic: str = ""
+
+
+@tool(
+    description=(
+        "This function takes a list of Texts and uses an LLM to summarize all of the input texts into a single text "
+        "based on the instructions provided by the user in their input. If a topic is included "
+        "the summary content will only include information related to that topic"
     ),
     category=ToolCategory.LLM_ANALYSIS,
 )
@@ -73,10 +135,15 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
+    if args.topic:
+        topic_phrase = TOPIC_TEMPLATE.format(topic=args.topic)
+    else:
+        topic_phrase = ""
     result = await llm.do_chat_w_sys_prompt(
         SUMMARIZE_PROMPT_MAIN.format(
             texts="\n***\n".join(Text.get_all_strs(args.texts)),
             chat_context=context.chat.get_gpt_input(),
+            topic_phrase=topic_phrase,
         ),
         SUMMARIZE_SYS_PROMPT.format(),
     )
@@ -84,12 +151,12 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
 
 
 async def topic_filter_helper(
-    texts: List[Text], topic: str, agent_id: str
+    text_groups: List[TextGroup], topic: str, agent_id: str
 ) -> List[Tuple[bool, str]]:
     gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
     llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
     tasks = []
-    text_strs = Text.get_all_strs(texts)
+    text_strs = Text.get_all_strs(text_groups)
     for text_str in text_strs:
         tasks.append(
             llm.do_chat_w_sys_prompt(
@@ -103,17 +170,18 @@ async def topic_filter_helper(
     score_tuples = []
     for result in results:
         try:
-            rationale, score = result.strip().split("\n")
+            rationale, score = result.strip().replace("\n\n", "\n").split("\n")
             score = int(score)
         except ValueError:
             score = 0
             rationale = "No relevance"
         counts[score] += 1
         score_tuples.append((score, rationale))
-    if counts[3] > len(texts) * LLM_FILTER_MAX_PERCENT:
+
+    if counts[3] > len(text_groups) * LLM_FILTER_MAX_PERCENT:
         # If there are lot of 3s, only include 3
         cutoff = 3
-    elif counts[3] + counts[2] < len(texts) * LLM_FILTER_MAX_PERCENT:
+    elif counts[3] + counts[2] < len(text_groups) * LLM_FILTER_MAX_PERCENT:
         # If there are hardly any 3 + 2, include 1s
         cutoff = 1
     else:
@@ -123,55 +191,29 @@ async def topic_filter_helper(
     return [(score >= cutoff, rationale) for score, rationale in score_tuples]
 
 
-class FilterTextsByTopicInput(ToolArgs):
-    topic: str
-    texts: List[Text]
-
-
-@tool(
-    description=(
-        "This function takes a topic and list of texts and uses an LLM to filter the list to only those"
-        " that are relevant to the provided topic. Can be applied to news, earnings, SEC filings, and any"
-        " other text. "
-        " It is better to call this function once with a complex topic with many ideas than to call this"
-        " function many times with smaller topics. Use filter_items_by_topic if you have things other "
-        "than texts that you want to filter"
-    ),
-    category=ToolCategory.LLM_ANALYSIS,
-)
-async def filter_texts_by_topic(
-    args: FilterTextsByTopicInput, context: PlanRunContext
-) -> List[Text]:
-    # not currently returning rationale, but will probably want it
-    return [
-        text
-        for text, (is_relevant, _) in zip(
-            args.texts, await topic_filter_helper(args.texts, args.topic, context.agent_id)
-        )
-        if is_relevant
-    ]
-
-
 class FilterItemsByTopicInput(ToolArgs):
     topic: str
     items: List[IOType]
-    texts: List[Text]
+    text_groups: List[TextGroup]
 
 
 @tool(
     description=(
         "This function takes any list of items (of any kind) which has some corresponding associated texts"
-        " and uses an LLM to filter to only those objects whose text representation is relevant to the provided topic."
+        " which have been grouped (this function only takes TextGroups, not Texts!)"
+        " and uses an LLM to filter to only those objects whose text representation is relevant to the provided topic. "
+        "The items and text_groups are aligned, they must be the same length and "
+        "correspond one to one"
     ),
     category=ToolCategory.LLM_ANALYSIS,
 )
-async def filter_items_by_topic(
+async def filter_items_by_topic_aligned(
     args: FilterItemsByTopicInput, context: PlanRunContext
 ) -> List[IOType]:
     return [
         item
         for item, (is_relevant, _) in zip(
-            args.items, await topic_filter_helper(args.texts, args.topic, context.agent_id)
+            args.items, await topic_filter_helper(args.text_groups, args.topic, context.agent_id)
         )
         if is_relevant
     ]
@@ -205,18 +247,21 @@ async def main() -> None:
     print(len(news_developments_lists[0]))  # type: ignore
     print(len(news_developments_lists[1]))  # type: ignore
     print(len(news_developments_lists[2]))  # type: ignore
-    news_developments = await collapse_lists(
-        CollapseListsInput(lists_of_lists=news_developments_lists), plan_context  # type: ignore
-    )  # Collapse the list of lists of news ids into a single list
-    print(len(news_developments))  # type: ignore
-    filtered_news = await filter_texts_by_topic(
-        FilterTextsByTopicInput(topic="machine learning", texts=news_developments), plan_context  # type: ignore
-    )  # Filter the news descriptions to only those relevant to machine learning
-    print(len(filtered_news))  # type: ignore
+    news_developments_groups = await convert_list_of_lists_of_texts_to_groups(
+        ConvertListofListsToGroupInput(list_of_lists_of_text=news_developments_lists), plan_context  # type: ignore
+    )
     summary = await summarize_texts(
-        SummarizeTextInput(texts=filtered_news), plan_context  # type: ignore
+        SummarizeTextInput(texts=news_developments_groups, topic="machine learning"), plan_context  # type: ignore
     )  # Summarize the filtered news texts into a single summary
     print(summary)
+
+    filtered_stocks = await filter_items_by_topic_aligned(
+        FilterItemsByTopicInput(
+            topic="Machine Learning", items=stock_ids, text_groups=news_developments_groups  # type: ignore
+        ),
+        plan_context,
+    )
+    print(filtered_stocks)
 
 
 if __name__ == "__main__":

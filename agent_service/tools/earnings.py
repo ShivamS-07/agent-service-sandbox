@@ -6,8 +6,12 @@ from typing import List, Optional
 from agent_service.io_types import EarningsSummaryText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
-from agent_service.tools.lists import CollapseListsInput, collapse_lists
-from agent_service.tools.LLM_analysis import SummarizeTextInput, summarize_texts
+from agent_service.tools.LLM_analysis import (
+    ConvertListofListsToGroupInput,
+    SummarizeTextInput,
+    convert_list_of_lists_of_texts_to_groups,
+    summarize_texts,
+)
 from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
@@ -18,6 +22,15 @@ class GetImpactingStocksInput(ToolArgs):
     impacted_stock_ids: List[int]
 
 
+@tool(
+    description=(
+        "This returns a list of lists of stocks, each inner list corresponds to all the"
+        " stocks which impact the corresponding stock. "
+        "The length of the returned list of lists is the same as the input stock_ids"
+    ),
+    category=ToolCategory.EARNINGS,
+    tool_registry=ToolRegistry,
+)
 async def get_impacting_stocks(
     args: GetImpactingStocksInput, context: PlanRunContext
 ) -> List[List[int]]:
@@ -52,6 +65,7 @@ class GetEarningsCallSummariesInput(ToolArgs):
         "This returns a list of lists of earnings call summary texts, each inner list corresponds to all the"
         " earnings calls for the corresponding stock that were published between start_date and end_date. "
         "start_date or end_date being None indicates the range is unbounded"
+        "The length of the returned list of lists is the same as the input stock_ids"
     ),
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,
@@ -84,8 +98,26 @@ async def get_earnings_call_summaries(
     return output
 
 
+class CollapseListOfListsOfStocksInput(ToolArgs):
+    list_of_list_of_stock_ids: List[List[int]]
+
+
+@tool(
+    description=(
+        "This function flattens a list of lists of stocks into a list of stocks. "
+        "Use this function if you want to use all stocks returned from stock earnings impacts."
+    ),
+    category=ToolCategory.EARNINGS,
+    is_visible=False,
+)
+async def collapse_list_of_lists_of_stocks(
+    args: CollapseListOfListsOfStocksInput, context: PlanRunContext
+) -> List[int]:
+    return [item for inner_list in args.list_of_list_of_stock_ids for item in inner_list]
+
+
 async def main() -> None:
-    input_text = "Need a summary of all the earnings calls from the last month of companies that might impact stocks in the TSX Composite"  # noqa: E501
+    input_text = "Need a summary of all the earnings calls from the last month of companies that might impact stocks in the TSX composite"  # noqa: E501
     user_message = Message(message=input_text, is_user_message=True, message_time=get_now_utc())
     chat_context = ChatContext(messages=[user_message])
     plan_context = PlanRunContext(
@@ -111,8 +143,8 @@ async def main() -> None:
 
     print(impacting_stocks_list)
 
-    impacted_stocks = await collapse_lists(
-        CollapseListsInput(lists_of_lists=impacting_stocks_list), plan_context  # type: ignore
+    impacted_stocks = await collapse_list_of_lists_of_stocks(
+        CollapseListOfListsOfStocksInput(list_of_list_of_stock_ids=impacting_stocks_list), plan_context  # type: ignore
     )
     print(len(impacted_stocks))  # type: ignore
 
@@ -120,8 +152,8 @@ async def main() -> None:
         GetEarningsCallSummariesInput(stock_ids=impacted_stocks, start_date=start_date), plan_context  # type: ignore
     )
 
-    earnings_summaries = await collapse_lists(
-        CollapseListsInput(lists_of_lists=earnings_summaries_list), plan_context  # type: ignore
+    earnings_summaries = await convert_list_of_lists_of_texts_to_groups(
+        ConvertListofListsToGroupInput(list_of_lists_of_texts=earnings_summaries_list), plan_context  # type: ignore
     )
 
     print(len(earnings_summaries))  # type: ignore

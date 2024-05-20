@@ -3,8 +3,10 @@ from unittest import IsolatedAsyncioTestCase
 
 from agent_service.tools.feature_data import (
     FeatureDataInput,
+    StatisticsIdentifierLookupInput,
     get_latest_date,
     get_statistic_data_for_companies,
+    statistic_identifier_lookup,
 )
 from agent_service.types import PlanRunContext
 
@@ -41,3 +43,23 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
         val1 = get_latest_date()
         val2 = get_latest_date()
         self.assertEqual(val1, val2)
+
+
+class TestStatisticsIdentifierLookup(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+
+    async def test_statistic_identifier_lookup_highprice(self):
+        self.args = StatisticsIdentifierLookupInput(statistic_name="High Price")
+        result = await statistic_identifier_lookup(self.args, self.context)
+        self.assertEqual(result, "spiq_high")
+
+    async def test_statistic_identifier_lookup_basiceps(self):
+        self.args = StatisticsIdentifierLookupInput(statistic_name="Basic EPS")
+        result = await statistic_identifier_lookup(self.args, self.context)
+        self.assertEqual(result, "spiq_9")
+
+    async def test_statistic_identifier_lookup_bollinger(self):
+        self.args = StatisticsIdentifierLookupInput(statistic_name="Bid Price")
+        result = await statistic_identifier_lookup(self.args, self.context)
+        self.assertEqual(result, "spiq_bid")
