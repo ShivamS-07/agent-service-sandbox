@@ -45,8 +45,9 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
 
     # Exact symbol match
     sql = """
-    SELECT gbi_security_id FROM master_security ms
-    WHERE lower(ms.symbol) = lower(%s)
+    SELECT gbi_security_id, symbol, isin, security_region, currency, name
+    FROM master_security ms
+    WHERE ms.symbol = upper(%s)
     AND ms.is_public
     AND ms.asset_type = 'Common Stock'
     AND ms.is_primary_trading_item = true
@@ -55,30 +56,57 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     """
     rows = db.generic_read(sql, [args.stock_name])
     if rows:
+        # useful for debugging
+        # print("symbol match: ", rows)
+        return rows[0]["gbi_security_id"]
+
+    # Exact ISIN match
+    sql = """
+    SELECT gbi_security_id, symbol, isin, security_region, currency, name
+    FROM master_security ms
+    WHERE ms.isin = upper(%s)
+    AND ms.is_public
+    AND ms.asset_type = 'Common Stock'
+    AND ms.is_primary_trading_item = true
+    AND ms.to_z is null
+    """
+    rows = db.generic_read(sql, [args.stock_name])
+    if rows:
+        # useful for debugging
+        # print("isin match: ", rows)
         return rows[0]["gbi_security_id"]
 
     # Word similarity name match
+    # this thing is extremely forgiving it was matching "JP3633400001" to "JPX Global, Inc."
+    # I set the similarity requirement to be higher
     sql = """
-    SELECT gbi_security_id FROM master_security ms
+    select * from (SELECT gbi_security_id, symbol, isin, security_region, currency, name
+    , word_similarity(lower(ms.name), lower(%s)) as ws
+    FROM master_security ms
     WHERE ms.asset_type = 'Common Stock'
     AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.region = 'United States'
     AND ms.to_z is null
-    ORDER BY word_similarity(lower(ms.name), lower(%s)) DESC
-    LIMIT 1
+    ORDER BY ws DESC
+    LIMIT 10) as tmp_ms
+    WHERE
+    tmp_ms.ws >= 0.3
     """
     rows = db.generic_read(sql, [args.stock_name])
     if rows:
+        # useful for debugging
+        # print("name match: ", rows)
         return rows[0]["gbi_security_id"]
 
     # Word similarity symbol match
+    # why did we want this???
     sql = """
-    SELECT gbi_security_id FROM master_security ms
-    WHERE word_similarity(lower(ms.symbol), lower(%s)) > 0.2
+    SELECT gbi_security_id, symbol, isin, security_region, currency, name
+    FROM master_security ms
+    WHERE word_similarity(lower(ms.symbol), lower(%s)) > 0.7
     AND ms.is_public
-    AND ms.asset_type = 'Common Stock'
-    AND ms.is_primary_trading_item = true
+    AND ms.asset_type = 'Common Stock'    AND ms.is_primary_trading_item = true
     AND ms.region = 'United States'
     AND ms.to_z is null
     ORDER BY word_similarity(lower(ms.symbol), lower(%s)) DESC
@@ -86,6 +114,7 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     """
     rows = db.generic_read(sql, [args.stock_name, args.stock_name])
     if rows:
+        # print("symbol similarity  match: ", rows)
         return rows[0]["gbi_security_id"]
 
     raise ValueError(f"Could not find the stock {args.stock_name}")

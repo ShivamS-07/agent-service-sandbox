@@ -40,6 +40,21 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
         result = await stock_identifier_lookup(self.args, self.context)
         self.assertEqual(result, 7558)
 
+    async def test_stock_identifier_lookup_isin(self):
+        self.args = StockIdentifierLookupInput(stock_name="JP3633400001")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result, 389721)  # 7203 toyota japan/jpy
+
+    async def test_stock_identifier_lookup_netflix_similarity(self):
+        self.args = StockIdentifierLookupInput(stock_name="Net flix")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result, 7558)
+
+    async def test_stock_identifier_lookup_apple_similarity(self):
+        self.args = StockIdentifierLookupInput(stock_name="apple")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result, 714)
+
     async def test_convert_stock_identifiers_to_tickers(self):
         result = await convert_stock_identifiers_to_tickers(
             args=StockIDsToTickerInput(stock_ids=[714, 715, 716]),
