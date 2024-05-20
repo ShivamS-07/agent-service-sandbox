@@ -100,6 +100,7 @@ async def query_gpt_worker(
     max_retries: int = 3,
     request_id: Optional[str] = None,
     no_cache: bool = False,
+    gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> str:
     if not request_id:
         request_id = str(uuid.uuid4())
@@ -116,6 +117,7 @@ async def query_gpt_worker(
             request_id=request_id,
             client_timestamp=client_timestamp,
             no_cache=no_cache,
+            gpt_service_stub=gpt_service_stub,
         )
     except Exception as e:
         exception_text = traceback.format_exc()
@@ -160,6 +162,7 @@ async def _query_gpt_worker(
     request_id: str = "",
     client_timestamp: Optional[str] = None,
     no_cache: bool = False,
+    gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> str:
 
     if not client_timestamp:
@@ -188,7 +191,7 @@ async def _query_gpt_worker(
         request_priority=f"GPT_SVC_PRIORITY_{priority}",
         extra_params=extra_params,
     )
-
+    stub = _get_gpt_service_stub() if not gpt_service_stub else gpt_service_stub
     metadata = [
         ("clienttimestamp", client_timestamp),
         ("clientname", CLIENT_NAME),
@@ -219,9 +222,11 @@ class GPT:
         self,
         context: Optional[Dict[str, str]] = None,
         model: str = DEFAULT_SMART_MODEL,
+        gpt_service_stub: Optional[GPTServiceStub] = None,
     ) -> None:
         self.model = model
         self.context = context
+        self.gpt_service_stub = gpt_service_stub
 
     async def do_chat_w_sys_prompt(
         self,
@@ -279,4 +284,5 @@ class GPT:
             context=context_with_task_type,
             output_json=output_json,
             no_cache=no_cache,
+            gpt_service_stub=self.gpt_service_stub,
         )

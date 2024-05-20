@@ -1,3 +1,7 @@
+from typing import Optional
+
+from gpt_service_proto_v1.service_grpc import GPTServiceStub
+
 from agent_service.chatbot.prompts import (
     AGENT_DESCRIPTION,
     COMPLETE_EXECUTION_MAIN_PROMPT,
@@ -20,10 +24,11 @@ class Chatbot:
         self,
         agent_id: str,
         model: str = DEFAULT_SMART_MODEL,
+        gpt_service_stub: Optional[GPTServiceStub] = None,
     ) -> None:
         self.agent_id = agent_id
         context = create_gpt_context(GptJobType.AGENT_CHATBOT, agent_id, GptJobIdType.AGENT_ID)
-        self.llm = GPT(context, model)
+        self.llm = GPT(context, model, gpt_service_stub=gpt_service_stub)
 
     async def generate_initial_preplan_response(self, chat_context: ChatContext) -> str:
         main_prompt = INITIAL_PREPLAN_MAIN_PROMPT.format(chat_context=chat_context.get_gpt_input())

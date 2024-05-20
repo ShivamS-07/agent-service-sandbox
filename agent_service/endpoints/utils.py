@@ -5,7 +5,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set
 
 from agent_service.endpoints.models import PlanRun, PlanRunTask, PlanRunTaskLog, Status
-from agent_service.utils.postgres import get_psql
+from agent_service.utils.postgres import Postgres
 from agent_service.utils.prefect import (
     get_prefect_plan_run_statuses,
     get_prefect_task_statuses,
@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 
 async def get_agent_hierarchical_worklogs(
     agent_id: str,
+    db: Postgres,
     start_date: Optional[datetime.date] = None,  # inclusive
     end_date: Optional[datetime.date] = None,  # inclusive
     most_recent_num_runs: Optional[int] = None,
 ) -> List[PlanRun]:
-    db = get_psql()
 
     plan_run_ids: Optional[List[str]] = None
     if most_recent_num_runs:
