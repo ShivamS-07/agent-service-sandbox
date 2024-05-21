@@ -9,35 +9,36 @@ verify_ssl = false
 name = "gbi"
 
 [dev-packages]
-black = {version = "~=24.4.0", index = "pypi"}
-flake8 = {version = "~=7.0.0", index = "pypi"}
-invoke = {version = "~=2.2.0", index = "pypi"}
-isort = {version = "~=5.13.0", index="pypi"}
-mypy = {version = "~=1.10.0", index="pypi"}
+black = {version = "==24.4.2", index = "pypi"}
+flake8 = {version = "==7.0.0", index = "pypi"}
+invoke = {version = "==2.2.0", index = "pypi"}
+isort = {version = "==5.13.2", index="pypi"}
+mypy = {version = "==1.10.0", index="pypi"}
 
 # Types
-pandas-stubs = "*"
-types-protobuf = "*"
-types-python-dateutil = "*"
-backoff-stubs = "*"
+pandas-stubs = {version = "==2.0.3.230814", index = "pypi"}
+types-protobuf = {version = "==5.26.0.20240422", index = "pypi"}
+types-python-dateutil = {version = "==2.9.0.20240316", index = "pypi"}
+backoff-stubs = {version = "==1.11.1.post1", index = "pypi"}
 
 [packages]
 fastapi = {version = "==0.110.3", index = "pypi"}
 pydantic = {version = "==2.7.1", index = "pypi"}
 sentry-sdk = {extras = ["fastapi"], version =  "*", index = "pypi"}
-prefect = {version = "~=2.18.0", index = "pypi"}
+prefect = {version = "==2.18.3", index = "pypi"}
 pandas = {version = "==1.5.3", index = "pypi"}
 gbi_common_py_utils = {version = "==1.0.98", index = "gbi"}
-openai = { version = "~=0.27.6", index = "pypi"}
-tiktoken = { version = "~=0.3.3", index = "pypi"}
+openai = { version = "==0.27.10", index = "pypi"}
+tiktoken = { version = "==0.3.3", index = "pypi"}
 PyJWT = {version = "==2.5.0", index = "pypi"}
 boosted-data-access-layer = {version = ">=0.0.277", index = "gbi"}
-dateparser = {version = "~=1.2.0", index = "pypi"}
+dateparser = {version = "==1.2.0", index = "pypi"}
 
 # External services
 gpt-service-proto-v1 = {version = "==1.4.0", index = "gbi"}
 nlp_service_proto_v1 = {version = "==1.125.0", index = "gbi"}
 stock-universe-service-proto-v1 = {version = "==0.37.0", index = "gbi"}
+pa-portfolio-service-proto-v1 = {version = "==1.300.0", index = "gbi"}
 
 [requires]
 python_version = "3.8"
