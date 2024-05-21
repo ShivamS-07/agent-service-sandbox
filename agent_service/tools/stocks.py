@@ -1,5 +1,6 @@
-from typing import List
+from typing import Any, Dict, List
 
+from agent_service.external.stock_search_dao import async_sort_stocks_by_volume
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
@@ -34,14 +35,48 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     Returns:
         int: The integer identifier of the stock.
     """
+    rows = await raw_stock_identifier_lookup(args, context)
+    if len(rows) == 1:
+        return rows[0]["gbi_security_id"]
+
+    # we have multiple matches, lets use dollar trading volume to choose the most likely match
+    gbi_ids = [r["gbi_security_id"] for r in rows]
+    stock_by_volume = await async_sort_stocks_by_volume(gbi_ids)  # fixme asyncify
+
+    if stock_by_volume:
+        return stock_by_volume[0][0]
+
+    # if nothing returned from stock search then just pick the first match
+    return rows[0]["gbi_security_id"]
+
+
+async def raw_stock_identifier_lookup(
+    args: StockIdentifierLookupInput, context: PlanRunContext
+) -> List[Dict[str, Any]]:
+    """Returns the the stocks with the closest text match to the input string
+    such as name, isin or symbol (JP3633400001, microsoft, apple, AAPL, TESLA, META, e.g.).
+
+    This function performs a series of queries to find the stock's identifier.
+    It starts with an exact symbol match,
+    then an exact ISIN match,
+    followed by a word similarity name match, and finally a word similarity symbol match.
+    It only proceeds to the next query if the previous one returns no results.
+
+
+    Args:
+        args (StockIdentifierLookupInput): The input arguments for the stock lookup.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        int: The integer identifier of the stock.
+    """
     db = get_psql()
     # TODO:
-    # Handling ISIN's
-    # Handling non US stocks
-    # Handling multiple possible matches
     # Using chat context to help decide
     # Use embedding to find the closest match (e.g. "google" vs "alphabet")
-    # Use trading volume to help decide
+    # ignore common company suffixes like Corp and Inc.
+    # get alternative name db up and query it
+    # make use of custom doc company tagging machinery
 
     # Exact symbol match
     sql = """
@@ -49,16 +84,15 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     FROM master_security ms
     WHERE ms.symbol = upper(%s)
     AND ms.is_public
-    AND ms.asset_type = 'Common Stock'
+    AND ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
     AND ms.is_primary_trading_item = true
-    AND ms.region = 'United States'
     AND ms.to_z is null
     """
     rows = db.generic_read(sql, [args.stock_name])
     if rows:
         # useful for debugging
         # print("symbol match: ", rows)
-        return rows[0]["gbi_security_id"]
+        return rows
 
     # Exact ISIN match
     sql = """
@@ -66,7 +100,7 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     FROM master_security ms
     WHERE ms.isin = upper(%s)
     AND ms.is_public
-    AND ms.asset_type = 'Common Stock'
+    AND ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
     """
@@ -74,48 +108,56 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     if rows:
         # useful for debugging
         # print("isin match: ", rows)
-        return rows[0]["gbi_security_id"]
+        return rows
 
     # Word similarity name match
-    # this thing is extremely forgiving it was matching "JP3633400001" to "JPX Global, Inc."
-    # I set the similarity requirement to be higher
+
+    # should we also allow 'Depositary Receipt (Common Stock)') ?
     sql = """
     select * from (SELECT gbi_security_id, symbol, isin, security_region, currency, name
-    , word_similarity(lower(ms.name), lower(%s)) as ws
+    , strict_word_similarity(lower(ms.name), lower(%s)) as ws
     FROM master_security ms
     WHERE ms.asset_type = 'Common Stock'
     AND ms.is_public
     AND ms.is_primary_trading_item = true
-    AND ms.region = 'United States'
     AND ms.to_z is null
     ORDER BY ws DESC
-    LIMIT 10) as tmp_ms
+    LIMIT 50) as tmp_ms
     WHERE
-    tmp_ms.ws >= 0.3
+    tmp_ms.ws >= 0.2
     """
     rows = db.generic_read(sql, [args.stock_name])
     if rows:
-        # useful for debugging
-        # print("name match: ", rows)
-        return rows[0]["gbi_security_id"]
+        # the weaker the match the more results to be
+        # considered for trading volume tie breaker
 
-    # Word similarity symbol match
-    # why did we want this???
-    sql = """
-    SELECT gbi_security_id, symbol, isin, security_region, currency, name
-    FROM master_security ms
-    WHERE word_similarity(lower(ms.symbol), lower(%s)) > 0.7
-    AND ms.is_public
-    AND ms.asset_type = 'Common Stock'    AND ms.is_primary_trading_item = true
-    AND ms.region = 'United States'
-    AND ms.to_z is null
-    ORDER BY word_similarity(lower(ms.symbol), lower(%s)) DESC
-    LIMIT 1
-    """
-    rows = db.generic_read(sql, [args.stock_name, args.stock_name])
-    if rows:
-        # print("symbol similarity  match: ", rows)
-        return rows[0]["gbi_security_id"]
+        # exact text  match
+        matches = [r for r in rows if r["ws"] >= 1.0]
+        if matches:
+            # if there is more than 1 exact match we have to break the tie
+            return matches
+
+        # strong text  match
+        matches = [r for r in rows if r["ws"] >= 0.9]
+        if matches:
+            return matches[:5]
+
+        matches = [r for r in rows if r["ws"] >= 0.7]
+        if matches:
+            return matches[:5]
+
+        matches = [r for r in rows if r["ws"] >= 0.4]
+        if matches:
+            return matches[:10]
+
+        matches = [r for r in rows if r["ws"] >= 0.3]
+        if matches:
+            return matches[:20]
+
+        # very weak text match
+        matches = [r for r in rows if r["ws"] > 0.2]
+        if matches:
+            return matches[:50]
 
     raise ValueError(f"Could not find the stock {args.stock_name}")
 

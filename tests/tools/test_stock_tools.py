@@ -55,6 +55,42 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
         result = await stock_identifier_lookup(self.args, self.context)
         self.assertEqual(result, 714)
 
+    async def test_stock_identifier_lookup_multiple_symbol_matches(self):
+        self.args = StockIdentifierLookupInput(stock_name="CAT")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result, 2242)
+
+    async def test_stock_identifier_lookup_multiple_isin_matches_no_data(self):
+        self.args = StockIdentifierLookupInput(stock_name="CA31811L1076")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result, 40888)
+
+    async def test_stock_identifier_lookup_multiple_isin_matches(self):
+        self.args = StockIdentifierLookupInput(stock_name="US9773723096")
+        result = await stock_identifier_lookup(self.args, self.context)
+        # it was hard to find an example of this case, this test failing may not mean much
+        self.assertEqual(result, 209866)
+
+    async def test_stock_identifier_lookup_multiple_name_matches(self):
+        self.args = StockIdentifierLookupInput(stock_name="toyota")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result, 389721)
+
+    async def test_stock_identifier_lookup_small_company_close_match(self):
+        self.args = StockIdentifierLookupInput(stock_name="Toyokumo")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result, 498552)
+
+    async def test_stock_identifier_lookup_small_company_close_match2(self):
+        self.args = StockIdentifierLookupInput(stock_name="Toyoda")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result, 389646)
+
+    async def test_stock_identifier_lookup_bad_spelling(self):
+        self.args = StockIdentifierLookupInput(stock_name="Toyotaa")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result, 389721)
+
     async def test_convert_stock_identifiers_to_tickers(self):
         result = await convert_stock_identifiers_to_tickers(
             args=StockIDsToTickerInput(stock_ids=[714, 715, 716]),
