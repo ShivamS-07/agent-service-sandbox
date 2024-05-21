@@ -47,7 +47,8 @@ PLAN_GUIDELINES = """The top priority of a plan is that the information needs of
 - You must never assume what the date is, you must use a tool that knows the date
 - Your lines can be as long as needed, do not violate any of the rules to avoid having long lines
 - Before you write a line, consider what each of the arguments of your function will be; if any of them is in the wrong form and so requires a function to be called on them before you can use it as a proper argument to this function, do that first!
-- Only the output returned by the last line of the script will be shown to the user, so you must be sure that it has all the information the user is asking for and that it is human readable (your final output should never be identifiers)"""
+- Only the output returned by the last line of the script will be shown to the user, so you must be sure that it has all the information the user is asking for and that it is human readable (your final output should never be identifiers)
+- If the information need of the client is numerical (e.g. stock price), data should always be output in the form of a Table, even if it is a single number (e.g. a stock price for a particular stock on a particular day)"""
 
 PLAN_EXAMPLE = "if you had the following two functions if your function set:\ndef add(num1: float, num2: float) -> float:\n# This function adds two numbers\ndef multiply(num1:float, num2:float) -> float:\n# this function multiplies two numbers\nAnd if the user message was:\nAdd 2.4 and 7.93 and multiply the result by 3\nThen you would output:\n # Must haves: add 2.4 and 7.93, multiply by 3.0\n\n# Final output: a float indicating the result of the calculation\n# Rough plan: I'll add the first two numbers first, then multiply\n# add 2.4 7.93\nsum = add(num1=2.4, num2=7.93)   # Add 2.4 and 7.93\n# float-Yes\n# product sum 3.0\nproduct = multiply(num1=sum, num2=3.0)  # Multiply that sum by 3\n# float-Yes"
 
