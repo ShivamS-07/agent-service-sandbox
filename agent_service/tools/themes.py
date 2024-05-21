@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple
 
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.io_types import (
+from agent_service.io_types.text import (
     ThemeNewsDevelopmentArticlesText,
     ThemeNewsDevelopmentText,
     ThemeText,

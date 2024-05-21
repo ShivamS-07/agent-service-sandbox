@@ -1,6 +1,6 @@
 from unittest import IsolatedAsyncioTestCase
 
-from agent_service.io_types import ThemeNewsDevelopmentText, ThemeText
+from agent_service.io_types.text import ThemeNewsDevelopmentText, ThemeText
 from agent_service.tools.themes import (
     GetThemeDevelopmentNewsArticlesInput,
     GetThemeDevelopmentNewsInput,

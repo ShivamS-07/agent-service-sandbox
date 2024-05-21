@@ -1,6 +1,6 @@
 from typing import List
 
-from agent_service.io_types import CompanyDescriptionText
+from agent_service.io_types.text import CompanyDescriptionText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 

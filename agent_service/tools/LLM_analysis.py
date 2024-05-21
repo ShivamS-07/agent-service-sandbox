@@ -5,7 +5,7 @@ from typing import Dict, List, Tuple
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL, FILTER_CONCURRENCY
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import IOType
-from agent_service.io_types import Text, TextGroup
+from agent_service.io_types.text import Text, TextGroup
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.news import (

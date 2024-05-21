@@ -1,7 +1,7 @@
 import datetime
 import unittest
 import warnings
-from typing import Any, List, Type, Union
+from typing import Any, List, Optional, Type, Union
 from unittest import IsolatedAsyncioTestCase
 from unittest.case import TestCase
 
@@ -9,13 +9,9 @@ import pandas as pd
 
 from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_type_utils import IOType
-from agent_service.io_types import (
-    StockNewsDevelopmentText,
-    StockTimeSeriesTable,
-    Text,
-    TimeSeriesLineGraph,
-    TimeSeriesTable,
-)
+from agent_service.io_types.graph import Graph
+from agent_service.io_types.table import Table
+from agent_service.io_types.text import StockNewsDevelopmentText, Text
 from agent_service.planner.executor import run_execution_plan_local
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import (
@@ -188,8 +184,8 @@ def get_test_registry() -> Type[ToolRegistry]:
 
     class GetEarningsCallSummaries(ToolArgs):
         stock_ids: List[int]
-        start_date: datetime.date = None
-        end_date: datetime.date = None
+        start_date: Optional[datetime.date] = None
+        end_date: Optional[datetime.date] = None
 
     @tool(
         description=(
@@ -255,7 +251,7 @@ def get_test_registry() -> Type[ToolRegistry]:
         stock_labels: List[str]
         statistic_id: str
         start_date: datetime.date
-        end_date: datetime.date = None
+        end_date: Optional[datetime.date] = None
 
     @tool(
         description=(
@@ -263,20 +259,20 @@ def get_test_registry() -> Type[ToolRegistry]:
             " referred to by statistic_id, for all the stocks in stock_ids, over the time"
             " range indicated, if end_date is not that means it is up to the present. It returns"
             " a StockTimeSeriesTable where the rows are stocks and the columns are the dates "
-            " stock_labels should be human-readable names or tickers that will be shown instead of",
+            " stock_labels should be human-readable names or tickers that will be shown instead of"
             " the identifiers if there is any visualization of this table, there must be as"
-            " many labels as there are stock_ids",
+            " many labels as there are stock_ids"
         ),
         category=ToolCategory.STATISTICS,
         tool_registry=TestRegistry,
     )
     async def get_company_stats_over_dates(
         args: GetCompanyStatsOverDatesInput, context: PlanRunContext
-    ) -> StockTimeSeriesTable:
-        return StockTimeSeriesTable(val=pd.DataFrame([[0]]))
+    ) -> Table:
+        return Table(data=pd.DataFrame([[0]]), columns=[])
 
     class AverageTableByDateInput(ToolArgs):
-        table: TimeSeriesTable
+        table: Table
         new_column_header: str
 
     @tool(
@@ -290,12 +286,12 @@ def get_test_registry() -> Type[ToolRegistry]:
     )
     async def average_table_by_date(
         args: AverageTableByDateInput, context: PlanRunContext
-    ) -> TimeSeriesTable:
-        return TimeSeriesTable(val=pd.DataFrame([[0]]))
+    ) -> Table:
+        return Table(data=pd.DataFrame([[0]]), columns=[])
 
     class ConcatTimeSeriesTableInput(ToolArgs):
-        table1: TimeSeriesTable
-        table2: TimeSeriesTable
+        table1: Table
+        table2: Table
 
     @tool(
         description=(
@@ -307,11 +303,11 @@ def get_test_registry() -> Type[ToolRegistry]:
     )
     async def concat_time_series_table(
         args: ConcatTimeSeriesTableInput, context: PlanRunContext
-    ) -> TimeSeriesTable:
-        return TimeSeriesTable(val=pd.DataFrame([[0]]))
+    ) -> Table:
+        return Table(data=pd.DataFrame([[0]]), columns=[])
 
     class PlotLineGraphInput(ToolArgs):
-        table: TimeSeriesTable
+        table: Table
 
     @tool(
         description=(
@@ -321,10 +317,8 @@ def get_test_registry() -> Type[ToolRegistry]:
         category=ToolCategory.OUTPUT,
         tool_registry=TestRegistry,
     )
-    async def PlotLineGraphInput(
-        args: PlotLineGraphInput, context: PlanRunContext
-    ) -> TimeSeriesLineGraph:
-        return TimeSeriesLineGraph(val=args.table)
+    async def PlotLineGraphInput(args: PlotLineGraphInput, context: PlanRunContext) -> Graph:
+        return Graph()
 
     # health care companies example
 
@@ -344,8 +338,8 @@ def get_test_registry() -> Type[ToolRegistry]:
 
     @tool(
         description=(
-            "Given a sector_id produced by the sector_lookup function, this returns stock ids for all ",
-            "stocks in that sector",
+            "Given a sector_id produced by the sector_lookup function, this returns stock ids for all "
+            "stocks in that sector"
         ),
         category=ToolCategory.STOCK,
         tool_registry=TestRegistry,
@@ -353,7 +347,7 @@ def get_test_registry() -> Type[ToolRegistry]:
     async def get_stocks_in_sector(
         args: GetStocksInSectorInput, context: PlanRunContext
     ) -> List[int]:
-        return ""
+        return []
 
     class GetCurrentCompanyStatsInput(ToolArgs):
         stock_ids: List[int]

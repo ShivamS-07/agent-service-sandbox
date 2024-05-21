@@ -7,7 +7,7 @@ from cachetools import TTLCache, cached
 from data_access_layer.core.dao.features.feature_utils import get_feature_metadata
 from data_access_layer.core.dao.features.features_dao import FeaturesDAO
 
-from agent_service.io_types import StockTimeSeriesTable
+from agent_service.io_types.table import Table, TableColumn, TableColumnType
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.stocks import StatisticsIdentifierLookupInput
 from agent_service.types import PlanRunContext
@@ -89,7 +89,7 @@ class FeatureDataInput(ToolArgs):
 )
 async def get_statistic_data_for_companies(
     args: FeatureDataInput, context: PlanRunContext
-) -> StockTimeSeriesTable:
+) -> Table:
     """Returns the Time series of data for the requested field for each of the stocks_ids
     Optionally a start_date and end_date may be provided to specify a date range
     To get a specific date only set both inputs to the same date
@@ -101,21 +101,19 @@ async def get_statistic_data_for_companies(
         context (PlanRunContext): The context of the plan run.
 
     Returns:
-        StockTimeSeriesTable: The requested data.
+        Table: The requested data.
     """
     return await _async_get_feature_data(args, context)
 
 
 @async_wrap
-def _async_get_feature_data(
-    args: FeatureDataInput, context: PlanRunContext
-) -> StockTimeSeriesTable:
+def _async_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> Table:
     # if getting a large number of features or stocks or dates, feature dao could be slow-ish
     # so  provide this wrapper to not block the event loop
     return _sync_get_feature_data(args, context)
 
 
-def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> StockTimeSeriesTable:
+def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> Table:
 
     features_metadata = get_feature_metadata(feature_ids=[args.field_id])
     metadata = features_metadata.get(args.field_id, None)
@@ -127,20 +125,34 @@ def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> S
         raise ValueError(f"Data field: {args.field_id} is from an unsupported source: {source}")
 
     if source == "SPIQ_DAILY":
-        return get_daily_feature_data(args, context)
+        df = get_daily_feature_data(args, context)
 
-    if source in ["SPIQ_DIVIDEND", "SPIQ_TARGET"]:
-        return get_non_daily_data(args, context)
+    elif source in ["SPIQ_DIVIDEND", "SPIQ_TARGET"]:
+        df = get_non_daily_data(args, context)
 
-    if source == "SPIQ_QUARTERLY":
-        return get_quarterly_data(args, context)
+    elif source == "SPIQ_QUARTERLY":
+        df = get_quarterly_data(args, context)
 
-    raise ValueError(
-        f"code path missing: Data field: {args.field_id} is from an unsupported source: {source}"
+    else:
+        raise ValueError(
+            f"code path missing: Data field: {args.field_id} is from an unsupported source: {source}"
+        )
+
+    return Table(
+        data=df,
+        columns=[
+            # TODO handle smarter column types, etc.
+            TableColumn(
+                label=col if not isinstance(col, tuple) else col[1],
+                col_label_is_gbi_id=True,
+                col_type=TableColumnType.FLOAT,
+            )
+            for col in df.columns
+        ],
     )
 
 
-def get_daily_feature_data(args: FeatureDataInput, context: PlanRunContext) -> StockTimeSeriesTable:
+def get_daily_feature_data(args: FeatureDataInput, context: PlanRunContext) -> pd.DataFrame:
     # if no dates are given assume they just want the latest value
     LATEST_DATE = get_latest_date()
     start_date = LATEST_DATE
@@ -179,11 +191,10 @@ def get_daily_feature_data(args: FeatureDataInput, context: PlanRunContext) -> S
 
     # cut it back down to the requested time range
     df = df.loc[pd.to_datetime(start_date) : pd.to_datetime(end_date)]
-    # print("final df", df)
-    return StockTimeSeriesTable(val=df)
+    return df
 
 
-def get_non_daily_data(args: FeatureDataInput, context: PlanRunContext) -> StockTimeSeriesTable:
+def get_non_daily_data(args: FeatureDataInput, context: PlanRunContext) -> pd.DataFrame:
     # if no dates are given assume they just want the latest value
     LATEST_DATE = get_latest_date()
     start_date = LATEST_DATE
@@ -226,12 +237,11 @@ def get_non_daily_data(args: FeatureDataInput, context: PlanRunContext) -> Stock
         # get only the range they asked for
         df = df.loc[pd.to_datetime(start_date) : pd.to_datetime(end_date)]
 
-    # print("final df", df)
-    return StockTimeSeriesTable(val=df)
+    return df
 
 
 # this might need a separate tool for addressing the data via relative and absolute periods
-def get_quarterly_data(args: FeatureDataInput, context: PlanRunContext) -> StockTimeSeriesTable:
+def get_quarterly_data(args: FeatureDataInput, context: PlanRunContext) -> pd.DataFrame:
     # if no dates are given assume they just want the latest value
     LATEST_DATE = get_latest_date()
     start_date = LATEST_DATE
@@ -287,8 +297,7 @@ def get_quarterly_data(args: FeatureDataInput, context: PlanRunContext) -> Stock
     # grab only the -1 relperiod column "... idx[rel_per:-1, ..."
     # grab all the gbiids "... :]"
     df = df.loc[idx[:], idx[rel_per:-1, :]]  # type: ignore
-    # print("final df", df)
-    return StockTimeSeriesTable(val=df)
+    return df
 
 
 # TODO in the future we need a latest date per region

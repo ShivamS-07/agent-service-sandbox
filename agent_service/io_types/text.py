@@ -1,72 +1,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Type, Union
+from typing import Any, Dict, List, Literal, Type, Union
 from uuid import uuid4
 
-import pandas as pd
 from pydantic import Field
-from pydantic.functional_serializers import field_serializer
-from pydantic.functional_validators import field_validator
 
 from agent_service.io_type_utils import ComplexIOBase, io_type
-
-
-@io_type
-class Table(ComplexIOBase):
-    # A dataframe wrapper
-    val: pd.DataFrame
-
-    def to_gpt_input(self) -> str:
-        return f"[Table with {self.val.shape[0]} rows and {self.val.shape[0]} columns]"
-
-    @field_validator("val", mode="before")
-    @classmethod
-    def _deserializer(cls, val: Any) -> Any:
-        val_field = cls.model_fields["val"]
-        if isinstance(val, dict) and val_field.annotation is pd.DataFrame:
-            val = pd.DataFrame.from_dict(val)
-        return val
-
-    @field_serializer("val", mode="wrap")
-    @classmethod
-    def _field_serializer(cls, val: Any, dumper: Callable) -> Any:
-        if isinstance(val, pd.DataFrame):
-            val = val.to_dict()
-        return dumper(val)
-
-
-@io_type
-class TimeSeriesTable(Table):
-    # A dataframe with date row index.
-    val: pd.DataFrame
-
-
-@io_type
-class StockTimeSeriesTable(TimeSeriesTable):
-    # A dataframe with date row index and GBI ID columns.
-    pass
-
-
-@io_type
-class StockTable(Table):
-    # A dataframe with GBI ID row index and arbitrary columns.
-    pass
-
-
-@io_type
-class Graph(ComplexIOBase):
-    # TODO: figure out how we are going to represent a graph, now just a table
-    val: Table
-
-    def to_gpt_input(self) -> str:
-        return f"[Graph based on table with {self.val.val.shape[0]} rows and {self.val.val.shape[0]} columns]"
-
-
-@io_type
-class TimeSeriesLineGraph(Graph):
-    pass
-
+from agent_service.io_types.output import Output, OutputType
 
 TextIDType = Union[str, int]
 
@@ -76,8 +17,11 @@ class Text(ComplexIOBase):
     id: TextIDType = Field(default_factory=lambda: str(uuid4()))
     val: str = ""
 
+    def to_rich_output(self) -> Output:
+        return TextOutput(val=self.get().val)
+
     @classmethod
-    def get_all_strs(cls, text: Union[Text, List[Any]]) -> Union[str, List[Any]]:
+    def get_all_strs(cls, text: Union[Text, TextGroup, List[Any]]) -> Union[str, List[Any]]:
         # For any possible configuration of Texts or TextGroups in Lists, this converts that
         # configuration to the corresponding strings in list, in class specific batches
         # TextGroups become a single string here
@@ -279,3 +223,14 @@ class TextGroup(ComplexIOBase):
 
     def convert_to_str(self, id_to_str: Dict[TextIDType, str]) -> str:
         return "\n***\n".join(id_to_str[text.id] for text in self.val)
+
+    def to_rich_output(self) -> Output:
+        # construct a lookup for all child texts
+        strings = Text.get_all_strs(self.val)
+        # TODO fix this implementation?
+        return TextOutput(val=str(strings))
+
+
+class TextOutput(Output):
+    output_type: Literal[OutputType.TEXT] = OutputType.TEXT
+    val: str

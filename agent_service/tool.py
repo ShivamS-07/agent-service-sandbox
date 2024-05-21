@@ -3,7 +3,7 @@ A tool represents a 'function' that can be included in an execution plan by an
 LLM. Tools are essentially python functions wrapped in a decorator. For example:
 
 class MyToolInput(ToolArgs):
-    arg1: StockTimeseriesTable
+    arg1: Table
     arg2: int = 1
     arg3: List[int] = [1, 2, 3]
 
@@ -124,7 +124,7 @@ class Tool:
         """
         Returns the tool as a function header for use by an LLM. E.g.
 
-        'def my_func(t: StockTimeseriesTable, x: int, y: int = 2)'
+        'def my_func(t: Table, x: int, y: int = 2)'
 
         """
         args = []

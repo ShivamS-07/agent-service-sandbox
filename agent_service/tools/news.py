@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 
 from agent_service.external.grpc_utils import timestamp_to_datetime
 from agent_service.external.nlp_svc_client import get_multi_companies_news_topics
-from agent_service.io_types import StockNewsDevelopmentText
+from agent_service.io_types.text import StockNewsDevelopmentText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.date_utils import get_now_utc

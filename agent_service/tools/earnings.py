@@ -3,7 +3,7 @@ import datetime
 from collections import defaultdict
 from typing import List, Optional
 
-from agent_service.io_types import EarningsSummaryText
+from agent_service.io_types.text import EarningsSummaryText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.LLM_analysis import (

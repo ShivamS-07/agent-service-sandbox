@@ -5,10 +5,16 @@ from typing import Any, Dict, List, Optional, Tuple
 from gbi_common_py_utils.utils.postgres import PostgresBase
 
 from agent_service.endpoints.models import AgentMetadata, AgentOutput
-from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
+from agent_service.io_type_utils import (
+    ComplexIOBase,
+    IOType,
+    dump_io_type,
+    load_io_type,
+)
 
 # Make sure all io_types are registered
 from agent_service.io_types import *  # noqa
+from agent_service.io_types.text import Text
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
@@ -257,7 +263,14 @@ class Postgres(PostgresBase):
         outputs = []
         for row in rows:
             output = row["output"]
-            row["output"] = load_io_type(output) if output else output
+            output_value = load_io_type(output) if output else output
+            if isinstance(output_value, ComplexIOBase):
+                # Convert to a rich output type for the frontend
+                output_value = output_value.to_rich_output()
+            else:
+                # otherwise, treat it as a text output if it's a basic type
+                output_value = Text(val=str(output_value)).to_rich_output()
+            row["output"] = output_value
             outputs.append(AgentOutput(agent_id=agent_id, **row))
 
         return outputs

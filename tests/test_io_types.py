@@ -12,7 +12,7 @@ from agent_service.io_type_utils import (
     io_type,
     load_io_type,
 )
-from agent_service.io_types import StockTable, StockTimeSeriesTable
+from agent_service.io_types.table import Table, TableColumn, TableColumnType
 from agent_service.types import ChatContext, Message
 
 
@@ -53,15 +53,19 @@ class TestIOType(unittest.TestCase):
     def test_dataframe_serialization(self):
         df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], index=["a", "b"], columns=["x", "y", "z"])
 
-        cases = [[StockTable(val=df), 1], StockTimeSeriesTable(val=df), StockTable(val=df)]
+        cases = [
+            [Table(data=df, columns=[TableColumn(label="A", col_type=TableColumnType.INTEGER)]), 1],
+            Table(data=df, columns=[TableColumn(label="B", col_type=TableColumnType.STRING)]),
+            Table(data=df, columns=[TableColumn(label="C", col_type=TableColumnType.FLOAT)]),
+        ]
         for arg in cases:
             res = dump_io_type(arg)
             loaded = load_io_type(res)
             self.assertEqual(type(loaded), type(arg))
             if isinstance(arg, list):
-                pd.testing.assert_frame_equal(loaded[0].val, arg[0].val)
+                pd.testing.assert_frame_equal(loaded[0].data, arg[0].data)
             else:
-                pd.testing.assert_frame_equal(loaded.val, arg.val)  # type: ignore
+                pd.testing.assert_frame_equal(loaded.data, arg.data)  # type: ignore
 
     def test_container_types(self):
         table = TestComplexType(val=2)

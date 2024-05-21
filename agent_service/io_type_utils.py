@@ -21,15 +21,17 @@ from pydantic.functional_validators import PlainValidator, model_validator
 from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandler
 from typing_extensions import Annotated, TypeAliasType
 
+from agent_service.io_types.output import Output
+
 SimpleType = Union[int, str, bool, float]
 
 PrimitiveType = Union[
+    datetime.date,
+    datetime.datetime,
     int,
     str,
     bool,
     float,
-    datetime.date,
-    datetime.datetime,
 ]
 
 IO_TYPE_NAME_KEY = "_type"
@@ -45,8 +47,16 @@ class ComplexIOBase(BaseModel, ABC):
     def to_gpt_input(self) -> str:
         return str(self.__class__)
 
+    def to_rich_output(self) -> Output:
+        """
+        Converts a ComplexIOType to rich output that powers the frontend.
+        """
+        # By default, just return json text. This should be overriden by types
+        # that are to be displayed to the frontend.
+        raise NotImplementedError("This type does not have a rich output")
+
     @classmethod
-    def name(cls) -> str:
+    def type_name(cls) -> str:
         return cls.__name__
 
     @model_serializer(mode="wrap")
@@ -56,7 +66,7 @@ class ComplexIOBase(BaseModel, ABC):
 
         # This calls the default pydantic serializer
         ser_dict: Dict[str, Any] = dumper(self)
-        ser_dict[IO_TYPE_NAME_KEY] = self.name()
+        ser_dict[IO_TYPE_NAME_KEY] = self.type_name()
         return ser_dict
 
     @model_validator(mode="wrap")
@@ -92,12 +102,23 @@ IOTypeBase = TypeAliasType(  # type: ignore
     "IOTypeBase",
     Union[PrimitiveType, List["IOTypeBase"], ComplexIOBase, "IOTypeDict"],  # type: ignore
 )
+
+
+# Below functions are just used to match the required pydantic function schemas.
+def _load_io_type_wrapper(v: Any) -> Any:
+    return _load_io_type_helper(v)
+
+
+def _dump_io_type_wrapper(v: Any, _: Any) -> Any:
+    return _dump_io_type_helper(v)
+
+
 IOType = TypeAliasType(  # type: ignore
     "IOType",
     Annotated[
         IOTypeBase,
-        PlainValidator(lambda v: _load_io_type_helper(v)),
-        WrapSerializer(lambda v, _: _dump_io_type_helper(v)),
+        PlainValidator(_load_io_type_wrapper),
+        WrapSerializer(_dump_io_type_wrapper),
     ],
 )
 # Need to do this due to limits of mypy and pydantic.
@@ -168,7 +189,7 @@ def io_type(cls: Type[T]) -> Type[T]:
     """
     Simple decorator to store a mapping from class name to class.
     """
-    _COMPLEX_TYPE_DICT[cls.name()] = cls
+    _COMPLEX_TYPE_DICT[cls.type_name()] = cls
     return cls
 
 

@@ -1,11 +1,14 @@
 import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from prefect.client.schemas.objects import StateType
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent_service.io_type_utils import IOType
+from agent_service.io_types.graph import GraphOutput
+from agent_service.io_types.table import TableOutput
+from agent_service.io_types.text import TextOutput
 from agent_service.types import Message
 
 
@@ -166,7 +169,7 @@ class AgentOutput(BaseModel):
     plan_id: str  # which execution plan is this associated with
     plan_run_id: str  # which run is the output generated from
     is_intermediate: bool  # whether this is an intermediate output or the final output
-    output: IOType
+    output: Union[TextOutput, GraphOutput, TableOutput] = Field(discriminator="output_type")
     created_at: datetime.datetime
 
 
