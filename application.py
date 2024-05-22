@@ -32,6 +32,8 @@ from agent_service.endpoints.models import (
     UpdateAgentResponse,
 )
 from agent_service.GPT.requests import _get_gpt_service_stub
+from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import get_psql
@@ -281,8 +283,8 @@ if __name__ == "__main__":
 
     logger.info("Starting server...")
     application.state.agent_service_impl = AgentServiceImpl(
-        pg=get_psql(),
         task_executor=PrefectTaskExecutor(),
         gpt_service_stub=_get_gpt_service_stub()[0],
+        async_db=AsyncDB(pg=AsyncPostgresBase()),
     )
     uvicorn.run(application, host=args.address, port=args.port)

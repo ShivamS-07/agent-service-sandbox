@@ -5,7 +5,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set
 
 from agent_service.endpoints.models import PlanRun, PlanRunTask, PlanRunTaskLog, Status
-from agent_service.utils.postgres import Postgres
+from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.prefect import (
     get_prefect_plan_run_statuses,
     get_prefect_task_statuses,
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 async def get_agent_hierarchical_worklogs(
     agent_id: str,
-    db: Postgres,
+    db: AsyncDB,
     start_date: Optional[datetime.date] = None,  # inclusive
     end_date: Optional[datetime.date] = None,  # inclusive
     most_recent_num_runs: Optional[int] = None,
@@ -27,11 +27,11 @@ async def get_agent_hierarchical_worklogs(
         logger.info(
             f"Getting the most recent {most_recent_num_runs} plan run IDs for agent {agent_id}..."
         )
-        plan_run_ids = db.get_agent_plan_runs(agent_id, limit_num=most_recent_num_runs)
+        plan_run_ids = await db.get_agent_plan_runs(agent_id, limit_num=most_recent_num_runs)
 
     logger.info(f"Getting worklogs for agent {agent_id}...")
     end_date_exclusive = end_date + datetime.timedelta(days=1) if end_date else None
-    rows = db.get_agent_worklogs(agent_id, start_date, end_date_exclusive, plan_run_ids)
+    rows = await db.get_agent_worklogs(agent_id, start_date, end_date_exclusive, plan_run_ids)
 
     logger.info("Getting runs statuses and tasks statuses from Prefect...")
     plan_ids = list({row["plan_id"] for row in rows})
@@ -41,7 +41,7 @@ async def get_agent_hierarchical_worklogs(
     )
 
     logger.info("Getting task names from execution_plans table...")
-    plan_id_to_plan = db.get_execution_plans(plan_ids)
+    plan_id_to_plan = await db.get_execution_plans(plan_ids)
 
     logger.info(f"Grouping work logs in hierarchical structure for agent {agent_id}...")
     plan_id_to_plan_run_ids: Dict[str, Set[str]] = defaultdict(set)

@@ -4,20 +4,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from gbi_common_py_utils.utils.postgres import PostgresBase
 
-from agent_service.endpoints.models import AgentMetadata, AgentOutput
-from agent_service.io_type_utils import (
-    ComplexIOBase,
-    IOType,
-    dump_io_type,
-    load_io_type,
-)
+from agent_service.io_type_utils import IOType, dump_io_type
 
 # Make sure all io_types are registered
 from agent_service.io_types import *  # noqa
-from agent_service.io_types.text import Text
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message, PlanRunContext
-from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 
 PSQL_CONN = None
@@ -40,77 +32,6 @@ class Postgres(PostgresBase):
     ################################################################################################
     # Agent Service
     ################################################################################################
-    def create_agent_for_user(self, user_id: str, agent_name: str = DEFAULT_AGENT_NAME) -> str:
-        """
-        This function creates an agent for a given user.
-
-        Args:
-            user_id: The user id to create the agent for.
-            agent_name: The name of the agent.
-
-        Returns: The agent id that was created.
-        """
-        sql = """
-            INSERT INTO agent.agents (user_id, agent_name)
-            VALUES (%(user_id)s, %(agent_name)s)
-            RETURNING agent_id::VARCHAR;
-        """
-        rows = self.generic_read(sql, params={"user_id": user_id, "agent_name": agent_name})
-        return rows[0]["agent_id"]
-
-    def insert_agent_and_messages(
-        self, agent_metadata: AgentMetadata, messages: List[Message]
-    ) -> None:
-        sql1 = """
-            INSERT INTO agent.agents (agent_id, user_id, agent_name, created_at, last_updated)
-            VALUES (%(agent_id)s, %(user_id)s, %(agent_name)s, %(created_at)s, %(last_updated)s)
-        """
-        sql2 = """
-            INSERT INTO agent.chat_messages
-            (agent_id, message_id, message, is_user_message, message_time)
-            VALUES (%(agent_id)s, %(message_id)s, %(message)s, %(is_user_message)s,
-                %(message_time)s)
-        """
-        with self.transaction_cursor() as cursor:
-            cursor.execute(sql1, agent_metadata.model_dump())
-            cursor.executemany(sql2, [msg.model_dump() for msg in messages])
-
-    def delete_agent_by_id(self, agent_id: str) -> None:
-        self.delete_from_table_where(table_name="agent.agents", agent_id=agent_id)
-
-    def update_agent_name(self, agent_id: str, agent_name: str) -> None:
-        return self.generic_update(
-            table_name="agent.agents",
-            where={"agent_id": agent_id},
-            values_to_update={"agent_name": agent_name, "last_updated": get_now_utc()},
-        )
-
-    def get_user_all_agents(self, user_id: str) -> List[AgentMetadata]:
-        """
-        This function retrieves all agents for a given user.
-
-        Args:
-            user_id: The user id to retrieve agents for.
-
-        Returns: A list of all agents for the user.
-        """
-        sql = """
-            SELECT agent_id::VARCHAR, user_id::VARCHAR, agent_name, created_at, last_updated
-            FROM agent.agents
-            WHERE user_id = %(user_id)s;
-        """
-        rows = self.generic_read(sql, params={"user_id": user_id})
-        return [
-            AgentMetadata(
-                agent_id=row["agent_id"],
-                user_id=row["user_id"],
-                agent_name=row["agent_name"],
-                created_at=row["created_at"],
-                last_updated=row["last_updated"],
-            )
-            for row in rows
-        ]
-
     @lru_cache(maxsize=128)
     def get_agent_owner(self, agent_id: str) -> Optional[str]:
         """
@@ -203,94 +124,6 @@ class Postgres(PostgresBase):
             plan_run_id=plan_run_id,
         )
 
-    def get_agent_worklogs(
-        self,
-        agent_id: str,
-        start_date: Optional[datetime.date] = None,  # inclusive
-        end_date: Optional[datetime.date] = None,  # exclusive
-        plan_run_ids: Optional[List[str]] = None,
-    ) -> List[Dict]:
-        params: Dict[str, Any] = {"agent_id": agent_id}
-        filters = ""
-        if start_date:
-            filters += " AND created_at >= %(start_date)s"
-            params["start_date"] = start_date
-        if end_date:
-            filters += " AND created_at < %(end_date)s"
-            params["end_date"] = end_date
-        if plan_run_ids:
-            filters += " AND plan_run_id = ANY(%(plan_run_ids)s)"
-            params["plan_run_ids"] = plan_run_ids
-
-        sql1 = f"""
-            SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, task_id::VARCHAR, is_task_output,
-                log_id::VARCHAR, log_message, created_at
-            FROM agent.work_logs
-            WHERE agent_id = %(agent_id)s {filters}
-            ORDER BY created_at DESC;
-        """
-        return get_psql().generic_read(sql1, params=params)
-
-    def get_log_data_from_log_id(self, agent_id: str, log_id: str) -> List[Dict]:
-        # NOTE: the reason to not return the `log_data` directly is because we can't distinguish
-        # 1) if there's no such entry in the table
-        # 2) if the entry exists but the `log_data` is None
-        # these two cases will be handled differently so just return `rows`
-        sql = """
-            SELECT log_data
-            FROM agent.work_logs
-            WHERE agent_id = %(agent_id)s AND log_id = %(log_id)s
-        """
-        rows = self.generic_read(sql, {"agent_id": agent_id, "log_id": log_id})
-        return rows
-
-    def get_agent_outputs(self, agent_id: str) -> List[AgentOutput]:
-        sql = """
-        SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, output_id::VARCHAR, is_intermediate,
-            "output", created_at
-        FROM agent.agent_outputs ao
-        WHERE plan_run_id IN (
-            SELECT plan_run_id FROM agent.agent_outputs
-            WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
-            ORDER BY created_at DESC LIMIT 1
-        )
-        ORDER BY created_at ASC;
-        """
-        rows = get_psql().generic_read(sql, {"agent_id": agent_id})
-        if not rows:
-            return []
-
-        outputs = []
-        for row in rows:
-            output = row["output"]
-            output_value = load_io_type(output) if output else output
-            if isinstance(output_value, ComplexIOBase):
-                # Convert to a rich output type for the frontend
-                output_value = output_value.to_rich_output()
-            else:
-                # otherwise, treat it as a text output if it's a basic type
-                output_value = Text(val=str(output_value)).to_rich_output()
-            row["output"] = output_value
-            outputs.append(AgentOutput(agent_id=agent_id, **row))
-
-        return outputs
-
-    def get_task_output(self, agent_id: str, plan_run_id: str, task_id: str) -> Optional[IOType]:
-        sql = """
-        SELECT log_data
-        FROM agent.work_logs
-        WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s AND task_id = %(task_id)s
-            AND is_task_output AND log_data NOTNULL
-        ORDER BY created_at DESC
-        LIMIT 1;
-        """
-        rows = get_psql().generic_read(
-            sql, {"agent_id": agent_id, "plan_run_id": plan_run_id, "task_id": task_id}
-        )
-        if not rows:
-            return None
-        return load_io_type(rows[0]["log_data"])
-
     ################################################################################################
     # Tools and Execution Plans
     ################################################################################################
@@ -308,15 +141,6 @@ class Postgres(PostgresBase):
         self.generic_write(
             sql, params={"plan_id": plan_id, "agent_id": agent_id, "plan": plan.model_dump_json()}
         )
-
-    def get_execution_plans(self, plan_ids: List[str]) -> Dict[str, ExecutionPlan]:
-        sql = """
-            SELECT plan_id::VARCHAR, plan
-            FROM agent.execution_plans
-            WHERE plan_id = ANY(%(plan_ids)s)
-        """
-        rows = self.generic_read(sql, params={"plan_ids": plan_ids})
-        return {row["plan_id"]: ExecutionPlan.model_validate(row["plan"]) for row in rows}
 
     def write_tool_log(
         self, log: IOType, context: PlanRunContext, associated_data: Optional[IOType] = None

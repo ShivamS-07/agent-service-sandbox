@@ -3,6 +3,9 @@ import datetime
 import logging
 from typing import Optional
 
+from agent_service.utils.async_db import AsyncDB
+from tests.skip_commit_boosted_db import SkipCommitBoostedPG
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s.%(funcName)s:%(lineno)d - %(levelname)s - %(message)s",
@@ -30,18 +33,19 @@ from agent_service.endpoints.models import (
     UpdateAgentResponse,
 )
 from agent_service.utils.do_nothing_task_executor import DoNothingTaskExecutor
-from agent_service.utils.postgres import Postgres
 
 
 class TestAgentServiceImplBase(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.loop = asyncio.get_event_loop()  # type: ignore[assignment]
-        cls.pg = Postgres(skip_commit=True, environment="DEV")
+        cls.pg = AsyncDB(pg=SkipCommitBoostedPG())
         cls.channel = Channel(host="gpt-service-2.boosted.ai", port=50051)
         cls.gpt_service_stub = GPTServiceStub(cls.channel)
         cls.agent_service_impl = AgentServiceImpl(
-            pg=cls.pg, task_executor=DoNothingTaskExecutor(), gpt_service_stub=cls.gpt_service_stub
+            task_executor=DoNothingTaskExecutor(),
+            gpt_service_stub=cls.gpt_service_stub,
+            async_db=cls.pg,
         )
 
     @classmethod

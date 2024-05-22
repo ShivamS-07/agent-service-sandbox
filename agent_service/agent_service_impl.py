@@ -28,16 +28,19 @@ from agent_service.endpoints.models import (
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.io_type_utils import load_io_type
 from agent_service.types import ChatContext, Message
+from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.postgres import DEFAULT_AGENT_NAME, Postgres
+from agent_service.utils.postgres import DEFAULT_AGENT_NAME
 from agent_service.utils.task_executor import TaskExecutor
 
 LOGGER = logging.getLogger(__name__)
 
 
 class AgentServiceImpl:
-    def __init__(self, pg: Postgres, task_executor: TaskExecutor, gpt_service_stub: GPTServiceStub):
-        self.pg = pg
+    def __init__(
+        self, task_executor: TaskExecutor, gpt_service_stub: GPTServiceStub, async_db: AsyncDB
+    ):
+        self.pg = async_db
         self.task_executor = task_executor
         self.gpt_service_stub = gpt_service_stub
 
@@ -82,7 +85,9 @@ class AgentServiceImpl:
 
         try:
             LOGGER.info(f"Inserting agent and messages into DB for agent {agent.agent_id}...")
-            self.pg.insert_agent_and_messages(agent_metadata=agent, messages=[user_msg, gpt_msg])
+            await self.pg.insert_agent_and_messages(
+                agent_metadata=agent, messages=[user_msg, gpt_msg]
+            )
         except Exception as e:
             LOGGER.exception(f"Failed to insert agent and messages into DB with exception: {e}")
             return CreateAgentResponse(success=False, allow_retry=True)
@@ -100,14 +105,15 @@ class AgentServiceImpl:
         return CreateAgentResponse(success=True, allow_retry=False, agent_id=agent.agent_id)
 
     async def get_all_agents(self, user: User) -> GetAllAgentsResponse:
-        return GetAllAgentsResponse(agents=self.pg.get_user_all_agents(user.user_id))
+        agents = await self.pg.get_user_all_agents(user.user_id)
+        return GetAllAgentsResponse(agents=agents)
 
     async def delete_agent(self, agent_id: str) -> DeleteAgentResponse:
-        self.pg.delete_agent_by_id(agent_id)
+        await self.pg.delete_agent_by_id(agent_id)
         return DeleteAgentResponse(success=True)
 
     async def update_agent(self, agent_id: str, req: UpdateAgentRequest) -> UpdateAgentResponse:
-        self.pg.update_agent_name(agent_id, req.agent_name)
+        await self.pg.update_agent_name(agent_id, req.agent_name)
         return UpdateAgentResponse(success=True)
 
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
@@ -137,7 +143,7 @@ class AgentServiceImpl:
             LOGGER.info(
                 f"Inserting user message and GPT response into DB for agent {req.agent_id}..."
             )
-            self.pg.insert_chat_messages(messages=[user_msg, gpt_msg])
+            await self.pg.insert_chat_messages(messages=[user_msg, gpt_msg])
         except Exception as e:
             LOGGER.exception(f"Failed to insert messages into DB with exception: {e}")
             return ChatWithAgentResponse(success=False, allow_retry=True)
@@ -162,7 +168,7 @@ class AgentServiceImpl:
     async def get_chat_history(
         self, agent_id: str, start: Optional[datetime.datetime], end: Optional[datetime.datetime]
     ) -> GetChatHistoryResponse:
-        chat_context = self.pg.get_chats_history_for_agent(agent_id, start, end)
+        chat_context = await self.pg.get_chats_history_for_agent(agent_id, start, end)
         return GetChatHistoryResponse(messages=chat_context.messages)
 
     async def get_agent_worklog_board(
@@ -189,7 +195,7 @@ class AgentServiceImpl:
         )
 
         # TODO: For now just get the latest plan. Later we can switch to LIVE plan
-        plan_id, execution_plan = self.pg.get_latest_execution_plan(agent_id)
+        plan_id, execution_plan = await self.pg.get_latest_execution_plan(agent_id)
         if plan_id is None or execution_plan is None:
             execution_plan_template = None
         else:
@@ -204,7 +210,7 @@ class AgentServiceImpl:
     async def get_agent_worklog_output(
         self, agent_id: str, log_id: str
     ) -> GetAgentWorklogOutputResponse:
-        rows = self.pg.get_log_data_from_log_id(agent_id, log_id)
+        rows = await self.pg.get_log_data_from_log_id(agent_id, log_id)
         if not rows:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{log_id} not found")
         log_data = rows[0]["log_data"]
@@ -215,14 +221,14 @@ class AgentServiceImpl:
     async def get_agent_task_output(
         self, agent_id: str, plan_run_id: str, task_id: str
     ) -> GetAgentTaskOutputResponse:
-        task_output = self.pg.get_task_output(
+        task_output = await self.pg.get_task_output(
             agent_id=agent_id, plan_run_id=plan_run_id, task_id=task_id
         )
 
         return GetAgentTaskOutputResponse(log_data=task_output)
 
     async def get_agent_output(self, agent_id: str) -> GetAgentOutputResponse:
-        outputs = self.pg.get_agent_outputs(agent_id=agent_id)
+        outputs = await self.pg.get_agent_outputs(agent_id=agent_id)
         if not outputs:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"No output found for {agent_id=}"
