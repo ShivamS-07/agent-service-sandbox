@@ -1,4 +1,3 @@
-from logging import getLogger
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
 from uuid import uuid4
 
@@ -28,6 +27,7 @@ from agent_service.tools import *  # noqa
 from agent_service.types import ChatContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
+from agent_service.utils.prefect import get_prefect_logger
 
 
 def get_arg_dict(arg_str: str) -> Dict[str, str]:
@@ -39,9 +39,6 @@ def get_arg_dict(arg_str: str) -> Dict[str, str]:
         key, value = arg_str[arg_indicies[i] : arg_indicies[i + 1]].strip(" ,").split("=")
         arg_dict[key.strip()] = value.strip()
     return arg_dict
-
-
-logger = getLogger(__name__)
 
 
 class Planner:
@@ -61,7 +58,7 @@ class Planner:
     async def create_initial_plan(self, chat_context: ChatContext) -> ExecutionPlan:
         # TODO: put this in a loop where if the parse fails, we query GPT with
         # two additional messages: the GPT response and the parse exception
-
+        logger = get_prefect_logger(__name__)
         plan_str = await self._query_GPT_for_initial_plan(chat_context.get_gpt_input())
 
         steps = self._parse_plan_str(plan_str)
