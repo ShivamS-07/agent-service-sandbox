@@ -152,6 +152,7 @@ class ToolCategory(str, enum.Enum):
     TABLE = "table"
     OUTPUT = "output"
     THEME = "theme"
+    COMMENTARY = "commentary"
 
     def get_description(self) -> str:
         if self == ToolCategory.MISC:
@@ -189,6 +190,9 @@ class ToolCategory(str, enum.Enum):
 
         if self == ToolCategory.THEME:
             return "Tools that involve macroeconomic themes"
+
+        if self == ToolCategory.COMMENTARY:
+            return "Tools that involve writing commentary"
 
         return ""
 

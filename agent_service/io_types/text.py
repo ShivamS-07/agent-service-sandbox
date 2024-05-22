@@ -111,7 +111,7 @@ class ThemeText(Text):
     @classmethod
     def get_strs_lookup(cls, themes: List[ThemeText]) -> Dict[str, str]:  # type: ignore
         sql = """
-        SELECT theme_id::TEXT, theme_descriptions::TEXT AS description
+        SELECT theme_id::TEXT, theme_description::TEXT AS description
         FROM nlp_service.themes
         WHERE theme_id = ANY(%(theme_id)s)
         """

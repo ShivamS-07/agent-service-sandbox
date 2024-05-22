@@ -1,3 +1,5 @@
+# Author(s): Mohammad Zarei, David Grohmann
+
 from typing import Any, Dict, List
 
 from agent_service.external.stock_search_dao import async_sort_stocks_by_volume

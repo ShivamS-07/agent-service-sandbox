@@ -1,5 +1,8 @@
+# Author(s): Mohammad Zarei, Julian Brooke
+
 import asyncio
-from typing import Dict, List, Tuple
+import datetime
+from typing import Dict, List, Optional, Tuple
 
 from agent_service.external.nlp_svc_client import get_security_themes
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
@@ -54,43 +57,72 @@ class ThemePostgres:
 
 LOOKUP_PROMPT = Prompt(
     name="THEME_LOOKUP_PROMPT",
-    template="Your task is to identify which (if any) of a provided list of macroeconomic themes correspond to a particular provided reference to a theme. If there is an exact match, or one with a strong semantic overlap, return it, otherwise return None. Do not return anything else. Here is the list of themes:\n---\n{all_themes}\n---\nAnd here is the user provided theme you are trying to match: {user_theme}. Now output the match from the list if you have found it: ",  # noqa: E501
+    template=(
+        "Your task is to identify which (if any) of a provided list of "
+        "macroeconomic themes correspond to a provided reference to a theme. "
+        "If there is an exact match, or one with a strong semantic overlap, return it, "
+        "otherwise return None. Do not return anything else. Here is the list of themes:\n"
+        "---\n"
+        "{all_themes}\n"
+        "---\n"
+        "And here is the user provided theme references you are trying to match: "
+        "{user_theme}."
+        "Now output the matches from the list if you have found them: "
+    ),
 )
 
 OUTLOOK_PROMPT = Prompt(
     name="THEME_OUTLOOK_PROMPT",
-    template="Your task is to identify which of the two possible trends associated with a particular macroeconomic theme is a better fit for a client need, based on provided chat context. Return either either the number 1 or the number 2, nothing else. Here is the chat context:\n---\n{chat_context}\n---\nAnd here are the two options:\n1: {pos_trend}\n2: {neg_trend}",  # noqa: E501
+    template=(
+        "Your task is to identify which of the two possible trends associated with a "
+        "particular macroeconomic theme is a better fit for a client need, based on provided "
+        "chat context. Return either either the number 1 or the number 2, nothing else. "
+        "Here is the chat context:\n"
+        "---\n"
+        "{chat_context}\n"
+        "---\n"
+        "And here are the two options:\n"
+        "1: {pos_trend}\n2: {neg_trend}"
+    ),
 )
 
 
 class GetMacroeconomicThemeInput(ToolArgs):
-    theme_ref: str
+    theme_refs: List[str]
 
 
 @tool(
-    description="This searches for an existing analysis of a macroeconomic theme and its effects "
-    "on stocks. The search is based on a string reference to the theme. A theme text object"
-    " is returned",
+    description=(
+        "This function searches for existing analysis of a macroeconomic themes "
+        "The search is based on a list of string references to the themes. "
+        "A list of theme text objects is returned"
+    ),
     category=ToolCategory.THEME,
 )
-async def get_macroeconomic_theme(
+async def get_macroeconomic_themes(
     args: GetMacroeconomicThemeInput, context: PlanRunContext
-) -> ThemeText:
+) -> List[ThemeText]:
     db = ThemePostgres()
     gpt_context = create_gpt_context(
-        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=DEFAULT_CHEAP_MODEL)
     theme_id_lookup = db.get_boosted_themes_lookup()
-    result = await llm.do_chat_w_sys_prompt(
-        LOOKUP_PROMPT.format(all_themes="\n".join(theme_id_lookup), user_theme=args.theme_ref),
-        NO_PROMPT,
-    )
-    if result in theme_id_lookup:
-        return ThemeText(id=theme_id_lookup[result])
-    else:
+    matched_themes = [
+        await llm.do_chat_w_sys_prompt(
+            LOOKUP_PROMPT.format(all_themes="\n".join(theme_id_lookup), user_theme=theme),
+            NO_PROMPT,
+        )
+        for theme in args.theme_refs
+    ]
+    themes = [
+        ThemeText(id=theme_id_lookup[theme]) for theme in matched_themes if theme in theme_id_lookup
+    ]
+    if not themes:
         # TODO we should actually throw an error and use it to revise the plan
-        return ThemeText(id="-1")
+        print(f"No themes found for: {args.theme_refs}!")
+        themes = [ThemeText(id="-1")]
+    return themes
 
 
 class GetStocksAffectedByThemeInput(ToolArgs):
@@ -100,8 +132,10 @@ class GetStocksAffectedByThemeInput(ToolArgs):
 
 @tool(
     description=(
-        "This gets a list of stocks (stock identifiers) that are either positively (if positive "
-        "is True) or negatively affected (if positive is False) by the theme indicated by theme_id"
+        (
+            "This function returns a list of stocks (stock identifiers) that are either positively (if positive "
+            "is True) or negatively affected (if positive is False) by the theme indicated by theme_id"
+        )
     ),
     category=ToolCategory.THEME,
 )
@@ -165,82 +199,95 @@ async def get_macroeconomic_themes_affecting_stocks(
 
 
 class GetThemeDevelopmentNewsInput(ToolArgs):
-    # the theme text object to get the news for
-    theme: ThemeText
+    # the themes to get the news for
+    themes: List[ThemeText]
 
 
 @tool(
     description=(
-        "This function takes a theme text object"
-        " and returns the development news for that theme."
+        "This function takes a lsit of themes as theme text object "
+        "and returns the list of corresponding developments news for each theme."
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
 )
 async def get_news_developments_about_theme(
     args: GetThemeDevelopmentNewsInput, context: PlanRunContext
-) -> List[ThemeNewsDevelopmentText]:
+) -> List[List[ThemeNewsDevelopmentText]]:
     """
-    This function takes a theme and returns the development news for that theme.
+    This function takes a list of theme(s) and returns the development news for them.
 
     Args:
         args (GetThemeDevelopmentNewsInput): The theme to get the news for.
         context (PlanRunContext): The context of the plan run.
 
     Returns:
-        List[ThemeNewsDevelopmentText]: List of news for the theme.
-    """
-    sql = """
-    SELECT development_id::TEXT
-    FROM nlp_service.theme_developments
-    WHERE theme_id = %s
+        List[List[ThemeNewsDevelopmentText]]: List of news for each theme.
     """
     db = get_psql()
-    rows = db.generic_read(sql, [args.theme.id])
-    development_ids = [row["development_id"] for row in rows]
-    if not development_ids:
-        raise ValueError(f"No developments found for theme {args.theme.id}")
-    return [ThemeNewsDevelopmentText(id=id) for id in development_ids]
+    res = []
+    for theme in args.themes:
+        sql = """
+        SELECT development_id::TEXT
+        FROM nlp_service.theme_developments
+        WHERE theme_id = %s
+        """
+        rows = db.generic_read(sql, [theme.id])
+        development_ids = [row["development_id"] for row in rows]
+        res.append([ThemeNewsDevelopmentText(id=id) for id in development_ids])
+    return res
 
 
 class GetThemeDevelopmentNewsArticlesInput(ToolArgs):
-    # the theme development news to get the articles for
-    development: ThemeNewsDevelopmentText
+    # the theme developments news to get the articles for
+    developments_list: List[List[ThemeNewsDevelopmentText]]
+    start_date: Optional[datetime.date] = None
 
 
 @tool(
     description=(
-        "This function takes a theme news development text object"
-        " and returns the news articles text object for that theme news development."
+        "This function takes a list of list of theme news developments "
+        "and returns the news articles for each theme news development "
+        "that are published after a given start date or "
+        "in the last 30 days if no start date is provided."
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
 )
 async def get_news_articles_for_theme_developments(
     args: GetThemeDevelopmentNewsArticlesInput, context: PlanRunContext
-) -> List[ThemeNewsDevelopmentArticlesText]:
+) -> List[List[List[ThemeNewsDevelopmentArticlesText]]]:
     """
-    This function takes a theme news development text object
-    and returns the article text object for that theme.
+    This function takes a list of list of theme news developments
+    and returns the article text object for each theme news development.
 
     Args:
         args (GetThemeDevelopmentNewsInput): The theme text object to get the news for.
         context (PlanRunContext): The context of the plan run.
 
     Returns:
-        ThemeNewsDevelopmentArticlesText: The article text object for the theme news development.
+        List[List[List[ThemeNewsDevelopmentArticlesText]]]: The list of article text object
+            for each theme news development.
     """
-    sql = """
-    SELECT news_id::TEXT
-    FROM nlp_service.theme_news
-    WHERE development_id = %s
-    """
+    start_date = args.start_date
+    if not start_date:
+        start_date = (get_now_utc() - datetime.timedelta(days=30)).date()
+    res = []
     db = get_psql()
-    rows = db.generic_read(sql, [args.development.id])
-    news_ids = [row["news_id"] for row in rows]
-    if not news_ids:
-        raise ValueError(f"No developments found for theme {args.development.id}")
-    return [ThemeNewsDevelopmentArticlesText(id=id) for id in news_ids]
+    for developments in args.developments_list:
+        articles = []
+        for development in developments:
+            sql = """
+            SELECT news_id::TEXT
+            FROM nlp_service.theme_news
+            WHERE development_id = %s
+            AND published_at >= %s
+            """
+            rows = db.generic_read(sql, [development.id, start_date])
+            news_ids = [row["news_id"] for row in rows]
+            articles.append([ThemeNewsDevelopmentArticlesText(id=id) for id in news_ids])
+        res.append(articles)
+    return res
 
 
 async def main() -> None:
@@ -255,11 +302,11 @@ async def main() -> None:
         chat=chat_context,
         run_tasks_without_prefect=True,
     )
-    theme: ThemeText = await get_macroeconomic_theme(  # type: ignore
-        args=GetMacroeconomicThemeInput(theme_ref="recession"), context=plan_context
+    themes: List[ThemeText] = await get_macroeconomic_themes(  # type: ignore
+        args=GetMacroeconomicThemeInput(theme_refs=["recession"]), context=plan_context
     )
     stocks = await get_stocks_affected_by_theme(
-        GetStocksAffectedByThemeInput(theme=theme, positive=False), context=plan_context
+        GetStocksAffectedByThemeInput(theme=themes[0], positive=False), context=plan_context
     )
     print(stocks)
 
