@@ -17,6 +17,10 @@ from nlp_service_proto_v1.news_pb2 import (
     GetMultiCompaniesNewsTopicsResponse,
 )
 from nlp_service_proto_v1.nlp_grpc import NLPServiceStub
+from nlp_service_proto_v1.themes_pb2 import (
+    GetSecurityThemesRequest,
+    GetSecurityThemesResponse,
+)
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
 from agent_service.utils.logs import async_perf_logger
@@ -71,4 +75,17 @@ async def get_multi_companies_news_topics(
             raise ValueError(
                 f"Failed to get multi companies news sentiments: {response.status.message}"
             )
+        return response
+
+
+@grpc_retry
+@async_perf_logger
+async def get_security_themes(user_id: str, gbi_ids: List[int]) -> GetSecurityThemesResponse:
+    with _get_service_stub() as stub:
+        response: GetSecurityThemesResponse = await stub.GetSecurityThemes(
+            GetSecurityThemesRequest(gbi_ids=gbi_ids),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        if response.status.code != 0:
+            raise ValueError(f"Failed to get security themes: {response.status.message}")
         return response

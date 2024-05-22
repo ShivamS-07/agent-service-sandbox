@@ -1,6 +1,7 @@
 import asyncio
 from typing import Dict, List, Tuple
 
+from agent_service.external.nlp_svc_client import get_security_themes
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.text import (
@@ -130,6 +131,37 @@ async def get_stocks_affected_by_theme(
         if polarity == args.positive:  # matches the desired polarity
             final_stocks.append(stock)
     return final_stocks
+
+
+class GetMacroeconomicThemesAffectingStocksInput(ToolArgs):
+    stock_ids: List[int]
+
+
+@tool(
+    description=(
+        "This function takes a list of stock identifiers and returns a list of lists of theme text"
+        " objects that are affecting the stocks. Each theme list corresponds to a stock in the"
+        " input list."
+    ),
+    category=ToolCategory.THEME,
+    tool_registry=ToolRegistry,
+)
+async def get_macroeconomic_themes_affecting_stocks(
+    args: GetMacroeconomicThemesAffectingStocksInput, context: PlanRunContext
+) -> List[List[ThemeText]]:
+    resp = await get_security_themes(user_id=context.user_id, gbi_ids=args.stock_ids)
+
+    gbi_id_to_idx = {e.gbi_id: idx for idx, e in enumerate(resp.security_themes)}
+
+    result: List[List[ThemeText]] = []
+    for stock_id in args.stock_ids:
+        if stock_id not in gbi_id_to_idx:
+            result.append([])
+
+        idx = gbi_id_to_idx[stock_id]
+        result.append([ThemeText(id=t.theme_id.id) for t in resp.security_themes[idx].themes])
+
+    return result
 
 
 class GetThemeDevelopmentNewsInput(ToolArgs):
