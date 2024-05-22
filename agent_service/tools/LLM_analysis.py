@@ -125,6 +125,7 @@ class SummarizeTextInput(ToolArgs):
         "the summary content will only include information related to that topic"
     ),
     category=ToolCategory.LLM_ANALYSIS,
+    reads_chat=True,
 )
 async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> Text:
     if context.chat is None:

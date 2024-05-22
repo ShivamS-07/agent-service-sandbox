@@ -33,6 +33,7 @@ tiktoken = { version = "==0.3.3", index = "pypi"}
 PyJWT = {version = "==2.5.0", index = "pypi"}
 boosted-data-access-layer = {version = ">=0.0.277", index = "gbi"}
 dateparser = {version = "==1.2.0", index = "pypi"}
+async-lru = {version = "==2.0.4", index = "pypi"}
 
 # External services
 gpt-service-proto-v1 = {version = "==1.4.0", index = "gbi"}

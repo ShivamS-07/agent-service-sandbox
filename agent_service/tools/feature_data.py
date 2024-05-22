@@ -25,8 +25,9 @@ FEATURES_DAO = FeaturesDAO()
 
 @tool(
     description=(
-        "This function takes a string (Churn low, Market Capitalization, Coppock Curve, e.g.)"
-        "which refers to a statistic, and converts it to a string identifier"
+        "This function takes a string (close price, Churn low, Market Capitalization, Coppock Curve, e.g.)"
+        " which refers to a financial indicator or statistic, and matches it to an identifier for that "
+        "statistic. You should use this before fetching any data for the statistic."
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,

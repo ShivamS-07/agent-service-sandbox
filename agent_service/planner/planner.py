@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
 from uuid import uuid4
 
@@ -19,12 +20,15 @@ from agent_service.planner.prompts import (
     PLAN_RULES,
     PLANNER_MAIN_PROMPT,
     PLANNER_SYS_PROMPT,
+    USER_INPUT_REPLAN_MAIN_PROMPT,
+    USER_INPUT_REPLAN_SYS_PROMPT,
 )
 from agent_service.tool import Tool, ToolRegistry
 
 # Make sure all tools are imported for the planner
 from agent_service.tools import *  # noqa
-from agent_service.types import ChatContext
+from agent_service.types import ChatContext, Message
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.prefect import get_prefect_logger
@@ -58,6 +62,8 @@ class Planner:
     async def create_initial_plan(self, chat_context: ChatContext) -> ExecutionPlan:
         # TODO: put this in a loop where if the parse fails, we query GPT with
         # two additional messages: the GPT response and the parse exception
+        # TODO: run multiple plans and pick the best one
+
         logger = get_prefect_logger(__name__)
         plan_str = await self._query_GPT_for_initial_plan(chat_context.get_gpt_input())
 
@@ -71,6 +77,31 @@ class Planner:
 
         return plan
 
+    @async_perf_logger
+    async def rewrite_plan_after_input(
+        self, chat_context: ChatContext, last_plan: ExecutionPlan
+    ) -> ExecutionPlan:
+        # for now, just assume last step is what is new
+        # TODO: multiple old plans, flexible chat cutoff
+        logger = get_prefect_logger(__name__)
+        last_message = chat_context.messages.pop()
+        main_chat_str = chat_context.get_gpt_input()
+        new_message = last_message.get_gpt_input()
+        old_plan_str = last_plan.get_formatted_plan()
+        new_plan_str = await self._query_GPT_for_new_plan_after_input(
+            new_message, main_chat_str, old_plan_str
+        )
+
+        steps = self._parse_plan_str(new_plan_str)
+
+        try:
+            new_plan = self._validate_and_construct_plan(steps)
+        except Exception:
+            logger.warning(f"Failed to validate plan with steps: {steps}")
+            raise
+
+        return new_plan
+
     async def _query_GPT_for_initial_plan(self, user_input: str) -> str:
         sys_prompt = PLANNER_SYS_PROMPT.format(
             rules=PLAN_RULES,
@@ -80,6 +111,21 @@ class Planner:
         )
 
         main_prompt = PLANNER_MAIN_PROMPT.format(message=user_input)
+        return await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+
+    async def _query_GPT_for_new_plan_after_input(
+        self, new_user_input: str, existing_context: str, old_plan: str
+    ) -> str:
+        sys_prompt = USER_INPUT_REPLAN_SYS_PROMPT.format(
+            rules=PLAN_RULES,
+            guidelines=PLAN_GUIDELINES,
+            example=PLAN_EXAMPLE,
+            tools=self.tool_string,
+        )
+
+        main_prompt = USER_INPUT_REPLAN_MAIN_PROMPT.format(
+            new_message=new_user_input, chat_context=existing_context, old_plan=old_plan
+        )
         return await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     def _try_parse_str_literal(self, val: str) -> Optional[str]:
@@ -305,3 +351,28 @@ class Planner:
             )
 
         return plan_steps
+
+
+async def main() -> None:
+    input_text = "Can you give me a single summary of news published in the last week about machine learning at Meta, Apple, and Microsoft?"  # noqa: E501
+    user_message = Message(message=input_text, is_user_message=True, message_time=get_now_utc())
+    AI_response = "Okay, I'm doing that summary for you."
+    AI_message = Message(message=AI_response, is_user_message=True, message_time=get_now_utc())
+    chat_context = ChatContext(messages=[user_message, AI_message])
+    planner = Planner("123")
+    plan = await planner.create_initial_plan(chat_context)
+
+    print(plan)
+
+    # new_user_input = "I need you to include Amazon in the summary as well"
+    new_user_input = "Focus the summary on Generative AI research"
+
+    new_message = Message(message=new_user_input, is_user_message=True, message_time=get_now_utc())
+    chat_context.messages.append(new_message)
+    updated_plan = await planner.rewrite_plan_after_input(chat_context, plan)
+    print(updated_plan)
+    chat_context.messages.pop()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

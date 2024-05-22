@@ -15,6 +15,7 @@ class DateFromDateStrInput(ToolArgs):
         "This function takes a string which refers to a time, either absolute or"
         " relative to the current time, and converts it to a Python date. "
         "This uses the python dateparser package, so any input should be compatible with that."
+        " You should always input some string, never an empty string."
     ),
     category=ToolCategory.DATES,
     tool_registry=ToolRegistry,

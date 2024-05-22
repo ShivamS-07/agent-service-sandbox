@@ -119,6 +119,7 @@ class Tool:
     input_type: Type[ToolArgs]
     return_type: Type[IOType]
     description: str
+    reads_chat: bool
 
     def to_function_header(self) -> str:
         """
@@ -230,6 +231,10 @@ class ToolRegistry:
         return tool_name in cls._REGISTRY_ALL_TOOLS_MAP
 
     @classmethod
+    def does_tool_read_chat(cls, tool_name: str) -> bool:
+        return cls._REGISTRY_ALL_TOOLS_MAP[tool_name].reads_chat
+
+    @classmethod
     def get_tool_str(cls) -> str:
         output = []
         for tool_category, tool_dict in cls._REGISTRY_CATEGORY_MAP.items():
@@ -258,6 +263,7 @@ def tool(
     create_prefect_task: bool = True,
     is_visible: bool = True,
     enabled: bool = True,
+    reads_chat: bool = False,
     tool_registry: Type[ToolRegistry] = ToolRegistry,
 ) -> Callable[[ToolFunc], ToolFunc]:
     """
@@ -398,6 +404,7 @@ def tool(
                     input_type=tool_args_type,
                     return_type=sig.return_annotation,
                     description=description,
+                    reads_chat=reads_chat,
                 ),
                 category=category,
             )
