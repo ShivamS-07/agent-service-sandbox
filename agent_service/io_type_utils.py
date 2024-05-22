@@ -22,6 +22,7 @@ from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandl
 from typing_extensions import Annotated, TypeAliasType
 
 from agent_service.io_types.output import Output
+from agent_service.utils.boosted_pg import BoostedPG
 
 SimpleType = Union[int, str, bool, float]
 
@@ -47,7 +48,7 @@ class ComplexIOBase(BaseModel, ABC):
     def to_gpt_input(self) -> str:
         return str(self.__class__)
 
-    def to_rich_output(self) -> Output:
+    async def to_rich_output(self, pg: BoostedPG) -> Output:
         """
         Converts a ComplexIOType to rich output that powers the frontend.
         """

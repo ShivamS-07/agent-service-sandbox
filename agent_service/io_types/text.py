@@ -8,6 +8,7 @@ from pydantic import Field
 
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.output import Output, OutputType
+from agent_service.utils.boosted_pg import BoostedPG
 
 TextIDType = Union[str, int]
 
@@ -17,7 +18,7 @@ class Text(ComplexIOBase):
     id: TextIDType = Field(default_factory=lambda: str(uuid4()))
     val: str = ""
 
-    def to_rich_output(self) -> Output:
+    async def to_rich_output(self, pg: BoostedPG) -> Output:
         return TextOutput(val=self.get().val)
 
     @classmethod
@@ -224,7 +225,7 @@ class TextGroup(ComplexIOBase):
     def convert_to_str(self, id_to_str: Dict[TextIDType, str]) -> str:
         return "\n***\n".join(id_to_str[text.id] for text in self.val)
 
-    def to_rich_output(self) -> Output:
+    async def to_rich_output(self, pg: BoostedPG) -> Output:
         # construct a lookup for all child texts
         strings = Text.get_all_strs(self.val)
         # TODO fix this implementation?

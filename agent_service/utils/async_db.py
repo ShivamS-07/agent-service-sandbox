@@ -39,10 +39,10 @@ class AsyncDB:
             output_value = load_io_type(output) if output else output
             if isinstance(output_value, ComplexIOBase):
                 # Convert to a rich output type for the frontend
-                output_value = output_value.to_rich_output()
+                output_value = await output_value.to_rich_output(self.pg)
             else:
                 # otherwise, treat it as a text output if it's a basic type
-                output_value = Text(val=str(output_value)).to_rich_output()
+                output_value = await Text(val=str(output_value)).to_rich_output(self.pg)
             row["output"] = output_value
             outputs.append(AgentOutput(agent_id=agent_id, **row))
 
