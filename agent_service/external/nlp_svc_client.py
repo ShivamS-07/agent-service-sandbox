@@ -18,6 +18,8 @@ from nlp_service_proto_v1.news_pb2 import (
 )
 from nlp_service_proto_v1.nlp_grpc import NLPServiceStub
 from nlp_service_proto_v1.themes_pb2 import (
+    GetAllThemesForUserRequest,
+    GetAllThemesForUserResponse,
     GetSecurityThemesRequest,
     GetSecurityThemesResponse,
 )
@@ -88,4 +90,17 @@ async def get_security_themes(user_id: str, gbi_ids: List[int]) -> GetSecurityTh
         )
         if response.status.code != 0:
             raise ValueError(f"Failed to get security themes: {response.status.message}")
+        return response
+
+
+@grpc_retry
+@async_perf_logger
+async def get_all_themes_for_user(user_id: str) -> GetAllThemesForUserResponse:
+    with _get_service_stub() as stub:
+        response: GetAllThemesForUserResponse = await stub.GetAllThemesForUser(
+            GetAllThemesForUserRequest(),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        if response.status.code != 0:
+            raise ValueError(f"Failed to get all themes for user: {response.status.message}")
         return response

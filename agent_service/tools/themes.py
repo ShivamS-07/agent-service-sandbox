@@ -4,7 +4,12 @@ import asyncio
 import datetime
 from typing import Dict, List, Optional, Tuple
 
-from agent_service.external.nlp_svc_client import get_security_themes
+from nlp_service_proto_v1.themes_pb2 import ThemeOutlookType
+
+from agent_service.external.nlp_svc_client import (
+    get_all_themes_for_user,
+    get_security_themes,
+)
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.text import (
@@ -132,10 +137,8 @@ class GetStocksAffectedByThemeInput(ToolArgs):
 
 @tool(
     description=(
-        (
-            "This function returns a list of stocks (stock identifiers) that are either positively (if positive "
-            "is True) or negatively affected (if positive is False) by the theme indicated by theme_id"
-        )
+        "This function returns a list of stocks (stock identifiers) that are either positively (if "
+        "positive is True) or negatively affected (if positive is False) by the macroeconomic theme"
     ),
     category=ToolCategory.THEME,
 )
@@ -173,9 +176,9 @@ class GetMacroeconomicThemesAffectingStocksInput(ToolArgs):
 
 @tool(
     description=(
-        "This function takes a list of stock identifiers and returns a list of lists of theme text"
-        " objects that are affecting the stocks. Each theme list corresponds to a stock in the"
-        " input list."
+        "This function takes a list of stock identifiers and returns a list of lists of "
+        "macroeconomic theme text objects that are affecting the stocks. Each theme list "
+        "corresponds to a stock in the input list."
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
@@ -198,6 +201,36 @@ async def get_macroeconomic_themes_affecting_stocks(
     return result
 
 
+class GetMacroeconomicThemeOutlookInput(ToolArgs):
+    theme: ThemeText
+
+
+@tool(
+    description=(
+        "This function takes a macroeconomic theme and returns the information about its current "
+        "trend or outlook"
+    ),
+    category=ToolCategory.THEME,
+    tool_registry=ToolRegistry,
+)
+async def get_macroeconomic_theme_outlook(
+    args: GetMacroeconomicThemeOutlookInput, context: PlanRunContext
+) -> str:
+    resp = await get_all_themes_for_user(user_id=context.user_id)
+    for theme in resp.themes:
+        if not theme.owner_id.id:
+            # we only support boosted themes for now because user themes may not have outlooks
+            continue
+
+        if theme.theme_id.id == args.theme.id:
+            if theme.current_outlook == ThemeOutlookType.THEME_OUTLOOK_POS:
+                return theme.positive_polarity_label
+            else:
+                return theme.negative_polarity_label
+
+    return "No outlook"
+
+
 class GetThemeDevelopmentNewsInput(ToolArgs):
     # the themes to get the news for
     themes: List[ThemeText]
@@ -205,7 +238,7 @@ class GetThemeDevelopmentNewsInput(ToolArgs):
 
 @tool(
     description=(
-        "This function takes a lsit of themes as theme text object "
+        "This function takes a list of macroeconomic themes as theme text object "
         "and returns the list of corresponding developments news for each theme."
     ),
     category=ToolCategory.THEME,
@@ -246,7 +279,7 @@ class GetThemeDevelopmentNewsArticlesInput(ToolArgs):
 
 @tool(
     description=(
-        "This function takes a list of list of theme news developments "
+        "This function takes a list of lists of macroeconomic theme news developments "
         "and returns the news articles for each theme news development "
         "that are published after a given start date or "
         "in the last 30 days if no start date is provided."
