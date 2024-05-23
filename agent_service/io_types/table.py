@@ -1,6 +1,7 @@
 import enum
 from typing import Any, Callable, List, Literal, Optional, Union, cast
 
+import numpy as np
 import pandas as pd
 from pydantic import BaseModel
 from pydantic.functional_serializers import field_serializer
@@ -93,6 +94,7 @@ class Table(ComplexIOBase):
 
             output_cols.append(output_col)
 
+        df = df.replace(np.nan, None)
         rows = df.values.tolist()
 
         return TableOutput(title=self.title, columns=output_cols, rows=rows)
@@ -142,4 +144,4 @@ class TableOutput(Output):
     output_type: Literal[OutputType.TABLE] = OutputType.TABLE
     title: Optional[str] = None
     columns: List[TableOutputColumn] = []
-    rows: List[List[CellType]]
+    rows: List[List[Optional[CellType]]]
