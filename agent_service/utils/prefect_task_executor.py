@@ -18,10 +18,17 @@ class PrefectTaskExecutor(TaskExecutor):
         run_plan_immediately: bool = True,
     ) -> None:
         await prefect_create_execution_plan(
-            agent_id, plan_id, user_id, skip_db_commit, skip_task_cache, run_plan_immediately
+            agent_id=agent_id,
+            plan_id=plan_id,
+            user_id=user_id,
+            skip_db_commit=skip_db_commit,
+            skip_task_cache=skip_task_cache,
+            run_plan_immediately=run_plan_immediately,
         )
 
     async def run_execution_plan(
         self, plan: ExecutionPlan, context: PlanRunContext, send_chat_when_finished: bool = True
     ) -> None:
-        await prefect_run_execution_plan(plan, context, send_chat_when_finished)
+        await prefect_run_execution_plan(
+            plan=plan, context=context, send_chat_when_finished=send_chat_when_finished
+        )
