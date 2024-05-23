@@ -87,7 +87,7 @@ class Table(ComplexIOBase):
         for df_col, col in zip(df.columns, self.columns):
             output_col = col.to_output_column()
             if col.col_label_is_stock_id:
-                output_col.name = stock_metadata[col.label].symbol  # type: ignore
+                output_col.name = stock_metadata[int(col.label)].symbol  # type: ignore
             if col.col_type == TableColumnType.STOCK:
                 df[df_col] = [stock_metadata[gbi_id] for gbi_id in df[df_col]]
 
