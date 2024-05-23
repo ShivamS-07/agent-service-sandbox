@@ -30,7 +30,7 @@ class TestPlans(IsolatedAsyncioTestCase):
         init_stdout_logging()
 
     @unittest.skip("Takes too long to run")
-    async def test_initial_chat(self) -> None:
+    async def test_full_chat(self) -> None:
         input_text = (
             "Can you give me a single summary of news published in the last month "
             "about machine learning at Meta, Apple, and Microsoft?"
@@ -104,4 +104,44 @@ class TestPlans(IsolatedAsyncioTestCase):
             chat_context, execution_plan, fake_output
         )
         chat_context.messages.append(Message(message=complete_response, is_user_message=False))
-        print(chat_context.get_gpt_input())
+        no_action_input = "Oh, that's interesting, thanks!"
+        chat_context.messages.append(Message(message=no_action_input, is_user_message=True))
+        no_action_response = await chatbot.generate_input_update_no_action_response(chat_context)
+        print(no_action_response)
+        chat_context.messages.pop()
+        rerun_input = "Okay, but can you rewrite the summary in a more casual style?"
+        chat_context.messages.append(Message(message=rerun_input, is_user_message=True))
+        rerun_response = await chatbot.generate_input_update_rerun_response(
+            chat_context, execution_plan, "summarize_texts"
+        )
+        print(rerun_response)
+        chat_context.messages.pop()
+        replan_input = "Can you include Amazon in the summary?"
+        chat_context.messages.append(Message(message=replan_input, is_user_message=True))
+        replan_preplan_response = await chatbot.generate_input_update_replan_preplan_response(
+            chat_context
+        )
+        print(replan_preplan_response)
+        new_nodes = plan_nodes[:]
+        new_nodes[1] = ToolExecutionNode(
+            tool_name="stock_identifier_lookup_multi",
+            args={"stock_names": ["Meta", "Apple", "Microsoft", "Amazon"]},
+            description="Convert company names to stock identifiers",
+            output_variable_name="stock_ids",
+            is_output_node=False,
+        )
+        new_nodes[2] = ToolExecutionNode(
+            tool_name="get_news_developments_about_companies",
+            args={
+                "stock_ids": Variable(var_name="stock_ids"),
+                "start_date": Variable(var_name="start_date"),
+            },
+            description="Get news developments for Meta, Apple, Microsoft, and Amazon since last month",
+            output_variable_name="news_developments",
+            is_output_node=False,
+        )
+        new_execution_plan = ExecutionPlan(nodes=new_nodes)
+        replan_postplan_response = await chatbot.generate_input_update_replan_postplan_response(
+            chat_context, execution_plan, new_execution_plan
+        )
+        print(replan_postplan_response)

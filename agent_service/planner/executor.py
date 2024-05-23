@@ -214,22 +214,29 @@ async def update_execution_after_input(
 
     chat_context = chat_context or db.get_chats_history_for_agent(agent_id=agent_id)
 
+    chatbot = Chatbot(agent_id=agent_id)
+
     latest_plan_id, latest_plan = db.get_latest_execution_plan(agent_id)
 
     if latest_plan is None or latest_plan_id is None:
-        # this could happen if original plan isn't done?
-        # we should probably either cancel original plan OR wait
-        return
-
-    # for now we are assuming that the last message in the chat context is the relevant message
-
-    action = await decider.decide_action(chat_context, latest_plan)
+        # we must still be creating the first plan, let's just redo it
+        # with this latest info
+        action = Action.CREATE
+        # for mypy
+        latest_plan = ExecutionPlan(nodes=[])
+        latest_plan_id = ""
+    else:
+        # for now we are assuming that the last message in the chat context is the relevant message
+        action = await decider.decide_action(chat_context, latest_plan)
 
     if action == Action.NONE or (
         action == Action.RERUN
         and (flow_run and flow_run.flow_run_type == FlowRunType.PLAN_CREATION)
     ):
-        # TODO add some chatbot response
+        message = chatbot.generate_input_update_no_action_response(chat_context)
+        db.insert_chat_messages(
+            messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
+        )
         if flow_run:
             await prefect_resume_agent_flow(flow_run)
     elif action == Action.RERUN:
@@ -237,6 +244,13 @@ async def update_execution_after_input(
         for node in latest_plan.nodes:
             if ToolRegistry.does_tool_read_chat(node.tool_name):
                 # we've already run into a chat reading node, which means we need to rerun
+                message = chatbot.generate_input_update_rerun_response(
+                    chat_context, latest_plan, str(node.tool_name)
+                )
+                db.insert_chat_messages(
+                    messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
+                )
+
                 if flow_run:
                     await prefect_cancel_agent_flow(flow_run)
                 plan_run_id = str(uuid4())
@@ -264,10 +278,20 @@ async def update_execution_after_input(
             if node.tool_task_id == current_task_id:
                 # if we got here without breaking, means no chat reading node
                 # has been run, we can just resume
+                message = chatbot.generate_input_update_no_action_response(chat_context)
+                db.insert_chat_messages(
+                    messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
+                )
+
                 if flow_run:
                     await prefect_resume_agent_flow(flow_run)
 
     else:
+        message = chatbot.generate_input_update_replan_preplan_response(chat_context)
+        db.insert_chat_messages(
+            messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
+        )
+
         if flow_run:
             await prefect_cancel_agent_flow(flow_run)
         new_plan_id = uuid4()
@@ -306,7 +330,7 @@ async def rewrite_execution_plan_after_input(
         # TODO: get all exectution plans, not just the most recent one
         # TODO: Add some chatbot response before we redo the plan
         # To stop potential circular behavior
-        old_plan = db.get_latest_execution_plan(agent_id)
+        _, old_plan = db.get_latest_execution_plan(agent_id)
         new_plan = await planner.rewrite_plan_after_input(chat_context, old_plan)
 
     if not skip_db_commit:
@@ -333,11 +357,13 @@ async def rewrite_execution_plan_after_input(
         plan=new_plan, context=ctx, send_chat_when_finished=send_chat_when_finished
     )
 
-    if send_chat_when_finished and not skip_db_commit:
+    if send_chat_when_finished and not skip_db_commit and old_plan:
         chatbot = Chatbot(agent_id=agent_id)
         # TODO: Send a different chatbot response discussing the plan update
-        message = await chatbot.generate_initial_postplan_response(
-            chat_context=db.get_chats_history_for_agent(agent_id=agent_id), execution_plan=new_plan
+        message = await chatbot.generate_input_update_replan_postplan_response(
+            chat_context=db.get_chats_history_for_agent(agent_id=agent_id),
+            new_plan=new_plan,
+            old_plan=old_plan,
         )
         db.insert_chat_messages(
             messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]

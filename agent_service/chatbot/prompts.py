@@ -23,6 +23,30 @@ COMPLETE_EXECUTION_SYS_PROMPT_STR = "{agent_description} The client requested so
 
 COMPLETE_EXECUTION_MAIN_PROMPT_STR = "Given the following interaction with the client, the plan you have executed, and the output of the plan, inform the user you are done and mention the output. Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nAnd here are the steps of your plan:\n---\n{plan}\n---\nAnd here is the output:\n---\n{output}\n---nNow write your response to the client: "
 
+### Input update No Action Response
+
+INPUT_UPDATE_NO_ACTION_SYS_PROMPT_STR = "{agent_description} The client has just send you a message (the last message in the chat) and you have determined that it does not require any change to your current plan for satisfying the information need. You must say something to the client that is a reasonable response to what they have said, but does not promise any particular action on your part at this time. Your total response should be no longer than 20 words."
+
+INPUT_UPDATE_NO_ACTION_MAIN_PROMPT_STR = "Given the following interaction with the client, write a response that is appropriate, friendly, but brief, and does not commit to any particular action. Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nNow write your response to the client: "
+
+### Input update rerun
+
+INPUT_UPDATE_RERUN_SYS_PROMPT_STR = "{agent_description} Your client has just sent you a message (the last message in the provided chat), and based on their needs, you are going to redo some of the work you have already done. You will be provided with your plan as a Python script, and at least one function corresponding to the step(s) that you intend to redo with their new requirements in mind. Please let the client know that you understand their needs (rephrase them, summarizing if needed) and mention specifically what work you are redoing, though you should not mention the specific function name, instead refer to the step in plain English. Be fairly brief, you should limit your response to 40 words."
+
+INPUT_UPDATE_RERUN_MAIN_PROMPT_STR = "Given the following interaction with the client, the plan you have executed (or are in the process of executing), and the functions in the plan that need to be re-run, let the user know you understand their updated needs and will redo work as required (but please rephrase this idea in your own words). Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nAnd here are the steps of your plan:\n---\n{plan}\n---\nAnd here is the function (possibly functions) that you'll be re-running:\n---\n{functions}\n---nNow write your response to the client: "
+
+### Input update replan preplanning
+
+INPUT_UPDATE_REPLAN_PREPLAN_SYS_PROMPT_STR = "{agent_description} Your client has just sent you a message (the last message in the provided chat), and based on their needs, you are going to make changes to your plan and rerun. Please let the client know that you understand their updated needs (rephrase them, summarizing if needed) and mention specifically that you are now thinking about the changes which need to be made. Be brief, you should limit your response to 20 words."
+
+INPUT_UPDATE_REPLAN_PREPLAN_MAIN_PROMPT_STR = "Given the following interaction with the client, let the user know you understand their updated needs and will update your plan of work appropriately (but please rephrase this idea in your own words). Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nNow write your response to the client: "
+
+### Input update replan postsplanning
+
+INPUT_UPDATE_REPLAN_POSTPLAN_SYS_PROMPT_STR = "{agent_description} Your client has recently sent you a message (the last client message in the provided chat), and based on their needs, you have made changes to your work plan, redoing parts of it. Please let the client know that you have finished your replanning and confirm the specific change(s) you have made. To help identify that change, you will be provided with the old plan as well as the new one, be specific when discussing the changes but not technical, your client does not know programming. Be fairly brief, you should limit your response to 60 words, and you should use less unless you really need more to explain the change in detail."
+
+INPUT_UPDATE_REPLAN_POSTPLAN_MAIN_PROMPT_STR = "Given the following interaction with the client, let the user know about the changes you have made to the plan, and that you are now carrying out this new plan (but please rephrase this idea in your own words). Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nHere is the old plan:\n---\n{old_plan}\n---\nHere is the updated plan:\n---\n{new_plan}\n---\n. Now write your response to the client: "
+
 
 ### Dataclasses
 
@@ -39,4 +63,32 @@ COMPLETE_EXECUTION_SYS_PROMPT = Prompt(
 )
 COMPLETE_EXECUTION_MAIN_PROMPT = Prompt(
     COMPLETE_EXECUTION_MAIN_PROMPT_STR, "COMPLETE_EXECUTION_MAIN_PROMPT"
+)
+
+INPUT_UPDATE_NO_ACTION_SYS_PROMPT = Prompt(
+    INPUT_UPDATE_NO_ACTION_SYS_PROMPT_STR, "INPUT_UPDATE_NO_ACTION_SYS_PROMPT"
+)
+INPUT_UPDATE_NO_ACTION_MAIN_PROMPT = Prompt(
+    INPUT_UPDATE_NO_ACTION_MAIN_PROMPT_STR, "INPUT_UPDATE_NO_ACTION_MAIN_PROMPT"
+)
+
+INPUT_UPDATE_RERUN_SYS_PROMPT = Prompt(
+    INPUT_UPDATE_RERUN_SYS_PROMPT_STR, "INPUT_UPDATE_RERUN_SYS_PROMPT"
+)
+INPUT_UPDATE_RERUN_MAIN_PROMPT = Prompt(
+    INPUT_UPDATE_RERUN_MAIN_PROMPT_STR, "INPUT_UPDATE_RERUN_MAIN_PROMPT"
+)
+
+INPUT_UPDATE_REPLAN_PREPLAN_SYS_PROMPT = Prompt(
+    INPUT_UPDATE_REPLAN_PREPLAN_SYS_PROMPT_STR, "INPUT_UPDATE_REPLAN_PREPLAN_SYS_PROMPT"
+)
+INPUT_UPDATE_REPLAN_PREPLAN_MAIN_PROMPT = Prompt(
+    INPUT_UPDATE_REPLAN_PREPLAN_MAIN_PROMPT_STR, "INPUT_UPDATE_REPLAN_PREPLAN_MAIN_PROMPT"
+)
+
+INPUT_UPDATE_REPLAN_POSTPLAN_SYS_PROMPT = Prompt(
+    INPUT_UPDATE_REPLAN_POSTPLAN_SYS_PROMPT_STR, "INPUT_UPDATE_REPLAN_POSTPLAN_SYS_PROMPT"
+)
+INPUT_UPDATE_REPLAN_POSTPLAN_MAIN_PROMPT = Prompt(
+    INPUT_UPDATE_REPLAN_POSTPLAN_MAIN_PROMPT_STR, "INPUT_UPDATE_REPLAN_POSTPLAN_MAIN_PROMPT"
 )
