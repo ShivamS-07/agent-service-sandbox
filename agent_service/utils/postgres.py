@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from gbi_common_py_utils.utils.postgres import PostgresBase
 
-from agent_service.io_type_utils import IOType, dump_io_type
+from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 
 # Make sure all io_types are registered
 from agent_service.io_types import *  # noqa
@@ -207,6 +207,28 @@ class Postgres(PostgresBase):
                 "is_intermediate": is_intermediate,
             },
         )
+
+    # TODO this won't be needed once we merge the sync and async files, but for
+    # now will just keep this here.
+    def get_latest_agent_output(self, agent_id: str) -> Optional[IOType]:
+        sql = """
+        SELECT "output"
+        FROM agent.agent_outputs ao
+        WHERE plan_run_id IN (
+            SELECT plan_run_id FROM agent.agent_outputs
+            WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
+            ORDER BY created_at DESC LIMIT 1
+        )
+        ORDER BY created_at ASC
+        LIMIT 1;
+        """
+        rows = self.generic_read(sql, {"agent_id": agent_id})
+        if not rows:
+            return None
+
+        row = rows[0]
+        output = load_io_type(row["output"])
+        return output
 
 
 def get_psql(skip_commit: bool = False) -> Postgres:
