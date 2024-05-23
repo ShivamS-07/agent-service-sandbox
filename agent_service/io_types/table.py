@@ -65,12 +65,8 @@ class Table(ComplexIOBase):
 
     async def to_rich_output(self, pg: BoostedPG) -> Output:
         df = self.data.copy(deep=True)
-        if isinstance(df.index, pd.DatetimeIndex):
-            # insert the column in the first slot
-            df.insert(loc=0, column="date_idx_col", value=df.index.date)
-            self.columns.insert(
-                0, TableColumn(label="Date", col_type=TableColumnType.DATE, is_indexed=True)
-            )
+        # We already have a column for the index
+        df = df.reset_index()
 
         # Fetch all stock metadata needed in one call
         gbi_ids_to_fetch: List[int] = []
