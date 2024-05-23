@@ -4,10 +4,14 @@ from typing import Dict, List, Optional
 
 from agent_service.external.grpc_utils import timestamp_to_datetime
 from agent_service.external.nlp_svc_client import get_multi_companies_news_topics
-from agent_service.io_types.text import StockNewsDevelopmentText
+from agent_service.io_types.text import (
+    StockNewsDevelopmentArticlesText,
+    StockNewsDevelopmentText,
+)
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.postgres import get_psql
 
 
 class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
@@ -60,3 +64,29 @@ async def get_news_developments_about_companies(
         outputs.append(topic_list)
 
     return outputs
+
+
+class GetNewsArticlesForStockDevelopmentsInput(ToolArgs):
+    developments_list: List[StockNewsDevelopmentText]
+
+
+@tool(
+    description=(
+        "This function takes a list of news developments and returns a list of all the news"
+        " development articles for those news developments."
+    ),
+    category=ToolCategory.NEWS,
+    tool_registry=ToolRegistry,
+)
+async def get_news_articles_for_stock_developments(
+    args: GetNewsArticlesForStockDevelopmentsInput, context: PlanRunContext
+) -> List[StockNewsDevelopmentArticlesText]:
+    sql = """
+        SELECT news_id::VARCHAR
+        FROM nlp_service.stock_news
+        WHERE topic_id = ANY(%(topic_ids)s)
+    """
+    rows = get_psql().generic_read(
+        sql, {"topic_ids": [topic.id for topic in args.developments_list]}
+    )
+    return [StockNewsDevelopmentArticlesText(id=row["news_id"]) for row in rows]

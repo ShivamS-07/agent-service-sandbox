@@ -104,6 +104,25 @@ class StockNewsDevelopmentText(Text):
 
 
 @io_type
+class StockNewsDevelopmentArticlesText(Text):
+    id: str
+
+    @classmethod
+    def get_strs_lookup(
+        cls, news_topics: List[StockNewsDevelopmentArticlesText]  # type: ignore
+    ) -> Dict[TextIDType, str]:
+        from agent_service.utils.postgres import get_psql
+
+        sql = """
+            SELECT news_id::TEXT, summary
+            FROM nlp_service.stock_news
+            WHERE news_id = ANY(%(news_ids)s)
+        """
+        rows = get_psql().generic_read(sql, {"news_ids": [topic.id for topic in news_topics]})
+        return {row["news_id"]: row["summary"] for row in rows}
+
+
+@io_type
 class ThemeText(Text):
     id: str
     val: Any = None
