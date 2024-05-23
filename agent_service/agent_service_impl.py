@@ -117,50 +117,25 @@ class AgentServiceImpl:
         return UpdateAgentResponse(success=True)
 
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
-        now = get_now_utc()
         try:
-            LOGGER.info("Generating initial response from GPT...")
+            LOGGER.info("Inserting user's new message to DB")
             user_msg = Message(
                 agent_id=req.agent_id,
                 message=req.prompt,
                 is_user_message=True,
-                message_time=now,
             )
-            chatbot = Chatbot(req.agent_id, gpt_service_stub=self.gpt_service_stub)
-            gpt_resp = await chatbot.generate_initial_preplan_response(
-                chat_context=ChatContext(messages=[user_msg])
-            )
-            gpt_msg = Message(
-                agent_id=req.agent_id,
-                message=gpt_resp,
-                is_user_message=False,
-            )
+            await self.pg.insert_chat_messages(messages=[user_msg])
         except Exception as e:
-            LOGGER.exception(f"Failed to generate initial response from GPT with exception: {e}")
+            LOGGER.exception(f"Failed to insert user message into DB with exception: {e}")
             return ChatWithAgentResponse(success=False, allow_retry=True)
 
         try:
-            LOGGER.info(
-                f"Inserting user message and GPT response into DB for agent {req.agent_id}..."
+            LOGGER.info("Updating execution after user's new message")
+            await self.task_executor.update_execution_after_input(
+                req.agent_id, user.user_id, chat_context=None
             )
-            await self.pg.insert_chat_messages(messages=[user_msg, gpt_msg])
         except Exception as e:
-            LOGGER.exception(f"Failed to insert messages into DB with exception: {e}")
-            return ChatWithAgentResponse(success=False, allow_retry=True)
-
-        # kick off Prefect job -> retry is forbidden
-        # TODO we should check if we NEED to create a new plan
-        plan_id = str(uuid4())
-        LOGGER.info(f"Creating execution plan {plan_id} for {req.agent_id=}")
-        try:
-            await self.task_executor.create_execution_plan(
-                agent_id=req.agent_id,
-                plan_id=plan_id,
-                user_id=user.user_id,
-                run_plan_immediately=True,
-            )
-        except Exception:
-            LOGGER.exception("Failed to kick off execution plan creation")
+            LOGGER.exception(f"Failed to update execution after input with exception: {e}")
             return ChatWithAgentResponse(success=False, allow_retry=False)
 
         return ChatWithAgentResponse(success=True, allow_retry=False)

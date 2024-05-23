@@ -233,7 +233,7 @@ async def update_execution_after_input(
         action == Action.RERUN
         and (flow_run and flow_run.flow_run_type == FlowRunType.PLAN_CREATION)
     ):
-        message = chatbot.generate_input_update_no_action_response(chat_context)
+        message = await chatbot.generate_input_update_no_action_response(chat_context)
         db.insert_chat_messages(
             messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
         )
@@ -244,7 +244,7 @@ async def update_execution_after_input(
         for node in latest_plan.nodes:
             if ToolRegistry.does_tool_read_chat(node.tool_name):
                 # we've already run into a chat reading node, which means we need to rerun
-                message = chatbot.generate_input_update_rerun_response(
+                message = await chatbot.generate_input_update_rerun_response(
                     chat_context, latest_plan, str(node.tool_name)
                 )
                 db.insert_chat_messages(
@@ -278,7 +278,7 @@ async def update_execution_after_input(
             if node.tool_task_id == current_task_id:
                 # if we got here without breaking, means no chat reading node
                 # has been run, we can just resume
-                message = chatbot.generate_input_update_no_action_response(chat_context)
+                message = await chatbot.generate_input_update_no_action_response(chat_context)
                 db.insert_chat_messages(
                     messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
                 )
@@ -287,14 +287,14 @@ async def update_execution_after_input(
                     await prefect_resume_agent_flow(flow_run)
 
     else:
-        message = chatbot.generate_input_update_replan_preplan_response(chat_context)
+        message = await chatbot.generate_input_update_replan_preplan_response(chat_context)
         db.insert_chat_messages(
             messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
         )
 
         if flow_run:
             await prefect_cancel_agent_flow(flow_run)
-        new_plan_id = uuid4()
+        new_plan_id = str(uuid4())
         await prefect_create_execution_plan(
             agent_id,
             user_id,
@@ -302,7 +302,7 @@ async def update_execution_after_input(
             action=action,
             skip_db_commit=skip_db_commit,
             skip_task_cache=skip_task_cache,
-            run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
+            run_plan_immediately=run_plan_in_prefect_immediately,
         )
 
 

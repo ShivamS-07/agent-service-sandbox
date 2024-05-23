@@ -44,9 +44,9 @@ DEFAULT_IP = "0.0.0.0"
 DEFAULT_DAL_PORT = 8000
 SERVICE_NAME = "AgentService"
 
+
 logger = logging.getLogger(__name__)
 
-init_sentry(disable_sentry=not EnvironmentUtils.is_deployed)
 
 application = FastAPI(title="Agent Service")
 router = APIRouter(prefix="/api")
@@ -276,6 +276,7 @@ if __name__ == "__main__":
     args = parse_args()
 
     init_stdout_logging()
+    init_sentry(disable_sentry=not EnvironmentUtils.is_deployed)
 
     logger.info("Warming up DB connection and JWT key map...")
     get_psql()

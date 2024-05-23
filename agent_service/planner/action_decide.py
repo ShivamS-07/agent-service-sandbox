@@ -41,7 +41,6 @@ class ActionDecider:
             chat_context=chat_context.get_gpt_input(),
             message=latest_message.get_gpt_input(),
         )
-        print(main_prompt.filled_prompt)
         result = await self.llm.do_chat_w_sys_prompt(
             main_prompt, ACTION_DECIDER_SYS_PROMPT.format()
         )  # , max_tokens=3)
