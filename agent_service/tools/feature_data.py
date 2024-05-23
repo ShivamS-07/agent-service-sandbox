@@ -116,6 +116,9 @@ def _async_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> 
 
 def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> Table:
 
+    if args.end_date is None and args.start_date is not None:
+        args.end_date = datetime.date.today()
+
     features_metadata = get_feature_metadata(feature_ids=[args.field_id])
     metadata = features_metadata.get(args.field_id, None)
     # print("--")
@@ -139,13 +142,15 @@ def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> T
             f"code path missing: Data field: {args.field_id} is from an unsupported source: {source}"
         )
 
+    df.index.rename("Date", inplace=True)
     return Table(
         data=df,
-        columns=[
+        columns=[TableColumn(label="Date", col_type=TableColumnType.DATE, is_indexed=True)]
+        + [
             # TODO handle smarter column types, etc.
             TableColumn(
                 label=col if not isinstance(col, tuple) else col[1],
-                col_label_is_gbi_id=True,
+                col_label_is_stock_id=True,
                 col_type=TableColumnType.FLOAT,
             )
             for col in df.columns

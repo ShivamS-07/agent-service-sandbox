@@ -4,9 +4,10 @@ from collections import defaultdict
 from typing import Any, Dict, List, Literal, Type, Union
 from uuid import uuid4
 
+import mdutils
 from pydantic import Field
 
-from agent_service.io_type_utils import ComplexIOBase, io_type
+from agent_service.io_type_utils import ComplexIOBase, IOType, io_type
 from agent_service.io_types.output import Output, OutputType
 from agent_service.utils.boosted_pg import BoostedPG
 
@@ -20,6 +21,40 @@ class Text(ComplexIOBase):
 
     async def to_rich_output(self, pg: BoostedPG) -> Output:
         return TextOutput(val=self.get().val)
+
+    @staticmethod
+    def _to_string_recursive(val: IOType) -> IOType:
+        if isinstance(val, list):
+            return [Text._to_string_recursive(v) for v in val]
+        elif isinstance(val, dict):
+            return {str(k): Text._to_string_recursive(v) for k, v in val.items()}
+        else:
+            return str(val)
+
+    @staticmethod
+    def from_io_type(val: IOType) -> Text:
+        """
+        Given an arbitrary IOType value, return it as a rich Text object
+        """
+        try:
+            # Try to convert data to markdown, otherwise just return as a raw string
+            if isinstance(val, list):
+                md = mdutils.MdUtils(file_name="", title="")
+                md.new_list(items=Text._to_string_recursive(val))
+                text = md.get_md_text().strip()
+            elif isinstance(val, dict):
+                md = mdutils.MdUtils(file_name="", title="")
+                table_cols = 2
+                table_rows = len(val)
+                table_values = [str(item) for tup in val.items() for item in tup]
+                md.new_table(columns=table_cols, rows=table_rows, text=table_values)
+                text = md.get_md_text().strip()
+            else:
+                text = str(val)
+        except Exception:
+            text = str(val)
+
+        return Text(val=text)
 
     @classmethod
     def get_all_strs(cls, text: Union[Text, TextGroup, List[Any]]) -> Union[str, List[Any]]:

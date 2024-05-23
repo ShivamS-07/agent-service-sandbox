@@ -51,7 +51,11 @@ class TestIOType(unittest.TestCase):
             self.assertEqual(loaded, arg)
 
     def test_dataframe_serialization(self):
-        df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], index=["a", "b"], columns=["x", "y", "z"])
+        df = pd.DataFrame(
+            [[1, 2, 3], [4, 5, 6]],
+            index=pd.Index(["a", "b"], name="Test Index"),
+            columns=["x", "y", "z"],
+        )
 
         cases = [
             [Table(data=df, columns=[TableColumn(label="A", col_type=TableColumnType.INTEGER)]), 1],

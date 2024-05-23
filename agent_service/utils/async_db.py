@@ -42,7 +42,7 @@ class AsyncDB:
                 output_value = await output_value.to_rich_output(self.pg)
             else:
                 # otherwise, treat it as a text output if it's a basic type
-                output_value = await Text(val=str(output_value)).to_rich_output(self.pg)
+                output_value = Text.from_io_type(output_value)
             row["output"] = output_value
             outputs.append(AgentOutput(agent_id=agent_id, **row))
 

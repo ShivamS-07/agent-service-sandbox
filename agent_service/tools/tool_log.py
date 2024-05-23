@@ -11,7 +11,8 @@ from agent_service.utils.prefect import get_prefect_logger
 def tool_log(
     log: IOType, context: PlanRunContext, associated_data: Optional[IOType] = None
 ) -> None:
-    db = get_psql(skip_commit=context.skip_db_commit)
-    db.write_tool_log(log=log, context=context, associated_data=associated_data)
+    if not context.skip_db_commit:
+        db = get_psql(skip_commit=context.skip_db_commit)
+        db.write_tool_log(log=log, context=context, associated_data=associated_data)
     logger = get_prefect_logger(__name__)
     logger.info(dump_io_type(log))

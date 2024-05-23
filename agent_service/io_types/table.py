@@ -40,8 +40,8 @@ class TableColumn(ComplexIOBase):
     col_type: TableColumnType
     unit: Optional[str] = None
     # keep track of this so that we can easily transform for the frontend later
-    col_label_is_gbi_id: bool = False
-    is_highlighted: bool = False
+    col_label_is_stock_id: bool = False
+    is_indexed: bool = False
 
     def to_output_column(self) -> "TableOutputColumn":
         # TODO switch GBI ID's to tickers if needed, etc.
@@ -49,7 +49,7 @@ class TableColumn(ComplexIOBase):
             name=str(self.label),
             col_type=self.col_type,
             unit=self.unit,
-            is_highlighted=self.is_highlighted,
+            is_highlighted=self.is_indexed,
         )
 
 
@@ -68,13 +68,13 @@ class Table(ComplexIOBase):
             # insert the column in the first slot
             df.insert(loc=0, column="date_idx_col", value=df.index.date)
             self.columns.insert(
-                0, TableColumn(label="Date", col_type=TableColumnType.DATE, is_highlighted=True)
+                0, TableColumn(label="Date", col_type=TableColumnType.DATE, is_indexed=True)
             )
 
         # Fetch all stock metadata needed in one call
         gbi_ids_to_fetch: List[int] = []
         for df_col, col in zip(df.columns, self.columns):
-            if col.col_label_is_gbi_id:
+            if col.col_label_is_stock_id:
                 gbi_ids_to_fetch.append(cast(int, col.label))
             if col.col_type == TableColumnType.STOCK:
                 gbi_ids_to_fetch.extend(df[df_col])
@@ -86,7 +86,7 @@ class Table(ComplexIOBase):
         output_cols = []
         for df_col, col in zip(df.columns, self.columns):
             output_col = col.to_output_column()
-            if col.col_label_is_gbi_id:
+            if col.col_label_is_stock_id:
                 output_col.name = stock_metadata[col.label].symbol  # type: ignore
             if col.col_type == TableColumnType.STOCK:
                 df[df_col] = [stock_metadata[gbi_id] for gbi_id in df[df_col]]
@@ -102,6 +102,8 @@ class Table(ComplexIOBase):
     def _deserializer(cls, data: Any) -> Any:
         if isinstance(data, dict):
             data = pd.DataFrame.from_dict(data)
+            # Recreate index from first column
+            data = data.set_index(data.columns[0])
             try:
                 # Try to convert the index to a DatetimeIndex if it's
                 # compatible, otherwise just leave as is.
@@ -114,7 +116,8 @@ class Table(ComplexIOBase):
     @classmethod
     def _field_serializer(cls, data: Any, dumper: Callable) -> Any:
         if isinstance(data, pd.DataFrame):
-            data = data.to_dict()
+            # Reset index to maintain index name
+            data = data.reset_index().to_dict()
         return dumper(data)
 
 
