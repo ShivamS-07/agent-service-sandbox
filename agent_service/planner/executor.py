@@ -126,7 +126,7 @@ async def create_execution_plan(
     chat_context: Optional[ChatContext] = None,
 ) -> ExecutionPlan:
     if action != Action.CREATE:
-        await rewrite_execution_plan_after_input(
+        return await rewrite_execution_plan_after_input(
             agent_id=agent_id,
             user_id=user_id,
             plan_id=plan_id,
