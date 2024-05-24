@@ -2,9 +2,10 @@ import asyncio
 import datetime
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, cast
 
 from agent_service.endpoints.models import PlanRun, PlanRunTask, PlanRunTaskLog, Status
+from agent_service.io_type_utils import load_io_type
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.prefect import (
     get_prefect_plan_run_statuses,
@@ -63,7 +64,7 @@ async def get_agent_hierarchical_worklogs(
             task_id_to_logs[row["task_id"]].append(
                 PlanRunTaskLog(
                     log_id=row["log_id"],
-                    log_message=row["log_message"],
+                    log_message=cast(str, load_io_type(row["log_message"])),
                     created_at=row["created_at"],
                 )
             )
