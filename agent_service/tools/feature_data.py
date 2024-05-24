@@ -26,6 +26,8 @@ TTLCache(maxsize=1, ttl=LATEST_DATE_SECONDS)
 # new request
 FEATURES_DAO = FeaturesDAO()
 
+StatisticId = str
+
 
 @tool(
     description=(
@@ -39,8 +41,8 @@ FEATURES_DAO = FeaturesDAO()
 )
 async def statistic_identifier_lookup(
     args: StatisticsIdentifierLookupInput, context: PlanRunContext
-) -> str:
-    """Returns the string identifier of a statistic given its name (Churn low, Market Capitalization, e.g.)
+) -> StatisticId:
+    """Returns the identifier of a statistic given its name (Churn low, Market Capitalization, e.g.)
 
     This function performs word similarity name match to find the statistic's identifier.
 
@@ -84,7 +86,7 @@ async def statistic_identifier_lookup(
 
 class FeatureDataInput(ToolArgs):
     stock_ids: List[int]
-    field_id: str
+    statistic_id: StatisticId
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
     # in the future we may want to take a currency as well
@@ -141,14 +143,14 @@ def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> T
         if args.start_date is None:
             args.start_date = datetime.date.today()
 
-    features_metadata = get_feature_metadata(feature_ids=[args.field_id])
-    metadata = features_metadata.get(args.field_id, None)
+    features_metadata = get_feature_metadata(feature_ids=[args.statistic_id])
+    metadata = features_metadata.get(args.statistic_id, None)
     # print("--")
     # print("metadata", metadata)
     source = metadata.source if metadata else "NO_SUCH_SOURCE"
     supported_sources = ["SPIQ_DAILY", "SPIQ_DIVIDEND", "SPIQ_TARGET", "SPIQ_QUARTERLY"]
     if source not in supported_sources:
-        raise ValueError(f"Data field: {args.field_id} is from an unsupported source: {source}")
+        raise ValueError(f"Data field: {args.statistic_id} is from an unsupported source: {source}")
 
     if source == "SPIQ_DAILY":
         df = get_daily_feature_data(args, context)
@@ -161,7 +163,7 @@ def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> T
 
     else:
         raise ValueError(
-            f"code path missing: Data field: {args.field_id} is from an unsupported source: {source}"
+            f"code path missing: Data field: {args.statistic_id} is from an unsupported source: {source}"
         )
 
     df.index.rename("Date", inplace=True)
@@ -171,7 +173,11 @@ def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> T
         + [
             # TODO handle smarter column types, etc.
             TableColumn(
+                # TODO soon this label will be a string ticker, for now it'll also be gbi id
                 label=col if not isinstance(col, tuple) else col[1],
+                # Sometimes the dataframe could be multiindexed, just to be safe
+                # we should do this to get the GBI ID.
+                label_stock_id=int(col) if not isinstance(col, tuple) else int(col[1]),
                 col_label_is_stock_id=True,
                 col_type=TableColumnType.FLOAT,
             )
@@ -205,13 +211,13 @@ def get_daily_feature_data(args: FeatureDataInput, context: PlanRunContext) -> p
     lookup_start_date = start_date - FORWARD_FILL_LOOKBACK
     feature_value_map = FEATURES_DAO.get_feature_data(
         gbi_ids=args.stock_ids,
-        features=[args.field_id],
+        features=[args.statistic_id],
         start_date=lookup_start_date,
         end_date=end_date,
         # currency=output_currency,
     ).get()
 
-    raw_df = feature_value_map[args.field_id]
+    raw_df = feature_value_map[args.statistic_id]
     # print("raw_df", raw_df)
     idx_daily = pd.date_range(start=lookup_start_date, end=end_date, freq="D")
     df = raw_df.reindex(idx_daily, method="ffill")
@@ -247,13 +253,13 @@ def get_non_daily_data(args: FeatureDataInput, context: PlanRunContext) -> pd.Da
     lookup_start_date = start_date - FORWARD_FILL_LOOKBACK
     feature_value_map = FEATURES_DAO.get_feature_data(
         gbi_ids=args.stock_ids,
-        features=[args.field_id],
+        features=[args.statistic_id],
         start_date=lookup_start_date,
         end_date=end_date,
         # currency=output_currency,
     ).get()
 
-    raw_df = feature_value_map[args.field_id]
+    raw_df = feature_value_map[args.statistic_id]
     # print("raw_df", raw_df)
 
     df = raw_df
@@ -290,7 +296,7 @@ def get_quarterly_data(args: FeatureDataInput, context: PlanRunContext) -> pd.Da
     if start_date != end_date:
         raise ValueError(
             "Quarterly Data is currently only available for single points"
-            f" in time field: {args.field_id}"
+            f" in time field: {args.statistic_id}"
         )
     # TODO: validate start <= end
     # dates are not in the future, etc
@@ -299,13 +305,13 @@ def get_quarterly_data(args: FeatureDataInput, context: PlanRunContext) -> pd.Da
     lookup_start_date = start_date - LOOKBACK
     feature_value_map = FEATURES_DAO.get_feature_data(
         gbi_ids=args.stock_ids,
-        features=[args.field_id],
+        features=[args.statistic_id],
         start_date=lookup_start_date,
         end_date=end_date,
         # currency=output_currency,
     ).get()
 
-    raw_df = feature_value_map[args.field_id]
+    raw_df = feature_value_map[args.statistic_id]
     # print("raw_df", raw_df)
 
     df = raw_df

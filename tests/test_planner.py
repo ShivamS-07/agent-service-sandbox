@@ -9,7 +9,7 @@ import pandas as pd
 
 from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_type_utils import IOType
-from agent_service.io_types.graph import Graph
+from agent_service.io_types.graph import LineGraph
 from agent_service.io_types.table import Table
 from agent_service.io_types.text import StockNewsDevelopmentText, Text
 from agent_service.planner.executor import run_execution_plan_local
@@ -317,8 +317,8 @@ def get_test_registry() -> Type[ToolRegistry]:
         category=ToolCategory.OUTPUT,
         tool_registry=TestRegistry,
     )
-    async def PlotLineGraphInput(args: PlotLineGraphInput, context: PlanRunContext) -> Graph:
-        return Graph()
+    async def PlotLineGraphInput(args: PlotLineGraphInput, context: PlanRunContext) -> LineGraph:
+        return None
 
     # health care companies example
 

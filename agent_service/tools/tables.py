@@ -46,7 +46,9 @@ the same as the input.
 
 Below is the json schema of the json you should produce. You should produce a
 list of these objects, one for each column. Note that if the column type is
-"stock", it means that the column contains stock identifiers.
+"stock", it means that the column contains stock identifiers. Make SURE to use
+the "currency" column type for ANY field that holds a value that represents a
+price, currency, or money amount.
 
 JSON Schema:
 
@@ -54,6 +56,9 @@ JSON Schema:
 
 col_label_is_stock_id is set to true if the *column's label itself* is a stock
 identifier. NOT if the column contains stocks.
+
+label_stock_id SHOULD NOT BE CHANGED. It should remain the same always if a
+stock column is being re-used.
 
 The transformation that will be applied to the dataframe is:
 {transform}
@@ -171,7 +176,7 @@ async def gen_new_column_schema(
     )
     json_str = _strip_code_markers(res, lang="json")
     try:
-        cols = json.loads(json_str)
+        cols = json.loads(json_str.strip())
         if not cols:
             # Empty object = unchanged
             return current_table_cols

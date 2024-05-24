@@ -24,7 +24,7 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
         self.context = PlanRunContext.get_dummy()
 
     async def test_feature_data_3_stock(self):
-        args = FeatureDataInput(stock_ids=[AAPL, AMZN, MSFT], field_id=CLOSE_PRICE)
+        args = FeatureDataInput(stock_ids=[AAPL, AMZN, MSFT], statistic_id=CLOSE_PRICE)
         result = await get_statistic_data_for_companies(args, self.context)
         self.assertEqual(result.data.shape[1], 3)  # num_stocks
         self.assertEqual(result.data.shape[0], 1)  # num_dates
@@ -32,7 +32,7 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
     async def test_feature_data_1_stock_many_dates(self):
         args = FeatureDataInput(
             stock_ids=[AAPL],
-            field_id=CLOSE_PRICE,
+            statistic_id=CLOSE_PRICE,
             start_date=datetime.date(2020, 1, 1),
             end_date=datetime.date(2020, 3, 1),
         )
@@ -49,7 +49,7 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
     async def test_feature_data_weekend(self):
         args = FeatureDataInput(
             stock_ids=[AAPL],
-            field_id=CLOSE_PRICE,
+            statistic_id=CLOSE_PRICE,
             start_date=datetime.date(2024, 4, 14),  # sunday
             end_date=datetime.date(2024, 4, 14),
         )
@@ -59,7 +59,7 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
         self.assertEqual(result.data.shape[0], 1)  # num_dates
 
     async def test_feature_data_dividend(self):
-        args = FeatureDataInput(stock_ids=[VZ], field_id=SPIQ_DIV_AMOUNT)
+        args = FeatureDataInput(stock_ids=[VZ], statistic_id=SPIQ_DIV_AMOUNT)
         result = await get_statistic_data_for_companies(args, self.context)
 
         self.assertEqual(result.data.shape[1], 1)  # num_stocks
@@ -67,7 +67,7 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
 
         args = FeatureDataInput(
             stock_ids=[VZ],
-            field_id=SPIQ_DIV_AMOUNT,
+            statistic_id=SPIQ_DIV_AMOUNT,
             start_date=datetime.date(2023, 4, 14),
             end_date=datetime.date(2024, 4, 14),
         )
@@ -77,7 +77,7 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
 
     async def test_feature_data_quarterly(self):
 
-        args = FeatureDataInput(stock_ids=[VZ], field_id=GROSS_PROFIT)
+        args = FeatureDataInput(stock_ids=[VZ], statistic_id=GROSS_PROFIT)
         result = await get_statistic_data_for_companies(args, self.context)
 
         self.assertEqual(result.data.shape[1], 1)  # num_stocks

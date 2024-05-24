@@ -1,5 +1,5 @@
 import enum
-from typing import Any, Callable, List, Literal, Optional, Union, cast
+from typing import Any, Callable, List, Literal, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -43,6 +43,7 @@ class TableColumn(ComplexIOBase):
     # keep track of this so that we can easily transform for the frontend later
     col_label_is_stock_id: bool = False
     is_indexed: bool = False
+    label_stock_id: Optional[int] = None
 
     def to_output_column(self) -> "TableOutputColumn":
         # TODO switch GBI ID's to tickers if needed, etc.
@@ -71,8 +72,8 @@ class Table(ComplexIOBase):
         # Fetch all stock metadata needed in one call
         gbi_ids_to_fetch: List[int] = []
         for df_col, col in zip(df.columns, self.columns):
-            if col.col_label_is_stock_id:
-                gbi_ids_to_fetch.append(cast(int, col.label))
+            if col.label_stock_id:
+                gbi_ids_to_fetch.append(col.label_stock_id)
             if col.col_type == TableColumnType.STOCK:
                 gbi_ids_to_fetch.extend(df[df_col])
 
@@ -83,8 +84,8 @@ class Table(ComplexIOBase):
         output_cols = []
         for df_col, col in zip(df.columns, self.columns):
             output_col = col.to_output_column()
-            if col.col_label_is_stock_id:
-                output_col.name = stock_metadata[int(col.label)].symbol  # type: ignore
+            if col.label_stock_id:
+                output_col.name = stock_metadata[col.label_stock_id].symbol
             if col.col_type == TableColumnType.STOCK:
                 df[df_col] = [stock_metadata[gbi_id] for gbi_id in df[df_col]]
 
