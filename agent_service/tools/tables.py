@@ -260,7 +260,7 @@ transformation that will be applied to the table by an LLM, so feel free to be
 detailed in your description of the desired transformation. It can include
 anything from mathematical operations to formatting, etc. Anything that could be
 done in pandas. It is better to be overly detailed than not detailed enough.
-
+Note again that the input MUST be a table, not a list!
 """,
     category=ToolCategory.TABLE,
 )

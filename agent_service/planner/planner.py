@@ -290,7 +290,7 @@ class Planner:
             if not check_type_is_valid(actual=parsed_variable_type, expected=arg_info.annotation):
                 raise ExecutionPlanParsingError(
                     (
-                        f"Tool '{tool.name}' has a type mismatch for arg '{arg}',"
+                        f"Tool '{tool.name}' has a type mismatch for arg '{str(arg)}',"
                         f" expected '{arg_info.annotation}' but found '{val}: {parsed_variable_type}'"
                     )
                 )
