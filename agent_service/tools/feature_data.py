@@ -83,7 +83,9 @@ class FeatureDataInput(ToolArgs):
         " to get a specific date only set both inputs to the same date."
         " If neither date is provided then it will assume the request "
         "is for the most recent date for which data exists. The statistic_id MUST be "
-        "fetched with the lookup function, it cannot be an arbitrary string."
+        "fetched with the lookup function, it cannot be an arbitrary string. "
+        "If the user does not mention any date or time frame, you should assume they "
+        "want the most recent datapoint and call without specifying either start_date or end_date."
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
@@ -116,8 +118,10 @@ def _async_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> 
 
 def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> Table:
 
-    if args.end_date is None and args.start_date is not None:
+    if args.end_date is None:
         args.end_date = datetime.date.today()
+        if args.start_date is None:
+            args.start_date = datetime.date.today()
 
     features_metadata = get_feature_metadata(feature_ids=[args.field_id])
     metadata = features_metadata.get(args.field_id, None)
