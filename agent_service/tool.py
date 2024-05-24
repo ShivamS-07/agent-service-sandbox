@@ -12,14 +12,17 @@ def my_tool(args: MyToolInput, context: PlanRunContext) -> int:
     ...
 """
 
+import datetime
 import enum
 import functools
 import inspect
 import logging
+import traceback
 from abc import ABC
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import (
+    Any,
     Callable,
     Dict,
     List,
@@ -32,6 +35,7 @@ from typing import (
     get_origin,
 )
 
+from gbi_common_py_utils.utils.event_logging import log_event
 from prefect.tasks import Task
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
@@ -39,6 +43,7 @@ from pydantic_core import PydanticUndefined
 from agent_service.io_type_utils import (
     IOType,
     check_type_is_io_type,
+    dump_io_type,
     get_clean_type_name,
 )
 from agent_service.types import PlanRunContext
@@ -350,6 +355,32 @@ def tool(
             tool_name = func.__name__
 
             async def main_func(args: T, context: PlanRunContext) -> IOType:
+                start = datetime.datetime.utcnow().isoformat()
+                event_data: Dict[str, Any] = {
+                    "tool_name": tool_name,
+                    "agent_id": context.agent_id,
+                    "user_id": context.user_id,
+                    "task_id": context.task_id,
+                    "plan_id": context.plan_run_id,
+                    "plan_run_id": context.plan_run_id,
+                    "args": args.model_dump_json(),
+                    "start_time_utc": start,
+                }
+
+                async def call_func() -> IOType:
+                    try:
+                        result = await func(args, context)
+                        event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
+                        event_data["result"] = dump_io_type(result)
+                        log_event(event_name="agent-service-tool-call", event_data=event_data)
+
+                        return result
+                    except Exception as e:
+                        event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
+                        event_data["error_msg"] = traceback.format_exc()
+                        log_event(event_name="agent-service-tool-call", event_data=event_data)
+                        raise e
+
                 if (
                     use_cache or (use_cache_fn and use_cache_fn(args, context))
                 ) and not context.skip_task_cache:
@@ -358,20 +389,31 @@ def tool(
                         cache_client = cache_backend if cache_backend else RedisCacheBackend()
                         key = cache_key_fn(tool_name, args, context)
                         cached_val = await cache_client.get(key)
+                        event_data["cache_key"] = key
                         if cached_val:
+                            event_data["cache_hit"] = True
+                            event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
+                            log_event(event_name="agent-service-tool-call", event_data=event_data)
                             return cached_val
 
                         new_val = await func(args, context)
                         await cache_client.set(key=key, val=new_val, ttl=cache_ttl)
+                        event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
+                        event_data["result"] = dump_io_type(new_val)
+                        log_event(event_name="agent-service-tool-call", event_data=event_data)
                         return new_val
                     except Exception:
+                        event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
+                        event_data["error_msg"] = traceback.format_exc()
+                        log_event(event_name="agent-service-tool-call", event_data=event_data)
                         logger.exception(f"Cache check failed for {(tool_name, args, context)}")
                         if new_val is not None:
+                            log_event(event_name="agent-service-tool-call", event_data=event_data)
                             return new_val
-                        return await func(args, context)
+
+                        return await call_func()
                 else:
-                    # Caching not enabled
-                    return await func(args, context)
+                    return await call_func()
 
             if create_prefect_task and not context.run_tasks_without_prefect:
                 # Create a prefect task that wraps the function with its caching
