@@ -8,6 +8,7 @@ from agent_service.external import sec_meta_svc_client
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
@@ -70,11 +71,14 @@ async def sector_identifier_lookup(
     )
 
     if result not in all_sectors or "-1" == result:
-        # TODO we should actually throw an error and use it to revise the plan
-        return -1  # or should we return None?
+        raise ValueError(f"Could not map text '{args.sector_name}' to a GICS sector")
 
     sector = all_sectors[result]
 
+    await tool_log(
+        log=f"Interpreting '{args.sector_name}' as GICS Sector: {sector.get('sector_name')}",
+        context=context,
+    )
     # or should this return the whole sector dict id + name
     # (maybe we should add descriptions of each sector as well?
     return sector["sector_id"]
@@ -142,6 +146,11 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
     """
 
     stock_ids = args.stock_ids
+    if stock_ids == []:
+        # degenerate case should i log or throw?
+        await tool_log(log="No stocks left to filter by sector", context=context)
+        return []
+
     if stock_ids is None:
         stock_ids = await get_default_stock_list(user_id=context.user_id)
 
@@ -160,4 +169,7 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
     # ms.gics as gics_subindustry_id,
 
     rows = db.generic_read(sql, params={"stock_ids": stock_ids, "sector_id": args.sector_id})
+    await tool_log(
+        log=f"Filtered {len(stock_ids)} stocks by sector down to {len(rows)}", context=context
+    )
     return [r["gbi_security_id"] for r in rows]

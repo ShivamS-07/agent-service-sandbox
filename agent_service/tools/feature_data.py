@@ -10,9 +10,13 @@ from data_access_layer.core.dao.features.features_dao import FeaturesDAO
 from agent_service.io_types.table import Table, TableColumn, TableColumnType
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.stocks import StatisticsIdentifierLookupInput
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import async_wrap
 from agent_service.utils.postgres import get_psql
+from agent_service.utils.prefect import get_prefect_logger
+
+logger = get_prefect_logger(__name__)
 
 LATEST_DATE_SECONDS = 60 * 60
 TTLCache(maxsize=1, ttl=LATEST_DATE_SECONDS)
@@ -55,16 +59,27 @@ async def statistic_identifier_lookup(
 
     # Word similarity name match
     sql = """
-    SELECT id FROM public.features feat
+    SELECT * FROM (
+    SELECT
+    strict_word_similarity(lower(feat.name), lower(%(search_text)s)) as ws,
+    id, name, description
+    FROM public.features feat
     WHERE feat.data_provider = 'SPIQ'
-    ORDER BY word_similarity(lower(feat.name), lower(%s)) DESC
-    LIMIT 1
+    ORDER BY ws DESC
+    LIMIT 10 ) as feats
+    where ws > 0.2
     """
-    rows = db.generic_read(sql, [args.statistic_name])
+    rows = db.generic_read(sql, {"search_text": args.statistic_name})
+    logger.info(f"found {len(rows)} potential matches for '{args.statistic_name}'")
     if rows:
+        logger.info(f"searched  '{args.statistic_name}' and found row: {str(rows[0])[:250]}")
+        await tool_log(
+            log=f"Interpreting '{args.statistic_name}' as {rows[0]['name']}", context=context
+        )
+
         return rows[0]["id"]
 
-    raise ValueError(f"Could not find the stock {args.statistic_name}")
+    raise ValueError(f"Could not find a stock data field related to: {args.statistic_name}")
 
 
 class FeatureDataInput(ToolArgs):
@@ -117,6 +132,9 @@ def _async_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> 
 
 
 def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> Table:
+
+    if not args.stock_ids:
+        raise ValueError("No stocks given to look up data for")
 
     if args.end_date is None:
         args.end_date = datetime.date.today()

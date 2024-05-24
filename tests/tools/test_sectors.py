@@ -31,11 +31,14 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
             ("sector", -1),
             ("sectors", -1),
             ("companies", -1),
+            ("No Sector", -1),
         ]
         for q, a in q_a:
             args = SectorIdentifierLookupInput(sector_name=q)
-            result = await sector_identifier_lookup(args, self.context)
-            self.assertEqual(result, a, q)
+            with self.subTest(q=q, a=a):
+                with self.assertRaises(ValueError):
+                    result = await sector_identifier_lookup(args, self.context)
+                    self.assertEqual(result, a, q)
 
     async def test_sector_exact_match(self):
         q_a = [
@@ -50,12 +53,13 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
             ("Information Technology", 45),
             ("Communication Services", 50),
             ("Utilities", 55),
-            ("No Sector", -1),
         ]
+
         for q, a in q_a:
             args = SectorIdentifierLookupInput(sector_name=q)
-            result = await sector_identifier_lookup(args, self.context)
-            self.assertEqual(result, a, q)
+            with self.subTest(q=q, a=a):
+                result = await sector_identifier_lookup(args, self.context)
+                self.assertEqual(result, a, q)
 
     async def test_sector_close_match(self):
         # not intended to be comprehensive
@@ -83,8 +87,9 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
         ]
         for q, a in q_a:
             args = SectorIdentifierLookupInput(sector_name=q)
-            result = await sector_identifier_lookup(args, self.context)
-            self.assertEqual(result, a, q)
+            with self.subTest(q=q, a=a):
+                result = await sector_identifier_lookup(args, self.context)
+                self.assertEqual(result, a, q)
 
     async def test_get_default_stock_list(self):
         stocks = await get_default_stock_list(user_id=self.context.user_id)

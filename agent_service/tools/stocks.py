@@ -4,8 +4,12 @@ from typing import Any, Dict, List
 
 from agent_service.external.stock_search_dao import async_sort_stocks_by_volume
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
+from agent_service.utils.prefect import get_prefect_logger
+
+logger = get_prefect_logger(__name__)
 
 
 class StockIdentifierLookupInput(ToolArgs):
@@ -37,19 +41,43 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     Returns:
         int: The integer identifier of the stock.
     """
+    logger.info(f"Attempting to map '{args.stock_name}' to a stock")
     rows = await raw_stock_identifier_lookup(args, context)
+    if not rows:
+        raise ValueError(f"Could not find any stocks related to: '{args.stock_name}'")
+
     if len(rows) == 1:
-        return rows[0]["gbi_security_id"]
+        only_stock = rows[0]
+        logger.info(f"found only 1 stock {only_stock}")
+        return only_stock["gbi_security_id"]
 
+    logger.info(f"found {len(rows)} best potential matching stocks")
     # we have multiple matches, lets use dollar trading volume to choose the most likely match
-    gbi_ids = [r["gbi_security_id"] for r in rows]
-    stock_by_volume = await async_sort_stocks_by_volume(gbi_ids)  # fixme asyncify
+    gbiid2stocks = {r["gbi_security_id"]: r for r in rows}
+    gbi_ids = list(gbiid2stocks.keys())
+    stocks_sorted_by_volume = await async_sort_stocks_by_volume(gbi_ids)  # fixme asyncify
 
-    if stock_by_volume:
-        return stock_by_volume[0][0]
+    if stocks_sorted_by_volume:
+        gbi_id = stocks_sorted_by_volume[0][0]
+        stock = gbiid2stocks.get(gbi_id)
+        if not stock:
+            stock = rows[0]
+            logger.warning("Logic error!")
+            # should not be possible
+        else:
+            logger.info(f"Top stock volumes: {stocks_sorted_by_volume[:10]}")
+    else:
+        # if nothing returned from stock search then just pick the first match
+        stock = rows[0]
+        logger.info("No stock volume info available!")
 
-    # if nothing returned from stock search then just pick the first match
-    return rows[0]["gbi_security_id"]
+    logger.info(f"found stock: {stock} from '{args.stock_name}'")
+    await tool_log(
+        log=f"Interpreting '{args.stock_name}' as {stock['symbol']}: {stock['name']}",
+        context=context,
+    )
+
+    return stock["gbi_security_id"]
 
 
 async def raw_stock_identifier_lookup(
@@ -94,6 +122,7 @@ async def raw_stock_identifier_lookup(
     if rows:
         # useful for debugging
         # print("symbol match: ", rows)
+        logger.info("found by symbol")
         return rows
 
     # Exact ISIN match
@@ -110,6 +139,7 @@ async def raw_stock_identifier_lookup(
     if rows:
         # useful for debugging
         # print("isin match: ", rows)
+        logger.info("found by ISIN")
         return rows
 
     # Word similarity name match
@@ -137,31 +167,42 @@ async def raw_stock_identifier_lookup(
         matches = [r for r in rows if r["ws"] >= 1.0]
         if matches:
             # if there is more than 1 exact match we have to break the tie
+            logger.info(f"found {len(matches)} perfect matches")
             return matches
 
         # strong text  match
         matches = [r for r in rows if r["ws"] >= 0.9]
         if matches:
+            logger.info(f"found {len(matches)} nearly perfect matches")
             return matches[:5]
 
         matches = [r for r in rows if r["ws"] >= 0.7]
         if matches:
+            logger.info(f"found {len(matches)} strong matches")
             return matches[:5]
 
         matches = [r for r in rows if r["ws"] >= 0.4]
         if matches:
+            logger.info(f"found {len(matches)} medium matches")
             return matches[:10]
 
         matches = [r for r in rows if r["ws"] >= 0.3]
         if matches:
+            logger.info(f"found {len(matches)} weak matches")
             return matches[:20]
 
         # very weak text match
         matches = [r for r in rows if r["ws"] > 0.2]
         if matches:
+            logger.info(f"found {len(matches)} very weak matches")
             return matches[:50]
 
-    raise ValueError(f"Could not find the stock {args.stock_name}")
+        if rows:
+            logger.info(
+                f"found {len(rows)} potential matches but they were all likely unrelated to the user intent"
+            )
+
+    raise ValueError(f"Could not find any stocks related to: '{args.stock_name}'")
 
 
 class StockIDsToTickerInput(ToolArgs):
