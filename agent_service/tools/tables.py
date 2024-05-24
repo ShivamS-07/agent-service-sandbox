@@ -154,7 +154,7 @@ def _strip_code_markers(gpt_output: str, lang: str) -> str:
     if gpt_output.endswith("```"):
         gpt_output = gpt_output[:-3]
 
-    return gpt_output
+    return gpt_output.strip()
 
 
 async def gen_new_column_schema(
@@ -175,7 +175,7 @@ async def gen_new_column_schema(
         if not cols:
             # Empty object = unchanged
             return current_table_cols
-        return [TableColumn(**item) for item in cols]
+        return [TableColumn.model_validate(item) for item in cols]
     except (ValidationError, JSONDecodeError) as e:
         prompt = DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT.format(
             schema=TableColumn.schema_json(),
@@ -192,7 +192,7 @@ async def gen_new_column_schema(
         )
         json_str = _strip_code_markers(res, lang="json")
         cols = json.loads(json_str)
-        return [TableColumn(**item) for item in cols]
+        return [TableColumn.model_validate(item) for item in cols]
 
 
 class TransformTableArgs(ToolArgs):
