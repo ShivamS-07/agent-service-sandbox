@@ -361,7 +361,7 @@ def tool(
                     "agent_id": context.agent_id,
                     "user_id": context.user_id,
                     "task_id": context.task_id,
-                    "plan_id": context.plan_run_id,
+                    "plan_id": context.plan_id,
                     "plan_run_id": context.plan_run_id,
                     "args": args.model_dump_json(),
                     "start_time_utc": start,
