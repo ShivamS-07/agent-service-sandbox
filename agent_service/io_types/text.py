@@ -57,20 +57,31 @@ class Text(ComplexIOBase):
         return Text(val=text)
 
     @classmethod
-    def get_all_strs(cls, text: Union[Text, TextGroup, List[Any]]) -> Union[str, List[Any]]:
+    def get_all_strs(
+        cls, text: Union[Text, TextGroup, List[Any], Dict[Any, Any]]
+    ) -> Union[str, List[Any], Dict[Any, Any]]:
         # For any possible configuration of Texts or TextGroups in Lists, this converts that
         # configuration to the corresponding strings in list, in class specific batches
         # TextGroups become a single string here
 
         def convert_to_ids_and_categorize(
-            text: Union[Text, TextGroup, List[Any]], categories: Dict[Type[Text], List[Text]]
-        ) -> Union[TextIDType, TextGroup, List[Any]]:
+            text: Union[Text, TextGroup, List[Any], Dict[Any, Any]],
+            categories: Dict[Type[Text], List[Text]],
+        ) -> Union[TextIDType, TextGroup, List[Any], Dict[Any, Any]]:
             """
-            Convert a structure of texts (e.g. nested lists, etc.) into an
+            Convert a structure of texts (e.g. nested lists, dicts, etc.) into an
             identical structure of text ID's, while also keeping track of all
             texts of each type.
             """
-            if not isinstance(text, list):
+            if isinstance(text, list):
+                return [convert_to_ids_and_categorize(sub_text, categories) for sub_text in text]
+            elif isinstance(text, dict):
+                # we assume texts are only values, not keys
+                return {
+                    key: convert_to_ids_and_categorize(value, categories)
+                    for key, value in text.items()
+                }
+            else:
                 if isinstance(text, TextGroup):
                     for subtext in text.val:
                         categories[type(subtext)].append(subtext)
@@ -78,8 +89,6 @@ class Text(ComplexIOBase):
                 else:
                     categories[type(text)].append(text)
                     return text.id
-            else:
-                return [convert_to_ids_and_categorize(sub_text, categories) for sub_text in text]
 
         categories: Dict[Type[Text], List[Text]] = defaultdict(list)
         # identical structure to input texts, but as IDs
@@ -90,11 +99,16 @@ class Text(ComplexIOBase):
             strs_lookup.update(textclass.get_strs_lookup(texts))
 
         def convert_ids_to_strs(
-            strs_lookup: Dict[TextIDType, str], id_rep: Union[TextIDType, TextGroup, List[Any]]
-        ) -> Union[str, List[Any]]:
+            strs_lookup: Dict[TextIDType, str],
+            id_rep: Union[TextIDType, TextGroup, List[Any], Dict[Any, Any]],
+        ) -> Union[str, List[Any], Dict[Any, Any]]:
             """
             Take the structure of ID lists, and map back into actual strings.
             """
+            if isinstance(id_rep, dict):
+                return {
+                    key: convert_ids_to_strs(strs_lookup, value) for key, value in id_rep.items()
+                }
             if isinstance(id_rep, list):
                 return [convert_ids_to_strs(strs_lookup, sub_id_rep) for sub_id_rep in id_rep]
             if isinstance(id_rep, TextGroup):
@@ -268,6 +282,9 @@ class CompanyDescriptionText(Text):
         return {row["gbi_id"]: row["company_description_short"] for row in rows}
 
 
+# These are not actual Text types, but build on top of them
+
+
 @io_type
 class TextGroup(ComplexIOBase):
     val: List[Text]
@@ -289,3 +306,27 @@ class TextGroup(ComplexIOBase):
 class TextOutput(Output):
     output_type: Literal[OutputType.TEXT] = OutputType.TEXT
     val: str
+
+
+@io_type
+class StockAlignedTextGroups(ComplexIOBase):
+    val: Dict[int, TextGroup]
+
+    @staticmethod
+    def join(
+        stock_to_texts_1: StockAlignedTextGroups, stock_to_texts_2: StockAlignedTextGroups
+    ) -> StockAlignedTextGroups:
+        output_dict = {}
+        all_stocks = set(stock_to_texts_1.val) | set(stock_to_texts_2.val)
+        for stock in all_stocks:
+            if stock in stock_to_texts_1.val:
+                if stock in stock_to_texts_2.val:
+                    output_dict[stock] = TextGroup.join(
+                        stock_to_texts_1.val[stock], stock_to_texts_2.val[stock]
+                    )
+                else:
+                    output_dict[stock] = stock_to_texts_1.val[stock]
+            else:
+                output_dict[stock] = stock_to_texts_2.val[stock]
+
+        return StockAlignedTextGroups(val=output_dict)

@@ -1,21 +1,39 @@
 import asyncio
 import datetime
 from collections import defaultdict
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from agent_service.io_types.text import EarningsSummaryText
+from agent_service.io_types.text import (
+    EarningsSummaryText,
+    StockAlignedTextGroups,
+    TextGroup,
+)
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
-from agent_service.tools.LLM_analysis import (
-    ConvertListofListsToGroupInput,
-    SummarizeTextInput,
-    convert_list_of_lists_of_texts_to_groups,
-    summarize_texts,
-)
+from agent_service.tools.LLM_analysis import SummarizeTextInput, summarize_texts
 from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import get_psql
+
+
+class CollapseListOfListsOfStocksInput(ToolArgs):
+    list_of_list_of_stock_ids: List[List[int]]
+
+
+@tool(
+    description=(
+        "This function flattens a list of lists of stocks into a list of stocks. "
+        "Use this function if you want to use all stocks returned from stock earnings impacts."
+        "Do not use this function to build lists, use build_list or add_list"
+    ),
+    category=ToolCategory.EARNINGS,
+    is_visible=False,
+)
+async def collapse_list_of_lists_of_stocks(
+    args: CollapseListOfListsOfStocksInput, context: PlanRunContext
+) -> List[int]:
+    return [item for inner_list in args.list_of_list_of_stock_ids for item in inner_list]
 
 
 class GetImpactingStocksInput(ToolArgs):
@@ -54,6 +72,43 @@ async def get_impacting_stocks(
     return output
 
 
+async def _get_earnings_summary_helper(
+    stock_ids: List[int],
+    start_date: Optional[datetime.date] = None,
+    end_date: Optional[datetime.date] = None,
+) -> Dict[int, List[EarningsSummaryText]]:
+    db = get_psql()
+    sql = """
+        SELECT summary_id::TEXT, gbi_id, sources
+        FROM nlp_service.earnings_call_summaries
+        WHERE gbi_id = ANY(%(gbi_ids)s)
+        """
+
+    rows = db.generic_read(sql, {"gbi_ids": stock_ids})
+    by_stock_lookup = defaultdict(list)
+    for row in rows:
+        by_stock_lookup[row["gbi_id"]].append(row)
+
+    if not start_date:
+        start_date = (get_now_utc() - datetime.timedelta(days=90)).date()
+    if not end_date:
+        # Add an extra day to be sure we don't miss anything with timezone weirdness
+        end_date = get_now_utc().date() + datetime.timedelta(days=1)
+
+    output: Dict[int, List[EarningsSummaryText]] = {}
+    for stock_id in stock_ids:
+        stock_output = []
+        for row in by_stock_lookup.get(stock_id, []):
+            publish_date = datetime.datetime.fromisoformat(
+                row["sources"][0]["publishing_time"]
+            ).date()
+            if publish_date < start_date or publish_date > end_date:
+                continue
+            stock_output.append(EarningsSummaryText(id=row["summary_id"]))
+        output[row["gbi_id"]] = stock_output
+    return output
+
+
 class GetEarningsCallSummariesInput(ToolArgs):
     stock_ids: List[int]
     start_date: Optional[datetime.date] = None
@@ -62,58 +117,57 @@ class GetEarningsCallSummariesInput(ToolArgs):
 
 @tool(
     description=(
-        "This returns a list of lists of earnings call summary texts, each inner list corresponds to all the"
+        "This returns stock-aligned groups of earnings call summaries, each text group corresponds to all the"
         " earnings calls for the corresponding stock that were published between start_date and end_date. "
-        "start_date or end_date being None indicates the range is unbounded"
-        "The length of the returned list of lists is the same as the input stock_ids"
+        " end_date defaults to today, start_date defaults to one quarter ago, which will return exactly"
+        " the summary for the most recent earnings call and what the clients are usually interested"
+        " in unless they explicitly state otherwise. "
+        " You will use this function if you want to use the earnings calls on a per stock basis, for instance "
+        " to filter multiple stocks based on the content of their earnings."
+        "For example, if a user asks `give me a list of stocks in the S&P 500` whose last earnings call "
+        " discussed mergers and acquisitions`, you would use this function to get the earnings calls`"
+    ),
+    category=ToolCategory.EARNINGS,
+    tool_registry=ToolRegistry,
+)
+async def get_stock_aligned_earnings_call_summaries(
+    args: GetEarningsCallSummariesInput, context: PlanRunContext
+) -> StockAlignedTextGroups:
+    summary_lookup = await _get_earnings_summary_helper(
+        args.stock_ids, args.start_date, args.end_date
+    )
+    output: Dict[int, TextGroup] = {}
+    for stock_id, topic_list in summary_lookup.items():
+        output[stock_id] = TextGroup(val=topic_list)  # type: ignore
+    return StockAlignedTextGroups(val=output)
+
+
+@tool(
+    description=(
+        "This returns a list of all earnings call summaries for one or more stocks "
+        " that were published between start_date and end_date. "
+        " end_date defaults to today, start_date defaults to one quarter ago, which will return exactly"
+        " the summary for the most recent earnings call and what the clients are usually interested"
+        " in unless they explicitly state otherwise."
+        " You will use this function if you want to use further summarize or display earnings calls summaries for"
+        " one or a very small groups of stocks, but it is NOT appropriate for use for per stock applications"
+        " like stock filtering since the alignment with stocks is not preserved. "
+        " For example, if the user asked `give me a summary of all the latest earnings calls "
+        " for the top-market cap tech stocks`, you would use this function."
     ),
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,
 )
 async def get_earnings_call_summaries(
     args: GetEarningsCallSummariesInput, context: PlanRunContext
-) -> List[List[EarningsSummaryText]]:
-    db = get_psql()
-    sql = """
-        SELECT summary_id::TEXT, gbi_id, created_timestamp
-        FROM nlp_service.earnings_call_summaries
-        WHERE gbi_id = ANY(%(gbi_ids)s)
-        """
-
-    rows = db.generic_read(sql, {"gbi_ids": args.stock_ids})
-    by_stock_lookup = defaultdict(list)
-    for row in rows:
-        by_stock_lookup[row["gbi_id"]].append(row)
-
-    output: List[List[EarningsSummaryText]] = []
-    for stock_id in args.stock_ids:
-        stock_output = []
-        for row in by_stock_lookup.get(stock_id, []):
-            if args.start_date is not None and row["created_timestamp"].date() < args.start_date:
-                continue
-            if args.end_date is not None and row["created_timestamp"].date() > args.end_date:
-                continue
-            stock_output.append(EarningsSummaryText(id=row["summary_id"]))
-        output.append(stock_output)
+) -> List[EarningsSummaryText]:
+    topic_lookup = await _get_earnings_summary_helper(
+        args.stock_ids, args.start_date, args.end_date
+    )
+    output: List[EarningsSummaryText] = []
+    for topic_list in topic_lookup.values():
+        output.extend(topic_list)
     return output
-
-
-class CollapseListOfListsOfStocksInput(ToolArgs):
-    list_of_list_of_stock_ids: List[List[int]]
-
-
-@tool(
-    description=(
-        "This function flattens a list of lists of stocks into a list of stocks. "
-        "Use this function if you want to use all stocks returned from stock earnings impacts."
-    ),
-    category=ToolCategory.EARNINGS,
-    is_visible=False,
-)
-async def collapse_list_of_lists_of_stocks(
-    args: CollapseListOfListsOfStocksInput, context: PlanRunContext
-) -> List[int]:
-    return [item for inner_list in args.list_of_list_of_stock_ids for item in inner_list]
 
 
 async def main() -> None:
@@ -148,12 +202,8 @@ async def main() -> None:
     )
     print(len(impacted_stocks))  # type: ignore
 
-    earnings_summaries_list = await get_earnings_call_summaries(
+    earnings_summaries = await get_earnings_call_summaries(
         GetEarningsCallSummariesInput(stock_ids=impacted_stocks, start_date=start_date), plan_context  # type: ignore
-    )
-
-    earnings_summaries = await convert_list_of_lists_of_texts_to_groups(
-        ConvertListofListsToGroupInput(list_of_lists_of_texts=earnings_summaries_list), plan_context  # type: ignore
     )
 
     print(len(earnings_summaries))  # type: ignore
