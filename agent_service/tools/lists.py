@@ -12,16 +12,17 @@ class AddListsInput(ToolArgs):
 
 @tool(
     description=(
-        "This function forms a single list from the elements of two lists. "
-        "For example, [1, 2, 3] and [4, 5, 6] would add to [1, 2, 3, 4, 5, 6]."
+        "This function forms a single deduplicated list from the elements of two lists. "
+        "For example, [1, 2, 3] and [3, 4, 5] would add to [1, 2, 3, 4, 5]."
+        "This is particularly useful if you created two lists of stocks and want to"
+        "combine them"
     ),
     category=ToolCategory.LIST,
     tool_registry=ToolRegistry,
     is_visible=False,
-    enabled=False,
 )
 async def add_lists(args: AddListsInput, context: PlanRunContext) -> List[IOType]:
-    return args.list1 + args.list2
+    return list(set(args.list1 + args.list2))
 
 
 class GetIndexInput(ToolArgs):

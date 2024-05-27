@@ -39,7 +39,13 @@ class TestPlans(IsolatedAsyncioTestCase):
         chat_context = ChatContext(messages=[user_message])
         chatbot = Chatbot("123")
         preplan_response = await chatbot.generate_initial_preplan_response(chat_context)
+        print(preplan_response)
         chat_context.messages.append(Message(message=preplan_response, is_user_message=False))
+        midplan_response = await chatbot.generate_initial_midplan_response(chat_context)
+        print(midplan_response)
+        chat_context.messages.append(Message(message=midplan_response, is_user_message=False))
+        failed_plan_response = await chatbot.generate_initial_plan_failed_response(chat_context)
+        print(failed_plan_response)
         plan_nodes = [
             ToolExecutionNode(
                 tool_name="get_date_from_date_str",

@@ -29,6 +29,9 @@ async def gen_and_run_plan(
         run_tasks_without_prefect=True,
         chat_context=chat,
     )
+    if plan is None:
+        print("failed to create plan")
+        return
     print("Created a plan with the following steps:")
     print("-----")
     print(plan.get_formatted_plan())

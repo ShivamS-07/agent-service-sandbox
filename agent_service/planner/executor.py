@@ -124,7 +124,7 @@ async def create_execution_plan(
     run_tasks_without_prefect: bool = False,
     send_chat_when_finished: bool = True,
     chat_context: Optional[ChatContext] = None,
-) -> ExecutionPlan:
+) -> Optional[ExecutionPlan]:
     if action != Action.CREATE:
         return await rewrite_execution_plan_after_input(
             agent_id=agent_id,
@@ -140,12 +140,24 @@ async def create_execution_plan(
         )
 
     logger = get_prefect_logger(__name__)
-    planner = Planner(agent_id=agent_id)
+    planner = Planner(
+        agent_id=agent_id, skip_db_commit=skip_db_commit, send_chat=send_chat_when_finished
+    )
     db = get_psql(skip_commit=skip_db_commit)
 
     logger.info(f"Starting creation of execution plan for {agent_id=}...")
     chat_context = chat_context or db.get_chats_history_for_agent(agent_id=agent_id)
     plan = await planner.create_initial_plan(chat_context=chat_context)
+    if plan is None:
+
+        if send_chat_when_finished and not skip_db_commit:
+            chatbot = Chatbot(agent_id=agent_id)
+            message = await chatbot.generate_initial_plan_failed_response(chat_context=chat_context)
+            db.insert_chat_messages(
+                messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
+            )
+        return None
+
     if not skip_db_commit:
         db.write_execution_plan(plan_id=plan_id, agent_id=agent_id, plan=plan)
     logger.info(f"Finished creating execution plan for {agent_id=}")
@@ -233,10 +245,11 @@ async def update_execution_after_input(
         action == Action.RERUN
         and (flow_run and flow_run.flow_run_type == FlowRunType.PLAN_CREATION)
     ):
-        message = await chatbot.generate_input_update_no_action_response(chat_context)
-        db.insert_chat_messages(
-            messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
-        )
+        if send_chat_when_finished and not skip_db_commit:
+            message = await chatbot.generate_input_update_no_action_response(chat_context)
+            db.insert_chat_messages(
+                messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
+            )
         if flow_run:
             await prefect_resume_agent_flow(flow_run)
     elif action == Action.RERUN:
@@ -244,12 +257,15 @@ async def update_execution_after_input(
         for node in latest_plan.nodes:
             if ToolRegistry.does_tool_read_chat(node.tool_name):
                 # we've already run into a chat reading node, which means we need to rerun
-                message = await chatbot.generate_input_update_rerun_response(
-                    chat_context, latest_plan, str(node.tool_name)
-                )
-                db.insert_chat_messages(
-                    messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
-                )
+                if send_chat_when_finished and not skip_db_commit:
+                    message = await chatbot.generate_input_update_rerun_response(
+                        chat_context, latest_plan, str(node.tool_name)
+                    )
+                    db.insert_chat_messages(
+                        messages=[
+                            Message(agent_id=agent_id, message=message, is_user_message=False)
+                        ]
+                    )
 
                 if flow_run:
                     await prefect_cancel_agent_flow(flow_run)
@@ -278,10 +294,13 @@ async def update_execution_after_input(
             if node.tool_task_id == current_task_id:
                 # if we got here without breaking, means no chat reading node
                 # has been run, we can just resume
-                message = await chatbot.generate_input_update_no_action_response(chat_context)
-                db.insert_chat_messages(
-                    messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
-                )
+                if send_chat_when_finished and not skip_db_commit:
+                    message = await chatbot.generate_input_update_no_action_response(chat_context)
+                    db.insert_chat_messages(
+                        messages=[
+                            Message(agent_id=agent_id, message=message, is_user_message=False)
+                        ]
+                    )
 
                 if flow_run:
                     await prefect_resume_agent_flow(flow_run)
@@ -394,7 +413,7 @@ async def create_execution_plan_local(
     run_plan_in_prefect_immediately: bool = True,
     run_tasks_without_prefect: bool = True,
     chat_context: Optional[ChatContext] = None,
-) -> ExecutionPlan:
+) -> Optional[ExecutionPlan]:
     return await create_execution_plan.fn(
         agent_id=agent_id,
         plan_id=plan_id,

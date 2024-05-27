@@ -9,7 +9,6 @@ from data_access_layer.core.dao.features.features_dao import FeaturesDAO
 
 from agent_service.io_types.table import Table, TableColumn, TableColumnType
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
-from agent_service.tools.stocks import StatisticsIdentifierLookupInput
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import async_wrap
@@ -27,6 +26,11 @@ TTLCache(maxsize=1, ttl=LATEST_DATE_SECONDS)
 FEATURES_DAO = FeaturesDAO()
 
 StatisticId = str
+
+
+class StatisticsIdentifierLookupInput(ToolArgs):
+    # name of the statistic to lookup
+    statistic_name: str
 
 
 @tool(

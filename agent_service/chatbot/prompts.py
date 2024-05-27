@@ -11,11 +11,23 @@ INITIAL_PREPLAN_SYS_PROMPT_STR = "{agent_description} You will be provided with 
 
 INITIAL_PREPLAN_MAIN_PROMPT_STR = "Given the following query from a client, confirm that you understand the client's need and have begun to generate a plan for satisfying it. Here is the client request: {chat_context}"
 
+### Initial MidPlan Response
+
+INITIAL_MIDPLAN_SYS_PROMPT_STR = "{agent_description} You have been provided with a client request for information, but you have run into challenges creating a plan to carry it out. You need to tell the client you are having problems and will need more time, but are still hopeful you can find a solution. You must make it clear that you are still working on generating a plan. Do not give any specifics on the problems you're having. Keep it fairly brief: your total response including any follow-up question should be no more than 30 words. Do not mention the term `information need` or `plan` in your response."
+
+INITIAL_MIDPLAN_MAIN_PROMPT_STR = "Given the following interaction with a client, inform the client you are having trouble coming up with a way to satisfy their request but will keep working on it. Here is the interaction with the client so far:\n {chat_context}"
+
 ### Initial Postplan Response
 
-INITIAL_POSTPLAN_SYS_PROMPT_STR = "{agent_description} You have been provided with a client request for information, and have generated an initial plan to satisfy that information need. You will tell the client that you've finished making the plan, and briefly describe it. Make sure the major steps are clear, but avoid any technical details, especially those related to data type manipulation. If, when comparing the plan with the original request, you find that you have made any assumptions about the interpretation of the client's request (in particular, the specific meaning of particular words), you should inform the client of the assumptions you have made. Finally, tell the client that you are beginning to execute the plan, but will revise the plan at any time if the client asks. Please do not use the wording above, rephrase. Do not mention the term `information need` or `plan` in your response.  Keep it fairly brief: your total response should be no more than 80 words. You do not need to greet the client."
+INITIAL_POSTPLAN_SYS_PROMPT_STR = "{agent_description} You have been provided with a client request for information, and have generated an initial plan to satisfy that information need. You will tell the client that you've finished making the plan, and briefly describe it. Make sure the major steps are clear, but avoid any technical details, especially those related to data type manipulation. If, when comparing the plan with the original request, you find that you have made any assumptions about the interpretation of the client's request (in particular, the specific meaning of particular words), you should inform the client of the assumptions you have made. You should also look carefully for things that you might have left out of the plan, and explain that you might be missing certain functionalites required (do not use those exact words). Finally, tell the client that you are beginning to execute the plan, but will revise the plan at any time if the client asks. Please do not use the wording above, rephrase. Do not mention the term `information need` or `plan` in your response.  Keep it fairly brief: your total response should be no more than 80 words. You do not need to greet the client."
 
 INITIAL_POSTPLAN_MAIN_PROMPT_STR = "Given the following interaction with the client and the plan you have just generated to satisfy their information need, inform the client of your progress and any assumptions you have made so far. Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nAnd here are the steps of your plan:\n---\n{plan}\n---\nNow write your response to the client: "
+
+### Initial Plan Failed Response
+
+INITIAL_PLAN_FAILED_SYS_PROMPT_STR = "{agent_description} You have been provided with a client request for information, but you have failed to generate an initial plan to satisfy that information need. You will tell the client that you've failed, apologize for that failure. Provide an explanation that your intelligence and/or ability are limited (do not use those exact words) and ask if maybe the client could simplify the request you could try again. Be brief, do not use more than 30 words."
+
+INITIAL_PLAN_FAILED_MAIN_PROMPT_STR = "Given the following interaction with the client, inform the client of your failure to generate a plan for satisfying their needs. Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nNow write your message to the client: "
 
 ### Complete Execution Response
 
@@ -53,9 +65,19 @@ INPUT_UPDATE_REPLAN_POSTPLAN_MAIN_PROMPT_STR = "Given the following interaction 
 INITIAL_PREPLAN_SYS_PROMPT = Prompt(INITIAL_PREPLAN_SYS_PROMPT_STR, "INITIAL_PREPLAN_SYS_PROMPT")
 INITIAL_PREPLAN_MAIN_PROMPT = Prompt(INITIAL_PREPLAN_MAIN_PROMPT_STR, "INITIAL_PREPLAN_MAIN_PROMPT")
 
+INITIAL_MIDPLAN_SYS_PROMPT = Prompt(INITIAL_MIDPLAN_SYS_PROMPT_STR, "INITIAL_MIDPLAN_SYS_PROMPT")
+INITIAL_MIDPLAN_MAIN_PROMPT = Prompt(INITIAL_MIDPLAN_MAIN_PROMPT_STR, "INITIAL_MIDPLAN_MAIN_PROMPT")
+
 INITIAL_POSTPLAN_SYS_PROMPT = Prompt(INITIAL_POSTPLAN_SYS_PROMPT_STR, "INITIAL_POSTPLAN_SYS_PROMPT")
 INITIAL_POSTPLAN_MAIN_PROMPT = Prompt(
     INITIAL_POSTPLAN_MAIN_PROMPT_STR, "INITIAL_POSTPLAN_MAIN_PROMPT"
+)
+
+INITIAL_PLAN_FAILED_SYS_PROMPT = Prompt(
+    INITIAL_PLAN_FAILED_SYS_PROMPT_STR, "INITIAL_PLAN_FAILED_SYS_PROMPT"
+)
+INITIAL_PLAN_FAILED_MAIN_PROMPT = Prompt(
+    INITIAL_PLAN_FAILED_MAIN_PROMPT_STR, "INITIAL_PLAN_FAILED_MAIN_PROMPT"
 )
 
 COMPLETE_EXECUTION_SYS_PROMPT = Prompt(

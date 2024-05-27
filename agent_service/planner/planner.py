@@ -2,10 +2,15 @@ import asyncio
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
 from uuid import uuid4
 
-from agent_service.GPT.constants import DEFAULT_SMART_MODEL
+from agent_service.chatbot.chatbot import Chatbot
+from agent_service.GPT.constants import DEFAULT_SMART_MODEL, GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import IOType, PrimitiveType, check_type_is_valid
-from agent_service.planner.constants import ARGUMENT_RE, ASSIGNMENT_RE
+from agent_service.planner.constants import (
+    ARGUMENT_RE,
+    ASSIGNMENT_RE,
+    INITIAL_PLAN_TRIES,
+)
 from agent_service.planner.planner_types import (
     ExecutionPlan,
     ExecutionPlanParsingError,
@@ -15,6 +20,10 @@ from agent_service.planner.planner_types import (
     Variable,
 )
 from agent_service.planner.prompts import (
+    BREAKDOWN_NEED_MAIN_PROMPT,
+    BREAKDOWN_NEED_SYS_PROMPT,
+    PICK_BEST_PLAN_MAIN_PROMPT,
+    PICK_BEST_PLAN_SYS_PROMPT,
     PLAN_EXAMPLE,
     PLAN_GUIDELINES,
     PLAN_RULES,
@@ -28,9 +37,11 @@ from agent_service.tool import Tool, ToolRegistry
 # Make sure all tools are imported for the planner
 from agent_service.tools import *  # noqa
 from agent_service.types import ChatContext, Message
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
+from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 
 
@@ -49,33 +60,139 @@ class Planner:
     def __init__(
         self,
         agent_id: str,
-        model: str = DEFAULT_SMART_MODEL,
         tool_registry: Type[ToolRegistry] = ToolRegistry,
+        send_chat: bool = True,
+        skip_db_commit: bool = False,
     ) -> None:
         self.agent_id = agent_id
         context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
-        self.llm = GPT(context, model)
+        self.smart_llm = GPT(context, DEFAULT_SMART_MODEL)
+        self.fast_llm = GPT(context, GPT4_O)
         self.tool_registry = tool_registry
         self.tool_string = tool_registry.get_tool_str()
+        self.send_chat = send_chat
+        self.skip_db_commit = skip_db_commit
 
     @async_perf_logger
-    async def create_initial_plan(self, chat_context: ChatContext) -> ExecutionPlan:
-        # TODO: put this in a loop where if the parse fails, we query GPT with
-        # two additional messages: the GPT response and the parse exception
-        # TODO: run multiple plans and pick the best one
+    async def create_initial_plan(self, chat_context: ChatContext) -> Optional[ExecutionPlan]:
 
         logger = get_prefect_logger(__name__)
-        plan_str = await self._query_GPT_for_initial_plan(chat_context.get_gpt_input())
+        first_round_tasks = [
+            self._create_initial_plan(chat_context, self.fast_llm)
+            for _ in range(INITIAL_PLAN_TRIES)
+        ]
+        first_round_results = [
+            plan for plan in await gather_with_concurrency(first_round_tasks) if plan is not None
+        ]
+        if first_round_results:
+            logger.info(
+                f"{len(first_round_results)} of {INITIAL_PLAN_TRIES} initial plan runs succeeded"
+            )
+            # GPT 4O seems to have done it now need to just pick
+            if len(first_round_results) > 1:
+                best_plan = await self._pick_best_plan(chat_context, first_round_results)
+            else:
+                best_plan = first_round_results[0]
 
-        steps = self._parse_plan_str(plan_str)
+            return best_plan
+
+        if self.send_chat and not self.skip_db_commit:
+            await self._send_delayed_planning_message()
+
+        logger.warning(f"All of {INITIAL_PLAN_TRIES} initial plan runs failed, trying round 2")
+
+        second_round_tasks = [
+            self._create_initial_plan(chat_context, self.smart_llm),
+            self._get_plan_from_breakdown(chat_context),
+        ]
+
+        turbo_plan, breakdown_plan = await gather_with_concurrency(second_round_tasks)
+
+        if turbo_plan is not None:
+            logger.info("Round 2 turbo run succeeded, using that plan")
+            # if we were able to get a working version with turbo, use that
+            return turbo_plan
+
+        if breakdown_plan:
+            logger.info("Round 2 breakdown run succeeded, using best breakdown plan")
+        else:
+            logger.warning("Round 2 planning failed, giving up")
+
+        # otherwise, return the best breakdown version if any
+        return breakdown_plan
+
+    async def _get_plan_from_breakdown(self, chat_context: ChatContext) -> Optional[ExecutionPlan]:
+        request_breakdown = await self._get_request_breakdown(chat_context)
+        breakdown_tasks = [
+            self._create_initial_plan(
+                ChatContext(messages=[Message(message=subneed, is_user_message=True)])
+            )
+            for subneed in request_breakdown
+        ]
+        breakdown_results = [
+            plan for plan in await gather_with_concurrency(breakdown_tasks) if plan
+        ]
+        if breakdown_results:
+            if len(breakdown_results) > 1:
+                # TODO: Combine best plans instead of just picking the best one?
+                best_plan = await self._pick_best_plan(chat_context, breakdown_results)
+            else:
+                best_plan = breakdown_results[0]
+        else:
+            best_plan = None
+
+        return best_plan
+
+    @async_perf_logger
+    async def _create_initial_plan(
+        self, chat_context: ChatContext, llm: Optional[GPT] = None
+    ) -> Optional[ExecutionPlan]:
+        if llm is None:
+            llm = self.fast_llm
+
+        logger = get_prefect_logger(__name__)
+        plan_str = await self._query_GPT_for_initial_plan(chat_context.get_gpt_input(), llm=llm)
 
         try:
+            steps = self._parse_plan_str(plan_str)
             plan = self._validate_and_construct_plan(steps)
         except Exception:
-            logger.warning(f"Failed to validate plan with steps: {steps}")
-            raise
+            logger.warning(f"Failed to parse and validate plan with steps: {steps}")
+            return None
 
         return plan
+
+    @async_perf_logger
+    async def _pick_best_plan(
+        self, chat_context: ChatContext, plans: List[ExecutionPlan]
+    ) -> ExecutionPlan:
+        plans_str = "\n\n".join(
+            f"Plan {n}:\n{plan.get_formatted_plan()}" for n, plan in enumerate(plans)
+        )
+        sys_prompt = PICK_BEST_PLAN_SYS_PROMPT.format(guidelines=PLAN_GUIDELINES)
+
+        main_prompt = PICK_BEST_PLAN_MAIN_PROMPT.format(
+            message=chat_context.get_gpt_input(), plans=plans_str
+        )
+        result = await self.fast_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+        return plans[int(result.split("\n")[-1])]
+
+    @async_perf_logger
+    async def _get_request_breakdown(self, chat_context: ChatContext) -> List[str]:
+        sys_prompt = BREAKDOWN_NEED_SYS_PROMPT.format(tools=self.tool_registry.get_tool_str())
+
+        main_prompt = BREAKDOWN_NEED_MAIN_PROMPT.format(message=chat_context.get_gpt_input())
+        result = await self.fast_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+        return result.strip("\n").replace("\n\n", "\n").split("\n")
+
+    @async_perf_logger
+    async def _send_delayed_planning_message(self, chat_context: ChatContext) -> None:
+        chatbot = Chatbot(agent_id=self.agent_id)
+        message = await chatbot.generate_initial_midplan_response(chat_context=chat_context)
+
+        get_psql().insert_chat_messages(
+            messages=[Message(agent_id=self.agent_id, message=message, is_user_message=False)]
+        )
 
     @async_perf_logger
     async def rewrite_plan_after_input(
@@ -102,7 +219,7 @@ class Planner:
 
         return new_plan
 
-    async def _query_GPT_for_initial_plan(self, user_input: str) -> str:
+    async def _query_GPT_for_initial_plan(self, user_input: str, llm: GPT) -> str:
         sys_prompt = PLANNER_SYS_PROMPT.format(
             rules=PLAN_RULES,
             guidelines=PLAN_GUIDELINES,
@@ -111,7 +228,7 @@ class Planner:
         )
 
         main_prompt = PLANNER_MAIN_PROMPT.format(message=user_input)
-        return await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+        return await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     async def _query_GPT_for_new_plan_after_input(
         self, new_user_input: str, existing_context: str, old_plan: str
@@ -126,7 +243,7 @@ class Planner:
         main_prompt = USER_INPUT_REPLAN_MAIN_PROMPT.format(
             new_message=new_user_input, chat_context=existing_context, old_plan=old_plan
         )
-        return await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+        return await self.smart_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     def _try_parse_str_literal(self, val: str) -> Optional[str]:
         if (val.startswith('"') and val.endswith('"')) or (

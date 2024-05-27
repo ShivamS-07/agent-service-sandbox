@@ -13,7 +13,7 @@ logger = get_prefect_logger(__name__)
 
 
 class StockIdentifierLookupInput(ToolArgs):
-    # name or symbole of the stock to lookup
+    # name or symbol of the stock to lookup
     stock_name: str
 
 
@@ -205,6 +205,36 @@ async def raw_stock_identifier_lookup(
     raise ValueError(f"Could not find any stocks related to: '{args.stock_name}'")
 
 
+class MultiStockIdentifierLookupInput(ToolArgs):
+    # name or symbol of the stock to lookup
+    stock_names: List[str]
+
+
+@tool(
+    description=(
+        "This function takes a list of strings e.g. ['microsoft', 'apple', 'TESLA', 'META'] "
+        "which refer to stocks, and converts them to a list of integer identifiers."
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def multi_stock_identifier_lookup(
+    args: MultiStockIdentifierLookupInput, context: PlanRunContext
+) -> List[int]:
+    # Just runs stock identifier look up below for each stock in the list
+    # Probably can be done more efficiently
+
+    output: List[int] = []
+    for stock_name in args.stock_names:
+        output.append(
+            await stock_identifier_lookup(  # type: ignore
+                StockIdentifierLookupInput(stock_name=stock_name), context
+            )
+        )
+    return output
+
+
 class StockIDsToTickerInput(ToolArgs):
     stock_ids: List[int]
 
@@ -228,11 +258,6 @@ async def convert_stock_identifiers_to_tickers(
     # Map to make sure they're in the same order
     mapping = {row["gbi_id"]: row["symbol"] for row in rows}
     return [mapping[stock_id] for stock_id in args.stock_ids]
-
-
-class StatisticsIdentifierLookupInput(ToolArgs):
-    # name of the statistic to lookup
-    statistic_name: str
 
 
 class GetStockUniverseInput(ToolArgs):

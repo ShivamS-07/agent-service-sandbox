@@ -201,14 +201,14 @@ def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> boo
     if expected in (IOType, Any):
         return True
 
-    # TODO revisit this later, this will really help with preventing false
-    # positives
-    if actual and expected:
-        try:
-            if issubclass(actual, ComplexIOBase) and issubclass(expected, ComplexIOBase):
-                return True
-        except TypeError:
-            pass
+    # # TODO revisit this later, this will really help with preventing false
+    # # positives
+    # if actual and expected:
+    #     try:
+    #         if issubclass(actual, ComplexIOBase) and issubclass(expected, ComplexIOBase):
+    #             return True
+    #     except TypeError:
+    #         pass
 
     if not get_origin(expected) and not get_origin(actual):
         return (

@@ -1,7 +1,7 @@
 import asyncio
 from typing import Type
 
-from agent_service.GPT.constants import GPT4O
+from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.planner.constants import Action
 from agent_service.planner.planner import Planner
@@ -20,7 +20,7 @@ class ActionDecider:
     def __init__(
         self,
         agent_id: str,
-        model: str = GPT4O,
+        model: str = GPT4_O,
         tool_registry: Type[ToolRegistry] = ToolRegistry,
     ) -> None:
         self.agent_id = agent_id
@@ -69,7 +69,7 @@ async def main() -> None:
         new_message = Message(message=new_input, is_user_message=True, message_time=get_now_utc())
         print(new_message)
         chat_context.messages.append(new_message)
-        result = await action_decider.decide_action(chat_context, plan)
+        result = await action_decider.decide_action(chat_context, plan)  # type: ignore
         print(result)
         chat_context.messages.pop()
 

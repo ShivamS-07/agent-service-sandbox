@@ -6,6 +6,10 @@ from agent_service.chatbot.prompts import (
     AGENT_DESCRIPTION,
     COMPLETE_EXECUTION_MAIN_PROMPT,
     COMPLETE_EXECUTION_SYS_PROMPT,
+    INITIAL_MIDPLAN_MAIN_PROMPT,
+    INITIAL_MIDPLAN_SYS_PROMPT,
+    INITIAL_PLAN_FAILED_MAIN_PROMPT,
+    INITIAL_PLAN_FAILED_SYS_PROMPT,
     INITIAL_POSTPLAN_MAIN_PROMPT,
     INITIAL_POSTPLAN_SYS_PROMPT,
     INITIAL_PREPLAN_MAIN_PROMPT,
@@ -44,6 +48,12 @@ class Chatbot:
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=50)
         return result
 
+    async def generate_initial_midplan_response(self, chat_context: ChatContext) -> str:
+        main_prompt = INITIAL_MIDPLAN_MAIN_PROMPT.format(chat_context=chat_context.get_gpt_input())
+        sys_prompt = INITIAL_MIDPLAN_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=50)
+        return result
+
     async def generate_initial_postplan_response(
         self, chat_context: ChatContext, execution_plan: ExecutionPlan
     ) -> str:
@@ -52,6 +62,14 @@ class Chatbot:
         )
         sys_prompt = INITIAL_POSTPLAN_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=100)
+        return result
+
+    async def generate_initial_plan_failed_response(self, chat_context: ChatContext) -> str:
+        main_prompt = INITIAL_PLAN_FAILED_MAIN_PROMPT.format(
+            chat_context=chat_context.get_gpt_input()
+        )
+        sys_prompt = INITIAL_PLAN_FAILED_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=50)
         return result
 
     async def generate_execution_complete_response(
