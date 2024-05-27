@@ -97,7 +97,7 @@ class Planner:
             return best_plan
 
         if self.send_chat and not self.skip_db_commit:
-            await self._send_delayed_planning_message()
+            await self._send_delayed_planning_message(chat_context)
 
         logger.warning(f"All of {INITIAL_PLAN_TRIES} initial plan runs failed, trying round 2")
 
