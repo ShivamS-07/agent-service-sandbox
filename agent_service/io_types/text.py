@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, Type, Union
 from uuid import uuid4
@@ -7,6 +8,7 @@ from uuid import uuid4
 import mdutils
 from pydantic import Field
 
+from agent_service.external.sec_utils import MANAGEMENT_SECTION, RISK_FACTORS, SecFiling
 from agent_service.io_type_utils import ComplexIOBase, IOType, io_type
 from agent_service.io_types.output import Output, OutputType
 from agent_service.utils.boosted_pg import BoostedPG
@@ -280,6 +282,47 @@ class CompanyDescriptionText(Text):
         db = get_psql()
         rows = db.generic_read(sql, {"stocks": [desc.id for desc in company_descriptions]})
         return {row["gbi_id"]: row["company_description_short"] for row in rows}
+
+
+@io_type
+class SecFilingText(Text):
+    """
+    The ID field is a serialized JSON object containing the latest SEC filing information.
+    After deserialization, it will be a dictionary like below:
+    {
+        "id": "6c0b495bc8a221cf32387c0123aeee5a",
+        "accessionNo": "0000320193-24-000069",
+        "cik": "320193",
+        "ticker": "AAPL",
+        "companyName": "Apple Inc.",
+        "companyNameLong": "Apple Inc. (Filer)",
+        "formType": "10-Q",
+        "description": "Form 10-Q - Quarterly report [Sections 13 or 15(d)]",
+        "filedAt": "2024-05-02T18:04:25-04:00",
+        "linkToTxt": "...",
+        "linkToHtml": "...",
+        "linkToXbrl": "",
+        "linkToFilingDetails": "...",
+        ...
+    }
+    """
+
+    id: str
+
+    @classmethod
+    def get_strs_lookup(
+        cls, sec_filing_list: List[SecFilingText]  # type: ignore
+    ) -> Dict[TextIDType, str]:
+        output: Dict[TextIDType, str] = {}
+        for obj in sec_filing_list:
+            filing_info = json.loads(obj.id)
+            management_section = SecFiling.download_section(filing_info, section=MANAGEMENT_SECTION)
+            risk_factor_section = SecFiling.download_section(filing_info, section=RISK_FACTORS)
+
+            text = f"SEC filing:\nManagement Section:\n\n{management_section}\n\nRisk Factors Section:\n\n{risk_factor_section}"  # noqa
+            output[obj.id] = text
+
+        return output
 
 
 # These are not actual Text types, but build on top of them

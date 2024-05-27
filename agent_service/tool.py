@@ -160,6 +160,7 @@ class ToolCategory(str, enum.Enum):
     THEME = "theme"
     COMMENTARY = "commentary"
     GRAPH = "graph"
+    TEXT = "text"
 
     def get_description(self) -> str:
         if self == ToolCategory.MISC:
@@ -167,6 +168,9 @@ class ToolCategory(str, enum.Enum):
 
         if self == ToolCategory.STOCK:
             return "Tools for stock lookup"
+
+        if self == ToolCategory.TEXT:
+            return "Other tools for retrieving texts"
 
         if self == ToolCategory.LIST:
             return "Tools for manipulating lists"

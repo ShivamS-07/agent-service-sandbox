@@ -67,7 +67,7 @@ async def gather_with_concurrency(tasks: Collection[Awaitable], n: int = MAX_CON
     return await asyncio.gather(*(sem_task(task) for task in tasks))
 
 
-def async_wrap(func: Callable) -> Callable:
+def async_wrap(func: Callable[..., T]) -> Callable[..., Coroutine[Any, Any, T]]:
     """A decorator to wrap a synchronous function to async.
     2 ways to use it:
         1) Put it above func like @async_wrap
@@ -86,7 +86,7 @@ def async_wrap(func: Callable) -> Callable:
     """
 
     @functools.wraps(func)
-    async def run(*args, loop=None, executor=None, **kwargs):  # type: ignore
+    async def run(*args, loop=None, executor=None, **kwargs) -> T:  # type: ignore
         pfunc = functools.partial(func, *args, **kwargs)
         if loop is None:
             loop = asyncio.get_event_loop()
@@ -99,7 +99,7 @@ def async_wrap(func: Callable) -> Callable:
         with ThreadPoolExecutor(max_workers=1) as executor:
             return await loop.run_in_executor(executor, pfunc)
 
-    return run
+    return run  # type: ignore
 
 
 async def identity(x: Any) -> Any:

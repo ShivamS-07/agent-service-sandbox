@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from gbi_common_py_utils.utils.postgres import PostgresBase
 
+from agent_service.external.sec_utils import SecurityMetadata
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 
 # Make sure all io_types are registered
@@ -207,6 +208,16 @@ class Postgres(PostgresBase):
                 "is_intermediate": is_intermediate,
             },
         )
+
+    def get_sec_metadata_from_gbi(self, gbi_ids: List[int]) -> Dict[int, SecurityMetadata]:
+        sql = """
+            SELECT gbi_security_id AS gbi_id, isin, symbol AS ticker, name AS company_name,
+                currency, security_region
+            FROM master_security
+            WHERE gbi_security_id = ANY(%s)
+        """
+        records = self.generic_read(sql, params=[gbi_ids])
+        return {record["gbi_id"]: SecurityMetadata(**record) for record in records}
 
     # TODO this won't be needed once we merge the sync and async files, but for
     # now will just keep this here.

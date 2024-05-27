@@ -1,3 +1,4 @@
+import logging
 import unittest
 from unittest import IsolatedAsyncioTestCase
 
@@ -13,6 +14,10 @@ from agent_service.types import PlanRunContext
 
 
 class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
+    @classmethod
+    def setUpClass(cls):
+        logging.getLogger("asyncio").setLevel(logging.ERROR)
+
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
 
