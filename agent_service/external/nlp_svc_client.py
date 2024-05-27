@@ -11,6 +11,10 @@ from gbi_common_py_utils.utils.environment import (
     get_environment_tag,
 )
 from grpclib.client import Channel
+from nlp_service_proto_v1.commentary_pb2 import (
+    GetCommentaryTopicsRequest,
+    GetCommentaryTopicsResponse,
+)
 from nlp_service_proto_v1.news_pb2 import (
     NEWS_DELTA_HORIZON_3M,
     GetMultiCompaniesNewsTopicsRequest,
@@ -90,6 +94,28 @@ async def get_security_themes(user_id: str, gbi_ids: List[int]) -> GetSecurityTh
         )
         if response.status.code != 0:
             raise ValueError(f"Failed to get security themes: {response.status.message}")
+        return response
+
+
+@grpc_retry
+@async_perf_logger
+async def get_top_themes(
+    user_id: str,
+    section_types: List[str],
+    date_range: str,
+    number_per_section: int,
+) -> GetCommentaryTopicsResponse:
+    with _get_service_stub() as stub:
+        response: GetCommentaryTopicsResponse = await stub.GetCommentaryTopics(
+            GetCommentaryTopicsRequest(
+                section_types=section_types,
+                date_range=date_range,
+                number_per_section=number_per_section,
+            ),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        if response.status.code != 0:
+            raise ValueError(f"Failed to get commentary topics: {response.status.message}")
         return response
 
 

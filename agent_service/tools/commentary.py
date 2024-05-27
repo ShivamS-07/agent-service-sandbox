@@ -15,8 +15,12 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prompt_utils import FilledPrompt, Prompt
 
-# PROMPTS
+# Constants
+MAX_ARTICLES_PER_DEVELOPMENT = 10
+MAX_DEVELOPMENTS_PER_THEME = 20
 
+
+# PROMPTS
 COMMENTARY_SYS_PROMPT = Prompt(
     name="LLM_COMMENTARY_SYS_PROMPT",
     template=(
@@ -44,7 +48,6 @@ COMMENTARY_PROMPT_MAIN = Prompt(
     name="LLM_COMMENTARY_MAIN_PROMPT",
     template=(
         "Summarize the following text(s) based on the needs of the client. "
-        "Here is the theme description related to the client requested topic, delimited by ----:\n"
         "Here are the themes descriptions along with their related developments and articles, delimited by ----:\n"
         "----\n"
         "{sections}\n"
@@ -53,17 +56,12 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "----\n"
         "{chat_context}\n"
         "----\n"
-        "{topic}"
         "Now write your commentary."
     ),
 )
 
 
-TOPIC_TEMPLATE = "The topic(s) the user is interested in is/are {topic}."
-
-
 class WriteCommentaryInput(ToolArgs):
-    topics: List[str]
     themes: List[ThemeText]
     developments: List[List[ThemeNewsDevelopmentText]]
     articles: List[List[List[ThemeNewsDevelopmentArticlesText]]]
@@ -72,14 +70,29 @@ class WriteCommentaryInput(ToolArgs):
 @tool(
     description=(
         "This function generates a macroeconomic commentary tailored to the specific needs of a client. "
-        "The client may provide particular topics or themes to focus on, and the function will create "
-        "a concise summary highlighting the most important points from the provided texts. "
+        "the function creates a concise summary highlighting the most important points from the provided texts. "
         "The summary will be based on a comprehensive analysis of themes, developments, and related articles, "
         "incorporating any specific instructions or preferences mentioned by the client during their interaction. "
     ),
     category=ToolCategory.COMMENTARY,
 )
 async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) -> Text:
+    # limit number of developments and articles
+    developments = []
+    articles = []
+
+    for i, theme in enumerate(args.themes):
+        # Get the first MAX_DEVELOPMENTS_PER_THEME developments for the current theme
+        limited_developments = args.developments[i][:MAX_DEVELOPMENTS_PER_THEME]
+        developments.append(limited_developments)
+
+        # For each development, get the first MAX_ARTICLES_PER_DEVELOPMENT articles
+        limited_articles = [
+            args.articles[i][j][:MAX_ARTICLES_PER_DEVELOPMENT]
+            for j in range(len(limited_developments))
+        ]
+        articles.append(limited_articles)
+
     # TODO we need guardrails on this
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
@@ -87,10 +100,9 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
 
     prompt_input = _prepare_commentary_prompt(
-        topic=args.topics,
         themes=args.themes,
-        developments=args.developments,
-        articles=args.articles,
+        developments=developments,
+        articles=articles,
         chat_context=context.chat.get_gpt_input() if context.chat is not None else "",
     )
 
@@ -103,7 +115,6 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
 
 def _prepare_commentary_prompt(
-    topic: List[str],
     themes: List[ThemeText],
     developments: List[List[ThemeNewsDevelopmentText]],
     articles: List[List[List[ThemeNewsDevelopmentArticlesText]]],
@@ -125,5 +136,4 @@ def _prepare_commentary_prompt(
     return COMMENTARY_PROMPT_MAIN.format(
         sections="\n\n".join(sections),
         chat_context=chat_context,
-        topic=TOPIC_TEMPLATE.format(topic=", ".join(topic)),
     )

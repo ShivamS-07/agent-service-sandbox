@@ -1,3 +1,4 @@
+import unittest
 from unittest import IsolatedAsyncioTestCase
 
 from agent_service.io_types.text import Text
@@ -14,6 +15,7 @@ from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 
 
+@unittest.skip("Skipping this test class till mock is implemented.")
 class TestWriteCommentary(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         input_text = "Write a commentary on interest rates and gen ai."

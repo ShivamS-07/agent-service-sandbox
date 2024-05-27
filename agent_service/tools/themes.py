@@ -3,12 +3,14 @@
 import asyncio
 import datetime
 from typing import Dict, List, Optional, Tuple
+from uuid import uuid4
 
 from nlp_service_proto_v1.themes_pb2 import ThemeOutlookType
 
 from agent_service.external.nlp_svc_client import (
     get_all_themes_for_user,
     get_security_themes,
+    get_top_themes,
 )
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
@@ -98,9 +100,9 @@ class GetMacroeconomicThemeInput(ToolArgs):
 
 @tool(
     description=(
-        "This function searches for existing analysis of a macroeconomic themes "
+        "This function searches for existing macroeconomic themes "
         "The search is based on a list of string references to the themes. "
-        "A list of theme text objects is returned"
+        "A list of theme text objects is returned."
     ),
     category=ToolCategory.THEME,
 )
@@ -126,7 +128,7 @@ async def get_macroeconomic_themes(
     if not themes:
         # TODO we should actually throw an error and use it to revise the plan
         print(f"No themes found for: {args.theme_refs}!")
-        themes = [ThemeText(id="-1")]
+        themes = [ThemeText(id=str(uuid4()))]
     return themes
 
 
@@ -261,13 +263,14 @@ async def get_news_developments_about_theme(
     res = []
     for theme in args.themes:
         sql = """
-        SELECT development_id::TEXT
+        SELECT development_id::TEXT, is_major_development, article_count
         FROM nlp_service.theme_developments
         WHERE theme_id = %s
+        ORDER BY is_major_development DESC, article_count DESC
         """
         rows = db.generic_read(sql, [theme.id])
-        development_ids = [row["development_id"] for row in rows]
-        res.append([ThemeNewsDevelopmentText(id=id) for id in development_ids])
+        ids = [row["development_id"] for row in rows]
+        res.append([ThemeNewsDevelopmentText(id=id) for id in ids])
     return res
 
 
@@ -315,12 +318,55 @@ async def get_news_articles_for_theme_developments(
             FROM nlp_service.theme_news
             WHERE development_id = %s
             AND published_at >= %s
+            ORDER BY published_at DESC
             """
             rows = db.generic_read(sql, [development.id, start_date])
             news_ids = [row["news_id"] for row in rows]
             articles.append([ThemeNewsDevelopmentArticlesText(id=id) for id in news_ids])
         res.append(articles)
     return res
+
+
+class GetTopNThemesInput(ToolArgs):
+    date_range: str = "1M"
+    theme_num: int = 3
+
+
+@tool(
+    description=(
+        "This function returns the top N themes based on the date range and number of themes. "
+        "The tool can be used when the user does not provide any themes to focus on, "
+        "or when the user wants a general market trend commentary. "
+        "The date range MUST be one of the following values: "
+        "['1W', '2W', '1M', '3M', '1Q', '6M', '1Y']. Default is '1M'. "
+    ),
+    category=ToolCategory.THEME,
+    tool_registry=ToolRegistry,
+)
+async def get_top_N_themes(args: GetTopNThemesInput, context: PlanRunContext) -> List[ThemeText]:
+    """
+    This function returns the top N themes for a user based on the date range and number of themes.
+
+    Args:
+        args (GetTopNThemesInput): The input arguments for the tool.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        List[ThemeText]: The list of theme text objects.
+    """
+    # TODO: fix this this endpoint to get ids instead of theme names
+    resp = await get_top_themes(
+        user_id=context.user_id,
+        section_types=["THEME"],
+        date_range=args.date_range,
+        number_per_section=args.theme_num,
+    )
+    theme_refs = [t.name for t in resp.topics]
+    # print(theme_refs)
+    themes = await get_macroeconomic_themes(
+        GetMacroeconomicThemeInput(theme_refs=theme_refs), context
+    )
+    return themes  # type: ignore
 
 
 async def main() -> None:
