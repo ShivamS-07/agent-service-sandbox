@@ -20,6 +20,8 @@ from gpt_service_proto_v1.service_pb2 import QueryGPTRequest, QueryGPTResponse
 from grpclib.client import Channel
 
 from agent_service.GPT.constants import (
+    CLIENT_NAME,
+    CLIENT_NAMESPACE,
     DEFAULT_SMART_MODEL,
     DEFAULT_TEMPERATURE,
     JSON_RESPONSE_FORMAT,
@@ -40,25 +42,6 @@ from agent_service.utils.prompt_utils import FilledPrompt
 
 logger = logging.getLogger(__name__)
 
-
-def get_client_name() -> str:
-    try:
-        with open("/etc/hostname", "r") as f:
-            return f.read().strip()
-    except Exception:
-        return "LOCAL"
-
-
-def get_client_namespace() -> str:
-    try:
-        with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "r") as f:
-            return f.read().strip()
-    except Exception:
-        return "LOCAL"
-
-
-CLIENT_NAME = get_client_name()
-CLIENT_NAMESPACE = get_client_namespace()
 DEFAULT_PRIORITY = os.getenv("GPT_SERVICE_DEFAULT_PRIORITY", "LOW")
 STUB = None
 

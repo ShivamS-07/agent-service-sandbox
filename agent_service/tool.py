@@ -40,6 +40,7 @@ from prefect.tasks import Task
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
+from agent_service.GPT.constants import CLIENT_NAMESPACE
 from agent_service.io_type_utils import (
     IOType,
     check_type_is_io_type,
@@ -377,13 +378,15 @@ def tool(
                     try:
                         result = await func(args, context)
                         event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
-                        log_event(event_name="agent-service-tool-call", event_data=event_data)
+                        if CLIENT_NAMESPACE != "LOCAL":
+                            log_event(event_name="agent-service-tool-call", event_data=event_data)
 
                         return result
                     except Exception as e:
                         event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
                         event_data["error_msg"] = traceback.format_exc()
-                        log_event(event_name="agent-service-tool-call", event_data=event_data)
+                        if CLIENT_NAMESPACE != "LOCAL":
+                            log_event(event_name="agent-service-tool-call", event_data=event_data)
                         raise e
 
                 if (
@@ -398,18 +401,23 @@ def tool(
                         if cached_val:
                             event_data["cache_hit"] = True
                             event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
-                            log_event(event_name="agent-service-tool-call", event_data=event_data)
+                            if CLIENT_NAMESPACE != "LOCAL":
+                                log_event(
+                                    event_name="agent-service-tool-call", event_data=event_data
+                                )
                             return cached_val
 
                         new_val = await func(args, context)
                         await cache_client.set(key=key, val=new_val, ttl=cache_ttl)
                         event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
-                        log_event(event_name="agent-service-tool-call", event_data=event_data)
+                        if CLIENT_NAMESPACE != "LOCAL":
+                            log_event(event_name="agent-service-tool-call", event_data=event_data)
                         return new_val
                     except Exception:
                         event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
                         event_data["error_msg"] = traceback.format_exc()
-                        log_event(event_name="agent-service-tool-call", event_data=event_data)
+                        if CLIENT_NAMESPACE != "LOCAL":
+                            log_event(event_name="agent-service-tool-call", event_data=event_data)
                         logger.exception(f"Cache check failed for {(tool_name, args, context)}")
                         if new_val is not None:
                             log_event(event_name="agent-service-tool-call", event_data=event_data)

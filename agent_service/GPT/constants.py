@@ -31,3 +31,23 @@ NO_PROMPT = Prompt(name="", template="").format()
 
 FILTER_CONCURRENCY = 32
 CHEAP_FILTER_CONCURRENCY = 100
+
+
+def get_client_name() -> str:
+    try:
+        with open("/etc/hostname", "r") as f:
+            return f.read().strip()
+    except Exception:
+        return "LOCAL"
+
+
+def get_client_namespace() -> str:
+    try:
+        with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "r") as f:
+            return f.read().strip()
+    except Exception:
+        return "LOCAL"
+
+
+CLIENT_NAME = get_client_name()
+CLIENT_NAMESPACE = get_client_namespace()
