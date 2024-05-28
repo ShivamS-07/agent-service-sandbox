@@ -2,8 +2,9 @@ import asyncio
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
-from agent_service.GPT.constants import DEFAULT_SMART_MODEL, FILTER_CONCURRENCY
+from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O
 from agent_service.GPT.requests import GPT
+from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_types.text import StockAlignedTextGroups, Text
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
@@ -92,11 +93,18 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     gpt_context = create_gpt_context(
         GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
     )
-    llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
+    llm = GPT(context=gpt_context, model=GPT4_O)
+    texts_str = "\n***\n".join(Text.get_all_strs(args.texts))
+    chat_str = context.chat.get_gpt_input()
+    tokenizer = GPTTokenizer(GPT4_O)
+    used = tokenizer.get_token_length(
+        "\n".join([SUMMARIZE_PROMPT_MAIN.template, SUMMARIZE_SYS_PROMPT.template, chat_str])
+    )
+    texts_str = tokenizer.chop_input_to_allowed_length(texts_str, used)
     result = await llm.do_chat_w_sys_prompt(
         SUMMARIZE_PROMPT_MAIN.format(
-            texts="\n***\n".join(Text.get_all_strs(args.texts)),
-            chat_context=context.chat.get_gpt_input(),
+            texts=texts_str,
+            chat_context=chat_str,
         ),
         SUMMARIZE_SYS_PROMPT.format(),
     )
@@ -107,9 +115,14 @@ async def topic_filter_helper(
     texts: List[str], topic: str, agent_id: str
 ) -> List[Tuple[bool, str]]:
     gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
-    llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
+    llm = GPT(context=gpt_context, model=GPT4_O)
+    tokenizer = GPTTokenizer(GPT4_O)
+    used = tokenizer.get_token_length(
+        "\n".join([TOPIC_FILTER_MAIN_PROMPT.template, TOPIC_FILTER_SYS_PROMPT.template, topic])
+    )
     tasks = []
     for text_str in texts:
+        text_str = tokenizer.chop_input_to_allowed_length(text_str, used)
         tasks.append(
             llm.do_chat_w_sys_prompt(
                 TOPIC_FILTER_MAIN_PROMPT.format(text=text_str, topic=topic),
@@ -216,6 +229,7 @@ async def main() -> None:
         plan_run_id="123",
         chat=chat_context,
         run_tasks_without_prefect=True,
+        skip_db_commit=True,
     )
     start_date = await get_date_from_date_str(
         DateFromDateStrInput(date_str="1 week ago"), plan_context

@@ -380,6 +380,7 @@ async def main() -> None:
         plan_run_id="123",
         chat=chat_context,
         run_tasks_without_prefect=True,
+        skip_db_commit=True,
     )
     themes: List[ThemeText] = await get_macroeconomic_themes(  # type: ignore
         args=GetMacroeconomicThemeInput(theme_refs=["recession"]), context=plan_context

@@ -181,6 +181,7 @@ async def main() -> None:
         plan_run_id="123",
         chat=chat_context,
         run_tasks_without_prefect=True,
+        skip_db_commit=True,
     )
     start_date = await get_date_from_date_str(
         DateFromDateStrInput(date_str="1 month ago"), plan_context
