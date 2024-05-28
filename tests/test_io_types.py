@@ -53,7 +53,6 @@ class TestIOType(unittest.TestCase):
     def test_dataframe_serialization(self):
         df = pd.DataFrame(
             [[1, 2, 3], [4, 5, 6]],
-            index=pd.Index(["a", "b"], name="Test Index"),
             columns=["x", "y", "z"],
         )
 

@@ -26,8 +26,8 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
     async def test_feature_data_3_stock(self):
         args = FeatureDataInput(stock_ids=[AAPL, AMZN, MSFT], statistic_id=CLOSE_PRICE)
         result = await get_statistic_data_for_companies(args, self.context)
-        self.assertEqual(result.data.shape[1], 3)  # num_stocks
-        self.assertEqual(result.data.shape[0], 1)  # num_dates
+        self.assertEqual(len(result.data["Stock ID"].unique()), 3)  # num_stocks
+        self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
 
     async def test_feature_data_1_stock_many_dates(self):
         args = FeatureDataInput(
@@ -37,8 +37,8 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
             end_date=datetime.date(2020, 3, 1),
         )
         result = await get_statistic_data_for_companies(args, self.context)
-        self.assertEqual(result.data.shape[1], 1)  # num_stocks
-        self.assertGreater(result.data.shape[0], 20)  # num_dates
+        self.assertEqual(len(result.data["Stock ID"].unique()), 1)  # num_stocks
+        self.assertGreater(len(result.data["Date"].unique()), 20)  # num_dates
 
     async def test_get_latest_date(self):
         # test doesnt throw and returns the same value
@@ -55,15 +55,15 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
         )
         result = await get_statistic_data_for_companies(args, self.context)
 
-        self.assertEqual(result.data.shape[1], 1)  # num_stocks
-        self.assertEqual(result.data.shape[0], 1)  # num_dates
+        self.assertEqual(len(result.data["Stock ID"].unique()), 1)  # num_stocks
+        self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
 
     async def test_feature_data_dividend(self):
         args = FeatureDataInput(stock_ids=[VZ], statistic_id=SPIQ_DIV_AMOUNT)
         result = await get_statistic_data_for_companies(args, self.context)
 
-        self.assertEqual(result.data.shape[1], 1)  # num_stocks
-        self.assertEqual(result.data.shape[0], 1)  # num_dates
+        self.assertEqual(len(result.data["Stock ID"].unique()), 1)  # num_stocks
+        self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
 
         args = FeatureDataInput(
             stock_ids=[VZ],
@@ -73,15 +73,15 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
         )
         result = await get_statistic_data_for_companies(args, self.context)
 
-        self.assertGreater(result.data.shape[0], 3)  # num_dates
+        self.assertGreater(len(result.data["Date"].unique()), 3)  # num_dates
 
     async def test_feature_data_quarterly(self):
 
         args = FeatureDataInput(stock_ids=[VZ], statistic_id=GROSS_PROFIT)
         result = await get_statistic_data_for_companies(args, self.context)
 
-        self.assertEqual(result.data.shape[1], 1)  # num_stocks
-        self.assertEqual(result.data.shape[0], 1)  # num_dates
+        self.assertEqual(len(result.data["Stock ID"].unique()), 1)  # num_stocks
+        self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
 
 
 class TestStatisticsIdentifierLookup(IsolatedAsyncioTestCase):

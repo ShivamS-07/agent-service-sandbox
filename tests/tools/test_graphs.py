@@ -21,33 +21,26 @@ from agent_service.types import PlanRunContext
 
 TIMESERIES_TABLE = Table(
     columns=[
-        TableColumn(label="Date", col_type=TableColumnType.DATE, is_indexed=True),
+        TableColumn(label="Date", col_type=TableColumnType.DATE),
         TableColumn(
-            label="AAPL",
-            col_type=TableColumnType.FLOAT,
-            is_indexed=True,
-            label_stock_id=714,
-            col_label_is_stock_id=True,
+            label="Stock ID",
+            col_type=TableColumnType.STOCK,
         ),
         TableColumn(
-            label="MSFT",
+            label="Value",
             col_type=TableColumnType.FLOAT,
-            is_indexed=True,
-            label_stock_id=6963,
-            col_label_is_stock_id=True,
-        ),
-        TableColumn(
-            label="TSLA",
-            col_type=TableColumnType.FLOAT,
-            is_indexed=True,
-            label_stock_id=1,
-            col_label_is_stock_id=True,
         ),
     ],
     data=pd.DataFrame(
-        data=[[1, 2, 3], [3, 4, 5]],
-        index=[datetime.date(2024, 1, 1), datetime.date(2024, 1, 2)],
-        columns=["AAPL", "MSFT", "TSLA"],
+        data=[
+            [datetime.date(2024, 1, 1), 1, 1],
+            [datetime.date(2024, 1, 2), 1, 3],
+            [datetime.date(2024, 1, 1), 2, 2],
+            [datetime.date(2024, 1, 2), 2, 4],
+            [datetime.date(2024, 1, 1), 3, 3],
+            [datetime.date(2024, 1, 2), 3, 5],
+        ],
+        columns=["Date", "Stock ID", "Value"],
     ),
 )
 
@@ -63,9 +56,9 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
                     label_type=TableColumnType.STOCK,
                     data_type=TableColumnType.FLOAT,
                     data=[
-                        PieSection(label="AAPL", value=3),
-                        PieSection(label="MSFT", value=4),
-                        PieSection(label="TSLA", value=5),
+                        PieSection(label=1, value=3),
+                        PieSection(label=2, value=4),
+                        PieSection(label=3, value=5),
                     ],
                 ),
             )
@@ -84,24 +77,24 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
                     y_axis_type=TableColumnType.FLOAT,
                     data=[
                         GraphDataset(
-                            dataset_id="AAPL",
-                            dataset_stock_id=714,
+                            dataset_id_type=TableColumnType.STOCK,
+                            dataset_id=1,
                             points=[
                                 DataPoint(x_val=datetime.date(2024, 1, 1), y_val=1),
                                 DataPoint(x_val=datetime.date(2024, 1, 2), y_val=3),
                             ],
                         ),
                         GraphDataset(
-                            dataset_id="MSFT",
-                            dataset_stock_id=6963,
+                            dataset_id_type=TableColumnType.STOCK,
+                            dataset_id=2,
                             points=[
                                 DataPoint(x_val=datetime.date(2024, 1, 1), y_val=2),
                                 DataPoint(x_val=datetime.date(2024, 1, 2), y_val=4),
                             ],
                         ),
                         GraphDataset(
-                            dataset_id="TSLA",
-                            dataset_stock_id=1,
+                            dataset_id_type=TableColumnType.STOCK,
+                            dataset_id=3,
                             points=[
                                 DataPoint(x_val=datetime.date(2024, 1, 1), y_val=3),
                                 DataPoint(x_val=datetime.date(2024, 1, 2), y_val=5),

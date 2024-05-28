@@ -43,7 +43,6 @@ from pydantic_core import PydanticUndefined
 from agent_service.io_type_utils import (
     IOType,
     check_type_is_io_type,
-    dump_io_type,
     get_clean_type_name,
 )
 from agent_service.types import PlanRunContext
@@ -371,7 +370,6 @@ def tool(
                     "task_id": context.task_id,
                     "plan_id": context.plan_id,
                     "plan_run_id": context.plan_run_id,
-                    "args": args.model_dump_json(),
                     "start_time_utc": start,
                 }
 
@@ -379,7 +377,6 @@ def tool(
                     try:
                         result = await func(args, context)
                         event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
-                        event_data["result"] = dump_io_type(result)
                         log_event(event_name="agent-service-tool-call", event_data=event_data)
 
                         return result
@@ -407,7 +404,6 @@ def tool(
                         new_val = await func(args, context)
                         await cache_client.set(key=key, val=new_val, ttl=cache_ttl)
                         event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
-                        event_data["result"] = dump_io_type(new_val)
                         log_event(event_name="agent-service-tool-call", event_data=event_data)
                         return new_val
                     except Exception:

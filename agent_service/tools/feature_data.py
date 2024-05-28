@@ -171,21 +171,21 @@ def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> T
         )
 
     df.index.rename("Date", inplace=True)
+    df.reset_index(inplace=True)
+    df = df.melt(id_vars=["Date"], var_name="Stock ID", value_name="Value")
+
+    # We now have a dataframe with only three columns: Date, Stock ID, and Value.
+
     return Table(
         data=df,
-        columns=[TableColumn(label="Date", col_type=TableColumnType.DATE, is_indexed=True)]
-        + [
+        columns=[
+            TableColumn(label="Date", col_type=TableColumnType.DATE),
+            TableColumn(label="Stock ID", col_type=TableColumnType.STOCK),
             # TODO handle smarter column types, etc.
             TableColumn(
-                # TODO soon this label will be a string ticker, for now it'll also be gbi id
-                label=col if not isinstance(col, tuple) else col[1],
-                # Sometimes the dataframe could be multiindexed, just to be safe
-                # we should do this to get the GBI ID.
-                label_stock_id=int(col) if not isinstance(col, tuple) else int(col[1]),
-                col_label_is_stock_id=True,
+                label="Value",
                 col_type=TableColumnType.FLOAT,
-            )
-            for col in df.columns
+            ),
         ],
     )
 

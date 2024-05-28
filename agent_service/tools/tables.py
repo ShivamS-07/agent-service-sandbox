@@ -35,14 +35,11 @@ Use descriptive column names so that someone looking at the schema would know
 immediately what the table has inside it. Please make sure that the column order
 makes sense for a viewer as if it were being viewed in a table. For example, a
 date column or a stock ID column (if they are present) should be on the left
-side and could be marked as an index.
+side, specifically in the order (date, stock ID, other data...).
 
 If the transformation description does not relate AT ALL to pandas or any sort
 of dataframe transformation, please just return the dataframe unchanged. You
 should still not output anything other than json.
-
-It is very important that you return only an empty list if the output schema is
-the same as the input.
 
 Below is the json schema of the json you should produce. You should produce a
 list of these objects, one for each column. Note that if the column type is
@@ -54,17 +51,11 @@ JSON Schema:
 
     {schema}
 
-col_label_is_stock_id is set to true if the *column's label itself* is a stock
-identifier. NOT if the column contains stocks.
-
-label_stock_id SHOULD NOT BE CHANGED. It should remain the same always if a
-stock column is being re-used.
-
 The transformation that will be applied to the dataframe is:
-{transform}
+    {transform}
 
 Here is the json describing the input dataframe, one object per column:
-{input_cols}
+    {input_cols}
 
 Please produce your json in the same format describing the columns after the
 transformation has been applied. Please produce ONLY this json.
@@ -109,20 +100,13 @@ If the transformation description does not relate AT ALL to pandas or any sort
 of dataframe transformation, please just return the dataframe unchanged. You
 should still not output anything other than code.
 
-The input dataframe's column schema, including the index if present is
-below. Note that if a 'column' is marked as an index, it is NOT actually a
-column, it is the index. For example, if the first column is a date column as is
-marked as an index, then the dataframe actually has a datetime index and NOT a
-column named 'Date'. Input dataframe's schema is below:
+The input dataframe's column schema is below. Date columns are python datetimes,
+and may need to be converted to pandas Timestamps if necessary. It has no index:
     {col_schema}
 
-The output dataframe's desired column schema, including the index if
-present. The code you write should create a dataframe with columns (and index)
-that conform to this schema.
+The output dataframe's desired column schema. The code you write should create a
+dataframe with columns that conform to this schema.
     {output_schema}
-
-Make sure you index the column that is marked as an index. If it is a date or
-datetime column, use pd.to_datetime to convert it to a DatettimeIndex.
 
 The input dataframe's overall info: {info}
 
@@ -311,4 +295,5 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
         output_df, error = _run_transform_code(df=args.input_table.data, code=code)
         if output_df is None:
             raise RuntimeError(f"Table transformation subprocess failed with:\n{error}")
+
     return Table(columns=new_col_schema, data=output_df)

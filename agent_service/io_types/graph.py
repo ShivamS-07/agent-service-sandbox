@@ -1,6 +1,6 @@
 import enum
 from abc import ABC
-from typing import List, Literal, Optional, Union
+from typing import List, Literal, Optional, Union, cast
 
 from pydantic.fields import Field
 
@@ -29,9 +29,9 @@ class DataPoint(ComplexIOBase):
 
 @io_type
 class GraphDataset(ComplexIOBase):
-    dataset_id: str
+    dataset_id: PrimitiveType
+    dataset_id_type: TableColumnType
     points: List[DataPoint]
-    dataset_stock_id: Optional[int] = None
 
 
 @io_type
@@ -44,25 +44,28 @@ class LineGraph(Graph):
     data: List[GraphDataset]
 
     async def to_rich_output(self, pg: BoostedPG) -> Output:
-        stocks_to_map = [
-            dataset.dataset_stock_id for dataset in self.data if dataset.dataset_stock_id
-        ]
+        stocks_to_map = cast(
+            List[int],
+            [
+                dataset.dataset_id
+                for dataset in self.data
+                if dataset.dataset_id_type == TableColumnType.STOCK
+            ],
+        )
         if not stocks_to_map:
             return GraphOutput(graph=self)
 
         metadata_map = await get_stock_metadata(pg, gbi_ids=stocks_to_map)
         for dataset in self.data:
-            if not dataset.dataset_stock_id:
-                continue
-            gbi = dataset.dataset_stock_id
+            gbi = dataset.dataset_id
             if gbi in metadata_map:
-                dataset.dataset_id = metadata_map[gbi].symbol
+                dataset.dataset_id = metadata_map[gbi].symbol  # type: ignore
         return GraphOutput(graph=self)
 
 
 @io_type
 class PieSection(ComplexIOBase):
-    label: str
+    label: PrimitiveType
     value: PrimitiveType
 
 
@@ -77,10 +80,10 @@ class PieGraph(Graph):
     async def to_rich_output(self, pg: BoostedPG) -> Output:
         if not self.label_type == TableColumnType.STOCK:
             return GraphOutput(graph=self)
-        stocks_to_map = [int(section.label) for section in self.data]
+        stocks_to_map = cast(List[int], [section.label for section in self.data])
         metadata_map = await get_stock_metadata(pg, gbi_ids=stocks_to_map)
         for section in self.data:
-            section.label = metadata_map[int(section.label)].symbol
+            section.label = metadata_map[section.label].symbol  # type: ignore
         return GraphOutput(graph=self)
 
 

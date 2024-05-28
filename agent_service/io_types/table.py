@@ -40,10 +40,6 @@ class TableColumn(ComplexIOBase):
     label: PrimitiveType
     col_type: TableColumnType
     unit: Optional[str] = None
-    # keep track of this so that we can easily transform for the frontend later
-    col_label_is_stock_id: bool = False
-    is_indexed: bool = False
-    label_stock_id: Optional[int] = None
 
     def to_output_column(self) -> "TableOutputColumn":
         # TODO switch GBI ID's to tickers if needed, etc.
@@ -51,8 +47,24 @@ class TableColumn(ComplexIOBase):
             name=str(self.label),
             col_type=self.col_type,
             unit=self.unit,
-            is_highlighted=self.is_indexed,
         )
+
+
+def _convert_timestamp_cols(cols: List[TableColumn], df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Given a dataframe, check for Timestamp columns and convert to date/datetime.
+    """
+    for col, df_col in zip(cols, df.columns):
+        if col.col_type == TableColumnType.DATE:
+            df[df_col] = df[df_col].apply(
+                func=lambda val: val.date() if isinstance(val, pd.Timestamp) else val
+            )
+        elif col.col_type == TableColumnType.DATETIME:
+            df[df_col] = df[df_col].apply(
+                func=lambda val: val.to_pydatetime() if isinstance(val, pd.Timestamp) else val
+            )
+
+    return df
 
 
 @io_type
@@ -66,14 +78,10 @@ class Table(ComplexIOBase):
 
     async def to_rich_output(self, pg: BoostedPG) -> Output:
         df = self.data.copy(deep=True)
-        # We already have a column for the index
-        df = df.reset_index()
 
         # Fetch all stock metadata needed in one call
         gbi_ids_to_fetch: List[int] = []
         for df_col, col in zip(df.columns, self.columns):
-            if col.label_stock_id:
-                gbi_ids_to_fetch.append(col.label_stock_id)
             if col.col_type == TableColumnType.STOCK:
                 gbi_ids_to_fetch.extend(df[df_col])
 
@@ -82,41 +90,44 @@ class Table(ComplexIOBase):
             stock_metadata = await get_stock_metadata(pg=pg, gbi_ids=gbi_ids_to_fetch)
 
         output_cols = []
+        is_first_col = True
         for df_col, col in zip(df.columns, self.columns):
             output_col = col.to_output_column()
-            if col.label_stock_id:
-                output_col.name = stock_metadata[col.label_stock_id].symbol
             if col.col_type == TableColumnType.STOCK:
                 df[df_col] = [stock_metadata[gbi_id] for gbi_id in df[df_col]]
+                if is_first_col:
+                    # Automatically highlight the first column if it's a stock column
+                    output_col.is_highlighted = True
+            elif col.col_type in (TableColumnType.DATE, TableColumnType.DATETIME) and is_first_col:
+                # Automatically highlight the first column if it's a date column
+                output_col.is_highlighted = True
 
             output_cols.append(output_col)
+            is_first_col = False
 
         df = df.replace(np.nan, None)
         rows = df.values.tolist()
 
         return TableOutput(title=self.title, columns=output_cols, rows=rows)
 
+    def model_post_init(self, __context: Any) -> None:
+        self.data = _convert_timestamp_cols(cols=self.columns, df=self.data)
+        return super().model_post_init(__context)
+
     @field_validator("data", mode="before")
     @classmethod
     def _deserializer(cls, data: Any) -> Any:
         if isinstance(data, dict):
             data = pd.DataFrame.from_dict(data)
-            # Recreate index from first column
-            data = data.set_index(data.columns[0])
-            try:
-                # Try to convert the index to a DatetimeIndex if it's
-                # compatible, otherwise just leave as is.
-                data.index = pd.to_datetime(data.index)
-            except Exception:
-                pass
+            # No index
+            data = data.reset_index(drop=True)
         return data
 
     @field_serializer("data", mode="wrap")
     @classmethod
     def _field_serializer(cls, data: Any, dumper: Callable) -> Any:
         if isinstance(data, pd.DataFrame):
-            # Reset index to maintain index name
-            data = data.reset_index().to_dict()
+            data = data.to_dict()
         return dumper(data)
 
 
