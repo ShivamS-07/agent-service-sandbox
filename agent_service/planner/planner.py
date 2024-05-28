@@ -157,7 +157,9 @@ class Planner:
             steps = self._parse_plan_str(plan_str)
             plan = self._validate_and_construct_plan(steps)
         except Exception:
-            logger.warning(f"Failed to parse and validate plan with steps: {steps}")
+            logger.warning(
+                f"Failed to parse and validate plan with original LLM output string:\n{plan_str}"
+            )
             return None
 
         return plan
