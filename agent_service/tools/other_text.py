@@ -21,6 +21,9 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import get_psql
+from agent_service.utils.prefect import get_prefect_logger
+
+logger = get_prefect_logger(__name__)
 
 
 async def get_sec_filings_helper(
@@ -53,7 +56,7 @@ class GetSecFilingsInput(ToolArgs):
     description="Given a list of stock ID's, return a list of sec filings for the stocks. "
     "Specifically, this includes the management and risk factors sections of the 10-K and 10-Q documents "
     "which provides detailed, up-to-date information about company operations and financial status "
-    "for the most recent quarter (10-Q) or year (10-K) for any US-listed companies. "
+    "for the previous quarter (10-Q) or year (10-K) for any US-listed companies. "
     "It is especially useful for finding current information about less well-known "
     "companies which may have little or no news for a given period. "
     "This function should be used if you intend to summarize one or handful of descriptions, "
@@ -80,7 +83,7 @@ async def get_sec_filings(args: GetSecFilingsInput, context: PlanRunContext) -> 
     description="Given a list of stock ID's, return a mapping from stock identifiers for SEC filings "
     "Specifically, this includes the management and risk factors sections of the 10-K and 10-Q documents "
     "which provides detailed, up-to-date information about company operations and financial status "
-    "for the most recent quarter (10-Q) or year (10-K) for any US-listed companies. "
+    "for the previous quarter (10-Q) or year (10-K) for any US-listed companies. "
     "It is especially useful for finding current information about less well-known "
     "companies which may have little or no news for a given period. However, it is usually best"
     " to use the get_all_text_data function instead unless the client specifically asks for SEC filings only. "
@@ -150,33 +153,47 @@ async def get_all_text_data_for_stocks(
 
     all_data: List[StockAlignedTextGroups] = []
     await tool_log(log="Getting company descriptions", context=context)
-    description_data = await get_company_descriptions_stock_aligned(
-        GetStockDescriptionInput(stock_ids=stock_ids), context=context
-    )
-    all_data.append(description_data)  # type: ignore
+    try:
+        description_data = await get_company_descriptions_stock_aligned(
+            GetStockDescriptionInput(stock_ids=stock_ids), context=context
+        )
+        all_data.append(description_data)  # type: ignore
+    except Exception as e:
+        logger.warning(f"failed to get company description(s) due to error: {e}")
     await tool_log(log="Getting news developments", context=context)
-    news_data = await get_stock_aligned_news_developments(
-        GetNewsDevelopmentsAboutCompaniesInput(
-            stock_ids=stock_ids, start_date=start_date, end_date=end_date
-        ),
-        context=context,
-    )
-    all_data.append(news_data)  # type: ignore
+    try:
+        news_data = await get_stock_aligned_news_developments(
+            GetNewsDevelopmentsAboutCompaniesInput(
+                stock_ids=stock_ids, start_date=start_date, end_date=end_date
+            ),
+            context=context,
+        )
+        all_data.append(news_data)  # type: ignore
+    except Exception as e:
+        logger.warning(f"failed to get company news due to error: {e}")
     await tool_log(log="Getting earnings summaries", context=context)
-    earnings_data = await get_stock_aligned_earnings_call_summaries(
-        GetEarningsCallSummariesInput(
-            stock_ids=stock_ids, start_date=start_date, end_date=end_date
-        ),
-        context=context,
-    )
-    all_data.append(earnings_data)  # type: ignore
+    try:
+        earnings_data = await get_stock_aligned_earnings_call_summaries(
+            GetEarningsCallSummariesInput(
+                stock_ids=stock_ids, start_date=start_date, end_date=end_date
+            ),
+            context=context,
+        )
+        all_data.append(earnings_data)  # type: ignore
+    except Exception as e:
+        logger.warning(f"failed to get earnings summaries due to error: {e}")
     await tool_log(log="Getting SEC filings", context=context)
-    sec_filings = await get_stock_aligned_sec_filings(
-        GetSecFilingsInput(stock_ids=stock_ids, start_date=start_date, end_date=end_date),
-        context=context,
-    )
-    all_data.append(sec_filings)  # type: ignore
+    try:
+        sec_filings = await get_stock_aligned_sec_filings(
+            GetSecFilingsInput(stock_ids=stock_ids, start_date=start_date, end_date=end_date),
+            context=context,
+        )
+        all_data.append(sec_filings)  # type: ignore
+    except Exception as e:
+        logger.warning(f"failed to get SEC filings(s) due to error: {e}")
     await tool_log(log="Combining all text data", context=context)
+    if len(all_data) == 0:
+        raise Exception("Found no data for the provided stocks")
     combined_texts = all_data[0]
     for other_texts in all_data[1:]:
         combined_texts = StockAlignedTextGroups.join(combined_texts, other_texts)

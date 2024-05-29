@@ -195,6 +195,8 @@ class SecFiling:
 
     target_file_type = {FILE_10K, FILE_10Q}
 
+    MAX_SEC_QUERY_SIZE = 50
+
     @classmethod
     def build_query_for_filings(
         cls, cik: str, start_date: Optional[datetime.date], end_date: Optional[datetime.date]
@@ -226,7 +228,7 @@ class SecFiling:
                 }
             },
             "from": "0",
-            "size": "1",
+            "size": str(cls.MAX_SEC_QUERY_SIZE),
             "sort": [{"filedAt": {"order": "desc"}}],
         }
         return query
