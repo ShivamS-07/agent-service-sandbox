@@ -85,6 +85,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
             points=[
                 DataPoint(x_val=x_val, y_val=y_val)
                 for x_val, y_val in zip(df[x_df_col], df[y_df_col])
+                if x_val is not None and y_val is not None
             ],
         )
         data = [dataset]
@@ -103,6 +104,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
                 points=[
                     DataPoint(x_val=x_val, y_val=y_val)
                     for x_val, y_val in zip(dataset_data[x_df_col], dataset_data[y_df_col])
+                    if x_val is not None and y_val is not None
                 ],
             )
             data.append(dataset)

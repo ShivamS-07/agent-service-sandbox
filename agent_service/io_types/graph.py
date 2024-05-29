@@ -23,8 +23,8 @@ class Graph(ComplexIOBase, ABC):
 
 @io_type
 class DataPoint(ComplexIOBase):
-    x_val: PrimitiveType
-    y_val: PrimitiveType
+    x_val: Optional[PrimitiveType]
+    y_val: Optional[PrimitiveType]
 
 
 @io_type
