@@ -115,10 +115,13 @@ async def get_prefect_task_statuses(
         try:
             plan_run_id, task_id = run.name.split(":")
         except ValueError:
+            # If the task name can't be split, the task probably has not be
+            # truly started yet. We can skip it for now and it'll appear in the
+            # next status call.
             logger.warning(
                 f"Failed to split ID string: '{run.name}', got pieces: {run.name.split(':')}"
             )
-            raise
+            continue
         output[(plan_run_id, task_id)] = run
 
     return output
