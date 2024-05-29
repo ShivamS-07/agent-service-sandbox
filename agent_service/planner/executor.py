@@ -92,6 +92,8 @@ async def run_execution_plan(
     # thing. Should fix that.
 
     logger.info(f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=}")
+    if not context.skip_db_commit:
+        db.write_agent_output(output=tool_output, context=context)
     logger.info("Generating chat message...")
     if send_chat_when_finished and not context.skip_db_commit:
         chatbot = Chatbot(agent_id=context.agent_id)
@@ -103,10 +105,6 @@ async def run_execution_plan(
         db.insert_chat_messages(
             messages=[Message(agent_id=context.agent_id, message=message, is_user_message=False)]
         )
-
-    logger.info("Finished generating chat message, storing output in DB...")
-    if not context.skip_db_commit:
-        db.write_agent_output(output=tool_output, context=context)
 
     logger.info("Finished run!")
     return tool_output

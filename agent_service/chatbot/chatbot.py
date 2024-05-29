@@ -25,7 +25,7 @@ from agent_service.chatbot.prompts import (
 )
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import IOType
+from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
@@ -75,10 +75,11 @@ class Chatbot:
     async def generate_execution_complete_response(
         self, chat_context: ChatContext, execution_plan: ExecutionPlan, output: IOType
     ) -> str:
+        output_str = output.to_gpt_input() if isinstance(output, ComplexIOBase) else str(output)
         main_prompt = COMPLETE_EXECUTION_MAIN_PROMPT.format(
             chat_context=chat_context.get_gpt_input(),
             plan=execution_plan.get_plan_steps_for_gpt(),
-            output=output,
+            output=output_str,
         )
         sys_prompt = COMPLETE_EXECUTION_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=100)

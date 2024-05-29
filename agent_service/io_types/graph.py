@@ -62,6 +62,12 @@ class LineGraph(Graph):
                 dataset.dataset_id = metadata_map[gbi].symbol  # type: ignore
         return GraphOutput(graph=self)
 
+    def to_gpt_input(self) -> str:
+        return (
+            f"Line Graph with X axis type: {self.x_axis_type.value},"
+            f" Y axis type: {self.y_axis_type.value}."
+        )
+
 
 @io_type
 class PieSection(ComplexIOBase):
@@ -85,6 +91,9 @@ class PieGraph(Graph):
         for section in self.data:
             section.label = metadata_map[section.label].symbol  # type: ignore
         return GraphOutput(graph=self)
+
+    def to_gpt_input(self) -> str:
+        return f"Pie Chart with sections: {self.data}"
 
 
 class GraphOutput(Output):
