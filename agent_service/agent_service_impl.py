@@ -118,7 +118,7 @@ class AgentServiceImpl:
 
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
         try:
-            LOGGER.info("Inserting user's new message to DB")
+            LOGGER.info(f"Inserting user's new message to DB for {req.agent_id=}")
             user_msg = Message(
                 agent_id=req.agent_id,
                 message=req.prompt,
@@ -130,12 +130,17 @@ class AgentServiceImpl:
             return ChatWithAgentResponse(success=False, allow_retry=True)
 
         try:
-            LOGGER.info("Updating execution after user's new message")
+            LOGGER.info(f"Updating execution after user's new message for {req.agent_id=}")
             await self.task_executor.update_execution_after_input(
-                req.agent_id, user.user_id, chat_context=None
+                agent_id=req.agent_id, user_id=user.user_id, chat_context=None
             )
         except Exception as e:
-            LOGGER.exception(f"Failed to update execution after input with exception: {e}")
+            LOGGER.exception(
+                (
+                    f"Failed to update agent id {req.agent_id} execution"
+                    f" after input with exception: {e}"
+                )
+            )
             return ChatWithAgentResponse(success=False, allow_retry=False)
 
         return ChatWithAgentResponse(success=True, allow_retry=False)

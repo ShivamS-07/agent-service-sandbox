@@ -214,13 +214,8 @@ async def update_execution_after_input(
     logger = get_prefect_logger(__name__)
     decider = ActionDecider(agent_id=agent_id)
     db = get_psql(skip_commit=skip_db_commit)
-    plan_run_ids = db.get_agent_plan_runs(agent_id=agent_id, limit_num=1)
-    if not plan_run_ids:
-        # TODO No plan is running, what to do here?
-        return
-    current_plan_run = plan_run_ids[0]
 
-    flow_run = await prefect_pause_current_agent_flow(current_plan_run)
+    flow_run = await prefect_pause_current_agent_flow(agent_id=agent_id)
 
     chat_context = chat_context or db.get_chats_history_for_agent(agent_id=agent_id)
 
@@ -250,8 +245,10 @@ async def update_execution_after_input(
             )
         if flow_run:
             await prefect_resume_agent_flow(flow_run)
-    elif action == Action.RERUN:
-        current_task_id = prefect_get_current_plan_run_task_id(current_plan_run)
+    elif action == Action.RERUN and flow_run:
+        # In this case, we know that the flow_run_type is PLAN_EXECUTION,
+        # otherwise we'd have run the above block instead.
+        current_task_id = prefect_get_current_plan_run_task_id(flow_run)
         for node in latest_plan.nodes:
             if ToolRegistry.does_tool_read_chat(node.tool_name):
                 # we've already run into a chat reading node, which means we need to rerun
@@ -304,6 +301,7 @@ async def update_execution_after_input(
                     await prefect_resume_agent_flow(flow_run)
 
     else:
+        # This handles the cases for REPLAN and APPEND
         message = await chatbot.generate_input_update_replan_preplan_response(chat_context)
         db.insert_chat_messages(
             messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
@@ -313,9 +311,9 @@ async def update_execution_after_input(
             await prefect_cancel_agent_flow(flow_run)
         new_plan_id = str(uuid4())
         await prefect_create_execution_plan(
-            agent_id,
-            user_id,
-            new_plan_id,
+            agent_id=agent_id,
+            user_id=user_id,
+            plan_id=new_plan_id,
             action=action,
             skip_db_commit=skip_db_commit,
             skip_task_cache=skip_task_cache,
@@ -341,14 +339,16 @@ async def rewrite_execution_plan_after_input(
 
     logger.info(f"Starting rewrite of execution plan for {agent_id=}...")
     chat_context = chat_context or db.get_chats_history_for_agent(agent_id=agent_id)
-    if action == Action.REPLAN or action == Action.APPEND:
+    if action not in (Action.REPLAN, Action.APPEND):
         # treat these the same for now
         # TODO: do append more efficiently, with a different prompt
         # TODO: get all exectution plans, not just the most recent one
         # TODO: Add some chatbot response before we redo the plan
         # To stop potential circular behavior
-        _, old_plan = db.get_latest_execution_plan(agent_id)
-        new_plan = await planner.rewrite_plan_after_input(chat_context, old_plan)
+        raise RuntimeError("Unreachable!")
+
+    _, old_plan = db.get_latest_execution_plan(agent_id)
+    new_plan = await planner.rewrite_plan_after_input(chat_context, old_plan)
 
     if not skip_db_commit:
         db.write_execution_plan(plan_id=plan_id, agent_id=agent_id, plan=new_plan)

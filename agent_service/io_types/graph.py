@@ -57,7 +57,7 @@ class LineGraph(Graph):
 
         metadata_map = await get_stock_metadata(pg, gbi_ids=stocks_to_map)
         for dataset in self.data:
-            gbi = dataset.dataset_id
+            gbi = int(dataset.dataset_id)  # type: ignore
             if gbi in metadata_map:
                 dataset.dataset_id = metadata_map[gbi].symbol  # type: ignore
         return GraphOutput(graph=self)
@@ -89,7 +89,7 @@ class PieGraph(Graph):
         stocks_to_map = cast(List[int], [section.label for section in self.data])
         metadata_map = await get_stock_metadata(pg, gbi_ids=stocks_to_map)
         for section in self.data:
-            section.label = metadata_map[section.label].symbol  # type: ignore
+            section.label = metadata_map[int(section.label)].symbol  # type: ignore
         return GraphOutput(graph=self)
 
     def to_gpt_input(self) -> str:

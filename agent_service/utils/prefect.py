@@ -11,6 +11,7 @@ from prefect import get_client
 from prefect.client.schemas import TaskRun
 from prefect.client.schemas.filters import (
     FlowRunFilter,
+    FlowRunFilterId,
     FlowRunFilterName,
     FlowRunFilterState,
     FlowRunFilterStateType,
@@ -208,49 +209,18 @@ async def prefect_cancel_agent_flow(run: PrefectFlowRun) -> None:
         await client.set_flow_run_state(flow_run_id=run.flow_run_id, state=cancelling_state)
 
 
-async def prefect_pause_plan_run(plan_run_id: str) -> None:
-    """
-    Given an plan run ID, pauses the associated prefect flow.
-    """
-    logger = get_prefect_logger(__name__)
-    flow_run_id = await _get_prefect_flow_uuid_from_plan_run_id(plan_run_id)
-    if not flow_run_id:
-        logger.error(f"Tried to pause a non-existant plan run {plan_run_id}")
-        return
-    await pause_flow_run(flow_run_id=flow_run_id)
-    logger.info(f"Paused plan run {plan_run_id}")
-
-
-async def prefect_resume_plan_run(plan_run_id: str) -> None:
-    logger = get_prefect_logger(__name__)
-    flow_run_id = await _get_prefect_flow_uuid_from_plan_run_id(plan_run_id)
-    if not flow_run_id:
-        logger.error(f"Tried to resume a non-existant plan run {plan_run_id}")
-        return
-    await resume_flow_run(flow_run_id=flow_run_id)
-    logger.info(f"Resumed plan run {plan_run_id}")
-
-
-async def prefect_cancel_plan_run(plan_run_id: str) -> None:
-    logger = get_prefect_logger(__name__)
-    flow_run_id = await _get_prefect_flow_uuid_from_plan_run_id(plan_run_id)
-    if not flow_run_id:
-        logger.error(f"Tried to cancel a non-existant plan run {plan_run_id}")
-        return
-    async with get_client() as client:
-        cancelling_state: State = State(type=StateType.CANCELLING)
-        await client.set_flow_run_state(flow_run_id=flow_run_id, state=cancelling_state)
-    logger.info(f"Scheduled plan run {plan_run_id} for cancellation")
-
-
-async def prefect_get_current_plan_run_task_id(plan_run_id: str) -> Optional[str]:
+async def prefect_get_current_plan_run_task_id(run: PrefectFlowRun) -> Optional[str]:
     """
     Given a plan run ID, fetch the task ID that is in progress and return it. If
     the plan has not been started, is already complete, or has failed then None
     will be returned.
     """
-    task_status_map = await get_prefect_task_statuses(plan_run_ids=[plan_run_id])
-    for (_, task_id), task_run in task_status_map.items():
+    async with get_client() as client:
+        runs = await client.read_task_runs(
+            flow_run_filter=FlowRunFilter(id=FlowRunFilterId(any_=[run.flow_run_id]))
+        )
+    task_status_map = {r.name: r for r in runs}
+    for task_id, task_run in task_status_map.items():
         if task_run.state_type in (StateType.RUNNING, StateType.PAUSED):
             return task_id
 
