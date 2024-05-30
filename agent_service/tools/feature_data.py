@@ -7,6 +7,12 @@ from cachetools import TTLCache, cached
 from data_access_layer.core.dao.features.feature_utils import get_feature_metadata
 from data_access_layer.core.dao.features.features_dao import FeaturesDAO
 
+from agent_service.GPT.constants import (
+    DEFAULT_CHEAP_MODEL,
+    FILTER_CONCURRENCY,
+    NO_PROMPT,
+)
+from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
@@ -17,9 +23,11 @@ from agent_service.io_types.table import (
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
-from agent_service.utils.async_utils import async_wrap
+from agent_service.utils.async_utils import async_wrap, gather_with_concurrency
+from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.prompt_utils import Prompt
 
 logger = get_prefect_logger(__name__)
 
@@ -36,6 +44,38 @@ FEATURES_DAO = FeaturesDAO()
 class StatisticId(ComplexIOBase):
     stat_id: str
     stat_name: str
+
+
+STATISTIC_CONFIRMATION_PROMPT = Prompt(
+    name="STATISTIC_CONFIRMATION_PROMPT",
+    template="""
+do "{term1}" and "{term2}" mean the same thing?
+just respond with yes or no
+""",
+)
+
+
+async def is_statistic_correct(context: PlanRunContext, search: str, match: str) -> bool:
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=DEFAULT_CHEAP_MODEL)
+
+    prompt = STATISTIC_CONFIRMATION_PROMPT.format(term1=search, term2=match)
+
+    result = await llm.do_chat_w_sys_prompt(
+        main_prompt=prompt,
+        sys_prompt=NO_PROMPT,
+    )
+
+    result = result.lower()
+    if result.startswith("yes"):
+        return True
+
+    if result.startswith("true"):
+        return True
+
+    return False
 
 
 class StatisticsIdentifierLookupInput(ToolArgs):
@@ -82,13 +122,29 @@ async def statistic_identifier_lookup(
     FROM public.features feat
     WHERE feat.data_provider = 'SPIQ'
     ORDER BY ws DESC
-    LIMIT 10 ) as feats
+    LIMIT 20 ) as feats
     where ws > 0.2
     """
     rows = db.generic_read(sql, {"search_text": args.statistic_name})
     logger.info(f"found {len(rows)} potential matches for '{args.statistic_name}'")
-    if rows:
-        logger.info(f"searched  '{args.statistic_name}' and found row: {str(rows[0])[:250]}")
+
+    if not rows:
+        raise ValueError(f"Could not find a stock data field related to: {args.statistic_name}")
+
+    tasks = [
+        is_statistic_correct(context, search=args.statistic_name, match=r["name"]) for r in rows
+    ]
+
+    for r in rows:
+        logger.info(f"searched  '{args.statistic_name}' and found potential match: {str(r)[:250]}")
+
+    results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
+
+    for result, row in zip(results, rows):
+        if not result:
+            continue
+
+        logger.info(f"searched  '{args.statistic_name}' and found best match: {str(row)[:250]}")
         await tool_log(
             log=f"Interpreting '{args.statistic_name}' as {rows[0]['name']}", context=context
         )

@@ -91,6 +91,10 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
 class TestStatisticsIdentifierLookup(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
+        # uncomment for easier debugging
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
 
     async def test_statistic_identifier_lookup_highprice(self):
         self.args = StatisticsIdentifierLookupInput(statistic_name="High Price")
@@ -101,6 +105,17 @@ class TestStatisticsIdentifierLookup(IsolatedAsyncioTestCase):
         self.args = StatisticsIdentifierLookupInput(statistic_name="Basic EPS")
         result = await statistic_identifier_lookup(self.args, self.context)
         self.assertEqual(result.stat_id, "spiq_9")
+
+    async def test_statistic_identifier_lookup_doesnt_exist(self):
+        self.args = StatisticsIdentifierLookupInput(statistic_name="Foo bar ratio")
+        with self.assertRaises(ValueError):
+            await statistic_identifier_lookup(self.args, self.context)
+
+    async def test_statistic_identifier_lookup_doesnt_exist_pe(self):
+        # eventually this should be changed to expect it to find something correct
+        self.args = StatisticsIdentifierLookupInput(statistic_name="pe ratio")
+        with self.assertRaises(ValueError):
+            await statistic_identifier_lookup(self.args, self.context)
 
     async def test_statistic_identifier_lookup_bollinger(self):
         self.args = StatisticsIdentifierLookupInput(statistic_name="Bid Price")

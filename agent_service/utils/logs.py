@@ -2,7 +2,7 @@ import functools
 import logging
 import sys
 import time
-from typing import Callable, TypeVar
+from typing import Callable, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -13,15 +13,17 @@ def init_logging(
     log_handler: logging.Handler,
     log_level: int = logging.INFO,
     disable_prefect_logging: bool = True,
+    formatter: Optional[logging.Formatter] = None,
 ) -> None:
     """Initialize logging with the specified log handler."""
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
 
     # add thread id to confirm parallel threads are running
-    formatter = logging.Formatter(
-        fmt="%(asctime)s %(process)8d %(thread)d %(levelname)8s  %(name)s : %(message)s"
-    )
+    if not formatter:
+        formatter = logging.Formatter(
+            fmt="%(asctime)s %(process)8d %(thread)d %(levelname)8s  %(name)s : %(message)s"
+        )
     log_handler.setFormatter(formatter)
     if disable_prefect_logging:
         # Remove the prefect handler
@@ -36,6 +38,17 @@ def init_stdout_logging(
 ) -> None:
     handler = logging.StreamHandler(sys.stdout)
     init_logging(handler, log_level, disable_prefect_logging=disable_prefect_logging)
+
+
+def init_test_logging(
+    log_level: int = logging.INFO,
+    disable_prefect_logging: bool = True,
+) -> None:
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter(fmt="%(asctime)s %(levelname)8s  %(name)s : %(message)s")
+    init_logging(
+        handler, log_level, disable_prefect_logging=disable_prefect_logging, formatter=formatter
+    )
 
 
 def async_perf_logger(func: Callable[..., T], level: int = logging.INFO) -> Callable[..., T]:

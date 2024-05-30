@@ -56,7 +56,7 @@ async def sector_identifier_lookup(
     Returns integer identifier best matching the input text, or None if not a match
     """
     gpt_context = create_gpt_context(
-        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=DEFAULT_CHEAP_MODEL)
 
