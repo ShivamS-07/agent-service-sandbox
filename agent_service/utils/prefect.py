@@ -19,7 +19,6 @@ from prefect.client.schemas.filters import (
 )
 from prefect.client.schemas.objects import State, StateType
 from prefect.deployments import run_deployment
-from prefect.engine import pause_flow_run, resume_flow_run
 from prefect.logging.loggers import get_run_logger
 
 from agent_service.endpoints.models import Status
@@ -107,7 +106,23 @@ async def get_prefect_task_statuses(
 
     async with get_client() as client:
         runs: List[TaskRun] = await client.read_task_runs(
-            flow_run_filter=FlowRunFilter(name=FlowRunFilterName(any_=plan_run_ids))
+            flow_run_filter=FlowRunFilter(
+                name=FlowRunFilterName(any_=plan_run_ids),
+                state=FlowRunFilterState(  # type: ignore
+                    # Filter out flows that are cancelled from the frontend.
+                    type=FlowRunFilterStateType(
+                        any_=[
+                            StateType.RUNNING,
+                            StateType.COMPLETED,
+                            StateType.FAILED,
+                            StateType.PENDING,
+                            StateType.SCHEDULED,
+                            StateType.PAUSED,
+                            StateType.CRASHED,
+                        ]
+                    )
+                ),
+            )
         )
     output = {}
     for run in runs:
@@ -171,6 +186,8 @@ class FlowRunType(enum.Enum):
 class PrefectFlowRun:
     flow_run_id: UUID
     flow_run_type: FlowRunType
+    # When we pause a run, store its prior state here for resuming.
+    prior_state: State
 
 
 async def prefect_pause_current_agent_flow(agent_id: str) -> Optional[PrefectFlowRun]:
@@ -189,28 +206,43 @@ async def prefect_pause_current_agent_flow(agent_id: str) -> Optional[PrefectFlo
             )
         )
         if not runs:
+            logger.info(f"No flow runs found to pause for {agent_id=}")
             return None
         # There should only be one
         run = runs[0]
+        prior_state = run.state
+        if not prior_state:
+            logger.info(f"Flow run {run.id} was not running for {agent_id=}, skipped")
+            return None
         try:
             # Try to pause, it will error if it's not in progress
-            await pause_flow_run(flow_run_id=run.id)
+            logger.info(f"Pausing flow run {run.id} for {agent_id=}")
+            paused_state: State = State(type=StateType.PAUSED)
+            await client.set_flow_run_state(flow_run_id=run.id, state=paused_state)
         except RuntimeError:
+            logger.info(f"Flow run {run.id} was not running for {agent_id=}, skipped")
             return None
 
     # TODO find a better way to do this.
     # If the run has a parent, it's an execution, otherwise it's a creation.
     if run.parent_task_run_id:
-        return PrefectFlowRun(flow_run_id=run.id, flow_run_type=FlowRunType.PLAN_EXECUTION)
+        return PrefectFlowRun(
+            flow_run_id=run.id, flow_run_type=FlowRunType.PLAN_EXECUTION, prior_state=prior_state
+        )
     else:
-        return PrefectFlowRun(flow_run_id=run.id, flow_run_type=FlowRunType.PLAN_CREATION)
+        return PrefectFlowRun(
+            flow_run_id=run.id, flow_run_type=FlowRunType.PLAN_CREATION, prior_state=prior_state
+        )
 
 
 async def prefect_resume_agent_flow(run: PrefectFlowRun) -> None:
-    await resume_flow_run(flow_run_id=run.flow_run_id)
+    logger.info(f"Resetting flow run {run.flow_run_id} to state {run.prior_state.type}")
+    async with get_client() as client:
+        await client.set_flow_run_state(flow_run_id=run.flow_run_id, state=run.prior_state)
 
 
 async def prefect_cancel_agent_flow(run: PrefectFlowRun) -> None:
+    logger.info(f"Cancelling flow run {run.flow_run_id}")
     cancelling_state: State = State(type=StateType.CANCELLING)
     async with get_client() as client:
         await client.set_flow_run_state(flow_run_id=run.flow_run_id, state=cancelling_state)
