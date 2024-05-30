@@ -6,7 +6,7 @@ import os
 import traceback
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
@@ -16,7 +16,12 @@ from gbi_common_py_utils.utils.environment import (
 from gbi_common_py_utils.utils.event_logging import log_event
 from google.protobuf.struct_pb2 import Struct
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
-from gpt_service_proto_v1.service_pb2 import QueryGPTRequest, QueryGPTResponse
+from gpt_service_proto_v1.service_pb2 import (
+    EmbedTextRequest,
+    EmbedTextResponse,
+    QueryGPTRequest,
+    QueryGPTResponse,
+)
 from grpclib.client import Channel
 
 from agent_service.GPT.constants import (
@@ -200,6 +205,96 @@ async def _query_gpt_worker(
     return result.response
 
 
+async def get_embedding(
+    model: str,
+    text: str,
+    retry_num: int = 1,
+    max_retries: int = 3,
+    request_id: Optional[str] = None,
+    no_cache: bool = False,
+    gpt_service_stub: Optional[GPTServiceStub] = None,
+) -> List[float]:
+    if not request_id:
+        request_id = str(uuid.uuid4())
+    client_timestamp = datetime.utcnow().isoformat()
+    try:
+        return await _get_embedding(
+            model=model,
+            text=text,
+            request_id=request_id,
+            client_timestamp=client_timestamp,
+            no_cache=no_cache,
+            gpt_service_stub=gpt_service_stub,
+        )
+    except Exception as e:
+        exception_text = traceback.format_exc()
+        log_event(
+            event_name="GPTService-Embed-Error",
+            event_data={
+                "error_msg": exception_text,
+                "send_timestamp": client_timestamp,
+                "retry_number": retry_num,
+                "request_id": request_id,
+                "give_up_timestamp": datetime.utcnow().isoformat(),
+                "model_id": model,
+            },
+        )
+        if retry_num == max_retries:
+            raise e
+        else:
+            await asyncio.sleep(1)
+            return await get_embedding(
+                model=model,
+                text=text,
+                retry_num=retry_num + 1,
+                max_retries=max_retries,
+                request_id=request_id,
+                no_cache=no_cache,
+            )
+
+
+async def _get_embedding(
+    model: str,
+    text: str,
+    request_id: str = "",
+    client_timestamp: Optional[str] = None,
+    no_cache: bool = False,
+    gpt_service_stub: Optional[GPTServiceStub] = None,
+) -> List[float]:
+
+    if not client_timestamp:
+        client_timestamp = datetime.utcnow().isoformat()
+
+    request = EmbedTextRequest(
+        model=model,
+        text=text,
+    )
+    stub = _get_gpt_service_stub() if not gpt_service_stub else gpt_service_stub
+    metadata = [
+        ("clienttimestamp", client_timestamp),
+        ("clientname", CLIENT_NAME),
+        ("clientnamespace", CLIENT_NAMESPACE),
+        ("clientrequestid", request_id),
+    ]
+
+    if no_cache or os.environ.get("NO_GPT_CACHE", "0") == "1":
+        metadata.append(("nocache", "true"))
+
+    stub, channel = _get_gpt_service_stub()
+    result: EmbedTextResponse = await stub.EmbedText(
+        request, timeout=MAX_GPT_WORKER_TIMEOUT, metadata=metadata
+    )
+
+    if not use_global_stub():
+        # explicitly close the channel after each call during unittests
+        channel.close()
+
+    if result.status.code != 0:
+        raise RuntimeError(f"Error response from GPT service: {result.status.message}")
+
+    return [float(i) for i in result.embedding]
+
+
 class GPT:
     def __init__(
         self,
@@ -266,6 +361,18 @@ class GPT:
             max_tokens=max_tokens,
             context=context_with_task_type,
             output_json=output_json,
+            no_cache=no_cache,
+            gpt_service_stub=self.gpt_service_stub,
+        )
+
+    async def embed_text(
+        self,
+        text: str,
+        no_cache: bool = False,
+    ) -> List[float]:
+        return await get_embedding(
+            model=self.model,
+            text=text,
             no_cache=no_cache,
             gpt_service_stub=self.gpt_service_stub,
         )

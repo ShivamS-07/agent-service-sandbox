@@ -46,7 +46,7 @@ PLAN_GUIDELINES = """The top priority of a plan is that the information needs of
 - When using doing LLM analysis (e.g. filtering) over multiple data sources, it is generally better to combine the data sources first and do the LLM analysis only once
 - If the client does not mention a specific list of stocks to work with but the functions you want to use require a list of stocks, you must start by getting a sensible default list of stocks, the S&P 500 is a good choice.
 - You must never assume what the date is, you must use a tool that knows the date
-- Your lines can be as long as needed, do not violate any of the rules to avoid having long lines
+- Your lines can be as long as needed, you must not violate any of the plan rules to avoid having long lines
 - Before you write a line, consider what each of the arguments of your function will be; if any of them is in the wrong form and so requires a function to be called on them before you can use it as a proper argument to this function, do that first!
 - Only the output returned by the last line of the script will be shown to the user, so you must be sure that it has all the information the user is asking for and that it is human readable (your final output should never be identifiers)
 - If the information need of the client is numerical (e.g. stock price), data should always be output in the form of a Table, even if it is a single number (e.g. a stock price for a particular stock on a particular day)

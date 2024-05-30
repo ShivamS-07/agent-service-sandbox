@@ -127,9 +127,8 @@ async def get_macroeconomic_themes(
     ]
     if not themes:
         # TODO we should actually throw an error and use it to revise the plan
-        print(f"No themes found for: {args.theme_refs}!")
-        themes = [ThemeText(id=str(uuid4()))]
-    return themes
+        themes = [ThemeText(id=str(uuid4()), text_type="NO THEME")]
+    return themes  # type: ignore
 
 
 class GetStocksAffectedByThemeInput(ToolArgs):
@@ -277,15 +276,12 @@ async def get_news_developments_about_theme(
 class GetThemeDevelopmentNewsArticlesInput(ToolArgs):
     # the theme developments news to get the articles for
     developments_list: List[List[ThemeNewsDevelopmentText]]
-    start_date: Optional[datetime.date] = None
 
 
 @tool(
     description=(
         "This function takes a list of lists of macroeconomic theme news developments "
         "and returns the news articles for each theme news development "
-        "that are published after a given start date or "
-        "in the last 30 days if no start date is provided."
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
@@ -305,9 +301,6 @@ async def get_news_articles_for_theme_developments(
         List[List[List[ThemeNewsDevelopmentArticlesText]]]: The list of article text object
             for each theme news development.
     """
-    start_date = args.start_date
-    if not start_date:
-        start_date = (get_now_utc() - datetime.timedelta(days=30)).date()
     res = []
     db = get_psql()
     for developments in args.developments_list:
@@ -317,10 +310,10 @@ async def get_news_articles_for_theme_developments(
             SELECT news_id::TEXT
             FROM nlp_service.theme_news
             WHERE development_id = %s
-            AND published_at >= %s
+            AND published_at >= NOW() - INTERVAL '2 years'
             ORDER BY published_at DESC
             """
-            rows = db.generic_read(sql, [development.id, start_date])
+            rows = db.generic_read(sql, [development.id])
             news_ids = [row["news_id"] for row in rows]
             articles.append([ThemeNewsDevelopmentArticlesText(id=id) for id in news_ids])
         res.append(articles)
@@ -328,17 +321,14 @@ async def get_news_articles_for_theme_developments(
 
 
 class GetTopNThemesInput(ToolArgs):
-    date_range: str = "1M"
+    start_date: Optional[datetime.date] = None
     theme_num: int = 3
 
 
 @tool(
     description=(
         "This function returns the top N themes based on the date range and number of themes. "
-        "The tool can be used when the user does not provide any themes to focus on, "
-        "or when the user wants a general market trend commentary. "
-        "The date range MUST be one of the following values: "
-        "['1W', '2W', '1M', '3M', '1Q', '6M', '1Y']. Default is '1M'. "
+        "The tool can be used when the user does not provide any themes to focus on."
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
@@ -354,19 +344,39 @@ async def get_top_N_themes(args: GetTopNThemesInput, context: PlanRunContext) ->
     Returns:
         List[ThemeText]: The list of theme text objects.
     """
-    # TODO: fix this this endpoint to get ids instead of theme names
+
+    # helper function to get the date range
+    async def _get_date_range(start_date: Optional[datetime.date]) -> str:
+        if start_date is None:
+            return "1M"
+        today = datetime.date.today()
+        diff = today - start_date
+        date_ranges = [
+            (datetime.timedelta(weeks=1), "1W"),
+            (datetime.timedelta(weeks=2), "2W"),
+            (datetime.timedelta(days=30), "1M"),
+            (datetime.timedelta(days=90), "3M"),
+            (datetime.timedelta(days=91), "1Q"),
+            (datetime.timedelta(days=182), "6M"),
+            (datetime.timedelta(days=365), "1Y"),
+        ]
+        # Find the closest date range
+        closest_range = min(date_ranges, key=lambda x: abs(x[0] - diff))
+        return closest_range[1]
+
+    # TODO: fix this endpoint to get ids instead of theme names
     resp = await get_top_themes(
         user_id=context.user_id,
         section_types=["THEME"],
-        date_range=args.date_range,
+        date_range=await _get_date_range(args.start_date),
         number_per_section=args.theme_num,
     )
-    theme_refs = [t.name for t in resp.topics]
+    theme_refs: List[str] = [str(t.name) for t in resp.topics]
     # print(theme_refs)
-    themes = await get_macroeconomic_themes(
+    themes: List[ThemeText] = await get_macroeconomic_themes(  # type: ignore
         GetMacroeconomicThemeInput(theme_refs=theme_refs), context
     )
-    return themes  # type: ignore
+    return themes
 
 
 async def main() -> None:
