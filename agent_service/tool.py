@@ -161,6 +161,7 @@ class ToolCategory(str, enum.Enum):
     COMMENTARY = "commentary"
     GRAPH = "graph"
     TEXT = "text"
+    AUTOMATION = "automation"
 
     def get_description(self) -> str:
         if self == ToolCategory.MISC:
@@ -207,6 +208,9 @@ class ToolCategory(str, enum.Enum):
 
         if self == ToolCategory.COMMENTARY:
             return "Tools that involve writing commentary"
+
+        if self == ToolCategory.AUTOMATION:
+            return "Tools that involve automating tasks and notifying users"
 
         return ""
 
