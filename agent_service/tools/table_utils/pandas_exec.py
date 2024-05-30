@@ -12,10 +12,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-d",
-        "--data",
+        "--data_file",
         type=str,
         required=True,
-        help="Input dataframe as json string.",
+        help="Input dataframe as json file.",
     )
     parser.add_argument(
         "-c",
@@ -40,11 +40,11 @@ def write_output(df: pd.DataFrame) -> None:
 
 def main() -> None:
     args = parse_args()
-    df = pd.read_json(args.data)
-    # Recreate the index on the first column
-    df.set_index(df.columns[0], inplace=True)
     with open(args.code, mode="r") as f:
         code = f.read()
+    with open(args.data_file, mode="r") as d:
+        serialized_df = d.read()
+    df = pd.read_json(serialized_df)
     if "import" in code:
         raise RuntimeError("'import' keyword detected in output code, DO NOT USE 'import'")
     new_df = exec_code(df, code)

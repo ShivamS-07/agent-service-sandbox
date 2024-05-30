@@ -1,8 +1,10 @@
 import datetime
 from unittest import IsolatedAsyncioTestCase
 
+from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
 from agent_service.tools.feature_data import (
     FeatureDataInput,
+    StatisticId,
     StatisticsIdentifierLookupInput,
     get_latest_date,
     get_statistic_data_for_companies,
@@ -14,9 +16,9 @@ AAPL = 714
 AMZN = 149
 MSFT = 6963
 VZ = 12250
-CLOSE_PRICE = "spiq_close"
-SPIQ_DIV_AMOUNT = "spiq_div_amount"
-GROSS_PROFIT = "spiq_10"
+CLOSE_PRICE = StatisticId(stat_id="spiq_close", stat_name="Close Price")
+SPIQ_DIV_AMOUNT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount")
+GROSS_PROFIT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount")
 
 
 class TestFeatureDataLookup(IsolatedAsyncioTestCase):
@@ -24,9 +26,12 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
         self.context = PlanRunContext.get_dummy()
 
     async def test_feature_data_3_stock(self):
-        args = FeatureDataInput(stock_ids=[AAPL, AMZN, MSFT], statistic_id=CLOSE_PRICE)
+        args = FeatureDataInput(
+            stock_ids=[AAPL, AMZN, MSFT],
+            statistic_id=CLOSE_PRICE,
+        )
         result = await get_statistic_data_for_companies(args, self.context)
-        self.assertEqual(len(result.data["Stock ID"].unique()), 3)  # num_stocks
+        self.assertEqual(len(result.data[STOCK_ID_COL_NAME_DEFAULT].unique()), 3)  # num_stocks
         self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
 
     async def test_feature_data_1_stock_many_dates(self):
@@ -37,7 +42,7 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
             end_date=datetime.date(2020, 3, 1),
         )
         result = await get_statistic_data_for_companies(args, self.context)
-        self.assertEqual(len(result.data["Stock ID"].unique()), 1)  # num_stocks
+        self.assertEqual(len(result.data[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
         self.assertGreater(len(result.data["Date"].unique()), 20)  # num_dates
 
     async def test_get_latest_date(self):
@@ -55,14 +60,14 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
         )
         result = await get_statistic_data_for_companies(args, self.context)
 
-        self.assertEqual(len(result.data["Stock ID"].unique()), 1)  # num_stocks
+        self.assertEqual(len(result.data[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
         self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
 
     async def test_feature_data_dividend(self):
         args = FeatureDataInput(stock_ids=[VZ], statistic_id=SPIQ_DIV_AMOUNT)
         result = await get_statistic_data_for_companies(args, self.context)
 
-        self.assertEqual(len(result.data["Stock ID"].unique()), 1)  # num_stocks
+        self.assertEqual(len(result.data[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
         self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
 
         args = FeatureDataInput(
@@ -76,11 +81,10 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
         self.assertGreater(len(result.data["Date"].unique()), 3)  # num_dates
 
     async def test_feature_data_quarterly(self):
-
         args = FeatureDataInput(stock_ids=[VZ], statistic_id=GROSS_PROFIT)
         result = await get_statistic_data_for_companies(args, self.context)
 
-        self.assertEqual(len(result.data["Stock ID"].unique()), 1)  # num_stocks
+        self.assertEqual(len(result.data[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
         self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
 
 
@@ -91,14 +95,14 @@ class TestStatisticsIdentifierLookup(IsolatedAsyncioTestCase):
     async def test_statistic_identifier_lookup_highprice(self):
         self.args = StatisticsIdentifierLookupInput(statistic_name="High Price")
         result = await statistic_identifier_lookup(self.args, self.context)
-        self.assertEqual(result, "spiq_high")
+        self.assertEqual(result.stat_id, "spiq_high")
 
     async def test_statistic_identifier_lookup_basiceps(self):
         self.args = StatisticsIdentifierLookupInput(statistic_name="Basic EPS")
         result = await statistic_identifier_lookup(self.args, self.context)
-        self.assertEqual(result, "spiq_9")
+        self.assertEqual(result.stat_id, "spiq_9")
 
     async def test_statistic_identifier_lookup_bollinger(self):
         self.args = StatisticsIdentifierLookupInput(statistic_name="Bid Price")
         result = await statistic_identifier_lookup(self.args, self.context)
-        self.assertEqual(result, "spiq_bid")
+        self.assertEqual(result.stat_id, "spiq_bid")

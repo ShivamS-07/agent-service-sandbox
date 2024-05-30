@@ -192,7 +192,11 @@ async def prefect_pause_current_agent_flow(agent_id: str) -> Optional[PrefectFlo
             return None
         # There should only be one
         run = runs[0]
-        await pause_flow_run(flow_run_id=run.id)
+        try:
+            # Try to pause, it will error if it's not in progress
+            await pause_flow_run(flow_run_id=run.id)
+        except RuntimeError:
+            return None
 
     # TODO find a better way to do this.
     # If the run has a parent, it's an execution, otherwise it's a creation.

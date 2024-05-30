@@ -11,126 +11,25 @@ import pandas as pd
 from pydantic import ValidationError
 
 from agent_service.GPT.requests import GPT
-from agent_service.io_types.table import Table, TableColumn
+from agent_service.io_types.table import (
+    STOCK_ID_COL_NAME_DEFAULT,
+    Table,
+    TableColumn,
+    TableColumnType,
+)
+from agent_service.io_types.text import StockAlignedTextGroups, Text
 from agent_service.tool import ToolArgs, ToolCategory, tool
+from agent_service.tools.table_utils.prompts import (
+    DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT,
+    DATAFRAME_SCHEMA_GENERATOR_SYS_PROMPT,
+    DATAFRAME_TRANSFORMER_MAIN_PROMPT,
+    DATAFRAME_TRANSFORMER_SYS_PROMPT,
+)
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
-from agent_service.utils.prompt_utils import Prompt
 
 logger = logging.getLogger(__name__)
-
-DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT = Prompt(
-    name="DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT",
-    template="""
-You will be given a json object describing the columns of a pandas
-dataframe. You should transform this json into another json with the same schema
-representing a dataframe after a transformation is applied. The transformation
-will be described to you, and you should produce only the json output for the
-new columns. If the output columns are identical to the inputs, simply return an
-empty list. Note that you should try to keep the table vertically aligned if
-possible (that is, more rows than columns).
-
-Use descriptive column names so that someone looking at the schema would know
-immediately what the table has inside it. Please make sure that the column order
-makes sense for a viewer as if it were being viewed in a table. For example, a
-date column or a stock ID column (if they are present) should be on the left
-side, specifically in the order (date, stock ID, other data...).
-
-If the transformation description does not relate AT ALL to pandas or any sort
-of dataframe transformation, please just return the dataframe unchanged. You
-should still not output anything other than json.
-
-Below is the json schema of the json you should produce. You should produce a
-list of these objects, one for each column. Note that if the column type is
-"stock", it means that the column contains stock identifiers. Make SURE to use
-the "currency" column type for ANY field that holds a value that represents a
-price, currency, or money amount.
-
-JSON Schema:
-
-    {schema}
-
-The transformation that will be applied to the dataframe is:
-    {transform}
-
-Here is the json describing the input dataframe, one object per column:
-    {input_cols}
-
-Please produce your json in the same format describing the columns after the
-transformation has been applied. Please produce ONLY this json.
-
-{error}
-""",
-)
-
-DATAFRAME_SCHEMA_GENERATOR_SYS_PROMPT = Prompt(
-    name="DATAFRAME_SCHEMA_GENERATOR_SYS_PROMPT",
-    template="""
-You are a quantitative data scientist who is extremely proficient at both finance and coding.
-""",
-).format()
-
-
-DATAFRAME_TRANSFORMER_MAIN_PROMPT = Prompt(
-    name="DATAFRAME_TRANSFORMER_MAIN_PROMPT",
-    template="""
-You will be given the description of a pandas dataframe stored in the variable
-`df`, as well as a description of a transformation to apply to the
-dataframe. You will produce ONLY python code that utilizes pandas to apply these
-transformations to the dataframe. The resultant dataframe must also be called
-`df`. The variable name must be kept the same, however the data stored in the
-variable `df` should be what the user asks for. The data inside `df` can be
-transformed arbitrarily to match the desired output.
-
-You can assume the following code is already written:
-
-    import datetime
-    import math
-
-    import numpy as np
-    import pandas as pd
-
-    df = pd.DataFrame(...)  # input dataframe
-
-Write only the continuation for this code with no preamble or follow up text. DO
-NOT INCLUDE ANY OTHER IMPORTS.
-
-If the transformation description does not relate AT ALL to pandas or any sort
-of dataframe transformation, please just return the dataframe unchanged. You
-should still not output anything other than code.
-
-The input dataframe's column schema is below. Date columns are python datetimes,
-and may need to be converted to pandas Timestamps if necessary. It has no index:
-    {col_schema}
-
-The output dataframe's desired column schema. The code you write should create a
-dataframe with columns that conform to this schema.
-    {output_schema}
-
-The input dataframe's overall info: {info}
-
-The transformation description:
-    {transform}
-
-{error}
-Write your code below. Make sure you reassign the output to the same variable `df`.
-Your code:
-
-""",
-)
-
-DATAFRAME_TRANSFORMER_SYS_PROMPT = Prompt(
-    name="DATAFRAME_TRANSFORMER_SYS_PROMPT",
-    template="""
-You are a quantitative data scientist who is extremely proficient with Python
-and Pandas. You will use python and pandas to write code that applies numerical
-transformations to a pandas dataframe based on the instructions given to
-you. Please comment your code for each step you take, as if the person reading
-it was only minimally technical. Your managers sometimes like to see your code,
-so they need to understand what it's doing.
-""",
-).format()  # format immediately since no arguments
 
 
 def _dump_cols(cols: List[TableColumn]) -> str:
@@ -189,13 +88,11 @@ class TransformTableArgs(ToolArgs):
     transformation_description: str
 
 
-def _get_command(df: pd.DataFrame, code_file: str) -> str:
+def _get_command(data_file: str, code_file: str) -> str:
     exec_code_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "table_utils/pandas_exec.py"
     )
-    # Reset the index to maintain the index's name
-    serialized = df.reset_index().to_json()
-    command = f"pipenv run python {exec_code_path} -d '{serialized}' -c {code_file}"
+    command = f"pipenv run python {exec_code_path} -d {data_file} -c {code_file}"
 
     if sys.platform == "darwin":
         # This is mostly for testing purposes
@@ -215,10 +112,15 @@ def _run_transform_code(df: pd.DataFrame, code: str) -> Tuple[Optional[pd.DataFr
         code = code[9:]
     if code.endswith("```"):
         code = code[:-3]
-    with tempfile.NamedTemporaryFile(mode="w+") as f:
-        f.write(code)
-        f.flush()
-        command: str = _get_command(df=df, code_file=f.name)
+    with tempfile.NamedTemporaryFile(mode="w+") as code_file, tempfile.NamedTemporaryFile(
+        mode="w+"
+    ) as data_file:
+        code_file.write(code)
+        code_file.flush()
+        serialized = df.to_json()
+        data_file.write(serialized)
+        data_file.flush()
+        command: str = _get_command(data_file=data_file.name, code_file=code_file.name)
         ret = subprocess.run(command, text=True, shell=True, capture_output=True)
 
     if ret.returncode == 0:
@@ -278,6 +180,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
     output_df, error = _run_transform_code(df=args.input_table.data, code=code)
     if output_df is None:
         logger.warning("Failed when transforming dataframe... trying again")
+        logger.warning(f"Failing code:\n{code}")
         code = await gpt.do_chat_w_sys_prompt(
             main_prompt=DATAFRAME_TRANSFORMER_MAIN_PROMPT.format(
                 col_schema=_dump_cols(args.input_table.columns),
@@ -297,3 +200,163 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
             raise RuntimeError(f"Table transformation subprocess failed with:\n{error}")
 
     return Table(columns=new_col_schema, data=output_df)
+
+
+class JoinTableArgs(ToolArgs):
+    input_tables: List[Table]
+
+
+def _join_two_tables(first: Table, second: Table) -> Table:
+    # Find columns to join by, ideally a date column, stock column, or both
+    first_stock_cols = None
+    second_stock_cols = None
+    first_date_cols = None
+    second_date_cols = None
+    other_cols = []
+
+    # First, find the date and stock columns for both dataframes if they are present.
+    for col, df_col in zip(first.columns, first.data.columns):
+        if not first_date_cols and col.col_type in (TableColumnType.DATE, TableColumnType.DATETIME):
+            first_date_cols = (col, df_col)
+            continue
+        if not first_stock_cols and col.col_type == TableColumnType.STOCK:
+            first_stock_cols = (col, df_col)
+            continue
+    for col, df_col in zip(second.columns, second.data.columns):
+        if not second_date_cols and col.col_type in (
+            TableColumnType.DATE,
+            TableColumnType.DATETIME,
+        ):
+            second_date_cols = (col, df_col)
+            continue
+        if not second_stock_cols and col.col_type == TableColumnType.STOCK:
+            second_stock_cols = (col, df_col)
+            continue
+
+    for col in first.columns + second.columns:
+        # Collect up all the columns that won't be joined on
+        if (
+            (first_stock_cols and col == first_stock_cols[0])
+            or (first_date_cols and col == first_date_cols[0])
+            or (second_stock_cols and col == second_stock_cols[0])
+            or (second_date_cols and col == second_date_cols[0])
+        ):
+            continue
+        other_cols.append(col)
+
+    # Ideally we'd never need these suffixes, but included just in case so we
+    # don't show anything crazy
+    join_suffixes = (" (one)", " (two)")
+
+    # Go case by case:
+    #   1. Join on stocks AND dates
+    #   2. Join on just stocks
+    #   3. Join on just dates
+    if first_stock_cols and second_stock_cols and first_date_cols and second_date_cols:
+        output_cols = [first_date_cols[0], first_stock_cols[0]] + other_cols
+        df = pd.merge(
+            left=first.data,
+            right=second.data,
+            how="outer",
+            left_on=[first_date_cols[1], first_stock_cols[1]],
+            right_on=[second_date_cols[1], second_stock_cols[1]],
+            suffixes=join_suffixes,
+        )
+    elif first_stock_cols and second_stock_cols:
+        output_cols = [first_stock_cols[0]] + other_cols
+        df = pd.merge(
+            left=first.data,
+            right=second.data,
+            how="outer",
+            left_on=first_stock_cols[1],
+            right_on=second_stock_cols[1],
+            suffixes=join_suffixes,
+        )
+    elif first_date_cols and second_date_cols:
+        output_cols = [first_date_cols[0]] + other_cols
+        df = pd.merge(
+            left=first.data,
+            right=second.data,
+            how="outer",
+            left_on=first_date_cols[1],
+            right_on=second_date_cols[1],
+            suffixes=join_suffixes,
+        )
+    else:
+        # Can't join on anything! Just concat
+        output_cols = first.columns + second.columns
+        df = pd.concat([first.data, second.data], axis=1)
+    return Table(
+        columns=output_cols,
+        data=df,
+    )
+
+
+@tool(
+    description="""Given a list of input tables, attempt to join the tables into
+a single table. Ideally, the tables will share a column or two that can be used
+to join (e.g. a stock column or a date column). This will create a single table
+from the multiple inputs. If you want to transform multiple tables, they must be
+merged with this first.
+""",
+    category=ToolCategory.TABLE,
+)
+async def join_tables(args: JoinTableArgs, context: PlanRunContext) -> Table:
+    if len(args.input_tables) == 0:
+        raise RuntimeError("Cannot join an empty list of tables!")
+    if len(args.input_tables) == 1:
+        raise RuntimeError("Cannot join a list of tables with one element!")
+
+    joined_table = args.input_tables[0]
+    for table in args.input_tables[1:]:
+        joined_table = _join_two_tables(joined_table, table)
+
+    return joined_table
+
+
+class CreateStockTextGroupTableArgs(ToolArgs):
+    stock_text_group: StockAlignedTextGroups
+
+
+@tool(
+    description="""Given a StockAlignedTextGroups object, create a table with a
+stock column and columns for each associated text. This should be used before
+joining a StockAlignedTextGroups object with other tables.
+""",
+    category=ToolCategory.TABLE,
+)
+async def create_table_from_stock_text_groups(
+    args: CreateStockTextGroupTableArgs, context: PlanRunContext
+) -> Table:
+    data = [
+        [gbi, Text.get_all_strs(text_group)]
+        for gbi, text_group in args.stock_text_group.val.items()
+    ]
+    df = pd.DataFrame(data=data, columns=[STOCK_ID_COL_NAME_DEFAULT, "Text"])
+    columns = [
+        TableColumn(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+        TableColumn(label="Text", col_type=TableColumnType.STRING),
+    ]
+    return Table(columns=columns, data=df)
+
+
+class GetStockListFromTableArgs(ToolArgs):
+    input_table: Table
+
+
+@tool(
+    description="""Given a table with at least one column of stocks, extract
+that column into a list of stock ID's.  This is very useful for e.g. filtering
+on some numerical data in a table before extracting the stock list and fetching
+other data with it.
+""",
+    category=ToolCategory.TABLE,
+)
+async def get_stock_identifier_list_from_table(
+    args: GetStockListFromTableArgs, context: PlanRunContext
+) -> List[int]:
+    for col, df_col in zip(args.input_table.columns, args.input_table.data.columns):
+        if col.col_type == TableColumnType.STOCK:
+            return args.input_table.data[df_col].unique().tolist()
+
+    raise RuntimeError("Cannot extract list of stocks, no stock column in table!")

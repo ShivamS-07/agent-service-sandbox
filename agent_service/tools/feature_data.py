@@ -7,7 +7,13 @@ from cachetools import TTLCache, cached
 from data_access_layer.core.dao.features.feature_utils import get_feature_metadata
 from data_access_layer.core.dao.features.features_dao import FeaturesDAO
 
-from agent_service.io_types.table import Table, TableColumn, TableColumnType
+from agent_service.io_type_utils import ComplexIOBase, io_type
+from agent_service.io_types.table import (
+    STOCK_ID_COL_NAME_DEFAULT,
+    Table,
+    TableColumn,
+    TableColumnType,
+)
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -25,7 +31,11 @@ TTLCache(maxsize=1, ttl=LATEST_DATE_SECONDS)
 # new request
 FEATURES_DAO = FeaturesDAO()
 
-StatisticId = str
+
+@io_type
+class StatisticId(ComplexIOBase):
+    stat_id: str
+    stat_name: str
 
 
 class StatisticsIdentifierLookupInput(ToolArgs):
@@ -83,7 +93,7 @@ async def statistic_identifier_lookup(
             log=f"Interpreting '{args.statistic_name}' as {rows[0]['name']}", context=context
         )
 
-        return rows[0]["id"]
+        return StatisticId(stat_id=rows[0]["id"], stat_name=rows[0]["name"])
 
     raise ValueError(f"Could not find a stock data field related to: {args.statistic_name}")
 
@@ -147,8 +157,8 @@ def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> T
         if args.start_date is None:
             args.start_date = datetime.date.today()
 
-    features_metadata = get_feature_metadata(feature_ids=[args.statistic_id])
-    metadata = features_metadata.get(args.statistic_id, None)
+    features_metadata = get_feature_metadata(feature_ids=[args.statistic_id.stat_id])
+    metadata = features_metadata.get(args.statistic_id.stat_id, None)
     # print("--")
     # print("metadata", metadata)
     source = metadata.source if metadata else "NO_SUCH_SOURCE"
@@ -172,7 +182,9 @@ def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> T
 
     df.index.rename("Date", inplace=True)
     df.reset_index(inplace=True)
-    df = df.melt(id_vars=["Date"], var_name="Stock ID", value_name="Value")
+    df = df.melt(
+        id_vars=["Date"], var_name=STOCK_ID_COL_NAME_DEFAULT, value_name=args.statistic_id.stat_name
+    )
 
     # We now have a dataframe with only three columns: Date, Stock ID, and Value.
 
@@ -180,10 +192,10 @@ def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> T
         data=df,
         columns=[
             TableColumn(label="Date", col_type=TableColumnType.DATE),
-            TableColumn(label="Stock ID", col_type=TableColumnType.STOCK),
+            TableColumn(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
             # TODO handle smarter column types, etc.
             TableColumn(
-                label="Value",
+                label=args.statistic_id.stat_name,
                 col_type=TableColumnType.FLOAT,
             ),
         ],
@@ -215,13 +227,13 @@ def get_daily_feature_data(args: FeatureDataInput, context: PlanRunContext) -> p
     lookup_start_date = start_date - FORWARD_FILL_LOOKBACK
     feature_value_map = FEATURES_DAO.get_feature_data(
         gbi_ids=args.stock_ids,
-        features=[args.statistic_id],
+        features=[args.statistic_id.stat_id],
         start_date=lookup_start_date,
         end_date=end_date,
         # currency=output_currency,
     ).get()
 
-    raw_df = feature_value_map[args.statistic_id]
+    raw_df = feature_value_map[args.statistic_id.stat_id]
     # print("raw_df", raw_df)
     idx_daily = pd.date_range(start=lookup_start_date, end=end_date, freq="D")
     df = raw_df.reindex(idx_daily, method="ffill")
@@ -257,13 +269,13 @@ def get_non_daily_data(args: FeatureDataInput, context: PlanRunContext) -> pd.Da
     lookup_start_date = start_date - FORWARD_FILL_LOOKBACK
     feature_value_map = FEATURES_DAO.get_feature_data(
         gbi_ids=args.stock_ids,
-        features=[args.statistic_id],
+        features=[args.statistic_id.stat_id],
         start_date=lookup_start_date,
         end_date=end_date,
         # currency=output_currency,
     ).get()
 
-    raw_df = feature_value_map[args.statistic_id]
+    raw_df = feature_value_map[args.statistic_id.stat_id]
     # print("raw_df", raw_df)
 
     df = raw_df
@@ -309,13 +321,13 @@ def get_quarterly_data(args: FeatureDataInput, context: PlanRunContext) -> pd.Da
     lookup_start_date = start_date - LOOKBACK
     feature_value_map = FEATURES_DAO.get_feature_data(
         gbi_ids=args.stock_ids,
-        features=[args.statistic_id],
+        features=[args.statistic_id.stat_id],
         start_date=lookup_start_date,
         end_date=end_date,
         # currency=output_currency,
     ).get()
 
-    raw_df = feature_value_map[args.statistic_id]
+    raw_df = feature_value_map[args.statistic_id.stat_id]
     # print("raw_df", raw_df)
 
     df = raw_df

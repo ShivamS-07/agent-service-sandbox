@@ -12,6 +12,8 @@ from agent_service.io_types.output import Output, OutputType
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.stock_metadata import StockMetadata, get_stock_metadata
 
+STOCK_ID_COL_NAME_DEFAULT = "Security"
+
 
 class TableColumnType(str, enum.Enum):
     # Raw values

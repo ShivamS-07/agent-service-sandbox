@@ -20,7 +20,8 @@ class GetStocksForUserAllWatchlistsInput(ToolArgs):
 
 @tool(
     description="This function takes a string which refers to a watchlist name, and returns the"
-    " list of stock identifiers in the best matched watchlist",
+    " list of stock identifiers in the best matched watchlist. A watchlist is a list of"
+    " stocks that the user cares about.",
     category=ToolCategory.USER,
     tool_registry=ToolRegistry,
     is_visible=True,
@@ -65,7 +66,7 @@ async def get_user_watchlist_stocks(
 
 
 @tool(
-    description="This function returns the list of stock identifiers in all watchlists of the user",
+    description="This function returns the list of stock identifiers in all watchlists of the user.",
     category=ToolCategory.USER,
     tool_registry=ToolRegistry,
     is_visible=True,
