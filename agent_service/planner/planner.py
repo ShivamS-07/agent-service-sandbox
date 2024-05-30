@@ -44,6 +44,8 @@ from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 
+logger = get_prefect_logger(__name__)
+
 
 def get_arg_dict(arg_str: str) -> Dict[str, str]:
     if len(arg_str) == 0:
@@ -156,10 +158,11 @@ class Planner:
         try:
             steps = self._parse_plan_str(plan_str)
             plan = self._validate_and_construct_plan(steps)
-        except Exception:
+        except Exception as e:
             logger.warning(
                 f"Failed to parse and validate plan with original LLM output string:\n{plan_str}"
             )
+            logger.warning(f"Failed to parse and validate plan due to exception: {repr(e)}")
             return None
 
         return plan
@@ -215,8 +218,10 @@ class Planner:
 
         try:
             new_plan = self._validate_and_construct_plan(steps)
-        except Exception:
+        except Exception as e:
             logger.warning(f"Failed to validate plan with steps: {steps}")
+            logger.warning(f"Failed to validate plan due to exception: {repr(e)}")
+
             raise
 
         return new_plan
@@ -402,6 +407,10 @@ class Planner:
             parsed_variable_type = self._try_parse_variable(val, variable_lookup=variable_lookup)
             # First check for an undefined variable
             if not parsed_variable_type:
+                logger.warning(
+                    f"{tool.name}' has undefined variable argument '{arg} "
+                    f"{val=}, {variable_lookup=}"
+                )
                 raise ExecutionPlanParsingError(
                     f"Tool '{tool.name}' has undefined variable argument '{arg}'."
                 )

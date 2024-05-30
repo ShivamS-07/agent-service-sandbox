@@ -14,6 +14,7 @@ from agent_service.GPT.constants import (
 )
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, io_type
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
     Table,
@@ -159,6 +160,7 @@ class FeatureDataInput(ToolArgs):
     statistic_id: StatisticId
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
+    date_range: Optional[DateRange] = None
     # in the future we may want to take a currency as well
 
 
@@ -168,7 +170,8 @@ class FeatureDataInput(ToolArgs):
         " for each stock in the list of stocks_ids."
         " Optionally a start_date and end_date may be provided to specify a date range"
         " to get a specific date only set both inputs to the same date."
-        " If neither date is provided then it will assume the request "
+        " if the optional date_range argument is passed in it will override anything set in start_date and end_date "
+        " If none of start_date, end_date, date_range are provided then it will assume the request "
         "is for the most recent date for which data exists. The statistic_id MUST be "
         "fetched with the lookup function, it cannot be an arbitrary string. "
         "If the user does not mention any date or time frame, you should assume they "
@@ -208,6 +211,10 @@ def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> T
     if not args.stock_ids:
         raise ValueError("No stocks given to look up data for")
 
+    if args.date_range:
+        args.start_date = args.date_range.start_date
+        args.end_date = args.date_range.end_date
+
     if args.end_date is None:
         args.end_date = datetime.date.today()
         if args.start_date is None:
@@ -228,7 +235,7 @@ def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> T
     elif source in ["SPIQ_DIVIDEND", "SPIQ_TARGET"]:
         df = get_non_daily_data(args, context)
 
-    elif source == "SPIQ_QUARTERLY":
+    elif source in ["SPIQ_QUARTERLY"]:
         df = get_quarterly_data(args, context)
 
     else:
@@ -264,6 +271,7 @@ def get_daily_feature_data(args: FeatureDataInput, context: PlanRunContext) -> p
     start_date = LATEST_DATE
     end_date = LATEST_DATE
 
+    logger.info(f"received {args=}'")
     # if only 1 date is given use that as start & end
     if args.start_date is None and args.end_date is not None:
         start_date = args.end_date
@@ -281,6 +289,13 @@ def get_daily_feature_data(args: FeatureDataInput, context: PlanRunContext) -> p
 
     FORWARD_FILL_LOOKBACK = datetime.timedelta(days=14)
     lookup_start_date = start_date - FORWARD_FILL_LOOKBACK
+
+    logger.info(
+        f"getting data for gbi_ids: {args.stock_ids}, "
+        f"features: {args.statistic_id}, "
+        f"{lookup_start_date=},  {end_date=}"
+    )
+
     feature_value_map = FEATURES_DAO.get_feature_data(
         gbi_ids=args.stock_ids,
         features=[args.statistic_id.stat_id],
@@ -367,7 +382,7 @@ def get_quarterly_data(args: FeatureDataInput, context: PlanRunContext) -> pd.Da
 
     if start_date != end_date:
         raise ValueError(
-            "Quarterly Data is currently only available for single points"
+            "Estimates and Quarterly Data is currently only available for single points"
             f" in time field: {args.statistic_id}"
         )
     # TODO: validate start <= end
