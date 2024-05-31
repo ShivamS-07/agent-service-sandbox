@@ -241,7 +241,7 @@ async def get_news_articles_for_topics(
                 break
 
         await tool_log(
-            log=f"Found {len(relevant_news)} news articles for topic {topic}.",
+            log=f"Found {len(relevant_news)} news articles for topic: {topic}.",
             context=context,
         )
         news.append(relevant_news)

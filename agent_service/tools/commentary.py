@@ -142,7 +142,7 @@ async def get_commentary_texts(
         )
         texts = await _get_theme_related_texts(themes_texts, context)
         await tool_log(
-            log="Got texts for top 3 themes for general commentary.",
+            log="Retrieved texts for top 3 themes for general commentary.",
             context=context,
         )
         return texts
@@ -171,7 +171,7 @@ async def _get_texts_for_topics(
         if themes[0].val != "-1":  # type: ignore
             # If themes are found, get the related texts
             await tool_log(
-                log=f"Getting theme related texts for topic: {topic}",
+                log=f"Retrieving theme texts for topic: {topic}",
                 context=context,
             )
             res = await _get_theme_related_texts(themes, context)  # type: ignore
@@ -179,7 +179,7 @@ async def _get_texts_for_topics(
         else:
             # If themes are not found, get the articles related to the topic
             await tool_log(
-                log=f"No themes found for topic: {topic}, trying to match articles.",
+                log=f"No themes found for topic: {topic}. Retrieving articles...",
                 context=context,
             )
             matched_articles = await get_news_articles_for_topics(

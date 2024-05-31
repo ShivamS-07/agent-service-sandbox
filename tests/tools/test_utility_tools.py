@@ -13,3 +13,10 @@ class TestUtilityTools(IsolatedAsyncioTestCase):
         res = await get_date_from_date_str(args, context=PlanRunContext.get_dummy())
         self.assertEqual(type(res), datetime.date)
         self.assertEqual(res, datetime.date.today() - datetime.timedelta(days=3))
+
+    async def test_get_date_from_date_str_(self):
+        # We don't need to unit test the dateparser library here, just a quick example
+        args = DateFromDateStrInput(date_str="Last 3 quarters")
+        res = await get_date_from_date_str(args, context=PlanRunContext.get_dummy())
+        print(res)
+        self.assertEqual(type(res), datetime.date)

@@ -4,12 +4,52 @@ from typing import Optional, Union
 
 import dateparser
 
+from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL
+from agent_service.GPT.requests import GPT
 from agent_service.io_types.dates import DateRange
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.prompt_utils import Prompt
 
 logger = get_prefect_logger(__name__)
+
+MAX_RETRIES = 3
+
+# PROMPTS
+
+DATE_SYS_PROMPT = Prompt(
+    name="LLM_DATE_SYS_PROMPT",
+    template=(
+        "You are an assistant designed to process date-like strings "
+        "and convert them into a proper date format that can be used "
+        "with Python's datetime package. Given a date-like string, "
+        "you should return the date in the format of YYYY-MM-DD. "
+        "In your response you must only return a SINGLE date in the format of YYYY-MM-DD."
+        "For example, if the input is 'last two months,' you should return "
+        "the date of 60 days ago based on today's date."
+        "If the input is 'last quarter,' you should return the date of the first day of "
+        "the last quarter based on today's date. "
+        "Definitions:"
+        "- The year is divided into four quarters:"
+        "  - Q1: January 1 to March 31"
+        "  - Q2: April 1 to June 30"
+        "  - Q3: July 1 to September 30"
+        "  - Q4: October 1 to December 31"
+    ),
+)
+
+DATE_MAIN_PROMPT = Prompt(
+    name="LLM_DATE_MAIN_PROMPT",
+    template=(
+        "Convert the following string to a proper date in the format of YYYY-MM-DD. "
+        "The string is as follows:\n"
+        "{string_date}\n"
+        "Today's date is {today_date}."
+        "Now convert this string to a date in the format of YYYY-MM-DD and only return the date."
+    ),
+)
 
 
 class DateFromDateStrInput(ToolArgs):
@@ -18,10 +58,9 @@ class DateFromDateStrInput(ToolArgs):
 
 @tool(
     description=(
-        "This function takes a string which refers to a time, either absolute or"
-        " relative to the current time, and converts it to a Python date. "
-        "This uses the python dateparser package, so any input should be compatible with that."
-        " You should always input some string, never an empty string."
+        "This function takes a string which refers to a time, either absolute or "
+        "relative to the current time, and converts it to a Python date. "
+        "You should always input some string, never an empty string. "
     ),
     category=ToolCategory.DATES,
     tool_registry=ToolRegistry,
@@ -32,7 +71,25 @@ async def get_date_from_date_str(
 ) -> datetime.date:
     val = dateparser.parse(args.date_str)
     if not val:
-        raise ValueError(f"Unable to parse date string '{args.date_str}'")
+        # use gpt to parse the date string
+        llm = GPT(model=DEFAULT_CHEAP_MODEL)
+        for _ in range(MAX_RETRIES):
+            result = await llm.do_chat_w_sys_prompt(
+                main_prompt=DATE_MAIN_PROMPT.format(
+                    string_date=args.date_str, today_date=datetime.date.today().isoformat()
+                ),
+                sys_prompt=DATE_SYS_PROMPT.format(),
+            )
+            # check if result has the format of a date
+            if (len(result.split("-")) == 3) and (len(result) == 10):
+                break
+        val = datetime.datetime.strptime(result, "%Y-%m-%d")
+        await tool_log(
+            log=f"The computed date for {args.date_str} is {val.date()}",
+            context=context,
+        )
+        return val.date()
+
     return val.date()
 
 
@@ -133,5 +190,9 @@ async def get_n_width_date_range_near_date(
         end_date = max(end_date, args.end_date)
 
     res = DateRange(start_date=start_date, end_date=end_date)
+    await tool_log(
+        log=f"Constructed a date range from the given inputs: {res}",
+        context=context,
+    )
     logger.info(f"returning {res=}")
     return res
