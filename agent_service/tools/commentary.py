@@ -1,7 +1,7 @@
 # Author(s): Mohammad Zarei
 
 import datetime
-from typing import List
+from typing import List, Optional
 
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
@@ -115,7 +115,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
 class GetCommentaryTextsInput(ToolArgs):
     topics: List[str] = [""]
-    start_date: datetime.date = datetime.date.today() - datetime.timedelta(days=30)
+    start_date: Optional[datetime.date] = None  # type: ignore
     no_specific_topic: bool = False
 
 
@@ -125,7 +125,7 @@ class GetCommentaryTextsInput(ToolArgs):
         "This function collects and prepares all text inputs to be used by the write_commentary tool "
         "for writing a commentary or short articles and market summaries. "
         "This function MUST only be used for write commentary tool. "
-        "If client wants a general commentary, no_specific_topic MUST be set to True. "
+        "If client wants a general commentary, 'no_specific_topic' MUST be set to True. "
     ),
     category=ToolCategory.COMMENTARY,
 )
@@ -166,7 +166,7 @@ async def _get_texts_for_topics(
         themes = await get_macroeconomic_themes(
             GetMacroeconomicThemeInput(theme_refs=[topic]), context
         )
-        if themes[0].text_type != "NO THEME":  # type: ignore
+        if themes[0].val != "-1":  # type: ignore
             # If themes are found, get the related texts
             await tool_log(
                 log=f"Getting theme related texts for topic: {topic}",

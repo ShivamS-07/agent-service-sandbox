@@ -139,7 +139,6 @@ class Text(ComplexIOBase):
 @io_type
 class StockNewsDevelopmentText(Text):
     id: str
-    text_type: str = "News Development Description"
 
     @classmethod
     def get_strs_lookup(cls, news_topics: List[StockNewsDevelopmentText]) -> Dict[TextIDType, str]:  # type: ignore
@@ -153,14 +152,14 @@ class StockNewsDevelopmentText(Text):
         db = get_psql()
         rows = db.generic_read(sql, {"topic_ids": [topic.id for topic in news_topics]})
         return {
-            row["topic_id"]: f"Text Type: {cls.text_type}\n{row['description']}" for row in rows
+            row["topic_id"]: f"Text Type: News Development Description\n{row['description']}"
+            for row in rows
         }
 
 
 @io_type
 class StockNewsDevelopmentArticlesText(Text):
     id: str
-    text_type: str = "News Article Description"
 
     @classmethod
     def get_strs_lookup(
@@ -174,13 +173,14 @@ class StockNewsDevelopmentArticlesText(Text):
             WHERE news_id = ANY(%(news_ids)s)
         """
         rows = get_psql().generic_read(sql, {"news_ids": [topic.id for topic in news_topics]})
-        return {row["news_id"]: f"Text Type: {cls.text_type}\n{row['summary']}" for row in rows}
+        return {
+            row["news_id"]: f"Text Type: News Article Description\n{row['summary']}" for row in rows
+        }
 
 
 @io_type
 class NewsPoolText(Text):
     id: str
-    text_type: str = "News Article Description"
 
     @classmethod
     def get_strs_lookup(cls, news_pool: List[NewsPoolText]) -> Dict[str, str]:  # type: ignore
@@ -194,7 +194,9 @@ class NewsPoolText(Text):
         db = get_psql()
         rows = db.generic_read(sql, {"news_ids": [topic.id for topic in news_pool]})
         return {
-            row["news_id"]: f"Text Type: {cls.text_type}\n{row['headline']}\n{row['summary']}"
+            row[
+                "news_id"
+            ]: f"Text Type: News Article Description\n{row['headline']}\n{row['summary']}"
             for row in rows
         }
 
@@ -202,7 +204,6 @@ class NewsPoolText(Text):
 @io_type
 class ThemeText(Text):
     id: str
-    text_type: str = "Theme Description"
 
     @classmethod
     def get_strs_lookup(cls, themes: List[ThemeText]) -> Dict[str, str]:  # type: ignore
@@ -216,14 +217,13 @@ class ThemeText(Text):
         db = get_psql()
         rows = db.generic_read(sql, {"theme_id": [topic.id for topic in themes]})
         return {
-            row["theme_id"]: f"Text Type: {cls.text_type}\n{row['description']}" for row in rows
+            row["theme_id"]: f"Text Type: Theme Description\n{row['description']}" for row in rows
         }
 
 
 @io_type
 class ThemeNewsDevelopmentText(Text):
     id: str
-    text_type: str = "News Development Description"
 
     @classmethod
     def get_strs_lookup(cls, themes: List[ThemeNewsDevelopmentText]) -> Dict[str, str]:  # type: ignore
@@ -239,7 +239,7 @@ class ThemeNewsDevelopmentText(Text):
         return {
             row[
                 "development_id"
-            ]: f"Text Type: {cls.text_type}\n{row['label']}\n{row['description']}"
+            ]: f"Text Type:  News Development Description \n{row['label']}\n{row['description']}"
             for row in rows
         }
 
@@ -247,7 +247,6 @@ class ThemeNewsDevelopmentText(Text):
 @io_type
 class ThemeNewsDevelopmentArticlesText(Text):
     id: str
-    text_type: str = "News Development Article"
 
     @classmethod
     def get_strs_lookup(cls, developments: List[ThemeNewsDevelopmentArticlesText]) -> Dict[str, str]:  # type: ignore
@@ -261,7 +260,9 @@ class ThemeNewsDevelopmentArticlesText(Text):
         db = get_psql()
         rows = db.generic_read(sql, {"news_id": [topic.id for topic in developments]})
         return {
-            row["news_id"]: f"Text Type: {cls.text_type}\n{row['headline']}\n{row['summary']}"
+            row[
+                "news_id"
+            ]: f"Text Type: News Development Article\n{row['headline']}\n{row['summary']}"
             for row in rows
         }
 
@@ -301,7 +302,6 @@ class EarningsSummaryText(Text):
 @io_type
 class CompanyDescriptionText(Text):
     id: int  # gbi_id
-    text_type: str = "Company Description"
 
     @classmethod
     def get_strs_lookup(
@@ -319,7 +319,7 @@ class CompanyDescriptionText(Text):
         db = get_psql()
         rows = db.generic_read(sql, {"stocks": [desc.id for desc in company_descriptions]})
         return {
-            row["gbi_id"]: f"Text Type: {cls.text_type}\n{row['company_description_short']}"
+            row["gbi_id"]: f"Text Type: Company Description\n{row['company_description_short']}"
             for row in rows
         }
 

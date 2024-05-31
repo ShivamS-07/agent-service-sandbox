@@ -127,7 +127,7 @@ async def get_macroeconomic_themes(
     ]
     if not themes:
         # TODO we should actually throw an error and use it to revise the plan
-        themes = [ThemeText(id=str(uuid4()), text_type="NO THEME")]
+        themes = [ThemeText(id=str(uuid4()), val="-1")]
     return themes  # type: ignore
 
 
