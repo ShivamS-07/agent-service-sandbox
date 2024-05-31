@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.logs import init_stdout_logging
 from tests.skip_commit_boosted_db import SkipCommitBoostedPG
 
 logging.basicConfig(
@@ -38,6 +39,8 @@ from agent_service.utils.do_nothing_task_executor import DoNothingTaskExecutor
 class TestAgentServiceImplBase(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        init_stdout_logging()
+
         cls.loop = asyncio.get_event_loop()  # type: ignore[assignment]
         cls.pg = AsyncDB(pg=SkipCommitBoostedPG())
         cls.channel = Channel(host="gpt-service-2.boosted.ai", port=50051)

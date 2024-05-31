@@ -29,6 +29,7 @@ from agent_service.endpoints.models import (
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.io_type_utils import load_io_type
 from agent_service.types import ChatContext, Message
+from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
@@ -56,8 +57,8 @@ class AgentServiceImpl:
 
         now = get_now_utc()
         agent_id = str(uuid4())
+        LOGGER.info("Generating initial response from GPT...")
         try:
-            LOGGER.info("Generating initial response from GPT...")
             agent = AgentMetadata(
                 agent_id=agent_id,
                 user_id=user.user_id,
@@ -85,14 +86,21 @@ class AgentServiceImpl:
             LOGGER.exception(f"Failed to generate initial response from GPT with exception: {e}")
             return CreateAgentResponse(success=False, allow_retry=True)
 
+        LOGGER.info(f"Inserting agent and messages into DB for agent {agent.agent_id}...")
         try:
-            LOGGER.info(f"Inserting agent and messages into DB for agent {agent.agent_id}...")
             await self.pg.insert_agent_and_messages(
                 agent_metadata=agent, messages=[user_msg, gpt_msg]
             )
         except Exception as e:
             LOGGER.exception(f"Failed to insert agent and messages into DB with exception: {e}")
             return CreateAgentResponse(success=False, allow_retry=True)
+
+        LOGGER.info("Publishing GPT response to Redis...")
+        try:
+            await send_chat_message(gpt_msg, db=self.pg, insert_message_into_db=False)
+        except Exception as e:
+            LOGGER.exception(f"Failed to publish GPT response to Redis: {e}")
+            return CreateAgentResponse(success=False, allow_retry=False)
 
         plan_id = str(uuid4())
         LOGGER.info(f"Creating execution plan {plan_id} for {agent_id=}")

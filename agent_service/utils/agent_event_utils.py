@@ -14,15 +14,18 @@ from agent_service.utils.postgres import SyncBoostedPG, get_psql
 from agent_service.utils.redis_queue import publish_agent_event
 
 
-async def send_chat_message(message: Message, db: Optional[AsyncDB] = None) -> None:
+async def send_chat_message(
+    message: Message, db: Optional[AsyncDB] = None, insert_message_into_db: bool = True
+) -> None:
     """
     Sends a chat message from GPT to the user. Updates the redis queue as well
     as the DB. If no DB instance is passed in, uses a SYNCHRONOUS DB instead.
     """
-    if db:
-        await db.insert_chat_messages(messages=[message])
-    else:
-        get_psql().insert_chat_messages(messages=[message])
+    if insert_message_into_db:
+        if db:
+            await db.insert_chat_messages(messages=[message])
+        else:
+            get_psql().insert_chat_messages(messages=[message])
 
     if not message.is_user_message:
         event = AgentEvent(agent_id=message.agent_id, event=MessageEvent(message=message))

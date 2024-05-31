@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import MagicMock, patch
 
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
@@ -9,8 +10,25 @@ from agent_service.endpoints.models import (
 from tests.test_agent_service_impl_base import TestAgentServiceImplBase
 
 
+async def generate_initial_preplan_response(chat_context):
+    return "Hi this is Warren AI, how can I help you today?"
+
+
+async def send_chat_message(*args, **kwargs):
+    return None
+
+
 class TestAgentServiceImpl(TestAgentServiceImplBase):
-    def test_agent_crud(self):
+    @patch("agent_service.agent_service_impl.Chatbot")
+    @patch("agent_service.agent_service_impl.send_chat_message")
+    def test_agent_crud(self, mock_send_chat_message: MagicMock, MockChatBot: MagicMock):
+        mock_chatbot = MockChatBot.return_value
+        mock_chatbot.generate_initial_preplan_response.side_effect = (
+            generate_initial_preplan_response
+        )
+
+        mock_send_chat_message.side_effect = send_chat_message
+
         test_user = str(uuid.uuid4())
         user = User(user_id=test_user, is_admin=False, is_super_admin=False, auth_token="")
         res = self.create_agent(req=CreateAgentRequest(first_prompt="Please help me!"), user=user)
@@ -30,7 +48,16 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         all_agents = self.get_all_agents(user=user)
         self.assertEqual(len(all_agents.agents), 0)
 
-    def test_chat_with_agent(self):
+    @patch("agent_service.agent_service_impl.Chatbot")
+    @patch("agent_service.agent_service_impl.send_chat_message")
+    def test_chat_with_agent(self, mock_send_chat_message: MagicMock, MockChatBot: MagicMock):
+        mock_chatbot = MockChatBot.return_value
+        mock_chatbot.generate_initial_preplan_response.side_effect = (
+            generate_initial_preplan_response
+        )
+
+        mock_send_chat_message.side_effect = send_chat_message
+
         test_user = str(uuid.uuid4())
         user = User(user_id=test_user, is_admin=False, is_super_admin=False, auth_token="")
         res = self.create_agent(req=CreateAgentRequest(first_prompt="Please help me!"), user=user)

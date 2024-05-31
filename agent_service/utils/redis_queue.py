@@ -4,8 +4,10 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional
 
 import redis.asyncio as redis
-from gbi_common_py_utils.utils.environment import LOCAL_TAG, get_environment_tag
+from gbi_common_py_utils.utils.environment import get_environment_tag
 from redis.asyncio.client import PubSub
+
+from agent_service.utils.environment import EnvironmentUtils
 
 # TODO eventually move async redis into gbi common
 
@@ -71,9 +73,9 @@ async def wait_for_messages(channel: PubSub) -> AsyncGenerator[str, None]:
 
 async def publish_agent_event(agent_id: str, serialized_event: str) -> None:
     redis = get_redis_queue_client()
-    if not redis and get_environment_tag() != LOCAL_TAG:
-        raise RuntimeError("Redis instance not found! Please specify REDIS_QUEUE_HOST")
-    elif not redis:
+    if not redis:
+        if EnvironmentUtils.is_deployed:
+            raise RuntimeError("Redis instance not found! Please specify REDIS_QUEUE_HOST")
         logger.warning("Skipping message publish on local")
         return
 

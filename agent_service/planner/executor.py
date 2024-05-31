@@ -382,8 +382,8 @@ async def rewrite_execution_plan_after_input(
             new_plan=new_plan,
             old_plan=old_plan,
         )
-        db.insert_chat_messages(
-            messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
+        await send_chat_message(
+            message=Message(agent_id=agent_id, message=message, is_user_message=False)
         )
 
     return new_plan
