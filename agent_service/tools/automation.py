@@ -29,9 +29,6 @@ async def set_schedule(args: SetupScheduleInput, context: PlanRunContext) -> str
     # agent_id: str = Field(default_factory=lambda: str(uuid4()))  # default is for testing only
     # message: IOType
     # is_user_message: bool
-    # get_psql().insert_chat_messages(
-    #     messages=[Message(agent_id=self.agent_id, message=message, is_user_message=False)]
-    # )
     await tool_log(
         log="Next run set for tomorrow at 8:00 AM",
         context=context,

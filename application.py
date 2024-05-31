@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRouter
+from starlette.responses import AsyncContentStream, StreamingResponse
 
 from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.authz_helper import (
@@ -246,6 +247,29 @@ async def get_agent_output(
     validate_user_agent_access(user.user_id, agent_id)
 
     return await application.state.agent_service_impl.get_agent_output(agent_id=agent_id)
+
+
+@router.get(
+    "/agent/stream/{agent_id}",
+    status_code=status.HTTP_200_OK,
+)
+async def steam_agent_events(
+    agent_id: str, user: User = Depends(parse_header)
+) -> StreamingResponse:
+    """Set up a data stream that returns messages based on backend events.
+
+    Args:
+        agent_id (str): agent ID
+    """
+    validate_user_agent_access(user.user_id, agent_id)
+
+    async def _wrap_serializer() -> AsyncContentStream:
+        async for event in application.state.agent_service_impl.stream_agent_events(
+            agent_id=agent_id
+        ):
+            yield event.model_dump_json()
+
+    return StreamingResponse(content=_wrap_serializer())
 
 
 application.include_router(router)

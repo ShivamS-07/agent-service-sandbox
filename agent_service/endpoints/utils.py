@@ -22,7 +22,6 @@ async def get_agent_hierarchical_worklogs(
     end_date: Optional[datetime.date] = None,  # inclusive
     most_recent_num_runs: Optional[int] = None,
 ) -> List[PlanRun]:
-
     plan_run_ids: Optional[List[str]] = None
     if most_recent_num_runs:
         logger.info(

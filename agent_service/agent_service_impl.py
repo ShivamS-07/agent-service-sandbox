@@ -1,6 +1,6 @@
 import datetime
 import logging
-from typing import Optional
+from typing import AsyncGenerator, Optional
 from uuid import uuid4
 
 from fastapi import HTTPException, status
@@ -9,6 +9,7 @@ from gpt_service_proto_v1.service_grpc import GPTServiceStub
 from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
+    AgentEvent,
     AgentMetadata,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
@@ -31,6 +32,7 @@ from agent_service.types import ChatContext, Message
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
+from agent_service.utils.redis_queue import get_agent_event_channel, wait_for_messages
 from agent_service.utils.task_executor import TaskExecutor
 
 LOGGER = logging.getLogger(__name__)
@@ -219,3 +221,13 @@ class AgentServiceImpl:
             return GetAgentOutputResponse(outputs=final_outputs)
 
         return GetAgentOutputResponse(outputs=outputs)
+
+    async def stream_agent_events(self, agent_id: str) -> AsyncGenerator[AgentEvent, None]:
+        LOGGER.info(f"Listening to events on channel for {agent_id=}")
+        async with get_agent_event_channel(agent_id=agent_id) as channel:
+            async for message in wait_for_messages(channel):
+                resp = AgentEvent.model_validate_json(message)
+                LOGGER.info(
+                    f"Got event on channel for {agent_id=} of type '{resp.event.event_type.value}'"
+                )
+                yield resp

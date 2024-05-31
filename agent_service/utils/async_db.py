@@ -6,11 +6,19 @@ from agent_service.io_type_utils import ComplexIOBase, IOType, load_io_type
 
 # Make sure all io_types are registered
 from agent_service.io_types import *  # noqa
+from agent_service.io_types.output import Output
 from agent_service.io_types.text import Text
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.date_utils import get_now_utc
+
+
+async def get_output_from_io_type(val: IOType, pg: BoostedPG) -> Output:
+    if not isinstance(val, ComplexIOBase):
+        val = Text.from_io_type(val)
+    val = await val.to_rich_output(pg)
+    return val
 
 
 class AsyncDB:
@@ -37,9 +45,7 @@ class AsyncDB:
         for row in rows:
             output = row["output"]
             output_value = load_io_type(output) if output else output
-            if not isinstance(output_value, ComplexIOBase):
-                output_value = Text.from_io_type(output_value)
-            output_value = await output_value.to_rich_output(self.pg)
+            output_value = await get_output_from_io_type(output_value, pg=self.pg)
             row["output"] = output_value
             outputs.append(AgentOutput(agent_id=agent_id, **row))
 

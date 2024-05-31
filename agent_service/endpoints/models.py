@@ -1,6 +1,7 @@
 import datetime
+import enum
 from enum import Enum
-from typing import List, Optional, Union
+from typing import List, Literal, Optional, Union
 
 from prefect.client.schemas.objects import StateType
 from pydantic import BaseModel, Field
@@ -10,6 +11,7 @@ from agent_service.io_types.graph import GraphOutput
 from agent_service.io_types.table import TableOutput
 from agent_service.io_types.text import TextOutput
 from agent_service.types import Message
+from agent_service.utils.date_utils import get_now_utc
 
 
 ####################################################################################################
@@ -176,3 +178,41 @@ class AgentOutput(BaseModel):
 class GetAgentOutputResponse(BaseModel):
     # it'll be only intermediate outputs OR the final outputs, sorted by time ASC
     outputs: List[AgentOutput]
+
+
+####################################################################################################
+# AgentEvents
+####################################################################################################
+class EventType(str, enum.Enum):
+    MESSAGE = "message"
+    OUTPUT = "output"
+    NEW_PLAN = "new_plan"
+    WORKLOG = "worklog"
+
+
+class MessageEvent(BaseModel):
+    event_type: Literal[EventType.MESSAGE] = EventType.MESSAGE
+    message: Message
+
+
+class OutputEvent(BaseModel):
+    event_type: Literal[EventType.OUTPUT] = EventType.OUTPUT
+    output: AgentOutput
+
+
+class NewPlanEvent(BaseModel):
+    event_type: Literal[EventType.NEW_PLAN] = EventType.NEW_PLAN
+    plan: ExecutionPlanTemplate
+
+
+class WorklogEvent(BaseModel):
+    event_type: Literal[EventType.WORKLOG] = EventType.WORKLOG
+    worklog: PlanRun
+
+
+class AgentEvent(BaseModel):
+    agent_id: str
+    event: Union[MessageEvent, OutputEvent, NewPlanEvent, WorklogEvent] = Field(
+        discriminator="event_type"
+    )
+    timestamp: datetime.datetime = Field(default_factory=get_now_utc)

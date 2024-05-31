@@ -37,11 +37,11 @@ from agent_service.tool import Tool, ToolRegistry
 # Make sure all tools are imported for the planner
 from agent_service.tools import *  # noqa
 from agent_service.types import ChatContext, Message
+from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
-from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 
 logger = get_prefect_logger(__name__)
@@ -77,7 +77,6 @@ class Planner:
 
     @async_perf_logger
     async def create_initial_plan(self, chat_context: ChatContext) -> Optional[ExecutionPlan]:
-
         logger = get_prefect_logger(__name__)
         first_round_tasks = [
             self._create_initial_plan(chat_context, self.fast_llm)
@@ -195,8 +194,8 @@ class Planner:
         chatbot = Chatbot(agent_id=self.agent_id)
         message = await chatbot.generate_initial_midplan_response(chat_context=chat_context)
 
-        get_psql().insert_chat_messages(
-            messages=[Message(agent_id=self.agent_id, message=message, is_user_message=False)]
+        await send_chat_message(
+            message=Message(agent_id=self.agent_id, message=message, is_user_message=False)
         )
 
     @async_perf_logger

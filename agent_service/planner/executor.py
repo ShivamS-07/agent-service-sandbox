@@ -14,6 +14,10 @@ from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import ExecutionPlan, Variable
 from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.utils.agent_event_utils import (
+    publish_agent_output,
+    send_chat_message,
+)
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import (
     FlowRunType,
@@ -93,7 +97,7 @@ async def run_execution_plan(
 
     logger.info(f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=}")
     if not context.skip_db_commit:
-        db.write_agent_output(output=tool_output, context=context)
+        await publish_agent_output(output=tool_output, context=context)
     logger.info("Generating chat message...")
     if send_chat_when_finished and not context.skip_db_commit:
         chatbot = Chatbot(agent_id=context.agent_id)
@@ -102,8 +106,8 @@ async def run_execution_plan(
             execution_plan=plan,
             output=tool_output,
         )
-        db.insert_chat_messages(
-            messages=[Message(agent_id=context.agent_id, message=message, is_user_message=False)]
+        await send_chat_message(
+            message=Message(agent_id=context.agent_id, message=message, is_user_message=False)
         )
 
     logger.info("Finished run!")
@@ -147,12 +151,11 @@ async def create_execution_plan(
     chat_context = chat_context or db.get_chats_history_for_agent(agent_id=agent_id)
     plan = await planner.create_initial_plan(chat_context=chat_context)
     if plan is None:
-
         if send_chat_when_finished and not skip_db_commit:
             chatbot = Chatbot(agent_id=agent_id)
             message = await chatbot.generate_initial_plan_failed_response(chat_context=chat_context)
-            db.insert_chat_messages(
-                messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
+            await send_chat_message(
+                message=Message(agent_id=agent_id, message=message, is_user_message=False)
             )
         return None
 
@@ -185,8 +188,8 @@ async def create_execution_plan(
         message = await chatbot.generate_initial_postplan_response(
             chat_context=db.get_chats_history_for_agent(agent_id=agent_id), execution_plan=plan
         )
-        db.insert_chat_messages(
-            messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
+        await send_chat_message(
+            message=Message(agent_id=agent_id, message=message, is_user_message=False)
         )
 
     return plan
@@ -241,8 +244,8 @@ async def update_execution_after_input(
     ):
         if send_chat_when_finished and not skip_db_commit:
             message = await chatbot.generate_input_update_no_action_response(chat_context)
-            db.insert_chat_messages(
-                messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
+            await send_chat_message(
+                message=Message(agent_id=agent_id, message=message, is_user_message=False)
             )
         if flow_run:
             await prefect_resume_agent_flow(flow_run)
@@ -257,10 +260,8 @@ async def update_execution_after_input(
                     message = await chatbot.generate_input_update_rerun_response(
                         chat_context, latest_plan, str(node.tool_name)
                     )
-                    db.insert_chat_messages(
-                        messages=[
-                            Message(agent_id=agent_id, message=message, is_user_message=False)
-                        ]
+                    await send_chat_message(
+                        message=Message(agent_id=agent_id, message=message, is_user_message=False)
                     )
 
                 if flow_run:
@@ -292,10 +293,8 @@ async def update_execution_after_input(
                 # has been run, we can just resume
                 if send_chat_when_finished and not skip_db_commit:
                     message = await chatbot.generate_input_update_no_action_response(chat_context)
-                    db.insert_chat_messages(
-                        messages=[
-                            Message(agent_id=agent_id, message=message, is_user_message=False)
-                        ]
+                    await send_chat_message(
+                        message=Message(agent_id=agent_id, message=message, is_user_message=False)
                     )
 
                 if flow_run:
@@ -304,8 +303,8 @@ async def update_execution_after_input(
     else:
         # This handles the cases for REPLAN and APPEND
         message = await chatbot.generate_input_update_replan_preplan_response(chat_context)
-        db.insert_chat_messages(
-            messages=[Message(agent_id=agent_id, message=message, is_user_message=False)]
+        await send_chat_message(
+            message=Message(agent_id=agent_id, message=message, is_user_message=False)
         )
 
         if flow_run:

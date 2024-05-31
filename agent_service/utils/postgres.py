@@ -11,6 +11,7 @@ from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 from agent_service.io_types import *  # noqa
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.environment import EnvironmentUtils
 
 PSQL_CONN = None
@@ -255,3 +256,39 @@ def get_psql(skip_commit: bool = False) -> Postgres:
     elif not PSQL_CONN.skip_commit and skip_commit:
         PSQL_CONN = Postgres(skip_commit=skip_commit)
     return PSQL_CONN
+
+
+# TODO eventually we can get rid of this possibly? Essentially allows us to use
+# the AsyncDB functions anywhere. These will simply be blocking versions.
+class SyncBoostedPG(BoostedPG):
+    def __init__(self) -> None:
+        self.db = get_psql()
+
+    async def generic_read(self, sql: str, params: Optional[Any] = None) -> List[Dict[str, Any]]:
+        return self.db.generic_read(sql, params)
+
+    async def generic_write(self, sql: str, params: Optional[Any] = None) -> None:
+        self.db.generic_write(sql, params)
+
+    async def delete_from_table_where(self, table_name: str, **kwargs: Any) -> None:
+        self.db.delete_from_table_where(table_name=table_name, **kwargs)
+
+    async def generic_update(self, table_name: str, where: Dict, values_to_update: Dict) -> None:
+        self.db.generic_update(
+            table_name=table_name, where=where, values_to_update=values_to_update
+        )
+
+    async def multi_row_insert(
+        self, table_name: str, rows: List[Dict[str, Any]], ignore_conflicts: bool = False
+    ) -> None:
+        self.db.multi_row_insert(
+            table_name=table_name, rows=rows, ignore_conflicts=ignore_conflicts
+        )
+
+    async def insert_atomic(self, to_insert: List[InsertToTableArgs]) -> None:
+        with self.db.transaction_cursor() as cursor:
+            for arg in to_insert:
+                sql, params = self.db._gen_multi_row_insert(
+                    table_name=arg.table_name, values_to_insert=arg.rows, ignore_conficts=False
+                )
+                cursor.execute(sql, params)  # type: ignore
