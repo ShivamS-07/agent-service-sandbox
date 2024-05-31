@@ -327,7 +327,8 @@ class GetTopNThemesInput(ToolArgs):
 
 @tool(
     description=(
-        "This function returns the top N themes based on the date range and number of themes. "
+        "This function returns the top N themes based on the provided start date and number of themes, "
+        "trends, or topics requested by client. "
         "The tool can be used when the user does not provide any themes to focus on."
     ),
     category=ToolCategory.THEME,

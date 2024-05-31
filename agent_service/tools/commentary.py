@@ -1,7 +1,7 @@
 # Author(s): Mohammad Zarei
 
 import datetime
-from typing import List, Optional
+from typing import List
 
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
@@ -33,8 +33,8 @@ from agent_service.utils.prompt_utils import Prompt
 
 # Constants
 MAX_ARTICLES_PER_DEVELOPMENT = 5
-MAX_DEVELOPMENTS_PER_TOPIC = 10
-MAX_MATCHED_ARTICLES_PER_TOPIC = 50
+MAX_DEVELOPMENTS_PER_TOPIC = 5
+MAX_MATCHED_ARTICLES_PER_TOPIC = 25
 
 
 # PROMPTS
@@ -115,17 +115,19 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
 class GetCommentaryTextsInput(ToolArgs):
     topics: List[str] = [""]
-    start_date: Optional[datetime.date] = None  # type: ignore
+    start_date: datetime.date = None  # type: ignore
     no_specific_topic: bool = False
 
 
 @tool(
     description=(
-        "This function can be used when  a client wants to write a commentary, article or market summary. "
-        "This function collects and prepares all text inputs to be used by the write_commentary tool "
+        "This function can be used when a client wants to write a commentary, article or market summary. "
+        "This function collects and prepares all texts to be used by the write_commentary tool "
         "for writing a commentary or short articles and market summaries. "
         "This function MUST only be used for write commentary tool. "
         "If client wants a general commentary, 'no_specific_topic' MUST be set to True. "
+        "Adjust start_date to get the text from that date based on client request. "
+        "If no start_date is provided, the function will only get text in last month. "
     ),
     category=ToolCategory.COMMENTARY,
 )
