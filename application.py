@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import datetime
 import logging
 from typing import Optional
@@ -8,7 +9,7 @@ from fastapi import Depends, FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRouter
-from starlette.responses import AsyncContentStream, StreamingResponse
+from sse_starlette.sse import AsyncContentStream, EventSourceResponse, ServerSentEvent
 
 from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.authz_helper import (
@@ -255,7 +256,7 @@ async def get_agent_output(
 )
 async def steam_agent_events(
     agent_id: str, user: User = Depends(parse_header)
-) -> StreamingResponse:
+) -> EventSourceResponse:
     """Set up a data stream that returns messages based on backend events.
 
     Args:
@@ -264,12 +265,16 @@ async def steam_agent_events(
     validate_user_agent_access(user.user_id, agent_id)
 
     async def _wrap_serializer() -> AsyncContentStream:
-        async for event in application.state.agent_service_impl.stream_agent_events(
-            agent_id=agent_id
-        ):
-            yield event.model_dump_json()
+        try:
+            async for event in application.state.agent_service_impl.stream_agent_events(
+                agent_id=agent_id
+            ):
+                yield ServerSentEvent(data=event.model_dump_json(), event="agent-event")
+        except asyncio.CancelledError as e:
+            logger.info(f"Event stream client disconnected for {agent_id=}")
+            raise e
 
-    return StreamingResponse(content=_wrap_serializer())
+    return EventSourceResponse(content=_wrap_serializer())
 
 
 application.include_router(router)
