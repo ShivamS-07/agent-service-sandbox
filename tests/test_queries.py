@@ -39,7 +39,7 @@ async def gen_and_run_plan(prompt: str, verbose: bool = False) -> Tuple[str, Opt
     context.chat = chat
     try:
         output = await run_execution_plan_local(
-            plan=plan, context=context, send_chat_when_finished=False, log_all_outputs=verbose
+            plan=plan, context=context, do_chat=False, log_all_outputs=verbose
         )
     except Exception:
         print("problem running plan:", plan.get_formatted_plan())

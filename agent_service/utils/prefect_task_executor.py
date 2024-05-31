@@ -18,7 +18,7 @@ class PrefectTaskExecutor(TaskExecutor):
         user_id: str,
         skip_db_commit: bool = False,
         skip_task_cache: bool = False,
-        run_plan_immediately: bool = True,
+        run_plan_in_prefect_immediately: bool = True,
     ) -> None:
         await prefect_create_execution_plan(
             agent_id=agent_id,
@@ -26,15 +26,13 @@ class PrefectTaskExecutor(TaskExecutor):
             user_id=user_id,
             skip_db_commit=skip_db_commit,
             skip_task_cache=skip_task_cache,
-            run_plan_immediately=run_plan_immediately,
+            run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
         )
 
     async def run_execution_plan(
-        self, plan: ExecutionPlan, context: PlanRunContext, send_chat_when_finished: bool = True
+        self, plan: ExecutionPlan, context: PlanRunContext, do_chat: bool = True
     ) -> None:
-        await prefect_run_execution_plan(
-            plan=plan, context=context, send_chat_when_finished=send_chat_when_finished
-        )
+        await prefect_run_execution_plan(plan=plan, context=context, do_chat=do_chat)
 
     async def update_execution_after_input(
         self,
@@ -44,7 +42,7 @@ class PrefectTaskExecutor(TaskExecutor):
         skip_task_cache: bool = False,
         run_plan_in_prefect_immediately: bool = True,
         run_tasks_without_prefect: bool = False,
-        send_chat_when_finished: bool = True,
+        do_chat: bool = True,
         chat_context: Optional[ChatContext] = None,
     ) -> None:
         await update_execution_after_input(
@@ -54,6 +52,6 @@ class PrefectTaskExecutor(TaskExecutor):
             skip_task_cache=skip_task_cache,
             run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
             run_tasks_without_prefect=run_tasks_without_prefect,
-            send_chat_when_finished=send_chat_when_finished,
+            do_chat=do_chat,
             chat_context=chat_context,
         )

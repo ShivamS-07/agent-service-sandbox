@@ -63,6 +63,7 @@ async def get_impacting_stocks(
     rows = db.generic_read(sql, {"gbi_ids": args.impacted_stock_ids})
     impacting_lookup = {row["impacted_gbi_id"]: row["impacting_stocks"] for row in rows}
     output = []
+    total = 0
     for impacted_id in args.impacted_stock_ids:
         output.append(
             await StockID.from_gbi_id_list(
@@ -71,6 +72,9 @@ async def get_impacting_stocks(
             if impacted_id in impacting_lookup
             else []
         )
+        total += len(output[-1])
+    if total == 0:
+        raise Exception("Did not get any impacting stocks for these stocks")
     return output
 
 
@@ -139,8 +143,14 @@ async def get_stock_aligned_earnings_call_summaries(
         args.stock_ids, args.start_date, args.end_date
     )
     output: Dict[int, TextGroup] = {}
+    count = 0
     for stock_id, topic_list in summary_lookup.items():
+        count += len(topic_list)
         output[stock_id] = TextGroup(val=topic_list)  # type: ignore
+    if count == 0:
+        raise Exception(
+            "Did not get any earnings call summaries for these stocks over the specified time period"
+        )
     return StockAlignedTextGroups(val=output)
 
 
@@ -169,6 +179,10 @@ async def get_earnings_call_summaries(
     output: List[EarningsSummaryText] = []
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
+    if not output:
+        raise Exception(
+            "Did not get any earnings call summaries for these stocks over the specified time period"
+        )
     return output
 
 

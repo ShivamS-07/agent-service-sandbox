@@ -6,6 +6,10 @@ from agent_service.chatbot.prompts import (
     AGENT_DESCRIPTION,
     COMPLETE_EXECUTION_MAIN_PROMPT,
     COMPLETE_EXECUTION_SYS_PROMPT,
+    ERROR_REPLAN_POSTPLAN_MAIN_PROMPT,
+    ERROR_REPLAN_POSTPLAN_SYS_PROMPT,
+    ERROR_REPLAN_PREPLAN_MAIN_PROMPT,
+    ERROR_REPLAN_PREPLAN_SYS_PROMPT,
     INITIAL_MIDPLAN_MAIN_PROMPT,
     INITIAL_MIDPLAN_SYS_PROMPT,
     INITIAL_PLAN_FAILED_MAIN_PROMPT,
@@ -26,7 +30,7 @@ from agent_service.chatbot.prompts import (
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, IOType
-from agent_service.planner.planner_types import ExecutionPlan
+from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan
 from agent_service.types import ChatContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 
@@ -110,7 +114,7 @@ class Chatbot:
         sys_prompt = INPUT_UPDATE_REPLAN_PREPLAN_SYS_PROMPT.format(
             agent_description=AGENT_DESCRIPTION
         )
-        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=30)
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=80)
         return result
 
     async def generate_input_update_replan_postplan_response(
@@ -124,5 +128,31 @@ class Chatbot:
         sys_prompt = INPUT_UPDATE_REPLAN_POSTPLAN_SYS_PROMPT.format(
             agent_description=AGENT_DESCRIPTION
         )
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=80)
+        return result
+
+    async def generate_error_replan_preplan_response(
+        self, chat_context: ChatContext, last_plan: ExecutionPlan, error_info: ErrorInfo
+    ) -> str:
+        main_prompt = ERROR_REPLAN_PREPLAN_MAIN_PROMPT.format(
+            chat_context=chat_context.get_gpt_input(),
+            old_plan=last_plan.get_formatted_plan(),
+            step=error_info.step.get_plan_step_str(),
+            error=error_info.error,
+            change=error_info.change,
+        )
+        sys_prompt = ERROR_REPLAN_PREPLAN_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=120)
+        return result
+
+    async def generate_error_replan_postplan_response(
+        self, chat_context: ChatContext, old_plan: ExecutionPlan, new_plan: ExecutionPlan
+    ) -> str:
+        main_prompt = ERROR_REPLAN_POSTPLAN_MAIN_PROMPT.format(
+            chat_context=chat_context.get_gpt_input(),
+            old_plan=old_plan.get_formatted_plan(),
+            new_plan=new_plan.get_formatted_plan(),
+        )
+        sys_prompt = ERROR_REPLAN_POSTPLAN_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=80)
         return result

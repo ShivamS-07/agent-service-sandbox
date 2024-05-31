@@ -29,7 +29,10 @@ from agent_service.tools.themes import (
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
+
+logger = get_prefect_logger(__name__)
 
 # Constants
 MAX_ARTICLES_PER_DEVELOPMENT = 5
@@ -165,32 +168,40 @@ async def _get_texts_for_topics(
     """
     texts = []
     for topic in args.topics:
-        themes = await get_macroeconomic_themes(
-            GetMacroeconomicThemeInput(theme_refs=[topic]), context
-        )
-        if themes[0].val != "-1":  # type: ignore
-            # If themes are found, get the related texts
+        try:
+            themes = await get_macroeconomic_themes(
+                GetMacroeconomicThemeInput(theme_refs=[topic]), context
+            )
             await tool_log(
                 log=f"Retrieving theme texts for topic: {topic}",
                 context=context,
             )
             res = await _get_theme_related_texts(themes, context)  # type: ignore
             texts.extend(res)
-        else:
+
+        except Exception as e:
+            logger.warning(f"failed to get theme data for topic {topic}: {e}")
             # If themes are not found, get the articles related to the topic
             await tool_log(
                 log=f"No themes found for topic: {topic}. Retrieving articles...",
                 context=context,
             )
-            matched_articles = await get_news_articles_for_topics(
-                GetNewsArticlesForTopicsInput(
-                    topics=[topic],
-                    start_date=args.start_date,
-                ),
-                context,
-            )
-            matched_articles = matched_articles[0][:MAX_MATCHED_ARTICLES_PER_TOPIC]  # type: ignore
-            texts.extend(matched_articles)  # type: ignore
+            try:
+                matched_articles = await get_news_articles_for_topics(
+                    GetNewsArticlesForTopicsInput(
+                        topics=[topic],
+                        start_date=args.start_date,
+                    ),
+                    context,
+                )
+
+                matched_articles = matched_articles[:MAX_MATCHED_ARTICLES_PER_TOPIC]  # type: ignore
+                texts.extend(matched_articles)  # type: ignore
+            except Exception as e:
+                logger.warning(f"failed to get news pool articles for topic {topic}: {e}")
+
+    if len(texts) == 0:
+        raise Exception("No data collected for commentary from available sources")
 
     return texts
 

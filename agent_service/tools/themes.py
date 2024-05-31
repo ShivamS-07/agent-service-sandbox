@@ -3,7 +3,6 @@
 import asyncio
 import datetime
 from typing import Dict, List, Optional, Tuple
-from uuid import uuid4
 
 from nlp_service_proto_v1.themes_pb2 import ThemeOutlookType
 
@@ -126,8 +125,7 @@ async def get_macroeconomic_themes(
         ThemeText(id=theme_id_lookup[theme]) for theme in matched_themes if theme in theme_id_lookup
     ]
     if not themes:
-        # TODO we should actually throw an error and use it to revise the plan
-        themes = [ThemeText(id=str(uuid4()), val="-1")]
+        raise Exception("was not able to find any relevant themes matching the input")
     return themes  # type: ignore
 
 
@@ -168,6 +166,8 @@ async def get_stocks_affected_by_theme(
             polarity = not polarity
         if polarity == args.positive:  # matches the desired polarity
             final_stocks.append(stock)
+    if len(final_stocks) == 0:
+        raise Exception("Found no stocks affected by this theme/polarity combination")
     return await StockID.from_gbi_id_list(final_stocks)
 
 
@@ -229,7 +229,7 @@ async def get_macroeconomic_theme_outlook(
             else:
                 return theme.negative_polarity_label
 
-    return "No outlook"
+    raise Exception("No outlook for this theme")
 
 
 class GetThemeDevelopmentNewsInput(ToolArgs):
@@ -303,6 +303,7 @@ async def get_news_articles_for_theme_developments(
     """
     res = []
     db = get_psql()
+    total_article_count = 0
     for developments in args.developments_list:
         articles = []
         for development in developments:
@@ -316,7 +317,12 @@ async def get_news_articles_for_theme_developments(
             rows = db.generic_read(sql, [development.id])
             news_ids = [row["news_id"] for row in rows]
             articles.append([ThemeNewsDevelopmentArticlesText(id=id) for id in news_ids])
+            total_article_count += len(articles[-1])
         res.append(articles)
+
+    if total_article_count == 0:
+        raise Exception("No articles relevant to theme found")
+
     return res
 
 
@@ -327,9 +333,14 @@ class GetTopNThemesInput(ToolArgs):
 
 @tool(
     description=(
-        "This function returns the top N themes based on the provided start date and number of themes, "
-        "trends, or topics requested by client. "
+        "This function returns the top N themes based on the date range and number of themes. "
+        "Top themes are those that seem to be trending in the news. "
         "The tool can be used when the user does not provide any themes to focus on."
+        "You MUST NEVER use this tool when a user has provided a topic, since you are not "
+        "likely that the top themes will correspond to the themes of interest for the user, "
+        "instead you should use the get_news_articles_for_topics tool which can get general news "
+        "topics if there is not a matching theme for a topic. Never call this function and then apply a "
+        "filter to a topic, it does not make sense!"
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
@@ -373,7 +384,6 @@ async def get_top_N_themes(args: GetTopNThemesInput, context: PlanRunContext) ->
         number_per_section=args.theme_num,
     )
     theme_refs: List[str] = [str(t.name) for t in resp.topics]
-    # print(theme_refs)
     themes: List[ThemeText] = await get_macroeconomic_themes(  # type: ignore
         GetMacroeconomicThemeInput(theme_refs=theme_refs), context
     )
@@ -396,6 +406,8 @@ async def main() -> None:
     themes: List[ThemeText] = await get_macroeconomic_themes(  # type: ignore
         args=GetMacroeconomicThemeInput(theme_refs=["recession"]), context=plan_context
     )
+
+    print(themes)
     stocks = await get_stocks_affected_by_theme(
         GetStocksAffectedByThemeInput(theme=themes[0], positive=False), context=plan_context
     )

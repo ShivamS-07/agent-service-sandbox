@@ -16,12 +16,12 @@ class DoNothingTaskExecutor(TaskExecutor):
         user_id: str,
         skip_db_commit: bool = False,
         skip_task_cache: bool = False,
-        run_plan_immediately: bool = True,
+        run_plan_in_prefect_immediately: bool = True,
     ) -> None:
         LOGGER.info("create_execution_plan called")
 
     async def run_execution_plan(
-        self, plan: ExecutionPlan, context: PlanRunContext, send_chat_when_finished: bool = True
+        self, plan: ExecutionPlan, context: PlanRunContext, do_chat: bool = True
     ) -> None:
         LOGGER.info("run_execution_plan called")
 
@@ -33,7 +33,7 @@ class DoNothingTaskExecutor(TaskExecutor):
         skip_task_cache: bool = False,
         run_plan_in_prefect_immediately: bool = True,
         run_tasks_without_prefect: bool = False,
-        send_chat_when_finished: bool = True,
+        do_chat: bool = True,
         chat_context: Optional[ChatContext] = None,
     ) -> None:
         pass

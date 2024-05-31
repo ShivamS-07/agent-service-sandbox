@@ -4,6 +4,7 @@ from unittest import IsolatedAsyncioTestCase
 
 from agent_service.chatbot.chatbot import Chatbot
 from agent_service.planner.planner_types import (
+    ErrorInfo,
     ExecutionPlan,
     ToolExecutionNode,
     Variable,
@@ -33,7 +34,7 @@ class TestPlans(IsolatedAsyncioTestCase):
     async def test_full_chat(self) -> None:
         input_text = (
             "Can you give me a single summary of news published in the last month "
-            "about machine learning at Meta, Apple, and Microsoft?"
+            "about Generative AI at Meta, Apple, and Microsoft?"
         )
         user_message = Message(message=input_text, is_user_message=True)
         chat_context = ChatContext(messages=[user_message])
@@ -87,8 +88,8 @@ class TestPlans(IsolatedAsyncioTestCase):
             ),
             ToolExecutionNode(
                 tool_name="filter_texts_by_topic",
-                args={"topic": "machine_learning", "texts": Variable(var_name="news_descriptions")},
-                description="Filter news descriptions to only those related to machine learning",
+                args={"topic": "Generative AI", "texts": Variable(var_name="news_descriptions")},
+                description="Filter news descriptions to only those related to Generative AI",
                 output_variable_name="filtered_texts",
                 is_output_node=True,
             ),
@@ -151,3 +152,32 @@ class TestPlans(IsolatedAsyncioTestCase):
             chat_context, execution_plan, new_execution_plan
         )
         print(replan_postplan_response)
+        chat_context.messages.pop()
+        chat_context.messages.pop()
+        error_info = ErrorInfo(
+            error="Exception: index error",
+            step=plan_nodes[5],
+            change="Include all AI news in the filter, not just Generative AI news",
+        )
+        error_preplan_response = await chatbot.generate_error_replan_preplan_response(
+            chat_context, execution_plan, error_info
+        )
+        print(error_preplan_response)
+        chat_context.messages.append(Message(message=error_preplan_response, is_user_message=False))
+        new_node = ToolExecutionNode(
+            tool_name="filter_texts_by_topic",
+            args={
+                "topic": "Artificial Intelligence",
+                "texts": Variable(var_name="news_descriptions"),
+            },
+            description="Filter news descriptions to only those related to artificial intelligences",
+            output_variable_name="filtered_texts",
+            is_output_node=True,
+        )
+        new_nodes = plan_nodes[:]
+        new_nodes[5] = new_node
+        new_execution_plan = ExecutionPlan(nodes=new_nodes)
+        error_postplan_response = await chatbot.generate_error_replan_postplan_response(
+            chat_context, execution_plan, new_execution_plan
+        )
+        print(error_postplan_response)

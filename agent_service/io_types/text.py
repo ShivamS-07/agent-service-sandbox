@@ -181,11 +181,11 @@ class StockNewsDevelopmentArticlesText(Text):
 
 
 @io_type
-class NewsPoolText(Text):
+class NewsPoolArticleText(Text):
     id: str
 
     @classmethod
-    def get_strs_lookup(cls, news_pool: List[NewsPoolText]) -> Dict[str, str]:  # type: ignore
+    def get_strs_lookup(cls, news_pool: List[NewsPoolArticleText]) -> Dict[str, str]:  # type: ignore
         sql = """
         SELECT news_id::TEXT, headline::TEXT, summary::TEXT
         FROM nlp_service.news_pool

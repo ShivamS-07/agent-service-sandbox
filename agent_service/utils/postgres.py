@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from gbi_common_py_utils.utils.postgres import PostgresBase
 
+from agent_service.endpoints.models import AgentMetadata
 from agent_service.external.sec_utils import SecurityMetadata
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 from agent_service.planner.planner_types import ExecutionPlan
@@ -12,6 +13,7 @@ from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.environment import EnvironmentUtils
 
 PSQL_CONN = None
+PSQL_CONN_SKIP_COMMIT = None
 
 DEFAULT_AGENT_NAME = "New Chat"
 
@@ -49,6 +51,9 @@ class Postgres(PostgresBase):
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
         return rows[0]["user_id"] if rows else None
+
+    def insert_agent(self, agent_metadata: AgentMetadata) -> None:
+        self.multi_row_insert(table_name="agent.agents", rows=[agent_metadata.model_dump()])
 
     def insert_chat_messages(self, messages: List[Message]) -> None:
         self.multi_row_insert(
@@ -97,6 +102,20 @@ class Postgres(PostgresBase):
         if not rows:
             return None, None
         return rows[0]["plan_id"], ExecutionPlan.model_validate(rows[0]["plan"])
+
+    def get_all_execution_plans(
+        self, agent_id: str
+    ) -> Tuple[List[ExecutionPlan], List[datetime.datetime]]:
+        sql = """
+            SELECT plan, created_at
+            FROM agent.execution_plans
+            WHERE agent_id = %(agent_id)s
+            ORDER BY last_updated ASC
+        """
+        rows = self.generic_read(sql, params={"agent_id": agent_id})
+        return [ExecutionPlan.model_validate(row["plan"]) for row in rows], [
+            row["created_at"] for row in rows
+        ]
 
     def get_agent_plan_runs(self, agent_id: str, limit_num: Optional[int] = None) -> List[str]:
         limit_sql = ""
@@ -247,12 +266,16 @@ def get_psql(skip_commit: bool = False) -> Postgres:
 
     Returns: Postgres object, which inherits from PostgresBase.
     """
-    global PSQL_CONN
-    if PSQL_CONN is None:
-        PSQL_CONN = Postgres(skip_commit=skip_commit)
-    elif not PSQL_CONN.skip_commit and skip_commit:
-        PSQL_CONN = Postgres(skip_commit=skip_commit)
-    return PSQL_CONN
+    global PSQL_CONN, PSQL_CONN_SKIP_COMMIT
+    if skip_commit:
+        if PSQL_CONN_SKIP_COMMIT is None:
+            PSQL_CONN_SKIP_COMMIT = Postgres(skip_commit=skip_commit)
+        return PSQL_CONN_SKIP_COMMIT
+
+    else:
+        if PSQL_CONN is None:
+            PSQL_CONN = Postgres(skip_commit=skip_commit)
+        return PSQL_CONN
 
 
 # TODO eventually we can get rid of this possibly? Essentially allows us to use

@@ -3,7 +3,6 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel
 
 from agent_service.utils.boosted_pg import BoostedPG
-from agent_service.utils.postgres import SyncBoostedPG
 
 
 class StockMetadata(BaseModel):
@@ -17,7 +16,10 @@ class StockMetadata(BaseModel):
 async def get_stock_metadata(
     gbi_ids: List[int], pg: Optional[BoostedPG] = None
 ) -> Dict[int, StockMetadata]:
-    pg = pg or SyncBoostedPG()
+    if not pg:
+        from agent_service.utils.postgres import SyncBoostedPG
+
+        pg = SyncBoostedPG()
     sql = """
     SELECT gbi_security_id AS gbi_id, symbol, name AS company_name, isin
     FROM master_security

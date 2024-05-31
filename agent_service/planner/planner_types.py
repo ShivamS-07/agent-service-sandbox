@@ -66,6 +66,9 @@ class ToolExecutionNode(BaseModel):
 
         return args
 
+    def get_plan_step_str(self) -> str:
+        return f"{self.output_variable_name} = {self.tool_name}({self.convert_args()})  # {self.description}"
+
 
 class ExecutionPlan(BaseModel):
     nodes: List[ToolExecutionNode]
@@ -79,15 +82,18 @@ class ExecutionPlan(BaseModel):
     def get_formatted_plan(self, numbered: bool = False) -> str:
         str_list = []
         for i, node in enumerate(self.nodes, start=1):
-            arguments = node.convert_args()
             prefix = ""
             if numbered:
                 prefix = f"{i}. "
-            str_list.append(
-                f"{prefix}{node.output_variable_name} = {node.tool_name}({arguments})  # {node.description}"
-            )
+            str_list.append(f"{prefix}{node.get_plan_step_str()}")
         return "\n".join(str_list)
 
 
 class ExecutionPlanParsingError(RuntimeError):
     pass
+
+
+class ErrorInfo(BaseModel):
+    error: str
+    step: ToolExecutionNode
+    change: str

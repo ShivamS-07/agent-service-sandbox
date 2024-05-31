@@ -7,6 +7,7 @@ from unittest.case import TestCase
 
 import pandas as pd
 
+from agent_service.endpoints.models import AgentMetadata
 from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_type_utils import IOType
 from agent_service.io_types.graph import LineGraph
@@ -22,7 +23,9 @@ from agent_service.planner.planner_types import (
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import init_stdout_logging
+from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
 
 
 def get_test_registry() -> Type[ToolRegistry]:
@@ -544,10 +547,23 @@ class TestPlans(IsolatedAsyncioTestCase):
                 ),
             ]
         )
+        plan_run_context = PlanRunContext.get_dummy()
+        db = get_psql(skip_commit=True)
+        agent = AgentMetadata(
+            agent_id=plan_run_context.agent_id,
+            user_id=plan_run_context.user_id,
+            agent_name=DEFAULT_AGENT_NAME,
+            created_at=get_now_utc(),
+            last_updated=get_now_utc(),
+        )
+        db.insert_agent(agent)
+        db.write_execution_plan(
+            plan_id=plan_run_context.plan_id, agent_id=plan_run_context.agent_id, plan=plan
+        )
         result = await run_execution_plan_local(
             plan,
-            PlanRunContext.get_dummy(),
-            send_chat_when_finished=False,
+            plan_run_context,
+            do_chat=False,
         )
         self.assertEqual(result.val, "A summarized text!")
 

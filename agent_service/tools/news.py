@@ -8,7 +8,7 @@ from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, DEFAULT_EMBEDDING_M
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.misc import StockID
 from agent_service.io_types.text import (
-    NewsPoolText,
+    NewsPoolArticleText,
     StockAlignedTextGroups,
     StockNewsDevelopmentArticlesText,
     StockNewsDevelopmentText,
@@ -99,6 +99,8 @@ async def get_all_news_developments_about_companies(
     output: List[StockNewsDevelopmentText] = []
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
+    if len(output) == 0:
+        raise Exception("Did not get any news developments for these stocks over the time period")
     return output
 
 
@@ -125,8 +127,12 @@ async def get_stock_aligned_news_developments(
         args.stock_ids, context.user_id, args.start_date, args.end_date
     )
     output: Dict[int, TextGroup] = {}
-    for gbi_id, topic_list in topic_lookup.items():
-        output[gbi_id] = TextGroup(val=topic_list)  # type: ignore
+    total = 0
+    for stock_id, topic_list in topic_lookup.items():
+        total += len(topic_list)
+        output[stock_id] = TextGroup(val=topic_list)  # type: ignore
+    if total == 0:
+        raise Exception("Did not get any news developments for these stocks over the time period")
     return StockAlignedTextGroups(val=output)
 
 
@@ -157,6 +163,8 @@ async def get_news_articles_for_stock_developments(
     rows = get_psql().generic_read(
         sql, {"topic_ids": [topic.id for topic in args.developments_list]}
     )
+    if not rows:
+        raise Exception("No articles for these news developments over the specified time period")
     return [StockNewsDevelopmentArticlesText(id=row["news_id"]) for row in rows]
 
 
@@ -191,15 +199,19 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
 @tool(
     description=(
         "This function takes a list of topics and returns a "
-        "list of news articles related to the given topics. The output is a list of NewsPoolText objects, "
+        "list of news articles related to the given topics. The output is a list of NewsPoolArticleText objects, "
         "each containing a news article. "
+        "If someone wants general information about a topic and there is no existing themes "
+        "This is the best tool to call."
+        "If someone asks for a topic that could be an existing microeconomic theme, then should look "
+        "for the theme first, but if that fails, this is right tool to use"
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,
 )
 async def get_news_articles_for_topics(
     args: GetNewsArticlesForTopicsInput, context: PlanRunContext
-) -> List[List[NewsPoolText]]:
+) -> List[NewsPoolArticleText]:
     # TODO: if start_date is very old, it will send many reuquests to GPT
     # start_date is optional, if not provided, use 30 days ago
     start_date = args.start_date
@@ -212,9 +224,9 @@ async def get_news_articles_for_topics(
 
     # get news articles
     db = get_psql()
-    news: List[List[NewsPoolText]] = []
+    news: List[NewsPoolArticleText] = []
     for topic, embedding in zip(args.topics, embeddings):
-        relevant_news: List[NewsPoolText] = []
+        relevant_news: List[NewsPoolArticleText] = []
         for news_ids in _get_similar_news_to_embedding(
             db, start_date, embedding, batch_size=EMBEDDING_POOL_BATCH_SIZE
         ):
@@ -238,7 +250,7 @@ async def get_news_articles_for_topics(
             if len(successful) / len(results) <= MIN_POOL_PERCENT_PER_BATCH:
                 break
 
-            relevant_news.extend([NewsPoolText(id=id) for id in successful])
+            relevant_news.extend([NewsPoolArticleText(id=id) for id in successful])
             # if we have enough news, stop
             if len(relevant_news) >= MAX_NUM_RELEVANT_NEWS_PER_TOPIC:
                 break
@@ -247,8 +259,10 @@ async def get_news_articles_for_topics(
             log=f"Found {len(relevant_news)} news articles for topic: {topic}.",
             context=context,
         )
-        news.append(relevant_news)
+        news.extend(relevant_news)
 
+    if len(news) == 0:
+        raise Exception("Found no news articles for provided topic(s)")
     return news
 
 

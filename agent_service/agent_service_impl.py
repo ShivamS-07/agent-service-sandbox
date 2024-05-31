@@ -106,7 +106,10 @@ class AgentServiceImpl:
         LOGGER.info(f"Creating execution plan {plan_id} for {agent_id=}")
         try:
             await self.task_executor.create_execution_plan(
-                agent_id=agent_id, plan_id=plan_id, user_id=user.user_id, run_plan_immediately=True
+                agent_id=agent_id,
+                plan_id=plan_id,
+                user_id=user.user_id,
+                run_plan_in_prefect_immediately=True,
             )
         except Exception:
             LOGGER.exception("Failed to kick off execution plan creation")

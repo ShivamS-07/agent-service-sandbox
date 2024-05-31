@@ -12,6 +12,7 @@ from agent_service.planner.constants import (
     INITIAL_PLAN_TRIES,
 )
 from agent_service.planner.planner_types import (
+    ErrorInfo,
     ExecutionPlan,
     ExecutionPlanParsingError,
     ParsedStep,
@@ -22,6 +23,8 @@ from agent_service.planner.planner_types import (
 from agent_service.planner.prompts import (
     BREAKDOWN_NEED_MAIN_PROMPT,
     BREAKDOWN_NEED_SYS_PROMPT,
+    ERROR_REPLAN_MAIN_PROMPT,
+    ERROR_REPLAN_SYS_PROMPT,
     PICK_BEST_PLAN_MAIN_PROMPT,
     PICK_BEST_PLAN_SYS_PROMPT,
     PLAN_EXAMPLE,
@@ -42,6 +45,7 @@ from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
+from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 
 logger = get_prefect_logger(__name__)
@@ -74,6 +78,7 @@ class Planner:
         self.tool_string = tool_registry.get_tool_str()
         self.send_chat = send_chat
         self.skip_db_commit = skip_db_commit
+        self.db = get_psql(skip_commit=skip_db_commit)
 
     @async_perf_logger
     async def create_initial_plan(self, chat_context: ChatContext) -> Optional[ExecutionPlan]:
@@ -97,7 +102,7 @@ class Planner:
 
             return best_plan
 
-        if self.send_chat and not self.skip_db_commit:
+        if self.send_chat:
             await self._send_delayed_planning_message(chat_context)
 
         logger.warning(f"All of {INITIAL_PLAN_TRIES} initial plan runs failed, trying round 2")
@@ -195,13 +200,39 @@ class Planner:
         message = await chatbot.generate_initial_midplan_response(chat_context=chat_context)
 
         await send_chat_message(
-            message=Message(agent_id=self.agent_id, message=message, is_user_message=False)
+            message=Message(agent_id=self.agent_id, message=message, is_user_message=False),
+            db=self.db,
         )
 
     @async_perf_logger
     async def rewrite_plan_after_input(
         self, chat_context: ChatContext, last_plan: ExecutionPlan
-    ) -> ExecutionPlan:
+    ) -> Optional[ExecutionPlan]:
+
+        logger = get_prefect_logger(__name__)
+        tasks = [
+            self._rewrite_plan_after_input(chat_context, last_plan)
+            for _ in range(INITIAL_PLAN_TRIES)
+        ]
+        results = [plan for plan in await gather_with_concurrency(tasks) if plan is not None]
+        if results:
+            logger.info(f"{len(results)} of {INITIAL_PLAN_TRIES} replan runs succeeded")
+            # GPT 4O seems to have done it now need to just pick
+            if len(results) > 1:
+                best_plan = await self._pick_best_plan(chat_context, results)
+            else:
+                best_plan = results[0]
+
+            return best_plan
+
+        logger.warning(f"All of {INITIAL_PLAN_TRIES} initial plan runs failed, trying round 2")
+
+        return None
+
+    @async_perf_logger
+    async def _rewrite_plan_after_input(
+        self, chat_context: ChatContext, last_plan: ExecutionPlan
+    ) -> Optional[ExecutionPlan]:
         # for now, just assume last step is what is new
         # TODO: multiple old plans, flexible chat cutoff
         logger = get_prefect_logger(__name__)
@@ -213,15 +244,64 @@ class Planner:
             new_message, main_chat_str, old_plan_str
         )
 
-        steps = self._parse_plan_str(new_plan_str)
+        try:
+            steps = self._parse_plan_str(new_plan_str)
+            new_plan = self._validate_and_construct_plan(steps)
+        except Exception:
+            logger.warning(
+                f"Failed to validate replan with original LLM output string: {new_plan_str}"
+            )
+            return None
+
+        return new_plan
+
+    @async_perf_logger
+    async def rewrite_plan_after_error(
+        self, error_info: ErrorInfo, chat_context: ChatContext, last_plan: ExecutionPlan
+    ) -> Optional[ExecutionPlan]:
+        logger = get_prefect_logger(__name__)
+        tasks = [
+            self._rewrite_plan_after_error(error_info, chat_context, last_plan)
+            for _ in range(INITIAL_PLAN_TRIES)
+        ]
+        results = [plan for plan in await gather_with_concurrency(tasks) if plan is not None]
+        if results:
+            logger.info(f"{len(results)} of {INITIAL_PLAN_TRIES} replan runs succeeded")
+            # GPT 4O seems to have done it now need to just pick
+            if len(results) > 1:
+                best_plan = await self._pick_best_plan(chat_context, results)
+            else:
+                best_plan = results[0]
+
+            return best_plan
+
+        logger.warning(f"All of {INITIAL_PLAN_TRIES} initial plan runs failed")
+
+        return None
+
+    @async_perf_logger
+    async def _rewrite_plan_after_error(
+        self, error_info: ErrorInfo, chat_context: ChatContext, last_plan: ExecutionPlan
+    ) -> Optional[ExecutionPlan]:
+        logger = get_prefect_logger(__name__)
+        old_plan_str = last_plan.get_formatted_plan()
+        chat_str = chat_context.get_gpt_input()
+        error_str = error_info.error
+        step_str = error_info.step.get_plan_step_str()
+        change_str = error_info.change
+        new_plan_str = await self._query_GPT_for_new_plan_after_error(
+            error_str, step_str, change_str, chat_str, old_plan_str
+        )
 
         try:
+            steps = self._parse_plan_str(new_plan_str)
             new_plan = self._validate_and_construct_plan(steps)
-        except Exception as e:
-            logger.warning(f"Failed to validate plan with steps: {steps}")
-            logger.warning(f"Failed to validate plan due to exception: {repr(e)}")
 
-            raise
+        except Exception:
+            logger.warning(
+                f"Failed to validate replan with original LLM output string: {new_plan_str}"
+            )
+            return None
 
         return new_plan
 
@@ -249,6 +329,26 @@ class Planner:
         main_prompt = USER_INPUT_REPLAN_MAIN_PROMPT.format(
             new_message=new_user_input, chat_context=existing_context, old_plan=old_plan
         )
+        return await self.fast_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+
+    async def _query_GPT_for_new_plan_after_error(
+        self, error: str, failed_step: str, change: str, chat_context: str, old_plan: str
+    ) -> str:
+        sys_prompt = ERROR_REPLAN_SYS_PROMPT.format(
+            rules=PLAN_RULES,
+            guidelines=PLAN_GUIDELINES,
+            example=PLAN_EXAMPLE,
+            tools=self.tool_string,
+        )
+
+        main_prompt = ERROR_REPLAN_MAIN_PROMPT.format(
+            error=error,
+            failed_step=failed_step,
+            change=change,
+            chat_context=chat_context,
+            old_plan=old_plan,
+        )
+
         return await self.smart_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     def _try_parse_str_literal(self, val: str) -> Optional[str]:
@@ -476,6 +576,9 @@ class Planner:
                     description=description,
                 )
             )
+
+        if len(plan_steps) == 0:
+            raise RuntimeError("No steps in the plan")
 
         return plan_steps
 

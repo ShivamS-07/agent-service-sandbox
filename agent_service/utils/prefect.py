@@ -18,6 +18,7 @@ from prefect.client.schemas.filters import (
     FlowRunFilterTags,
 )
 from prefect.client.schemas.objects import State, StateType
+from prefect.context import FlowRunContext, get_run_context
 from prefect.deployments import run_deployment
 from prefect.logging.loggers import get_run_logger
 
@@ -27,7 +28,7 @@ from agent_service.planner.constants import (
     RUN_EXECUTION_PLAN_FLOW_NAME,
     Action,
 )
-from agent_service.planner.planner_types import ExecutionPlan
+from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan
 from agent_service.types import PlanRunContext
 from agent_service.utils.logs import async_perf_logger
 
@@ -40,9 +41,10 @@ async def prefect_create_execution_plan(
     plan_id: str,
     user_id: str,
     action: Action = Action.CREATE,
+    error_info: Optional[ErrorInfo] = None,
     skip_db_commit: bool = False,
     skip_task_cache: bool = False,
-    run_plan_immediately: bool = True,
+    run_plan_in_prefect_immediately: bool = True,
 ) -> None:
     # Deployment name has the format "flow_name/deployment_name". For use
     # they're the same.
@@ -55,8 +57,9 @@ async def prefect_create_execution_plan(
             "user_id": user_id,
             "skip_db_commit": skip_db_commit,
             "skip_task_cache": skip_task_cache,
-            "run_plan_in_prefect_immediately": run_plan_immediately,
+            "run_plan_in_prefect_immediately": run_plan_in_prefect_immediately,
             "action": action,
+            "error_info": error_info,
         },
         tags=[agent_id],
     )
@@ -64,7 +67,7 @@ async def prefect_create_execution_plan(
 
 @async_perf_logger
 async def prefect_run_execution_plan(
-    plan: ExecutionPlan, context: PlanRunContext, send_chat_when_finished: bool = True
+    plan: ExecutionPlan, context: PlanRunContext, do_chat: bool = True
 ) -> None:
     await run_deployment(
         name=f"{RUN_EXECUTION_PLAN_FLOW_NAME}/{RUN_EXECUTION_PLAN_FLOW_NAME}",
@@ -72,7 +75,7 @@ async def prefect_run_execution_plan(
         parameters={
             "plan": plan.model_dump(),
             "context": context.model_dump(),
-            "send_chat_when_finished": send_chat_when_finished,
+            "do_chat": do_chat,
         },
         tags=[context.agent_id],
     )
@@ -264,3 +267,23 @@ async def prefect_get_current_plan_run_task_id(run: PrefectFlowRun) -> Optional[
             return task_id
 
     return None
+
+
+async def prefect_cancel_current_flow() -> None:
+    try:
+        context = get_run_context()
+    except Exception:
+        # Ignore any issues to handle local runs
+        return
+    logger = get_prefect_logger(__name__)
+    if not isinstance(context, FlowRunContext):
+        logger.error("Cannot cancel flow from within a task...")
+        return
+
+    if not context.flow_run:
+        logger.error("Cannot cancel flow with no flow running...")
+        return
+
+    cancelling_state: State = State(type=StateType.CANCELLING)
+    async with get_client() as client:
+        await client.set_flow_run_state(flow_run_id=context.flow_run.id, state=cancelling_state)

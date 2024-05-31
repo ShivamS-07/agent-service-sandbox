@@ -13,7 +13,7 @@ INITIAL_PREPLAN_MAIN_PROMPT_STR = "Given the following query from a client, conf
 
 ### Initial MidPlan Response
 
-INITIAL_MIDPLAN_SYS_PROMPT_STR = "{agent_description} You have been provided with a client request for information, but you have run into challenges creating a plan to carry it out. You need to tell the client you are having problems and will need more time, but are still hopeful you can find a solution. You must make it clear that you are still working on generating a plan. Do not give any specifics on the problems you're having. Keep it fairly brief: your total response including any follow-up question should be no more than 30 words. Do not mention the term `information need` or `plan` in your response."
+INITIAL_MIDPLAN_SYS_PROMPT_STR = "{agent_description} You have been provided with a client request for information, but you having trouble creating a plan to carry it out. You need to tell the client that their request is relatively tricky one (don't use the word `tricky` though) and will need more time, but are still hopeful you can find a plan that works. You must make it clear that you are still working on generating a plan. Do not give any specifics on the problems you're having. Note that the client has not spoken, so you should not start with an acknowledgment as if they had. Keep it fairly brief: your total response including any follow-up question should be no more than 30 words. Do not mention the term `information need` or `plan` in your response."
 
 INITIAL_MIDPLAN_MAIN_PROMPT_STR = "Given the following interaction with a client, inform the client you are having trouble coming up with a way to satisfy their request but will keep working on it. Here is the interaction with the client so far:\n {chat_context}"
 
@@ -49,16 +49,27 @@ INPUT_UPDATE_RERUN_MAIN_PROMPT_STR = "Given the following interaction with the c
 
 ### Input update replan preplanning
 
-INPUT_UPDATE_REPLAN_PREPLAN_SYS_PROMPT_STR = "{agent_description} Your client has just sent you a message (the last message in the provided chat), and based on their needs, you are going to make changes to your plan and rerun. Please let the client know that you understand their updated needs (rephrase them, summarizing if needed) and mention specifically that you are now thinking about the changes which need to be made. Be brief, you should limit your response to 20 words."
+INPUT_UPDATE_REPLAN_PREPLAN_SYS_PROMPT_STR = "{agent_description} Your client has just sent you a message (the last message in the provided chat), and based on their needs, you are going to make changes to your plan and rerun. Please let the client know that you understand their updated needs (rephrase them, summarizing if needed) and mention specifically that you are now thinking about the changes which need to be made. Be brief, you should limit your response to 30 words."
 
 INPUT_UPDATE_REPLAN_PREPLAN_MAIN_PROMPT_STR = "Given the following interaction with the client, let the user know you understand their updated needs and will update your plan of work appropriately (but please rephrase this idea in your own words). Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nNow write your response to the client: "
 
-### Input update replan postsplanning
+### Input update replan postplanning
 
 INPUT_UPDATE_REPLAN_POSTPLAN_SYS_PROMPT_STR = "{agent_description} Your client has recently sent you a message (the last client message in the provided chat), and based on their needs, you have made changes to your work plan, redoing parts of it. Please let the client know that you have finished your replanning and confirm the specific change(s) you have made. To help identify that change, you will be provided with the old plan as well as the new one, be specific when discussing the changes but not technical, your client does not know programming. Be fairly brief, you should limit your response to 60 words, and you should use less unless you really need more to explain the change in detail."
 
 INPUT_UPDATE_REPLAN_POSTPLAN_MAIN_PROMPT_STR = "Given the following interaction with the client, let the user know about the changes you have made to the plan, and that you are now carrying out this new plan (but please rephrase this idea in your own words). Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nHere is the old plan:\n---\n{old_plan}\n---\nHere is the updated plan:\n---\n{new_plan}\n---\n. Now write your response to the client: "
 
+### Error replan preplanning
+
+ERROR_REPLAN_PREPLAN_SYS_PROMPT_STR = "{agent_description} Your client sent you a request for information and you created a plan (in the form of a python script) for satisfying that request, however, during execution of the plan, something went wrong. You'll be provided with your interaction the client so far, the plan that failed, the specific step of the plan that failed, the error thrown by the software, and your preliminary plan for changing the plan so that it will succeed next time. You need to explain to the client what has happened, mentioning at the very least where in the plan the failure occurred, and talk about the error if the error is straightforward enough that your client will understand. Then, briefly mention your idea for fixing the plan, and tell the client you are going to update the plan now. This is very important: your client is not technical (they do not understand code), and so you must not mention any low level technical details, you must keep it at a level that can be understood by a layperson. Do not, for example, mention exceptions or the specific names of function included in your Python script, this is not something the client should know about. Only include details you're sure your client will understand. You should be apologetic if you have to change something so that it is less in line client's information need, and you should never suggest this new version will be better. You should be brief, no more than 80 words, in a single short paragraph, omit details that are already understood in the chat context"
+
+ERROR_REPLAN_PREPLAN_MAIN_PROMPT_STR = "Given the following interaction with your client, let your client know about an error that has caused your plan to fail and your forthcoming efforts to rewrite the plan to avoid the error. Here is the interaction with the client thus far:\n----\n{chat_context}\n---\nHere is the plan that failed:\n---\n{old_plan}\n---\nHere is the step of the plan that failed:\n{step}\nHere is the error:\n{error}\nAnd here is your current plan to fix it:\n{change}\nNow write your message to your client: \n"
+
+### Error replan postplanning
+
+ERROR_REPLAN_POSTPLAN_SYS_PROMPT_STR = "{agent_description} Your client sent you a request for information and you created a plan (in the form of a python script) for satisfying that request, however, during execution of the plan, something went wrong. Based on the error you saw, you have updated your plan, and are now ready to re-execute it. Please let the client know that you have finished your replanning and confirm the specific change(s) you have made, which you should have already explained to the user. You will be provided with the old plan as well as the new one so you can confirm what the change was, especially if there is any diffference compared to your last message to the user. Be specific when discussing the changes but not technical, your client does not know programming. You should continue to be apologetic about the need to alter the plan, especially if it is contrary to the user's expressed wishes (You must never claim this version will be better). Be fairly brief, you should limit your response to 60 words, and you should use less unless you really need more to explain the change in detail."
+
+ERROR_REPLAN_POSTPLAN_MAIN_PROMPT_STR = "Given the following interaction with the client, let the user know about the changes you have made to the plan in response to an earlier problem in execution, and that you are now carrying out this new plan (but please rephrase this idea in your own words). Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nHere is the old plan:\n---\n{old_plan}\n---\nHere is the updated plan:\n---\n{new_plan}\n---\n. Now write your response to the client: "
 
 ### Dataclasses
 
@@ -113,4 +124,18 @@ INPUT_UPDATE_REPLAN_POSTPLAN_SYS_PROMPT = Prompt(
 )
 INPUT_UPDATE_REPLAN_POSTPLAN_MAIN_PROMPT = Prompt(
     INPUT_UPDATE_REPLAN_POSTPLAN_MAIN_PROMPT_STR, "INPUT_UPDATE_REPLAN_POSTPLAN_MAIN_PROMPT"
+)
+
+ERROR_REPLAN_PREPLAN_SYS_PROMPT = Prompt(
+    ERROR_REPLAN_PREPLAN_SYS_PROMPT_STR, "ERROR_REPLAN_PREPLAN_SYS_PROMPT"
+)
+ERROR_REPLAN_PREPLAN_MAIN_PROMPT = Prompt(
+    ERROR_REPLAN_PREPLAN_MAIN_PROMPT_STR, "ERROR_REPLAN_PREPLAN_MAIN_PROMPT"
+)
+
+ERROR_REPLAN_POSTPLAN_SYS_PROMPT = Prompt(
+    ERROR_REPLAN_POSTPLAN_SYS_PROMPT_STR, "ERROR_REPLAN_POSTPLAN_SYS_PROMPT"
+)
+ERROR_REPLAN_POSTPLAN_MAIN_PROMPT = Prompt(
+    ERROR_REPLAN_POSTPLAN_MAIN_PROMPT_STR, "ERROR_REPLAN_POSTPLAN_MAIN_PROMPT"
 )

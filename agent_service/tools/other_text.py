@@ -78,7 +78,8 @@ async def get_sec_filings(args: GetSecFilingsInput, context: PlanRunContext) -> 
     for filings in stock_filing_map.values():
         all_filings.extend(filings)
 
-    # TODO throw exception if no filings
+    if len(all_filings) == 0:
+        raise Exception("No filings were retrieved for these stocks over this time period")
     return all_filings
 
 
@@ -108,10 +109,12 @@ async def get_stock_aligned_sec_filings(
         [stock.gbi_id for stock in args.stock_ids], args.start_date, args.end_date
     )
     final_map: Dict[int, TextGroup] = {}
+    total = 0
     for stock, texts in stock_filing_map.items():
+        total += len(texts)
         final_map[stock] = TextGroup(val=texts)  # type: ignore
-
-    # TODO throw exception if no filings
+    if total == 0:
+        raise Exception("No filings were retrieved for these stocks over this time period")
     return StockAlignedTextGroups(val=final_map)
 
 
