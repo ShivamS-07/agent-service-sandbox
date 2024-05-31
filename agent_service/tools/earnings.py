@@ -3,6 +3,7 @@ import datetime
 from collections import defaultdict
 from typing import Dict, List, Optional
 
+from agent_service.io_types.misc import StockID
 from agent_service.io_types.text import (
     EarningsSummaryText,
     StockAlignedTextGroups,
@@ -18,7 +19,7 @@ from agent_service.utils.postgres import get_psql
 
 
 class CollapseListOfListsOfStocksInput(ToolArgs):
-    list_of_list_of_stock_ids: List[List[int]]
+    list_of_list_of_stock_ids: List[List[StockID]]
 
 
 @tool(
@@ -32,12 +33,12 @@ class CollapseListOfListsOfStocksInput(ToolArgs):
 )
 async def collapse_list_of_lists_of_stocks(
     args: CollapseListOfListsOfStocksInput, context: PlanRunContext
-) -> List[int]:
+) -> List[StockID]:
     return [item for inner_list in args.list_of_list_of_stock_ids for item in inner_list]
 
 
 class GetImpactingStocksInput(ToolArgs):
-    impacted_stock_ids: List[int]
+    impacted_stock_ids: List[StockID]
 
 
 @tool(
@@ -51,8 +52,7 @@ class GetImpactingStocksInput(ToolArgs):
 )
 async def get_impacting_stocks(
     args: GetImpactingStocksInput, context: PlanRunContext
-) -> List[List[int]]:
-
+) -> List[List[StockID]]:
     db = get_psql()
     sql = """
     SELECT impacted_gbi_id, JSON_AGG(JSON_BUILD_ARRAY(gbi_id, reason)) AS impacting_stocks
@@ -65,7 +65,9 @@ async def get_impacting_stocks(
     output = []
     for impacted_id in args.impacted_stock_ids:
         output.append(
-            [pair[0] for pair in impacting_lookup[impacted_id]]
+            await StockID.from_gbi_id_list(
+                [pair[0] for pair in impacting_lookup[impacted_id.gbi_id]]
+            )
             if impacted_id in impacting_lookup
             else []
         )
@@ -73,7 +75,7 @@ async def get_impacting_stocks(
 
 
 async def _get_earnings_summary_helper(
-    stock_ids: List[int],
+    stock_ids: List[StockID],
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
 ) -> Dict[int, List[EarningsSummaryText]]:
@@ -84,7 +86,7 @@ async def _get_earnings_summary_helper(
         WHERE gbi_id = ANY(%(gbi_ids)s)
         """
 
-    rows = db.generic_read(sql, {"gbi_ids": stock_ids})
+    rows = db.generic_read(sql, {"gbi_ids": [stock.gbi_id for stock in stock_ids]})
     by_stock_lookup = defaultdict(list)
     for row in rows:
         by_stock_lookup[row["gbi_id"]].append(row)
@@ -98,7 +100,7 @@ async def _get_earnings_summary_helper(
     output: Dict[int, List[EarningsSummaryText]] = {}
     for stock_id in stock_ids:
         stock_output = []
-        for row in by_stock_lookup.get(stock_id, []):
+        for row in by_stock_lookup.get(stock_id.gbi_id, []):
             publish_date = datetime.datetime.fromisoformat(
                 row["sources"][0]["publishing_time"]
             ).date()
@@ -110,7 +112,7 @@ async def _get_earnings_summary_helper(
 
 
 class GetEarningsCallSummariesInput(ToolArgs):
-    stock_ids: List[int]
+    stock_ids: List[StockID]
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
 

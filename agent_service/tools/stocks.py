@@ -4,6 +4,7 @@
 from typing import Any, Dict, List
 
 from agent_service.external.stock_search_dao import async_sort_stocks_by_volume
+from agent_service.io_types.misc import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -27,7 +28,9 @@ class StockIdentifierLookupInput(ToolArgs):
     tool_registry=ToolRegistry,
     is_visible=False,
 )
-async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: PlanRunContext) -> int:
+async def stock_identifier_lookup(
+    args: StockIdentifierLookupInput, context: PlanRunContext
+) -> StockID:
     """Returns the integer identifier of a stock given its name or symbol (microsoft, apple, AAPL, TESLA, META, e.g.).
 
     This function performs a series of queries to find the stock's identifier. It starts with an exact symbol match,
@@ -50,7 +53,11 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
     if len(rows) == 1:
         only_stock = rows[0]
         logger.info(f"found only 1 stock {only_stock}")
-        return only_stock["gbi_security_id"]
+        return StockID(
+            gbi_id=only_stock["gbi_security_id"],
+            symbol=only_stock["symbol"],
+            isin=only_stock["isin"],
+        )
 
     logger.info(f"found {len(rows)} best potential matching stocks")
     # we have multiple matches, lets use dollar trading volume to choose the most likely match
@@ -78,7 +85,7 @@ async def stock_identifier_lookup(args: StockIdentifierLookupInput, context: Pla
         context=context,
     )
 
-    return stock["gbi_security_id"]
+    return StockID(gbi_id=stock["gbi_security_id"], symbol=stock["symbol"], isin=stock["isin"])
 
 
 async def raw_stock_identifier_lookup(
@@ -222,11 +229,11 @@ class MultiStockIdentifierLookupInput(ToolArgs):
 )
 async def multi_stock_identifier_lookup(
     args: MultiStockIdentifierLookupInput, context: PlanRunContext
-) -> List[int]:
+) -> List[StockID]:
     # Just runs stock identifier look up below for each stock in the list
     # Probably can be done more efficiently
 
-    output: List[int] = []
+    output: List[StockID] = []
     for stock_name in args.stock_names:
         output.append(
             await stock_identifier_lookup(  # type: ignore
@@ -234,31 +241,6 @@ async def multi_stock_identifier_lookup(
             )
         )
     return output
-
-
-class StockIDsToTickerInput(ToolArgs):
-    stock_ids: List[int]
-
-
-@tool(
-    description=(
-        "This converts a list of uninterpretable stock identifiers to a list of human readable tickers"
-    ),
-    category=ToolCategory.STOCK,
-    tool_registry=ToolRegistry,
-)
-async def convert_stock_identifiers_to_tickers(
-    args: StockIDsToTickerInput, context: PlanRunContext
-) -> List[str]:
-    db = get_psql()
-    sql = """
-    SELECT gbi_security_id AS gbi_id, symbol FROM master_security
-    WHERE gbi_security_id = ANY(%(gbi_ids)s)
-    """
-    rows = db.generic_read(sql, {"gbi_ids": args.stock_ids})
-    # Map to make sure they're in the same order
-    mapping = {row["gbi_id"]: row["symbol"] for row in rows}
-    return [mapping[stock_id] for stock_id in args.stock_ids]
 
 
 class GetStockUniverseInput(ToolArgs):
@@ -278,7 +260,7 @@ class GetStockUniverseInput(ToolArgs):
     tool_registry=ToolRegistry,
     is_visible=False,
 )
-async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContext) -> List[int]:
+async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContext) -> List[StockID]:
     """Returns the list of stock identifiers given a stock universe name.
 
     Args:
@@ -286,7 +268,7 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
         context (PlanRunContext): The context of the plan run.
 
     Returns:
-        list[int]: The list of stock identifiers in the universe.
+        list[StockID]: The list of stock identifiers in the universe.
     """
     db = get_psql()
     # TODO :
@@ -310,11 +292,13 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
 
     # Find the stocks in the universe
     sql = """
-    SELECT DISTINCT gbi_id
-    FROM "data".etf_universe_holdings
+    SELECT DISTINCT ON (gbi_id)
+    gbi_id, symbol, isin
+    FROM "data".etf_universe_holdings euh
+    JOIN master_security ms ON ms.gbi_security_id = euh.gbi_id
     WHERE spiq_company_id = %s
-    AND to_z > NOW()
+    AND euh.to_z > NOW()
     """
     rows = db.generic_read(sql, [universe_spiq_company_id])
 
-    return [row["gbi_id"] for row in rows]
+    return [StockID(gbi_id=row["gbi_id"], symbol=row["symbol"], isin=row["isin"]) for row in rows]

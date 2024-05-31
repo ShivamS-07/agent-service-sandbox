@@ -437,18 +437,6 @@ def get_test_registry() -> Type[ToolRegistry]:
     class ConvertStockIdentifiersToTickers(ToolArgs):
         stock_ids: List[int]
 
-    @tool(
-        description=(
-            "This converts a list of uninterpretable stock identifiers to a list of human readable tickers"
-        ),
-        category=ToolCategory.THEME,
-        tool_registry=TestRegistry,
-    )
-    async def convert_stock_identifiers_to_tickers(
-        args: ConvertStockIdentifiersToTickers, context: PlanRunContext
-    ) -> List[str]:
-        return []
-
     return TestRegistry
 
 

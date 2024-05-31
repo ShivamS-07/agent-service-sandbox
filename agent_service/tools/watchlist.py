@@ -5,6 +5,7 @@ from agent_service.external.pa_svc_client import (
     get_all_watchlists,
     get_watchlist_stocks,
 )
+from agent_service.io_types.misc import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
@@ -28,7 +29,7 @@ class GetStocksForUserAllWatchlistsInput(ToolArgs):
 )
 async def get_user_watchlist_stocks(
     args: GetUserWatchlistStocksInput, context: PlanRunContext
-) -> List[int]:
+) -> List[StockID]:
     # Use PA Service to get all accessible watchlists (including shared watchlists)
     resp = await get_all_watchlists(user_id=context.user_id)
     if not resp.watchlists:
@@ -46,8 +47,10 @@ async def get_user_watchlist_stocks(
             name_to_id[watchlist.name] = watchlist.watchlist_id.id
 
     if args.watchlist_name in name_to_id:
-        return await get_watchlist_stocks(
-            user_id=context.user_id, watchlist_id=name_to_id[args.watchlist_name]
+        return await StockID.from_gbi_id_list(
+            await get_watchlist_stocks(
+                user_id=context.user_id, watchlist_id=name_to_id[args.watchlist_name]
+            )
         )
 
     # Use SQL built-in function to find the best match
@@ -62,7 +65,9 @@ async def get_user_watchlist_stocks(
     )
     watchlist_id = name_to_id[rows[0]["watchlist_name"]]
 
-    return await get_watchlist_stocks(user_id=context.user_id, watchlist_id=watchlist_id)
+    return await StockID.from_gbi_id_list(
+        await get_watchlist_stocks(user_id=context.user_id, watchlist_id=watchlist_id)
+    )
 
 
 @tool(
@@ -73,5 +78,7 @@ async def get_user_watchlist_stocks(
 )
 async def get_stocks_for_user_all_watchlists(
     args: GetStocksForUserAllWatchlistsInput, context: PlanRunContext
-) -> List[int]:
-    return await get_all_stocks_in_all_watchlists(user_id=context.user_id)
+) -> List[StockID]:
+    return await StockID.from_gbi_id_list(
+        await get_all_stocks_in_all_watchlists(user_id=context.user_id)
+    )

@@ -10,11 +10,16 @@ from agent_service.io_types.output import Output
 from agent_service.io_types.text import Text
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.date_utils import get_now_utc
 
 
 async def get_output_from_io_type(val: IOType, pg: BoostedPG) -> Output:
+    if isinstance(val, list):
+        val = await gather_with_concurrency([get_output_from_io_type(v, pg=pg) for v in val])
+    elif isinstance(val, dict):
+        val = {key: await get_output_from_io_type(v, pg=pg) for key, v in val.items()}
     if not isinstance(val, ComplexIOBase):
         val = Text.from_io_type(val)
     val = await val.to_rich_output(pg)

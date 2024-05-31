@@ -15,6 +15,7 @@ from agent_service.GPT.constants import (
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.dates import DateRange
+from agent_service.io_types.misc import StockID
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
     Table,
@@ -156,7 +157,7 @@ async def statistic_identifier_lookup(
 
 
 class FeatureDataInput(ToolArgs):
-    stock_ids: List[int]
+    stock_ids: List[StockID]
     statistic_id: StatisticId
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
@@ -207,7 +208,6 @@ def _async_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> 
 
 
 def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> Table:
-
     if not args.stock_ids:
         raise ValueError("No stocks given to look up data for")
 
@@ -297,7 +297,7 @@ def get_daily_feature_data(args: FeatureDataInput, context: PlanRunContext) -> p
     )
 
     feature_value_map = FEATURES_DAO.get_feature_data(
-        gbi_ids=args.stock_ids,
+        gbi_ids=[stock.gbi_id for stock in args.stock_ids],
         features=[args.statistic_id.stat_id],
         start_date=lookup_start_date,
         end_date=end_date,
@@ -339,7 +339,7 @@ def get_non_daily_data(args: FeatureDataInput, context: PlanRunContext) -> pd.Da
     FORWARD_FILL_LOOKBACK = datetime.timedelta(days=366)
     lookup_start_date = start_date - FORWARD_FILL_LOOKBACK
     feature_value_map = FEATURES_DAO.get_feature_data(
-        gbi_ids=args.stock_ids,
+        gbi_ids=[stock.gbi_id for stock in args.stock_ids],
         features=[args.statistic_id.stat_id],
         start_date=lookup_start_date,
         end_date=end_date,
@@ -391,7 +391,7 @@ def get_quarterly_data(args: FeatureDataInput, context: PlanRunContext) -> pd.Da
     LOOKBACK = datetime.timedelta(days=366)
     lookup_start_date = start_date - LOOKBACK
     feature_value_map = FEATURES_DAO.get_feature_data(
-        gbi_ids=args.stock_ids,
+        gbi_ids=[stock.gbi_id for stock in args.stock_ids],
         features=[args.statistic_id.stat_id],
         start_date=lookup_start_date,
         end_date=end_date,

@@ -1,6 +1,7 @@
 import datetime
 from unittest import IsolatedAsyncioTestCase
 
+from agent_service.io_types.misc import StockID
 from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
 from agent_service.tools.feature_data import (
     FeatureDataInput,
@@ -12,10 +13,10 @@ from agent_service.tools.feature_data import (
 )
 from agent_service.types import PlanRunContext
 
-AAPL = 714
-AMZN = 149
-MSFT = 6963
-VZ = 12250
+AAPL = StockID(gbi_id=714, isin="", symbol="AAPL")
+AMZN = StockID(gbi_id=149, isin="", symbol="AMZN")
+MSFT = StockID(gbi_id=6963, isin="", symbol="AAPL")
+VZ = StockID(gbi_id=12250, isin="", symbol="VZ")
 CLOSE_PRICE = StatisticId(stat_id="spiq_close", stat_name="Close Price")
 SPIQ_DIV_AMOUNT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount")
 GROSS_PROFIT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount")

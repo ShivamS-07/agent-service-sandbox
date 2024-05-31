@@ -3,6 +3,7 @@ import json
 from typing import Dict, List, Optional
 
 from agent_service.external.sec_utils import FILINGS, SecFiling, SecMapping
+from agent_service.io_types.misc import StockID
 from agent_service.io_types.text import SecFilingText, StockAlignedTextGroups, TextGroup
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.earnings import (
@@ -47,7 +48,7 @@ async def get_sec_filings_helper(
 
 
 class GetSecFilingsInput(ToolArgs):
-    stock_ids: List[int]
+    stock_ids: List[StockID]
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
 
@@ -70,7 +71,9 @@ class GetSecFilingsInput(ToolArgs):
     tool_registry=ToolRegistry,
 )
 async def get_sec_filings(args: GetSecFilingsInput, context: PlanRunContext) -> List[SecFilingText]:
-    stock_filing_map = await get_sec_filings_helper(args.stock_ids, args.start_date, args.end_date)
+    stock_filing_map = await get_sec_filings_helper(
+        [stock.gbi_id for stock in args.stock_ids], args.start_date, args.end_date
+    )
     all_filings = []
     for filings in stock_filing_map.values():
         all_filings.extend(filings)
@@ -101,8 +104,9 @@ async def get_sec_filings(args: GetSecFilingsInput, context: PlanRunContext) -> 
 async def get_stock_aligned_sec_filings(
     args: GetSecFilingsInput, context: PlanRunContext
 ) -> StockAlignedTextGroups:
-
-    stock_filing_map = await get_sec_filings_helper(args.stock_ids, args.start_date, args.end_date)
+    stock_filing_map = await get_sec_filings_helper(
+        [stock.gbi_id for stock in args.stock_ids], args.start_date, args.end_date
+    )
     final_map: Dict[int, TextGroup] = {}
     for stock, texts in stock_filing_map.items():
         final_map[stock] = TextGroup(val=texts)  # type: ignore
@@ -113,7 +117,7 @@ async def get_stock_aligned_sec_filings(
 
 class GetAllTextDataForStocksInput(ToolArgs):
     # name of the universe to lookup
-    stock_ids: List[int]
+    stock_ids: List[StockID]
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
 
@@ -159,7 +163,7 @@ async def get_all_text_data_for_stocks(
         )
         all_data.append(description_data)  # type: ignore
     except Exception as e:
-        logger.warning(f"failed to get company description(s) due to error: {e}")
+        logger.exception(f"failed to get company description(s) due to error: {e}")
     await tool_log(log="Getting news developments", context=context)
     try:
         news_data = await get_stock_aligned_news_developments(
@@ -170,7 +174,7 @@ async def get_all_text_data_for_stocks(
         )
         all_data.append(news_data)  # type: ignore
     except Exception as e:
-        logger.warning(f"failed to get company news due to error: {e}")
+        logger.exception(f"failed to get company news due to error: {e}")
     await tool_log(log="Getting earnings summaries", context=context)
     try:
         earnings_data = await get_stock_aligned_earnings_call_summaries(
@@ -181,7 +185,7 @@ async def get_all_text_data_for_stocks(
         )
         all_data.append(earnings_data)  # type: ignore
     except Exception as e:
-        logger.warning(f"failed to get earnings summaries due to error: {e}")
+        logger.exception(f"failed to get earnings summaries due to error: {e}")
     await tool_log(log="Getting SEC filings", context=context)
     try:
         sec_filings = await get_stock_aligned_sec_filings(
@@ -190,7 +194,7 @@ async def get_all_text_data_for_stocks(
         )
         all_data.append(sec_filings)  # type: ignore
     except Exception as e:
-        logger.warning(f"failed to get SEC filings(s) due to error: {e}")
+        logger.exception(f"failed to get SEC filings(s) due to error: {e}")
     await tool_log(log="Combining all text data", context=context)
     if len(all_data) == 0:
         raise Exception("Found no data for the provided stocks")

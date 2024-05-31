@@ -1,6 +1,7 @@
 import unittest
 
 from agent_service.GPT.requests import set_use_global_stub
+from agent_service.io_types.misc import StockID
 from agent_service.tools.sectors import (
     SectorFilterInput,
     SectorIdentifierLookupInput,
@@ -102,12 +103,16 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
         self.assertLess(len(stocks), 525)
 
     async def test_sector_filter(self):
-        args = SectorFilterInput(sector_id=40, stock_ids=[1092])  # financials  # BAC
+        args = SectorFilterInput(
+            sector_id=40, stock_ids=[StockID(gbi_id=1092, symbol="", isin="")]
+        )  # financials  # BAC
 
         stocks = await sector_filter(args=args, context=self.context)
         self.assertEqual(1, len(stocks))
 
-        args = SectorFilterInput(sector_id=50, stock_ids=[1092])  # 'Communication Services'  # BAC
+        args = SectorFilterInput(
+            sector_id=50, stock_ids=[StockID(gbi_id=1092, symbol="", isin="")]
+        )  # 'Communication Services'  # BAC
 
         stocks = await sector_filter(args=args, context=self.context)
         self.assertEqual(0, len(stocks))

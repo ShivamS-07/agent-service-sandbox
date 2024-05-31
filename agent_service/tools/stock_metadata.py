@@ -1,5 +1,6 @@
 from typing import List
 
+from agent_service.io_types.misc import StockID
 from agent_service.io_types.text import (
     CompanyDescriptionText,
     StockAlignedTextGroups,
@@ -10,7 +11,7 @@ from agent_service.types import PlanRunContext
 
 
 class GetStockDescriptionInput(ToolArgs):
-    stock_ids: List[int]
+    stock_ids: List[StockID]
 
 
 @tool(
@@ -29,7 +30,7 @@ class GetStockDescriptionInput(ToolArgs):
 async def get_company_descriptions(
     args: GetStockDescriptionInput, context: PlanRunContext
 ) -> List[CompanyDescriptionText]:
-    return [CompanyDescriptionText(id=stock_id) for stock_id in args.stock_ids]
+    return [CompanyDescriptionText(id=stock_id.gbi_id) for stock_id in args.stock_ids]
 
 
 @tool(
@@ -53,7 +54,7 @@ async def get_company_descriptions_stock_aligned(
 ) -> StockAlignedTextGroups:
     return StockAlignedTextGroups(
         val={
-            stock_id: TextGroup(val=[CompanyDescriptionText(id=stock_id)])
+            stock_id.gbi_id: TextGroup(val=[CompanyDescriptionText(id=stock_id.gbi_id)])
             for stock_id in args.stock_ids
         }
     )

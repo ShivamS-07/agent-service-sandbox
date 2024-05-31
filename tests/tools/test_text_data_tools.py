@@ -1,6 +1,7 @@
 import logging
 from unittest import IsolatedAsyncioTestCase
 
+from agent_service.io_types.misc import StockID
 from agent_service.io_types.text import Text
 from agent_service.tools.other_text import (
     GetAllTextDataForStocksInput,
@@ -22,13 +23,13 @@ class TestTextData(IsolatedAsyncioTestCase):
 
     async def test_get_sec_filing(self):
         sec_filing_texts = await get_sec_filings(
-            args=GetSecFilingsInput(stock_ids=[714]),
+            args=GetSecFilingsInput(stock_ids=[StockID(gbi_id=714, symbol="", isin="")]),
             context=self.context,
         )
         self.assertIsNotNone(sec_filing_texts)
 
         sec_filing_mapping = await get_stock_aligned_sec_filings(
-            args=GetSecFilingsInput(stock_ids=[714]),
+            args=GetSecFilingsInput(stock_ids=[StockID(gbi_id=714, symbol="", isin="")]),
             context=self.context,
         )
         self.assertIsNotNone(sec_filing_mapping)
@@ -43,7 +44,9 @@ class TestTextData(IsolatedAsyncioTestCase):
 
     async def test_get_all_text_data(self):
         all_data = await get_all_text_data_for_stocks(
-            args=GetAllTextDataForStocksInput(stock_ids=[18654]),
+            args=GetAllTextDataForStocksInput(
+                stock_ids=[StockID(gbi_id=18654, symbol="", isin="")]
+            ),
             context=self.context,
         )
         types = set()

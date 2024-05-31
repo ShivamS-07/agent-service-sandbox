@@ -7,6 +7,7 @@ from cachetools import TTLCache, cached
 from agent_service.external import sec_meta_svc_client
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
+from agent_service.io_types.misc import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -100,10 +101,10 @@ def get_all_sectors() -> Dict[str, Dict]:
 
 # can't use cache decorator because even though we
 # need user id to qry svc it doesn't change the answer
-DEFAULT_STOCK_LIST: List[int] = []
+DEFAULT_STOCK_LIST: List[StockID] = []
 
 
-async def get_default_stock_list(user_id: str) -> List[int]:
+async def get_default_stock_list(user_id: str) -> List[StockID]:
     """
     Returns a default stock list (sp500 for now)
     # int he future this might be user aware
@@ -117,17 +118,19 @@ async def get_default_stock_list(user_id: str) -> List[int]:
     resp = await sec_meta_svc_client.get_etf_holdings(SPY_SP500_GBI_ID, user_id)
 
     gbi_ids = [stock.gbi_id for stock in resp.etf_universe_holdings[0].holdings.weighted_securities]
-
     # shouldn't have to do this but there was a bug on dev where dupes were being returned
     gbi_ids = list(set(gbi_ids))
+    stocks = await StockID.from_gbi_id_list(gbi_ids)
+
+    gbi_ids = list(set(gbi_ids))
     if gbi_ids:
-        DEFAULT_STOCK_LIST = gbi_ids
+        DEFAULT_STOCK_LIST = stocks
     return DEFAULT_STOCK_LIST
 
 
 class SectorFilterInput(ToolArgs):
     sector_id: int
-    stock_ids: Optional[List[int]] = None
+    stock_ids: Optional[List[StockID]] = None
 
 
 @tool(
@@ -140,7 +143,7 @@ Returns a list of stock_ids filtered by sector
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
 )
-async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> List[int]:
+async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> List[StockID]:
     """
     Returns a sector-filtered list of gbi_ids
     """
@@ -157,7 +160,7 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
     db = get_psql()
 
     sql = """
-    SELECT ms.gbi_security_id
+    SELECT ms.gbi_security_id, ms.symbol, ms.isin
     FROM master_security ms
     WHERE CAST(SUBSTRING(CAST(ms.gics AS TEXT), 1, 2) AS INT) = %(sector_id)s
     AND ms.gbi_security_id = ANY(%(stock_ids)s)
@@ -168,8 +171,11 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
     # cast(substring(cast(ms.gics as text), 1, 6) as int) as gics_industry_id,
     # ms.gics as gics_subindustry_id,
 
-    rows = db.generic_read(sql, params={"stock_ids": stock_ids, "sector_id": args.sector_id})
+    rows = db.generic_read(
+        sql,
+        params={"stock_ids": [stock.gbi_id for stock in stock_ids], "sector_id": args.sector_id},
+    )
     await tool_log(
         log=f"Filtered {len(stock_ids)} stocks by sector down to {len(rows)}", context=context
     )
-    return [r["gbi_security_id"] for r in rows]
+    return [StockID(gbi_id=r["gbi_security_id"], symbol=r["symbol"], isin=r["isin"]) for r in rows]

@@ -10,6 +10,7 @@ from pa_portfolio_service_proto_v1.watchlist_pb2 import (
 )
 from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID
 
+from agent_service.io_types.misc import StockID
 from agent_service.tools.watchlist import (
     GetUserWatchlistStocksInput,
     get_user_watchlist_stocks,
@@ -45,13 +46,19 @@ class TestWatchlistTools(IsolatedAsyncioTestCase):
         mock_get_all_watchlists.side_effect = get_all_watchlists
 
         async def get_watchlist_stocks(user_id: str, watchlist_id: str):
-            return [1, 2, 3]
+            return [714, 6963]
 
         mock_get_watchlist_stocks.side_effect = get_watchlist_stocks
 
         args = GetUserWatchlistStocksInput(watchlist_name="Helo")
         result = await get_user_watchlist_stocks(args, self.context)
-        self.assertEqual(result, [1, 2, 3])
+        self.assertEqual(
+            result,
+            [
+                StockID(gbi_id=714, symbol="AAPL", isin="US0378331005"),
+                StockID(gbi_id=6963, symbol="MSFT", isin="US5949181045"),
+            ],
+        )
 
     def create_dummy_watchlists_for_user(self, user_id: str):
         rows = [

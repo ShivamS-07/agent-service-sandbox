@@ -14,6 +14,7 @@ from agent_service.external.nlp_svc_client import (
 )
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
+from agent_service.io_types.misc import StockID
 from agent_service.io_types.text import (
     ThemeNewsDevelopmentArticlesText,
     ThemeNewsDevelopmentText,
@@ -30,7 +31,6 @@ from agent_service.utils.prompt_utils import Prompt
 
 
 class ThemePostgres:
-
     def __init__(self) -> None:
         self.db = get_psql()
 
@@ -145,7 +145,7 @@ class GetStocksAffectedByThemeInput(ToolArgs):
 )
 async def get_stocks_affected_by_theme(
     args: GetStocksAffectedByThemeInput, context: PlanRunContext
-) -> List[int]:
+) -> List[StockID]:
     if context.chat is None:
         return []
     db = ThemePostgres()
@@ -168,11 +168,11 @@ async def get_stocks_affected_by_theme(
             polarity = not polarity
         if polarity == args.positive:  # matches the desired polarity
             final_stocks.append(stock)
-    return final_stocks
+    return await StockID.from_gbi_id_list(final_stocks)
 
 
 class GetMacroeconomicThemesAffectingStocksInput(ToolArgs):
-    stock_ids: List[int]
+    stock_ids: List[StockID]
 
 
 @tool(
@@ -196,7 +196,7 @@ async def get_macroeconomic_themes_affecting_stocks(
         if stock_id not in gbi_id_to_idx:
             result.append([])
 
-        idx = gbi_id_to_idx[stock_id]
+        idx = gbi_id_to_idx[stock_id.gbi_id]
         result.append([ThemeText(id=t.theme_id.id) for t in resp.security_themes[idx].themes])
 
     return result

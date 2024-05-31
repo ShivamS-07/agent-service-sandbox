@@ -30,6 +30,8 @@ class Text(ComplexIOBase):
             return [Text._to_string_recursive(v) for v in val]
         elif isinstance(val, dict):
             return {str(k): Text._to_string_recursive(v) for k, v in val.items()}
+        elif isinstance(val, Text):
+            return val.val
         else:
             return str(val)
 
@@ -389,6 +391,9 @@ class TextGroup(ComplexIOBase):
 class TextOutput(Output):
     output_type: Literal[OutputType.TEXT] = OutputType.TEXT
     val: str
+
+    def __str__(self) -> str:
+        return self.val
 
 
 @io_type

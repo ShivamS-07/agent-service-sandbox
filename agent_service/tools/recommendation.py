@@ -7,6 +7,7 @@ from agent_service.external.discover_svc_client import get_temporary_discover_bl
 from agent_service.external.investment_policy_svc import (
     get_all_stock_investment_policies,
 )
+from agent_service.io_types.misc import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
 from agent_service.tools.tool_log import tool_log
@@ -53,7 +54,7 @@ class GetRecommendedStocksInput(ToolArgs):
     many factors like news, ISM, ratings, etc.
     """
 
-    stock_ids: List[int]  # if empty, we will default to use SP500
+    stock_ids: List[StockID]  # if empty, we will default to use SP500
     buy: bool  # whether to get buy or sell recommendations
     horizon: str = "1M"  # 1M, 3M, 1Y
     delta_horizon: str = "1M"  # 1W, 1M, 3M, 6M, 9M, 1Y
@@ -101,7 +102,7 @@ class GetRecommendedStocksInput(ToolArgs):
 )
 async def get_recommended_stocks(
     args: GetRecommendedStocksInput, context: PlanRunContext
-) -> List[int]:
+) -> List[StockID]:
     # NOTE: You can't use `get_dummy()` to create a dummy context for this tool because it requires
     # an actual user ID to make the gRPC call (specifically for PA SVC)
 
@@ -134,7 +135,7 @@ async def get_recommended_stocks(
 
     settings_blob = copy.deepcopy(SETTINGS_TEMPLATE)
     settings_blob["ism_settings"]["ism_id"] = ism_id
-    settings_blob["gbi_ids"] = stock_ids
+    settings_blob["gbi_ids"] = [stock.gbi_id for stock in stock_ids]
     settings_blob["ism_settings"]["match_labels"] = [
         "Perfect Match",
         "Strong Match",
@@ -155,4 +156,6 @@ async def get_recommended_stocks(
         # TODO: We can loose the constraints, but this is already very loose. What to do?
         raise ValueError("Cannot find enough stocks to meet the requirement.")
 
-    return [row.gbi_id for row in resp.rows[: args.num_stocks_to_return]]
+    return await StockID.from_gbi_id_list(
+        [row.gbi_id for row in resp.rows[: args.num_stocks_to_return]]
+    )

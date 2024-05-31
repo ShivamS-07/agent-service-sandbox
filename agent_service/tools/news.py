@@ -6,6 +6,7 @@ from agent_service.external.grpc_utils import timestamp_to_datetime
 from agent_service.external.nlp_svc_client import get_multi_companies_news_topics
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, DEFAULT_EMBEDDING_MODEL
 from agent_service.GPT.requests import GPT
+from agent_service.io_types.misc import StockID
 from agent_service.io_types.text import (
     NewsPoolText,
     StockAlignedTextGroups,
@@ -27,12 +28,14 @@ MAX_NUM_RELEVANT_NEWS_PER_TOPIC = 200
 
 
 async def _get_news_developments_helper(
-    gbi_ids: List[int],
+    stock_ids: List[StockID],
     user_id: str,
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
 ) -> Dict[int, List[StockNewsDevelopmentText]]:
-    response = await get_multi_companies_news_topics(user_id=user_id, gbi_ids=gbi_ids)
+    response = await get_multi_companies_news_topics(
+        user_id=user_id, gbi_ids=[stock.gbi_id for stock in stock_ids]
+    )
     # Response now has a list of topics. Build an association dict to ensure correct ordering.
     stock_to_topics_map: Dict[int, List] = defaultdict(list)
     for topic in response.topics:
@@ -45,8 +48,8 @@ async def _get_news_developments_helper(
         end_date = get_now_utc().date() + datetime.timedelta(days=1)
 
     output_dict: Dict[int, List[StockNewsDevelopmentText]] = {}
-    for gbi_id in gbi_ids:
-        topics = stock_to_topics_map[gbi_id]
+    for stock in stock_ids:
+        topics = stock_to_topics_map[stock.gbi_id]
         topic_list = []
         for topic in topics:
             topic_date = timestamp_to_datetime(topic.last_article_date).date()
@@ -55,13 +58,13 @@ async def _get_news_developments_helper(
                 continue
             # Only return ID's
             topic_list.append(StockNewsDevelopmentText(id=topic.topic_id.id))
-        output_dict[gbi_id] = topic_list
+        output_dict[stock.gbi_id] = topic_list
 
     return output_dict
 
 
 class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
-    stock_ids: List[int]
+    stock_ids: List[StockID]
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
 
@@ -122,8 +125,8 @@ async def get_stock_aligned_news_developments(
         args.stock_ids, context.user_id, args.start_date, args.end_date
     )
     output: Dict[int, TextGroup] = {}
-    for stock_id, topic_list in topic_lookup.items():
-        output[stock_id] = TextGroup(val=topic_list)  # type: ignore
+    for gbi_id, topic_list in topic_lookup.items():
+        output[gbi_id] = TextGroup(val=topic_list)  # type: ignore
     return StockAlignedTextGroups(val=output)
 
 

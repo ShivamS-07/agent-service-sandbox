@@ -1,8 +1,9 @@
 from typing import Dict, List, Optional
 
-from pydantic.main import BaseModel
+from pydantic import BaseModel
 
 from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.postgres import SyncBoostedPG
 
 
 class StockMetadata(BaseModel):
@@ -13,7 +14,10 @@ class StockMetadata(BaseModel):
 
 
 # TODO cache this
-async def get_stock_metadata(pg: BoostedPG, gbi_ids: List[int]) -> Dict[int, StockMetadata]:
+async def get_stock_metadata(
+    gbi_ids: List[int], pg: Optional[BoostedPG] = None
+) -> Dict[int, StockMetadata]:
+    pg = pg or SyncBoostedPG()
     sql = """
     SELECT gbi_security_id AS gbi_id, symbol, name AS company_name, isin
     FROM master_security

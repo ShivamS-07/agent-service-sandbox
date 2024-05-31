@@ -6,9 +6,6 @@ from gbi_common_py_utils.utils.postgres import PostgresBase
 
 from agent_service.external.sec_utils import SecurityMetadata
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
-
-# Make sure all io_types are registered
-from agent_service.io_types import *  # noqa
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
