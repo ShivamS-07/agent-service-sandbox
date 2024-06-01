@@ -26,7 +26,7 @@ fastapi = {version = "==0.111.0", index = "pypi"}
 sse-starlette = {version = "==2.1.0", index = "pypi"}
 pydantic = {version = "==2.7.1", index = "pypi"}
 sentry-sdk = {extras = ["fastapi"], version =  "*", index = "pypi"}
-prefect = {version = "==2.18.3", index = "pypi"}
+prefect = {version = "==2.19.3", index = "pypi"}
 pandas = {version = "==1.5.3", index = "pypi"}
 gbi_common_py_utils = {version = "==1.0.98", index = "gbi"}
 openai = { version = "==0.27.10", index = "pypi"}

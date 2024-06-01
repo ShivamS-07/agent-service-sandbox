@@ -59,7 +59,7 @@ async def prefect_create_execution_plan(
             "skip_task_cache": skip_task_cache,
             "run_plan_in_prefect_immediately": run_plan_in_prefect_immediately,
             "action": action,
-            "error_info": error_info,
+            "error_info": error_info.model_dump() if error_info else error_info,
         },
         tags=[agent_id],
     )
@@ -107,7 +107,7 @@ async def get_prefect_task_statuses(
     if not plan_run_ids:
         return {}
 
-    async with get_client() as client:
+    async with get_client() as client:  # type: ignore
         runs: List[TaskRun] = await client.read_task_runs(
             flow_run_filter=FlowRunFilter(
                 name=FlowRunFilterName(any_=plan_run_ids),
@@ -155,7 +155,7 @@ async def get_prefect_plan_run_statuses(plan_run_ids: List[str]) -> Dict[str, Ta
     if not plan_run_ids:
         return {}
 
-    async with get_client() as client:
+    async with get_client() as client:  # type: ignore
         runs = await client.read_flow_runs(
             flow_run_filter=FlowRunFilter(name=FlowRunFilterName(any_=plan_run_ids))
         )
@@ -171,7 +171,7 @@ def get_prefect_logger(name: str) -> Union[Logger, LoggerAdapter]:
 
 @alru_cache(maxsize=32)
 async def _get_prefect_flow_uuid_from_plan_run_id(plan_run_id: str) -> Optional[UUID]:
-    async with get_client() as client:
+    async with get_client() as client:  # type: ignore
         runs: List[TaskRun] = await client.read_task_runs(
             flow_run_filter=FlowRunFilter(name=FlowRunFilterName(any_=[plan_run_id]))
         )
@@ -194,7 +194,7 @@ class PrefectFlowRun:
 
 
 async def prefect_pause_current_agent_flow(agent_id: str) -> Optional[PrefectFlowRun]:
-    async with get_client() as client:
+    async with get_client() as client:  # type: ignore
         # Get runs that are in progress with this agent, and pause them. Note
         # that this is *technically* a race condition, but it should be so
         # unlikely that hopefully it won't have any impact.
@@ -240,14 +240,14 @@ async def prefect_pause_current_agent_flow(agent_id: str) -> Optional[PrefectFlo
 
 async def prefect_resume_agent_flow(run: PrefectFlowRun) -> None:
     logger.info(f"Resetting flow run {run.flow_run_id} to state {run.prior_state.type}")
-    async with get_client() as client:
+    async with get_client() as client:  # type: ignore
         await client.set_flow_run_state(flow_run_id=run.flow_run_id, state=run.prior_state)
 
 
 async def prefect_cancel_agent_flow(run: PrefectFlowRun) -> None:
     logger.info(f"Cancelling flow run {run.flow_run_id}")
     cancelling_state: State = State(type=StateType.CANCELLING)
-    async with get_client() as client:
+    async with get_client() as client:  # type: ignore
         await client.set_flow_run_state(flow_run_id=run.flow_run_id, state=cancelling_state)
 
 
@@ -257,7 +257,7 @@ async def prefect_get_current_plan_run_task_id(run: PrefectFlowRun) -> Optional[
     the plan has not been started, is already complete, or has failed then None
     will be returned.
     """
-    async with get_client() as client:
+    async with get_client() as client:  # type: ignore
         runs = await client.read_task_runs(
             flow_run_filter=FlowRunFilter(id=FlowRunFilterId(any_=[run.flow_run_id]))
         )
@@ -285,5 +285,5 @@ async def prefect_cancel_current_flow() -> None:
         return
 
     cancelling_state: State = State(type=StateType.CANCELLING)
-    async with get_client() as client:
+    async with get_client() as client:  # type: ignore
         await client.set_flow_run_state(flow_run_id=context.flow_run.id, state=cancelling_state)

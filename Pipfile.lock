@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "50701e71305f1d52b5404bd728af7f3992c0427b62e669cac45a1a494fc01629"
+            "sha256": "7cc38c8c1448ff9a48d33b379fb3aac7e477700ac45e71294d9c744071017ed1"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -180,7 +180,7 @@
                 "sha256:4640d96be84d82d02ed59ea2b7105a0f7b33abe8703703cd0ab0bf87c427522f",
                 "sha256:7405140ff1230c310e51dc27b3145b9092d659ce68ff733fb0cefe3ee42be028"
             ],
-            "markers": "python_full_version < '3.12.0'",
+            "markers": "python_version < '3.12'",
             "version": "==4.0.3"
         },
         "asyncpg": {
@@ -281,19 +281,19 @@
         },
         "boto3": {
             "hashes": [
-                "sha256:53cb8aeb405afa1cd2b25421e27a951aeb568026675dec020587861fac96ac87",
-                "sha256:e7f5ab2d1f1b90971a2b9369760c2c6bae49dae98c084a5c3f5c78e3968ace15"
+                "sha256:1506589e30566bbb2f4997b60968ff7d4ef8a998836c31eedd36437ac3b7408a",
+                "sha256:c8a383b904d6faaf7eed0c06e31b423db128e4c09ce7bd2afc39d1cd07030a51"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==1.34.116"
+            "version": "==1.34.117"
         },
         "botocore": {
             "hashes": [
-                "sha256:269cae7ba99081519a9f87d7298e238d9e68ba94eb4f8ddfa906224c34cb8b6c",
-                "sha256:ec4d42c816e9b2d87a2439ad277e7dda16a4a614ef6839cf66f4c1a58afa547c"
+                "sha256:26a431997f882bcdd1e835f44c24b2a1752b1c4e5183c2ce62999ce95d518d6c",
+                "sha256:4637ca42e6c51aebc4d9a2d92f97bf4bdb042e3f7985ff31a659a11e4c170e73"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==1.34.116"
+            "version": "==1.34.117"
         },
         "bottle": {
             "hashes": [
@@ -973,7 +973,7 @@
             "version": "==2024.5.0"
         },
         "gbi-common-proto-v1": {
-            "markers": "python_version >= '3.0'",
+            "markers": "python_version >= '3'",
             "version": "==1.13.0"
         },
         "gbi-common-py-utils": {
@@ -1423,7 +1423,7 @@
                 "sha256:b6326e2da0f7d425338bebf58848e830421defbce785f12ae812e65128518156",
                 "sha256:e7d69b1c20f32815bbec722330ee8af14b1287bb1c2b0afa590dbf031cadeaa0"
             ],
-            "markers": "python_version >= '3.0'",
+            "markers": "python_version >= '3'",
             "version": "==0.4.0"
         },
         "jmespath": {
@@ -1766,7 +1766,7 @@
                 "sha256:f136bab9c2cfd8da131132c2cf6cc27331dd6fae65f95f69dcd4ae3c3639c810",
                 "sha256:f3a86ed21e4f87050382c7bc96571755193c4c1392490744ac73d660e8f564a9"
             ],
-            "markers": "python_version >= '3.8'",
+            "markers": "python_version < '3.10'",
             "version": "==1.24.4"
         },
         "oauthlib": {
@@ -1914,7 +1914,7 @@
                 "sha256:f888f2d2909a414680a29ae74d0592758f2b9fcdee3549887779cd4055e975db",
                 "sha256:fb53ffa0085002ddd43b6ca61a7b34f2d4d7c3ed66f931fe599e1a531b42af9b"
             ],
-            "markers": "python_full_version < '3.12.0'",
+            "markers": "python_version < '3.12'",
             "version": "==2.1.2"
         },
         "pep517": {
@@ -1935,14 +1935,14 @@
         },
         "prefect": {
             "hashes": [
-                "sha256:b5c7ce517ca118a1490634c689fb53d19ba1c07ce524d79f9862b23ad1a0bfce",
-                "sha256:b77bae58f056e3e6633abdd9a465411c58a0f1d871201fcd4a35388446c1a4ea"
+                "sha256:2438f2cc61184dc52b94b72ffb01e409ab3e9a146ebda0a8a0ac68b6423270e4",
+                "sha256:2d1e0f8b7b4375c38ff60cf03e7aa32a09eefafe338eedb6ec5a68c8c2bcf6bd"
             ],
             "index": "pypi",
-            "version": "==2.18.3"
+            "version": "==2.19.3"
         },
         "proto-cube-flat-proto-v1": {
-            "markers": "python_version >= '3.0'",
+            "markers": "python_version >= '3'",
             "version": "==1.2.0"
         },
         "protobuf": {
