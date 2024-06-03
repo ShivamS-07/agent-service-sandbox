@@ -31,6 +31,9 @@ JSON Schema:
 
     {schema}
 
+The 'col_type' field types are explained below:
+    {col_type_explain}
+
 The transformation that will be applied to the dataframe is:
     {transform}
 
@@ -90,6 +93,9 @@ and may need to be converted to pandas Timestamps if necessary. It has no index:
 The output dataframe's desired column schema. The code you write should create a
 dataframe with columns that conform to this schema.
     {output_schema}
+
+The 'col_type' field types are explained below:
+    {col_type_explain}
 
 The input dataframe's overall info: {info}
 

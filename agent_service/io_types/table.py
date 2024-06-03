@@ -36,6 +36,24 @@ class TableColumnType(str, enum.Enum):
     # Special type that has stock metadata
     STOCK = "stock"
 
+    @staticmethod
+    def get_type_explanations() -> str:
+        """
+        Get a string to explain to the LLM what each table column type means (if
+        not obvious).
+        """
+        return (
+            "- 'currency': A column containing a price or other float with a currency attached. "
+            "In this case the 'unit' is the currency ISO, please keep that consistent.\n"
+            "- 'date/datetime': A column containing a python date or datetime object."
+            "- 'percent': A column containing a percent value float. 100% is equal to 1.0, NOT 100. "
+            "E.g. 25 percent is represented as 0.25.\n"
+            "- 'delta': A float value representing a raw change over time. E.g. price change day over day.\n"
+            "- 'pct_delta': A float value representing a change over time as a percent. "
+            "100% is equal to 1.0 NOT 100. E.g. percent change of price day over day.\n"
+            "- 'stock': A special column containing stock identifier information."
+        )
+
 
 @io_type
 class TableColumn(ComplexIOBase):

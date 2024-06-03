@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -28,8 +27,7 @@ from agent_service.tools.table_utils.prompts import (
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
-
-logger = logging.getLogger(__name__)
+from agent_service.utils.prefect import get_prefect_logger
 
 
 def _dump_cols(cols: List[TableColumn]) -> str:
@@ -48,10 +46,12 @@ def _strip_code_markers(gpt_output: str, lang: str) -> str:
 async def gen_new_column_schema(
     gpt: GPT, transformation_description: str, current_table_cols: List[TableColumn]
 ) -> List[TableColumn]:
+    logger = get_prefect_logger(__name__)
     prompt = DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT.format(
         schema=TableColumn.schema_json(),
         transform=transformation_description,
         input_cols=_dump_cols(current_table_cols),
+        col_type_explain=TableColumnType.get_type_explanations(),
         error="",
     )
     res = await gpt.do_chat_w_sys_prompt(
@@ -69,6 +69,7 @@ async def gen_new_column_schema(
             schema=TableColumn.schema_json(),
             transform=transformation_description,
             input_cols=_dump_cols(current_table_cols),
+            col_type_explain=TableColumnType.get_type_explanations(),
             error=(
                 "The last time you ran this you got the following error, "
                 f"please correct your mistake:\nLast Result:\n{res}\n\nError:\n{str(e)}"
@@ -156,6 +157,7 @@ Note again that the input MUST be a table, not a list!
     category=ToolCategory.TABLE,
 )
 async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> Table:
+    logger = get_prefect_logger(__name__)
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
@@ -173,10 +175,12 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
             output_schema=_dump_cols(new_col_schema),
             info=_get_df_info(args.input_table.data),
             transform=args.transformation_description,
+            col_type_explain=TableColumnType.get_type_explanations(),
             error="",
         ),
         sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
     )
+    logger.info(f"Running transform code:\n{code}")
     output_df, error = _run_transform_code(df=args.input_table.data, code=code)
     if output_df is None:
         logger.warning("Failed when transforming dataframe... trying again")
@@ -187,6 +191,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
                 output_schema=_dump_cols(new_col_schema),
                 info=_get_df_info(args.input_table.data),
                 transform=args.transformation_description,
+                col_type_explain=TableColumnType.get_type_explanations(),
                 error=(
                     "Your last code failed with this error, please correct it:\n"
                     f"Last Code:\n\n{code}\n\n"
