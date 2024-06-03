@@ -235,28 +235,31 @@ async def get_macroeconomic_theme_outlook(
 class GetThemeDevelopmentNewsInput(ToolArgs):
     # the themes to get the news for
     themes: List[ThemeText]
+    max_devs_per_theme: Optional[int] = None
 
 
 @tool(
     description=(
         "This function takes a list of macroeconomic themes as theme text object "
-        "and returns the list of corresponding developments news for each theme."
+        "and returns the list of corresponding developments news for all themes."
+        "max_devs_per_theme is an optional parameter to limit the number of developments per theme, "
+        "and None means no limit on the number of developments per theme. "
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
 )
 async def get_news_developments_about_theme(
     args: GetThemeDevelopmentNewsInput, context: PlanRunContext
-) -> List[List[ThemeNewsDevelopmentText]]:
+) -> List[ThemeNewsDevelopmentText]:
     """
-    This function takes a list of theme(s) and returns the development news for them.
+    This function takes a list of theme(s) and returns the news development for them.
 
     Args:
         args (GetThemeDevelopmentNewsInput): The theme to get the news for.
         context (PlanRunContext): The context of the plan run.
 
     Returns:
-        List[List[ThemeNewsDevelopmentText]]: List of news for each theme.
+        List[ThemeNewsDevelopmentText]: List of news development for the themes.
     """
     db = get_psql()
     res = []
@@ -268,27 +271,33 @@ async def get_news_developments_about_theme(
         ORDER BY is_major_development DESC, article_count DESC
         """
         rows = db.generic_read(sql, [theme.id])
+        if args.max_devs_per_theme:
+            rows = rows[: args.max_devs_per_theme]
         ids = [row["development_id"] for row in rows]
-        res.append([ThemeNewsDevelopmentText(id=id) for id in ids])
+        res.extend([ThemeNewsDevelopmentText(id=id) for id in ids])
     return res
 
 
 class GetThemeDevelopmentNewsArticlesInput(ToolArgs):
     # the theme developments news to get the articles for
-    developments_list: List[List[ThemeNewsDevelopmentText]]
+    developments_list: List[ThemeNewsDevelopmentText]
+    max_articles_per_development: Optional[int] = None
 
 
 @tool(
     description=(
-        "This function takes a list of lists of macroeconomic theme news developments "
-        "and returns the news articles for each theme news development "
+        "This function takes a lists of macroeconomic theme news developments "
+        "and returns the news articles for all theme news developments."
+        "max_articles_per_development is an optional parameter to limit the "
+        "number of articles per news development, and `None` means no limit on the "
+        "number of articles per news development."
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
 )
 async def get_news_articles_for_theme_developments(
     args: GetThemeDevelopmentNewsArticlesInput, context: PlanRunContext
-) -> List[List[List[ThemeNewsDevelopmentArticlesText]]]:
+) -> List[ThemeNewsDevelopmentArticlesText]:
     """
     This function takes a list of list of theme news developments
     and returns the article text object for each theme news development.
@@ -298,29 +307,26 @@ async def get_news_articles_for_theme_developments(
         context (PlanRunContext): The context of the plan run.
 
     Returns:
-        List[List[List[ThemeNewsDevelopmentArticlesText]]]: The list of article text object
+        List[ThemeNewsDevelopmentArticlesText]: The list of article text object
             for each theme news development.
     """
     res = []
     db = get_psql()
-    total_article_count = 0
-    for developments in args.developments_list:
-        articles = []
-        for development in developments:
-            sql = """
-            SELECT news_id::TEXT
-            FROM nlp_service.theme_news
-            WHERE development_id = %s
-            AND published_at >= NOW() - INTERVAL '2 years'
-            ORDER BY published_at DESC
-            """
-            rows = db.generic_read(sql, [development.id])
-            news_ids = [row["news_id"] for row in rows]
-            articles.append([ThemeNewsDevelopmentArticlesText(id=id) for id in news_ids])
-            total_article_count += len(articles[-1])
-        res.append(articles)
+    for development in args.developments_list:
+        sql = """
+        SELECT news_id::TEXT
+        FROM nlp_service.theme_news
+        WHERE development_id = %s
+        AND published_at >= NOW() - INTERVAL '2 years'
+        ORDER BY published_at DESC
+        """
+        rows = db.generic_read(sql, [development.id])
+        news_ids = [row["news_id"] for row in rows]
+        if args.max_articles_per_development:
+            news_ids = news_ids[: args.max_articles_per_development]
+        res.extend([ThemeNewsDevelopmentArticlesText(id=id) for id in news_ids])
 
-    if total_article_count == 0:
+    if len(res) == 0:
         raise Exception("No articles relevant to theme found")
 
     return res

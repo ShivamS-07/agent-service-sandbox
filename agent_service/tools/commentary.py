@@ -1,16 +1,13 @@
 # Author(s): Mohammad Zarei
 
+import asyncio
 import datetime
 from typing import List
+from uuid import uuid4
 
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
-from agent_service.io_types.text import (
-    Text,
-    ThemeNewsDevelopmentArticlesText,
-    ThemeNewsDevelopmentText,
-    ThemeText,
-)
+from agent_service.io_types.text import Text, ThemeText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.news import (
     GetNewsArticlesForTopicsInput,
@@ -27,7 +24,8 @@ from agent_service.tools.themes import (
     get_top_N_themes,
 )
 from agent_service.tools.tool_log import tool_log
-from agent_service.types import PlanRunContext
+from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -36,7 +34,7 @@ logger = get_prefect_logger(__name__)
 
 # Constants
 MAX_ARTICLES_PER_DEVELOPMENT = 5
-MAX_DEVELOPMENTS_PER_TOPIC = 5
+MAX_DEVELOPMENTS_PER_TOPIC = 10
 MAX_MATCHED_ARTICLES_PER_TOPIC = 25
 
 
@@ -166,7 +164,7 @@ async def _get_texts_for_topics(
     This function gets the texts for the given topics. If the themes are found, it gets the related texts.
     If the themes are not found, it gets the articles related to the topic.
     """
-    texts = []
+    texts: List = []
     for topic in args.topics:
         try:
             themes = await get_macroeconomic_themes(
@@ -177,7 +175,7 @@ async def _get_texts_for_topics(
                 context=context,
             )
             res = await _get_theme_related_texts(themes, context)  # type: ignore
-            texts.extend(res)
+            texts.extend(res)  # type: ignore
 
         except Exception as e:
             logger.warning(f"failed to get theme data for topic {topic}: {e}")
@@ -191,11 +189,10 @@ async def _get_texts_for_topics(
                     GetNewsArticlesForTopicsInput(
                         topics=[topic],
                         start_date=args.start_date,
+                        max_num_articles_per_topic=MAX_MATCHED_ARTICLES_PER_TOPIC,
                     ),
                     context,
                 )
-
-                matched_articles = matched_articles[:MAX_MATCHED_ARTICLES_PER_TOPIC]  # type: ignore
                 texts.extend(matched_articles)  # type: ignore
             except Exception as e:
                 logger.warning(f"failed to get news pool articles for topic {topic}: {e}")
@@ -206,51 +203,79 @@ async def _get_texts_for_topics(
     return texts
 
 
-async def _combine_into_single_texts_list(
-    themes: List[ThemeText],
-    developments: List[List[ThemeNewsDevelopmentText]],
-    articles: List[List[List[ThemeNewsDevelopmentArticlesText]]],
-) -> List[Text]:
-    """
-    This function combines the themes, developments, and articles into a single list of Text objects.
-    """
-    texts = []
-    for i in range(len(themes)):
-        texts.append(themes[i])  # type: ignore
-        for j in range(len(developments[i])):
-            texts.append(developments[i][j])  # type: ignore
-            for k in range(len(articles[i][j])):
-                texts.append(articles[i][j][k])  # type: ignore
-    return texts  # type: ignore
-
-
 async def _get_theme_related_texts(
     themes_texts: List[ThemeText], context: PlanRunContext
 ) -> List[Text]:
     """
     This function gets the theme related texts for the given themes.
     """
+    res: List = []
     development_texts = await get_news_developments_about_theme(
-        GetThemeDevelopmentNewsInput(themes=themes_texts), context
+        GetThemeDevelopmentNewsInput(
+            themes=themes_texts, max_devs_per_theme=MAX_DEVELOPMENTS_PER_TOPIC
+        ),
+        context,
     )
     article_texts = await get_news_articles_for_theme_developments(  # type: ignore
-        GetThemeDevelopmentNewsArticlesInput(developments_list=development_texts), context  # type: ignore
+        GetThemeDevelopmentNewsArticlesInput(
+            developments_list=development_texts,  # type: ignore
+            max_articles_per_development=MAX_ARTICLES_PER_DEVELOPMENT,
+        ),
+        context,  # type: ignore
     )
-    # limit number of developments and articles
-    development_texts_limited = []
-    article_texts_limited = []
+    res.extend(development_texts)  # type: ignore
+    res.extend(article_texts)  # type: ignore
+    return res
 
-    for i in range(len(themes_texts)):
-        # Get the first MAX_DEVELOPMENTS_PER_TOPIC developments for the current theme
-        limited_developments = development_texts[i][:MAX_DEVELOPMENTS_PER_TOPIC]  # type: ignore
-        development_texts_limited.append(limited_developments)
 
-        # For each development, get the first MAX_ARTICLES_PER_DEVELOPMENT articles
-        limited_articles = [
-            article_texts[i][j][:MAX_ARTICLES_PER_DEVELOPMENT]  # type: ignore
-            for j in range(len(limited_developments))
-        ]
-        article_texts_limited.append(limited_articles)
-    return await _combine_into_single_texts_list(
-        themes_texts, development_texts_limited, article_texts_limited  # type: ignore
+# Test
+async def main() -> None:
+    input_text = "Write a commentary on impact of cloud computing on military industrial complex."
+    user_message = Message(message=input_text, is_user_message=True, message_time=get_now_utc())
+    chat_context = ChatContext(messages=[user_message])
+
+    context = PlanRunContext(
+        agent_id=str(uuid4()),
+        plan_id=str(uuid4()),
+        user_id=str(uuid4()),
+        plan_run_id=str(uuid4()),
+        chat=chat_context,
+        skip_db_commit=True,
+        skip_task_cache=True,
+        run_tasks_without_prefect=True,
     )
+    texts = await get_commentary_texts(
+        GetCommentaryTextsInput(
+            topics=["cloud computing", "military industrial complex"],
+            start_date=datetime.date(2024, 4, 1),
+            no_specific_topic=False,
+        ),
+        context,
+    )
+    print("Length of texts: ", len(texts))  # type: ignore
+    args = WriteCommentaryInput(
+        texts=texts,  # type: ignore
+    )
+    result = await write_commentary(args, context)
+    print(result)
+    print("-------------------------------------------------")
+    print("-------------------------------------------------")
+    print("General commentary")
+    texts = await get_commentary_texts(
+        GetCommentaryTextsInput(
+            topics=[""],
+            start_date=datetime.date(2024, 4, 1),
+            no_specific_topic=True,
+        ),
+        context,
+    )
+    print("Length of texts: ", len(texts))  # type: ignore
+    args = WriteCommentaryInput(
+        texts=texts,  # type: ignore
+    )
+    result = await write_commentary(args, context)
+    print(result)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

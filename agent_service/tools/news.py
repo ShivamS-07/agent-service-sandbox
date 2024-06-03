@@ -194,6 +194,7 @@ THEME_RELEVANT_MAIN_PROMPT = Prompt(
 class GetNewsArticlesForTopicsInput(ToolArgs):
     topics: List[str]
     start_date: Optional[datetime.date] = None
+    max_num_articles_per_topic: Optional[int] = None
 
 
 @tool(
@@ -259,6 +260,8 @@ async def get_news_articles_for_topics(
             log=f"Found {len(relevant_news)} news articles for topic: {topic}.",
             context=context,
         )
+        if args.max_num_articles_per_topic:
+            relevant_news = relevant_news[: args.max_num_articles_per_topic]
         news.extend(relevant_news)
 
     if len(news) == 0:

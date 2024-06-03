@@ -34,13 +34,10 @@ class TestThemeDevelopmentNewsArticles(IsolatedAsyncioTestCase):
     async def test_get_news_articles_for_theme_raisinginterstrate(self):
         # development: Lower Inflation Expectations Due to High Rates with id 8fce3d05-e9bc-4ecd-9d8e-227ce71a5e5c
         self.args = GetThemeDevelopmentNewsArticlesInput(
-            developments_list=[
-                [ThemeNewsDevelopmentText(id="8fce3d05-e9bc-4ecd-9d8e-227ce71a5e5c")]
-            ],
+            developments_list=[ThemeNewsDevelopmentText(id="8fce3d05-e9bc-4ecd-9d8e-227ce71a5e5c")],
             start_date="2023-01-01 00:00:00",
         )
         result = await get_news_articles_for_theme_developments(self.args, self.context)
-        print("here", len(result))
         self.assertGreater(len(result), 0)
 
 
