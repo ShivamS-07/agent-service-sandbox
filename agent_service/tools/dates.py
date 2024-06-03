@@ -109,7 +109,7 @@ class DateRangeInput(ToolArgs):
         "This function returns a date range 'DateRange' with a start_date and end_date "
         "that are chosen to be relative to and near to the one of the passed in dates "
         "or near today's date if no date was passed in. "
-        "it is useful for when a you need to a date range for a graph but were provided no "
+        "it is extremely useful for when a you need to a date range for a graph but were provided no "
         "references to a date or only a reference to a single date. "
         "Also useful when you need a date range near to a date or close to a date. "
         "Can also be used to create a custom width date range relative to one of the dates "

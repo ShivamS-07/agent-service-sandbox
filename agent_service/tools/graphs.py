@@ -1,3 +1,5 @@
+import pandas as pd
+
 from agent_service.io_types.graph import (
     DataPoint,
     GraphDataset,
@@ -23,7 +25,8 @@ where you need to make a graph from a Table with data like that, this use this
 function. (Ideally the table index should be dates or some other type
 representing time.) It is extremely important that you provide enough data to
 graph. E.g. at least 7-14 datapoints to make a nice line. Note that the input
-must be a Table!
+must be a Table! If the source data is stock pricing data, financial data, or
+economic time series data, then a date range should be used to acquire the data rather than a single date or no date.
 """
 )
 async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> LineGraph:
@@ -31,6 +34,9 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
     if len(cols) < 2:
         raise RuntimeError("Table must have at least two columns to make a line graph!")
     if len(args.input_table.data) < 2:
+        # this check assumes there is only 1 dataset to be graphed
+        # it fails to block a multidateset table (multi stock) where each stock
+        # has only 1 datapoint
         raise RuntimeError("Need at least two points to make a line graph!")
 
     x_axis_col = None
@@ -89,15 +95,15 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
             ],
         )
         data = [dataset]
-
     else:
         ds_col, dataset_df_col = dataset_col
-        grouped_df = df.set_index(dataset_df_col)
-        for dataset_val in grouped_df.index.unique():
+        # get the unique dataset keys
+        dataset_vals = pd.unique(df[dataset_df_col])
+        for dataset_val in dataset_vals:
             # For each unique value in the dataset column, extract data for the
             # graph. For example, if the dataset column contains stock ID's,
             # this will create a dataset for each stock.
-            dataset_data = grouped_df.loc[dataset_val]
+            dataset_data = df.loc[df[dataset_df_col] == dataset_val]
             dataset = GraphDataset(
                 dataset_id=dataset_val,
                 dataset_id_type=ds_col.col_type,
