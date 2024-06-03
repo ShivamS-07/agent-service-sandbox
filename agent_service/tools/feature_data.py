@@ -4,9 +4,17 @@ from typing import List, Optional
 
 import pandas as pd
 from cachetools import TTLCache, cached
-from data_access_layer.core.dao.features.feature_utils import get_feature_metadata
 from data_access_layer.core.dao.features.features_dao import FeaturesDAO
+from feature_service_proto_v1.feature_service_pb2 import (
+    FEATURE_UNITS_PERCENT,
+    FEATURE_UNITS_PRICE,
+    FEATURE_UNITS_UNIT,
+    GetFeatureDataResponse,
+)
+from gbi_common_py_utils.numpy_common.numpy_cube import NumpyCube
+from gbi_common_py_utils.numpy_common.numpy_sheet import NumpySheet
 
+from agent_service.external.feature_svc_client import get_feature_data
 from agent_service.GPT.constants import (
     DEFAULT_CHEAP_MODEL,
     FILTER_CONCURRENCY,
@@ -25,7 +33,7 @@ from agent_service.io_types.table import (
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
-from agent_service.utils.async_utils import async_wrap, gather_with_concurrency
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -117,15 +125,32 @@ async def statistic_identifier_lookup(
 
     # Word similarity name match
     sql = """
-    SELECT * FROM (
-    SELECT
-    strict_word_similarity(lower(feat.name), lower(%(search_text)s)) as ws,
-    id, name, description
-    FROM public.features feat
-    WHERE feat.data_provider = 'SPIQ'
-    ORDER BY ws DESC
-    LIMIT 20 ) as feats
-    where ws > 0.2
+    SELECT id, name, match_name, description, ws FROM (
+        select
+            alt_match.id, alt_match.name, alt_match.description, alt_match.match_name,
+            sqrt(
+                strict_word_similarity(
+                    lower(alt_match.match_name),
+                    lower(%(search_text)s)
+                ) * (
+                    -- scale score by diff in name length
+                    cast(least(length(match_name), length(%(search_text)s)) as float)
+                    /
+                    greatest(length(match_name), length(%(search_text)s))
+                )
+            ) as ws
+            -- sqrt score because we're multiplying it by a length factor
+            -- once in the scaler and another time in the similarity grams match
+        from (
+            select
+                id, name, description,
+                unnest(ARRAY_APPEND(alternate_names, name)) as match_name
+            from feature_service.available_features
+        ) as alt_match
+        order by ws desc
+        limit 20
+    ) as feats
+    WHERE ws > 0.2
     """
     rows = db.generic_read(sql, {"search_text": args.statistic_name})
     logger.info(f"found {len(rows)} potential matches for '{args.statistic_name}'")
@@ -134,7 +159,8 @@ async def statistic_identifier_lookup(
         raise ValueError(f"Could not find a stock data field related to: {args.statistic_name}")
 
     tasks = [
-        is_statistic_correct(context, search=args.statistic_name, match=r["name"]) for r in rows
+        is_statistic_correct(context, search=args.statistic_name, match=r["match_name"])
+        for r in rows
     ]
 
     for r in rows:
@@ -197,228 +223,134 @@ async def get_statistic_data_for_companies(
     Returns:
         Table: The requested data.
     """
-    return await _async_get_feature_data(args, context)
-
-
-@async_wrap
-def _async_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> Table:
-    # if getting a large number of features or stocks or dates, feature dao could be slow-ish
-    # so  provide this wrapper to not block the event loop
-    return _sync_get_feature_data(args, context)
-
-
-def _sync_get_feature_data(args: FeatureDataInput, context: PlanRunContext) -> Table:
-    if not args.stock_ids:
-        raise ValueError("No stocks given to look up data for")
-
+    stock_ids = [stock.gbi_id for stock in args.stock_ids]
     if args.date_range:
         args.start_date = args.date_range.start_date
         args.end_date = args.date_range.end_date
 
-    if args.end_date is None:
-        args.end_date = datetime.date.today()
-        if args.start_date is None:
-            args.start_date = datetime.date.today()
-
-    features_metadata = get_feature_metadata(feature_ids=[args.statistic_id.stat_id])
-    metadata = features_metadata.get(args.statistic_id.stat_id, None)
-    # print("--")
-    # print("metadata", metadata)
-    source = metadata.source if metadata else "NO_SUCH_SOURCE"
-    supported_sources = ["SPIQ_DAILY", "SPIQ_DIVIDEND", "SPIQ_TARGET", "SPIQ_QUARTERLY"]
-    if source not in supported_sources:
-        raise ValueError(f"Data field: {args.statistic_id} is from an unsupported source: {source}")
-
-    if source == "SPIQ_DAILY":
-        df = get_daily_feature_data(args, context)
-
-    elif source in ["SPIQ_DIVIDEND", "SPIQ_TARGET"]:
-        df = get_non_daily_data(args, context)
-
-    elif source in ["SPIQ_QUARTERLY"]:
-        df = get_quarterly_data(args, context)
-
-    else:
-        raise ValueError(
-            f"code path missing: Data field: {args.statistic_id} is from an unsupported source: {source}"
-        )
-
-    df.index.rename("Date", inplace=True)
-    df.reset_index(inplace=True)
-    df = df.melt(
-        id_vars=["Date"], var_name=STOCK_ID_COL_NAME_DEFAULT, value_name=args.statistic_id.stat_name
-    )
-
-    # We now have a dataframe with only three columns: Date, Stock ID, and Value.
-
-    return Table(
-        data=df,
-        columns=[
-            TableColumn(label="Date", col_type=TableColumnType.DATE),
-            TableColumn(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-            # TODO handle smarter column types, etc.
-            TableColumn(
-                label=args.statistic_id.stat_name,
-                col_type=TableColumnType.FLOAT,
-            ),
-        ],
-    )
-
-
-def get_daily_feature_data(args: FeatureDataInput, context: PlanRunContext) -> pd.DataFrame:
-    # if no dates are given assume they just want the latest value
-    LATEST_DATE = get_latest_date()
-    start_date = LATEST_DATE
-    end_date = LATEST_DATE
-
-    logger.info(f"received {args=}'")
-    # if only 1 date is given use that as start & end
+    # if no dates given, use latest date
+    if args.start_date is None and args.end_date is None:
+        latest_date = get_latest_date()
+        start_date = latest_date
+        end_date = latest_date
+    # if only end date given, use end to end
     if args.start_date is None and args.end_date is not None:
         start_date = args.end_date
-        end_date = start_date
+        end_date = args.end_date
+    # if only start date given, use start to start
     elif args.start_date is not None and args.end_date is None:
         start_date = args.start_date
-        end_date = start_date
+        end_date = args.start_date
+    # if both dates are given use as is
     elif args.start_date is not None and args.end_date is not None:
-        # if both dates are given use as is
         start_date = args.start_date
         end_date = args.end_date
 
-    # TODO: validate start <= end
-    # dates are not in the future, etc
-
-    FORWARD_FILL_LOOKBACK = datetime.timedelta(days=14)
-    lookup_start_date = start_date - FORWARD_FILL_LOOKBACK
+    # if one date given, turn on ffill.
+    ffill_days = 0
+    if start_date == end_date:
+        # I think we should have a separate tool for "latest" or "last N"
+        ffill_days = 180
 
     logger.info(
-        f"getting data for gbi_ids: {args.stock_ids}, "
+        f"getting data for gbi_ids: {stock_ids}, "
         f"features: {args.statistic_id}, "
-        f"{lookup_start_date=},  {end_date=}"
+        f"{start_date=}, {end_date=}"
     )
 
-    feature_value_map = FEATURES_DAO.get_feature_data(
-        gbi_ids=[stock.gbi_id for stock in args.stock_ids],
-        features=[args.statistic_id.stat_id],
-        start_date=lookup_start_date,
-        end_date=end_date,
-        # currency=output_currency,
-    ).get()
+    # TODO: is there a better way to get this across the wire? send as raw bytes?
+    result: GetFeatureDataResponse = await get_feature_data(
+        user_id=context.user_id,
+        statistic_ids=[args.statistic_id.stat_id],
+        stock_ids=stock_ids,
+        from_date=start_date,
+        to_date=end_date,
+        ffill_days=ffill_days,
+    )
 
-    raw_df = feature_value_map[args.statistic_id.stat_id]
-    # print("raw_df", raw_df)
-    idx_daily = pd.date_range(start=lookup_start_date, end=end_date, freq="D")
-    df = raw_df.reindex(idx_daily, method="ffill")
-    df.index.names = ["date"]
-
-    # cut it back down to the requested time range
-    df = df.loc[pd.to_datetime(start_date) : pd.to_datetime(end_date)]
-    return df
-
-
-def get_non_daily_data(args: FeatureDataInput, context: PlanRunContext) -> pd.DataFrame:
-    # if no dates are given assume they just want the latest value
-    LATEST_DATE = get_latest_date()
-    start_date = LATEST_DATE
-    end_date = LATEST_DATE
-
-    # if only 1 date is given use that as start & end
-    if args.start_date is None and args.end_date is not None:
-        start_date = args.end_date
-        end_date = start_date
-    elif args.start_date is not None and args.end_date is None:
-        start_date = args.start_date
-        end_date = start_date
-    elif args.start_date is not None and args.end_date is not None:
-        # if both dates are given use as is
-        start_date = args.start_date
-        end_date = args.end_date
-
-    # TODO: validate start <= end
-    # dates are not in the future, etc
-
-    FORWARD_FILL_LOOKBACK = datetime.timedelta(days=366)
-    lookup_start_date = start_date - FORWARD_FILL_LOOKBACK
-    feature_value_map = FEATURES_DAO.get_feature_data(
-        gbi_ids=[stock.gbi_id for stock in args.stock_ids],
-        features=[args.statistic_id.stat_id],
-        start_date=lookup_start_date,
-        end_date=end_date,
-        # currency=output_currency,
-    ).get()
-
-    raw_df = feature_value_map[args.statistic_id.stat_id]
-    # print("raw_df", raw_df)
-
-    df = raw_df
-
-    if start_date == end_date:
-        # get the latest
-        df = df.iloc[[-1]]
-    else:
-        # get only the range they asked for
-        df = df.loc[pd.to_datetime(start_date) : pd.to_datetime(end_date)]
-
-    return df
-
-
-# this might need a separate tool for addressing the data via relative and absolute periods
-def get_quarterly_data(args: FeatureDataInput, context: PlanRunContext) -> pd.DataFrame:
-    # if no dates are given assume they just want the latest value
-    LATEST_DATE = get_latest_date()
-    start_date = LATEST_DATE
-    end_date = LATEST_DATE
-
-    # if only 1 date is given use that as start & end
-    if args.start_date is None and args.end_date is not None:
-        start_date = args.end_date
-        end_date = start_date
-    elif args.start_date is not None and args.end_date is None:
-        start_date = args.start_date
-        end_date = start_date
-    elif args.start_date is not None and args.end_date is not None:
-        # if both dates are given use as is
-        start_date = args.start_date
-        end_date = args.end_date
-
-    if start_date != end_date:
-        raise ValueError(
-            "Estimates and Quarterly Data is currently only available for single points"
-            f" in time field: {args.statistic_id}"
+    # make the dataframe with index = dates, columns = stock ids
+    # or columns = statistic id (for global features)
+    # since we are requesting data for a single statistic_id, we can do a simple check
+    # and slice out the relevant data
+    security_data = NumpyCube.initialize_from_proto_bytes(result.security_data_cube)
+    global_data = NumpySheet.initialize_from_proto_bytes(result.global_data_sheet)
+    is_global = not (args.statistic_id.stat_id in security_data.row_map)
+    if is_global:
+        data = global_data.np_data[global_data.row_map[args.statistic_id.stat_id], :]
+        df = pd.DataFrame(
+            data,
+            index=pd.to_datetime(security_data.columns),
+            columns=[args.statistic_id.stat_name],
         )
-    # TODO: validate start <= end
-    # dates are not in the future, etc
-
-    LOOKBACK = datetime.timedelta(days=366)
-    lookup_start_date = start_date - LOOKBACK
-    feature_value_map = FEATURES_DAO.get_feature_data(
-        gbi_ids=[stock.gbi_id for stock in args.stock_ids],
-        features=[args.statistic_id.stat_id],
-        start_date=lookup_start_date,
-        end_date=end_date,
-        # currency=output_currency,
-    ).get()
-
-    raw_df = feature_value_map[args.statistic_id.stat_id]
-    # print("raw_df", raw_df)
-
-    df = raw_df
-
-    if start_date == end_date:
-        # get the latest
-        df = df.iloc[[-1]]
     else:
-        # this is not yet supported
-        # we will need new DAL apis to get the data indexed by calendar quarter
-        # and pick the latest value for each one
-        pass
+        if not stock_ids:
+            raise ValueError("No stocks given to look up statistic for.")
+        # dims are (feats, dates, secs) -> (dates, secs)
+        data = security_data.np_data[security_data.row_map[args.statistic_id.stat_id], :, :]
+        df = pd.DataFrame(
+            data,
+            index=pd.to_datetime(security_data.columns),
+            columns=[int(s) for s in security_data.fields],
+        )
 
-    rel_per = -1
-    idx = pd.IndexSlice
-    # grab all the rows "idx[:] ..."
-    # grab only the -1 relperiod column "... idx[rel_per:-1, ..."
-    # grab all the gbiids "... :]"
-    df = df.loc[idx[:], idx[rel_per:-1, :]]  # type: ignore
-    return df
+    # wrangle units
+    units = dict(result.feature_units).get(args.statistic_id.stat_id, FEATURE_UNITS_UNIT)
+    if units == FEATURE_UNITS_PRICE:
+        value_coltype = TableColumnType.CURRENCY
+    elif units == FEATURE_UNITS_PERCENT:
+        value_coltype = TableColumnType.PERCENT
+    else:
+        value_coltype = TableColumnType.FLOAT
+
+    # turn dataframe into records.
+    # TODO - should global statistics be its own tool? how?
+    # TODO handle smarter column types, etc.
+
+    # we are guaranteed to get back a single currency for every security
+    # because we asked the rpc to do so. just take the first.
+    # coerce empty string to None (grpc serialization) - if the feature was not currency-valued
+    curr_unit = (
+        result.iso_currency
+        if result.iso_currency and value_coltype == TableColumnType.CURRENCY
+        else None
+    )
+    if is_global:
+        # if global, the stock column is actually a feature column
+        df.index.rename("Date", inplace=True)
+        df.reset_index(inplace=True)
+
+        # We now have a dataframe with only a few columns: Date, Statistic Name
+        # currency may or may not be set.
+        return Table(
+            data=df,
+            columns=[
+                TableColumn(label="Date", col_type=TableColumnType.DATE),
+                TableColumn(
+                    label=args.statistic_id.stat_name, col_type=value_coltype, unit=curr_unit
+                ),
+            ],
+        )
+    else:
+        # if not global, augment with currency information if exists.
+        df.index.rename("Date", inplace=True)
+        df.reset_index(inplace=True)
+        df = df.melt(
+            id_vars=["Date"],
+            var_name=STOCK_ID_COL_NAME_DEFAULT,
+            value_name=args.statistic_id.stat_name,
+        )
+
+        # We now have a dataframe with only a few columns: Date, Stock ID, Statistic Name
+        return Table(
+            data=df,
+            columns=[
+                TableColumn(label="Date", col_type=TableColumnType.DATE),
+                TableColumn(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+                TableColumn(
+                    label=args.statistic_id.stat_name, col_type=value_coltype, unit=curr_unit
+                ),
+            ],
+        )
 
 
 # TODO in the future we need a latest date per region

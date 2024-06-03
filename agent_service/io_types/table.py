@@ -22,6 +22,7 @@ class TableColumnType(str, enum.Enum):
     FLOAT = "float"
     BOOLEAN = "boolean"
 
+    # A currency valued number
     CURRENCY = "currency"
     DATE = "date"  # YYYY-MM-DD
     DATETIME = "datetime"  # yyyy-mm-dd + ISO timestamp

@@ -21,11 +21,20 @@ VZ = StockID(gbi_id=12250, isin="", symbol="VZ")
 CLOSE_PRICE = StatisticId(stat_id="spiq_close", stat_name="Close Price")
 SPIQ_DIV_AMOUNT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount")
 GROSS_PROFIT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount")
+GLOBAL_CAN_TO_USD_EXCH_RATE = StatisticId(stat_id="FRED_DEXCAUS", stat_name="CAD to USD")
 
 
 class TestFeatureDataLookup(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
+
+    async def test_feature_data_global(self):
+        args = FeatureDataInput(
+            stock_ids=[],
+            statistic_id=GLOBAL_CAN_TO_USD_EXCH_RATE,
+        )
+        result = await get_statistic_data_for_companies(args, self.context)
+        self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
 
     async def test_feature_data_3_stock(self):
         args = FeatureDataInput(
@@ -97,6 +106,11 @@ class TestStatisticsIdentifierLookup(IsolatedAsyncioTestCase):
         from agent_service.utils.logs import init_test_logging
 
         init_test_logging()
+
+    async def test_statistic_identifier_lookup_price(self):
+        self.args = StatisticsIdentifierLookupInput(statistic_name="Price")
+        result = await statistic_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.stat_id, "spiq_close")
 
     async def test_statistic_identifier_lookup_highprice(self):
         self.args = StatisticsIdentifierLookupInput(statistic_name="High Price")
