@@ -51,13 +51,34 @@ def build_auth_metadata(auth_token: str) -> List[Tuple[str, str]]:
     return metadata
 
 
-def date_to_timestamp(dt: datetime.date) -> Timestamp:
-    timestamp = int(dt.strftime("%s"))
-    return Timestamp(seconds=int(timestamp), nanos=int(timestamp % 1 * 1e9))
+def date_to_timestamp(dt: Optional[datetime.date]) -> Optional[Timestamp]:
+    if dt is None:
+        return None
+    timestamp = Timestamp()
+    timestamp.FromDatetime(datetime.datetime.combine(dt, datetime.time()))
+    return timestamp
 
 
-def timestamp_to_datetime(timestamp: Timestamp) -> datetime.datetime:
-    return datetime.datetime.fromtimestamp(timestamp.seconds + timestamp.nanos / 1e9)
+def datetime_to_timestamp(dt: Optional[datetime.datetime]) -> Optional[Timestamp]:
+    if dt is None:
+        return None
+    timestamp = Timestamp()
+    timestamp.FromDatetime(dt)
+    return timestamp
+
+
+def timestamp_to_datetime(ts: Timestamp) -> Optional[datetime.datetime]:
+    if ts is None or ts.seconds == 0:
+        return None
+    return ts.ToDatetime()
+
+
+def timestamp_to_date(
+    ts: Optional[Timestamp], default: Optional[datetime.date] = None
+) -> Optional[datetime.date]:
+    if ts is None or ts.seconds == 0:
+        return default
+    return ts.ToDatetime().date()
 
 
 T = TypeVar("T")
