@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from cachetools import TTLCache, cached
 
 from agent_service.external import sec_meta_svc_client
-from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
+from agent_service.GPT.constants import HAIKU, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.misc import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
@@ -13,6 +13,7 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
+from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 
 ONE_HOUR = 60 * 60
@@ -25,18 +26,26 @@ class SectorIdentifierLookupInput(ToolArgs):
 SECTOR_LOOKUP_PROMPT = Prompt(
     name="SECTOR_LOOKUP_PROMPT",
     template="""
-Your task is to identify which (if any) of a provided list of GICS economic sectors
+Your task is to, in a finance context,
+identify which (if any) of a provided list of GICS economic sectors
 corresponds to a particular provided reference to a sector.
 If there is an exact match, or one with a strong semantic overlap,
 return the sector_id of the match,
 otherwise return -1 to indicate "No Sector".
-Do not return anything else.
-Here is the list of Sectors:
+
+Here are the Sectors in json format:
 ---
 {lookup_list}
 ---
-And here is the user provided sector text you are trying to match: {text_input}.
-Now output the match from the list if you have found it:
+
+And here is the user provided sector text you are trying to match: '{text_input}'
+
+Now output the match from the list if you have found it and also provide a short reason
+
+Make sure to return this in JSON.
+ONLY RETURN IN JSON. DO NOT RETURN NON-JSON.
+Do not return anything else.
+Return in this format: {{"correct_sector_id":"", "reason":""}}
 """,
 )
 
@@ -56,10 +65,11 @@ async def sector_identifier_lookup(
     """
     Returns integer identifier best matching the input text, or None if not a match
     """
+    logger = get_prefect_logger(__name__)
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    llm = GPT(context=gpt_context, model=DEFAULT_CHEAP_MODEL)
+    llm = GPT(context=gpt_context, model=HAIKU)
 
     all_sectors = get_all_sectors()
     lookup_prompt = SECTOR_LOOKUP_PROMPT.format(
@@ -69,12 +79,17 @@ async def sector_identifier_lookup(
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=lookup_prompt,
         sys_prompt=NO_PROMPT,
+        output_json=True,
     )
 
-    if result not in all_sectors or "-1" == result:
+    logger.info(f"'{args.sector_name=}' '{result=}'")
+    res_obj = json.loads(result)
+
+    found_sector = str(res_obj.get("correct_sector_id", "-1"))
+    if found_sector not in found_sector or "-1" == found_sector:
         raise ValueError(f"Could not map text '{args.sector_name}' to a GICS sector")
 
-    sector = all_sectors[result]
+    sector = all_sectors[found_sector]
 
     await tool_log(
         log=f"Interpreting '{args.sector_name}' as GICS Sector: {sector.get('sector_name')}",

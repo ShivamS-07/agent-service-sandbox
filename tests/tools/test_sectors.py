@@ -18,6 +18,11 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
         set_use_global_stub(False)
         self.context = PlanRunContext.get_dummy()
 
+        # uncomment for easier debugging
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
+
     async def test_get_all_sectors(self):
         sectors = get_all_sectors()
         if not sectors:
@@ -33,6 +38,8 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
             ("sectors", -1),
             ("companies", -1),
             ("No Sector", -1),
+            # ("semiconductor sector", -1),
+            # ("semiconductor", -1),
         ]
         for q, a in q_a:
             args = SectorIdentifierLookupInput(sector_name=q)
@@ -66,25 +73,27 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
         # not intended to be comprehensive
         # but a simple test
         #
-        # most fail, so barely better than simple text lookup
-        #
         # I spoke with Jon he said it would probably do better
         # if we provided descriptions of each sector
         # but we would need to write them or find some
         q_a = [
             ("property", 60),
-            # this used to work but fails now. ("realestate", 60),
-            # fails ("reit", 60),
-            # fails ("oil & gas", 10),
-            # fails ("chemicals", 15),
-            # fails ("manufacturers", 20),
-            # fails ("luxory goods", 25),
-            # fails ("everyday products", 30),
-            # fails ("hospitals and medical providers", 35),
-            # fails ("banks", 40),
-            # this used to work but fails now. ("IT", 45),
-            # fails ("phone cable or internet companies", 50),
-            # fails ("electric and gas", 55),
+            ("realestate", 60),
+            ("reit", 60),
+            ("oil & gas", 10),
+            ("chemicals", 15),
+            ("manufacturers", 20),
+            ("luxory goods", 25),
+            ("everyday products", 30),
+            ("hospitals and medical providers", 35),
+            ("healthcare", 35),
+            ("banks", 40),
+            ("IT", 45),
+            ("technology", 45),
+            ("tech", 45),
+            ("phone cable or internet companies", 50),
+            ("telecoms", 50),
+            ("electric and gas", 55),
         ]
         for q, a in q_a:
             args = SectorIdentifierLookupInput(sector_name=q)
