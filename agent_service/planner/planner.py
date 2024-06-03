@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
 from uuid import uuid4
 
@@ -206,12 +207,21 @@ class Planner:
 
     @async_perf_logger
     async def rewrite_plan_after_input(
-        self, chat_context: ChatContext, last_plan: ExecutionPlan
+        self,
+        chat_context: ChatContext,
+        last_plan: ExecutionPlan,
+        last_plan_timestamp: datetime.datetime,
     ) -> Optional[ExecutionPlan]:
+
+        latest_user_messages = [
+            message
+            for message in chat_context.messages
+            if message.is_user_message and message.message_time > last_plan_timestamp
+        ]
 
         logger = get_prefect_logger(__name__)
         tasks = [
-            self._rewrite_plan_after_input(chat_context, last_plan)
+            self._rewrite_plan_after_input(chat_context, last_plan, latest_user_messages)
             for _ in range(INITIAL_PLAN_TRIES)
         ]
         results = [plan for plan in await gather_with_concurrency(tasks) if plan is not None]
@@ -231,17 +241,16 @@ class Planner:
 
     @async_perf_logger
     async def _rewrite_plan_after_input(
-        self, chat_context: ChatContext, last_plan: ExecutionPlan
+        self, chat_context: ChatContext, last_plan: ExecutionPlan, latest_messages: List[Message]
     ) -> Optional[ExecutionPlan]:
         # for now, just assume last step is what is new
         # TODO: multiple old plans, flexible chat cutoff
         logger = get_prefect_logger(__name__)
-        last_message = chat_context.messages.pop()
         main_chat_str = chat_context.get_gpt_input()
-        new_message = last_message.get_gpt_input()
+        new_messages = "\n".join([message.get_gpt_input() for message in latest_messages])
         old_plan_str = last_plan.get_formatted_plan()
         new_plan_str = await self._query_GPT_for_new_plan_after_input(
-            new_message, main_chat_str, old_plan_str
+            new_messages, main_chat_str, old_plan_str
         )
 
         try:

@@ -10,6 +10,7 @@ from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 
 PSQL_CONN = None
@@ -90,9 +91,9 @@ class Postgres(PostgresBase):
 
     def get_latest_execution_plan(
         self, agent_id: str
-    ) -> Tuple[Optional[str], Optional[ExecutionPlan]]:
+    ) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime]]:
         sql = """
-            SELECT plan_id::VARCHAR, plan
+            SELECT plan_id::VARCHAR, plan, created_at
             FROM agent.execution_plans
             WHERE agent_id = %(agent_id)s
             ORDER BY last_updated DESC
@@ -100,8 +101,9 @@ class Postgres(PostgresBase):
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
         if not rows:
-            return None, None
-        return rows[0]["plan_id"], ExecutionPlan.model_validate(rows[0]["plan"])
+            return None, None, None
+        row = rows[0]
+        return row["plan_id"], ExecutionPlan.model_validate(row["plan"]), row["created_at"]
 
     def get_all_execution_plans(
         self, agent_id: str
@@ -147,17 +149,26 @@ class Postgres(PostgresBase):
     ################################################################################################
     def write_execution_plan(self, plan_id: str, agent_id: str, plan: ExecutionPlan) -> None:
         sql = """
-        INSERT INTO agent.execution_plans (plan_id, agent_id, plan)
+        INSERT INTO agent.execution_plans (plan_id, agent_id, plan, created_at, last_updated)
         VALUES (
-          %(plan_id)s, %(agent_id)s, %(plan)s
+          %(plan_id)s, %(agent_id)s, %(plan)s, %(created_at)s, %(last_updated)s
         )
         ON CONFLICT (plan_id) DO UPDATE SET
           agent_id = EXCLUDED.agent_id,
           plan = EXCLUDED.plan,
           last_updated = NOW()
         """
+
+        created_at = last_updated = get_now_utc()  # need so skip_commit db has proper times
         self.generic_write(
-            sql, params={"plan_id": plan_id, "agent_id": agent_id, "plan": plan.model_dump_json()}
+            sql,
+            params={
+                "plan_id": plan_id,
+                "agent_id": agent_id,
+                "plan": plan.model_dump_json(),
+                "created_at": created_at,
+                "last_updated": last_updated,
+            },
         )
 
     def write_tool_log(

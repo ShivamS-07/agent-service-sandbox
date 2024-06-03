@@ -1,5 +1,5 @@
 import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import AgentMetadata, AgentOutput
 from agent_service.io_type_utils import ComplexIOBase, IOType, load_io_type
@@ -13,6 +13,7 @@ from agent_service.types import ChatContext, Message
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.postgres import Postgres
 
 
 async def get_output_from_io_type(val: IOType, pg: BoostedPG) -> Output:
@@ -89,9 +90,9 @@ class AsyncDB:
 
     async def get_latest_execution_plan(
         self, agent_id: str
-    ) -> Tuple[Optional[str], Optional[ExecutionPlan]]:
+    ) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime]]:
         sql = """
-            SELECT plan_id::VARCHAR, plan
+            SELECT plan_id::VARCHAR, plan, created_at
             FROM agent.execution_plans
             WHERE agent_id = %(agent_id)s
             ORDER BY last_updated DESC
@@ -99,8 +100,12 @@ class AsyncDB:
         """
         rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
         if not rows:
-            return None, None
-        return rows[0]["plan_id"], ExecutionPlan.model_validate(rows[0]["plan"])
+            return None, None, None
+        return (
+            rows[0]["plan_id"],
+            ExecutionPlan.model_validate(rows[0]["plan"]),
+            rows[0]["created_at"],
+        )
 
     async def get_agent_plan_runs(
         self, agent_id: str, limit_num: Optional[int] = None
@@ -253,3 +258,21 @@ class AsyncDB:
         await self.pg.multi_row_insert(
             table_name="agent.chat_messages", rows=[msg.model_dump() for msg in messages]
         )
+
+
+async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:
+    if isinstance(db, Postgres):
+        return db.get_chats_history_for_agent(agent_id)
+    elif isinstance(db, AsyncDB):
+        return await db.get_chats_history_for_agent(agent_id)
+
+
+async def get_latest_execution_plan_from_db(
+    agent_id: str, db: Union[AsyncDB, Postgres]
+) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime]]:
+    if isinstance(db, Postgres):
+        return db.get_latest_execution_plan(agent_id)
+    elif isinstance(db, AsyncDB):
+        return await db.get_latest_execution_plan(agent_id)
+    else:
+        return None, None, None

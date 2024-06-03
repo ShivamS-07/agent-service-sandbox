@@ -8,6 +8,7 @@ from agent_service.endpoints.models import AgentMetadata
 from agent_service.planner.executor import (
     create_execution_plan_local,
     run_execution_plan_local,
+    update_execution_after_input,
 )
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
@@ -22,6 +23,7 @@ async def gen_and_run_plan(
     user_id: Optional[str] = None,
     do_chat: bool = False,
     replan_execution_error: bool = False,
+    multiple_inputs: bool = False,
 ) -> None:
     if not prompt:
         prompt = input("Enter a prompt for the agent> ")
@@ -92,6 +94,66 @@ async def gen_and_run_plan(
     )
     print("Output from main run:")
     pprint(output)
+
+    if multiple_inputs:
+        while True:
+            prompt = input("Enter a follow up prompt for the agent (type n to stop)> ")
+
+            if prompt == "n":
+                break
+            print(f"Updating execution plan given prompt: '{prompt}'")
+
+            now = get_now_utc()
+
+            new_user_msg = Message(
+                agent_id=agent.agent_id,
+                message=prompt,
+                is_user_message=True,
+                message_time=now,
+            )
+
+            db.insert_chat_messages([new_user_msg])
+            replanning_output = await update_execution_after_input(
+                agent_id,
+                user_id,
+                skip_db_commit=True,
+                skip_task_cache=False,
+                run_plan_in_prefect_immediately=False,
+                run_tasks_without_prefect=True,
+                do_chat=do_chat,
+            )
+            if replanning_output is None:
+                print("failed to create plan or no replanning needed")
+                continue
+            new_plan_id, plan, action = replanning_output
+            print(action)
+            if not run_plan_without_confirmation:
+                cont = input("Shall I continue? (y/n)> ")
+                if cont.lower() != "y":
+                    print("Exiting...")
+                    return
+
+            context = PlanRunContext(
+                agent_id=agent_id,
+                plan_id=new_plan_id,
+                user_id=user_id,
+                plan_run_id=str(uuid4()),
+                skip_db_commit=True,
+                skip_task_cache=True,
+                run_tasks_without_prefect=True,
+                chat=db.get_chats_history_for_agent(agent_id),
+            )
+
+            output = await run_execution_plan_local(
+                plan=plan,
+                context=context,
+                do_chat=do_chat,
+                log_all_outputs=verbose,
+                replan_execution_error=replan_execution_error,
+            )
+            print("Output from follow up run:")
+            pprint(output)
+
     if do_chat:
         print("Chat:")
         print(db.get_chats_history_for_agent(agent_id).get_gpt_input())
@@ -112,6 +174,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-u", "--user_id", type=str)  # useful if tool needs user
     parser.add_argument("-c", "--do_chat", action="store_true", default=False)
     parser.add_argument("-e", "--retry_on_execution_error", action="store_true", default=False)
+    parser.add_argument("-i", "--allow_additional_input", action="store_true", default=False)
     return parser.parse_args()
 
 
@@ -124,6 +187,7 @@ async def main() -> None:
         user_id=args.user_id,
         do_chat=args.do_chat,
         replan_execution_error=args.retry_on_execution_error,
+        multiple_inputs=args.allow_additional_input,
     )
 
 

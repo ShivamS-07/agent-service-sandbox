@@ -1,4 +1,3 @@
-import asyncio
 from typing import Optional, Union
 
 from agent_service.endpoints.models import (
@@ -71,10 +70,20 @@ async def publish_agent_output(
 
 
 async def publish_agent_execution_plan(
-    plan: ExecutionPlan, context: PlanRunContext, async_db: Optional[AsyncDB] = None
+    plan: ExecutionPlan, context: PlanRunContext, db: Optional[Union[AsyncDB, Postgres]] = None
 ) -> None:
-    if not async_db:  # probably never hits this, only for mypy
-        async_db = AsyncDB(SyncBoostedPG())
+
+    if db:
+        if isinstance(db, AsyncDB):
+            await db.write_execution_plan(
+                plan_id=context.plan_id, agent_id=context.agent_id, plan=plan
+            )
+        elif isinstance(db, Postgres):
+            db.write_execution_plan(plan_id=context.plan_id, agent_id=context.agent_id, plan=plan)
+    else:  # probably never hits this
+        await AsyncDB(SyncBoostedPG()).write_execution_plan(
+            plan_id=context.plan_id, agent_id=context.agent_id, plan=plan
+        )
 
     event = AgentEvent(
         agent_id=context.agent_id,
@@ -86,9 +95,4 @@ async def publish_agent_execution_plan(
         ),
     )
 
-    await asyncio.gather(
-        async_db.write_execution_plan(
-            plan_id=context.plan_id, agent_id=context.agent_id, plan=plan
-        ),
-        publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json()),
-    )
+    await publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json())

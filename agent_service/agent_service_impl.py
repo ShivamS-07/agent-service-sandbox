@@ -188,7 +188,7 @@ class AgentServiceImpl:
         )
 
         # TODO: For now just get the latest plan. Later we can switch to LIVE plan
-        plan_id, execution_plan = await self.pg.get_latest_execution_plan(agent_id)
+        plan_id, execution_plan, _ = await self.pg.get_latest_execution_plan(agent_id)
         if plan_id is None or execution_plan is None:
             execution_plan_template = None
         else:
