@@ -106,6 +106,11 @@ class TestStatisticsIdentifierLookup(unittest.IsolatedAsyncioTestCase):
 
         init_test_logging()
 
+    async def test_statistic_identifier_lookup_conv(self):
+        self.args = StatisticsIdentifierLookupInput(statistic_name="bank prime rate")
+        result = await statistic_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.stat_id, "FRED_DPRIME")
+
     async def test_statistic_identifier_lookup_price(self):
         self.args = StatisticsIdentifierLookupInput(statistic_name="Price")
         result = await statistic_identifier_lookup(self.args, self.context)

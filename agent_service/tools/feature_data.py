@@ -211,6 +211,61 @@ async def statistic_identifier_lookup(
     raise ValueError(f"Could not find a stock data field related to: {args.statistic_name}")
 
 
+class MacroFeatureDataInput(ToolArgs):
+    statistic_id: StatisticId
+    start_date: Optional[datetime.date] = None
+    end_date: Optional[datetime.date] = None
+    date_range: Optional[DateRange] = None
+    # in the future we may want to take a currency as well
+
+
+@tool(
+    description=(
+        "This function returns the time series of data for a statistic_id"
+        " that is not tied to a specific stock."
+        " Optionally a start_date and end_date may be provided to specify a date range"
+        " to get a specific date only set both inputs to the same date."
+        " if the optional date_range argument is passed in it will override anything set in start_date and end_date "
+        " If none of start_date, end_date, date_range are provided then it will assume the request "
+        " is for the most recent date for which data exists. The statistic_id MUST be "
+        " fetched with the lookup function, it cannot be an arbitrary string. "
+        " If the user does not mention any date or time frame, you should assume they "
+        " want the most recent datapoint and call without specifying either start_date or end_date."
+    ),
+    category=ToolCategory.STATISTICS,
+    tool_registry=ToolRegistry,
+)
+async def get_macro_statistic_data(args: MacroFeatureDataInput, context: PlanRunContext) -> Table:
+    if args.date_range:
+        args.start_date = args.date_range.start_date
+        args.end_date = args.date_range.end_date
+
+    # if no dates given, use latest date
+    if args.start_date is None and args.end_date is None:
+        latest_date = get_latest_date()
+        start_date = latest_date
+        end_date = latest_date
+    # if only end date given, use end to end
+    if args.start_date is None and args.end_date is not None:
+        start_date = args.end_date
+        end_date = args.end_date
+    # if only start date given, use start to start
+    elif args.start_date is not None and args.end_date is None:
+        start_date = args.start_date
+        end_date = args.start_date
+    # if both dates are given use as is
+    elif args.start_date is not None and args.end_date is not None:
+        start_date = args.start_date
+        end_date = args.end_date
+
+    return await get_statistic_data(
+        context=context,
+        statistic_id=args.statistic_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
 class FeatureDataInput(ToolArgs):
     stock_ids: List[StockID]
     statistic_id: StatisticId
@@ -223,15 +278,15 @@ class FeatureDataInput(ToolArgs):
 @tool(
     description=(
         "This function returns the time series of data for a statistic_id"
-        " for each stock in the list of stocks_ids."
+        " for each stock in the list of stock_ids. "
         " Optionally a start_date and end_date may be provided to specify a date range"
         " to get a specific date only set both inputs to the same date."
         " if the optional date_range argument is passed in it will override anything set in start_date and end_date "
         " If none of start_date, end_date, date_range are provided then it will assume the request "
-        "is for the most recent date for which data exists. The statistic_id MUST be "
-        "fetched with the lookup function, it cannot be an arbitrary string. "
-        "If the user does not mention any date or time frame, you should assume they "
-        "want the most recent datapoint and call without specifying either start_date or end_date."
+        " is for the most recent date for which data exists. The statistic_id MUST be "
+        " fetched with the lookup function, it cannot be an arbitrary string. "
+        " If the user does not mention any date or time frame, you should assume they "
+        " want the most recent datapoint and call without specifying either start_date or end_date."
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
@@ -263,7 +318,6 @@ async def get_statistic_data_for_companies(
         start_date = latest_date
         end_date = latest_date
     # if only end date given, use end to end
-    logger = get_prefect_logger(__name__)
     if args.start_date is None and args.end_date is not None:
         start_date = args.end_date
         end_date = args.end_date
@@ -276,22 +330,40 @@ async def get_statistic_data_for_companies(
         start_date = args.start_date
         end_date = args.end_date
 
+    return await get_statistic_data(
+        context=context,
+        statistic_id=args.statistic_id,
+        start_date=start_date,
+        end_date=end_date,
+        stock_ids=stock_ids,
+    )
+
+
+async def get_statistic_data(
+    context: PlanRunContext,
+    statistic_id: StatisticId,
+    start_date: datetime.date,
+    end_date: datetime.date,
+    stock_ids: Optional[List[int]] = None,
+) -> Table:
+    stock_ids = stock_ids or []
     # if one date given, turn on ffill.
     ffill_days = 0
     if start_date == end_date:
         # I think we should have a separate tool for "latest" or "last N"
         ffill_days = 180
 
+    logger = get_prefect_logger(__name__)
     logger.info(
         f"getting data for gbi_ids: {stock_ids}, "
-        f"features: {args.statistic_id}, "
+        f"features: {statistic_id}, "
         f"{start_date=}, {end_date=}"
     )
 
     # TODO: is there a better way to get this across the wire? send as raw bytes?
     result: GetFeatureDataResponse = await get_feature_data(
         user_id=context.user_id,
-        statistic_ids=[args.statistic_id.stat_id],
+        statistic_ids=[statistic_id.stat_id],
         stock_ids=stock_ids,
         from_date=start_date,
         to_date=end_date,
@@ -304,19 +376,19 @@ async def get_statistic_data_for_companies(
     # and slice out the relevant data
     security_data = NumpyCube.initialize_from_proto_bytes(result.security_data_cube)
     global_data = NumpySheet.initialize_from_proto_bytes(result.global_data_sheet)
-    is_global = not (args.statistic_id.stat_id in security_data.row_map)
+    is_global = not (statistic_id.stat_id in security_data.row_map)
     if is_global:
-        data = global_data.np_data[global_data.row_map[args.statistic_id.stat_id], :]
+        data = global_data.np_data[global_data.row_map[statistic_id.stat_id], :]
         df = pd.DataFrame(
             data,
             index=pd.to_datetime(security_data.columns),
-            columns=[args.statistic_id.stat_name],
+            columns=[statistic_id.stat_name],
         )
     else:
         if not stock_ids:
             raise ValueError("No stocks given to look up statistic for.")
         # dims are (feats, dates, secs) -> (dates, secs)
-        data = security_data.np_data[security_data.row_map[args.statistic_id.stat_id], :, :]
+        data = security_data.np_data[security_data.row_map[statistic_id.stat_id], :, :]
         df = pd.DataFrame(
             data,
             index=pd.to_datetime(security_data.columns),
@@ -324,7 +396,7 @@ async def get_statistic_data_for_companies(
         )
 
     # wrangle units
-    units = dict(result.feature_units).get(args.statistic_id.stat_id, FEATURE_UNITS_UNIT)
+    units = dict(result.feature_units).get(statistic_id.stat_id, FEATURE_UNITS_UNIT)
     if units == FEATURE_UNITS_PRICE:
         value_coltype = TableColumnType.CURRENCY
     elif units == FEATURE_UNITS_PERCENT:
@@ -355,9 +427,7 @@ async def get_statistic_data_for_companies(
             data=df,
             columns=[
                 TableColumn(label="Date", col_type=TableColumnType.DATE),
-                TableColumn(
-                    label=args.statistic_id.stat_name, col_type=value_coltype, unit=curr_unit
-                ),
+                TableColumn(label=statistic_id.stat_name, col_type=value_coltype, unit=curr_unit),
             ],
         )
     else:
@@ -367,7 +437,7 @@ async def get_statistic_data_for_companies(
         df = df.melt(
             id_vars=["Date"],
             var_name=STOCK_ID_COL_NAME_DEFAULT,
-            value_name=args.statistic_id.stat_name,
+            value_name=statistic_id.stat_name,
         )
 
         # We now have a dataframe with only a few columns: Date, Stock ID, Statistic Name
@@ -376,9 +446,7 @@ async def get_statistic_data_for_companies(
             columns=[
                 TableColumn(label="Date", col_type=TableColumnType.DATE),
                 TableColumn(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-                TableColumn(
-                    label=args.statistic_id.stat_name, col_type=value_coltype, unit=curr_unit
-                ),
+                TableColumn(label=statistic_id.stat_name, col_type=value_coltype, unit=curr_unit),
             ],
         )
 
