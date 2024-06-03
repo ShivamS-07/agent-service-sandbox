@@ -81,7 +81,7 @@ async def publish_agent_execution_plan(
         event=NewPlanEvent(
             event_type=EventType.NEW_PLAN,
             plan=ExecutionPlanTemplate(
-                plan_id=context.plan_id, task_names=[node.tool_name for node in plan.nodes]
+                plan_id=context.plan_id, task_names=[node.description for node in plan.nodes]
             ),
         ),
     )
