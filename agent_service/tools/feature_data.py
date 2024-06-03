@@ -1,4 +1,5 @@
 import datetime
+import json
 from threading import Lock
 from typing import List, Optional
 
@@ -15,11 +16,7 @@ from gbi_common_py_utils.numpy_common.numpy_cube import NumpyCube
 from gbi_common_py_utils.numpy_common.numpy_sheet import NumpySheet
 
 from agent_service.external.feature_svc_client import get_feature_data
-from agent_service.GPT.constants import (
-    DEFAULT_CHEAP_MODEL,
-    FILTER_CONCURRENCY,
-    NO_PROMPT,
-)
+from agent_service.GPT.constants import FILTER_CONCURRENCY, HAIKU, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.dates import DateRange
@@ -39,8 +36,6 @@ from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 
-logger = get_prefect_logger(__name__)
-
 LATEST_DATE_SECONDS = 60 * 60
 TTLCache(maxsize=1, ttl=LATEST_DATE_SECONDS)
 
@@ -59,33 +54,58 @@ class StatisticId(ComplexIOBase):
 STATISTIC_CONFIRMATION_PROMPT = Prompt(
     name="STATISTIC_CONFIRMATION_PROMPT",
     template="""
-do "{term1}" and "{term2}" mean the same thing?
-just respond with yes or no
+Your task is to determine if the search term  means the same thing as the candidate match in a finance context
+search term: '{search}'
+candidate match: '{match}'
+If the search term means the same thing as the candidate match return "answer" : "true"
+if not a good match, return "answer" : "false"
+also give a short reason to explain your answer in a "reason" field
+Make sure to return this in JSON.
+ONLY RETURN IN JSON. DO NOT RETURN NON-JSON.
+Return in this format: {{"answer":"", "reason":""}}
 """,
 )
 
 
 async def is_statistic_correct(context: PlanRunContext, search: str, match: str) -> bool:
+    logger = get_prefect_logger(__name__)
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    llm = GPT(context=gpt_context, model=DEFAULT_CHEAP_MODEL)
+    llm = GPT(context=gpt_context, model=HAIKU)
 
-    prompt = STATISTIC_CONFIRMATION_PROMPT.format(term1=search, term2=match)
+    prompt = STATISTIC_CONFIRMATION_PROMPT.format(search=search, match=match)
 
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=prompt,
         sys_prompt=NO_PROMPT,
+        output_json=True,
     )
 
-    result = result.lower()
-    if result.startswith("yes"):
-        return True
+    result = result.strip().lower()
 
-    if result.startswith("true"):
-        return True
+    def convert_result(result: str) -> bool:
+        if result.startswith("yes"):
+            return True
 
-    return False
+        if result.startswith("true"):
+            return True
+
+        if not result.startswith("{"):
+            return False
+
+        try:
+            res_obj = json.loads(result)
+            answer = res_obj.get("answer", False)
+            if str(answer).lower() in ["yes", "true"]:
+                return True
+        except Exception as e:
+            print(f"json parse: {repr(e)} : {result=}")
+        return False
+
+    answer = convert_result(result)
+    logger.info(f"'{answer=}' '{search=}', '{match=}', '{result=}',")
+    return answer
 
 
 class StatisticsIdentifierLookupInput(ToolArgs):
@@ -118,6 +138,7 @@ async def statistic_identifier_lookup(
     Returns:
         str: The integer identifier of the statistic.
     """
+    logger = get_prefect_logger(__name__)
     db = get_psql()
     # TODO :
     # 1. Add more filtering or new column (agent_supported) to table
@@ -158,13 +179,21 @@ async def statistic_identifier_lookup(
     if not rows:
         raise ValueError(f"Could not find a stock data field related to: {args.statistic_name}")
 
+    for r in rows:
+        logger.info(f"searched  '{args.statistic_name}' and found potential match: {str(r)[:250]}")
+
+    if rows[0]["ws"] > 0.9:
+        row = rows[0]
+        logger.info(f"searched  '{args.statistic_name}' and found best match: {str(row)[:250]}")
+        await tool_log(
+            log=f"Interpreting '{args.statistic_name}' as {row['name']}", context=context
+        )
+        return StatisticId(stat_id=row["id"], stat_name=row["name"])
+
     tasks = [
         is_statistic_correct(context, search=args.statistic_name, match=r["match_name"])
         for r in rows
     ]
-
-    for r in rows:
-        logger.info(f"searched  '{args.statistic_name}' and found potential match: {str(r)[:250]}")
 
     results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
 
@@ -174,10 +203,10 @@ async def statistic_identifier_lookup(
 
         logger.info(f"searched  '{args.statistic_name}' and found best match: {str(row)[:250]}")
         await tool_log(
-            log=f"Interpreting '{args.statistic_name}' as {rows[0]['name']}", context=context
+            log=f"Interpreting '{args.statistic_name}' as {row['name']}", context=context
         )
 
-        return StatisticId(stat_id=rows[0]["id"], stat_name=rows[0]["name"])
+        return StatisticId(stat_id=row["id"], stat_name=row["name"])
 
     raise ValueError(f"Could not find a stock data field related to: {args.statistic_name}")
 
@@ -234,6 +263,7 @@ async def get_statistic_data_for_companies(
         start_date = latest_date
         end_date = latest_date
     # if only end date given, use end to end
+    logger = get_prefect_logger(__name__)
     if args.start_date is None and args.end_date is not None:
         start_date = args.end_date
         end_date = args.end_date

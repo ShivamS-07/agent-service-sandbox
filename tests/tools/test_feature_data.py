@@ -1,6 +1,5 @@
 import datetime
 import unittest
-from unittest import IsolatedAsyncioTestCase
 
 from agent_service.io_types.misc import StockID
 from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
@@ -24,7 +23,7 @@ GROSS_PROFIT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount
 GLOBAL_CAN_TO_USD_EXCH_RATE = StatisticId(stat_id="FRED_DEXCAUS", stat_name="CAD to USD")
 
 
-class TestFeatureDataLookup(IsolatedAsyncioTestCase):
+class TestFeatureDataLookup(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
 
@@ -99,7 +98,7 @@ class TestFeatureDataLookup(IsolatedAsyncioTestCase):
         self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
 
 
-class TestStatisticsIdentifierLookup(IsolatedAsyncioTestCase):
+class TestStatisticsIdentifierLookup(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
         # uncomment for easier debugging
@@ -122,6 +121,11 @@ class TestStatisticsIdentifierLookup(IsolatedAsyncioTestCase):
         result = await statistic_identifier_lookup(self.args, self.context)
         self.assertEqual(result.stat_id, "spiq_9")
 
+    async def test_statistic_identifier_lookup_eps(self):
+        self.args = StatisticsIdentifierLookupInput(statistic_name="EPS")
+        result = await statistic_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.stat_id, "spiq_9")
+
     async def test_statistic_identifier_lookup_doesnt_exist(self):
         self.args = StatisticsIdentifierLookupInput(statistic_name="Foo bar ratio")
         with self.assertRaises(ValueError):
@@ -133,8 +137,7 @@ class TestStatisticsIdentifierLookup(IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await statistic_identifier_lookup(self.args, self.context)
 
-    @unittest.skip("not reliable")
-    async def test_statistic_identifier_lookup_bollinger(self):
+    async def test_statistic_identifier_lookup_bid_price(self):
         self.args = StatisticsIdentifierLookupInput(statistic_name="Bid Price")
         result = await statistic_identifier_lookup(self.args, self.context)
         self.assertEqual(result.stat_id, "spiq_bid")
