@@ -198,6 +198,21 @@ class AsyncDB:
             ]
         )
 
+    async def write_execution_plan(self, plan_id: str, agent_id: str, plan: ExecutionPlan) -> None:
+        sql = """
+        INSERT INTO agent.execution_plans (plan_id, agent_id, plan)
+        VALUES (
+          %(plan_id)s, %(agent_id)s, %(plan)s
+        )
+        ON CONFLICT (plan_id) DO UPDATE SET
+          agent_id = EXCLUDED.agent_id,
+          plan = EXCLUDED.plan,
+          last_updated = NOW()
+        """
+        await self.pg.generic_write(
+            sql, params={"plan_id": plan_id, "agent_id": agent_id, "plan": plan.model_dump_json()}
+        )
+
     async def delete_agent_by_id(self, agent_id: str) -> None:
         await self.pg.delete_from_table_where(table_name="agent.agents", agent_id=agent_id)
 

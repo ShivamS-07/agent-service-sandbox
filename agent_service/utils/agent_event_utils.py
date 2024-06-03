@@ -1,12 +1,16 @@
+import asyncio
 from typing import Optional, Union
 
 from agent_service.endpoints.models import (
     AgentEvent,
     AgentOutput,
+    ExecutionPlanTemplate,
     MessageEvent,
+    NewPlanEvent,
     OutputEvent,
 )
 from agent_service.io_type_utils import IOType
+from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import Message, PlanRunContext
 from agent_service.utils.async_db import AsyncDB, get_output_from_io_type
 from agent_service.utils.date_utils import get_now_utc
@@ -63,3 +67,22 @@ async def publish_agent_output(
         ),
     )
     await publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json())
+
+
+async def publish_agent_execution_plan(
+    plan: ExecutionPlan, context: PlanRunContext, async_db: Optional[AsyncDB] = None
+) -> None:
+    if not async_db:  # probably never hits this, only for mypy
+        async_db = AsyncDB(SyncBoostedPG())
+
+    event = NewPlanEvent(
+        plan=ExecutionPlanTemplate(
+            plan_id=context.plan_id, task_names=[node.tool_name for node in plan.nodes]
+        )
+    )
+    await asyncio.gather(
+        async_db.write_execution_plan(
+            plan_id=context.plan_id, agent_id=context.agent_id, plan=plan
+        ),
+        publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json()),
+    )
