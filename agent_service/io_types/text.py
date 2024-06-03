@@ -21,6 +21,14 @@ class Text(ComplexIOBase):
     id: TextIDType = Field(default_factory=lambda: str(uuid4()))
     val: str = ""
 
+    def __hash__(self) -> int:
+        return self.id.__hash__()
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, Text):
+            return self.id == other.id
+        return False
+
     async def to_rich_output(self, pg: BoostedPG) -> Output:
         return TextOutput(val=self.get().val)
 

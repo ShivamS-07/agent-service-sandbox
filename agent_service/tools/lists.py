@@ -5,7 +5,7 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 
 
-class AddListsInput(ToolArgs):
+class CombineListsInput(ToolArgs):
     list1: List[IOType]
     list2: List[IOType]
 
@@ -14,15 +14,34 @@ class AddListsInput(ToolArgs):
     description=(
         "This function forms a single deduplicated list from the elements of two lists. "
         "For example, [1, 2, 3] and [3, 4, 5] would add to [1, 2, 3, 4, 5]."
-        "This is particularly useful if you created two lists of stocks and want to"
-        "combine them"
+        "This is particularly useful if you created two lists of stocks or texts and want to"
+        "put them together into a single list"
+        "This is equivalent to `boolean OR` or `Union` logic, if you want only want elements in "
+        "both lists, use intersect_lists"
     ),
     category=ToolCategory.LIST,
     tool_registry=ToolRegistry,
     is_visible=False,
 )
-async def add_lists(args: AddListsInput, context: PlanRunContext) -> List[IOType]:
+async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
     return list(set(args.list1 + args.list2))
+
+
+@tool(
+    description=(
+        "This function forms a list of the elements included in both of two lists. "
+        "For example, [1, 2, 3, 4] and [3, 4, 5] would intersect to to [3, 4]."
+        "You will want to use this function if, for example, you have two lists of stocks that each have a certain"
+        "property and you want a list of stocks with both properties, though note it usually better to apply filters "
+        "iteratively on a single list rather than intersecting the output of two filters. "
+        "This is equivalent to boolean AND logic, use add_lists if you want OR logic."
+    ),
+    category=ToolCategory.LIST,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def intersect_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
+    return list(set(args.list1) & set(args.list2))
 
 
 class GetIndexInput(ToolArgs):

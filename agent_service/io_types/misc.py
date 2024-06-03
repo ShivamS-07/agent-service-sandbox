@@ -1,4 +1,6 @@
-from typing import List, Optional
+from __future__ import annotations
+
+from typing import Any, List, Optional
 
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.output import Output
@@ -12,6 +14,14 @@ class StockID(ComplexIOBase):
     gbi_id: int
     symbol: Optional[str]
     isin: str
+
+    def __hash__(self) -> int:
+        return self.gbi_id
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, StockID):
+            return self.gbi_id == other.gbi_id
+        return False
 
     @staticmethod
     async def from_gbi_id_list(gbi_ids: List[int]) -> List["StockID"]:
