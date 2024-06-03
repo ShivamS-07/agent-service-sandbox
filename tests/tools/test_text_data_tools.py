@@ -7,6 +7,7 @@ from agent_service.tools.other_text import (
     GetAllTextDataForStocksInput,
     GetSecFilingsInput,
     get_all_text_data_for_stocks,
+    get_all_text_data_for_stocks_aligned,
     get_sec_filings,
     get_stock_aligned_sec_filings,
 )
@@ -43,7 +44,7 @@ class TestTextData(IsolatedAsyncioTestCase):
         # print(actual_sec_filing_1[0])  # useful when debugging
 
     async def test_get_all_text_data(self):
-        all_data = await get_all_text_data_for_stocks(
+        all_data = await get_all_text_data_for_stocks_aligned(
             args=GetAllTextDataForStocksInput(
                 stock_ids=[StockID(gbi_id=18654, symbol="", isin="")]
             ),
@@ -51,5 +52,17 @@ class TestTextData(IsolatedAsyncioTestCase):
         )
         types = set()
         for text in all_data.val[18654].val:
+            types.add(type(text))
+        self.assertEqual(len(types), 4)
+
+        all_data = await get_all_text_data_for_stocks(
+            args=GetAllTextDataForStocksInput(
+                stock_ids=[StockID(gbi_id=18654, symbol="", isin="")]
+            ),
+            context=self.context,
+        )
+
+        types = set()
+        for text in all_data:
             types.add(type(text))
         self.assertEqual(len(types), 4)

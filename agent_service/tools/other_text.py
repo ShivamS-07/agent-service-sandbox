@@ -4,18 +4,26 @@ from typing import Dict, List, Optional
 
 from agent_service.external.sec_utils import FILINGS, SecFiling, SecMapping
 from agent_service.io_types.misc import StockID
-from agent_service.io_types.text import SecFilingText, StockAlignedTextGroups, TextGroup
+from agent_service.io_types.text import (
+    SecFilingText,
+    StockAlignedTextGroups,
+    Text,
+    TextGroup,
+)
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.earnings import (
     GetEarningsCallSummariesInput,
+    get_earnings_call_summaries,
     get_stock_aligned_earnings_call_summaries,
 )
 from agent_service.tools.news import (
     GetNewsDevelopmentsAboutCompaniesInput,
+    get_all_news_developments_about_companies,
     get_stock_aligned_news_developments,
 )
 from agent_service.tools.stock_metadata import (
     GetStockDescriptionInput,
+    get_company_descriptions,
     get_company_descriptions_stock_aligned,
 )
 from agent_service.tools.tool_log import tool_log
@@ -136,17 +144,22 @@ class GetAllTextDataForStocksInput(ToolArgs):
         " these sources, you must this function to get the data, though if they specifically mention a subset "
         " of these sources or it is clear which individual source would have the information required, "
         "you must gather data using the individual function. For example, if a client asked "
-        "`Can you list any challenges that McDonald's is facing in Asian markets`, relevant information"
+        "`Give me stocks facing challenges in Asian markets`, relevant information"
         " might be spread across multiple sources and you can use this function, but if the client "
-        "mentions they are specific interested in information from SEC filings, you should pull only that data"
+        "mentions they are specific interested in information from SEC filings, you should pull only that data. "
+        "This stock aligned function should be used if you intend to apply an LLM analysis function on a per "
+        "stock basis, such as for filtering ."
+        "For example, if a user asked `Please give me all companies that have been affected by Generative AI`, "
+        " you would use this function to get the data for each stock to be used for filtering. "
         "If end_date is omitted, data up to the current day will be included, if the start date is "
         "omitted, all data for the last quarter will be included."
+        ""
     ),
     category=ToolCategory.TEXT,
     tool_registry=ToolRegistry,
     is_visible=False,
 )
-async def get_all_text_data_for_stocks(
+async def get_all_text_data_for_stocks_aligned(
     args: GetAllTextDataForStocksInput, context: PlanRunContext
 ) -> StockAlignedTextGroups:
     stock_ids = args.stock_ids
@@ -205,3 +218,86 @@ async def get_all_text_data_for_stocks(
     for other_texts in all_data[1:]:
         combined_texts = StockAlignedTextGroups.join(combined_texts, other_texts)
     return combined_texts
+
+
+@tool(
+    description=(
+        "This function takes a lists of stocks and returns a StockAlignedTextGroups object"
+        " which contains a mapping from all stocks to all the text information that is available"
+        " for these stocks. This data includes:\n"
+        "1. Company descriptions\n2. News developments\n3. Earnings Call Summaries\n4. SEC Filings\n"
+        "This function should be your default tool for getting data when the best source is not clear"
+        "If a client asks for something related to qualitative information that could be contained in any of"
+        " these sources, you must this function to get the data, though if they specifically mention a subset "
+        " of these sources or it is clear which individual source would have the information required, "
+        "you must gather data using the individual function. For example, if a client asked "
+        "`Summarize the challenges McDonald's is facing in Asian markets`, relevant information"
+        " might be spread across multiple sources and you can use this function, but if the client "
+        "mentions they are specific interested in information from SEC filings, you should pull only that data. "
+        "This function (rather than its aligned counterpart) should be used if you intend to summarize one or "
+        " handful of descriptions, or show these descriptions to the user directly. "
+        "For example, if a user asked `Please give me a brief summary of problems the magnificent 7 tech companies"
+        " are facing`, you would use this function to get the information. "
+        "If end_date is omitted, data up to the current day will be included, if the start date is "
+        "omitted, all data for the last quarter will be included."
+    ),
+    category=ToolCategory.TEXT,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_all_text_data_for_stocks(
+    args: GetAllTextDataForStocksInput, context: PlanRunContext
+) -> List[Text]:
+    stock_ids = args.stock_ids
+    start_date = args.start_date
+    end_date = args.end_date
+    if not start_date:
+        start_date = (get_now_utc() - datetime.timedelta(days=90)).date()
+    if not end_date:
+        # Add an extra day to be sure we don't miss anything with timezone weirdness
+        end_date = get_now_utc().date() + datetime.timedelta(days=1)
+
+    all_data: List[Text] = []
+    await tool_log(log="Getting company descriptions", context=context)
+    try:
+        description_data = await get_company_descriptions(
+            GetStockDescriptionInput(stock_ids=stock_ids), context=context
+        )
+        all_data.extend(description_data)  # type: ignore
+    except Exception as e:
+        logger.exception(f"failed to get company description(s) due to error: {e}")
+    await tool_log(log="Getting news developments", context=context)
+    try:
+        news_data = await get_all_news_developments_about_companies(
+            GetNewsDevelopmentsAboutCompaniesInput(
+                stock_ids=stock_ids, start_date=start_date, end_date=end_date
+            ),
+            context=context,
+        )
+        all_data.extend(news_data)  # type: ignore
+    except Exception as e:
+        logger.exception(f"failed to get company news due to error: {e}")
+    await tool_log(log="Getting earnings summaries", context=context)
+    try:
+        earnings_data = await get_earnings_call_summaries(
+            GetEarningsCallSummariesInput(
+                stock_ids=stock_ids, start_date=start_date, end_date=end_date
+            ),
+            context=context,
+        )
+        all_data.extend(earnings_data)  # type: ignore
+    except Exception as e:
+        logger.exception(f"failed to get earnings summaries due to error: {e}")
+    await tool_log(log="Getting SEC filings", context=context)
+    try:
+        sec_filings = await get_sec_filings(
+            GetSecFilingsInput(stock_ids=stock_ids, start_date=start_date, end_date=end_date),
+            context=context,
+        )
+        all_data.extend(sec_filings)  # type: ignore
+    except Exception as e:
+        logger.exception(f"failed to get SEC filings(s) due to error: {e}")
+    await tool_log(log="Combining all text data", context=context)
+    if len(all_data) == 0:
+        raise Exception("Found no data for the provided stocks")
+    return all_data
