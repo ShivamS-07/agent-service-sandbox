@@ -4,6 +4,7 @@ from typing import Optional, Union
 from agent_service.endpoints.models import (
     AgentEvent,
     AgentOutput,
+    EventType,
     ExecutionPlanTemplate,
     MessageEvent,
     NewPlanEvent,
@@ -75,11 +76,16 @@ async def publish_agent_execution_plan(
     if not async_db:  # probably never hits this, only for mypy
         async_db = AsyncDB(SyncBoostedPG())
 
-    event = NewPlanEvent(
-        plan=ExecutionPlanTemplate(
-            plan_id=context.plan_id, task_names=[node.tool_name for node in plan.nodes]
-        )
+    event = AgentEvent(
+        agent_id=context.agent_id,
+        event=NewPlanEvent(
+            event_type=EventType.NEW_PLAN,
+            plan=ExecutionPlanTemplate(
+                plan_id=context.plan_id, task_names=[node.tool_name for node in plan.nodes]
+            ),
+        ),
     )
+
     await asyncio.gather(
         async_db.write_execution_plan(
             plan_id=context.plan_id, agent_id=context.agent_id, plan=plan
