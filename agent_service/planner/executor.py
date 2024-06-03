@@ -41,7 +41,6 @@ from agent_service.utils.prefect import (
     FlowRunType,
     get_prefect_logger,
     prefect_cancel_agent_flow,
-    prefect_cancel_current_flow,
     prefect_create_execution_plan,
     prefect_get_current_plan_run_task_id,
     prefect_pause_current_agent_flow,
@@ -101,11 +100,13 @@ async def run_execution_plan(
             tool_output = await tool.func(args=step_args, context=context)
         except Exception as e:
             logger.exception(f"Step '{step.tool_name}' failed due to {e}")
+            retrying = False
             if replan_execution_error:
-                await handle_error_in_execution(context, e, step, do_chat)
+                retrying = await handle_error_in_execution(context, e, step, do_chat)
 
-            await prefect_cancel_current_flow()
-            return None
+            if retrying:
+                raise RuntimeError("Plan run attempt failed, retrying")
+            raise RuntimeError("All retry attempts failed")
 
         db.write_tool_output(output=tool_output, context=context)
         if log_all_outputs:
@@ -190,7 +191,7 @@ async def create_execution_plan(
                 message=Message(agent_id=agent_id, message=message, is_user_message=False),
                 db=db,
             )
-        return None
+        raise RuntimeError("Failed to create execution plan!")
 
     plan_run_id = str(uuid4())
     ctx = PlanRunContext(
@@ -472,7 +473,11 @@ async def rewrite_execution_plan(
 
 async def handle_error_in_execution(
     context: PlanRunContext, error: Exception, step: ToolExecutionNode, do_chat: bool = True
-) -> None:
+) -> bool:
+    """
+    Handles an error, and returns a boolean. Returns True if the plan is being
+    retried, and false if not.
+    """
     db = get_psql(skip_commit=context.skip_db_commit)
     plans, plan_times = db.get_all_execution_plans(context.agent_id)
     chat_context = db.get_chats_history_for_agent(context.agent_id)
@@ -496,7 +501,7 @@ async def handle_error_in_execution(
                 db=db,
             )
 
-        return
+        return False
 
     error_info = ErrorInfo(error=str(error), step=step, change=change)
 
@@ -549,8 +554,10 @@ async def handle_error_in_execution(
             )
             print("Got replan after error output:")
             pprint.pprint(output)
+            return True
         else:
             print("replan failed")
+            return False
 
     else:
         await prefect_create_execution_plan(
@@ -563,6 +570,7 @@ async def handle_error_in_execution(
             skip_task_cache=context.skip_task_cache,
             run_plan_in_prefect_immediately=True,
         )
+        return True
 
 
 # Run these in tests or if you don't want to connect to the prefect server.

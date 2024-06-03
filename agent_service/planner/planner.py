@@ -118,6 +118,7 @@ class Planner:
         if turbo_plan is not None:
             logger.info("Round 2 turbo run succeeded, using that plan")
             # if we were able to get a working version with turbo, use that
+            logger.info(f"New Plan:\n{turbo_plan.get_formatted_plan()}")
             return turbo_plan
 
         if breakdown_plan:
@@ -126,6 +127,7 @@ class Planner:
             logger.warning("Round 2 planning failed, giving up")
 
         # otherwise, return the best breakdown version if any
+        logger.info(f"New Plan:\n{breakdown_plan.get_formatted_plan()}")
         return breakdown_plan
 
     async def _get_plan_from_breakdown(self, chat_context: ChatContext) -> Optional[ExecutionPlan]:
@@ -212,13 +214,11 @@ class Planner:
         last_plan: ExecutionPlan,
         last_plan_timestamp: datetime.datetime,
     ) -> Optional[ExecutionPlan]:
-
         latest_user_messages = [
             message
             for message in chat_context.messages
             if message.is_user_message and message.message_time > last_plan_timestamp
         ]
-
         logger = get_prefect_logger(__name__)
         tasks = [
             self._rewrite_plan_after_input(chat_context, last_plan, latest_user_messages)

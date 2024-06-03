@@ -104,15 +104,18 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
             # graph. For example, if the dataset column contains stock ID's,
             # this will create a dataset for each stock.
             dataset_data = df.loc[df[dataset_df_col] == dataset_val]
-            dataset = GraphDataset(
-                dataset_id=dataset_val,
-                dataset_id_type=ds_col.col_type,
-                points=[
-                    DataPoint(x_val=x_val, y_val=y_val)
-                    for x_val, y_val in zip(dataset_data[x_df_col], dataset_data[y_df_col])
-                    if x_val is not None and y_val is not None
-                ],
-            )
+            try:
+                dataset = GraphDataset(
+                    dataset_id=dataset_val,
+                    dataset_id_type=ds_col.col_type,
+                    points=[
+                        DataPoint(x_val=x_val, y_val=y_val)
+                        for x_val, y_val in zip(dataset_data[x_df_col], dataset_data[y_df_col])
+                        if x_val is not None and y_val is not None
+                    ],
+                )
+            except TypeError:
+                raise RuntimeError("Cannot graph table with a single row!")
             data.append(dataset)
 
     return LineGraph(

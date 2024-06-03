@@ -111,20 +111,6 @@ async def get_prefect_task_statuses(
         runs: List[TaskRun] = await client.read_task_runs(
             flow_run_filter=FlowRunFilter(
                 name=FlowRunFilterName(any_=plan_run_ids),
-                state=FlowRunFilterState(  # type: ignore
-                    # Filter out flows that are cancelled from the frontend.
-                    type=FlowRunFilterStateType(
-                        any_=[
-                            StateType.RUNNING,
-                            StateType.COMPLETED,
-                            StateType.FAILED,
-                            StateType.PENDING,
-                            StateType.SCHEDULED,
-                            StateType.PAUSED,
-                            StateType.CRASHED,
-                        ]
-                    )
-                ),
             )
         )
     output = {}
@@ -246,7 +232,7 @@ async def prefect_resume_agent_flow(run: PrefectFlowRun) -> None:
 
 async def prefect_cancel_agent_flow(run: PrefectFlowRun) -> None:
     logger.info(f"Cancelling flow run {run.flow_run_id}")
-    cancelling_state: State = State(type=StateType.CANCELLING)
+    cancelling_state: State = State(type=StateType.CANCELLED)
     async with get_client() as client:  # type: ignore
         await client.set_flow_run_state(flow_run_id=run.flow_run_id, state=cancelling_state)
 
@@ -284,6 +270,6 @@ async def prefect_cancel_current_flow() -> None:
         logger.error("Cannot cancel flow with no flow running...")
         return
 
-    cancelling_state: State = State(type=StateType.CANCELLING)
+    cancelling_state: State = State(type=StateType.CANCELLED)
     async with get_client() as client:  # type: ignore
         await client.set_flow_run_state(flow_run_id=context.flow_run.id, state=cancelling_state)
