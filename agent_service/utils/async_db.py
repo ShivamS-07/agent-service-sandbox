@@ -11,7 +11,7 @@ from agent_service.io_types.text import Text
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message
 from agent_service.utils.async_utils import gather_with_concurrency
-from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
+from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import Postgres
 
@@ -191,16 +191,9 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, params=params)
         return ChatContext(messages=[Message(agent_id=agent_id, **row) for row in rows])
 
-    async def insert_agent_and_messages(
-        self, agent_metadata: AgentMetadata, messages: List[Message]
-    ) -> None:
-        await self.pg.insert_atomic(
-            to_insert=[
-                InsertToTableArgs(table_name="agent.agents", rows=[agent_metadata.model_dump()]),
-                InsertToTableArgs(
-                    table_name="agent.chat_messages", rows=[msg.model_dump() for msg in messages]
-                ),
-            ]
+    async def create_agent(self, agent_metadata: AgentMetadata) -> None:
+        await self.pg.multi_row_insert(
+            table_name="agent.agents", rows=[agent_metadata.model_dump()]
         )
 
     async def write_execution_plan(self, plan_id: str, agent_id: str, plan: ExecutionPlan) -> None:

@@ -22,7 +22,6 @@ from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
     ChatWithAgentRequest,
     ChatWithAgentResponse,
-    CreateAgentRequest,
     CreateAgentResponse,
     DeleteAgentResponse,
     GetAgentOutputResponse,
@@ -55,10 +54,8 @@ class TestAgentServiceImplBase(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.channel.close()
 
-    def create_agent(self, req: CreateAgentRequest, user: User) -> CreateAgentResponse:
-        return self.loop.run_until_complete(
-            self.agent_service_impl.create_agent(req=req, user=user)
-        )
+    def create_agent(self, user: User) -> CreateAgentResponse:
+        return self.loop.run_until_complete(self.agent_service_impl.create_agent(user=user))
 
     def get_all_agents(self, user: User) -> GetAllAgentsResponse:
         return self.loop.run_until_complete(self.agent_service_impl.get_all_agents(user=user))

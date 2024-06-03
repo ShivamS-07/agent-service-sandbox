@@ -21,7 +21,6 @@ from agent_service.endpoints.authz_helper import (
 from agent_service.endpoints.models import (
     ChatWithAgentRequest,
     ChatWithAgentResponse,
-    CreateAgentRequest,
     CreateAgentResponse,
     DeleteAgentResponse,
     GetAgentOutputResponse,
@@ -80,10 +79,8 @@ def health() -> str:
 @router.post(
     "/agent/create-agent", response_model=CreateAgentResponse, status_code=status.HTTP_201_CREATED
 )
-async def create_agent(
-    req: CreateAgentRequest, user: User = Depends(parse_header)
-) -> CreateAgentResponse:
-    return await application.state.agent_service_impl.create_agent(req=req, user=user)
+async def create_agent(user: User = Depends(parse_header)) -> CreateAgentResponse:
+    return await application.state.agent_service_impl.create_agent(user=user)
 
 
 @router.delete(

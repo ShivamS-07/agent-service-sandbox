@@ -17,10 +17,6 @@ from agent_service.utils.date_utils import get_now_utc
 ####################################################################################################
 # CreateAgent
 ####################################################################################################
-class CreateAgentRequest(BaseModel):
-    first_prompt: str
-
-
 class CreateAgentResponse(BaseModel):
     success: bool
     allow_retry: bool
@@ -68,6 +64,7 @@ class GetAllAgentsResponse(BaseModel):
 class ChatWithAgentRequest(BaseModel):
     agent_id: str
     prompt: str
+    is_first_prompt: bool = False
 
 
 class ChatWithAgentResponse(BaseModel):

@@ -13,7 +13,6 @@ from agent_service.endpoints.models import (
     AgentMetadata,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
-    CreateAgentRequest,
     CreateAgentResponse,
     DeleteAgentResponse,
     ExecutionPlanTemplate,
@@ -47,74 +46,18 @@ class AgentServiceImpl:
         self.task_executor = task_executor
         self.gpt_service_stub = gpt_service_stub
 
-    async def create_agent(self, req: CreateAgentRequest, user: User) -> CreateAgentResponse:
-        """Create an agent - Client should send the first prompt from user
-        1. Generate initial response from GPT -> Allow retry if fails
-        2. Insert agent and messages into DB -> Allow retry if fails
-        3. Kick off Prefect job -> retry is forbidden since it's a major system issue
-        4. Return success or failure to client. If success, return agent ID
-        """
+    async def create_agent(self, user: User) -> CreateAgentResponse:
+        """Create an agent entry in the DB and return ID immediately"""
 
         now = get_now_utc()
-        agent_id = str(uuid4())
-        LOGGER.info("Generating initial response from GPT...")
-        try:
-            agent = AgentMetadata(
-                agent_id=agent_id,
-                user_id=user.user_id,
-                agent_name=DEFAULT_AGENT_NAME,
-                created_at=now,
-                last_updated=now,
-            )
-            user_msg = Message(
-                agent_id=agent.agent_id,
-                message=req.first_prompt,
-                is_user_message=True,
-                message_time=now,
-            )
-            chatbot = Chatbot(agent.agent_id, gpt_service_stub=self.gpt_service_stub)
-            gpt_resp = await chatbot.generate_initial_preplan_response(
-                chat_context=ChatContext(messages=[user_msg])
-            )
-            gpt_msg = Message(
-                agent_id=agent.agent_id,
-                message=gpt_resp,
-                is_user_message=False,
-            )
-        except Exception as e:
-            # FE should retry if this fails
-            LOGGER.exception(f"Failed to generate initial response from GPT with exception: {e}")
-            return CreateAgentResponse(success=False, allow_retry=True)
-
-        LOGGER.info(f"Inserting agent and messages into DB for agent {agent.agent_id}...")
-        try:
-            await self.pg.insert_agent_and_messages(
-                agent_metadata=agent, messages=[user_msg, gpt_msg]
-            )
-        except Exception as e:
-            LOGGER.exception(f"Failed to insert agent and messages into DB with exception: {e}")
-            return CreateAgentResponse(success=False, allow_retry=True)
-
-        LOGGER.info("Publishing GPT response to Redis...")
-        try:
-            await send_chat_message(gpt_msg, db=self.pg, insert_message_into_db=False)
-        except Exception as e:
-            LOGGER.exception(f"Failed to publish GPT response to Redis: {e}")
-            return CreateAgentResponse(success=False, allow_retry=False)
-
-        plan_id = str(uuid4())
-        LOGGER.info(f"Creating execution plan {plan_id} for {agent_id=}")
-        try:
-            await self.task_executor.create_execution_plan(
-                agent_id=agent_id,
-                plan_id=plan_id,
-                user_id=user.user_id,
-                run_plan_in_prefect_immediately=True,
-            )
-        except Exception:
-            LOGGER.exception("Failed to kick off execution plan creation")
-            return CreateAgentResponse(success=False, allow_retry=False)
-
+        agent = AgentMetadata(
+            agent_id=str(uuid4()),
+            user_id=user.user_id,
+            agent_name=DEFAULT_AGENT_NAME,
+            created_at=now,
+            last_updated=now,
+        )
+        await self.pg.create_agent(agent)
         return CreateAgentResponse(success=True, allow_retry=False, agent_id=agent.agent_id)
 
     async def get_all_agents(self, user: User) -> GetAllAgentsResponse:
@@ -130,31 +73,62 @@ class AgentServiceImpl:
         return UpdateAgentResponse(success=True)
 
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
-        try:
-            LOGGER.info(f"Inserting user's new message to DB for {req.agent_id=}")
-            user_msg = Message(
-                agent_id=req.agent_id,
-                message=req.prompt,
-                is_user_message=True,
-            )
-            await self.pg.insert_chat_messages(messages=[user_msg])
-        except Exception as e:
-            LOGGER.exception(f"Failed to insert user message into DB with exception: {e}")
-            return ChatWithAgentResponse(success=False, allow_retry=True)
+        agent_id = req.agent_id
+        user_msg = Message(agent_id=agent_id, message=req.prompt, is_user_message=True)
 
-        try:
-            LOGGER.info(f"Updating execution after user's new message for {req.agent_id=}")
-            await self.task_executor.update_execution_after_input(
-                agent_id=req.agent_id, user_id=user.user_id, chat_context=None
-            )
-        except Exception as e:
-            LOGGER.exception(
-                (
-                    f"Failed to update agent id {req.agent_id} execution"
-                    f" after input with exception: {e}"
+        if not req.is_first_prompt:
+            try:
+                LOGGER.info(f"Inserting user's new message to DB for {agent_id=}")
+                await self.pg.insert_chat_messages(messages=[user_msg])
+            except Exception as e:
+                LOGGER.exception(f"Failed to insert user message into DB with exception: {e}")
+                return ChatWithAgentResponse(success=False, allow_retry=True)
+
+            try:
+                LOGGER.info(f"Updating execution plan after user's new message for {req.agent_id=}")
+                await self.task_executor.update_execution_after_input(
+                    agent_id=req.agent_id, user_id=user.user_id, chat_context=None
                 )
-            )
-            return ChatWithAgentResponse(success=False, allow_retry=False)
+            except Exception as e:
+                LOGGER.exception((f"Failed to update {agent_id=} execution plan: {e}"))
+                return ChatWithAgentResponse(success=False, allow_retry=False)
+        else:
+            try:
+                LOGGER.info("Generating initial response from GPT (first prompt)")
+                chatbot = Chatbot(agent_id, gpt_service_stub=self.gpt_service_stub)
+                gpt_resp = await chatbot.generate_initial_preplan_response(
+                    chat_context=ChatContext(messages=[user_msg])
+                )
+
+                LOGGER.info("Inserting user's and GPT's messages to DB")
+                gpt_msg = Message(agent_id=agent_id, message=gpt_resp, is_user_message=False)
+                await self.pg.insert_chat_messages(messages=[user_msg, gpt_msg])
+            except Exception as e:
+                # FE should retry if this fails
+                LOGGER.exception(
+                    f"Failed to generate initial response from GPT with exception: {e}"
+                )
+                return ChatWithAgentResponse(success=False, allow_retry=True)
+
+            try:
+                LOGGER.info("Publishing GPT response to Redis")
+                await send_chat_message(gpt_msg, self.pg, insert_message_into_db=False)
+            except Exception as e:
+                LOGGER.exception(f"Failed to publish GPT response to Redis: {e}")
+                return ChatWithAgentResponse(success=False, allow_retry=False)
+
+            plan_id = str(uuid4())
+            LOGGER.info(f"Creating execution plan {plan_id} for {agent_id=}")
+            try:
+                await self.task_executor.create_execution_plan(
+                    agent_id=agent_id,
+                    plan_id=plan_id,
+                    user_id=user.user_id,
+                    run_plan_in_prefect_immediately=True,
+                )
+            except Exception:
+                LOGGER.exception("Failed to kick off execution plan creation")
+                return ChatWithAgentResponse(success=False, allow_retry=False)
 
         return ChatWithAgentResponse(success=True, allow_retry=False)
 
