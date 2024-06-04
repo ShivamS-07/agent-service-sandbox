@@ -3,6 +3,7 @@ import json
 from threading import Lock
 from typing import List, Optional
 
+import numpy as np
 import pandas as pd
 from cachetools import TTLCache, cached
 from data_access_layer.core.dao.features.features_dao import FeaturesDAO
@@ -394,6 +395,7 @@ async def get_statistic_data(
             index=pd.to_datetime(security_data.columns),
             columns=[int(s) for s in security_data.fields],
         )
+    df = df.replace(0, np.nan).dropna(axis="index", how="all")
 
     # wrangle units
     units = dict(result.feature_units).get(statistic_id.stat_id, FEATURE_UNITS_UNIT)

@@ -18,6 +18,7 @@ AMZN = StockID(gbi_id=149, isin="", symbol="AMZN")
 MSFT = StockID(gbi_id=6963, isin="", symbol="AAPL")
 VZ = StockID(gbi_id=12250, isin="", symbol="VZ")
 CLOSE_PRICE = StatisticId(stat_id="spiq_close", stat_name="Close Price")
+PE_RATIO = StatisticId(stat_id="pe_ratio", stat_name="P/E Ratio")
 SPIQ_DIV_AMOUNT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount")
 GROSS_PROFIT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount")
 GLOBAL_CAN_TO_USD_EXCH_RATE = StatisticId(stat_id="FRED_DEXCAUS", stat_name="CAD to USD")
@@ -33,6 +34,15 @@ class TestFeatureDataLookup(unittest.IsolatedAsyncioTestCase):
             statistic_id=GLOBAL_CAN_TO_USD_EXCH_RATE,
         )
         result = await get_statistic_data_for_companies(args, self.context)
+        self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
+
+    async def test_preset_feature_data_3_stock(self):
+        args = FeatureDataInput(
+            stock_ids=[AAPL, AMZN, MSFT],
+            statistic_id=PE_RATIO,
+        )
+        result = await get_statistic_data_for_companies(args, self.context)
+        self.assertEqual(len(result.data[STOCK_ID_COL_NAME_DEFAULT].unique()), 3)  # num_stocks
         self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
 
     async def test_feature_data_3_stock(self):
@@ -136,12 +146,11 @@ class TestStatisticsIdentifierLookup(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await statistic_identifier_lookup(self.args, self.context)
 
-    @unittest.skip("This test is failing")
-    async def test_statistic_identifier_lookup_doesnt_exist_pe(self):
+    async def test_statistic_identifier_lookup_pe(self):
         # eventually this should be changed to expect it to find something correct
         self.args = StatisticsIdentifierLookupInput(statistic_name="pe ratio")
-        with self.assertRaises(ValueError):
-            await statistic_identifier_lookup(self.args, self.context)
+        result = await statistic_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.stat_id, "pe_ratio")
 
     async def test_statistic_identifier_lookup_bid_price(self):
         self.args = StatisticsIdentifierLookupInput(statistic_name="Bid Price")
