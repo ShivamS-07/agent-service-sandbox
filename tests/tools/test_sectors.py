@@ -115,7 +115,7 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
     async def test_sector_filter(self):
         args = SectorFilterInput(
             sector_id=SectorID(sec_id=40, sec_name="Financials"),
-            stock_ids=[StockID(gbi_id=1092, symbol="", isin="")],
+            stock_ids=[StockID(gbi_id=1092, symbol="", isin="", company_name="")],
         )  # financials  # BAC
 
         stocks = await sector_filter(args=args, context=self.context)
@@ -123,7 +123,7 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
 
         args = SectorFilterInput(
             sector_id=SectorID(sec_id=50, sec_name="Communcation Services"),
-            stock_ids=[StockID(gbi_id=1092, symbol="", isin="")],
+            stock_ids=[StockID(gbi_id=1092, symbol="", isin="", company_name="")],
         )  # 'Communication Services'  # BAC
 
         stocks = await sector_filter(args=args, context=self.context)

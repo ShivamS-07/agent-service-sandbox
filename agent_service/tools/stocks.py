@@ -56,6 +56,7 @@ async def stock_identifier_lookup(
             gbi_id=only_stock["gbi_security_id"],
             symbol=only_stock["symbol"],
             isin=only_stock["isin"],
+            company_name=only_stock["name"],
         )
 
     logger.info(f"found {len(rows)} best potential matching stocks")
@@ -84,7 +85,12 @@ async def stock_identifier_lookup(
         context=context,
     )
 
-    return StockID(gbi_id=stock["gbi_security_id"], symbol=stock["symbol"], isin=stock["isin"])
+    return StockID(
+        gbi_id=stock["gbi_security_id"],
+        symbol=stock["symbol"],
+        isin=stock["isin"],
+        company_name=stock["name"],
+    )
 
 
 async def raw_stock_identifier_lookup(
@@ -293,7 +299,7 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
     # Find the stocks in the universe
     sql = """
     SELECT DISTINCT ON (gbi_id)
-    gbi_id, symbol, isin
+    gbi_id, symbol, isin, name
     FROM "data".etf_universe_holdings euh
     JOIN master_security ms ON ms.gbi_security_id = euh.gbi_id
     WHERE spiq_company_id = %s
@@ -301,4 +307,9 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
     """
     rows = db.generic_read(sql, [universe_spiq_company_id])
 
-    return [StockID(gbi_id=row["gbi_id"], symbol=row["symbol"], isin=row["isin"]) for row in rows]
+    return [
+        StockID(
+            gbi_id=row["gbi_id"], symbol=row["symbol"], isin=row["isin"], company_name=row["name"]
+        )
+        for row in rows
+    ]

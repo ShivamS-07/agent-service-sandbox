@@ -17,6 +17,8 @@ class StockID(ComplexIOBase):
     gbi_id: int
     symbol: Optional[str]
     isin: str
+    # Default for backwards compat
+    company_name: str = ""
 
     def __hash__(self) -> int:
         return self.gbi_id
@@ -30,7 +32,12 @@ class StockID(ComplexIOBase):
     async def from_gbi_id_list(gbi_ids: List[int]) -> List["StockID"]:
         meta_dict = await get_stock_metadata(gbi_ids=gbi_ids)
         return [
-            StockID(gbi_id=meta.gbi_id, symbol=meta.symbol, isin=meta.isin)
+            StockID(
+                gbi_id=meta.gbi_id,
+                symbol=meta.symbol,
+                isin=meta.isin,
+                company_name=meta.company_name,
+            )
             for meta in meta_dict.values()
         ]
 

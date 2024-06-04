@@ -344,7 +344,7 @@ async def main() -> None:
         run_tasks_without_prefect=True,
         skip_db_commit=True,
     )
-    stock_id = StockID(gbi_id=714, symbol="APPL", isin="")
+    stock_id = StockID(gbi_id=714, symbol="APPL", isin="", company_name="")
 
     gen_kpi_list: List[KPIText] = await get_important_kpis_for_stock(  # type: ignore
         args=GetImportantKPIsForStock(stock_id=stock_id), context=plan_context

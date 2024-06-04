@@ -23,7 +23,7 @@ class TestTextData(IsolatedAsyncioTestCase):
         self.context = PlanRunContext.get_dummy()
 
     async def test_get_sec_filing(self):
-        stock = StockID(gbi_id=714, symbol="", isin="")
+        stock = StockID(gbi_id=714, symbol="", isin="", company_name="")
         sec_filing_texts = await get_sec_filings(
             args=GetSecFilingsInput(stock_ids=[stock]),
             context=self.context,
@@ -47,18 +47,18 @@ class TestTextData(IsolatedAsyncioTestCase):
     async def test_get_all_text_data(self):
         all_data = await get_all_text_data_for_stocks_aligned(
             args=GetAllTextDataForStocksInput(
-                stock_ids=[StockID(gbi_id=18654, symbol="", isin="")]
+                stock_ids=[StockID(gbi_id=18654, symbol="", isin="", company_name="")]
             ),
             context=self.context,
         )
         types = set()
-        for text in all_data.val[StockID(gbi_id=18654, symbol="", isin="")].val:
+        for text in all_data.val[StockID(gbi_id=18654, symbol="", isin="", company_name="")].val:
             types.add(type(text))
         self.assertEqual(len(types), 4)
 
         all_data = await get_all_text_data_for_stocks(
             args=GetAllTextDataForStocksInput(
-                stock_ids=[StockID(gbi_id=18654, symbol="", isin="")]
+                stock_ids=[StockID(gbi_id=18654, symbol="", isin="", company_name="")]
             ),
             context=self.context,
         )

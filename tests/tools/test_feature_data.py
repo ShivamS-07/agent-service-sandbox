@@ -13,10 +13,10 @@ from agent_service.tools.feature_data import (
 )
 from agent_service.types import PlanRunContext
 
-AAPL = StockID(gbi_id=714, isin="", symbol="AAPL")
-AMZN = StockID(gbi_id=149, isin="", symbol="AMZN")
-MSFT = StockID(gbi_id=6963, isin="", symbol="AAPL")
-VZ = StockID(gbi_id=12250, isin="", symbol="VZ")
+AAPL = StockID(gbi_id=714, isin="", symbol="AAPL", company_name="")
+AMZN = StockID(gbi_id=149, isin="", symbol="AMZN", company_name="")
+MSFT = StockID(gbi_id=6963, isin="", symbol="AAPL", company_name="")
+VZ = StockID(gbi_id=12250, isin="", symbol="VZ", company_name="")
 CLOSE_PRICE = StatisticId(stat_id="spiq_close", stat_name="Close Price")
 PE_RATIO = StatisticId(stat_id="pe_ratio", stat_name="P/E Ratio")
 SPIQ_DIV_AMOUNT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount")

@@ -55,8 +55,8 @@ class TestWatchlistTools(IsolatedAsyncioTestCase):
         self.assertEqual(
             result,
             [
-                StockID(gbi_id=714, symbol="AAPL", isin="US0378331005"),
-                StockID(gbi_id=6963, symbol="MSFT", isin="US5949181045"),
+                StockID(gbi_id=714, symbol="AAPL", isin="US0378331005", company_name=""),
+                StockID(gbi_id=6963, symbol="MSFT", isin="US5949181045", company_name=""),
             ],
         )
 

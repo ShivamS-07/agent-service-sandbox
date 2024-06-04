@@ -10,6 +10,7 @@ from agent_service.io_types.table import (
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.stock_metadata import get_stock_metadata
 
 logger = get_prefect_logger(__name__)
 
@@ -34,8 +35,10 @@ async def get_portfolio_holdings(
     args: GetPortfolioWorkspaceHoldingsInput, context: PlanRunContext
 ) -> Table:
     workspace = await get_all_holdings_in_workspace(context.user_id, args.portfolio_id)
+    gbi_ids = [holding.gbi_id for holding in workspace.holdings]
+    stock_meta = await get_stock_metadata(gbi_ids=gbi_ids)
     data = {
-        "Stock": [holding.gbi_id for holding in workspace.holdings],
+        STOCK_ID_COL_NAME_DEFAULT: [stock_meta[holding.gbi_id] for holding in workspace.holdings],
         "Weight": [holding.weight for holding in workspace.holdings],
     }
     df = pd.DataFrame(data)

@@ -111,11 +111,20 @@ class Table(ComplexIOBase):
         for df_col, col in zip(df.columns, self.columns):
             output_col = col.to_output_column()
             if col.col_type == TableColumnType.STOCK:
-                if is_first_col:
-                    # Map to symbol or isin
-                    df[df_col] = df[df_col].map(
-                        lambda val: (val.symbol or val.isin) if isinstance(val, StockID) else val
+                # Map to StockMetadata
+                df[df_col] = df[df_col].map(
+                    lambda val: (
+                        StockMetadata(
+                            gbi_id=val.gbi_id,
+                            symbol=val.symbol,
+                            isin=val.isin,
+                            company_name=val.company_name,
+                        )
+                        if isinstance(val, StockID)
+                        else val
                     )
+                )
+                if is_first_col:
                     # Automatically highlight the first column if it's a stock column
                     output_col.is_highlighted = True
             elif col.col_type in (TableColumnType.DATE, TableColumnType.DATETIME) and is_first_col:

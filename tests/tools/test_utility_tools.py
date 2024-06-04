@@ -36,17 +36,17 @@ class TestUtilityTools(IsolatedAsyncioTestCase):
 
     async def test_intersect_lists(self):
         stock_list_1 = [
-            StockID(gbi_id=1, symbol=None, isin=""),
-            StockID(gbi_id=2, symbol=None, isin=""),
-            StockID(gbi_id=3, symbol=None, isin=""),
+            StockID(gbi_id=1, symbol=None, isin="", company_name=""),
+            StockID(gbi_id=2, symbol=None, isin="", company_name=""),
+            StockID(gbi_id=3, symbol=None, isin="", company_name=""),
         ]
         stock_list_2 = [
-            StockID(gbi_id=4, symbol=None, isin=""),
-            StockID(gbi_id=2, symbol=None, isin=""),
-            StockID(gbi_id=3, symbol=None, isin=""),
+            StockID(gbi_id=4, symbol=None, isin="", company_name=""),
+            StockID(gbi_id=2, symbol=None, isin="", company_name=""),
+            StockID(gbi_id=3, symbol=None, isin="", company_name=""),
         ]
         args = CombineListsInput(list1=stock_list_1, list2=stock_list_2)
         result = await intersect_lists(args, context=PlanRunContext.get_dummy())
         self.assertEqual(len(result), 2)
-        self.assertIn(StockID(gbi_id=2, symbol=None, isin=""), result)
-        self.assertIn(StockID(gbi_id=3, symbol=None, isin=""), result)
+        self.assertIn(StockID(gbi_id=2, symbol=None, isin="", company_name=""), result)
+        self.assertIn(StockID(gbi_id=3, symbol=None, isin="", company_name=""), result)

@@ -308,7 +308,6 @@ async def get_statistic_data_for_companies(
     Returns:
         Table: The requested data.
     """
-    stock_ids = [stock.gbi_id for stock in args.stock_ids]
     if args.date_range:
         args.start_date = args.date_range.start_date
         args.end_date = args.date_range.end_date
@@ -336,7 +335,7 @@ async def get_statistic_data_for_companies(
         statistic_id=args.statistic_id,
         start_date=start_date,
         end_date=end_date,
-        stock_ids=stock_ids,
+        stock_ids=args.stock_ids,
     )
 
 
@@ -345,9 +344,11 @@ async def get_statistic_data(
     statistic_id: StatisticId,
     start_date: datetime.date,
     end_date: datetime.date,
-    stock_ids: Optional[List[int]] = None,
+    stock_ids: Optional[List[StockID]] = None,
 ) -> Table:
     stock_ids = stock_ids or []
+    gbi_id_map = {stock.gbi_id: stock for stock in stock_ids}
+    gbi_ids = list(gbi_id_map.keys())
     # if one date given, turn on ffill.
     ffill_days = 0
     if start_date == end_date:
@@ -356,7 +357,7 @@ async def get_statistic_data(
 
     logger = get_prefect_logger(__name__)
     logger.info(
-        f"getting data for gbi_ids: {stock_ids}, "
+        f"getting data for gbi_ids: {gbi_ids}, "
         f"features: {statistic_id}, "
         f"{start_date=}, {end_date=}"
     )
@@ -365,7 +366,7 @@ async def get_statistic_data(
     result: GetFeatureDataResponse = await get_feature_data(
         user_id=context.user_id,
         statistic_ids=[statistic_id.stat_id],
-        stock_ids=stock_ids,
+        stock_ids=gbi_ids,
         from_date=start_date,
         to_date=end_date,
         ffill_days=ffill_days,
@@ -441,6 +442,8 @@ async def get_statistic_data(
             var_name=STOCK_ID_COL_NAME_DEFAULT,
             value_name=statistic_id.stat_name,
         )
+        # Map back to the StockID objects
+        df[STOCK_ID_COL_NAME_DEFAULT] = df[STOCK_ID_COL_NAME_DEFAULT].map(gbi_id_map)
 
         # We now have a dataframe with only a few columns: Date, Stock ID, Statistic Name
         return Table(
