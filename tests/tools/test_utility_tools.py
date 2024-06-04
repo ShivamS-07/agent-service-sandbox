@@ -1,7 +1,7 @@
 import datetime
 from unittest.async_case import IsolatedAsyncioTestCase
 
-from agent_service.io_types.misc import StockID
+from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import Text
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.lists import CombineListsInput, add_lists, intersect_lists

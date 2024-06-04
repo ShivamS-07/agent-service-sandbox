@@ -13,8 +13,6 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 
-logger = get_prefect_logger(__name__)
-
 MAX_RETRIES = 3
 
 # PROMPTS
@@ -126,7 +124,7 @@ class DateRangeInput(ToolArgs):
 async def get_n_width_date_range_near_date(
     args: DateRangeInput, context: PlanRunContext
 ) -> DateRange:
-
+    logger = get_prefect_logger(__name__)
     logger.info(f"constructing a date range from: {args=}")
     width_days = (
         abs(args.width_years) * 365.25

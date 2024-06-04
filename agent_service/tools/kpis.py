@@ -7,7 +7,7 @@ import pandas as pd
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
-from agent_service.io_types.misc import StockID
+from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table, TableColumn, TableColumnType
 from agent_service.io_types.text import KPIText
 from agent_service.tool import ToolArgs, ToolCategory, tool

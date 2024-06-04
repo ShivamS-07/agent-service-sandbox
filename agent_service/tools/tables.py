@@ -10,13 +10,14 @@ import pandas as pd
 from pydantic import ValidationError
 
 from agent_service.GPT.requests import GPT
+from agent_service.io_types.stock import StockAlignedTextGroups
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
     Table,
     TableColumn,
     TableColumnType,
 )
-from agent_service.io_types.text import StockAlignedTextGroups, Text
+from agent_service.io_types.text import Text
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.table_utils.prompts import (
     DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT,

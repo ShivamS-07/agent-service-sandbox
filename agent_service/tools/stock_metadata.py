@@ -1,11 +1,7 @@
 from typing import List
 
-from agent_service.io_types.misc import StockID
-from agent_service.io_types.text import (
-    CompanyDescriptionText,
-    StockAlignedTextGroups,
-    TextGroup,
-)
+from agent_service.io_types.stock import StockAlignedTextGroups, StockID
+from agent_service.io_types.text import CompanyDescriptionText, TextGroup
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 
@@ -54,7 +50,7 @@ async def get_company_descriptions_stock_aligned(
 ) -> StockAlignedTextGroups:
     return StockAlignedTextGroups(
         val={
-            stock_id.gbi_id: TextGroup(val=[CompanyDescriptionText(id=stock_id.gbi_id)])
+            stock_id: TextGroup(val=[CompanyDescriptionText(id=stock_id.gbi_id)])
             for stock_id in args.stock_ids
         }
     )

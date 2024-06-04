@@ -4,14 +4,12 @@
 from typing import Any, Dict, List
 
 from agent_service.external.stock_search_dao import async_sort_stocks_by_volume
-from agent_service.io_types.misc import StockID
+from agent_service.io_types.stock import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
-
-logger = get_prefect_logger(__name__)
 
 
 class StockIdentifierLookupInput(ToolArgs):
@@ -45,6 +43,7 @@ async def stock_identifier_lookup(
     Returns:
         int: The integer identifier of the stock.
     """
+    logger = get_prefect_logger(__name__)
     logger.info(f"Attempting to map '{args.stock_name}' to a stock")
     rows = await raw_stock_identifier_lookup(args, context)
     if not rows:
@@ -108,6 +107,7 @@ async def raw_stock_identifier_lookup(
     Returns:
         int: The integer identifier of the stock.
     """
+    logger = get_prefect_logger(__name__)
     db = get_psql()
     # TODO:
     # Using chat context to help decide

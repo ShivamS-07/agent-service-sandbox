@@ -1,6 +1,7 @@
 from typing import List
 
-from agent_service.io_types.misc import StockID
+from agent_service.io_type_utils import HistoryEntry
+from agent_service.io_types.stock import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
@@ -26,7 +27,7 @@ async def filter_stocks_by_region(
     args: FilterStockRegionInput, context: PlanRunContext
 ) -> List[StockID]:
     sql = """
-    SELECT gbi_security_id, symbol, isin FROM master_security
+    SELECT gbi_security_id
     WHERE security_region = %(region)s
     AND gbi_security_id = ANY(%(stocks)s)
     """
@@ -34,7 +35,9 @@ async def filter_stocks_by_region(
     rows = db.generic_read(
         sql, {"stocks": [stock.gbi_id for stock in args.stock_ids], "region": args.region_name}
     )
+    stocks_to_include = {row["gbi_security_id"] for row in rows}
     return [
-        StockID(gbi_id=row["gbi_security_id"], symbol=row["symbol"], isin=row["isin"])
-        for row in rows
+        stock.with_history_entry(HistoryEntry(explanation=f"In region '{args.region_name}'"))
+        for stock in args.stock_ids
+        if stock.gbi_id in stocks_to_include
     ]

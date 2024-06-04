@@ -1,7 +1,7 @@
 import logging
 from unittest import IsolatedAsyncioTestCase
 
-from agent_service.io_types.misc import StockID
+from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import Text
 from agent_service.tools.other_text import (
     GetAllTextDataForStocksInput,
@@ -23,14 +23,15 @@ class TestTextData(IsolatedAsyncioTestCase):
         self.context = PlanRunContext.get_dummy()
 
     async def test_get_sec_filing(self):
+        stock = StockID(gbi_id=714, symbol="", isin="")
         sec_filing_texts = await get_sec_filings(
-            args=GetSecFilingsInput(stock_ids=[StockID(gbi_id=714, symbol="", isin="")]),
+            args=GetSecFilingsInput(stock_ids=[stock]),
             context=self.context,
         )
         self.assertIsNotNone(sec_filing_texts)
 
         sec_filing_mapping = await get_stock_aligned_sec_filings(
-            args=GetSecFilingsInput(stock_ids=[StockID(gbi_id=714, symbol="", isin="")]),
+            args=GetSecFilingsInput(stock_ids=[stock]),
             context=self.context,
         )
         self.assertIsNotNone(sec_filing_mapping)
@@ -40,7 +41,7 @@ class TestTextData(IsolatedAsyncioTestCase):
         self.assertIsNotNone(actual_sec_filing_1)
         self.assertIsNotNone(actual_sec_filing_2)
         # They should have the same content
-        self.assertEqual(actual_sec_filing_1[0][:100], actual_sec_filing_2[714][:100])
+        self.assertEqual(actual_sec_filing_1[0][:100], actual_sec_filing_2[stock][:100])  # type: ignore
         # print(actual_sec_filing_1[0])  # useful when debugging
 
     async def test_get_all_text_data(self):
@@ -51,7 +52,7 @@ class TestTextData(IsolatedAsyncioTestCase):
             context=self.context,
         )
         types = set()
-        for text in all_data.val[18654].val:
+        for text in all_data.val[StockID(gbi_id=18654, symbol="", isin="")].val:
             types.add(type(text))
         self.assertEqual(len(types), 4)
 

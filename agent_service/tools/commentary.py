@@ -30,8 +30,6 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 
-logger = get_prefect_logger(__name__)
-
 # Constants
 MAX_ARTICLES_PER_DEVELOPMENT = 5
 MAX_DEVELOPMENTS_PER_TOPIC = 10
@@ -164,6 +162,7 @@ async def _get_texts_for_topics(
     This function gets the texts for the given topics. If the themes are found, it gets the related texts.
     If the themes are not found, it gets the articles related to the topic.
     """
+    logger = get_prefect_logger(__name__)
     texts: List = []
     for topic in args.topics:
         try:

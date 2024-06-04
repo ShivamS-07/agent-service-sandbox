@@ -7,7 +7,12 @@ from pydantic import BaseModel
 from pydantic.functional_serializers import field_serializer
 from pydantic.functional_validators import field_validator
 
-from agent_service.io_type_utils import ComplexIOBase, PrimitiveType, io_type
+from agent_service.io_type_utils import (
+    ComplexIOBase,
+    PrimitiveType,
+    io_type,
+    load_io_type_dict,
+)
 from agent_service.io_types.output import Output, OutputType
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.stock_metadata import StockMetadata, get_stock_metadata
@@ -138,10 +143,21 @@ class Table(ComplexIOBase):
     @field_validator("data", mode="before")
     @classmethod
     def _deserializer(cls, data: Any) -> Any:
+        def _apply_func(val: Any) -> Any:
+            # This allows us to store ANY arbitrary IOType in dataframes, and
+            # they will be serialized and deserialized automatically.
+            if isinstance(val, dict):
+                try:
+                    return load_io_type_dict(val)
+                except Exception:
+                    pass
+            return val
+
         if isinstance(data, dict):
             data = pd.DataFrame.from_dict(data)
             # No index
             data = data.reset_index(drop=True)
+            data = data.applymap(_apply_func)
         return data
 
     @field_serializer("data", mode="wrap")

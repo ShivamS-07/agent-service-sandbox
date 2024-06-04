@@ -3,13 +3,8 @@ import json
 from typing import Dict, List, Optional
 
 from agent_service.external.sec_utils import FILINGS, SecFiling, SecMapping
-from agent_service.io_types.misc import StockID
-from agent_service.io_types.text import (
-    SecFilingText,
-    StockAlignedTextGroups,
-    Text,
-    TextGroup,
-)
+from agent_service.io_types.stock import StockAlignedTextGroups, StockID
+from agent_service.io_types.text import SecFilingText, Text, TextGroup
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.earnings import (
     GetEarningsCallSummariesInput,
@@ -32,16 +27,16 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 
-logger = get_prefect_logger(__name__)
-
 
 async def get_sec_filings_helper(
-    stock_ids: List[int], start_date: Optional[datetime.date], end_date: Optional[datetime.date]
-) -> Dict[int, List[SecFilingText]]:
+    stock_ids: List[StockID], start_date: Optional[datetime.date], end_date: Optional[datetime.date]
+) -> Dict[StockID, List[SecFilingText]]:
     stock_filing_map = {}
-    gbi_id_metadata_map = get_psql().get_sec_metadata_from_gbi(gbi_ids=stock_ids)
+    gbi_id_metadata_map = get_psql().get_sec_metadata_from_gbi(
+        gbi_ids=[stock.gbi_id for stock in stock_ids]
+    )
     for stock_id in stock_ids:
-        cik = await SecMapping.map_gbi_id_to_cik(stock_id, gbi_id_metadata_map)
+        cik = await SecMapping.map_gbi_id_to_cik(stock_id.gbi_id, gbi_id_metadata_map)
         if cik is None:
             continue
 
@@ -79,9 +74,7 @@ class GetSecFilingsInput(ToolArgs):
     tool_registry=ToolRegistry,
 )
 async def get_sec_filings(args: GetSecFilingsInput, context: PlanRunContext) -> List[SecFilingText]:
-    stock_filing_map = await get_sec_filings_helper(
-        [stock.gbi_id for stock in args.stock_ids], args.start_date, args.end_date
-    )
+    stock_filing_map = await get_sec_filings_helper(args.stock_ids, args.start_date, args.end_date)
     all_filings = []
     for filings in stock_filing_map.values():
         all_filings.extend(filings)
@@ -113,10 +106,8 @@ async def get_sec_filings(args: GetSecFilingsInput, context: PlanRunContext) -> 
 async def get_stock_aligned_sec_filings(
     args: GetSecFilingsInput, context: PlanRunContext
 ) -> StockAlignedTextGroups:
-    stock_filing_map = await get_sec_filings_helper(
-        [stock.gbi_id for stock in args.stock_ids], args.start_date, args.end_date
-    )
-    final_map: Dict[int, TextGroup] = {}
+    stock_filing_map = await get_sec_filings_helper(args.stock_ids, args.start_date, args.end_date)
+    final_map: Dict[StockID, TextGroup] = {}
     total = 0
     for stock, texts in stock_filing_map.items():
         total += len(texts)
@@ -165,6 +156,7 @@ async def get_all_text_data_for_stocks_aligned(
     stock_ids = args.stock_ids
     start_date = args.start_date
     end_date = args.end_date
+    logger = get_prefect_logger(__name__)
     if not start_date:
         start_date = (get_now_utc() - datetime.timedelta(days=90)).date()
     if not end_date:
@@ -251,6 +243,7 @@ async def get_all_text_data_for_stocks(
     stock_ids = args.stock_ids
     start_date = args.start_date
     end_date = args.end_date
+    logger = get_prefect_logger(__name__)
     if not start_date:
         start_date = (get_now_utc() - datetime.timedelta(days=90)).date()
     if not end_date:

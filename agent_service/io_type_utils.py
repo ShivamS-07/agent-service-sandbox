@@ -7,6 +7,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Set,
     Type,
     TypeVar,
     Union,
@@ -19,7 +20,7 @@ from pydantic.config import ConfigDict
 from pydantic.functional_serializers import WrapSerializer, model_serializer
 from pydantic.functional_validators import PlainValidator, model_validator
 from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandler
-from typing_extensions import Annotated, TypeAliasType
+from typing_extensions import Annotated, Self, TypeAliasType
 
 from agent_service.io_types.output import Output
 from agent_service.utils.boosted_pg import BoostedPG
@@ -38,12 +39,26 @@ PrimitiveType = Union[
 IO_TYPE_NAME_KEY = "_type"
 
 
+class Citation(BaseModel):
+    # TODO
+    pass
+
+
+class HistoryEntry(BaseModel):
+    explanation: str
+    # Citations for the explanation
+    citations: List[Citation] = []
+
+
 class ComplexIOBase(BaseModel, ABC):
     """
     Parent class of non-primitive types that may act as inputs or outputs to tools.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    # Tracks the history of the object across various filters, summarizations, etc.
+    history: List[HistoryEntry] = []
 
     def to_gpt_input(self) -> str:
         return str(self.__class__)
@@ -52,9 +67,46 @@ class ComplexIOBase(BaseModel, ABC):
         """
         Converts a ComplexIOType to rich output that powers the frontend.
         """
-        # By default, just return json text. This should be overriden by types
-        # that are to be displayed to the frontend.
         raise NotImplementedError("This type does not have a rich output")
+
+    def with_history_entry(self, entry: HistoryEntry) -> Self:
+        self.history.append(entry)
+        return self
+
+    def extend_history_from(self, other: Self) -> Self:
+        self.history.extend(other.history)
+        return self
+
+    def __hash__(self) -> int:
+        return hash((type(self),) + tuple(sorted(self.dict().items())))
+
+    @classmethod
+    def union_sets(cls, set1: Set[Self], set2: Set[Self]) -> Set[Self]:
+        dict1 = {hash(val): val for val in set1}
+        dict2 = {hash(val): val for val in set2}
+        output = set()
+        for val in set1.union(set2):
+            key = hash(val)
+            if key in dict1 and key in dict2:
+                # If it's in both, merge the histories
+                new_val = dict1[key]
+                output.add(new_val.extend_history_from(dict2[key]))
+            else:
+                output.add(val)
+
+        return output
+
+    @classmethod
+    def intersect_sets(cls, set1: Set[Self], set2: Set[Self]) -> Set[Self]:
+        dict1 = {hash(val): val for val in set1}
+        dict2 = {hash(val): val for val in set2}
+        output = set()
+        for val in set1.intersection(set2):
+            key = hash(val)
+            new_val = dict1[key]
+            output.add(new_val.extend_history_from(dict2[key]))
+
+        return output
 
     @classmethod
     def type_name(cls) -> str:
@@ -107,7 +159,7 @@ IOTypeBase = TypeAliasType(  # type: ignore
 
 # Below functions are just used to match the required pydantic function schemas.
 def _load_io_type_wrapper(v: Any) -> Any:
-    return _load_io_type_helper(v)
+    return load_io_type_dict(v)
 
 
 def _dump_io_type_wrapper(v: Any, _: Any) -> Any:
@@ -146,13 +198,13 @@ def _dump_io_type_helper(val: IOTypeBase) -> Any:
     return IOTypeAdapter.dump_python(val, mode="json")
 
 
-def _load_io_type_helper(val: Any) -> IOTypeBase:
+def load_io_type_dict(val: Any) -> IOTypeBase:
     if isinstance(val, dict) and IO_TYPE_NAME_KEY in val:
         return ComplexIOBase.load(val)
     if isinstance(val, list):
-        return [_load_io_type_helper(elem) for elem in val]
+        return [load_io_type_dict(elem) for elem in val]
     if isinstance(val, dict):
-        return {k: _load_io_type_helper(v) for k, v in val.items()}
+        return {k: load_io_type_dict(v) for k, v in val.items()}
     return IOTypeAdapter.validate_python(val)
 
 
@@ -162,7 +214,7 @@ def dump_io_type(val: IOType) -> str:
 
 def load_io_type(val: str) -> IOType:
     loaded = json.loads(val)
-    return _load_io_type_helper(loaded)
+    return load_io_type_dict(loaded)
 
 
 def get_clean_type_name(typ: Optional[Type]) -> str:

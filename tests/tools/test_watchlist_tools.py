@@ -10,7 +10,7 @@ from pa_portfolio_service_proto_v1.watchlist_pb2 import (
 )
 from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID
 
-from agent_service.io_types.misc import StockID
+from agent_service.io_types.stock import StockID
 from agent_service.tools.watchlist import (
     GetUserWatchlistStocksInput,
     get_user_watchlist_stocks,

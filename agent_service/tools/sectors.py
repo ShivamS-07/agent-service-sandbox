@@ -7,7 +7,8 @@ from cachetools import TTLCache, cached
 from agent_service.external import sec_meta_svc_client
 from agent_service.GPT.constants import HAIKU, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.io_types.misc import StockID
+from agent_service.io_type_utils import ComplexIOBase, HistoryEntry, io_type
+from agent_service.io_types.stock import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -17,6 +18,12 @@ from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 
 ONE_HOUR = 60 * 60
+
+
+@io_type
+class SectorID(ComplexIOBase):
+    sec_id: int
+    sec_name: str
 
 
 class SectorIdentifierLookupInput(ToolArgs):
@@ -61,7 +68,7 @@ or -1 if no a matching sector is found.
 )
 async def sector_identifier_lookup(
     args: SectorIdentifierLookupInput, context: PlanRunContext
-) -> int:
+) -> SectorID:
     """
     Returns integer identifier best matching the input text, or None if not a match
     """
@@ -97,7 +104,7 @@ async def sector_identifier_lookup(
     )
     # or should this return the whole sector dict id + name
     # (maybe we should add descriptions of each sector as well?
-    return sector["sector_id"]
+    return SectorID(sec_id=int(sector["sector_id"]), sec_name=sector["sector_name"])
 
 
 @cached(cache=TTLCache(maxsize=1, ttl=ONE_HOUR), lock=Lock())
@@ -144,7 +151,7 @@ async def get_default_stock_list(user_id: str) -> List[StockID]:
 
 
 class SectorFilterInput(ToolArgs):
-    sector_id: int
+    sector_id: SectorID
     stock_ids: Optional[List[StockID]] = None
 
 
@@ -175,7 +182,7 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
     db = get_psql()
 
     sql = """
-    SELECT ms.gbi_security_id, ms.symbol, ms.isin
+    SELECT ms.gbi_security_id
     FROM master_security ms
     WHERE CAST(SUBSTRING(CAST(ms.gics AS TEXT), 1, 2) AS INT) = %(sector_id)s
     AND ms.gbi_security_id = ANY(%(stock_ids)s)
@@ -188,9 +195,17 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
 
     rows = db.generic_read(
         sql,
-        params={"stock_ids": [stock.gbi_id for stock in stock_ids], "sector_id": args.sector_id},
+        params={
+            "stock_ids": [stock.gbi_id for stock in stock_ids],
+            "sector_id": args.sector_id.sec_id,
+        },
     )
     await tool_log(
         log=f"Filtered {len(stock_ids)} stocks by sector down to {len(rows)}", context=context
     )
-    return [StockID(gbi_id=r["gbi_security_id"], symbol=r["symbol"], isin=r["isin"]) for r in rows]
+    included_gbi_ids = {row["gbi_security_id"] for row in rows}
+    return [
+        stock.with_history_entry(HistoryEntry(explanation=f"In sector '{args.sector_id.sec_name}'"))
+        for stock in stock_ids
+        if stock.gbi_id in included_gbi_ids
+    ]

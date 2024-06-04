@@ -5,7 +5,7 @@ from agent_service.external.pa_svc_client import (
     get_all_watchlists,
     get_watchlist_stocks,
 )
-from agent_service.io_types.misc import StockID
+from agent_service.io_types.stock import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql

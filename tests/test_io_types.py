@@ -1,10 +1,11 @@
 import unittest
-from typing import Dict, List, Union
+from typing import Any, Dict, List, Union
 
 import pandas as pd
 
 from agent_service.io_type_utils import (
     ComplexIOBase,
+    HistoryEntry,
     IOType,
     check_type_is_io_type,
     check_type_is_valid,
@@ -27,6 +28,14 @@ class TestComplexType(ComplexIOBase):
     val: int
     another: str = "3"
     x: TestComplex1 = TestComplex1(val=2)
+
+    def __hash__(self) -> int:
+        return self.val
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, self.__class__):
+            return self.val == other.val
+        return NotImplemented
 
 
 class TestIOType(unittest.TestCase):
@@ -144,3 +153,53 @@ class TestIOType(unittest.TestCase):
 
         for typ1, typ2, expected in cases:
             self.assertEqual(check_type_is_valid(typ1, typ2), expected, f"{typ1} and {typ2} error")
+
+    def test_union_with_history(self):
+        set1 = {
+            TestComplexType(val=1, history=[HistoryEntry(explanation="Test1")]),
+            TestComplexType(val=2),
+            TestComplexType(val=3),
+        }
+        set2 = {
+            TestComplexType(val=1, history=[HistoryEntry(explanation="Test2")]),
+            TestComplexType(val=6, history=[HistoryEntry(explanation="Test1")]),
+            TestComplexType(val=4),
+        }
+        result = TestComplexType.union_sets(set1, set2)
+        self.assertEqual(
+            result,
+            {
+                TestComplexType(
+                    val=1,
+                    history=[HistoryEntry(explanation="Test1"), HistoryEntry(explanation="Test2")],
+                ),
+                TestComplexType(val=2),
+                TestComplexType(val=3),
+                TestComplexType(val=6, history=[HistoryEntry(explanation="Test1")]),
+                TestComplexType(val=4),
+            },
+        )
+
+    def test_intersection_with_history(self):
+        set1 = {
+            TestComplexType(val=1, history=[HistoryEntry(explanation="Test1")]),
+            TestComplexType(val=2),
+            TestComplexType(val=3),
+        }
+        set2 = {
+            TestComplexType(val=1, history=[HistoryEntry(explanation="Test2")]),
+            TestComplexType(val=6, history=[HistoryEntry(explanation="Test1")]),
+            TestComplexType(val=4),
+            TestComplexType(val=3),
+        }
+        result = TestComplexType.intersect_sets(set1, set2)
+        self.assertEqual(
+            result,
+            {
+                TestComplexType(
+                    val=1,
+                    history=[HistoryEntry(explanation="Test1"), HistoryEntry(explanation="Test2")],
+                ),
+                TestComplexType(val=3),
+            },
+        )

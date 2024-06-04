@@ -7,7 +7,7 @@ from agent_service.external.discover_svc_client import get_temporary_discover_bl
 from agent_service.external.investment_policy_svc import (
     get_all_stock_investment_policies,
 )
-from agent_service.io_types.misc import StockID
+from agent_service.io_types.stock import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
 from agent_service.tools.tool_log import tool_log

@@ -5,8 +5,9 @@ from typing import Dict, List, Tuple
 from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
-from agent_service.io_types.misc import StockID
-from agent_service.io_types.text import StockAlignedTextGroups, Text
+from agent_service.io_type_utils import HistoryEntry
+from agent_service.io_types.stock import StockAlignedTextGroups, StockID
+from agent_service.io_types.text import Text
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.news import (
@@ -179,8 +180,8 @@ async def filter_texts_by_topic(
     # not currently returning rationale, but will probably want it
     texts: List[str] = Text.get_all_strs(args.texts)  # type: ignore
     return [
-        text
-        for text, (is_relevant, _) in zip(
+        text.with_history_entry(HistoryEntry(explanation=reason))
+        for text, (is_relevant, reason) in zip(
             args.texts, await topic_filter_helper(texts, args.topic, context.agent_id)
         )
         if is_relevant
@@ -210,14 +211,15 @@ async def filter_stocks_by_topic_aligned(
     str_dict: Dict[int, str] = Text.get_all_strs(args.text_groups.val)  # type: ignore
     stocks = list(str_dict.keys())
     texts = list(str_dict.values())
-    gbi_ids = [
+    gbi_ids = {
         stock
         for stock, (is_relevant, _) in zip(
             stocks, await topic_filter_helper(texts, args.topic, context.agent_id)
         )
         if is_relevant
-    ]
-    return await StockID.from_gbi_id_list(gbi_ids)
+    }
+    filtered_stocks = [stock for stock in args.text_groups.val.keys() if stock.gbi_id in gbi_ids]
+    return filtered_stocks
 
 
 async def main() -> None:

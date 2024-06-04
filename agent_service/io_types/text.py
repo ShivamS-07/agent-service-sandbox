@@ -408,27 +408,3 @@ class TextOutput(Output):
 
     def __str__(self) -> str:
         return self.val
-
-
-@io_type
-class StockAlignedTextGroups(ComplexIOBase):
-    val: Dict[int, TextGroup]
-
-    @staticmethod
-    def join(
-        stock_to_texts_1: StockAlignedTextGroups, stock_to_texts_2: StockAlignedTextGroups
-    ) -> StockAlignedTextGroups:
-        output_dict = {}
-        all_stocks = set(stock_to_texts_1.val) | set(stock_to_texts_2.val)
-        for stock in all_stocks:
-            if stock in stock_to_texts_1.val:
-                if stock in stock_to_texts_2.val:
-                    output_dict[stock] = TextGroup.join(
-                        stock_to_texts_1.val[stock], stock_to_texts_2.val[stock]
-                    )
-                else:
-                    output_dict[stock] = stock_to_texts_1.val[stock]
-            else:
-                output_dict[stock] = stock_to_texts_2.val[stock]
-
-        return StockAlignedTextGroups(val=output_dict)

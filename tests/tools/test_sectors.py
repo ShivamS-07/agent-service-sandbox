@@ -1,9 +1,10 @@
 import unittest
 
 from agent_service.GPT.requests import set_use_global_stub
-from agent_service.io_types.misc import StockID
+from agent_service.io_types.stock import StockID
 from agent_service.tools.sectors import (
     SectorFilterInput,
+    SectorID,
     SectorIdentifierLookupInput,
     get_all_sectors,
     get_default_stock_list,
@@ -46,7 +47,7 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
             with self.subTest(q=q, a=a):
                 with self.assertRaises(ValueError):
                     result = await sector_identifier_lookup(args, self.context)
-                    self.assertEqual(result, a, q)
+                    self.assertEqual(result.sec_id, a, q)
 
     async def test_sector_exact_match(self):
         q_a = [
@@ -67,7 +68,7 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
             args = SectorIdentifierLookupInput(sector_name=q)
             with self.subTest(q=q, a=a):
                 result = await sector_identifier_lookup(args, self.context)
-                self.assertEqual(result, a, q)
+                self.assertEqual(result.sec_id, a, q)
 
     async def test_sector_close_match(self):
         # not intended to be comprehensive
@@ -99,7 +100,7 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
             args = SectorIdentifierLookupInput(sector_name=q)
             with self.subTest(q=q, a=a):
                 result = await sector_identifier_lookup(args, self.context)
-                self.assertEqual(result, a, q)
+                self.assertEqual(result.sec_id, a, q)
 
     async def test_get_default_stock_list(self):
         stocks = await get_default_stock_list(user_id=self.context.user_id)
@@ -113,21 +114,23 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
 
     async def test_sector_filter(self):
         args = SectorFilterInput(
-            sector_id=40, stock_ids=[StockID(gbi_id=1092, symbol="", isin="")]
+            sector_id=SectorID(sec_id=40, sec_name="Financials"),
+            stock_ids=[StockID(gbi_id=1092, symbol="", isin="")],
         )  # financials  # BAC
 
         stocks = await sector_filter(args=args, context=self.context)
         self.assertEqual(1, len(stocks))
 
         args = SectorFilterInput(
-            sector_id=50, stock_ids=[StockID(gbi_id=1092, symbol="", isin="")]
+            sector_id=SectorID(sec_id=50, sec_name="Communcation Services"),
+            stock_ids=[StockID(gbi_id=1092, symbol="", isin="")],
         )  # 'Communication Services'  # BAC
 
         stocks = await sector_filter(args=args, context=self.context)
         self.assertEqual(0, len(stocks))
 
         args = SectorFilterInput(
-            sector_id=40,  # financials
+            sector_id=SectorID(sec_id=40, sec_name="Financials"),  # financials
         )
 
         stocks = await sector_filter(args=args, context=self.context)

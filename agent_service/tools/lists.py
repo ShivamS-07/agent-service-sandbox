@@ -1,6 +1,6 @@
 from typing import List
 
-from agent_service.io_type_utils import IOType
+from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 
@@ -24,7 +24,12 @@ class CombineListsInput(ToolArgs):
     is_visible=False,
 )
 async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
-    return list(set(args.list1 + args.list2))
+    try:
+        # Do this if the lists have complex io types in them
+        return list(ComplexIOBase.union_sets(set(args.list1), set(args.list2)))  # type: ignore
+    except Exception:
+        # otherwise just do a normal intersection
+        return list(set(args.list1 + args.list2))
 
 
 @tool(
@@ -41,7 +46,12 @@ async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IO
     is_visible=False,
 )
 async def intersect_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
-    return list(set(args.list1) & set(args.list2))
+    try:
+        # Do this if the lists have complex io types in them
+        return list(ComplexIOBase.intersect_sets(set(args.list1), set(args.list2)))  # type: ignore
+    except Exception:
+        # otherwise just do a normal intersection
+        return list(set(args.list1) & set(args.list2))
 
 
 class GetIndexInput(ToolArgs):

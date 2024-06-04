@@ -20,7 +20,7 @@ from agent_service.GPT.constants import FILTER_CONCURRENCY, HAIKU, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.dates import DateRange
-from agent_service.io_types.misc import StockID
+from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
     Table,

@@ -13,7 +13,7 @@ from agent_service.external.nlp_svc_client import (
 )
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.io_types.misc import StockID
+from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
     ThemeNewsDevelopmentArticlesText,
     ThemeNewsDevelopmentText,
