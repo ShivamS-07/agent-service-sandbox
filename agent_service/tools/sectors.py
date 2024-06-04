@@ -205,7 +205,9 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
     )
     included_gbi_ids = {row["gbi_security_id"] for row in rows}
     return [
-        stock.with_history_entry(HistoryEntry(explanation=f"In sector '{args.sector_id.sec_name}'"))
+        stock.with_history_entry(
+            HistoryEntry(explanation=f"In sector '{args.sector_id.sec_name}'.")
+        )
         for stock in stock_ids
         if stock.gbi_id in included_gbi_ids
     ]

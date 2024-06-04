@@ -2,29 +2,16 @@ import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import AgentMetadata, AgentOutput
-from agent_service.io_type_utils import ComplexIOBase, IOType, load_io_type
+from agent_service.io_type_utils import IOType, load_io_type
 
 # Make sure all io_types are registered
 from agent_service.io_types import *  # noqa
-from agent_service.io_types.output import Output
-from agent_service.io_types.text import Text
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message
-from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres
-
-
-async def get_output_from_io_type(val: IOType, pg: BoostedPG) -> Output:
-    if isinstance(val, list):
-        val = await gather_with_concurrency([get_output_from_io_type(v, pg=pg) for v in val])
-    elif isinstance(val, dict):
-        val = {key: await get_output_from_io_type(v, pg=pg) for key, v in val.items()}
-    if not isinstance(val, ComplexIOBase):
-        val = Text.from_io_type(val)
-    val = await val.to_rich_output(pg)
-    return val
 
 
 class AsyncDB:

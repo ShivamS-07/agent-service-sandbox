@@ -14,8 +14,9 @@ from agent_service.io_type_utils import (
     load_io_type_dict,
 )
 from agent_service.io_types.output import Output, OutputType
+from agent_service.io_types.stock import StockID
 from agent_service.utils.boosted_pg import BoostedPG
-from agent_service.utils.stock_metadata import StockMetadata, get_stock_metadata
+from agent_service.utils.stock_metadata import StockMetadata
 
 STOCK_ID_COL_NAME_DEFAULT = "Security"
 
@@ -105,23 +106,16 @@ class Table(ComplexIOBase):
     async def to_rich_output(self, pg: BoostedPG) -> Output:
         df = self.data.copy(deep=True)
 
-        # Fetch all stock metadata needed in one call
-        gbi_ids_to_fetch: List[int] = []
-        for df_col, col in zip(df.columns, self.columns):
-            if col.col_type == TableColumnType.STOCK:
-                gbi_ids_to_fetch.extend(df[df_col])
-
-        stock_metadata = {}
-        if gbi_ids_to_fetch:
-            stock_metadata = await get_stock_metadata(pg=pg, gbi_ids=gbi_ids_to_fetch)
-
         output_cols = []
         is_first_col = True
         for df_col, col in zip(df.columns, self.columns):
             output_col = col.to_output_column()
             if col.col_type == TableColumnType.STOCK:
-                df[df_col] = [stock_metadata[gbi_id] for gbi_id in df[df_col]]
                 if is_first_col:
+                    # Map to symbol or isin
+                    df[df_col] = df[df_col].map(
+                        lambda val: (val.symbol or val.isin) if isinstance(val, StockID) else val
+                    )
                     # Automatically highlight the first column if it's a stock column
                     output_col.is_highlighted = True
             elif col.col_type in (TableColumnType.DATE, TableColumnType.DATETIME) and is_first_col:

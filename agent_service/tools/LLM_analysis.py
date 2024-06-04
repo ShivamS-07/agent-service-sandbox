@@ -208,17 +208,21 @@ class FilterStocksByTopicInput(ToolArgs):
 async def filter_stocks_by_topic_aligned(
     args: FilterStocksByTopicInput, context: PlanRunContext
 ) -> List[StockID]:
-    str_dict: Dict[int, str] = Text.get_all_strs(args.text_groups.val)  # type: ignore
+    str_dict: Dict[StockID, str] = Text.get_all_strs(args.text_groups.val)  # type: ignore
     stocks = list(str_dict.keys())
     texts = list(str_dict.values())
-    gbi_ids = {
-        stock
-        for stock, (is_relevant, _) in zip(
+    stock_reason_map = {
+        stock: reason
+        for stock, (is_relevant, reason) in zip(
             stocks, await topic_filter_helper(texts, args.topic, context.agent_id)
         )
         if is_relevant
     }
-    filtered_stocks = [stock for stock in args.text_groups.val.keys() if stock.gbi_id in gbi_ids]
+    filtered_stocks = [
+        stock.with_history_entry(HistoryEntry(explanation=stock_reason_map[stock]))
+        for stock in args.text_groups.val.keys()
+        if stock in stock_reason_map
+    ]
     return filtered_stocks
 
 

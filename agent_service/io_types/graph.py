@@ -1,14 +1,14 @@
 import enum
 from abc import ABC
-from typing import List, Literal, Optional, Union, cast
+from typing import List, Literal, Optional, Union
 
 from pydantic.fields import Field
 
 from agent_service.io_type_utils import ComplexIOBase, PrimitiveType, io_type
 from agent_service.io_types.output import Output, OutputType
+from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import TableColumnType
 from agent_service.utils.boosted_pg import BoostedPG
-from agent_service.utils.stock_metadata import get_stock_metadata
 
 
 class GraphType(str, enum.Enum):
@@ -44,22 +44,9 @@ class LineGraph(Graph):
     data: List[GraphDataset]
 
     async def to_rich_output(self, pg: BoostedPG) -> Output:
-        stocks_to_map = cast(
-            List[int],
-            [
-                dataset.dataset_id
-                for dataset in self.data
-                if dataset.dataset_id_type == TableColumnType.STOCK
-            ],
-        )
-        if not stocks_to_map:
-            return GraphOutput(graph=self)
-
-        metadata_map = await get_stock_metadata(pg=pg, gbi_ids=stocks_to_map)
         for dataset in self.data:
-            gbi = int(dataset.dataset_id)  # type: ignore
-            if gbi in metadata_map:
-                dataset.dataset_id = metadata_map[gbi].symbol  # type: ignore
+            if isinstance(dataset.dataset_id, StockID):
+                dataset.dataset_id = dataset.dataset_id.symbol or dataset.dataset_id.isin
         return GraphOutput(graph=self)
 
     def to_gpt_input(self) -> str:
@@ -86,10 +73,9 @@ class PieGraph(Graph):
     async def to_rich_output(self, pg: BoostedPG) -> Output:
         if not self.label_type == TableColumnType.STOCK:
             return GraphOutput(graph=self)
-        stocks_to_map = cast(List[int], [section.label for section in self.data])
-        metadata_map = await get_stock_metadata(pg=pg, gbi_ids=stocks_to_map)
         for section in self.data:
-            section.label = metadata_map[int(section.label)].symbol  # type: ignore
+            if isinstance(section.label, StockID):
+                section.label = section.label.symbol or section.label.isin
         return GraphOutput(graph=self)
 
     def to_gpt_input(self) -> str:

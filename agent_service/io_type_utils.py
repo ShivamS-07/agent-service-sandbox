@@ -77,8 +77,11 @@ class ComplexIOBase(BaseModel, ABC):
         self.history.extend(other.history)
         return self
 
+    def get_history_string(self) -> str:
+        return " ".join((entry.explanation for entry in self.history))
+
     def __hash__(self) -> int:
-        return hash((type(self),) + tuple(sorted(self.dict().items())))
+        return hash((type(self),) + tuple(sorted(self.model_dump().items())))
 
     @classmethod
     def union_sets(cls, set1: Set[Self], set2: Set[Self]) -> Set[Self]:
