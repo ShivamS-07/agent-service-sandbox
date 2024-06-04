@@ -398,21 +398,15 @@ async def rewrite_execution_plan(
     logger.info(f"Starting rewrite of execution plan for {agent_id=}...")
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
 
-    if action not in (Action.REPLAN, Action.APPEND):
-        # treat these the same for now
-        # TODO: do append more efficiently, with a different prompt
-        # TODO: get all execution plans, not just the most recent one
-        # TODO: Add some chatbot response before we redo the plan
-        # To stop potential circular behavior
-        raise RuntimeError("Unreachable!")
-
     _, old_plan, plan_timestamp = await get_latest_execution_plan_from_db(agent_id, db)
     if not old_plan:  # shouldn't happen, just for mypy
         return None
     if error_info:
         new_plan = await planner.rewrite_plan_after_error(error_info, chat_context, old_plan)
     else:
-        new_plan = await planner.rewrite_plan_after_input(chat_context, old_plan, plan_timestamp)
+        new_plan = await planner.rewrite_plan_after_input(
+            chat_context, old_plan, plan_timestamp, append=action == Action.APPEND
+        )
 
     if not new_plan:
         if do_chat:

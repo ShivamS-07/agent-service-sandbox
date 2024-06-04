@@ -33,6 +33,8 @@ from agent_service.planner.prompts import (
     PLAN_RULES,
     PLANNER_MAIN_PROMPT,
     PLANNER_SYS_PROMPT,
+    USER_INPUT_APPEND_MAIN_PROMPT,
+    USER_INPUT_APPEND_SYS_PROMPT,
     USER_INPUT_REPLAN_MAIN_PROMPT,
     USER_INPUT_REPLAN_SYS_PROMPT,
 )
@@ -95,6 +97,7 @@ class Planner:
             logger.info(
                 f"{len(first_round_results)} of {INITIAL_PLAN_TRIES} initial plan runs succeeded"
             )
+            first_round_results = list(set(first_round_results))  # get rid of complete duplicates
             # GPT 4O seems to have done it now need to just pick
             if len(first_round_results) > 1:
                 best_plan = await self._pick_best_plan(chat_context, first_round_results)
@@ -213,6 +216,7 @@ class Planner:
         chat_context: ChatContext,
         last_plan: ExecutionPlan,
         last_plan_timestamp: datetime.datetime,
+        append: bool = False,
     ) -> Optional[ExecutionPlan]:
         latest_user_messages = [
             message
@@ -221,12 +225,15 @@ class Planner:
         ]
         logger = get_prefect_logger(__name__)
         tasks = [
-            self._rewrite_plan_after_input(chat_context, last_plan, latest_user_messages)
+            self._rewrite_plan_after_input(
+                chat_context, last_plan, latest_user_messages, append=append
+            )
             for _ in range(INITIAL_PLAN_TRIES)
         ]
         results = [plan for plan in await gather_with_concurrency(tasks) if plan is not None]
         if results:
             logger.info(f"{len(results)} of {INITIAL_PLAN_TRIES} replan runs succeeded")
+            results = list(set(results))  # get rid of complete duplicates and avoid best pick
             # GPT 4O seems to have done it now need to just pick
             if len(results) > 1:
                 best_plan = await self._pick_best_plan(chat_context, results)
@@ -241,7 +248,11 @@ class Planner:
 
     @async_perf_logger
     async def _rewrite_plan_after_input(
-        self, chat_context: ChatContext, last_plan: ExecutionPlan, latest_messages: List[Message]
+        self,
+        chat_context: ChatContext,
+        last_plan: ExecutionPlan,
+        latest_messages: List[Message],
+        append: bool = False,
     ) -> Optional[ExecutionPlan]:
         # for now, just assume last step is what is new
         # TODO: multiple old plans, flexible chat cutoff
@@ -250,16 +261,18 @@ class Planner:
         new_messages = "\n".join([message.get_gpt_input() for message in latest_messages])
         old_plan_str = last_plan.get_formatted_plan()
         new_plan_str = await self._query_GPT_for_new_plan_after_input(
-            new_messages, main_chat_str, old_plan_str
+            new_messages, main_chat_str, old_plan_str, append=append
         )
 
         try:
-            steps = self._parse_plan_str(new_plan_str)
+            if append:
+                plan_str = old_plan_str + "\n" + new_plan_str
+            else:
+                plan_str = new_plan_str
+            steps = self._parse_plan_str(plan_str)
             new_plan = self._validate_and_construct_plan(steps)
         except Exception:
-            logger.warning(
-                f"Failed to validate replan with original LLM output string: {new_plan_str}"
-            )
+            logger.warning(f"Failed to validate replan with original LLM output string: {plan_str}")
             return None
 
         return new_plan
@@ -276,6 +289,7 @@ class Planner:
         results = [plan for plan in await gather_with_concurrency(tasks) if plan is not None]
         if results:
             logger.info(f"{len(results)} of {INITIAL_PLAN_TRIES} replan runs succeeded")
+            results = list(set(results))  # get rid of complete duplicates
             # GPT 4O seems to have done it now need to just pick
             if len(results) > 1:
                 best_plan = await self._pick_best_plan(chat_context, results)
@@ -326,16 +340,22 @@ class Planner:
         return await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     async def _query_GPT_for_new_plan_after_input(
-        self, new_user_input: str, existing_context: str, old_plan: str
+        self, new_user_input: str, existing_context: str, old_plan: str, append: bool = False
     ) -> str:
-        sys_prompt = USER_INPUT_REPLAN_SYS_PROMPT.format(
+        if append:
+            sys_prompt_template = USER_INPUT_APPEND_SYS_PROMPT
+            main_prompt_template = USER_INPUT_APPEND_MAIN_PROMPT
+        else:
+            sys_prompt_template = USER_INPUT_REPLAN_SYS_PROMPT
+            main_prompt_template = USER_INPUT_REPLAN_MAIN_PROMPT
+        sys_prompt = sys_prompt_template.format(
             rules=PLAN_RULES,
             guidelines=PLAN_GUIDELINES,
             example=PLAN_EXAMPLE,
             tools=self.tool_string,
         )
 
-        main_prompt = USER_INPUT_REPLAN_MAIN_PROMPT.format(
+        main_prompt = main_prompt_template.format(
             new_message=new_user_input, chat_context=existing_context, old_plan=old_plan
         )
         return await self.fast_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)

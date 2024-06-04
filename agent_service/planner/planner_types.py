@@ -73,6 +73,14 @@ class ToolExecutionNode(BaseModel):
 class ExecutionPlan(BaseModel):
     nodes: List[ToolExecutionNode]
 
+    def __hash__(self) -> int:
+        return self.get_formatted_plan().__hash__()
+
+    def __eq__(self, value: object) -> bool:
+        if isinstance(value, ExecutionPlan):
+            return self.get_formatted_plan() == value.get_formatted_plan()
+        return False
+
     def get_plan_steps_for_gpt(self) -> str:
         output = []
         for i, node in enumerate(self.nodes, start=1):
