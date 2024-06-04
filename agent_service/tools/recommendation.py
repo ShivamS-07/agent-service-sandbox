@@ -1,5 +1,5 @@
 import copy
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import field_validator
 
@@ -54,7 +54,7 @@ class GetRecommendedStocksInput(ToolArgs):
     many factors like news, ISM, ratings, etc.
     """
 
-    stock_ids: List[StockID]  # if empty, we will default to use SP500
+    stock_ids: Optional[List[StockID]] = None  # if None, we will default to use SP500
     buy: bool  # whether to get buy or sell recommendations
     horizon: str = "1M"  # 1M, 3M, 1Y
     delta_horizon: str = "1M"  # 1W, 1M, 3M, 6M, 9M, 1Y

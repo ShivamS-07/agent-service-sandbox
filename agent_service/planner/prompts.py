@@ -46,6 +46,7 @@ PLAN_GUIDELINES = """The top priority of a plan is that the information needs of
 - When using doing LLM analysis (e.g. filtering) over multiple data sources, it is generally better to combine the data sources first and do the LLM analysis only once
 - If the client does not mention a specific list of stocks to work with but the functions you want to use require a list of stocks, you must start by getting a sensible default list of stocks, the S&P 500 is a good choice.
 - You must never assume what the date is, you must use a tool that knows the date, but if you need today's date call the proper function for it
+- It is fine to output lists of StockIDs as your final output, we will automatically convert them to a human readable format, you do not need to apply a tool to do that.
 - Your lines can be as long as needed, you must not violate any of the plan rules to avoid having long lines
 - If the client asks to plot or draw a graph or chart, but does not make a reference to any date-like things such as: a date, days, weeks, months, years etc, then you should call a function to acquire a 1 year date range rather than just using today's date or a single point in time
 - If the client asks to plot or draw a graph or chart on a specific date, call a function to acquire a 1 year date range near that date.

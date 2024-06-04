@@ -2,7 +2,7 @@
 
 import asyncio
 import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from nlp_service_proto_v1.themes_pb2 import ThemeOutlookType
 
@@ -15,6 +15,7 @@ from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
+    Text,
     ThemeNewsDevelopmentArticlesText,
     ThemeNewsDevelopmentText,
     ThemeText,
@@ -129,20 +130,20 @@ async def get_macroeconomic_themes(
     return themes  # type: ignore
 
 
-class GetStocksAffectedByThemeInput(ToolArgs):
-    theme: ThemeText
+class GetStocksAffectedByThemesInput(ToolArgs):
+    themes: List[ThemeText]
     positive: bool
 
 
 @tool(
     description=(
         "This function returns a list of stocks (stock identifiers) that are either positively (if "
-        "positive is True) or negatively affected (if positive is False) by the macroeconomic theme"
+        "positive is True) or negatively affected (if positive is False) by the macroeconomic themes"
     ),
     category=ToolCategory.THEME,
 )
 async def get_stocks_affected_by_theme(
-    args: GetStocksAffectedByThemeInput, context: PlanRunContext
+    args: GetStocksAffectedByThemesInput, context: PlanRunContext
 ) -> List[StockID]:
     if context.chat is None:
         return []
@@ -151,24 +152,25 @@ async def get_stocks_affected_by_theme(
         GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=DEFAULT_CHEAP_MODEL)
-    pos_trend, neg_trend = db.get_theme_outlooks(args.theme.id)
-    result = await llm.do_chat_w_sys_prompt(
-        OUTLOOK_PROMPT.format(
-            chat_context=context.chat.get_gpt_input(), pos_trend=pos_trend, neg_trend=neg_trend
-        ),
-        NO_PROMPT,
-    )
-    is_neg_trend = result == "2"
-    stock_polarity_lookup = db.get_theme_stock_polarity_lookup(args.theme.id)
-    final_stocks: List[int] = []
-    for stock, polarity in stock_polarity_lookup.items():
-        if is_neg_trend:
-            polarity = not polarity
-        if polarity == args.positive:  # matches the desired polarity
-            final_stocks.append(stock)
+    final_stocks: Set[int] = set()
+    for theme in args.themes:
+        pos_trend, neg_trend = db.get_theme_outlooks(theme.id)
+        result = await llm.do_chat_w_sys_prompt(
+            OUTLOOK_PROMPT.format(
+                chat_context=context.chat.get_gpt_input(), pos_trend=pos_trend, neg_trend=neg_trend
+            ),
+            NO_PROMPT,
+        )
+        is_neg_trend = result == "2"
+        stock_polarity_lookup = db.get_theme_stock_polarity_lookup(theme.id)
+        for stock, polarity in stock_polarity_lookup.items():
+            if is_neg_trend:
+                polarity = not polarity
+            if polarity == args.positive:  # matches the desired polarity
+                final_stocks.add(stock)
     if len(final_stocks) == 0:
         raise Exception("Found no stocks affected by this theme/polarity combination")
-    return await StockID.from_gbi_id_list(final_stocks)
+    return await StockID.from_gbi_id_list(list(final_stocks))
 
 
 class GetMacroeconomicThemesAffectingStocksInput(ToolArgs):
@@ -177,59 +179,74 @@ class GetMacroeconomicThemesAffectingStocksInput(ToolArgs):
 
 @tool(
     description=(
-        "This function takes a list of stock identifiers and returns a list of lists of "
-        "macroeconomic theme text objects that are affecting the stocks. Each theme list "
-        "corresponds to a stock in the input list."
+        "This function takes a list of stock identifiers and returns a list of "
+        "macroeconomic themes that are affecting the stocks."
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
 )
 async def get_macroeconomic_themes_affecting_stocks(
     args: GetMacroeconomicThemesAffectingStocksInput, context: PlanRunContext
-) -> List[List[ThemeText]]:
-    resp = await get_security_themes(user_id=context.user_id, gbi_ids=args.stock_ids)
+) -> List[ThemeText]:
+    resp = await get_security_themes(
+        user_id=context.user_id, gbi_ids=[stock_id.gbi_id for stock_id in args.stock_ids]
+    )
 
     gbi_id_to_idx = {e.gbi_id: idx for idx, e in enumerate(resp.security_themes)}
 
-    result: List[List[ThemeText]] = []
+    result: Set[ThemeText] = set()
     for stock_id in args.stock_ids:
-        if stock_id not in gbi_id_to_idx:
-            result.append([])
+        gbi_id = stock_id.gbi_id
+        if gbi_id not in gbi_id_to_idx:
+            continue
 
         idx = gbi_id_to_idx[stock_id.gbi_id]
-        result.append([ThemeText(id=t.theme_id.id) for t in resp.security_themes[idx].themes])
+        result.update([ThemeText(id=t.theme_id.id) for t in resp.security_themes[idx].themes])
 
-    return result
+    return list(result)
 
 
 class GetMacroeconomicThemeOutlookInput(ToolArgs):
-    theme: ThemeText
+    themes: List[ThemeText]
 
 
 @tool(
     description=(
-        "This function takes a macroeconomic theme and returns the information about its current "
-        "trend or outlook"
+        "This function takes a list of macroeconomic themes and returns the information about their current "
+        "trend or outlook for each theme. There is one outlook text for each input theme."
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
 )
 async def get_macroeconomic_theme_outlook(
     args: GetMacroeconomicThemeOutlookInput, context: PlanRunContext
-) -> str:
+) -> List[Text]:
     resp = await get_all_themes_for_user(user_id=context.user_id)
+    theme_outlook_lookup = {}
     for theme in resp.themes:
-        if not theme.owner_id.id:
+        if theme.owner_id.id:
             # we only support boosted themes for now because user themes may not have outlooks
             continue
 
-        if theme.theme_id.id == args.theme.id:
+        if theme.current_outlook:
             if theme.current_outlook == ThemeOutlookType.THEME_OUTLOOK_POS:
-                return theme.positive_polarity_label
+                theme_outlook_lookup[theme.theme_id.id] = theme.positive_polarity_label
             else:
-                return theme.negative_polarity_label
+                theme_outlook_lookup[theme.theme_id.id] = theme.negative_polarity_label
 
-    raise Exception("No outlook for this theme")
+    success_count = 0
+    output: List[Text] = []
+    for theme in args.themes:
+        if theme.id in theme_outlook_lookup:
+            output.append(Text(val=theme_outlook_lookup[theme.id]))
+            success_count += 1
+        else:
+            output.append(Text())
+
+    if success_count == 0:
+        raise Exception("No outlooks for these themes")
+
+    return output
 
 
 class GetThemeDevelopmentNewsInput(ToolArgs):
@@ -403,21 +420,31 @@ async def main() -> None:
     plan_context = PlanRunContext(
         agent_id="123",
         plan_id="123",
-        user_id="123",
+        user_id="123",  # set a real user id for this to work
         plan_run_id="123",
         chat=chat_context,
         run_tasks_without_prefect=True,
         skip_db_commit=True,
     )
     themes: List[ThemeText] = await get_macroeconomic_themes(  # type: ignore
-        args=GetMacroeconomicThemeInput(theme_refs=["recession"]), context=plan_context
+        args=GetMacroeconomicThemeInput(theme_refs=["Gen AI"]), context=plan_context
     )
 
     print(themes)
     stocks = await get_stocks_affected_by_theme(
-        GetStocksAffectedByThemeInput(theme=themes[0], positive=False), context=plan_context
+        GetStocksAffectedByThemesInput(themes=themes, positive=False), context=plan_context
     )
     print(stocks)
+
+    outlooks = await get_macroeconomic_theme_outlook(
+        args=GetMacroeconomicThemeOutlookInput(themes=themes), context=plan_context
+    )
+    print(outlooks)
+
+    more_themes = await get_macroeconomic_themes_affecting_stocks(
+        GetMacroeconomicThemesAffectingStocksInput(stock_ids=stocks), context=plan_context  # type: ignore
+    )
+    print(more_themes)
 
 
 if __name__ == "__main__":
