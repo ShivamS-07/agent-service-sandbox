@@ -21,6 +21,10 @@ from pa_portfolio_service_proto_v1.watchlist_pb2 import (
     GetWatchlistStocksAndWeightsResponse,
 )
 from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID
+from pa_portfolio_service_proto_v1.workspace_pb2 import (
+    GetTSWorkspacesHoldingsRequest,
+    GetTSWorkspacesHoldingsResponse,
+)
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
 from agent_service.utils.logs import async_perf_logger
@@ -101,3 +105,21 @@ async def get_all_stocks_in_all_watchlists(user_id: str) -> List[int]:
                 f" {response.status.message}"
             )
         return list(response.gbi_ids)
+
+
+@grpc_retry
+@async_perf_logger
+async def get_all_holdings_in_workspace(
+    user_id: str, workspace_id: str
+) -> GetTSWorkspacesHoldingsResponse.WorkspaceToHoldings:
+    with _get_service_stub() as stub:
+        response: GetTSWorkspacesHoldingsResponse = await stub.GetTSWorkspacesHoldings(
+            GetTSWorkspacesHoldingsRequest(workspace_ids=[UUID(id=workspace_id)]),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to get all stocks in a workspace: {response.status.code}"
+                f" {response.status.message}"
+            )
+        return response.workspaceStocks[0]
