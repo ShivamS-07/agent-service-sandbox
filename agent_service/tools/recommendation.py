@@ -96,7 +96,8 @@ class GetRecommendedStocksInput(ToolArgs):
     description="Given a list of stock ID's, a boolean indicating whether to buy or sell, the "
     "investment horizon and delta horizon, and the number of wanted stocks, returns a list of "
     "stock ID's that are recommended to buy or sell as it is indicated. If no stock ID's are "
-    "provided, searching from the S&P 500 stocks.",
+    "provided, searching from the S&P 500 stocks. For example, if a user says "
+    "`Give me 10 stocks you like/don't like` you should use this function",
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
 )

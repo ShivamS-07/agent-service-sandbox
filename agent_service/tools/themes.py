@@ -74,7 +74,7 @@ LOOKUP_PROMPT = Prompt(
         "---\n"
         "And here is the user provided theme references you are trying to match: "
         "{user_theme}."
-        "Now output the matches from the list if you have found them: "
+        "Now output the match from the list if you have found one: "
     ),
 )
 
@@ -115,13 +115,15 @@ async def get_macroeconomic_themes(
     )
     llm = GPT(context=gpt_context, model=DEFAULT_CHEAP_MODEL)
     theme_id_lookup = db.get_boosted_themes_lookup()
+
     matched_themes = [
         await llm.do_chat_w_sys_prompt(
-            LOOKUP_PROMPT.format(all_themes="\n".join(theme_id_lookup), user_theme=theme),
+            LOOKUP_PROMPT.format(all_themes="\n".join(theme_id_lookup.keys()), user_theme=theme),
             NO_PROMPT,
         )
         for theme in args.theme_refs
     ]
+
     themes = [
         ThemeText(id=theme_id_lookup[theme]) for theme in matched_themes if theme in theme_id_lookup
     ]
@@ -427,7 +429,7 @@ async def main() -> None:
         skip_db_commit=True,
     )
     themes: List[ThemeText] = await get_macroeconomic_themes(  # type: ignore
-        args=GetMacroeconomicThemeInput(theme_refs=["Gen AI"]), context=plan_context
+        args=GetMacroeconomicThemeInput(theme_refs=["Generative AI"]), context=plan_context
     )
 
     print(themes)
