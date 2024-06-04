@@ -162,6 +162,7 @@ class ToolCategory(str, enum.Enum):
     GRAPH = "graph"
     TEXT = "text"
     AUTOMATION = "automation"
+    KPI = "key performance indicators"
 
     def get_description(self) -> str:
         if self == ToolCategory.MISC:
@@ -211,6 +212,14 @@ class ToolCategory(str, enum.Enum):
 
         if self == ToolCategory.AUTOMATION:
             return "Tools that involve automating tasks and notifying users"
+
+        if self == ToolCategory.KPI:
+            return (
+                "Tools that involve metrics that are company, market, industry, "
+                "segment, or product specific. There are not general or broad line items "
+                "applicable to all companies such as 'Revenue' or 'EPS', these are found "
+                "under the 'statistics' category."
+            )
 
         return ""
 

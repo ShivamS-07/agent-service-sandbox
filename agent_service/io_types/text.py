@@ -375,6 +375,12 @@ class SecFilingText(Text):
         return output
 
 
+@io_type
+class KPIText(Text):
+    stock_id: int
+    id: int
+
+
 # These are not actual Text types, but build on top of them
 
 

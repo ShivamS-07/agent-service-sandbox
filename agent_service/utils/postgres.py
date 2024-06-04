@@ -269,6 +269,49 @@ class Postgres(PostgresBase):
         output = load_io_type(row["output"])
         return output
 
+    def get_short_company_description(
+        self, gbi_id: int
+    ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
+        """
+        Given a GBI ID, return the short company description if present, otherwise None.
+        """
+        sql = """
+        SELECT
+          cds.company_description_short AS company_description,
+          cds.last_updated AT TIME ZONE 'UTC' AS last_updated
+        FROM spiq_security_mapping ssm
+        LEFT JOIN nlp_service.company_descriptions_short cds
+          ON ssm.spiq_company_id = cds.spiq_company_id
+        WHERE ssm.gbi_id = %s;
+        """
+        records = self.generic_read(sql, params=[gbi_id])
+        if not records:
+            (None, None)
+        row = records[0]
+        return (row["company_description"], row["last_updated"])
+
+    def get_long_company_description(
+        self, gbi_id: int
+    ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
+        """
+        Given a GBI ID, return the long company description and updated time if
+        present, otherwise None.
+        """
+        sql = """
+        SELECT
+          cd.company_description,
+          cd.last_updated AT TIME ZONE 'UTC' AS last_updated
+        FROM spiq_security_mapping ssm
+        LEFT JOIN nlp_service.company_descriptions cd
+          ON ssm.spiq_company_id = cd.spiq_company_id
+        WHERE ssm.gbi_id = %s;
+        """
+        records = self.generic_read(sql, params=[gbi_id])
+        if not records:
+            (None, None)
+        row = records[0]
+        return (row["company_description"], row["last_updated"])
+
 
 def get_psql(skip_commit: bool = False) -> Postgres:
     """
