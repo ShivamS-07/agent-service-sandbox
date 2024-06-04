@@ -1,28 +1,18 @@
 from typing import List
 
-import pandas as pd
-
 from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import (
-    STOCK_ID_COL_NAME_DEFAULT,
-    Table,
-    TableColumn,
-    TableColumnType,
-)
 from agent_service.io_types.text import Text
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 
 
-def convert_list_of_stocks_to_table(stocks: List[StockID]) -> Table:
-    columns = [
-        TableColumn(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-        TableColumn(label="Explanation", col_type=TableColumnType.STRING),
-    ]
-    data = [[stock, stock.get_history_string()] for stock in stocks]
-    return Table(columns=columns, data=pd.DataFrame(data=data))
+def convert_list_of_stocks_to_text(stocks: List[StockID]) -> Text:
+    data_str = "\n".join(
+        [f"- **{stock.symbol or stock.isin}** - {stock.get_history_string()}" for stock in stocks]
+    )
+    return Text(val=data_str)
 
 
 async def get_output_from_io_type(val: IOType, pg: BoostedPG) -> Output:
@@ -36,7 +26,7 @@ async def get_output_from_io_type(val: IOType, pg: BoostedPG) -> Output:
             # TODO probably improve this
             val = Text(val="No values found.")
         elif isinstance(val[0], StockID):
-            val = convert_list_of_stocks_to_table(stocks=val)
+            val = convert_list_of_stocks_to_text(stocks=val)
         else:
             val = await gather_with_concurrency([get_output_from_io_type(v, pg=pg) for v in val])
     elif isinstance(val, dict):
