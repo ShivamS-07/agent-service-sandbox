@@ -157,6 +157,7 @@ async def get_recommended_stocks(
         # TODO: We can loose the constraints, but this is already very loose. What to do?
         raise ValueError("Cannot find enough stocks to meet the requirement.")
 
-    return await StockID.from_gbi_id_list(
-        [row.gbi_id for row in resp.rows[: args.num_stocks_to_return]]
-    )
+    gbi_ids = [row.gbi_id for row in resp.rows[: args.num_stocks_to_return]]
+    stock_ids = await StockID.from_gbi_id_list(gbi_ids)
+    gbi_id_to_stock = {stock.gbi_id: stock for stock in stock_ids}
+    return [gbi_id_to_stock[gbi_id] for gbi_id in gbi_ids]
