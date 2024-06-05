@@ -1,5 +1,5 @@
 import pprint
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, cast
 from uuid import uuid4
 
 from prefect import flow
@@ -28,6 +28,7 @@ from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.agent_event_utils import (
     publish_agent_execution_plan,
+    publish_agent_output,
     publish_agent_updated_worklogs,
     send_chat_message,
 )
@@ -115,6 +116,10 @@ async def run_execution_plan(
 
         if not step.is_output_node:
             db.write_tool_output(output=tool_output, context=context)
+        else:
+            # We have an output node
+            outputs = cast(List[IOType], tool_output)
+            await publish_agent_output(outputs=outputs, context=context, db=db)
         if log_all_outputs:
             logger.info(f"Output of step '{step.tool_name}': {tool_output}")
 

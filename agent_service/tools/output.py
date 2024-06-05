@@ -3,8 +3,6 @@ from typing import List
 from agent_service.io_type_utils import IOType
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.types import PlanRunContext
-from agent_service.utils.agent_event_utils import publish_agent_output
-from agent_service.utils.postgres import get_psql
 
 
 class OutputArgs(ToolArgs):
@@ -28,6 +26,5 @@ user asks for, and no other extraneous information.
     is_output_tool=True,
 )
 async def output(args: OutputArgs, context: PlanRunContext) -> List[IOType]:
-    db = get_psql(skip_commit=context.skip_db_commit)
-    await publish_agent_output(outputs=args.objects_to_output, context=context, db=db)
+    # For now does nothing
     return args.objects_to_output
