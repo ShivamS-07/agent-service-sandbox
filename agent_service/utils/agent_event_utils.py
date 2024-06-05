@@ -1,4 +1,6 @@
-from typing import Optional, Union
+import asyncio
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Union, cast
 
 from agent_service.endpoints.models import (
     AgentEvent,
@@ -8,14 +10,26 @@ from agent_service.endpoints.models import (
     MessageEvent,
     NewPlanEvent,
     OutputEvent,
+    PlanRun,
+    PlanRunTaskLog,
+    Status,
+    WorklogEvent,
 )
-from agent_service.io_type_utils import IOType
+from agent_service.endpoints.utils import (
+    get_plan_run_task_list,
+    reset_plan_run_status_if_needed,
+)
+from agent_service.io_type_utils import IOType, load_io_type
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import Message, PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
+from agent_service.utils.prefect import (
+    get_prefect_plan_run_statuses,
+    get_prefect_task_statuses,
+)
 from agent_service.utils.redis_queue import publish_agent_event
 
 
@@ -96,4 +110,65 @@ async def publish_agent_execution_plan(
         ),
     )
 
+    await publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json())
+
+
+async def publish_agent_updated_worklogs(
+    context: PlanRunContext,
+    plan: ExecutionPlan,
+    db: Optional[Postgres] = None,
+) -> None:
+    db = db or get_psql()
+    rows = db.get_agent_worklogs(context.agent_id, plan_run_ids=[context.plan_run_id])
+    if not rows:
+        return
+
+    plan_run_id_to_status, run_task_pair_to_status = await asyncio.gather(
+        get_prefect_plan_run_statuses([context.plan_run_id]),
+        get_prefect_task_statuses([context.plan_run_id]),
+    )
+    if not plan_run_id_to_status or not run_task_pair_to_status:
+        return
+
+    task_id_to_logs: Dict[str, List[PlanRunTaskLog]] = defaultdict(list)
+    task_id_to_task_output: Dict[str, Dict[str, Any]] = defaultdict(dict)
+    for row in rows:
+        if row["is_task_output"]:  # there should only be 1 task output per task
+            task_id_to_task_output[row["task_id"]] = row
+        else:
+            task_id_to_logs[row["task_id"]].append(
+                PlanRunTaskLog(
+                    log_id=row["log_id"],
+                    log_message=cast(str, load_io_type(row["log_message"])),
+                    created_at=row["created_at"],
+                )
+            )
+
+    prefect_flow_run = plan_run_id_to_status[context.plan_run_id]
+    plan_run_status = Status.from_prefect_state(prefect_flow_run.state_type)
+    plan_run_start = prefect_flow_run.start_time
+    plan_run_end = prefect_flow_run.end_time
+
+    full_tasks = get_plan_run_task_list(
+        context.plan_run_id,
+        plan.nodes,
+        task_id_to_logs,
+        task_id_to_task_output,
+        run_task_pair_to_status,
+    )
+
+    plan_run_status = reset_plan_run_status_if_needed(plan_run_status, full_tasks)
+
+    plan_run = PlanRun(
+        plan_run_id=context.plan_run_id,
+        status=plan_run_status,
+        plan_id=context.plan_id,
+        start_time=plan_run_start or full_tasks[0].start_time,  # type: ignore # noqa
+        end_time=plan_run_end,
+        tasks=full_tasks,
+    )
+    event = AgentEvent(
+        agent_id=context.agent_id,
+        event=WorklogEvent(event_type=EventType.WORKLOG, worklog=plan_run),
+    )
     await publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json())

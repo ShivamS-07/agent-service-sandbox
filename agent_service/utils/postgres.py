@@ -144,6 +144,34 @@ class Postgres(PostgresBase):
             plan_run_id=plan_run_id,
         )
 
+    def get_agent_worklogs(
+        self,
+        agent_id: str,
+        start_date: Optional[datetime.date] = None,  # inclusive
+        end_date: Optional[datetime.date] = None,  # exclusive
+        plan_run_ids: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        params: Dict[str, Any] = {"agent_id": agent_id}
+        filters = ""
+        if start_date:
+            filters += " AND created_at >= %(start_date)s"
+            params["start_date"] = start_date
+        if end_date:
+            filters += " AND created_at < %(end_date)s"
+            params["end_date"] = end_date
+        if plan_run_ids:
+            filters += " AND plan_run_id = ANY(%(plan_run_ids)s)"
+            params["plan_run_ids"] = plan_run_ids
+
+        sql1 = f"""
+            SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, task_id::VARCHAR, is_task_output,
+                log_id::VARCHAR, log_message, created_at
+            FROM agent.work_logs
+            WHERE agent_id = %(agent_id)s {filters}
+            ORDER BY created_at DESC;
+        """
+        return self.generic_read(sql1, params=params)
+
     ################################################################################################
     # Tools and Execution Plans
     ################################################################################################

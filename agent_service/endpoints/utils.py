@@ -2,10 +2,13 @@ import asyncio
 import datetime
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set, cast
+from typing import Any, Dict, List, Optional, Set, Tuple, cast
+
+from prefect.client.schemas import TaskRun
 
 from agent_service.endpoints.models import PlanRun, PlanRunTask, PlanRunTaskLog, Status
 from agent_service.io_type_utils import load_io_type
+from agent_service.planner.planner_types import ToolExecutionNode
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.prefect import (
     get_prefect_plan_run_statuses,
@@ -85,68 +88,15 @@ async def get_agent_hierarchical_worklogs(
                 plan_run_start = prefect_flow_run.start_time
                 plan_run_end = prefect_flow_run.end_time
 
-            # we want each run to have the full list of tasks with different statuses
-            incomplete_tasks: List[PlanRunTask] = []
-            complete_tasks: List[PlanRunTask] = []
-            for node in plan_nodes:
-                task_id = node.tool_task_id
-                prefect_task_run = run_task_pair_to_status.get((plan_run_id, task_id), None)
-                if prefect_task_run is None:
-                    task_status = Status.NOT_STARTED
-                    task_start = None
-                    task_end = None
-                else:
-                    task_status = Status.from_prefect_state(prefect_task_run.state_type)
-                    task_start = prefect_task_run.start_time
-                    task_end = prefect_task_run.end_time
-
-                if task_id not in task_id_to_task_output and task_id not in task_id_to_logs:
-                    incomplete_tasks.append(
-                        PlanRunTask(
-                            task_id=task_id,
-                            task_name=node.description,
-                            status=task_status,
-                            start_time=task_start,
-                            end_time=task_end,
-                            logs=[],
-                        )
-                    )
-                    continue
-
-                if task_id in task_id_to_logs:  # this is a task that has logs
-                    logs = task_id_to_logs[task_id]
-                    logs.sort(key=lambda x: x.created_at)
-                    task = PlanRunTask(
-                        task_id=task_id,
-                        task_name=node.description,
-                        status=task_status,
-                        start_time=task_start or logs[0].created_at,
-                        end_time=task_end or logs[-1].created_at,
-                        logs=logs,
-                    )
-                else:  # this is a task that has no logs, just task output
-                    log_time = task_id_to_task_output[task_id]["created_at"]
-                    task = PlanRunTask(
-                        task_id=task_id,
-                        task_name=node.description,
-                        status=task_status,
-                        start_time=task_start or log_time,
-                        end_time=task_end or log_time,
-                        logs=[],
-                    )
-                complete_tasks.append(task)
-
-            full_tasks: List[PlanRunTask] = (
-                sorted(complete_tasks, key=lambda x: x.start_time) + incomplete_tasks  # type: ignore # noqa
+            full_tasks = get_plan_run_task_list(
+                plan_run_id,
+                plan_nodes,
+                task_id_to_logs,
+                task_id_to_task_output,
+                run_task_pair_to_status,
             )
 
-            # reset plan status if any task is not COMPLETE
-            if any(task.status == Status.ERROR for task in full_tasks):
-                plan_run_status = Status.ERROR
-            elif any(task.status == Status.CANCELLED for task in full_tasks):
-                plan_run_status = Status.CANCELLED
-            elif any(task.status == Status.RUNNING for task in full_tasks):
-                plan_run_status = Status.RUNNING
+            plan_run_status = reset_plan_run_status_if_needed(plan_run_status, full_tasks)
 
             run_history.append(
                 PlanRun(
@@ -166,3 +116,79 @@ async def get_agent_hierarchical_worklogs(
 
     run_history.sort(key=lambda x: x.start_time)
     return run_history
+
+
+def get_plan_run_task_list(
+    plan_run_id: str,
+    plan_nodes: List[ToolExecutionNode],
+    task_id_to_logs: Dict[str, List[PlanRunTaskLog]],
+    task_id_to_task_output: Dict[str, Dict[str, Any]],
+    run_task_pair_to_status: Dict[Tuple[str, str], TaskRun],
+) -> List[PlanRunTask]:
+    # we want each run to have the full list of tasks with different statuses
+    incomplete_tasks: List[PlanRunTask] = []
+    complete_tasks: List[PlanRunTask] = []
+    for node in plan_nodes:
+        task_id = node.tool_task_id
+        prefect_task_run = run_task_pair_to_status.get((plan_run_id, task_id), None)
+        if prefect_task_run is None:
+            task_status = Status.NOT_STARTED
+            task_start = None
+            task_end = None
+        else:
+            task_status = Status.from_prefect_state(prefect_task_run.state_type)
+            task_start = prefect_task_run.start_time
+            task_end = prefect_task_run.end_time
+
+        if task_id not in task_id_to_task_output and task_id not in task_id_to_logs:
+            incomplete_tasks.append(
+                PlanRunTask(
+                    task_id=task_id,
+                    task_name=node.description,
+                    status=task_status,
+                    start_time=task_start,
+                    end_time=task_end,
+                    logs=[],
+                )
+            )
+            continue
+
+        if task_id in task_id_to_logs:  # this is a task that has logs
+            logs = task_id_to_logs[task_id]
+            logs.sort(key=lambda x: x.created_at)
+            task = PlanRunTask(
+                task_id=task_id,
+                task_name=node.description,
+                status=task_status,
+                start_time=task_start or logs[0].created_at,
+                end_time=task_end or logs[-1].created_at,
+                logs=logs,
+            )
+        else:  # this is a task that has no logs, just task output
+            log_time = task_id_to_task_output[task_id]["created_at"]
+            task = PlanRunTask(
+                task_id=task_id,
+                task_name=node.description,
+                status=task_status,
+                start_time=task_start or log_time,
+                end_time=task_end or log_time,
+                logs=[],
+            )
+        complete_tasks.append(task)
+
+    full_tasks: List[PlanRunTask] = (
+        sorted(complete_tasks, key=lambda x: x.start_time) + incomplete_tasks  # type: ignore # noqa
+    )
+    return full_tasks
+
+
+def reset_plan_run_status_if_needed(
+    plan_run_status: Status, full_tasks: List[PlanRunTask]
+) -> Status:
+    if any(task.status == Status.ERROR for task in full_tasks):
+        plan_run_status = Status.ERROR
+    elif any(task.status == Status.CANCELLED for task in full_tasks):
+        plan_run_status = Status.CANCELLED
+    elif any(task.status == Status.RUNNING for task in full_tasks):
+        plan_run_status = Status.RUNNING
+    return plan_run_status

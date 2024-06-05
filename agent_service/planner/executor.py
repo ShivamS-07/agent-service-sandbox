@@ -15,6 +15,7 @@ from agent_service.planner.constants import (
     CREATE_EXECUTION_PLAN_FLOW_NAME,
     EXECUTION_TRIES,
     RUN_EXECUTION_PLAN_FLOW_NAME,
+    WORKLOG_INTERVAL,
 )
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import (
@@ -28,6 +29,7 @@ from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.agent_event_utils import (
     publish_agent_execution_plan,
     publish_agent_output,
+    publish_agent_updated_worklogs,
     send_chat_message,
 )
 from agent_service.utils.async_db import (
@@ -36,6 +38,7 @@ from agent_service.utils.async_db import (
     get_latest_execution_plan_from_db,
 )
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import Postgres, get_psql
 from agent_service.utils.prefect import (
     FlowRunType,
@@ -68,7 +71,10 @@ async def run_execution_plan(
     )
 
     tool_output = None
-    for step in plan.nodes:
+    prev_worklog_publish_time = get_now_utc()
+    for idx, step in enumerate(plan.nodes):
+        now = get_now_utc()
+
         logger.info(f"Running step '{step.tool_name}'")
         tool = ToolRegistry.get_tool(step.tool_name)
         # First, resolve the variables
@@ -111,6 +117,20 @@ async def run_execution_plan(
         db.write_tool_output(output=tool_output, context=context)
         if log_all_outputs:
             logger.info(f"Output of step '{step.tool_name}': {tool_output}")
+
+        if (
+            idx == 0
+            or (idx == len(plan.nodes) - 1)
+            or (now - prev_worklog_publish_time).seconds >= WORKLOG_INTERVAL
+        ):
+            try:
+                # always publish the first/last output, and also publish every second
+                logger.info(f"Publishing updated worklogs at step '{step.tool_name}'...")
+                prev_worklog_publish_time = now
+                await publish_agent_updated_worklogs(context, plan, db)
+            except Exception as e:
+                # event publishing shouldn't affect the main flow
+                logger.exception(f"Failed to publish worklogs at step '{step.tool_name}': {e}")
 
         # Store the output in the associated variable
         if step.output_variable_name:
