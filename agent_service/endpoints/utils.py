@@ -191,4 +191,8 @@ def reset_plan_run_status_if_needed(
         plan_run_status = Status.CANCELLED
     elif any(task.status == Status.RUNNING for task in full_tasks):
         plan_run_status = Status.RUNNING
+    elif all(task.status == Status.COMPLETE for task in full_tasks):
+        # chances are that all tasks are completed but the prefect flow has some following garbage
+        # collection steps that are not related to the actual tasks
+        plan_run_status = Status.COMPLETE
     return plan_run_status
