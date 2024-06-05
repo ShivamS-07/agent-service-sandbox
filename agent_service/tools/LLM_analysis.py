@@ -139,8 +139,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     texts_str = tokenizer.chop_input_to_allowed_length(texts_str, used)
     result = await llm.do_chat_w_sys_prompt(
         SUMMARIZE_PROMPT_MAIN.format(
-            texts=texts_str,
-            chat_context=chat_str,
+            texts=texts_str, chat_context=chat_str, topic_phrase=TOPIC_PHRASE
         ),
         SUMMARIZE_SYS_PROMPT.format(),
     )
