@@ -159,6 +159,7 @@ class ToolCategory(str, enum.Enum):
     OUTPUT = "output"
     THEME = "theme"
     COMMENTARY = "commentary"
+    PORTFOLIO = "portfolio"
     GRAPH = "graph"
     TEXT = "text"
     AUTOMATION = "automation"
@@ -209,6 +210,9 @@ class ToolCategory(str, enum.Enum):
 
         if self == ToolCategory.COMMENTARY:
             return "Tools that involve writing commentary"
+
+        if self == ToolCategory.PORTFOLIO:
+            return "Tools that involve portfolios"
 
         if self == ToolCategory.AUTOMATION:
             return "Tools that involve automating tasks and notifying users"
