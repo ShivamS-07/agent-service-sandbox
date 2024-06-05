@@ -25,7 +25,7 @@ from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
     Table,
-    TableColumn,
+    TableColumnMetadata,
     TableColumnType,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
@@ -426,11 +426,13 @@ async def get_statistic_data(
 
         # We now have a dataframe with only a few columns: Date, Statistic Name
         # currency may or may not be set.
-        return Table(
+        return Table.from_df_and_cols(
             data=df,
             columns=[
-                TableColumn(label="Date", col_type=TableColumnType.DATE),
-                TableColumn(label=statistic_id.stat_name, col_type=value_coltype, unit=curr_unit),
+                TableColumnMetadata(label="Date", col_type=TableColumnType.DATE),
+                TableColumnMetadata(
+                    label=statistic_id.stat_name, col_type=value_coltype, unit=curr_unit
+                ),
             ],
         )
     else:
@@ -446,12 +448,16 @@ async def get_statistic_data(
         df[STOCK_ID_COL_NAME_DEFAULT] = df[STOCK_ID_COL_NAME_DEFAULT].map(gbi_id_map)
 
         # We now have a dataframe with only a few columns: Date, Stock ID, Statistic Name
-        return Table(
+        return Table.from_df_and_cols(
             data=df,
             columns=[
-                TableColumn(label="Date", col_type=TableColumnType.DATE),
-                TableColumn(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-                TableColumn(label=statistic_id.stat_name, col_type=value_coltype, unit=curr_unit),
+                TableColumnMetadata(label="Date", col_type=TableColumnType.DATE),
+                TableColumnMetadata(
+                    label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
+                ),
+                TableColumnMetadata(
+                    label=statistic_id.stat_name, col_type=value_coltype, unit=curr_unit
+                ),
             ],
         )
 

@@ -7,7 +7,7 @@ from cachetools import TTLCache, cached
 from agent_service.external import sec_meta_svc_client
 from agent_service.GPT.constants import HAIKU, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import ComplexIOBase, HistoryEntry, io_type
+from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.stock import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
@@ -204,10 +204,4 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
         log=f"Filtered {len(stock_ids)} stocks by sector down to {len(rows)}", context=context
     )
     included_gbi_ids = {row["gbi_security_id"] for row in rows}
-    return [
-        stock.with_history_entry(
-            HistoryEntry(explanation=f"In sector '{args.sector_id.sec_name}'.")
-        )
-        for stock in stock_ids
-        if stock.gbi_id in included_gbi_ids
-    ]
+    return [stock for stock in stock_ids if stock.gbi_id in included_gbi_ids]

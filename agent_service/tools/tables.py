@@ -10,11 +10,12 @@ import pandas as pd
 from pydantic import ValidationError
 
 from agent_service.GPT.requests import GPT
-from agent_service.io_types.stock import StockAlignedTextGroups
+from agent_service.io_types.stock import StockAlignedTextGroups, StockID
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
+    StockTableColumn,
     Table,
-    TableColumn,
+    TableColumnMetadata,
     TableColumnType,
 )
 from agent_service.io_types.text import Text
@@ -31,7 +32,7 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 from agent_service.utils.prefect import get_prefect_logger
 
 
-def _dump_cols(cols: List[TableColumn]) -> str:
+def _dump_cols(cols: List[TableColumnMetadata]) -> str:
     return json.dumps([col.model_dump(mode="json") for col in cols])
 
 
@@ -45,11 +46,11 @@ def _strip_code_markers(gpt_output: str, lang: str) -> str:
 
 
 async def gen_new_column_schema(
-    gpt: GPT, transformation_description: str, current_table_cols: List[TableColumn]
-) -> List[TableColumn]:
+    gpt: GPT, transformation_description: str, current_table_cols: List[TableColumnMetadata]
+) -> List[TableColumnMetadata]:
     logger = get_prefect_logger(__name__)
     prompt = DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT.format(
-        schema=TableColumn.schema_json(),
+        schema=TableColumnMetadata.schema_json(),
         transform=transformation_description,
         input_cols=_dump_cols(current_table_cols),
         col_type_explain=TableColumnType.get_type_explanations(),
@@ -64,10 +65,10 @@ async def gen_new_column_schema(
         if not cols:
             # Empty object = unchanged
             return current_table_cols
-        return [TableColumn.model_validate(item) for item in cols]
+        return [TableColumnMetadata.model_validate(item) for item in cols]
     except (ValidationError, JSONDecodeError) as e:
         prompt = DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT.format(
-            schema=TableColumn.schema_json(),
+            schema=TableColumnMetadata.schema_json(),
             transform=transformation_description,
             input_cols=_dump_cols(current_table_cols),
             col_type_explain=TableColumnType.get_type_explanations(),
@@ -82,7 +83,7 @@ async def gen_new_column_schema(
         )
         json_str = _strip_code_markers(res, lang="json")
         cols = json.loads(json_str)
-        return [TableColumn.model_validate(item) for item in cols]
+        return [TableColumnMetadata.model_validate(item) for item in cols]
 
 
 class TransformTableArgs(ToolArgs):
@@ -150,15 +151,17 @@ table of stock prices, and you want to compute the rolling 7-day average, you ca
 
 The `transformation_description` argument is a free text description of a
 transformation that will be applied to the table by an LLM, so feel free to be
-detailed in your description of the desired transformation. It can include
-anything from mathematical operations to formatting, etc. Anything that could be
-done in pandas. It is better to be overly detailed than not detailed enough.
-Note again that the input MUST be a table, not a list!
+detailed in your description of the desired transformation. Ideally the
+transformation should be something mathematical, or a pandas operation like
+group-by. Anything that could be done in pandas. Simple table formatting should
+not use this. It is better to be overly detailed than not detailed enough. Note
+again that the input MUST be a table, not a list!
 """,
     category=ToolCategory.TABLE,
 )
 async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> Table:
     logger = get_prefect_logger(__name__)
+    input_col_metadata = [col.metadata for col in args.input_table.columns]
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
@@ -167,14 +170,15 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
     new_col_schema = await gen_new_column_schema(
         gpt,
         transformation_description=args.transformation_description,
-        current_table_cols=args.input_table.columns,
+        current_table_cols=input_col_metadata,
     )
     await tool_log(log="Transforming table", context=context)
+    data_df = args.input_table.to_df()
     code = await gpt.do_chat_w_sys_prompt(
         main_prompt=DATAFRAME_TRANSFORMER_MAIN_PROMPT.format(
-            col_schema=_dump_cols(args.input_table.columns),
+            col_schema=_dump_cols(input_col_metadata),
             output_schema=_dump_cols(new_col_schema),
-            info=_get_df_info(args.input_table.data),
+            info=_get_df_info(data_df),
             transform=args.transformation_description,
             col_type_explain=TableColumnType.get_type_explanations(),
             error="",
@@ -182,15 +186,15 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
         sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
     )
     logger.info(f"Running transform code:\n{code}")
-    output_df, error = _run_transform_code(df=args.input_table.data, code=code)
+    output_df, error = _run_transform_code(df=data_df, code=code)
     if output_df is None:
         logger.warning("Failed when transforming dataframe... trying again")
         logger.warning(f"Failing code:\n{code}")
         code = await gpt.do_chat_w_sys_prompt(
             main_prompt=DATAFRAME_TRANSFORMER_MAIN_PROMPT.format(
-                col_schema=_dump_cols(args.input_table.columns),
+                col_schema=_dump_cols(input_col_metadata),
                 output_schema=_dump_cols(new_col_schema),
-                info=_get_df_info(args.input_table.data),
+                info=_get_df_info(data_df),
                 transform=args.transformation_description,
                 col_type_explain=TableColumnType.get_type_explanations(),
                 error=(
@@ -201,11 +205,11 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
             ),
             sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
         )
-        output_df, error = _run_transform_code(df=args.input_table.data, code=code)
+        output_df, error = _run_transform_code(df=data_df, code=code)
         if output_df is None:
             raise RuntimeError(f"Table transformation subprocess failed with:\n{error}")
 
-    return Table(columns=new_col_schema, data=output_df)
+    return Table.from_df_and_cols(columns=new_col_schema, data=output_df)
 
 
 class JoinTableArgs(ToolArgs):
@@ -214,86 +218,95 @@ class JoinTableArgs(ToolArgs):
 
 def _join_two_tables(first: Table, second: Table) -> Table:
     # Find columns to join by, ideally a date column, stock column, or both
-    first_stock_cols = None
-    second_stock_cols = None
-    first_date_cols = None
-    second_date_cols = None
+    first_stock_col_meta = None
+    second_stock_col_meta = None
+    first_date_col_meta = None
+    second_date_col_meta = None
     other_cols = []
 
-    # First, find the date and stock columns for both dataframes if they are present.
-    for col, df_col in zip(first.columns, first.data.columns):
-        if not first_date_cols and col.col_type in (TableColumnType.DATE, TableColumnType.DATETIME):
-            first_date_cols = (col, df_col)
-            continue
-        if not first_stock_cols and col.col_type == TableColumnType.STOCK:
-            first_stock_cols = (col, df_col)
-            continue
-    for col, df_col in zip(second.columns, second.data.columns):
-        if not second_date_cols and col.col_type in (
+    # First, find the date and stock columns for both tables if they are present.
+    for col in first.columns:
+        if not first_date_col_meta and col.metadata.col_type in (
             TableColumnType.DATE,
             TableColumnType.DATETIME,
         ):
-            second_date_cols = (col, df_col)
+            first_date_col_meta = col.metadata
             continue
-        if not second_stock_cols and col.col_type == TableColumnType.STOCK:
-            second_stock_cols = (col, df_col)
+        if not first_stock_col_meta and col.metadata.col_type == TableColumnType.STOCK:
+            first_stock_col_meta = col.metadata
+            continue
+    for col in second.columns:
+        if not second_date_col_meta and col.metadata.col_type in (
+            TableColumnType.DATE,
+            TableColumnType.DATETIME,
+        ):
+            second_date_col_meta = col.metadata
+            continue
+        if not second_stock_col_meta and col.metadata.col_type == TableColumnType.STOCK:
+            second_stock_col_meta = col.metadata
             continue
 
     for col in first.columns + second.columns:
         # Collect up all the columns that won't be joined on
         if (
-            (first_stock_cols and col == first_stock_cols[0])
-            or (first_date_cols and col == first_date_cols[0])
-            or (second_stock_cols and col == second_stock_cols[0])
-            or (second_date_cols and col == second_date_cols[0])
+            (first_stock_col_meta and col.metadata == first_stock_col_meta)
+            or (first_date_col_meta and col.metadata == first_date_col_meta)
+            or (second_stock_col_meta and col.metadata == second_stock_col_meta)
+            or (second_date_col_meta and col.metadata == second_date_col_meta)
         ):
             continue
-        other_cols.append(col)
+        other_cols.append(col.metadata)
 
     # Ideally we'd never need these suffixes, but included just in case so we
     # don't show anything crazy
     join_suffixes = (" (one)", " (two)")
 
+    first_data = first.to_df()
+    second_data = second.to_df()
     # Go case by case:
     #   1. Join on stocks AND dates
     #   2. Join on just stocks
     #   3. Join on just dates
-    if first_stock_cols and second_stock_cols and first_date_cols and second_date_cols:
-        output_cols = [first_date_cols[0], first_stock_cols[0]] + other_cols
+    if (
+        first_stock_col_meta
+        and second_stock_col_meta
+        and first_date_col_meta
+        and second_date_col_meta
+    ):
+        output_col_metas = [first_date_col_meta, first_stock_col_meta] + other_cols
         df = pd.merge(
-            left=first.data,
-            right=second.data,
+            left=first_data,
+            right=second_data,
             how="outer",
-            left_on=[first_date_cols[1], first_stock_cols[1]],
-            right_on=[second_date_cols[1], second_stock_cols[1]],
+            left_on=[first_date_col_meta.label, first_stock_col_meta.label],
+            right_on=[second_date_col_meta.label, second_stock_col_meta.label],
             suffixes=join_suffixes,
         )
-    elif first_stock_cols and second_stock_cols:
-        output_cols = [first_stock_cols[0]] + other_cols
+    elif first_stock_col_meta and second_stock_col_meta:
+        output_col_metas = [first_stock_col_meta] + other_cols
         df = pd.merge(
-            left=first.data,
-            right=second.data,
+            left=first_data,
+            right=second_data,
             how="outer",
-            left_on=first_stock_cols[1],
-            right_on=second_stock_cols[1],
+            left_on=first_stock_col_meta.label,
+            right_on=second_stock_col_meta.label,
             suffixes=join_suffixes,
         )
-    elif first_date_cols and second_date_cols:
-        output_cols = [first_date_cols[0]] + other_cols
+    elif first_date_col_meta and second_date_col_meta:
+        output_col_metas = [first_date_col_meta] + other_cols
         df = pd.merge(
-            left=first.data,
-            right=second.data,
+            left=first_data,
+            right=second_data,
             how="outer",
-            left_on=first_date_cols[1],
-            right_on=second_date_cols[1],
+            left_on=first_date_col_meta.label,
+            right_on=second_date_col_meta.label,
             suffixes=join_suffixes,
         )
     else:
         # Can't join on anything! Just concat
-        output_cols = first.columns + second.columns
-        df = pd.concat([first.data, second.data], axis=1)
-    return Table(
-        columns=output_cols,
+        return Table(columns=first.columns + second.columns)
+    return Table.from_df_and_cols(
+        columns=output_col_metas,
         data=df,
     )
 
@@ -340,10 +353,10 @@ async def create_table_from_stock_text_groups(
     ]
     df = pd.DataFrame(data=data, columns=[STOCK_ID_COL_NAME_DEFAULT, "Text"])
     columns = [
-        TableColumn(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-        TableColumn(label="Text", col_type=TableColumnType.STRING),
+        TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+        TableColumnMetadata(label="Text", col_type=TableColumnType.STRING),
     ]
-    return Table(columns=columns, data=df)
+    return Table.from_df_and_cols(columns=columns, data=df)
 
 
 class GetStockListFromTableArgs(ToolArgs):
@@ -360,9 +373,9 @@ other data with it.
 )
 async def get_stock_identifier_list_from_table(
     args: GetStockListFromTableArgs, context: PlanRunContext
-) -> List[int]:
-    for col, df_col in zip(args.input_table.columns, args.input_table.data.columns):
-        if col.col_type == TableColumnType.STOCK:
-            return args.input_table.data[df_col].unique().tolist()
+) -> List[StockID]:
+    for col in args.input_table.columns:
+        if isinstance(col, StockTableColumn):
+            return col.data
 
     raise RuntimeError("Cannot extract list of stocks, no stock column in table!")

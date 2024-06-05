@@ -2,13 +2,22 @@ import datetime
 
 import pandas as pd
 
-from agent_service.io_types.table import Table, TableColumn, TableColumnType
+from agent_service.io_types.stock import StockID
+from agent_service.io_types.table import Table, TableColumnMetadata, TableColumnType
 
-TEST_STOCK_DATE_TABLE1 = Table(
+STOCK1 = StockID(gbi_id=72, symbol="", isin="", company_name="")
+STOCK2 = StockID(gbi_id=76, symbol="", isin="", company_name="")
+STOCK3 = StockID(gbi_id=78, symbol="", isin="", company_name="")
+STOCK4 = StockID(gbi_id=112, symbol="", isin="", company_name="")
+STOCK5 = StockID(gbi_id=124, symbol="", isin="", company_name="")
+STOCK6 = StockID(gbi_id=149, symbol="", isin="", company_name="")
+
+
+TEST_STOCK_DATE_TABLE1 = Table.from_df_and_cols(
     columns=[
-        TableColumn(label="Date", col_type=TableColumnType.DATE, unit=None),
-        TableColumn(label="Security", col_type=TableColumnType.STOCK, unit=None),
-        TableColumn(label="Close Price", col_type=TableColumnType.FLOAT, unit=None),
+        TableColumnMetadata(label="Date", col_type=TableColumnType.DATE, unit=None),
+        TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK, unit=None),
+        TableColumnMetadata(label="Close Price", col_type=TableColumnType.FLOAT, unit=None),
     ],
     data=pd.DataFrame(
         data={
@@ -30,21 +39,21 @@ TEST_STOCK_DATE_TABLE1 = Table(
                 14: datetime.date(2024, 5, 19),
             },
             "Security": {
-                0: 72,
-                1: 72,
-                2: 72,
-                3: 72,
-                4: 72,
-                5: 76,
-                6: 76,
-                7: 76,
-                8: 76,
-                9: 76,
-                10: 78,
-                11: 78,
-                12: 78,
-                13: 78,
-                14: 78,
+                0: STOCK1,
+                1: STOCK1,
+                2: STOCK1,
+                3: STOCK1,
+                4: STOCK1,
+                5: STOCK2,
+                6: STOCK2,
+                7: STOCK2,
+                8: STOCK2,
+                9: STOCK2,
+                10: STOCK3,
+                11: STOCK3,
+                12: STOCK3,
+                13: STOCK3,
+                14: STOCK3,
             },
             "Close Price": {
                 0: 221.81,
@@ -67,11 +76,11 @@ TEST_STOCK_DATE_TABLE1 = Table(
     ),
 )
 
-TEST_STOCK_DATE_TABLE2 = Table(
+TEST_STOCK_DATE_TABLE2 = Table.from_df_and_cols(
     columns=[
-        TableColumn(label="Date", col_type=TableColumnType.DATE, unit=None),
-        TableColumn(label="Security", col_type=TableColumnType.STOCK, unit=None),
-        TableColumn(label="Open Price", col_type=TableColumnType.FLOAT, unit=None),
+        TableColumnMetadata(label="Date", col_type=TableColumnType.DATE, unit=None),
+        TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK, unit=None),
+        TableColumnMetadata(label="Open Price", col_type=TableColumnType.FLOAT, unit=None),
     ],
     data=pd.DataFrame(
         data={
@@ -90,18 +99,18 @@ TEST_STOCK_DATE_TABLE2 = Table(
                 11: datetime.date(2024, 5, 19),
             },
             "Security": {
-                0: 112,
-                1: 112,
-                2: 112,
-                3: 112,
-                4: 124,
-                5: 124,
-                6: 124,
-                7: 124,
-                8: 149,
-                9: 149,
-                10: 149,
-                11: 149,
+                0: STOCK4,
+                1: STOCK4,
+                2: STOCK4,
+                3: STOCK4,
+                4: STOCK5,
+                5: STOCK5,
+                6: STOCK5,
+                7: STOCK5,
+                8: STOCK6,
+                9: STOCK6,
+                10: STOCK6,
+                11: STOCK6,
             },
             "Open Price": {
                 0: 21.21,
@@ -121,17 +130,17 @@ TEST_STOCK_DATE_TABLE2 = Table(
     ),
 )
 
-TEST_STOCK_TABLE1 = Table(
+TEST_STOCK_TABLE1 = Table.from_df_and_cols(
     columns=[
-        TableColumn(label="Security", col_type=TableColumnType.STOCK),
-        TableColumn(label="News Summary", col_type=TableColumnType.STRING),
+        TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK),
+        TableColumnMetadata(label="News Summary", col_type=TableColumnType.STRING),
     ],
     data=pd.DataFrame(
         data={
             "Security": {
-                0: 112,
-                1: 124,
-                2: 149,
+                0: STOCK4,
+                1: STOCK5,
+                2: STOCK6,
             },
             "News Summary": {
                 0: "blah1",
@@ -142,16 +151,16 @@ TEST_STOCK_TABLE1 = Table(
     ),
 )
 
-TEST_STOCK_TABLE2 = Table(
+TEST_STOCK_TABLE2 = Table.from_df_and_cols(
     columns=[
-        TableColumn(label="Security", col_type=TableColumnType.STOCK),
-        TableColumn(label="Earnings Summary", col_type=TableColumnType.STRING),
+        TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK),
+        TableColumnMetadata(label="Earnings Summary", col_type=TableColumnType.STRING),
     ],
     data=pd.DataFrame(
         data={
             "Security": {
-                0: 112,
-                1: 124,
+                0: STOCK4,
+                1: STOCK5,
             },
             "Earnings Summary": {
                 0: "blah1",

@@ -33,7 +33,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
     cols = args.input_table.columns
     if len(cols) < 2:
         raise RuntimeError("Table must have at least two columns to make a line graph!")
-    if len(args.input_table.data) < 2:
+    if args.input_table.get_num_rows() < 2:
         # this check assumes there is only 1 dataset to be graphed
         # it fails to block a multidateset table (multi stock) where each stock
         # has only 1 datapoint
@@ -42,8 +42,10 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
     x_axis_col = None
     dataset_col = None
     data_col = None
-    for col, df_col in zip(cols, args.input_table.data.columns):
-        if not x_axis_col and col.col_type in (
+    # TODO can probably clean this up to not use the df at all
+    df = args.input_table.to_df()
+    for col, df_col in zip(cols, df.columns):
+        if not x_axis_col and col.metadata.col_type in (
             TableColumnType.DATE,
             TableColumnType.DATETIME,
             TableColumnType.INTEGER,
@@ -58,7 +60,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
             continue
 
         # Keep adding columns while they're the same types as the first graphable column
-        if not data_col and col.col_type in (
+        if not data_col and col.metadata.col_type in (
             TableColumnType.CURRENCY,
             TableColumnType.FLOAT,
             TableColumnType.INTEGER,
@@ -77,7 +79,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
         )
 
     data = []
-    df = args.input_table.data
+    df = args.input_table.to_df()
     y_col, y_df_col = data_col
     x_col, x_df_col = x_axis_col
     if dataset_col is None:
@@ -86,7 +88,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
         # column. This only happens when there are exactly two columns, so we
         # can just use the first col to graph.
         dataset = GraphDataset(
-            dataset_id=str(y_col.label),
+            dataset_id=str(y_col.metadata.label),
             dataset_id_type=TableColumnType.STRING,
             points=[
                 DataPoint(x_val=x_val, y_val=y_val)
@@ -107,7 +109,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
             try:
                 dataset = GraphDataset(
                     dataset_id=dataset_val,
-                    dataset_id_type=ds_col.col_type,
+                    dataset_id_type=ds_col.metadata.col_type,
                     points=[
                         DataPoint(x_val=x_val, y_val=y_val)
                         for x_val, y_val in zip(dataset_data[x_df_col], dataset_data[y_df_col])
@@ -119,10 +121,10 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
             data.append(dataset)
 
     return LineGraph(
-        x_axis_type=x_axis_col[0].col_type,
-        x_unit=x_col.unit,
-        y_axis_type=y_col.col_type,
-        y_unit=y_col.unit,
+        x_axis_type=x_axis_col[0].metadata.col_type,
+        x_unit=x_col.metadata.unit,
+        y_axis_type=y_col.metadata.col_type,
+        y_unit=y_col.metadata.unit,
         data=data,
     )
 
@@ -145,7 +147,7 @@ Note that the input must be a Table!
 )
 async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> PieGraph:
     cols = args.input_table.columns
-    df = args.input_table.data
+    df = args.input_table.to_df()
     if len(cols) < 2:
         raise RuntimeError("Must have at least index and one column to create pie chart!")
     # Do some analysis on the table to convert it to the best-fit graph.
@@ -154,7 +156,7 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
     data_col = None
     data_df_col = None
     for col, df_col in zip(cols, df.columns):
-        if not label_col and col.col_type in (
+        if not label_col and col.metadata.col_type in (
             TableColumnType.STOCK,
             TableColumnType.STRING,
         ):
@@ -175,7 +177,7 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
 
     # Get the "most recent" if there are multiple groups
     grouped_df = df.groupby(label_df_col).last()
-    if data_col.col_type in (
+    if data_col.metadata.col_type in (
         TableColumnType.PERCENT,
         TableColumnType.FLOAT,
         TableColumnType.INTEGER,
@@ -184,24 +186,24 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
         # We have numerical data. Categories are simply the index, no
         # counting required.
         return PieGraph(
-            label_type=label_col.col_type,
-            data_type=data_col.col_type,
-            unit=data_col.unit,
+            label_type=label_col.metadata.col_type,
+            data_type=data_col.metadata.col_type,
+            unit=data_col.metadata.unit,
             data=[
                 PieSection(label=idx, value=val)  # type: ignore
                 for idx, val in grouped_df[data_df_col].items()
             ],
         )
-    if data_col.col_type in (
+    if data_col.metadata.col_type in (
         TableColumnType.STRING,
         TableColumnType.STOCK,
         TableColumnType.BOOLEAN,
     ):
         # We have categorical data, counting is required
         return PieGraph(
-            label_type=data_col.col_type,
+            label_type=data_col.metadata.col_type,
             data_type=TableColumnType.INTEGER,
-            unit=data_col.unit,
+            unit=data_col.metadata.unit,
             data=[
                 PieSection(label=category, value=count)  # type: ignore
                 for category, count in grouped_df[data_df_col].value_counts().items()

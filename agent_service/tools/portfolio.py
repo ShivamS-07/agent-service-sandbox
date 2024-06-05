@@ -8,7 +8,7 @@ from agent_service.external.pa_svc_client import (
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
     Table,
-    TableColumn,
+    TableColumnMetadata,
     TableColumnType,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
@@ -46,11 +46,11 @@ async def get_portfolio_holdings(
         "Weight": [holding.weight for holding in workspace.holdings],
     }
     df = pd.DataFrame(data)
-    table = Table(
+    table = Table.from_df_and_cols(
         data=df,
         columns=[
-            TableColumn(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-            TableColumn(label="Weight", col_type=TableColumnType.FLOAT),
+            TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
         ],
     )
     return table

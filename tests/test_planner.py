@@ -272,7 +272,7 @@ def get_test_registry() -> Type[ToolRegistry]:
     async def get_company_stats_over_dates(
         args: GetCompanyStatsOverDatesInput, context: PlanRunContext
     ) -> Table:
-        return Table(data=pd.DataFrame([[0]]), columns=[])
+        return Table.from_df_and_cols(data=pd.DataFrame([[0]]), columns=[])
 
     class AverageTableByDateInput(ToolArgs):
         table: Table
@@ -290,7 +290,7 @@ def get_test_registry() -> Type[ToolRegistry]:
     async def average_table_by_date(
         args: AverageTableByDateInput, context: PlanRunContext
     ) -> Table:
-        return Table(data=pd.DataFrame([[0]]), columns=[])
+        return Table.from_df_and_cols(data=pd.DataFrame([[0]]), columns=[])
 
     class ConcatTimeSeriesTableInput(ToolArgs):
         table1: Table
@@ -307,7 +307,7 @@ def get_test_registry() -> Type[ToolRegistry]:
     async def concat_time_series_table(
         args: ConcatTimeSeriesTableInput, context: PlanRunContext
     ) -> Table:
-        return Table(data=pd.DataFrame([[0]]), columns=[])
+        return Table.from_df_and_cols(data=pd.DataFrame([[0]]), columns=[])
 
     class PlotLineGraphInput(ToolArgs):
         table: Table

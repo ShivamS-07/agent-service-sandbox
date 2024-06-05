@@ -29,7 +29,7 @@ class DataPoint(ComplexIOBase):
 
 @io_type
 class GraphDataset(ComplexIOBase):
-    dataset_id: PrimitiveType
+    dataset_id: Union[PrimitiveType, StockID]
     dataset_id_type: TableColumnType
     points: List[DataPoint]
 
@@ -58,7 +58,7 @@ class LineGraph(Graph):
 
 @io_type
 class PieSection(ComplexIOBase):
-    label: PrimitiveType
+    label: Union[PrimitiveType, StockID]
     value: PrimitiveType
 
 

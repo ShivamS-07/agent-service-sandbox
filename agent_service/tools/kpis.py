@@ -8,7 +8,7 @@ import pandas as pd
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import Table, TableColumn, TableColumnType
+from agent_service.io_types.table import Table, TableColumnMetadata, TableColumnType
 from agent_service.io_types.text import KPIText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.types import ChatContext, Message, PlanRunContext
@@ -80,7 +80,7 @@ KPI_RELEVANCY_MAIN_PROMPT = Prompt(
 
 def convert_data_to_table(title: str, data: Dict[str, List[KPIInstance]]) -> Table:
     data_dict: Dict[str, Any] = {}
-    columns = [TableColumn(label="Quarter", col_type=TableColumnType.STRING)]
+    columns = [TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING)]
     for kpi_name, kpi_history in data.items():
         actual_col = f"{kpi_name} Actual"
         estimate_col = f"{kpi_name} Estimate"
@@ -88,23 +88,27 @@ def convert_data_to_table(title: str, data: Dict[str, List[KPIInstance]]) -> Tab
 
         unit = kpi_history[0].unit
         if unit == "Amount":
-            columns.append(TableColumn(label=actual_col, col_type=TableColumnType.CURRENCY))
-            columns.append(TableColumn(label=estimate_col, col_type=TableColumnType.CURRENCY))
+            columns.append(TableColumnMetadata(label=actual_col, col_type=TableColumnType.CURRENCY))
+            columns.append(
+                TableColumnMetadata(label=estimate_col, col_type=TableColumnType.CURRENCY)
+            )
         elif unit == "Percent":
-            columns.append(TableColumn(label=actual_col, col_type=TableColumnType.PERCENT))
-            columns.append(TableColumn(label=estimate_col, col_type=TableColumnType.PERCENT))
+            columns.append(TableColumnMetadata(label=actual_col, col_type=TableColumnType.PERCENT))
+            columns.append(
+                TableColumnMetadata(label=estimate_col, col_type=TableColumnType.PERCENT)
+            )
         else:
             columns.append(
-                TableColumn(
+                TableColumnMetadata(
                     label=actual_col, col_type=TableColumnType.FLOAT, unit=kpi_history[0].unit
                 )
             )
             columns.append(
-                TableColumn(
+                TableColumnMetadata(
                     label=estimate_col, col_type=TableColumnType.FLOAT, unit=kpi_history[0].unit
                 )
             )
-        columns.append(TableColumn(label=surprise_col, col_type=TableColumnType.FLOAT))
+        columns.append(TableColumnMetadata(label=surprise_col, col_type=TableColumnType.FLOAT))
 
         for kpi_inst in kpi_history:
             quarter = f"Q{kpi_inst.quarter}-{kpi_inst.year}"
@@ -129,7 +133,7 @@ def convert_data_to_table(title: str, data: Dict[str, List[KPIInstance]]) -> Tab
         df_data.append(row)
 
     df = pd.DataFrame(df_data)
-    return Table(title=title, data=df, columns=columns)
+    return Table.from_df_and_cols(title=title, data=df, columns=columns)
 
 
 def get_company_data_and_kpis(gbi_id: int) -> CompanyInformation:
@@ -358,9 +362,10 @@ async def main() -> None:
         CompanyKPIsRequest(stock_id=stock_id, table_name="General KPI Table", kpis=gen_kpi_list),
         context=plan_context,
     )
-    print(gen_kpis_table.data.head())
+    df = gen_kpis_table.to_df()
+    print(df.head())
     for column in gen_kpis_table.columns:
-        print(column.label)
+        print(column.metadata.label)
     print("-------------------------------------------------")
 
     topic_kpis_table: Table = await get_kpis_data_for_stock(  # type: ignore
@@ -369,9 +374,9 @@ async def main() -> None:
         ),
         context=plan_context,
     )
-    print(topic_kpis_table.data.head())
+    print(df.head())
     for column in topic_kpis_table.columns:
-        print(column.label)
+        print(column.metadata.label)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,5 @@
 from typing import List
 
-from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.stock import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
@@ -36,8 +35,4 @@ async def filter_stocks_by_region(
         sql, {"stocks": [stock.gbi_id for stock in args.stock_ids], "region": args.region_name}
     )
     stocks_to_include = {row["gbi_security_id"] for row in rows}
-    return [
-        stock.with_history_entry(HistoryEntry(explanation=f"In region '{args.region_name}'."))
-        for stock in args.stock_ids
-        if stock.gbi_id in stocks_to_include
-    ]
+    return [stock for stock in args.stock_ids if stock.gbi_id in stocks_to_include]

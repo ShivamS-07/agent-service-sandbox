@@ -1,18 +1,12 @@
+import datetime
 import enum
-from typing import Any, Callable, List, Literal, Optional, Union
+from typing import List, Literal, Optional, Union
 
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel
-from pydantic.functional_serializers import field_serializer
-from pydantic.functional_validators import field_validator
 
-from agent_service.io_type_utils import (
-    ComplexIOBase,
-    PrimitiveType,
-    io_type,
-    load_io_type_dict,
-)
+from agent_service.io_type_utils import ComplexIOBase, IOType, PrimitiveType, io_type
 from agent_service.io_types.output import Output, OutputType
 from agent_service.io_types.stock import StockID
 from agent_service.utils.boosted_pg import BoostedPG
@@ -63,54 +57,97 @@ class TableColumnType(str, enum.Enum):
 
 
 @io_type
-class TableColumn(ComplexIOBase):
+class TableColumnMetadata(ComplexIOBase):
     label: PrimitiveType
     col_type: TableColumnType
     unit: Optional[str] = None
 
+
+@io_type
+class TableColumn(ComplexIOBase):
+    metadata: TableColumnMetadata
+    data: List[Optional[IOType]]
+
     def to_output_column(self) -> "TableOutputColumn":
         # TODO switch GBI ID's to tickers if needed, etc.
         return TableOutputColumn(
-            name=str(self.label),
-            col_type=self.col_type,
-            unit=self.unit,
+            name=str(self.metadata.label),
+            col_type=self.metadata.col_type,
+            unit=self.metadata.unit,
         )
 
 
-def _convert_timestamp_cols(cols: List[TableColumn], df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Given a dataframe, check for Timestamp columns and convert to date/datetime.
-    """
-    for col, df_col in zip(cols, df.columns):
-        if col.col_type == TableColumnType.DATE:
-            df[df_col] = df[df_col].apply(
-                func=lambda val: val.date() if isinstance(val, pd.Timestamp) else val
-            )
-        elif col.col_type == TableColumnType.DATETIME:
-            df[df_col] = df[df_col].apply(
-                func=lambda val: val.to_pydatetime() if isinstance(val, pd.Timestamp) else val
-            )
+@io_type
+class StockTableColumn(TableColumn):
+    metadata: TableColumnMetadata = TableColumnMetadata(
+        label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
+    )
+    data: List[StockID]  # type: ignore
 
-    return df
+
+@io_type
+class DateTableColumn(TableColumn):
+    metadata: TableColumnMetadata = TableColumnMetadata(label="Date", col_type=TableColumnType.DATE)
+    data: List[datetime.date]  # type: ignore
 
 
 @io_type
 class Table(ComplexIOBase):
     title: Optional[str] = None
     columns: List[TableColumn]
-    data: pd.DataFrame
+
+    def get_num_rows(self) -> int:
+        if not self.columns:
+            return 0
+        return len(self.columns[0].data)
 
     def to_gpt_input(self) -> str:
-        return f"[Table with {len(self.data)} rows and {len(self.data.columns)} columns]"
+        return f"[Table with {self.get_num_rows()} rows and {len(self.columns)} columns]"
+
+    def to_df(self, stocks_as_tickers_only: bool = False) -> pd.DataFrame:
+        data = {}
+        for col in self.columns:
+            if isinstance(col, StockTableColumn) and stocks_as_tickers_only:
+                data[col.metadata.label] = list(
+                    map(lambda stock: stock.symbol or stock.isin if stock else stock, col.data)
+                )
+            else:
+                data[col.metadata.label] = col.data
+
+        return pd.DataFrame(data=data)
+
+    @staticmethod
+    def from_df_and_cols(
+        columns: List[TableColumnMetadata], data: pd.DataFrame, title: Optional[str] = None
+    ) -> "Table":
+        out_columns: List[TableColumn] = []
+        data = data.replace(np.nan, None)
+        for col_meta, df_col in zip(columns, data.columns):
+            if col_meta.col_type == TableColumnType.DATE:
+                data[df_col] = data[df_col].apply(
+                    func=lambda val: val.date() if isinstance(val, pd.Timestamp) else val
+                )
+                out_columns.append(DateTableColumn(metadata=col_meta, data=data[df_col].to_list()))
+            elif col_meta.col_type == TableColumnType.DATETIME:
+                data[df_col] = data[df_col].apply(
+                    func=lambda val: val.to_pydatetime() if isinstance(val, pd.Timestamp) else val
+                )
+                out_columns.append(DateTableColumn(metadata=col_meta, data=data[df_col].to_list()))
+            elif col_meta.col_type == TableColumnType.STOCK:
+                out_columns.append(StockTableColumn(metadata=col_meta, data=data[df_col].to_list()))
+            else:
+                out_columns.append(TableColumn(metadata=col_meta, data=data[df_col].to_list()))
+
+        return Table(columns=out_columns, title=title)
 
     async def to_rich_output(self, pg: BoostedPG) -> Output:
-        df = self.data.copy(deep=True)
-
         output_cols = []
         is_first_col = True
+        # Use a dataframe for convenience
+        df = self.to_df()
         for df_col, col in zip(df.columns, self.columns):
             output_col = col.to_output_column()
-            if col.col_type == TableColumnType.STOCK:
+            if output_col.col_type == TableColumnType.STOCK:
                 # Map to StockMetadata
                 df[df_col] = df[df_col].map(
                     lambda val: (
@@ -127,48 +164,19 @@ class Table(ComplexIOBase):
                 if is_first_col:
                     # Automatically highlight the first column if it's a stock column
                     output_col.is_highlighted = True
-            elif col.col_type in (TableColumnType.DATE, TableColumnType.DATETIME) and is_first_col:
+            elif (
+                output_col.col_type in (TableColumnType.DATE, TableColumnType.DATETIME)
+                and is_first_col
+            ):
                 # Automatically highlight the first column if it's a date column
                 output_col.is_highlighted = True
 
             output_cols.append(output_col)
             is_first_col = False
 
-        df = df.replace(np.nan, None)
         rows = df.values.tolist()
 
         return TableOutput(title=self.title, columns=output_cols, rows=rows)
-
-    def model_post_init(self, __context: Any) -> None:
-        self.data = _convert_timestamp_cols(cols=self.columns, df=self.data)
-        return super().model_post_init(__context)
-
-    @field_validator("data", mode="before")
-    @classmethod
-    def _deserializer(cls, data: Any) -> Any:
-        def _apply_func(val: Any) -> Any:
-            # This allows us to store ANY arbitrary IOType in dataframes, and
-            # they will be serialized and deserialized automatically.
-            if isinstance(val, dict):
-                try:
-                    return load_io_type_dict(val)
-                except Exception:
-                    pass
-            return val
-
-        if isinstance(data, dict):
-            data = pd.DataFrame.from_dict(data)
-            # No index
-            data = data.reset_index(drop=True)
-            data = data.applymap(_apply_func)
-        return data
-
-    @field_serializer("data", mode="wrap")
-    @classmethod
-    def _field_serializer(cls, data: Any, dumper: Callable) -> Any:
-        if isinstance(data, pd.DataFrame):
-            data = data.to_dict()
-        return dumper(data)
 
 
 CellType = Union[PrimitiveType, StockMetadata]

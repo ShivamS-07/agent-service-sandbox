@@ -10,7 +10,8 @@ from agent_service.io_types.graph import (
     PieGraph,
     PieSection,
 )
-from agent_service.io_types.table import Table, TableColumn, TableColumnType
+from agent_service.io_types.stock import StockID
+from agent_service.io_types.table import Table, TableColumnMetadata, TableColumnType
 from agent_service.tools.graphs import (
     MakeLineGraphArgs,
     MakePieGraphArgs,
@@ -19,26 +20,30 @@ from agent_service.tools.graphs import (
 )
 from agent_service.types import PlanRunContext
 
-TIMESERIES_TABLE = Table(
+STOCK1 = StockID(gbi_id=1, symbol="", isin="", company_name="")
+STOCK2 = StockID(gbi_id=2, symbol="", isin="", company_name="")
+STOCK3 = StockID(gbi_id=3, symbol="", isin="", company_name="")
+
+TIMESERIES_TABLE = Table.from_df_and_cols(
     columns=[
-        TableColumn(label="Date", col_type=TableColumnType.DATE),
-        TableColumn(
+        TableColumnMetadata(label="Date", col_type=TableColumnType.DATE),
+        TableColumnMetadata(
             label="Stock ID",
             col_type=TableColumnType.STOCK,
         ),
-        TableColumn(
+        TableColumnMetadata(
             label="Value",
             col_type=TableColumnType.FLOAT,
         ),
     ],
     data=pd.DataFrame(
         data=[
-            [datetime.date(2024, 1, 1), 1, 1],
-            [datetime.date(2024, 1, 2), 1, 3],
-            [datetime.date(2024, 1, 1), 2, 2],
-            [datetime.date(2024, 1, 2), 2, 4],
-            [datetime.date(2024, 1, 1), 3, 3],
-            [datetime.date(2024, 1, 2), 3, 5],
+            [datetime.date(2024, 1, 1), STOCK1, 1],
+            [datetime.date(2024, 1, 2), STOCK1, 3],
+            [datetime.date(2024, 1, 1), STOCK2, 2],
+            [datetime.date(2024, 1, 2), STOCK2, 4],
+            [datetime.date(2024, 1, 1), STOCK3, 3],
+            [datetime.date(2024, 1, 2), STOCK3, 5],
         ],
         columns=["Date", "Stock ID", "Value"],
     ),
@@ -56,9 +61,9 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
                     label_type=TableColumnType.STOCK,
                     data_type=TableColumnType.FLOAT,
                     data=[
-                        PieSection(label=1, value=3),
-                        PieSection(label=2, value=4),
-                        PieSection(label=3, value=5),
+                        PieSection(label=STOCK1, value=3),
+                        PieSection(label=STOCK2, value=4),
+                        PieSection(label=STOCK3, value=5),
                     ],
                 ),
             )
@@ -78,7 +83,7 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
                     data=[
                         GraphDataset(
                             dataset_id_type=TableColumnType.STOCK,
-                            dataset_id=1,
+                            dataset_id=STOCK1,
                             points=[
                                 DataPoint(x_val=datetime.date(2024, 1, 1), y_val=1),
                                 DataPoint(x_val=datetime.date(2024, 1, 2), y_val=3),
@@ -86,7 +91,7 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
                         ),
                         GraphDataset(
                             dataset_id_type=TableColumnType.STOCK,
-                            dataset_id=2,
+                            dataset_id=STOCK2,
                             points=[
                                 DataPoint(x_val=datetime.date(2024, 1, 1), y_val=2),
                                 DataPoint(x_val=datetime.date(2024, 1, 2), y_val=4),
@@ -94,7 +99,7 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
                         ),
                         GraphDataset(
                             dataset_id_type=TableColumnType.STOCK,
-                            dataset_id=3,
+                            dataset_id=STOCK3,
                             points=[
                                 DataPoint(x_val=datetime.date(2024, 1, 1), y_val=3),
                                 DataPoint(x_val=datetime.date(2024, 1, 2), y_val=5),

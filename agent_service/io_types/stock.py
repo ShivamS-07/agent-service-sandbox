@@ -28,6 +28,11 @@ class StockID(ComplexIOBase):
             return self.gbi_id == other.gbi_id
         return False
 
+    def __lt__(self, other: Any) -> bool:
+        if isinstance(other, StockID):
+            return self.gbi_id < other.gbi_id
+        return NotImplemented
+
     @staticmethod
     async def from_gbi_id_list(gbi_ids: List[int]) -> List["StockID"]:
         meta_dict = await get_stock_metadata(gbi_ids=gbi_ids)

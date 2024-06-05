@@ -34,7 +34,8 @@ class TestFeatureDataLookup(unittest.IsolatedAsyncioTestCase):
             statistic_id=GLOBAL_CAN_TO_USD_EXCH_RATE,
         )
         result = await get_statistic_data_for_companies(args, self.context)
-        self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
+        df = result.to_df()
+        self.assertEqual(len(df["Date"].unique()), 1)  # num_dates
 
     async def test_preset_feature_data_3_stock(self):
         args = FeatureDataInput(
@@ -42,8 +43,9 @@ class TestFeatureDataLookup(unittest.IsolatedAsyncioTestCase):
             statistic_id=PE_RATIO,
         )
         result = await get_statistic_data_for_companies(args, self.context)
-        self.assertEqual(len(result.data[STOCK_ID_COL_NAME_DEFAULT].unique()), 3)  # num_stocks
-        self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
+        df = result.to_df()
+        self.assertEqual(len(df[STOCK_ID_COL_NAME_DEFAULT].unique()), 3)  # num_stocks
+        self.assertEqual(len(df["Date"].unique()), 1)  # num_dates
 
     async def test_feature_data_3_stock(self):
         args = FeatureDataInput(
@@ -51,8 +53,9 @@ class TestFeatureDataLookup(unittest.IsolatedAsyncioTestCase):
             statistic_id=CLOSE_PRICE,
         )
         result = await get_statistic_data_for_companies(args, self.context)
-        self.assertEqual(len(result.data[STOCK_ID_COL_NAME_DEFAULT].unique()), 3)  # num_stocks
-        self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
+        df = result.to_df()
+        self.assertEqual(len(df[STOCK_ID_COL_NAME_DEFAULT].unique()), 3)  # num_stocks
+        self.assertEqual(len(df["Date"].unique()), 1)  # num_dates
 
     async def test_feature_data_1_stock_many_dates(self):
         args = FeatureDataInput(
@@ -62,8 +65,9 @@ class TestFeatureDataLookup(unittest.IsolatedAsyncioTestCase):
             end_date=datetime.date(2020, 3, 1),
         )
         result = await get_statistic_data_for_companies(args, self.context)
-        self.assertEqual(len(result.data[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
-        self.assertGreater(len(result.data["Date"].unique()), 20)  # num_dates
+        df = result.to_df()
+        self.assertEqual(len(df[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
+        self.assertGreater(len(df["Date"].unique()), 20)  # num_dates
 
     async def test_get_latest_date(self):
         # test doesnt throw and returns the same value
@@ -80,15 +84,17 @@ class TestFeatureDataLookup(unittest.IsolatedAsyncioTestCase):
         )
         result = await get_statistic_data_for_companies(args, self.context)
 
-        self.assertEqual(len(result.data[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
-        self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
+        df = result.to_df()
+        self.assertEqual(len(df[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
+        self.assertEqual(len(df["Date"].unique()), 1)  # num_dates
 
     async def test_feature_data_dividend(self):
         args = FeatureDataInput(stock_ids=[VZ], statistic_id=SPIQ_DIV_AMOUNT)
         result = await get_statistic_data_for_companies(args, self.context)
 
-        self.assertEqual(len(result.data[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
-        self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
+        df = result.to_df()
+        self.assertEqual(len(df[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
+        self.assertEqual(len(df["Date"].unique()), 1)  # num_dates
 
         args = FeatureDataInput(
             stock_ids=[VZ],
@@ -97,15 +103,16 @@ class TestFeatureDataLookup(unittest.IsolatedAsyncioTestCase):
             end_date=datetime.date(2024, 4, 14),
         )
         result = await get_statistic_data_for_companies(args, self.context)
-
-        self.assertGreater(len(result.data["Date"].unique()), 3)  # num_dates
+        df = result.to_df()
+        self.assertGreater(len(df["Date"].unique()), 3)  # num_dates
 
     async def test_feature_data_quarterly(self):
         args = FeatureDataInput(stock_ids=[VZ], statistic_id=GROSS_PROFIT)
         result = await get_statistic_data_for_companies(args, self.context)
 
-        self.assertEqual(len(result.data[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
-        self.assertEqual(len(result.data["Date"].unique()), 1)  # num_dates
+        df = result.to_df()
+        self.assertEqual(len(df[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
+        self.assertEqual(len(df["Date"].unique()), 1)  # num_dates
 
 
 class TestStatisticsIdentifierLookup(unittest.IsolatedAsyncioTestCase):
