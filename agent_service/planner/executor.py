@@ -1,5 +1,5 @@
 import pprint
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
 from prefect import flow
@@ -28,7 +28,6 @@ from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.agent_event_utils import (
     publish_agent_execution_plan,
-    publish_agent_output,
     publish_agent_updated_worklogs,
     send_chat_message,
 )
@@ -60,7 +59,7 @@ async def run_execution_plan(
     log_all_outputs: bool = False,
     replan_execution_error: bool = True,
     run_plan_in_prefect_immediately: bool = True,
-) -> Optional[IOType]:
+) -> List[IOType]:
     logger = get_prefect_logger(__name__)
     # Maps variables to their resolved values
     variable_lookup: Dict[str, IOType] = {}
@@ -69,7 +68,7 @@ async def run_execution_plan(
     db.insert_plan_run(
         agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
     )
-
+    final_outputs = []
     tool_output = None
     prev_worklog_publish_time = get_now_utc()
     for idx, step in enumerate(plan.nodes):
@@ -114,7 +113,8 @@ async def run_execution_plan(
                 raise RuntimeError("Plan run attempt failed, retrying")
             raise RuntimeError("All retry attempts failed")
 
-        db.write_tool_output(output=tool_output, context=context)
+        if not step.is_output_node:
+            db.write_tool_output(output=tool_output, context=context)
         if log_all_outputs:
             logger.info(f"Output of step '{step.tool_name}': {tool_output}")
 
@@ -139,20 +139,21 @@ async def run_execution_plan(
         # Update the chat context in case of new messages
         if not context.skip_db_commit:
             context.chat = db.get_chats_history_for_agent(agent_id=context.agent_id)
+        if step.is_output_node:
+            final_outputs.append(tool_output)
         logger.info(f"Finished step '{step.tool_name}'")
 
     # TODO right now we don't handle output tools, and we just output the last
     # thing. Should fix that.
 
     logger.info(f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=}")
-    await publish_agent_output(output=tool_output, context=context, db=db)
     if do_chat:
         logger.info("Generating chat message...")
         chatbot = Chatbot(agent_id=context.agent_id)
         message = await chatbot.generate_execution_complete_response(
             chat_context=db.get_chats_history_for_agent(agent_id=context.agent_id),
             execution_plan=plan,
-            output=tool_output,
+            outputs=final_outputs,
         )
         await send_chat_message(
             message=Message(agent_id=context.agent_id, message=message, is_user_message=False),
@@ -160,7 +161,7 @@ async def run_execution_plan(
         )
 
     logger.info("Finished run!")
-    return tool_output
+    return final_outputs
 
 
 @flow(name=CREATE_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{plan_id}")
@@ -594,7 +595,7 @@ async def run_execution_plan_local(
     do_chat: bool = False,
     log_all_outputs: bool = False,
     replan_execution_error: bool = False,
-) -> Optional[IOType]:
+) -> List[IOType]:
     context.run_tasks_without_prefect = True
     return await run_execution_plan.fn(
         plan=plan,

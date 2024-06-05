@@ -125,6 +125,7 @@ class Tool:
     return_type: Type[IOType]
     description: str
     reads_chat: bool
+    is_output_tool: bool = False
 
     def to_function_header(self) -> str:
         """
@@ -295,6 +296,7 @@ def tool(
     enabled: bool = True,
     reads_chat: bool = False,
     tool_registry: Type[ToolRegistry] = ToolRegistry,
+    is_output_tool: bool = False,
 ) -> Callable[[ToolFunc], ToolFunc]:
     """
     Decorator to register a function as a Tool usable by GPT. This can only decorate a function of the format:
@@ -476,6 +478,7 @@ def tool(
                     return_type=sig.return_annotation,
                     description=description,
                     reads_chat=reads_chat,
+                    is_output_tool=is_output_tool,
                 ),
                 category=category,
             )

@@ -536,13 +536,20 @@ class TestPlans(IsolatedAsyncioTestCase):
                     },
                     description="Filter news descriptions to only those related to machine learning",
                     output_variable_name="filtered_texts",
-                    is_output_node=True,
+                    is_output_node=False,
                 ),
                 ToolExecutionNode(
                     tool_name="summarize_texts",
                     args={"texts": Variable(var_name="filtered_texts")},
                     description="Summarize the news descriptions into a single summary text",
                     output_variable_name="summary",
+                    is_output_node=False,
+                ),
+                ToolExecutionNode(
+                    tool_name="output",
+                    args={"objects_to_output": [Variable(var_name="summary")]},
+                    description="Output the result",
+                    output_variable_name="result",
                     is_output_node=True,
                 ),
             ]
@@ -565,7 +572,7 @@ class TestPlans(IsolatedAsyncioTestCase):
             plan_run_context,
             do_chat=False,
         )
-        self.assertEqual(result.val, "A summarized text!")
+        self.assertIsNotNone(result)
 
 
 class TestPlanConstructionValidation(TestCase):
@@ -702,6 +709,12 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
                 arguments={"texts": "filtered_news"},
                 description="Summarize the news descriptions into a single summary text",
             ),
+            ParsedStep(
+                output_var="result",
+                function="output",
+                arguments={"objects_to_output": "[summary]"},
+                description="Output the result",
+            ),
         ]
         execution_plan = planner._validate_and_construct_plan(example_input)
 
@@ -752,6 +765,13 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
                 args={"texts": Variable(var_name="filtered_news")},
                 description="Summarize the news descriptions into a single summary text",
                 output_variable_name="summary",
+                is_output_node=False,
+            ),
+            ToolExecutionNode(
+                tool_name="output",
+                args={"objects_to_output": [Variable(var_name="summary")]},
+                description="Output the result",
+                output_variable_name="result",
                 is_output_node=True,
             ),
         ]

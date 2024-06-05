@@ -104,7 +104,7 @@ class DateRangeInput(ToolArgs):
 
 @tool(
     description=(
-        "This function returns a date range 'DateRange' with a start_date and end_date "
+        "This function returns a date range 'DateRange' with dates "
         "that are chosen to be relative to and near to the one of the passed in dates "
         "or near today's date if no date was passed in. "
         "it is extremely useful for when a you need to a date range for a graph but were provided no "
@@ -189,7 +189,10 @@ async def get_n_width_date_range_near_date(
 
     res = DateRange(start_date=start_date, end_date=end_date)
     await tool_log(
-        log=f"Constructed a date range from the given inputs: {res}",
+        log=(
+            "Constructed a date range from the given inputs - "
+            f"start date: {res.start_date.isoformat()}, end date: {res.end_date.isoformat()}"
+        ),
         context=context,
     )
     logger.info(f"returning {res=}")

@@ -557,11 +557,14 @@ class Planner:
     def _validate_and_construct_plan(self, steps: List[ParsedStep]) -> ExecutionPlan:
         variable_lookup: Dict[str, Type[IOType]] = {}
         plan_nodes: List[ToolExecutionNode] = []
+        has_output_tool = False
         for step in steps:
             if not self.tool_registry.is_tool_registered(step.function):
                 raise ExecutionPlanParsingError(f"Invalid function '{step.function}'")
 
             tool = self.tool_registry.get_tool(step.function)
+            if tool.is_output_tool:
+                has_output_tool = True
             partial_args = self._validate_tool_arguments(
                 tool, args=step.arguments, variable_lookup=variable_lookup
             )
@@ -573,10 +576,12 @@ class Planner:
                 description=step.description,
                 output_variable_name=step.output_var,
                 tool_task_id=str(uuid4()),
+                is_output_node=tool.is_output_tool,
             )
             plan_nodes.append(node)
-        if plan_nodes:
-            plan_nodes[-1].is_output_node = True
+
+        if not has_output_tool:
+            raise ExecutionPlanParsingError("No call to `output` found!")
 
         return ExecutionPlan(nodes=plan_nodes)
 

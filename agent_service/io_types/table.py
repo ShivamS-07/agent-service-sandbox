@@ -104,21 +104,28 @@ class Table(ComplexIOBase):
     def to_gpt_input(self) -> str:
         return f"[Table with {self.get_num_rows()} rows and {len(self.columns)} columns]"
 
-    def to_df(self, stocks_as_tickers_only: bool = False) -> pd.DataFrame:
+    def to_df(
+        self, stocks_as_tickers_only: bool = False, stocks_as_hashables: bool = False
+    ) -> pd.DataFrame:
         data = {}
         for col in self.columns:
-            if isinstance(col, StockTableColumn) and stocks_as_tickers_only:
-                data[col.metadata.label] = list(
-                    map(lambda stock: stock.symbol or stock.isin if stock else stock, col.data)
-                )
-            else:
-                data[col.metadata.label] = col.data
+            data[col.metadata.label] = col.data
+            if isinstance(col, StockTableColumn):
+                if stocks_as_tickers_only:
+                    data[col.metadata.label] = list(
+                        map(lambda stock: stock.symbol or stock.isin if stock else stock, col.data)
+                    )
+                elif stocks_as_hashables:
+                    data[col.metadata.label] = [stock.to_hashable() for stock in col.data]
 
         return pd.DataFrame(data=data)
 
     @staticmethod
     def from_df_and_cols(
-        columns: List[TableColumnMetadata], data: pd.DataFrame, title: Optional[str] = None
+        columns: List[TableColumnMetadata],
+        data: pd.DataFrame,
+        title: Optional[str] = None,
+        stocks_are_hashable_objs: bool = False,
     ) -> "Table":
         out_columns: List[TableColumn] = []
         data = data.replace(np.nan, None)
@@ -134,7 +141,10 @@ class Table(ComplexIOBase):
                 )
                 out_columns.append(DateTableColumn(metadata=col_meta, data=data[df_col].to_list()))
             elif col_meta.col_type == TableColumnType.STOCK:
-                out_columns.append(StockTableColumn(metadata=col_meta, data=data[df_col].to_list()))
+                stocks = data[df_col].to_list()
+                if stocks_are_hashable_objs:
+                    stocks = [StockID.from_hashable(stock) for stock in stocks]
+                out_columns.append(StockTableColumn(metadata=col_meta, data=stocks))
             else:
                 out_columns.append(TableColumn(metadata=col_meta, data=data[df_col].to_list()))
 

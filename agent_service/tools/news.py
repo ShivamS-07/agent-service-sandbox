@@ -6,6 +6,7 @@ from agent_service.external.grpc_utils import timestamp_to_date
 from agent_service.external.nlp_svc_client import get_multi_companies_news_topics
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, DEFAULT_EMBEDDING_MODEL
 from agent_service.GPT.requests import GPT
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockAlignedTextGroups, StockID
 from agent_service.io_types.text import (
     NewsPoolArticleText,
@@ -68,6 +69,7 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
     stock_ids: List[StockID]
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
+    date_range: Optional[DateRange] = None
 
 
 @tool(
@@ -94,8 +96,12 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
 async def get_all_news_developments_about_companies(
     args: GetNewsDevelopmentsAboutCompaniesInput, context: PlanRunContext
 ) -> List[StockNewsDevelopmentText]:
+    start_date = args.start_date
+    end_date = args.end_date
+    if args.date_range:
+        start_date, end_date = args.date_range.start_date, args.date_range.end_date
     topic_lookup = await _get_news_developments_helper(
-        args.stock_ids, context.user_id, args.start_date, args.end_date
+        args.stock_ids, context.user_id, start_date, end_date
     )
     output: List[StockNewsDevelopmentText] = []
     for topic_list in topic_lookup.values():

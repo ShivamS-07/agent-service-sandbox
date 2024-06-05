@@ -137,7 +137,6 @@ def _get_df_info(df: pd.DataFrame) -> str:
     return f"""
     Number of rows: {len(df)}
     Columns: {df.columns}
-    Index: {df.index}
     """
 
 
@@ -173,7 +172,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
         current_table_cols=input_col_metadata,
     )
     await tool_log(log="Transforming table", context=context)
-    data_df = args.input_table.to_df()
+    data_df = args.input_table.to_df(stocks_as_hashables=True)
     code = await gpt.do_chat_w_sys_prompt(
         main_prompt=DATAFRAME_TRANSFORMER_MAIN_PROMPT.format(
             col_schema=_dump_cols(input_col_metadata),
@@ -209,7 +208,9 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
         if output_df is None:
             raise RuntimeError(f"Table transformation subprocess failed with:\n{error}")
 
-    return Table.from_df_and_cols(columns=new_col_schema, data=output_df)
+    return Table.from_df_and_cols(
+        columns=new_col_schema, data=output_df, stocks_are_hashable_objs=True
+    )
 
 
 class JoinTableArgs(ToolArgs):
@@ -261,8 +262,8 @@ def _join_two_tables(first: Table, second: Table) -> Table:
     # don't show anything crazy
     join_suffixes = (" (one)", " (two)")
 
-    first_data = first.to_df()
-    second_data = second.to_df()
+    first_data = first.to_df(stocks_as_hashables=True)
+    second_data = second.to_df(stocks_as_hashables=True)
     # Go case by case:
     #   1. Join on stocks AND dates
     #   2. Join on just stocks
@@ -305,10 +306,7 @@ def _join_two_tables(first: Table, second: Table) -> Table:
     else:
         # Can't join on anything! Just concat
         return Table(columns=first.columns + second.columns)
-    return Table.from_df_and_cols(
-        columns=output_col_metas,
-        data=df,
-    )
+    return Table.from_df_and_cols(columns=output_col_metas, data=df, stocks_are_hashable_objs=True)
 
 
 @tool(

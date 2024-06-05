@@ -194,7 +194,7 @@ class MessageEvent(BaseModel):
 
 class OutputEvent(BaseModel):
     event_type: Literal[EventType.OUTPUT] = EventType.OUTPUT
-    output: AgentOutput
+    output: List[AgentOutput]
 
 
 class NewPlanEvent(BaseModel):

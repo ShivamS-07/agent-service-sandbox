@@ -59,26 +59,33 @@ async def send_chat_message(
 
 
 async def publish_agent_output(
-    output: IOType,
+    outputs: List[IOType],
     context: PlanRunContext,
     is_intermediate: bool = False,
     db: Optional[Postgres] = None,
 ) -> None:
     if not db:
         db = get_psql()
-    db.write_agent_output(output=output, context=context)
-    rich_output = await get_output_from_io_type(output, pg=SyncBoostedPG())
+    rich_outputs = []
+    for output in outputs:
+        db.write_agent_output(output=output, context=context)
+        rich_output = await get_output_from_io_type(output, pg=SyncBoostedPG())
+        rich_outputs.append(rich_output)
+    now = get_now_utc()
     event = AgentEvent(
         agent_id=context.agent_id,
         event=OutputEvent(
-            output=AgentOutput(
-                agent_id=context.agent_id,
-                plan_id=context.plan_id,
-                plan_run_id=context.plan_run_id,
-                output=rich_output,  # type: ignore
-                is_intermediate=is_intermediate,
-                created_at=get_now_utc(),
-            )
+            output=[
+                AgentOutput(
+                    agent_id=context.agent_id,
+                    plan_id=context.plan_id,
+                    plan_run_id=context.plan_run_id,
+                    output=rich_output,  # type: ignore
+                    is_intermediate=is_intermediate,
+                    created_at=now,
+                )
+                for rich_output in rich_outputs
+            ]
         ),
     )
     await publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json())

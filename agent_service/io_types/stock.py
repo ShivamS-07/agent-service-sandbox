@@ -49,6 +49,13 @@ class StockID(ComplexIOBase):
     async def to_rich_output(self, pg: BoostedPG) -> Output:
         return TextOutput(val=self.symbol or self.isin)
 
+    def to_hashable(self) -> str:
+        return self.model_dump_json()
+
+    @staticmethod
+    def from_hashable(val: str) -> StockID:
+        return StockID.model_validate_json(val)
+
 
 @io_type
 class StockAlignedTextGroups(ComplexIOBase):

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
@@ -77,9 +77,13 @@ class Chatbot:
         return result
 
     async def generate_execution_complete_response(
-        self, chat_context: ChatContext, execution_plan: ExecutionPlan, output: IOType
+        self, chat_context: ChatContext, execution_plan: ExecutionPlan, outputs: List[IOType]
     ) -> str:
-        output_str = output.to_gpt_input() if isinstance(output, ComplexIOBase) else str(output)
+        output_list = [
+            output.to_gpt_input() if isinstance(output, ComplexIOBase) else str(output)
+            for output in outputs
+        ]
+        output_str = "\n".join(output_list)
         main_prompt = COMPLETE_EXECUTION_MAIN_PROMPT.format(
             chat_context=chat_context.get_gpt_input(),
             plan=execution_plan.get_plan_steps_for_gpt(),
