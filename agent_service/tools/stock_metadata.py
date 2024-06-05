@@ -19,6 +19,8 @@ class GetStockDescriptionInput(ToolArgs):
         " or show these descriptions to the user directly"
         "For example, if a user asked `Please give me a quick rundown on what "
         "the company Snowflake does`, you would use this function to get the information"
+        " You should also use it for answering a question about a specific stock related to"
+        " information likely to be discussed in company description."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -41,6 +43,7 @@ async def get_company_descriptions(
         "For example, if the client asked: `I want a list of stocks which sell electronics`"
         " you would use this function to get information about the companies so you can filter "
         " to the ones asked for by the client"
+        " You should NOT use this function for getting data for questions about specific stocks."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

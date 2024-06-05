@@ -326,12 +326,30 @@ class CompanyDescriptionText(Text):
         """
         from agent_service.utils.postgres import get_psql
 
+        stocks = [desc.id for desc in company_descriptions]
+
+        # get short first since we always have that
+
         db = get_psql()
-        rows = db.generic_read(sql, {"stocks": [desc.id for desc in company_descriptions]})
-        return {
+        rows = db.generic_read(sql, {"stocks": stocks})
+
+        descriptions = {
             row["gbi_id"]: f"Text Type: Company Description\n{row['company_description_short']}"
             for row in rows
         }
+
+        # replace with long if it exists
+
+        long_sql = sql.replace("_short", "")
+
+        rows = db.generic_read(long_sql, {"stocks": stocks})
+
+        for row in rows:
+            descriptions[row["gbi_id"]] = (
+                f"Text Type: Company Description\n{row['company_description']}"
+            )
+
+        return descriptions
 
 
 @io_type

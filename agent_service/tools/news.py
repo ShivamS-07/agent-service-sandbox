@@ -87,6 +87,7 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         "An example of the kind of query you would use this function for: "
         " `Summarize all the news about GPUs for Nvida and Intel over the last 3 weeks. "
         "If you want to filter news articles by topic, you should choose this function. "
+        " You should NOT use this function for getting data for questions about specific stocks. "
         "If end_date is left out, "
         "the current date is used. If start_date is left out, 1 week ago is used."
     ),
@@ -122,6 +123,8 @@ async def get_all_news_developments_about_companies(
         " to summarize all the news. An example of the kind of query you would use this for: "
         "`I want a list of airline stocks that have faced major customer service issues in the last month. "
         "Again, if you want to filter stocks by topic, you should choose this function."
+        " You should also use it for answering a question about a specific stock related to"
+        " information that is likely to be discussed in news. "
         "If end_date is left out, the current date is used. If start_date is left out, 1 week ago is used"
     ),
     category=ToolCategory.NEWS,

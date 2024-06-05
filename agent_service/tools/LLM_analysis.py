@@ -1,6 +1,6 @@
 import asyncio
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O
 from agent_service.GPT.requests import GPT
@@ -34,7 +34,7 @@ SUMMARIZE_SYS_PROMPT = Prompt(
 
 SUMMARIZE_PROMPT_MAIN = Prompt(
     name="LLM_SUMMARIZE_MAIN_PROMPT",
-    template="Summarize the following text(s) based on the needs of the client. Here are the documents, delimited by -----:\n-----\n{texts}\n-----\nHere is the transcript of your interaction with the client, delimited by ----:\n----\n{chat_context}\n----\nNow write your summary",  # noqa: E501
+    template="Summarize the following text(s) based on the needs of the client. Here are the documents, delimited by -----:\n-----\n{texts}\n-----\nHere is the transcript of your interaction with the client, delimited by ----:\n----\n{chat_context}\n----\n{topic_phrase}. Now write your summary",  # noqa: E501
 )
 
 TOPIC_FILTER_SYS_PROMPT = Prompt(
@@ -46,6 +46,27 @@ TOPIC_FILTER_MAIN_PROMPT = Prompt(
     name="TOPIC_FILTER_MAIN_PROMPT",
     template="Decide to what degree the following text or texts have information that is relevant to the provided topic. Here is the text or texts, delimited by ---:\n---\n{text}\n---\n. The topic is: {topic}. Write your discussion, followed by your relevant rating between 0 and 3: ",  # noqa: E501
 )
+
+ANSWER_QUESTION_SYS_PROMPT = Prompt(
+    name="ANSWER_QUESTION_SYS_PROMPT",
+    template="You are a financial analyst highly skilled at retrieval of important financial information. You will be provided with a question, and one or more text documents that may contain its answer. Search carefully for the answer, and provide one if you can find it. If you find information that is pertinent to the question but nevertheless does not strictly speaking answer it, you may choose admit that you did not find an answer, but provide the relevant information you did find. If there is no information that is at least somewhat relevant to the question, then simply say that you could not find an answer. For example, if the text provided was simply  `McDonald's has extensive operations in Singapore` and the question was `Does McDonald's have operations in Malaysia?`, you might answer: The information I have direct access to does not indicate whether McDonald's has operations in Malaysia, however it definitely has operations in neighboring Singapore. But if the question was `How did McDonald's revenue in China change last year?`, the information in the text is essentially irrelevant to this question and you need to admit that you have no direct knowledge of the answer to the question. You may use common sense facts to help guide you, but the core of your answer must come from some text provided in your input, you must not answer questions based on extensively on information that is not provided in the input documents. You should limit your answer to no longer than a paragraph of 200 words.",  # noqa: E501
+)
+
+ANSWER_QUESTION_MAIN_PROMPT = Prompt(
+    name="ANSWER_QUESTION_MAIN_PROMPT",
+    template="Answer the following question to the extent that is possible from the information in the text(s) provided, admitting that the information is not there if it is not. Here are the text(s), delimited by '---':\n---\n{texts}\n---\nHere is the question:\n{question}\nNow write your answer: ",  # noqa: E501
+)
+
+PROFILE_FILTER_SYS_PROMPT = Prompt(
+    name="PROFILE_FILTER_SYS_PROMPT",
+    template="You are a financial analyst highly skilled at analyzing documents for insights about companies. You will be given a group of documents which talk about a particular company, and need to decide if the company matches that profile based on the documents you have. Sometimes the profile will contain objective, factual requirements that are easy to verify, please only include stocks where there is strong evidence the condition holds for the company within the documents that have been provided. For example, if you are looking for `companies which produce solar cells`, there must be explicit mention of the company producing such a product somewhere in the documents you have. Other requirements are might be more subjective, for example `companies taking a commanding role in pharmaceutical R&D relative to their peers`, there may not be explicit mention of such nebulous property in the documents, but if you can find at least some significant evidence for it (and no clear counter evidence) such that you can make a case, you should allow the company to pass. If the profile includes multiple requirements, you must be sure that all hold, unless there is an explicit disjunction. For example, if the profiles say `companies that offer both ICE and electric vehicles`, then you must find evidence of both ICE and electric vehicles as products to accept, but if says `companies that offer both either ICE or electric vehicles`, then only one of the two is required (but both is also good). First, output 1 or 2 sentences (no more than 100 words) which justify your choice (state facts from the document(s) and make it clear why they imply the company fits the profile) and then, on a second line, write Yes if you think it does match the profile, or No if it does not. Be conservative, you should say No more often than Yes.",  # noqa: E501
+)
+PROFILE_FILTER_MAIN_PROMPT = Prompt(
+    name="PROFILE_FILTER_MAIN_PROMPT",
+    template="Decide whether or not, based on the provided documents related to a company, whether or not it matches the provided profile. Here is the company name: {company_name}. Here are the documents about it, delimited by '---':\n---\n{texts}\n---\nHere is the profile:\n{profile}\nNow discussion your decision, and provide a final answer on the next line:\n",  # noqa: E501
+)
+
+TOPIC_PHRASE = "The client has asked for the summary to be focused specifically on the following topic: {topic}. "
 
 
 # These are to try to force the filter to allow some hits but not too many
@@ -75,14 +96,20 @@ async def combine_stock_aligned_text_groups(
     return StockAlignedTextGroups.join(args.text_groups1, args.text_groups2)
 
 
+# Summarize, Q/A
+
+
 class SummarizeTextInput(ToolArgs):
     texts: List[Text]
+    topic: Optional[str] = None
 
 
 @tool(
     description=(
         "This function takes a list of Texts of any kind and uses an LLM to summarize all of the input texts "
         "into a single text based on the instructions provided by the user in their input. "
+        "You may also provide a topic if you want the summary to have a very specific focus."
+        "If you do this, you should NOT apply filter_texts_by_topic before you run this"
     ),
     category=ToolCategory.LLM_ANALYSIS,
     reads_chat=True,
@@ -98,9 +125,16 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     llm = GPT(context=gpt_context, model=GPT4_O)
     texts_str = "\n***\n".join(Text.get_all_strs(args.texts))
     chat_str = context.chat.get_gpt_input()
+    topic = args.topic
+    if topic:
+        topic_str = TOPIC_PHRASE.format(topic=topic)
+    else:
+        topic_str = ""
     tokenizer = GPTTokenizer(GPT4_O)
     used = tokenizer.get_token_length(
-        "\n".join([SUMMARIZE_PROMPT_MAIN.template, SUMMARIZE_SYS_PROMPT.template, chat_str])
+        "\n".join(
+            [SUMMARIZE_PROMPT_MAIN.template, SUMMARIZE_SYS_PROMPT.template, chat_str, topic_str]
+        )
     )
     texts_str = tokenizer.chop_input_to_allowed_length(texts_str, used)
     result = await llm.do_chat_w_sys_prompt(
@@ -111,6 +145,51 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         SUMMARIZE_SYS_PROMPT.format(),
     )
     return Text(val=result)
+
+
+class AnswerQuestionInput(ToolArgs):
+    question: str
+    texts: List[Text]
+
+
+@tool(
+    description=(
+        "This function takes a list of Texts of any kind and searches them for the answer to a question "
+        "typically a factual question about a specific stock, e.g. `What countries does Pizza Hut has restaurants in?`"
+        " The texts can be any kind of document that might be a potential source of an answer."
+        " If the user ask a question, you must try to derive the answer from the text using this function"
+        " you cannot just show a text that is likely to have it."
+        " When answering questions about a particular stock, you should default to using all text available "
+        " for that stock, unless the user particularly asks for a source, or you're 100% sure that "
+        " the answer will only be in one particular source."
+    ),
+    category=ToolCategory.LLM_ANALYSIS,
+)
+async def answer_question_with_text_data(
+    args: AnswerQuestionInput, context: PlanRunContext
+) -> Text:
+    # TODO we need guardrails on this
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=GPT4_O)
+    texts_str = "\n***\n".join(Text.get_all_strs(args.texts))
+    tokenizer = GPTTokenizer(GPT4_O)
+    used = tokenizer.get_token_length(
+        "\n".join([SUMMARIZE_PROMPT_MAIN.template, SUMMARIZE_SYS_PROMPT.template, args.question])
+    )
+    texts_str = tokenizer.chop_input_to_allowed_length(texts_str, used)
+    result = await llm.do_chat_w_sys_prompt(
+        ANSWER_QUESTION_MAIN_PROMPT.format(
+            texts=texts_str,
+            question=args.question,
+        ),
+        ANSWER_QUESTION_SYS_PROMPT.format(),
+    )
+    return Text(val=result)
+
+
+# Topic filter
 
 
 async def topic_filter_helper(
@@ -166,11 +245,14 @@ class FilterTextsByTopicInput(ToolArgs):
 @tool(
     description=(
         "This function takes a topic and list of texts and uses an LLM to filter the list of Text to only those"
-        " that are relevant to the provided topic. Can be applied to news, earnings, SEC filings, and any"
+        " that are relevant to the provided topic."
         " other text. Use this function when you only care about filtering texts for the purposes"
-        " display/summarization. This cannot be used with StockAlignedTextGroups, "
+        " display/summarization. This cannot be used with StockAlignedTextGroups. "
         " Use filter_stock_by_topic if you want to filter stocks based on the contents of "
-        " associated texts"
+        " associated texts."
+        " This function is useful for small texts like news articles and news developments"
+        " it is typically not as useful for longer, more diverse texts like SEC fillings and earnings calls, because"
+        " it can only filter individual texts, it does not filter contents within documents"
     ),
     category=ToolCategory.LLM_ANALYSIS,
 )
@@ -201,7 +283,11 @@ class FilterStocksByTopicInput(ToolArgs):
         "The output of this function is a filtered list of stocks, not a filtered list of "
         "texts. If your goal is filtering texts directly, you should retrieve raw Texts and "
         " use filter_text_by_topic."
-        "Again, the output of this function is a list of stocks, not texts!!!"
+        " Again, the output of this function is a list of stocks, not texts!!!"
+        " Also, never use this function to answer a question about a single stock, use the answer question tool."
+        " You should use this function if you are generally interested in stocks relevant to a topic, but "
+        " Important: if the filter is related to a specific property that the company has, you should use the profile "
+        " filter function, not this function, this should be only used for general relevance!"
     ),
     category=ToolCategory.LLM_ANALYSIS,
 )
@@ -215,6 +301,88 @@ async def filter_stocks_by_topic_aligned(
         stock: reason
         for stock, (is_relevant, reason) in zip(
             stocks, await topic_filter_helper(texts, args.topic, context.agent_id)
+        )
+        if is_relevant
+    }
+    filtered_stocks = [
+        stock.with_history_entry(HistoryEntry(explanation=stock_reason_map[stock]))
+        for stock in args.text_groups.val.keys()
+        if stock in stock_reason_map
+    ]
+    return filtered_stocks
+
+
+# Profile filter
+
+
+async def profile_filter_helper(
+    stocks: List[StockID], texts: List[str], profile: str, agent_id: str
+) -> List[Tuple[bool, str]]:
+    gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
+    llm = GPT(context=gpt_context, model=GPT4_O)
+    tokenizer = GPTTokenizer(GPT4_O)
+    used = tokenizer.get_token_length(
+        "\n".join(
+            [PROFILE_FILTER_MAIN_PROMPT.template, PROFILE_FILTER_SYS_PROMPT.template, profile]
+        )
+    )
+    tasks = []
+    for text_str, stock in zip(texts, stocks):
+        text_str = tokenizer.chop_input_to_allowed_length(text_str, used)
+        tasks.append(
+            llm.do_chat_w_sys_prompt(
+                PROFILE_FILTER_MAIN_PROMPT.format(
+                    company_name=stock.company_name, texts=text_str, profile=profile
+                ),
+                PROFILE_FILTER_SYS_PROMPT.format(),
+            )
+        )
+    results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
+
+    output_tuples = []
+    for result in results:
+        try:
+            rationale, answer = result.strip().replace("\n\n", "\n").split("\n")
+            is_match = answer.lower().startswith("yes")
+        except ValueError:
+            is_match = False
+            rationale = "No match"
+        output_tuples.append((is_match, rationale))
+
+    return output_tuples
+
+
+class FilterStocksByProfileMatch(ToolArgs):
+    profile: str
+    text_groups: StockAlignedTextGroups
+
+
+@tool(
+    description=(
+        "This function takes a StockAlignedTextGroups object which has a mapping between stocks and "
+        "some corresponding associated texts"
+        " It uses an LLM to filter to only those stocks whose text representation indicates that the stock "
+        " matches the provide profile"
+        " The profile string must specify the exact property the desired companies have, it MUST NOT just be a topic"
+        " For example, the profile might be `companies which operate in Spain` or "
+        "`companies which produce wingnuts used in Boeing airplanes`"
+        " The text input to this function should be all the text data about the company that could reasonably "
+        " indicate whether or not the profile matches"
+        " The output of this function is a filtered list of stocks, not texts."
+        " Never use this function to answer a question about a single stock, use the answer question tool."
+    ),
+    category=ToolCategory.LLM_ANALYSIS,
+)
+async def filter_stocks_by_profile_match(
+    args: FilterStocksByProfileMatch, context: PlanRunContext
+) -> List[StockID]:
+    str_dict: Dict[StockID, str] = Text.get_all_strs(args.text_groups.val)  # type: ignore
+    stocks = list(str_dict.keys())
+    texts = list(str_dict.values())
+    stock_reason_map = {
+        stock: reason
+        for stock, (is_relevant, reason) in zip(
+            stocks, await profile_filter_helper(stocks, texts, args.profile, context.agent_id)
         )
         if is_relevant
     }

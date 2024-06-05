@@ -1,6 +1,6 @@
 import asyncio
 import datetime
-from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args
 from uuid import uuid4
 
 from agent_service.chatbot.chatbot import Chatbot
@@ -519,7 +519,7 @@ class Planner:
 
             if parsed_val is not None:
                 literal_typ: Type = type(parsed_val)
-                expected = get_origin(arg_info.annotation) or arg_info.annotation
+                expected = arg_info.annotation
                 if not check_type_is_valid(actual=literal_typ, expected=expected):
                     raise ExecutionPlanParsingError(
                         (

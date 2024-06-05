@@ -11,7 +11,11 @@ from agent_service.external.nlp_svc_client import (
     get_security_themes,
     get_top_themes,
 )
-from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, NO_PROMPT
+from agent_service.GPT.constants import (
+    DEFAULT_CHEAP_MODEL,
+    DEFAULT_SMART_MODEL,
+    NO_PROMPT,
+)
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
@@ -67,8 +71,8 @@ LOOKUP_PROMPT = Prompt(
     template=(
         "Your task is to identify which (if any) of a provided list of "
         "macroeconomic themes correspond to a provided reference to a theme. "
-        "If there is an exact match, or one with a strong semantic overlap, return it, "
-        "otherwise return None. Do not return anything else. Here is the list of themes:\n"
+        "If there is an exact match, or one with a strong semantic overlap, write that match. "
+        "Otherwise write None. Do not write anything else. Here is the list of themes:\n"
         "---\n"
         "{all_themes}\n"
         "---\n"
@@ -113,9 +117,8 @@ async def get_macroeconomic_themes(
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    llm = GPT(context=gpt_context, model=DEFAULT_CHEAP_MODEL)
+    llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
     theme_id_lookup = db.get_boosted_themes_lookup()
-
     matched_themes = [
         await llm.do_chat_w_sys_prompt(
             LOOKUP_PROMPT.format(all_themes="\n".join(theme_id_lookup.keys()), user_theme=theme),

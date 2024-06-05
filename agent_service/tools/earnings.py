@@ -127,7 +127,8 @@ class GetEarningsCallSummariesInput(ToolArgs):
         " You will use this function if you want to use the earnings calls on a per stock basis, for instance "
         " to filter multiple stocks based on the content of their earnings."
         "For example, if a user asks `give me a list of stocks in the S&P 500` whose last earnings call "
-        " discussed mergers and acquisitions`, you would use this function to get the earnings calls`"
+        " discussed mergers and acquisitions`, you would use this function to get the earnings calls`."
+        " You should NOT use this function for getting data for questions about specific stocks."
     ),
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,
@@ -162,6 +163,8 @@ async def get_stock_aligned_earnings_call_summaries(
         " like stock filtering since the alignment with stocks is not preserved. "
         " For example, if the user asked `give me a summary of all the latest earnings calls "
         " for the top-market cap tech stocks`, you would use this function."
+        " You should also use it for answering a question about a specific stock related to"
+        " information likely to be discussed in an earnings call."
     ),
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,

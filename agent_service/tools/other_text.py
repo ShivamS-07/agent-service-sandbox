@@ -67,6 +67,8 @@ class GetSecFilingsInput(ToolArgs):
     " or show these descriptions to the user directly"
     "For example, if a user asked `Please give me a brief summary of the main risks mentioned in "
     "Apple's latest 10-Q`, you would use this function to get the information"
+    " You should also use it for answering a question about a specific stock related to"
+    " information that is likely to be discussed in the 10-K/Q. "
     "Any documents published between start_date and end_date will be included, if the end_date is "
     "excluded it is assume to include documents up to today, if start_date is not "
     "included, the start date is a quarter ago, which includes only the latest SEC filing.",
@@ -97,6 +99,7 @@ async def get_sec_filings(args: GetSecFilingsInput, context: PlanRunContext) -> 
     "For example, if a user asked `Please give me all the companies that talk about Generative AI in "
     "their latest filings`, you would use this function to get the data for each stock to be "
     "used for filtering. "
+    " You should NOT use this function for getting data for questions about specific stocks. "
     "Any documents published between start_date and end_date will be included, if the end_date is "
     "excluded it is assume to include documents up to today, if start_date is not "
     "included, the start date is a quarter ago, which includes only the latest SEC filing.",
@@ -142,6 +145,7 @@ class GetAllTextDataForStocksInput(ToolArgs):
         "stock basis, such as for filtering ."
         "For example, if a user asked `Please give me all companies that have been affected by Generative AI`, "
         " you would use this function to get the data for each stock to be used for filtering. "
+        " You should not use this function for getting data for questions about specific stocks. "
         "If end_date is omitted, data up to the current day will be included, if the start date is "
         "omitted, all data for the last quarter will be included."
         ""
@@ -230,6 +234,8 @@ async def get_all_text_data_for_stocks_aligned(
         " handful of descriptions, or show these descriptions to the user directly. "
         "For example, if a user asked `Please give me a brief summary of problems the magnificent 7 tech companies"
         " are facing`, you would use this function to get the information. "
+        " You should also use it for answering a question about a specific stock related to"
+        " information that could be discussed in various documents relevant to the company"
         "If end_date is omitted, data up to the current day will be included, if the start date is "
         "omitted, all data for the last quarter will be included."
     ),
