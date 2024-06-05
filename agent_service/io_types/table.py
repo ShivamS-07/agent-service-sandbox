@@ -184,6 +184,7 @@ class Table(ComplexIOBase):
             output_cols.append(output_col)
             is_first_col = False
 
+        df = df.replace(np.nan, None)
         rows = df.values.tolist()
 
         return TableOutput(title=self.title, columns=output_cols, rows=rows)

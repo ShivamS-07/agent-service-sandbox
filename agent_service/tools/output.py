@@ -11,7 +11,7 @@ class OutputArgs(ToolArgs):
 
 @tool(
     description="""This is a very important function that displays any object
-to the user.  EVERY plan you come up with should have at least one call to this
+to the user. EVERY plan you come up with should have at least one call to this
 function. Objects will be displayed in the same order the function is called
 in. For example, assuming there are three objects stored in variables called
 "text", "graph", and "table", the call:
@@ -19,7 +19,8 @@ in. For example, assuming there are three objects stored in variables called
    result = output([text, graph, table])
 
 Will show the objects top to bottom in that order. Please display only what the
-user asks for, and no other extraneous information.
+user asks for, and no other extraneous information. Please only display every
+variable once, otherwise the user will see duplicates.
 """,
     category=ToolCategory.OUTPUT,
     is_visible=False,
