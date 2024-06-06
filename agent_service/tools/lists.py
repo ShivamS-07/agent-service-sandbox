@@ -2,7 +2,9 @@ from typing import List
 
 from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.prefect import get_prefect_logger
 
 
 class CombineListsInput(ToolArgs):
@@ -13,11 +15,11 @@ class CombineListsInput(ToolArgs):
 @tool(
     description=(
         "This function forms a single deduplicated list from the elements of two lists. "
-        "For example, [1, 2, 3] and [3, 4, 5] would add to [1, 2, 3, 4, 5]."
-        "This is particularly useful if you created two lists of stocks or texts and want to"
-        "put them together into a single list"
-        "This is equivalent to `boolean OR` or `Union` logic, if you want only want elements in "
-        "both lists, use intersect_lists"
+        " For example, [1, 2, 3] and [3, 4, 5] would add to [1, 2, 3, 4, 5]."
+        " This is particularly useful if you created two lists of stocks or texts and want to"
+        " put them together into a single list"
+        " This is equivalent to `boolean OR` or `Union` logic, if you only want elements in "
+        " both lists, use intersect_lists"
     ),
     category=ToolCategory.LIST,
     tool_registry=ToolRegistry,
@@ -35,23 +37,32 @@ async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IO
 @tool(
     description=(
         "This function forms a list of the elements included in both of two lists. "
-        "For example, [1, 2, 3, 4] and [3, 4, 5] would intersect to to [3, 4]."
-        "You will want to use this function if, for example, you have two lists of stocks that each have a certain"
-        "property and you want a list of stocks with both properties, though note it usually better to apply filters "
-        "iteratively on a single list rather than intersecting the output of two filters. "
-        "This is equivalent to boolean AND logic, use add_lists if you want OR logic."
+        " For example, [1, 2, 3, 4] and [3, 4, 5] would intersect to to [3, 4]."
+        " You will want to use this function if, for example, you have two lists of stocks that each have a certain"
+        " property and you want a list of stocks with both properties, though note it usually better to apply filters "
+        " iteratively on a single list rather than intersecting the output of two filters. "
+        " This is equivalent to boolean AND logic, use add_lists if you want OR logic."
     ),
     category=ToolCategory.LIST,
     tool_registry=ToolRegistry,
     is_visible=False,
 )
 async def intersect_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
+    logger = get_prefect_logger(__name__)
     try:
         # Do this if the lists have complex io types in them
-        return list(ComplexIOBase.intersect_sets(set(args.list1), set(args.list2)))  # type: ignore
+        result = list(ComplexIOBase.intersect_sets(set(args.list1), set(args.list2)))  # type: ignore
     except Exception:
         # otherwise just do a normal intersection
-        return list(set(args.list1) & set(args.list2))
+        result = list(set(args.list1) & set(args.list2))  # type: ignore
+
+    logger.info(f"Intersection is of size = {len(result)}")
+    await tool_log(
+        log=f"Intersection is of size = {len(result)}",
+        context=context,
+    )
+
+    return result  # type: ignore
 
 
 class GetIndexInput(ToolArgs):

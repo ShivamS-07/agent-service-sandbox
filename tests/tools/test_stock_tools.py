@@ -18,6 +18,9 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
+        # uncomment for easier debugging
+        # from agent_service.utils.logs import init_test_logging
+        # init_test_logging()
 
     async def test_stock_identifier_lookup_meta(self):
         self.args = StockIdentifierLookupInput(stock_name="Meta")
@@ -100,6 +103,10 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
 class TestStockUniverse(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
+
+        # uncomment for easier debugging
+        # from agent_service.utils.logs import init_test_logging
+        # init_test_logging()
 
     async def test_get_stock_universe_sp500(self):
         self.args = GetStockUniverseInput(universe_name="S&P 500")
