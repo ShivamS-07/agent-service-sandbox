@@ -88,7 +88,8 @@ class Citation(BaseModel):
 
 class HistoryEntry(BaseModel):
     explanation: PrimitiveType
-    title: str
+    # Default for backwards compat
+    title: str = ""
     entry_type: TableColumnType = TableColumnType.STRING
     unit: Optional[str] = None
     # Citations for the explanation

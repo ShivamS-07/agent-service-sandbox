@@ -28,6 +28,9 @@ def convert_list_of_stocks_to_table(stocks: List[StockID]) -> Table:
     # First column contains all stocks
     for stock in stocks:
         for entry in stock.history:
+            # Hack for backwards compat, TODO will remove
+            if not entry.title:
+                continue
             if entry.title not in entry_title_to_col_map:
                 # create the column
                 col = TableColumn(
