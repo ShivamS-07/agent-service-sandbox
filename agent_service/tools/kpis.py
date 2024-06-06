@@ -189,7 +189,7 @@ async def get_relevant_kpis_for_gbi_id(
         pid_metadata = company_info.kpi_lookup.get(pid, None)
         if pid_metadata:
             topic_kpi_list.append(
-                KPIText(val=pid_metadata.name, id=pid_metadata.pid, stock_id=gbi_id)
+                KPIText(val=pid_metadata.name, id=pid_metadata.pid, gbi_id=gbi_id)
             )
     return topic_kpi_list
 
@@ -280,7 +280,7 @@ async def get_important_kpis_for_stock(
         pid_metadata = company_info.kpi_lookup.get(pid, None)
         if pid_metadata:
             important_kpi_list.append(
-                KPIText(val=pid_metadata.name, id=pid_metadata.pid, stock_id=args.stock_id.gbi_id)
+                KPIText(val=pid_metadata.name, id=pid_metadata.pid, gbi_id=args.stock_id.gbi_id)
             )
     return important_kpi_list
 

@@ -261,6 +261,8 @@ class GetStockUniverseInput(ToolArgs):
         " and returns the list of stock identifiers in the universe."
         "Stock universes are generally major market indexes like the S&P 500 or the"
         "Stoxx 600"
+        " If the client wants to filter over stocks but does not specify an initial set"
+        " of stocks, you should call this tool with 'S&P 500'"
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

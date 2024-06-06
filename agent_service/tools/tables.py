@@ -10,15 +10,13 @@ import pandas as pd
 from pydantic import ValidationError
 
 from agent_service.GPT.requests import GPT
-from agent_service.io_types.stock import StockAlignedTextGroups, StockID
+from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
-    STOCK_ID_COL_NAME_DEFAULT,
     StockTableColumn,
     Table,
     TableColumnMetadata,
     TableColumnType,
 )
-from agent_service.io_types.text import Text
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.table_utils.prompts import (
     DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT,
@@ -331,32 +329,6 @@ async def join_tables(args: JoinTableArgs, context: PlanRunContext) -> Table:
     return joined_table
 
 
-class CreateStockTextGroupTableArgs(ToolArgs):
-    stock_text_group: StockAlignedTextGroups
-
-
-@tool(
-    description="""Given a StockAlignedTextGroups object, create a table with a
-stock column and columns for each associated text. This should be used before
-joining a StockAlignedTextGroups object with other tables.
-""",
-    category=ToolCategory.TABLE,
-)
-async def create_table_from_stock_text_groups(
-    args: CreateStockTextGroupTableArgs, context: PlanRunContext
-) -> Table:
-    data = [
-        [gbi, Text.get_all_strs(text_group)]
-        for gbi, text_group in args.stock_text_group.val.items()
-    ]
-    df = pd.DataFrame(data=data, columns=[STOCK_ID_COL_NAME_DEFAULT, "Text"])
-    columns = [
-        TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-        TableColumnMetadata(label="Text", col_type=TableColumnType.STRING),
-    ]
-    return Table.from_df_and_cols(columns=columns, data=df)
-
-
 class GetStockListFromTableArgs(ToolArgs):
     input_table: Table
 
@@ -366,6 +338,8 @@ class GetStockListFromTableArgs(ToolArgs):
 that column into a list of stock ID's.  This is very useful for e.g. filtering
 on some numerical data in a table before extracting the stock list and fetching
 other data with it.
+This function can only be used with actual tables, it cannot be used with either
+lists of texts or lists of stocks
 """,
     category=ToolCategory.TABLE,
 )

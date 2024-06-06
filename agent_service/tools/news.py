@@ -7,12 +7,11 @@ from agent_service.external.nlp_svc_client import get_multi_companies_news_topic
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, DEFAULT_EMBEDDING_MODEL
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.dates import DateRange
-from agent_service.io_types.stock import StockAlignedTextGroups, StockID
+from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
     NewsPoolArticleText,
     StockNewsDevelopmentArticlesText,
     StockNewsDevelopmentText,
-    TextGroup,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
@@ -59,7 +58,7 @@ async def _get_news_developments_helper(
                 # Filter topics not in the time window
                 continue
             # Only return ID's
-            topic_list.append(StockNewsDevelopmentText(id=topic.topic_id.id))
+            topic_list.append(StockNewsDevelopmentText(id=topic.topic_id.id, gbi_id=stock.gbi_id))
         output_dict[stock] = topic_list
 
     return output_dict
@@ -77,17 +76,6 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         "This function calls an internal API which provides all the news developments "
         "with articles between the start date and the end date that are relevant to the"
         " provided list of stocks, the output is a list of news developments. "
-        "Unlike get_stock_aligned_news_developments, all developments are returned in a single list"
-        "there is no segregation by company, so it is appropriately used when you are filtering "
-        "and or summarizing all news about one or more stocks into a single summary. "
-        "This function is not appropriate for use in filtering of the input stocks, "
-        "or other applications where you need to do per stock analysis or per stock generation of "
-        "text since all the news is included together and it is not possible to do anything else "
-        "at an individual stock level"
-        "An example of the kind of query you would use this function for: "
-        " `Summarize all the news about GPUs for Nvida and Intel over the last 3 weeks. "
-        "If you want to filter news articles by topic, you should choose this function. "
-        " You should NOT use this function for getting data for questions about specific stocks. "
         "If end_date is left out, "
         "the current date is used. If start_date is left out, 1 week ago is used."
     ),
@@ -112,40 +100,6 @@ async def get_all_news_developments_about_companies(
     return output
 
 
-@tool(
-    description=(
-        "This function calls an internal API which provides all the news developments "
-        "with articles between the start date and the end date, arranged "
-        " according to stock, the output is a list of StockAlignedTextGroups with a "
-        "mapping from stocks to lists of news articles associated with the stock "
-        "This function should be used when you plan to pass this data to an LLM-based aligned function"
-        " to filter stocks. Use get_all_news_developments_about_companies if you simply want"
-        " to summarize all the news. An example of the kind of query you would use this for: "
-        "`I want a list of airline stocks that have faced major customer service issues in the last month. "
-        "Again, if you want to filter stocks by topic, you should choose this function."
-        " You should also use it for answering a question about a specific stock related to"
-        " information that is likely to be discussed in news. "
-        "If end_date is left out, the current date is used. If start_date is left out, 1 week ago is used"
-    ),
-    category=ToolCategory.NEWS,
-    tool_registry=ToolRegistry,
-)
-async def get_stock_aligned_news_developments(
-    args: GetNewsDevelopmentsAboutCompaniesInput, context: PlanRunContext
-) -> StockAlignedTextGroups:
-    topic_lookup = await _get_news_developments_helper(
-        args.stock_ids, context.user_id, args.start_date, args.end_date
-    )
-    output: Dict[StockID, TextGroup] = {}
-    total = 0
-    for stock_id, topic_list in topic_lookup.items():
-        total += len(topic_list)
-        output[stock_id] = TextGroup(val=topic_list)  # type: ignore
-    if total == 0:
-        raise Exception("Did not get any news developments for these stocks over the time period")
-    return StockAlignedTextGroups(val=output)
-
-
 class GetNewsArticlesForStockDevelopmentsInput(ToolArgs):
     developments_list: List[StockNewsDevelopmentText]
 
@@ -166,7 +120,7 @@ async def get_news_articles_for_stock_developments(
     args: GetNewsArticlesForStockDevelopmentsInput, context: PlanRunContext
 ) -> List[StockNewsDevelopmentArticlesText]:
     sql = """
-        SELECT news_id::VARCHAR
+        SELECT news_id::VARCHAR, gbi_id
         FROM nlp_service.stock_news
         WHERE topic_id = ANY(%(topic_ids)s)
     """
@@ -175,7 +129,9 @@ async def get_news_articles_for_stock_developments(
     )
     if not rows:
         raise Exception("No articles for these news developments over the specified time period")
-    return [StockNewsDevelopmentArticlesText(id=row["news_id"]) for row in rows]
+    return [
+        StockNewsDevelopmentArticlesText(id=row["news_id"], gbi_id=row["gbi_id"]) for row in rows
+    ]
 
 
 THEME_RELEVANT_SYS_PROMPT = Prompt(name="THEME_RELEVANT_SYS_PROMPT", template="")
@@ -213,9 +169,11 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
         "list of news articles related to the given topics. The output is a list of NewsPoolArticleText objects, "
         "each containing a news article. "
         "If someone wants general information about a topic and there is no existing themes "
-        "This is the best tool to call."
+        "This is the best tool to call. "
         "If someone asks for a topic that could be an existing microeconomic theme, then should look "
-        "for the theme first, but if that fails, this is right tool to use"
+        "for the theme first, but if that fails, this is right tool to use. "
+        "This function must not be used if you intend to filter by stocks, the news articles do not "
+        "contain information about which stocks they are relevant to."
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,

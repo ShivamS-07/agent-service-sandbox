@@ -7,20 +7,19 @@ from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.stock import StockAlignedTextGroups, StockID
-from agent_service.io_types.text import Text
+from agent_service.io_types.text import NewsText, Text
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
-from agent_service.tools.news import (
+from agent_service.tools.news import (  # get_stock_aligned_news_developments,
     GetNewsDevelopmentsAboutCompaniesInput,
     get_all_news_developments_about_companies,
-    get_stock_aligned_news_developments,
 )
 from agent_service.tools.stocks import (
     StockIdentifierLookupInput,
     stock_identifier_lookup,
 )
 from agent_service.types import ChatContext, Message, PlanRunContext
-from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prompt_utils import Prompt
@@ -39,7 +38,7 @@ SUMMARIZE_PROMPT_MAIN = Prompt(
 
 TOPIC_FILTER_SYS_PROMPT = Prompt(
     name="TOPIC_FILTER_SYS_PROMPT",
-    template="You are a financial analyst checking a text or collection of texts to see if there is anything in the texts that is strongly relevant to the provided topic. On the first line of your output, if you think there is at least some relevance to the topic, please briefly discuss the nature of relevance in no more than 30 words. If there is absolutely no relevance, you should simply output `No relevance`. Then on the second line, output a number between 0 and 3. 0 indicates no relevance, 1 indicates some relevance, 2 indicates moderate relevance, and 3 should be used when the text is clearly highly relevant to the topic. Most of the texts you will read will not be relevant, and so 0 should be your default.",  # noqa: E501
+    template="You are a financial analyst checking a text or collection of texts to see if there is anything in the texts that is strongly relevant to the provided topic. On the first line of your output, if you think there is at least some relevance to the topic, please briefly discuss the nature of relevance in no more than 30 words. Just directly highlight any content that is relevant to the topic in your discussion, avoid boilerplate language like `The text discusses` and in fact you absolutely must not refer to `the text`, just talk about the content. If there is absolutely no relevance, you should simply output `No relevance`. Then on the second line, output a number between 0 and 3. 0 indicates no relevance, 1 indicates some relevance, 2 indicates moderate relevance, and 3 should be used when the text is clearly highly relevant to the topic. Most of the texts you will read will not be relevant, and so 0 should be your default.",  # noqa: E501
 )
 
 TOPIC_FILTER_MAIN_PROMPT = Prompt(
@@ -74,31 +73,6 @@ LLM_FILTER_MAX_PERCENT = 0.2
 LLM_FILTER_MIN_PERCENT = 0.05
 
 
-class CombineStockAlignedTextGroupsInput(ToolArgs):
-    text_groups1: StockAlignedTextGroups
-    text_groups2: StockAlignedTextGroups
-
-
-@tool(
-    description=(
-        "This function combines two StockAlignedTextGroups by joining the paired TextGroups "
-        "across the two mappings, creating a single mapping to the combined TextGroups. "
-        "Use this function when combining the output of different data retrieval functions called over the same ids. "
-        "In particular, if you want to apply filter or search and the request mentions two different "
-        "data sources, you should combine using this function before calling the LLM."
-    ),
-    category=ToolCategory.LLM_ANALYSIS,
-    is_visible=False,
-)
-async def combine_stock_aligned_text_groups(
-    args: CombineStockAlignedTextGroupsInput, context: PlanRunContext
-) -> StockAlignedTextGroups:
-    return StockAlignedTextGroups.join(args.text_groups1, args.text_groups2)
-
-
-# Summarize, Q/A
-
-
 class SummarizeTextInput(ToolArgs):
     texts: List[Text]
     topic: Optional[str] = None
@@ -123,7 +97,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=GPT4_O)
-    texts_str = "\n***\n".join(Text.get_all_strs(args.texts))
+    texts_str = "\n***\n".join(Text.get_all_strs(args.texts, include_header=True))
     chat_str = context.chat.get_gpt_input()
     topic = args.topic
     if topic:
@@ -172,7 +146,7 @@ async def answer_question_with_text_data(
         GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=GPT4_O)
-    texts_str = "\n***\n".join(Text.get_all_strs(args.texts))
+    texts_str = "\n***\n".join(Text.get_all_strs(args.texts, include_header=True))
     tokenizer = GPTTokenizer(GPT4_O)
     used = tokenizer.get_token_length(
         "\n".join([SUMMARIZE_PROMPT_MAIN.template, SUMMARIZE_SYS_PROMPT.template, args.question])
@@ -236,79 +210,39 @@ async def topic_filter_helper(
     return [(score >= cutoff, rationale) for score, rationale in score_tuples]
 
 
-class FilterTextsByTopicInput(ToolArgs):
+class FilterNewsByTopicInput(ToolArgs):
     topic: str
-    texts: List[Text]
+    news_texts: List[NewsText]
 
 
 @tool(
     description=(
-        "This function takes a topic and list of texts and uses an LLM to filter the list of Text to only those"
+        "This function takes a topic and list of news texts and uses an LLM to filter the texts to only those"
         " that are relevant to the provided topic."
-        " other text. Use this function when you only care about filtering texts for the purposes"
-        " display/summarization. This cannot be used with StockAlignedTextGroups. "
-        " Use filter_stock_by_topic if you want to filter stocks based on the contents of "
-        " associated texts."
-        " This function is useful for small texts like news articles and news developments"
-        " it is typically not as useful for longer, more diverse texts like SEC fillings and earnings calls, because"
-        " it can only filter individual texts, it does not filter contents within documents"
+        " Please choose very carefully between this function and filter_stocks_by_profile. This "
+        " must NOT be used if your current interest is in filtering stocks/companies, it must only be used when "
+        " your immediate goal is filtering news for direct presentation to the user. If you are summarizing news "
+        " (or any other Texts) it is better to use that the summarize_text tool directly with a topic argument"
+        " For example, if your client asks: "
+        " Give me a list of news about Microsoft related to AI"
+        " You could apply this filtering function on news developments for Microsoft"
+        " Again, both input and output of this function are lists of news texts with no connection to stocks"
+        " You must not use this function to filter stocks."
     ),
     category=ToolCategory.LLM_ANALYSIS,
 )
-async def filter_texts_by_topic(
-    args: FilterTextsByTopicInput, context: PlanRunContext
-) -> List[Text]:
+async def filter_news_by_topic(
+    args: FilterNewsByTopicInput, context: PlanRunContext
+) -> List[NewsText]:
     # not currently returning rationale, but will probably want it
-    texts: List[str] = Text.get_all_strs(args.texts)  # type: ignore
+    texts: List[str] = Text.get_all_strs(args.news_texts, include_header=True)  # type: ignore
     return [
         text.with_history_entry(HistoryEntry(explanation=reason))
         for text, (is_relevant, reason) in zip(
-            args.texts, await topic_filter_helper(texts, args.topic, context.agent_id)
+            args.news_texts, await topic_filter_helper(texts, args.topic, context.agent_id)
         )
         if is_relevant
     ]
-
-
-class FilterStocksByTopicInput(ToolArgs):
-    topic: str
-    text_groups: StockAlignedTextGroups
-
-
-@tool(
-    description=(
-        "This function takes a StockAlignedTextGroups object which has a mapping between stocks and "
-        "some corresponding associated texts"
-        " It uses an LLM to filter to only those stocks whose text representation is relevant to the provided topic. "
-        "The output of this function is a filtered list of stocks, not a filtered list of "
-        "texts. If your goal is filtering texts directly, you should retrieve raw Texts and "
-        " use filter_text_by_topic."
-        " Again, the output of this function is a list of stocks, not texts!!!"
-        " Also, never use this function to answer a question about a single stock, use the answer question tool."
-        " You should use this function if you are generally interested in stocks relevant to a topic, but "
-        " Important: if the filter is related to a specific property that the company has, you should use the profile "
-        " filter function, not this function, this should be only used for general relevance!"
-    ),
-    category=ToolCategory.LLM_ANALYSIS,
-)
-async def filter_stocks_by_topic_aligned(
-    args: FilterStocksByTopicInput, context: PlanRunContext
-) -> List[StockID]:
-    str_dict: Dict[StockID, str] = Text.get_all_strs(args.text_groups.val)  # type: ignore
-    stocks = list(str_dict.keys())
-    texts = list(str_dict.values())
-    stock_reason_map = {
-        stock: reason
-        for stock, (is_relevant, reason) in zip(
-            stocks, await topic_filter_helper(texts, args.topic, context.agent_id)
-        )
-        if is_relevant
-    }
-    filtered_stocks = [
-        stock.with_history_entry(HistoryEntry(explanation=stock_reason_map[stock]))
-        for stock in args.text_groups.val.keys()
-        if stock in stock_reason_map
-    ]
-    return filtered_stocks
 
 
 # Profile filter
@@ -328,6 +262,8 @@ async def profile_filter_helper(
     tasks = []
     for text_str, stock in zip(texts, stocks):
         text_str = tokenizer.chop_input_to_allowed_length(text_str, used)
+        if text_str == "":  # no text, skip
+            tasks.append(identity(""))
         tasks.append(
             llm.do_chat_w_sys_prompt(
                 PROFILE_FILTER_MAIN_PROMPT.format(
@@ -353,18 +289,30 @@ async def profile_filter_helper(
 
 class FilterStocksByProfileMatch(ToolArgs):
     profile: str
-    text_groups: StockAlignedTextGroups
+    stocks: List[StockID]
+    texts: List[Text]
 
 
 @tool(
     description=(
-        "This function takes a StockAlignedTextGroups object which has a mapping between stocks and "
-        "some corresponding associated texts"
+        "This function takes a list of stocks and a lists of texts about those stocks"
         " It uses an LLM to filter to only those stocks whose text representation indicates that the stock "
-        " matches the provide profile"
-        " The profile string must specify the exact property the desired companies have, it MUST NOT just be a topic"
+        " matches the provided profile"
+        " The profile string must specify the exact property the desired companies have "
         " For example, the profile might be `companies which operate in Spain` or "
-        "`companies which produce wingnuts used in Boeing airplanes`"
+        "`companies which produce wingnuts used in Boeing airplanes` "
+        " If the client just expresses interest in companies related to a topic X in some way, the profile may also be "
+        " `companies with recent Y that mention X` (where Y is a text type and X is the topic)"
+        " The profile must contain all information to understand why kind of companies we are looking for "
+        " without any other context, do not include anaphoric language, do not say things `stocks like those` "
+        " because we will not be able to interpret what `those` means without context"
+        " If you are filtering stocks, you will use this function, do not filter using filter_news_by_topic!"
+        " For example, if the client asked for a list of stocks which had news about product releases, you "
+        " would call this function with the profile `companies with product release news`, you do not need to "
+        " filter to press release news first! "
+        " The text inputs to this function must be documents specifically about the stocks provided, "
+        " the function used to acquire the data must take the same list of stock_ids as arguments. Do not pass "
+        " the output of `get_news_articles_for_topics`, it does not have information about stocks."
         " The text input to this function should be all the text data about the company that could reasonably "
         " indicate whether or not the profile matches"
         " The output of this function is a filtered list of stocks, not texts."
@@ -375,7 +323,8 @@ class FilterStocksByProfileMatch(ToolArgs):
 async def filter_stocks_by_profile_match(
     args: FilterStocksByProfileMatch, context: PlanRunContext
 ) -> List[StockID]:
-    str_dict: Dict[StockID, str] = Text.get_all_strs(args.text_groups.val)  # type: ignore
+    aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(args.stocks, args.texts)
+    str_dict: Dict[StockID, str] = Text.get_all_strs(aligned_text_groups.val, include_header=True)  # type: ignore
     stocks = list(str_dict.keys())
     texts = list(str_dict.values())
     stock_reason_map = {
@@ -387,7 +336,7 @@ async def filter_stocks_by_profile_match(
     }
     filtered_stocks = [
         stock.with_history_entry(HistoryEntry(explanation=stock_reason_map[stock]))
-        for stock in args.text_groups.val.keys()
+        for stock in aligned_text_groups.val.keys()
         if stock in stock_reason_map
     ]
     return filtered_stocks
@@ -424,14 +373,10 @@ async def main() -> None:
         SummarizeTextInput(texts=news_developments, topic="machine learning"), plan_context  # type: ignore
     )  # Summarize the filtered news texts into a single summary
     print(summary)
-    news_developments_aligned = await get_stock_aligned_news_developments(
-        GetNewsDevelopmentsAboutCompaniesInput(stock_ids=stock_ids, start_date=start_date),  # type: ignore
-        plan_context,
-    )  # Get news developments for the last month for Meta, Apple, and Microsoft
 
-    filtered_stocks = await filter_stocks_by_topic_aligned(
-        FilterStocksByTopicInput(
-            topic="Machine Learning", text_groups=news_developments_aligned  # type: ignore
+    filtered_stocks = await filter_stocks_by_profile_match(
+        FilterStocksByProfileMatch(
+            profile="company involved in Machine Learning", texts=news_developments, stocks=stock_ids  # type: ignore
         ),
         plan_context,
     )

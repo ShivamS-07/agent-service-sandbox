@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from typing import Any, Dict, List, Literal, Type, Union
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Type, Union
 from uuid import uuid4
 
 import mdutils
@@ -20,6 +20,8 @@ TextIDType = Union[str, int]
 class Text(ComplexIOBase):
     id: TextIDType = Field(default_factory=lambda: str(uuid4()))
     val: str = ""
+    text_type: ClassVar[str] = "Misc"
+    gbi_id: Optional[int] = None
 
     def __hash__(self) -> int:
         return self.id.__hash__()
@@ -70,7 +72,7 @@ class Text(ComplexIOBase):
 
     @classmethod
     def get_all_strs(
-        cls, text: Union[Text, TextGroup, List[Any], Dict[Any, Any]]
+        cls, text: Union[Text, TextGroup, List[Any], Dict[Any, Any]], include_header: bool = False
     ) -> Union[str, List[Any], Dict[Any, Any]]:
         # For any possible configuration of Texts or TextGroups in Lists, this converts that
         # configuration to the corresponding strings in list, in class specific batches
@@ -108,7 +110,7 @@ class Text(ComplexIOBase):
         strs_lookup = {}
         # For every subclass of Text, fetch data
         for textclass, texts in categories.items():
-            strs_lookup.update(textclass.get_strs_lookup(texts))
+            strs_lookup.update(textclass.get_strs_lookup(texts, include_header=include_header))
 
         def convert_ids_to_strs(
             strs_lookup: Dict[TextIDType, str],
@@ -131,7 +133,17 @@ class Text(ComplexIOBase):
         return convert_ids_to_strs(strs_lookup, texts_as_ids)
 
     @classmethod
-    def get_strs_lookup(cls, texts: List[Text]) -> Dict[TextIDType, str]:
+    def get_strs_lookup(
+        cls, texts: List[Text], include_header: bool = False
+    ) -> Dict[TextIDType, str]:
+        strs_lookup = cls._get_strs_lookup(texts)
+        if include_header:
+            for id, val in strs_lookup.items():
+                strs_lookup[id] = f"Text type: {cls.text_type}\nText:\n{val}"
+        return strs_lookup
+
+    @classmethod
+    def _get_strs_lookup(cls, texts: List[Text]) -> Dict[TextIDType, str]:
         return {text.id: text.val for text in texts}
 
     def get(self) -> Text:
@@ -147,13 +159,19 @@ class Text(ComplexIOBase):
 
 
 @io_type
-class StockNewsDevelopmentText(Text):
+class NewsText(Text):
+    pass
+
+
+@io_type
+class StockNewsDevelopmentText(NewsText):
     id: str
+    text_type: ClassVar[str] = "News Development Summary"
 
     @classmethod
-    def get_strs_lookup(cls, news_topics: List[StockNewsDevelopmentText]) -> Dict[TextIDType, str]:  # type: ignore
+    def _get_strs_lookup(cls, news_topics: List[StockNewsDevelopmentText]) -> Dict[TextIDType, str]:  # type: ignore
         sql = """
-        SELECT topic_id::TEXT, (topic_descriptions->-1->0)::TEXT AS description
+        SELECT topic_id::TEXT, topic_label, (topic_descriptions->-1->0)::TEXT AS description
         FROM nlp_service.stock_news_topics
         WHERE topic_id = ANY(%(topic_ids)s)
         """
@@ -161,39 +179,36 @@ class StockNewsDevelopmentText(Text):
 
         db = get_psql()
         rows = db.generic_read(sql, {"topic_ids": [topic.id for topic in news_topics]})
-        return {
-            row["topic_id"]: f"Text Type: News Development Description\n{row['description']}"
-            for row in rows
-        }
+        return {row["topic_id"]: f"{row['topic_label']}\n{row['description']}" for row in rows}
 
 
 @io_type
-class StockNewsDevelopmentArticlesText(Text):
+class StockNewsDevelopmentArticlesText(NewsText):
     id: str
+    text_type: ClassVar[str] = "News Article Summary"
 
     @classmethod
-    def get_strs_lookup(
+    def _get_strs_lookup(
         cls, news_topics: List[StockNewsDevelopmentArticlesText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         from agent_service.utils.postgres import get_psql
 
         sql = """
-            SELECT news_id::TEXT, summary
+            SELECT news_id::TEXT, headline, summary
             FROM nlp_service.stock_news
             WHERE news_id = ANY(%(news_ids)s)
         """
         rows = get_psql().generic_read(sql, {"news_ids": [topic.id for topic in news_topics]})
-        return {
-            row["news_id"]: f"Text Type: News Article Description\n{row['summary']}" for row in rows
-        }
+        return {row["news_id"]: f"{row['headline']}\n{row['summary']}" for row in rows}
 
 
 @io_type
-class NewsPoolArticleText(Text):
+class NewsPoolArticleText(NewsText):
     id: str
+    text_type: ClassVar[str] = "News Article Summary"
 
     @classmethod
-    def get_strs_lookup(cls, news_pool: List[NewsPoolArticleText]) -> Dict[str, str]:  # type: ignore
+    def _get_strs_lookup(cls, news_pool: List[NewsPoolArticleText]) -> Dict[str, str]:  # type: ignore
         sql = """
         SELECT news_id::TEXT, headline::TEXT, summary::TEXT
         FROM nlp_service.news_pool
@@ -203,20 +218,16 @@ class NewsPoolArticleText(Text):
 
         db = get_psql()
         rows = db.generic_read(sql, {"news_ids": [topic.id for topic in news_pool]})
-        return {
-            row[
-                "news_id"
-            ]: f"Text Type: News Article Description\n{row['headline']}\n{row['summary']}"
-            for row in rows
-        }
+        return {row["news_id"]: f"{row['headline']}\n{row['summary']}" for row in rows}
 
 
 @io_type
 class ThemeText(Text):
     id: str
+    text_type: ClassVar[str] = "Theme Description"
 
     @classmethod
-    def get_strs_lookup(cls, themes: List[ThemeText]) -> Dict[str, str]:  # type: ignore
+    def _get_strs_lookup(cls, themes: List[ThemeText]) -> Dict[str, str]:  # type: ignore
         sql = """
         SELECT theme_id::TEXT, theme_description::TEXT AS description
         FROM nlp_service.themes
@@ -226,17 +237,16 @@ class ThemeText(Text):
 
         db = get_psql()
         rows = db.generic_read(sql, {"theme_id": [topic.id for topic in themes]})
-        return {
-            row["theme_id"]: f"Text Type: Theme Description\n{row['description']}" for row in rows
-        }
+        return {row["theme_id"]: row["description"] for row in rows}
 
 
 @io_type
-class ThemeNewsDevelopmentText(Text):
+class ThemeNewsDevelopmentText(NewsText):
     id: str
+    text_type: ClassVar[str] = "News Development Summary"
 
     @classmethod
-    def get_strs_lookup(cls, themes: List[ThemeNewsDevelopmentText]) -> Dict[str, str]:  # type: ignore
+    def _get_strs_lookup(cls, themes: List[ThemeNewsDevelopmentText]) -> Dict[str, str]:  # type: ignore
         sql = """
         SELECT development_id::TEXT, label::TEXT, description::TEXT
         FROM nlp_service.theme_developments
@@ -246,20 +256,16 @@ class ThemeNewsDevelopmentText(Text):
 
         db = get_psql()
         rows = db.generic_read(sql, {"development_id": [topic.id for topic in themes]})
-        return {
-            row[
-                "development_id"
-            ]: f"Text Type:  News Development Description \n{row['label']}\n{row['description']}"
-            for row in rows
-        }
+        return {row["development_id"]: f"{row['label']}\n{row['description']}" for row in rows}
 
 
 @io_type
-class ThemeNewsDevelopmentArticlesText(Text):
+class ThemeNewsDevelopmentArticlesText(NewsText):
     id: str
+    text_type: ClassVar[str] = "News Article Summary"
 
     @classmethod
-    def get_strs_lookup(cls, developments: List[ThemeNewsDevelopmentArticlesText]) -> Dict[str, str]:  # type: ignore
+    def _get_strs_lookup(cls, developments: List[ThemeNewsDevelopmentArticlesText]) -> Dict[str, str]:  # type: ignore
         sql = """
         SELECT news_id::TEXT, headline::TEXT, summary::TEXT
         FROM nlp_service.theme_news
@@ -269,18 +275,16 @@ class ThemeNewsDevelopmentArticlesText(Text):
 
         db = get_psql()
         rows = db.generic_read(sql, {"news_id": [topic.id for topic in developments]})
-        return {
-            row[
-                "news_id"
-            ]: f"Text Type: News Development Article\n{row['headline']}\n{row['summary']}"
-            for row in rows
-        }
+        return {row["news_id"]: f"{row['headline']}\n{row['summary']}" for row in rows}
 
 
 @io_type
 class EarningsSummaryText(Text):
+    id: str
+    text_type: ClassVar[str] = "Earnings Call Summary"
+
     @classmethod
-    def get_strs_lookup(
+    def _get_strs_lookup(
         cls, earnings_summaries: List[EarningsSummaryText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         sql = """
@@ -312,9 +316,10 @@ class EarningsSummaryText(Text):
 @io_type
 class CompanyDescriptionText(Text):
     id: int  # gbi_id
+    text_type: ClassVar[str] = "Company Description"
 
     @classmethod
-    def get_strs_lookup(
+    def _get_strs_lookup(
         cls, company_descriptions: List[CompanyDescriptionText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         sql = """
@@ -333,10 +338,7 @@ class CompanyDescriptionText(Text):
         db = get_psql()
         rows = db.generic_read(sql, {"stocks": stocks})
 
-        descriptions = {
-            row["gbi_id"]: f"Text Type: Company Description\n{row['company_description_short']}"
-            for row in rows
-        }
+        descriptions = {row["gbi_id"]: row["company_description_short"] for row in rows}
 
         # replace with long if it exists
 
@@ -345,9 +347,7 @@ class CompanyDescriptionText(Text):
         rows = db.generic_read(long_sql, {"stocks": stocks})
 
         for row in rows:
-            descriptions[row["gbi_id"]] = (
-                f"Text Type: Company Description\n{row['company_description']}"
-            )
+            descriptions[row["gbi_id"]] = row["company_description"]
 
         return descriptions
 
@@ -377,8 +377,10 @@ class SecFilingText(Text):
 
     id: str
 
+    text_type: ClassVar[str] = "SEC filing"
+
     @classmethod
-    def get_strs_lookup(
+    def _get_strs_lookup(
         cls, sec_filing_list: List[SecFilingText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         output: Dict[TextIDType, str] = {}
@@ -387,7 +389,7 @@ class SecFilingText(Text):
             management_section = SecFiling.download_section(filing_info, section=MANAGEMENT_SECTION)
             risk_factor_section = SecFiling.download_section(filing_info, section=RISK_FACTORS)
 
-            text = f"SEC filing:\nManagement Section:\n\n{management_section}\n\nRisk Factors Section:\n\n{risk_factor_section}"  # noqa
+            text = f"Management Section:\n\n{management_section}\n\nRisk Factors Section:\n\n{risk_factor_section}"  # noqa
             output[obj.id] = text
 
         return output
@@ -395,8 +397,8 @@ class SecFilingText(Text):
 
 @io_type
 class KPIText(Text):
-    stock_id: int
     id: int
+    text_type: ClassVar[str] = "KPI"
 
 
 # These are not actual Text types, but build on top of them
