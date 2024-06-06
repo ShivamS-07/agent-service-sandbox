@@ -1,5 +1,6 @@
 import pandas as pd
 
+from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.graph import (
     DataPoint,
     GraphDataset,
@@ -7,7 +8,7 @@ from agent_service.io_types.graph import (
     PieGraph,
     PieSection,
 )
-from agent_service.io_types.table import Table, TableColumnType
+from agent_service.io_types.table import Table
 from agent_service.tool import ToolArgs, tool
 from agent_service.types import PlanRunContext
 

@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import subprocess
@@ -10,6 +11,7 @@ import pandas as pd
 from pydantic import ValidationError
 
 from agent_service.GPT.requests import GPT
+from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     StockTableColumn,
@@ -346,8 +348,27 @@ lists of texts or lists of stocks
 async def get_stock_identifier_list_from_table(
     args: GetStockListFromTableArgs, context: PlanRunContext
 ) -> List[StockID]:
-    for col in args.input_table.columns:
+    stock_column = None
+    # Columns after the stock column
+    rest_columns = None
+    for i, col in enumerate(args.input_table.columns):
         if isinstance(col, StockTableColumn):
-            return col.data
-
-    raise RuntimeError("Cannot extract list of stocks, no stock column in table!")
+            stock_column = col
+            rest_columns = args.input_table.columns[i + 1 :]
+            break
+    if not stock_column or not rest_columns:
+        raise RuntimeError("Cannot extract list of stocks, no stock column in table!")
+    # Don't update in place to prevent issues in case this table is used elsewhere.
+    # Use a set to prevent duplicates.
+    stocks = copy.deepcopy(stock_column.data)
+    for col in rest_columns:
+        for i, stock in enumerate(stocks):
+            stock.history.append(
+                HistoryEntry(
+                    title=str(col.metadata.label),
+                    entry_type=col.metadata.col_type,
+                    unit=col.metadata.unit,
+                    explanation=col.data[i],  # type: ignore
+                )
+            )
+    return list(set(stocks))

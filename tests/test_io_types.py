@@ -7,13 +7,14 @@ from agent_service.io_type_utils import (
     ComplexIOBase,
     HistoryEntry,
     IOType,
+    TableColumnType,
     check_type_is_io_type,
     check_type_is_valid,
     dump_io_type,
     io_type,
     load_io_type,
 )
-from agent_service.io_types.table import Table, TableColumnMetadata, TableColumnType
+from agent_service.io_types.table import Table, TableColumnMetadata
 from agent_service.types import ChatContext, Message
 
 
@@ -162,13 +163,13 @@ class TestIOType(unittest.TestCase):
 
     def test_union_with_history(self):
         set1 = {
-            TestComplexType(val=1, history=[HistoryEntry(explanation="Test1")]),
+            TestComplexType(val=1, history=[HistoryEntry(explanation="Test1", title="")]),
             TestComplexType(val=2),
             TestComplexType(val=3),
         }
         set2 = {
-            TestComplexType(val=1, history=[HistoryEntry(explanation="Test2")]),
-            TestComplexType(val=6, history=[HistoryEntry(explanation="Test1")]),
+            TestComplexType(val=1, history=[HistoryEntry(explanation="Test2", title="")]),
+            TestComplexType(val=6, history=[HistoryEntry(explanation="Test1", title="")]),
             TestComplexType(val=4),
         }
         result = TestComplexType.union_sets(set1, set2)
@@ -177,24 +178,27 @@ class TestIOType(unittest.TestCase):
             {
                 TestComplexType(
                     val=1,
-                    history=[HistoryEntry(explanation="Test1"), HistoryEntry(explanation="Test2")],
+                    history=[
+                        HistoryEntry(explanation="Test1", title=""),
+                        HistoryEntry(explanation="Test2", title=""),
+                    ],
                 ),
                 TestComplexType(val=2),
                 TestComplexType(val=3),
-                TestComplexType(val=6, history=[HistoryEntry(explanation="Test1")]),
+                TestComplexType(val=6, history=[HistoryEntry(explanation="Test1", title="")]),
                 TestComplexType(val=4),
             },
         )
 
     def test_intersection_with_history(self):
         set1 = {
-            TestComplexType(val=1, history=[HistoryEntry(explanation="Test1")]),
+            TestComplexType(val=1, history=[HistoryEntry(explanation="Test1", title="")]),
             TestComplexType(val=2),
             TestComplexType(val=3),
         }
         set2 = {
-            TestComplexType(val=1, history=[HistoryEntry(explanation="Test2")]),
-            TestComplexType(val=6, history=[HistoryEntry(explanation="Test1")]),
+            TestComplexType(val=1, history=[HistoryEntry(explanation="Test2", title="")]),
+            TestComplexType(val=6, history=[HistoryEntry(explanation="Test1", title="")]),
             TestComplexType(val=4),
             TestComplexType(val=3),
         }
@@ -204,7 +208,10 @@ class TestIOType(unittest.TestCase):
             {
                 TestComplexType(
                     val=1,
-                    history=[HistoryEntry(explanation="Test1"), HistoryEntry(explanation="Test2")],
+                    history=[
+                        HistoryEntry(explanation="Test1", title=""),
+                        HistoryEntry(explanation="Test2", title=""),
+                    ],
                 ),
                 TestComplexType(val=3),
             },

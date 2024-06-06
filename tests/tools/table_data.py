@@ -2,8 +2,9 @@ import datetime
 
 import pandas as pd
 
+from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import Table, TableColumnMetadata, TableColumnType
+from agent_service.io_types.table import Table, TableColumnMetadata
 
 STOCK1 = StockID(gbi_id=72, symbol="", isin="", company_name="")
 STOCK2 = StockID(gbi_id=76, symbol="", isin="", company_name="")

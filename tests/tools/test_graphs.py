@@ -3,6 +3,7 @@ import unittest
 
 import pandas as pd
 
+from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.graph import (
     DataPoint,
     GraphDataset,
@@ -11,7 +12,7 @@ from agent_service.io_types.graph import (
     PieSection,
 )
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import Table, TableColumnMetadata, TableColumnType
+from agent_service.io_types.table import Table, TableColumnMetadata
 from agent_service.tools.graphs import (
     MakeLineGraphArgs,
     MakePieGraphArgs,

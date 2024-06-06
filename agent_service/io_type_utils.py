@@ -1,4 +1,5 @@
 import datetime
+import enum
 import json
 from abc import ABC
 from typing import (
@@ -39,13 +40,57 @@ PrimitiveType = Union[
 IO_TYPE_NAME_KEY = "_type"
 
 
+class TableColumnType(str, enum.Enum):
+    # Raw values
+    INTEGER = "integer"
+    STRING = "string"
+    FLOAT = "float"
+    BOOLEAN = "boolean"
+
+    # A currency valued number
+    CURRENCY = "currency"
+    DATE = "date"  # YYYY-MM-DD
+    DATETIME = "datetime"  # yyyy-mm-dd + ISO timestamp
+
+    # Float value where 1.0 = 100%
+    PERCENT = "percent"
+
+    # Values for showing changes, anything above zero = green, below zero = red
+    DELTA = "delta"  # Raw float delta
+    PCT_DELTA = "pct_delta"  # Float delta value where 1.0 = 100% change
+
+    # Special type that has stock metadata
+    STOCK = "stock"
+
+    @staticmethod
+    def get_type_explanations() -> str:
+        """
+        Get a string to explain to the LLM what each table column type means (if
+        not obvious).
+        """
+        return (
+            "- 'currency': A column containing a price or other float with a currency attached. "
+            "In this case the 'unit' is the currency ISO, please keep that consistent.\n"
+            "- 'date/datetime': A column containing a python date or datetime object."
+            "- 'percent': A column containing a percent value float. 100% is equal to 1.0, NOT 100. "
+            "E.g. 25 percent is represented as 0.25.\n"
+            "- 'delta': A float value representing a raw change over time. E.g. price change day over day.\n"
+            "- 'pct_delta': A float value representing a change over time as a percent. "
+            "100% is equal to 1.0 NOT 100. E.g. percent change of price day over day.\n"
+            "- 'stock': A special column containing stock identifier information."
+        )
+
+
 class Citation(BaseModel):
     # TODO
     pass
 
 
 class HistoryEntry(BaseModel):
-    explanation: str
+    explanation: PrimitiveType
+    title: str
+    entry_type: TableColumnType = TableColumnType.STRING
+    unit: Optional[str] = None
     # Citations for the explanation
     citations: List[Citation] = []
 
@@ -76,9 +121,6 @@ class ComplexIOBase(BaseModel, ABC):
     def extend_history_from(self, other: Self) -> Self:
         self.history.extend(other.history)
         return self
-
-    def get_history_string(self) -> str:
-        return " ".join((entry.explanation for entry in self.history))
 
     def __hash__(self) -> int:
         return hash((type(self),) + tuple(sorted(self.model_dump().items())))

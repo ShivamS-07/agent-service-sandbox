@@ -8,7 +8,7 @@ from pydantic.functional_validators import field_validator
 
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.output import Output
-from agent_service.io_types.text import Text, TextGroup, TextOutput
+from agent_service.io_types.text import Text, TextGroup
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.stock_metadata import get_stock_metadata
 
@@ -48,7 +48,16 @@ class StockID(ComplexIOBase):
         ]
 
     async def to_rich_output(self, pg: BoostedPG) -> Output:
-        return TextOutput(val=self.symbol or self.isin)
+        # convert the stock to a rich text format showing its history if present
+        strings = [f"**{self.company_name} ({self.symbol or self.isin})**"]
+        for entry in self.history:
+            if entry.title:
+                strings.append(f"- **{entry.title}**: {entry.explanation}")
+            else:
+                strings.append(f"- {entry.explanation}")
+        string_val = "\n".join(strings)
+        text = Text(val=string_val)
+        return await text.to_rich_output(pg=pg)
 
     def to_hashable(self) -> str:
         return self.model_dump_json()

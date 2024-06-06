@@ -1,6 +1,7 @@
 import unittest
 
-from agent_service.io_types.table import Table, TableColumnMetadata, TableColumnType
+from agent_service.io_type_utils import HistoryEntry, TableColumnType
+from agent_service.io_types.table import Table, TableColumnMetadata
 from agent_service.tools.tables import (
     GetStockListFromTableArgs,
     JoinTableArgs,
@@ -61,3 +62,7 @@ class TestTableTools(unittest.IsolatedAsyncioTestCase):
             args=args, context=PlanRunContext.get_dummy()
         )
         self.assertEqual([stock.gbi_id for stock in result], [112, 124, 149])
+        first_stock = result[0]
+        self.assertEqual(
+            first_stock.history, [HistoryEntry(title="News Summary", explanation="blah1")]
+        )

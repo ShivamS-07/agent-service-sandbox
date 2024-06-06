@@ -4,10 +4,14 @@ from typing import List, Literal, Optional, Union
 
 from pydantic.fields import Field
 
-from agent_service.io_type_utils import ComplexIOBase, PrimitiveType, io_type
+from agent_service.io_type_utils import (
+    ComplexIOBase,
+    PrimitiveType,
+    TableColumnType,
+    io_type,
+)
 from agent_service.io_types.output import Output, OutputType
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import TableColumnType
 from agent_service.utils.boosted_pg import BoostedPG
 
 

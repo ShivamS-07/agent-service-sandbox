@@ -1,59 +1,23 @@
 import datetime
-import enum
 from typing import List, Literal, Optional, Union
 
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel
 
-from agent_service.io_type_utils import ComplexIOBase, IOType, PrimitiveType, io_type
+from agent_service.io_type_utils import (
+    ComplexIOBase,
+    IOType,
+    PrimitiveType,
+    TableColumnType,
+    io_type,
+)
 from agent_service.io_types.output import Output, OutputType
 from agent_service.io_types.stock import StockID
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.stock_metadata import StockMetadata
 
 STOCK_ID_COL_NAME_DEFAULT = "Security"
-
-
-class TableColumnType(str, enum.Enum):
-    # Raw values
-    INTEGER = "integer"
-    STRING = "string"
-    FLOAT = "float"
-    BOOLEAN = "boolean"
-
-    # A currency valued number
-    CURRENCY = "currency"
-    DATE = "date"  # YYYY-MM-DD
-    DATETIME = "datetime"  # yyyy-mm-dd + ISO timestamp
-
-    # Float value where 1.0 = 100%
-    PERCENT = "percent"
-
-    # Values for showing changes, anything above zero = green, below zero = red
-    DELTA = "delta"  # Raw float delta
-    PCT_DELTA = "pct_delta"  # Float delta value where 1.0 = 100% change
-
-    # Special type that has stock metadata
-    STOCK = "stock"
-
-    @staticmethod
-    def get_type_explanations() -> str:
-        """
-        Get a string to explain to the LLM what each table column type means (if
-        not obvious).
-        """
-        return (
-            "- 'currency': A column containing a price or other float with a currency attached. "
-            "In this case the 'unit' is the currency ISO, please keep that consistent.\n"
-            "- 'date/datetime': A column containing a python date or datetime object."
-            "- 'percent': A column containing a percent value float. 100% is equal to 1.0, NOT 100. "
-            "E.g. 25 percent is represented as 0.25.\n"
-            "- 'delta': A float value representing a raw change over time. E.g. price change day over day.\n"
-            "- 'pct_delta': A float value representing a change over time as a percent. "
-            "100% is equal to 1.0 NOT 100. E.g. percent change of price day over day.\n"
-            "- 'stock': A special column containing stock identifier information."
-        )
 
 
 @io_type
