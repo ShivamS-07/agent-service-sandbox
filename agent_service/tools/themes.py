@@ -357,6 +357,7 @@ async def get_news_articles_for_theme_developments(
 class GetTopNThemesInput(ToolArgs):
     start_date: Optional[datetime.date] = None
     theme_num: int = 3
+    portfolio_id: Optional[str] = None
 
 
 @tool(
@@ -410,6 +411,7 @@ async def get_top_N_themes(args: GetTopNThemesInput, context: PlanRunContext) ->
         section_types=["THEME"],
         date_range=await _get_date_range(args.start_date),
         number_per_section=args.theme_num,
+        portfolio_id=args.portfolio_id,
     )
     theme_refs: List[str] = [str(t.name) for t in resp.topics]
     themes: List[ThemeText] = await get_macroeconomic_themes(  # type: ignore

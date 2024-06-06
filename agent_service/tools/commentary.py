@@ -2,7 +2,7 @@
 
 import asyncio
 import datetime
-from typing import List
+from typing import List, Optional
 from uuid import uuid4
 
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
@@ -113,9 +113,10 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
 
 class GetCommentaryTextsInput(ToolArgs):
-    topics: List[str] = [""]
+    topics: List[str] = []
     start_date: datetime.date = None  # type: ignore
     no_specific_topic: bool = False
+    portfolio_id: Optional[str] = None
 
 
 @tool(
@@ -133,23 +134,52 @@ class GetCommentaryTextsInput(ToolArgs):
 async def get_commentary_texts(
     args: GetCommentaryTextsInput, context: PlanRunContext
 ) -> List[Text]:
+    if not args.topics:
+        # no topics were given so we need to find some default ones
+        if args.portfolio_id:
+            # get portfolio related topics (logic William is adding)
+            themes_texts: List[ThemeText] = await get_top_N_themes(  # type: ignore
+                GetTopNThemesInput(
+                    start_date=args.start_date, theme_num=3, portfolio_id=args.portfolio_id
+                ),
+                context,
+            )
+            texts = await _get_theme_related_texts(themes_texts, context)
+            await tool_log(
+                log="Retrieved texts for top 3 themes related to portfolio.",
+                context=context,
+            )
+            return texts
+        else:
+            # get popular topics
+            themes_texts: List[ThemeText] = await get_top_N_themes(  # type: ignore
+                GetTopNThemesInput(start_date=args.start_date, theme_num=3), context
+            )
+            texts = await _get_theme_related_texts(themes_texts, context)
+            await tool_log(
+                log="Retrieved texts for top 3 themes for general commentary.",
+                context=context,
+            )
+            return texts
 
-    # If general_commentary is True, get the texts for top 3 themes
-    if args.no_specific_topic or args.topics == [""]:
-        themes_texts: List[ThemeText] = await get_top_N_themes(  # type: ignore
-            GetTopNThemesInput(start_date=args.start_date, theme_num=3), context
-        )
-        texts = await _get_theme_related_texts(themes_texts, context)
-        await tool_log(
-            log="Retrieved texts for top 3 themes for general commentary.",
-            context=context,
-        )
-        return texts
-
-    # Try get the themes for each topics or find related articles
-    texts = await _get_texts_for_topics(args, context)
-
-    return texts
+    else:
+        if args.portfolio_id:
+            themes_texts: List[ThemeText] = await get_top_N_themes(  # type: ignore
+                GetTopNThemesInput(
+                    start_date=args.start_date, theme_num=3, portfolio_id=args.portfolio_id
+                ),
+                context,
+            )
+            portfolio_texts = await _get_theme_related_texts(themes_texts, context)
+            await tool_log(
+                log="Retrieved texts for top 3 themes for general commentary.",
+                context=context,
+            )
+            topic_texts = await _get_texts_for_topics(args, context)
+            return portfolio_texts + topic_texts
+        else:
+            texts = await _get_texts_for_topics(args, context)
+            return texts
 
 
 # Helper functions
