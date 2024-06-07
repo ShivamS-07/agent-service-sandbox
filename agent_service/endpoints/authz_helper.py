@@ -132,3 +132,13 @@ def validate_user_agent_access(request_user_id: str, agent_id: str) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"User {request_user_id} is not authorized to access agent {agent_id}",
         )
+
+
+def validate_user_plan_run_access(request_user_id: str, plan_run_id: str) -> None:
+    agent_id = get_psql().get_plan_run_agent_id(plan_run_id)
+    if agent_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent for plan run {plan_run_id} not found",
+        )
+    validate_user_agent_access(request_user_id, agent_id)

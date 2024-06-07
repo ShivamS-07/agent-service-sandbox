@@ -20,10 +20,12 @@ class AsyncDB:
 
     async def get_agent_outputs(self, agent_id: str) -> List[AgentOutput]:
         sql = """
-                SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, output_id::VARCHAR, is_intermediate,
-                    "output", created_at
+                SELECT ao.plan_id::VARCHAR, ao.plan_run_id::VARCHAR, ao.output_id::VARCHAR, ao.is_intermediate,
+                    ao.output, ao.created_at, pr.shared
                 FROM agent.agent_outputs ao
-                WHERE plan_run_id IN (
+                LEFT JOIN agent.plan_runs pr
+                ON ao.plan_run_id = pr.plan_run_id
+                WHERE ao.plan_run_id IN (
                     SELECT plan_run_id FROM agent.agent_outputs
                     WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
                     ORDER BY created_at DESC LIMIT 1
@@ -133,10 +135,12 @@ class AsyncDB:
             params["plan_run_ids"] = plan_run_ids
 
         sql1 = f"""
-            SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, task_id::VARCHAR, is_task_output,
-                log_id::VARCHAR, log_message, created_at
-            FROM agent.work_logs
-            WHERE agent_id = %(agent_id)s {filters}
+            SELECT wl.plan_id::VARCHAR, wl.plan_run_id::VARCHAR, wl.task_id::VARCHAR, wl.is_task_output,
+                wl.log_id::VARCHAR, wl.log_message, wl.created_at, pr.shared
+            FROM agent.work_logs wl
+            LEFT JOIN agent.plan_runs pr
+            ON wl.plan_run_id = pr.plan_run_id
+            WHERE wl.agent_id = %(agent_id)s {filters}
             ORDER BY created_at DESC;
         """
         return await self.pg.generic_read(sql1, params=params)
@@ -237,6 +241,13 @@ class AsyncDB:
     async def insert_chat_messages(self, messages: List[Message]) -> None:
         await self.pg.multi_row_insert(
             table_name="agent.chat_messages", rows=[msg.model_dump() for msg in messages]
+        )
+
+    async def set_plan_run_share_status(self, plan_run_id: str, status: bool) -> None:
+        return await self.pg.generic_update(
+            table_name="agent.plan_runs",
+            where={"plan_run_id": plan_run_id},
+            values_to_update={"shared": status},
         )
 
 

@@ -131,6 +131,7 @@ class PlanRun(BaseModel):
     start_time: datetime.datetime
     end_time: Optional[datetime.datetime]
     tasks: List[PlanRunTask]  # sorted by start_time ASC
+    shared: bool = False
 
 
 class ExecutionPlanTemplate(BaseModel):
@@ -170,6 +171,7 @@ class AgentOutput(BaseModel):
     is_intermediate: bool  # whether this is an intermediate output or the final output
     output: Union[TextOutput, GraphOutput, TableOutput] = Field(discriminator="output_type")
     created_at: datetime.datetime
+    shared: bool = False
 
 
 class GetAgentOutputResponse(BaseModel):
@@ -213,3 +215,22 @@ class AgentEvent(BaseModel):
         discriminator="event_type"
     )
     timestamp: datetime.datetime = Field(default_factory=get_now_utc)
+
+
+####################################################################################################
+# Plan Run Sharing
+####################################################################################################
+class SharePlanRunRequest(BaseModel):
+    plan_run_id: str
+
+
+class SharePlanRunResponse(BaseModel):
+    success: bool
+
+
+class UnsharePlanRunRequest(BaseModel):
+    plan_run_id: str
+
+
+class UnsharePlanRunResponse(BaseModel):
+    success: bool

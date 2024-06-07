@@ -83,6 +83,7 @@ async def publish_agent_output(
                     output=rich_output,  # type: ignore
                     is_intermediate=is_intermediate,
                     created_at=now,
+                    shared=False,
                 )
                 for rich_output in rich_outputs
             ]

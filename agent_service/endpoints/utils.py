@@ -42,13 +42,13 @@ async def get_agent_hierarchical_worklogs(
     plan_run_id_to_status, run_task_pair_to_status = await asyncio.gather(
         get_prefect_plan_run_statuses(plan_run_ids), get_prefect_task_statuses(plan_run_ids)
     )
-
     logger.info("Getting task names from execution_plans table...")
     plan_id_to_plan = await db.get_execution_plans(plan_ids)
 
     logger.info(f"Grouping work logs in hierarchical structure for agent {agent_id}...")
     plan_id_to_plan_run_ids: Dict[str, Set[str]] = defaultdict(set)
     plan_run_id_to_task_ids: Dict[str, Set[str]] = defaultdict(set)
+    plan_run_id_to_share_status: Dict[str, bool] = {}
     task_id_to_logs: Dict[str, List[PlanRunTaskLog]] = defaultdict(list)
     task_id_to_task_output: Dict[str, Dict[str, Any]] = defaultdict(dict)
 
@@ -59,6 +59,7 @@ async def get_agent_hierarchical_worklogs(
 
         plan_id_to_plan_run_ids[row["plan_id"]].add(row["plan_run_id"])
         plan_run_id_to_task_ids[row["plan_run_id"]].add(row["task_id"])
+        plan_run_id_to_share_status[row["plan_run_id"]] = row["shared"]
 
         if row["is_task_output"]:  # there should only be 1 task output per task
             task_id_to_task_output[row["task_id"]] = row
@@ -97,6 +98,7 @@ async def get_agent_hierarchical_worklogs(
             )
 
             plan_run_status = reset_plan_run_status_if_needed(plan_run_status, full_tasks)
+            plan_run_share_status = plan_run_id_to_share_status.get(plan_run_id, False)
 
             run_history.append(
                 PlanRun(
@@ -106,6 +108,7 @@ async def get_agent_hierarchical_worklogs(
                     start_time=plan_run_start or full_tasks[0].start_time,  # type: ignore # noqa
                     end_time=plan_run_end or full_tasks[-1].end_time,
                     tasks=full_tasks,
+                    shared=plan_run_share_status,
                 )
             )
 

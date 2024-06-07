@@ -17,6 +17,7 @@ from agent_service.endpoints.authz_helper import (
     get_keyid_to_key_map,
     parse_header,
     validate_user_agent_access,
+    validate_user_plan_run_access,
 )
 from agent_service.endpoints.models import (
     ChatWithAgentRequest,
@@ -29,6 +30,10 @@ from agent_service.endpoints.models import (
     GetAgentWorklogOutputResponse,
     GetAllAgentsResponse,
     GetChatHistoryResponse,
+    SharePlanRunRequest,
+    SharePlanRunResponse,
+    UnsharePlanRunRequest,
+    UnsharePlanRunResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
 )
@@ -281,6 +286,42 @@ async def steam_agent_events(
             raise e
 
     return EventSourceResponse(content=_wrap_serializer())
+
+
+@router.post(
+    "/agent/share-plan-run",
+    response_model=SharePlanRunResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def share_plan_run(
+    req: SharePlanRunRequest, user: User = Depends(parse_header)
+) -> ChatWithAgentResponse:
+    """Share agent plan run (set shared status to true)
+
+    Args:
+        plan_run_id (str): plan run ID
+    """
+
+    validate_user_plan_run_access(user.user_id, req.plan_run_id)
+    return await application.state.agent_service_impl.share_plan_run(plan_run_id=req.plan_run_id)
+
+
+@router.post(
+    "/agent/unshare-plan-run",
+    response_model=UnsharePlanRunResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def unshare_plan_run(
+    req: UnsharePlanRunRequest, user: User = Depends(parse_header)
+) -> ChatWithAgentResponse:
+    """Unshare agent plan run (set shared status to false)
+
+    Args:
+        plan_run_id (str): plan run ID
+    """
+
+    validate_user_plan_run_access(user.user_id, req.plan_run_id)
+    return await application.state.agent_service_impl.unshare_plan_run(plan_run_id=req.plan_run_id)
 
 
 application.include_router(router)

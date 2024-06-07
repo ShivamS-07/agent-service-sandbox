@@ -22,6 +22,8 @@ from agent_service.endpoints.models import (
     GetAgentWorklogOutputResponse,
     GetAllAgentsResponse,
     GetChatHistoryResponse,
+    SharePlanRunResponse,
+    UnsharePlanRunResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
 )
@@ -216,3 +218,11 @@ class AgentServiceImpl:
                     f"Got event on channel for {agent_id=} of type '{resp.event.event_type.value}'"
                 )
                 yield resp
+
+    async def share_plan_run(self, plan_run_id: str) -> SharePlanRunResponse:
+        await self.pg.set_plan_run_share_status(plan_run_id=plan_run_id, status=True)
+        return SharePlanRunResponse(success=True)
+
+    async def unshare_plan_run(self, plan_run_id: str) -> UnsharePlanRunResponse:
+        await self.pg.set_plan_run_share_status(plan_run_id=plan_run_id, status=False)
+        return UnsharePlanRunResponse(success=True)
