@@ -21,6 +21,7 @@ from agent_service.GPT.constants import FILTER_CONCURRENCY, HAIKU, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.dates import DateRange
+from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
@@ -29,10 +30,12 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
     TableColumnType,
 )
+from agent_service.io_types.text import Text
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -51,6 +54,10 @@ FEATURES_DAO = FeaturesDAO()
 class StatisticId(ComplexIOBase):
     stat_id: str
     stat_name: str
+
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        t = Text(val=f"Statistic: {self.stat_name}")
+        return await t.to_rich_output(pg=pg, title=title)
 
 
 STATISTIC_CONFIRMATION_PROMPT = Prompt(

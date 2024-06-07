@@ -167,6 +167,7 @@ class Table(ComplexIOBase):
 CellType = Union[PrimitiveType, StockMetadata]
 
 
+@io_type
 class StockTable(Table):
     """
     Wrapper around a table, used really only for type hinting.

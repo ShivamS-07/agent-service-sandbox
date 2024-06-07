@@ -19,7 +19,6 @@ from agent_service.endpoints.models import (
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
-    GetAgentWorklogOutputResponse,
     GetAllAgentsResponse,
     GetChatHistoryResponse,
     SharePlanRunResponse,
@@ -28,11 +27,11 @@ from agent_service.endpoints.models import (
     UpdateAgentResponse,
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
-from agent_service.io_type_utils import load_io_type
 from agent_service.types import ChatContext, Message
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
 from agent_service.utils.redis_queue import get_agent_event_channel, wait_for_messages
 from agent_service.utils.task_executor import TaskExecutor
@@ -176,17 +175,6 @@ class AgentServiceImpl:
             run_history=run_history, execution_plan_template=execution_plan_template
         )
 
-    async def get_agent_worklog_output(
-        self, agent_id: str, log_id: str
-    ) -> GetAgentWorklogOutputResponse:
-        rows = await self.pg.get_log_data_from_log_id(agent_id, log_id)
-        if not rows:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{log_id} not found")
-        log_data = rows[0]["log_data"]
-        output = load_io_type(log_data) if log_data is not None else None
-
-        return GetAgentWorklogOutputResponse(output=output)
-
     async def get_agent_task_output(
         self, agent_id: str, plan_run_id: str, task_id: str
     ) -> GetAgentTaskOutputResponse:
@@ -194,7 +182,20 @@ class AgentServiceImpl:
             agent_id=agent_id, plan_run_id=plan_run_id, task_id=task_id
         )
 
-        return GetAgentTaskOutputResponse(log_data=task_output)
+        return GetAgentTaskOutputResponse(
+            output=await get_output_from_io_type(task_output, pg=self.pg.pg) if task_output else None  # type: ignore
+        )
+
+    async def get_agent_log_output(
+        self, agent_id: str, plan_run_id: str, log_id: str
+    ) -> GetAgentTaskOutputResponse:
+        log_output = await self.pg.get_log_output(
+            agent_id=agent_id, plan_run_id=plan_run_id, log_id=log_id
+        )
+
+        return GetAgentTaskOutputResponse(
+            output=await get_output_from_io_type(log_output, pg=self.pg.pg) if log_output else None  # type: ignore
+        )
 
     async def get_agent_output(self, agent_id: str) -> GetAgentOutputResponse:
         outputs = await self.pg.get_agent_outputs(agent_id=agent_id)

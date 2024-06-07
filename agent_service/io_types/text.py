@@ -421,10 +421,12 @@ class TextGroup(ComplexIOBase):
         return "\n***\n".join(id_to_str[text.id] for text in self.val)
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        from agent_service.utils.output_construction import get_output_from_io_type
+
         # construct a lookup for all child texts
         strings = Text.get_all_strs(self.val)
         # TODO fix this implementation?
-        return TextOutput(val=str(strings), title=title)
+        return await get_output_from_io_type(strings, pg=pg, title=title)
 
 
 @io_type

@@ -180,7 +180,7 @@ class Postgres(PostgresBase):
 
         sql1 = f"""
             SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, task_id::VARCHAR, is_task_output,
-                log_id::VARCHAR, log_message, created_at
+                log_id::VARCHAR, log_message, created_at, (log_data NOTNULL) AS has_output
             FROM agent.work_logs
             WHERE agent_id = %(agent_id)s {filters}
             ORDER BY created_at DESC;

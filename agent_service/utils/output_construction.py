@@ -1,4 +1,4 @@
-from typing import List, cast
+from typing import List
 
 from agent_service.io_type_utils import ComplexIOBase, IOType, io_type
 from agent_service.io_types.output import Output
@@ -55,7 +55,7 @@ async def get_output_from_io_type(val: IOType, pg: BoostedPG, title: str = "") -
     """
     # Be a bit sneaky, check if there's a title attached to the object
     if not title and hasattr(val, "title"):
-        title = cast(str, val.title)
+        title = str(val.title)
 
     if isinstance(val, list):
         if not val:

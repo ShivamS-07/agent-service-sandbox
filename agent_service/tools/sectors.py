@@ -8,10 +8,13 @@ from agent_service.external import sec_meta_svc_client
 from agent_service.GPT.constants import HAIKU, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, io_type
+from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
+from agent_service.io_types.text import Text
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -24,6 +27,10 @@ ONE_HOUR = 60 * 60
 class SectorID(ComplexIOBase):
     sec_id: int
     sec_name: str
+
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        t = Text(val=f"Sector: {self.sec_name}")
+        return await t.to_rich_output(pg=pg, title=title)
 
 
 class SectorIdentifierLookupInput(ToolArgs):

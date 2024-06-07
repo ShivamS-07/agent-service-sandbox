@@ -69,6 +69,7 @@ async def get_agent_hierarchical_worklogs(
                     log_id=row["log_id"],
                     log_message=cast(str, load_io_type(row["log_message"])),
                     created_at=row["created_at"],
+                    has_output=row["has_output"],
                 )
             )
 

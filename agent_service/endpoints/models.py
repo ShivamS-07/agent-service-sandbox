@@ -6,7 +6,6 @@ from typing import List, Literal, Optional, Union
 from prefect.client.schemas.objects import StateType
 from pydantic import BaseModel, Field
 
-from agent_service.io_type_utils import IOType
 from agent_service.io_types.graph import GraphOutput
 from agent_service.io_types.table import TableOutput
 from agent_service.io_types.text import TextOutput
@@ -109,6 +108,7 @@ class PlanRunTaskLog(BaseModel):
     log_id: str
     log_message: str  # user-faced log item under each task
     created_at: datetime.datetime
+    has_output: bool = False
 
 
 class PlanRunTask(BaseModel):
@@ -147,18 +147,12 @@ class GetAgentWorklogBoardResponse(BaseModel):
 
 
 ####################################################################################################
-# GetAgentWorklogOutput
-####################################################################################################
-class GetAgentWorklogOutputResponse(BaseModel):
-    output: Optional[IOType]
-
-
-####################################################################################################
 # GetAgentTaskOutput
 ####################################################################################################
 class GetAgentTaskOutputResponse(BaseModel):
-    # it's very likely that the schema will change. For now we are just returning the output
-    log_data: Optional[IOType]
+    output: Optional[Union[TextOutput, GraphOutput, TableOutput]] = Field(
+        discriminator="output_type"
+    )
 
 
 ####################################################################################################

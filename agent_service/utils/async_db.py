@@ -64,18 +64,23 @@ class AsyncDB:
             return None
         return load_io_type(rows[0]["log_data"])
 
-    async def get_log_data_from_log_id(self, agent_id: str, log_id: str) -> List[Dict]:
-        # NOTE: the reason to not return the `log_data` directly is because we can't distinguish
-        # 1) if there's no such entry in the table
-        # 2) if the entry exists but the `log_data` is None
-        # these two cases will be handled differently so just return `rows`
+    async def get_log_output(
+        self, agent_id: str, plan_run_id: str, log_id: str
+    ) -> Optional[IOType]:
         sql = """
-            SELECT log_data
-            FROM agent.work_logs
-            WHERE agent_id = %(agent_id)s AND log_id = %(log_id)s
+        SELECT log_data
+        FROM agent.work_logs
+        WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s AND log_id = %(log_id)s
+            AND NOT is_task_output AND log_data NOTNULL
+        ORDER BY created_at DESC
+        LIMIT 1;
         """
-        rows = await self.pg.generic_read(sql, {"agent_id": agent_id, "log_id": log_id})
-        return rows
+        rows = await self.pg.generic_read(
+            sql, {"agent_id": agent_id, "plan_run_id": plan_run_id, "log_id": log_id}
+        )
+        if not rows:
+            return None
+        return load_io_type(rows[0]["log_data"])
 
     async def get_latest_execution_plan(
         self, agent_id: str
@@ -136,7 +141,7 @@ class AsyncDB:
 
         sql1 = f"""
             SELECT wl.plan_id::VARCHAR, wl.plan_run_id::VARCHAR, wl.task_id::VARCHAR, wl.is_task_output,
-                wl.log_id::VARCHAR, wl.log_message, wl.created_at, pr.shared
+                wl.log_id::VARCHAR, wl.log_message, wl.created_at, pr.shared, (log_data NOTNULL) AS has_output
             FROM agent.work_logs wl
             LEFT JOIN agent.plan_runs pr
             ON wl.plan_run_id = pr.plan_run_id

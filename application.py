@@ -27,7 +27,6 @@ from agent_service.endpoints.models import (
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
-    GetAgentWorklogOutputResponse,
     GetAllAgentsResponse,
     GetChatHistoryResponse,
     SharePlanRunRequest,
@@ -203,22 +202,6 @@ async def get_agent_worklog_board(
 
 
 @router.get(
-    "/agent/get-agent-worklog-output/{agent_id}/{log_id}",
-    response_model=GetAgentWorklogOutputResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_agent_worklog_output(
-    agent_id: str, log_id: str, user: User = Depends(parse_header)
-) -> GetAgentWorklogOutputResponse:
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
-
-    return await application.state.agent_service_impl.get_agent_worklog_output(
-        agent_id=agent_id, log_id=log_id
-    )
-
-
-@router.get(
     "/agent/get-agent-task-output/{agent_id}/{plan_run_id}/{task_id}",
     response_model=GetAgentTaskOutputResponse,
     status_code=status.HTTP_200_OK,
@@ -238,6 +221,29 @@ async def get_agent_task_output(
 
     return await application.state.agent_service_impl.get_agent_task_output(
         agent_id=agent_id, plan_run_id=plan_run_id, task_id=task_id
+    )
+
+
+@router.get(
+    "/agent/get-agent-log-output/{agent_id}/{plan_run_id}/{log_id}",
+    response_model=GetAgentTaskOutputResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_agent_log_output(
+    agent_id: str, plan_run_id: str, log_id: str, user: User = Depends(parse_header)
+) -> GetAgentTaskOutputResponse:
+    """Get the final outputs of a task once it's completed for Work Log Board
+
+    Args:
+        agent_id (str): agent ID
+        plan_run_id (str): the run ID from Prefect
+        task_id (str): the task ID of a run from Prefect
+    """
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        validate_user_agent_access(user.user_id, agent_id)
+
+    return await application.state.agent_service_impl.get_agent_log_output(
+        agent_id=agent_id, plan_run_id=plan_run_id, log_id=log_id
     )
 
 
