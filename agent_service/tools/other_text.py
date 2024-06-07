@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 
 from agent_service.external.sec_utils import FILINGS, SecFiling, SecMapping
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.text import SecFilingText, Text
+from agent_service.io_types.text import StockSecFilingText, StockText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.earnings import (  # get_stock_aligned_earnings_call_summaries,
     GetEarningsCallSummariesInput,
@@ -27,7 +27,7 @@ from agent_service.utils.prefect import get_prefect_logger
 
 async def get_sec_filings_helper(
     stock_ids: List[StockID], start_date: Optional[datetime.date], end_date: Optional[datetime.date]
-) -> Dict[StockID, List[SecFilingText]]:
+) -> Dict[StockID, List[StockSecFilingText]]:
     stock_filing_map = {}
     gbi_id_metadata_map = get_psql().get_sec_metadata_from_gbi(
         gbi_ids=[stock.gbi_id for stock in stock_ids]
@@ -42,7 +42,8 @@ async def get_sec_filings_helper(
         if (not resp) or (FILINGS not in resp) or (not resp[FILINGS]):
             continue
         stock_filing_map[stock_id] = [
-            SecFilingText(id=json.dumps(filing), gbi_id=stock_id.gbi_id) for filing in resp[FILINGS]
+            StockSecFilingText(id=json.dumps(filing), gbi_id=stock_id.gbi_id)
+            for filing in resp[FILINGS]
         ]
     return stock_filing_map
 
@@ -66,7 +67,9 @@ class GetSecFilingsInput(ToolArgs):
     category=ToolCategory.TEXT,
     tool_registry=ToolRegistry,
 )
-async def get_sec_filings(args: GetSecFilingsInput, context: PlanRunContext) -> List[SecFilingText]:
+async def get_sec_filings(
+    args: GetSecFilingsInput, context: PlanRunContext
+) -> List[StockSecFilingText]:
     stock_filing_map = await get_sec_filings_helper(args.stock_ids, args.start_date, args.end_date)
     all_filings = []
     for filings in stock_filing_map.values():
@@ -106,7 +109,7 @@ class GetAllTextDataForStocksInput(ToolArgs):
 )
 async def get_all_text_data_for_stocks(
     args: GetAllTextDataForStocksInput, context: PlanRunContext
-) -> List[Text]:
+) -> List[StockText]:
     stock_ids = args.stock_ids
     start_date = args.start_date
     end_date = args.end_date
@@ -117,7 +120,7 @@ async def get_all_text_data_for_stocks(
         # Add an extra day to be sure we don't miss anything with timezone weirdness
         end_date = get_now_utc().date() + datetime.timedelta(days=1)
 
-    all_data: List[Text] = []
+    all_data: List[StockText] = []
     await tool_log(log="Getting company descriptions", context=context)
     try:
         description_data = await get_company_descriptions(

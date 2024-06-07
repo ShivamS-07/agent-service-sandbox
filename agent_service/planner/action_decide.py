@@ -11,6 +11,7 @@ from agent_service.planner.prompts import (
     ACTION_DECIDER_SYS_PROMPT,
     ERROR_ACTION_DECIDER_MAIN_PROMPT,
     ERROR_ACTION_DECIDER_SYS_PROMPT,
+    ERROR_REPLAN_GUIDELINES,
 )
 from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext, Message
@@ -71,7 +72,9 @@ class ErrorActionDecider:
     ) -> Tuple[Action, str]:
         latest_plan = plans[-1]
 
-        sys_prompt = ERROR_ACTION_DECIDER_SYS_PROMPT.format(tools=self.tool_registry.get_tool_str())
+        sys_prompt = ERROR_ACTION_DECIDER_SYS_PROMPT.format(
+            tools=self.tool_registry.get_tool_str(), replan_guidelines=ERROR_REPLAN_GUIDELINES
+        )
 
         main_prompt = ERROR_ACTION_DECIDER_MAIN_PROMPT.format(
             plan=latest_plan.get_formatted_plan(),

@@ -2,6 +2,7 @@
 
 import asyncio
 import datetime
+from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple
 
 from nlp_service_proto_v1.themes_pb2 import ThemeOutlookType
@@ -11,12 +12,9 @@ from agent_service.external.nlp_svc_client import (
     get_security_themes,
     get_top_themes,
 )
-from agent_service.GPT.constants import (
-    DEFAULT_CHEAP_MODEL,
-    DEFAULT_SMART_MODEL,
-    NO_PROMPT,
-)
+from agent_service.GPT.constants import DEFAULT_SMART_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
+from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
     Text,
@@ -57,14 +55,25 @@ class ThemePostgres:
         records = self.db.generic_read(sql, params={"theme_id": theme_id})
         return (records[0]["positive_label"], records[0]["negative_label"])
 
-    def get_theme_stock_polarity_lookup(self, theme_id: str) -> Dict[int, bool]:
+    def get_theme_stock_polarity_reason_lookup(self, theme_id: str) -> Dict[int, Tuple[bool, str]]:
         sql = """
-                SELECT theme_id, gbi_id, is_positive_polarity, is_primary_impact
+                SELECT theme_id, gbi_id, is_positive_polarity, is_primary_impact,
+                reason, reason_json
                 FROM nlp_service.theme_impact_stocks
                 WHERE theme_id = %(theme_id)s AND is_primary_impact = true
         """
         records = self.db.generic_read(sql, params={"theme_id": theme_id})
-        return {record["gbi_id"]: record["is_positive_polarity"] for record in records}
+        return {
+            record["gbi_id"]: (
+                record["is_positive_polarity"],
+                (
+                    "\n".join(record["reason_json"].values())
+                    if record["reason_json"]
+                    else record["reason"]
+                ),
+            )
+            for record in records
+        }
 
     def get_news_dev_about_theme(self, theme_id: str) -> List[str]:
         sql = """
@@ -96,7 +105,8 @@ LOOKUP_PROMPT = Prompt(
     template=(
         "Your task is to identify which (if any) of a provided list of "
         "macroeconomic themes correspond to a provided reference to a theme. "
-        "If there is an exact match, or one with a strong semantic overlap, write that match. "
+        "If there is an exact match, or one with significant semantic overlap, write that match. "
+        "Do not be too picky, if there's one that stands out as being clearly relevant, choose it. "
         "Otherwise write None. Do not write anything else. Here is the list of themes:\n"
         "---\n"
         "{all_themes}\n"
@@ -111,8 +121,8 @@ OUTLOOK_PROMPT = Prompt(
     name="THEME_OUTLOOK_PROMPT",
     template=(
         "Your task is to identify which of the two possible trends associated with a "
-        "particular macroeconomic theme is a better fit for a client need, based on provided "
-        "chat context. Return either either the number 1 or the number 2, nothing else. "
+        "particular macroeconomic theme better fits the client's expectation for the future, based on the"
+        "mention of the theme in the chat context. Return either either the number 1 or the number 2, nothing else. "
         "Here is the chat context:\n"
         "---\n"
         "{chat_context}\n"
@@ -132,6 +142,10 @@ class GetMacroeconomicThemeInput(ToolArgs):
         "This function searches for existing macroeconomic themes "
         "The search is based on a list of string references to the themes. "
         "A list of theme text objects is returned."
+        "The string reference should be brief as possible while containing the core macroeconomic concept of interest, "
+        "do not include language that indicates the polarity/direction, for example if the query is "
+        "`we want rising oil price losers`, the theme reference is `Oil Prices`, both `rising` and `losers "
+        "should be excluded."
     ),
     category=ToolCategory.THEME,
 )
@@ -182,8 +196,8 @@ async def get_stocks_affected_by_theme(
     gpt_context = create_gpt_context(
         GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
     )
-    llm = GPT(context=gpt_context, model=DEFAULT_CHEAP_MODEL)
-    final_stocks: Set[int] = set()
+    llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
+    final_stocks_reason: Dict[int, List[str]] = defaultdict(list)
     for theme in args.themes:
         pos_trend, neg_trend = db.get_theme_outlooks(theme.id)
         result = await llm.do_chat_w_sys_prompt(
@@ -193,15 +207,23 @@ async def get_stocks_affected_by_theme(
             NO_PROMPT,
         )
         is_neg_trend = result == "2"
-        stock_polarity_lookup = db.get_theme_stock_polarity_lookup(theme.id)
-        for stock, polarity in stock_polarity_lookup.items():
+
+        stock_polarity_reason_lookup = db.get_theme_stock_polarity_reason_lookup(theme.id)
+        for stock, (polarity, reason) in stock_polarity_reason_lookup.items():
             if is_neg_trend:
                 polarity = not polarity
             if polarity == args.positive:  # matches the desired polarity
-                final_stocks.add(stock)
-    if len(final_stocks) == 0:
+                final_stocks_reason[stock].append(reason)
+    if len(final_stocks_reason) == 0:
         raise Exception("Found no stocks affected by this theme/polarity combination")
-    return await StockID.from_gbi_id_list(list(final_stocks))
+    stock_ids = await StockID.from_gbi_id_list(list(final_stocks_reason.keys()))
+    for stock_id in stock_ids:
+        for reason in final_stocks_reason[stock_id.gbi_id]:
+            stock_id.with_history_entry(
+                HistoryEntry(explanation=reason, title="Connection to theme")
+            )
+
+    return stock_ids
 
 
 class GetMacroeconomicThemesAffectingStocksInput(ToolArgs):

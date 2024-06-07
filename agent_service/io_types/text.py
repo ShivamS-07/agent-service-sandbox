@@ -164,7 +164,12 @@ class NewsText(Text):
 
 
 @io_type
-class StockNewsDevelopmentText(NewsText):
+class StockText(Text):
+    pass
+
+
+@io_type
+class StockNewsDevelopmentText(NewsText, StockText):
     id: str
     text_type: ClassVar[str] = "News Development Summary"
 
@@ -183,7 +188,7 @@ class StockNewsDevelopmentText(NewsText):
 
 
 @io_type
-class StockNewsDevelopmentArticlesText(NewsText):
+class StockNewsDevelopmentArticlesText(NewsText, StockText):
     id: str
     text_type: ClassVar[str] = "News Article Summary"
 
@@ -279,13 +284,13 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
 
 
 @io_type
-class EarningsSummaryText(Text):
+class StockEarningsSummaryText(StockText):
     id: str
     text_type: ClassVar[str] = "Earnings Call Summary"
 
     @classmethod
     def _get_strs_lookup(
-        cls, earnings_summaries: List[EarningsSummaryText]  # type: ignore
+        cls, earnings_summaries: List[StockEarningsSummaryText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         sql = """
         SELECT summary_id::TEXT, summary
@@ -314,13 +319,13 @@ class EarningsSummaryText(Text):
 
 
 @io_type
-class CompanyDescriptionText(Text):
+class StockDescriptionText(StockText):
     id: int  # gbi_id
     text_type: ClassVar[str] = "Company Description"
 
     @classmethod
     def _get_strs_lookup(
-        cls, company_descriptions: List[CompanyDescriptionText]  # type: ignore
+        cls, company_descriptions: List[StockDescriptionText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         sql = """
         SELECT ssm.gbi_id, cds.company_description_short
@@ -353,7 +358,7 @@ class CompanyDescriptionText(Text):
 
 
 @io_type
-class SecFilingText(Text):
+class StockSecFilingText(StockText):
     """
     The ID field is a serialized JSON object containing the latest SEC filing information.
     After deserialization, it will be a dictionary like below:
@@ -381,7 +386,7 @@ class SecFilingText(Text):
 
     @classmethod
     def _get_strs_lookup(
-        cls, sec_filing_list: List[SecFilingText]  # type: ignore
+        cls, sec_filing_list: List[StockSecFilingText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         output: Dict[TextIDType, str] = {}
         for obj in sec_filing_list:
@@ -406,7 +411,7 @@ class KPIText(Text):
 
 @io_type
 class TextGroup(ComplexIOBase):
-    val: List[Text]
+    val: List[StockText]
 
     @staticmethod
     def join(group1: TextGroup, group2: TextGroup) -> TextGroup:

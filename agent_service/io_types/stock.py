@@ -8,7 +8,7 @@ from pydantic.functional_validators import field_validator
 
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.output import Output
-from agent_service.io_types.text import Text, TextGroup
+from agent_service.io_types.text import StockText, Text, TextGroup
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.stock_metadata import get_stock_metadata
 
@@ -95,7 +95,9 @@ class StockAlignedTextGroups(ComplexIOBase):
         return StockAlignedTextGroups(val=output_dict)
 
     @staticmethod
-    def from_stocks_and_text(stocks: List[StockID], texts: List[Text]) -> StockAlignedTextGroups:
+    def from_stocks_and_text(
+        stocks: List[StockID], texts: List[StockText]
+    ) -> StockAlignedTextGroups:
         temp_dict = defaultdict(list)
         for text in texts:
             if hasattr(text, "gbi_id"):  # might not be the right kind of text

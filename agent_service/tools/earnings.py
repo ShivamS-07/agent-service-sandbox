@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import Dict, List, Optional
 
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.text import EarningsSummaryText
+from agent_service.io_types.text import StockEarningsSummaryText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.LLM_analysis import SummarizeTextInput, summarize_texts
@@ -58,7 +58,7 @@ async def _get_earnings_summary_helper(
     stock_ids: List[StockID],
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
-) -> Dict[StockID, List[EarningsSummaryText]]:
+) -> Dict[StockID, List[StockEarningsSummaryText]]:
     db = get_psql()
     sql = """
         SELECT summary_id::TEXT, gbi_id, sources
@@ -77,7 +77,7 @@ async def _get_earnings_summary_helper(
         # Add an extra day to be sure we don't miss anything with timezone weirdness
         end_date = get_now_utc().date() + datetime.timedelta(days=1)
 
-    output: Dict[StockID, List[EarningsSummaryText]] = {}
+    output: Dict[StockID, List[StockEarningsSummaryText]] = {}
     for stock_id in stock_ids:
         stock_output = []
         for row in by_stock_lookup.get(stock_id.gbi_id, []):
@@ -86,7 +86,9 @@ async def _get_earnings_summary_helper(
             ).date()
             if publish_date < start_date or publish_date > end_date:
                 continue
-            stock_output.append(EarningsSummaryText(id=row["summary_id"], gbi_id=stock_id.gbi_id))
+            stock_output.append(
+                StockEarningsSummaryText(id=row["summary_id"], gbi_id=stock_id.gbi_id)
+            )
         output[stock_id] = stock_output
     return output
 
@@ -110,11 +112,11 @@ class GetEarningsCallSummariesInput(ToolArgs):
 )
 async def get_earnings_call_summaries(
     args: GetEarningsCallSummariesInput, context: PlanRunContext
-) -> List[EarningsSummaryText]:
+) -> List[StockEarningsSummaryText]:
     topic_lookup = await _get_earnings_summary_helper(
         args.stock_ids, args.start_date, args.end_date
     )
-    output: List[EarningsSummaryText] = []
+    output: List[StockEarningsSummaryText] = []
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
     if not output:
