@@ -145,10 +145,10 @@ async def get_recommended_stocks(
 
     if args.buy:
         settings_blob["rating_settings"]["boundary"]["lb"] = 2.5
-        settings_blob["news_settings"]["sentiment_boundaries"] = [{"lb": 0, "ub": 1}]
+        # settings_blob["news_settings"]["sentiment_boundaries"] = [{"lb": 0, "ub": 1}]
     else:
         settings_blob["rating_settings"]["boundary"]["ub"] = 2.5
-        settings_blob["news_settings"]["sentiment_boundaries"] = [{"lb": -1, "ub": 0}]
+        # settings_blob["news_settings"]["sentiment_boundaries"] = [{"lb": -1, "ub": 0}]
 
     resp = await get_temporary_discover_block_data(
         context.user_id, settings_blob, args.horizon, args.delta_horizon
