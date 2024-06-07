@@ -27,6 +27,7 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 
@@ -38,7 +39,7 @@ MAX_MATCHED_ARTICLES_PER_TOPIC = 25
 
 # PROMPTS
 COMMENTARY_SYS_PROMPT = Prompt(
-    name="LLM_COMMENTARY_SYS_PROMPT",
+    name="COMMENTARY_SYS_PROMPT",
     template=(
         "You are a financial analyst tasked with writing a commentary according "
         "to the instructions of an important client. You will be provided with the texts "
@@ -48,9 +49,9 @@ COMMENTARY_SYS_PROMPT = Prompt(
         "include information about that topic. Otherwise, you should write a normal prose "
         "summary that touches on what you be to be the most important points that you see "
         "across all the text you have been provided with. The most important points are those "
-        "which are highlighted, repeated, or otherwise appear most relevant to the user's "
+        "which are highlighted, repeated, or otherwise appear most relevant to the client's "
         "expressed interest, if any. If none of these criteria seem to apply, use your best "
-        "judgment on what seems to be important. Unless the user says otherwise, your output "
+        "judgment on what seems to be important. Unless the client says otherwise, your output "
         "should be must smaller (a small fraction) of all the text provided. Please be concise "
         "in your writing, and do not include any fluff. NEVER include ANY information about your "
         "portfolio that is not explicitly provided to you. NEVER PUT SOURCES INLINE. For example, if "
@@ -61,9 +62,10 @@ COMMENTARY_SYS_PROMPT = Prompt(
 )
 
 COMMENTARY_PROMPT_MAIN = Prompt(
-    name="LLM_COMMENTARY_MAIN_PROMPT",
+    name="COMMENTARY_MAIN_PROMPT",
     template=(
         "Analyze the following text(s) and write a commentary based on the needs of the client. "
+        "{previous_commentary}"
         "The texts include themes, news developments or news articles related to the client's interests. "
         "Here are, all texts for your analysis, delimited by ----:\n"
         "----\n"
@@ -73,7 +75,24 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "----\n"
         "{chat_context}"
         "----\n"
-        "Now write your commentary."
+        "Now write your commentary. "
+    ),
+)
+PREVIOUS_COMMENTARY_MODIFICATION = Prompt(
+    name="PREVIOUS_COMMENTARY_MODIFICATION",
+    template=(
+        "Here is the previous commentary you wrote for the client, delimited by ***. "
+        "\n***\n"
+        "{commentary}"
+        "\n***\n"
+        "Only act based on one of the following cases:\n"
+        "- If client only asked for minor changes (adding more details, changing the tone, "
+        "making it shorter, etc.) you MUST use the previous commentary as a base and "
+        "make those changes. Ignore the following given texts.\n"
+        "- If client asked for adding new topics or information to previous commentary, "
+        "then you MUST analyze the following texts and adjust the previous commentary accordingly.\n"
+        "- If client asked for a completely new commentary, you MUST ignore the previous commentary "
+        "and write a new one based on the following texts."
     ),
 )
 
@@ -84,13 +103,13 @@ class WriteCommentaryInput(ToolArgs):
 
 @tool(
     description=(
-        "This function should be used when user wants to write a commentary, articles or market summaries. "
+        "This function should be used when client wants to write a commentary, articles or market summaries. "
         "This function generates a commentary either based for general market trends or "
         "based on specific topics mentioned by a client. "
         "The function creates a concise summary based on a comprehensive analysis of the provided texts. "
         "The commentary will be written in a professional tone, "
         "incorporating any specific instructions or preferences mentioned by the client during their interaction. "
-        "The input to the function is prepared by the get_commentary_input tool. "
+        "The input to the function is prepared by the get_commentary_input tool."
     ),
     category=ToolCategory.COMMENTARY,
 )
@@ -101,13 +120,34 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     )
     llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
 
-    result = await llm.do_chat_w_sys_prompt(
-        main_prompt=COMMENTARY_PROMPT_MAIN.format(
-            texts="\n***\n".join(Text.get_all_strs(args.texts)),
-            chat_context=context.chat.get_gpt_input() if context.chat is not None else "",
-        ),
-        sys_prompt=COMMENTARY_SYS_PROMPT.format(),
+    # get previous commentary if exists
+    db = get_psql()
+    previous_commentary = (
+        db.get_last_tool_output_for_plan(context.plan_id, context.plan_run_id, context.task_id)
+        if context.task_id is not None
+        else None
     )
+    # If previous commnetary exists, add it to the prompt
+    if previous_commentary:
+        result = await llm.do_chat_w_sys_prompt(
+            main_prompt=COMMENTARY_PROMPT_MAIN.format(
+                previous_commentary=PREVIOUS_COMMENTARY_MODIFICATION.format(
+                    previous_commentary=previous_commentary
+                ),
+                texts="\n***\n".join(Text.get_all_strs(args.texts)),
+                chat_context=context.chat.get_gpt_input() if context.chat is not None else "",
+            ),
+            sys_prompt=COMMENTARY_SYS_PROMPT.format(),
+        )
+    else:
+        result = await llm.do_chat_w_sys_prompt(
+            main_prompt=COMMENTARY_PROMPT_MAIN.format(
+                previous_commentary="",
+                texts="\n***\n".join(Text.get_all_strs(args.texts)),
+                chat_context=context.chat.get_gpt_input() if context.chat is not None else "",
+            ),
+            sys_prompt=COMMENTARY_SYS_PROMPT.format(),
+        )
 
     return Text(val=result)
 

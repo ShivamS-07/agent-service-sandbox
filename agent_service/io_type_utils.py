@@ -258,8 +258,10 @@ def dump_io_type(val: IOType) -> str:
     return json.dumps(_dump_io_type_helper(val))
 
 
-def load_io_type(val: str) -> IOType:
+def load_io_type(val: str) -> Optional[IOType]:
     loaded = json.loads(val)
+    if loaded is None:
+        return None
     return load_io_type_dict(loaded)
 
 

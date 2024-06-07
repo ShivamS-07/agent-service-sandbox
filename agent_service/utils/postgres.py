@@ -275,21 +275,20 @@ class Postgres(PostgresBase):
         records = self.generic_read(sql, params=[gbi_ids])
         return {record["gbi_id"]: SecurityMetadata(**record) for record in records}
 
-    # TODO this won't be needed once we merge the sync and async files, but for
-    # now will just keep this here.
-    def get_latest_agent_output(self, agent_id: str) -> Optional[IOType]:
+    def get_last_tool_output_for_plan(
+        self, agent_id: str, plan_id: str, task_id: str
+    ) -> Optional[IOType]:
         sql = """
-        SELECT "output"
-        FROM agent.agent_outputs ao
-        WHERE plan_run_id IN (
-            SELECT plan_run_id FROM agent.agent_outputs
-            WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
-            ORDER BY created_at DESC LIMIT 1
-        )
-        ORDER BY created_at ASC
-        LIMIT 1;
+        SELECT log_data
+        FROM agent.work_logs wl
+        WHERE agent_id = %(agent_id)s AND plan_id = %(plan_id)s AND task_id = %(task_id)s
+          AND is_task_output
+        ORDER BY created_at DESC
+        LIMIT 1
         """
-        rows = self.generic_read(sql, {"agent_id": agent_id})
+        rows = self.generic_read(
+            sql, {"agent_id": agent_id, "plan_id": plan_id, "task_id": task_id}
+        )
         if not rows:
             return None
 
