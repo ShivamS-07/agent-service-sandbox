@@ -31,8 +31,8 @@ class Text(ComplexIOBase):
             return self.id == other.id
         return False
 
-    async def to_rich_output(self, pg: BoostedPG) -> Output:
-        return TextOutput(val=self.get().val)
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        return TextOutput(val=self.get().val, title=title)
 
     @staticmethod
     def _to_string_recursive(val: IOType) -> IOType:
@@ -415,11 +415,11 @@ class TextGroup(ComplexIOBase):
     def convert_to_str(self, id_to_str: Dict[TextIDType, str]) -> str:
         return "\n***\n".join(id_to_str[text.id] for text in self.val)
 
-    async def to_rich_output(self, pg: BoostedPG) -> Output:
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         # construct a lookup for all child texts
         strings = Text.get_all_strs(self.val)
         # TODO fix this implementation?
-        return TextOutput(val=str(strings))
+        return TextOutput(val=str(strings), title=title)
 
 
 class TextOutput(Output):

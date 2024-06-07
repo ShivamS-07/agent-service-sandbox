@@ -94,7 +94,6 @@ async def publish_agent_output(
 async def publish_agent_execution_plan(
     plan: ExecutionPlan, context: PlanRunContext, db: Optional[Union[AsyncDB, Postgres]] = None
 ) -> None:
-
     if db:
         if isinstance(db, AsyncDB):
             await db.write_execution_plan(

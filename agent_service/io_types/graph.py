@@ -47,11 +47,11 @@ class LineGraph(Graph):
     y_unit: Optional[str] = None
     data: List[GraphDataset]
 
-    async def to_rich_output(self, pg: BoostedPG) -> Output:
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         for dataset in self.data:
             if isinstance(dataset.dataset_id, StockID):
                 dataset.dataset_id = dataset.dataset_id.symbol or dataset.dataset_id.isin
-        return GraphOutput(graph=self)
+        return GraphOutput(graph=self, title=title)
 
     def to_gpt_input(self) -> str:
         return (
@@ -74,13 +74,13 @@ class PieGraph(Graph):
     unit: Optional[str] = None
     data: List[PieSection]
 
-    async def to_rich_output(self, pg: BoostedPG) -> Output:
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         if not self.label_type == TableColumnType.STOCK:
             return GraphOutput(graph=self)
         for section in self.data:
             if isinstance(section.label, StockID):
                 section.label = section.label.symbol or section.label.isin
-        return GraphOutput(graph=self)
+        return GraphOutput(graph=self, title=title)
 
     def to_gpt_input(self) -> str:
         return f"Pie Chart with sections: {self.data}"

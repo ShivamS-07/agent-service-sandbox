@@ -134,7 +134,7 @@ def convert_data_to_table(title: str, data: Dict[str, List[KPIInstance]]) -> Tab
         df_data.append(row)
 
     df = pd.DataFrame(df_data)
-    return Table.from_df_and_cols(title=title, data=df, columns=columns)
+    return Table.from_df_and_cols(data=df, columns=columns)
 
 
 def get_company_data_and_kpis(gbi_id: int) -> CompanyInformation:

@@ -547,7 +547,7 @@ class TestPlans(IsolatedAsyncioTestCase):
                 ),
                 ToolExecutionNode(
                     tool_name="output",
-                    args={"objects_to_output": [Variable(var_name="summary")]},
+                    args={"object_to_output": [Variable(var_name="summary")], "title": "test"},
                     description="Output the result",
                     output_variable_name="result",
                     is_output_node=True,
@@ -712,7 +712,7 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
             ParsedStep(
                 output_var="result",
                 function="output",
-                arguments={"objects_to_output": "[summary]"},
+                arguments={"object_to_output": "summary", "title": '"test"'},
                 description="Output the result",
             ),
         ]
@@ -769,7 +769,7 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
             ),
             ToolExecutionNode(
                 tool_name="output",
-                args={"objects_to_output": [Variable(var_name="summary")]},
+                args={"object_to_output": Variable(var_name="summary"), "title": "test"},
                 description="Output the result",
                 output_variable_name="result",
                 is_output_node=True,

@@ -13,3 +13,4 @@ class OutputType(str, enum.Enum):
 
 class Output(BaseModel, ABC):
     output_type: OutputType
+    title: str = ""

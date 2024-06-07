@@ -47,7 +47,7 @@ class StockID(ComplexIOBase):
             for meta in meta_dict.values()
         ]
 
-    async def to_rich_output(self, pg: BoostedPG) -> Output:
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         # convert the stock to a rich text format showing its history if present
         strings = [f"**{self.company_name} ({self.symbol or self.isin})**"]
         for entry in self.history:

@@ -57,7 +57,6 @@ class DateTableColumn(TableColumn):
 
 @io_type
 class Table(ComplexIOBase):
-    title: Optional[str] = None
     columns: List[TableColumn]
 
     def get_num_rows(self) -> int:
@@ -88,7 +87,6 @@ class Table(ComplexIOBase):
     def from_df_and_cols(
         columns: List[TableColumnMetadata],
         data: pd.DataFrame,
-        title: Optional[str] = None,
         stocks_are_hashable_objs: bool = False,
     ) -> "Table":
         out_columns: List[TableColumn] = []
@@ -112,9 +110,9 @@ class Table(ComplexIOBase):
             else:
                 out_columns.append(TableColumn(metadata=col_meta, data=data[df_col].to_list()))
 
-        return Table(columns=out_columns, title=title)
+        return Table(columns=out_columns)
 
-    async def to_rich_output(self, pg: BoostedPG) -> Output:
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         output_cols = []
         is_first_col = True
         # Use a dataframe for convenience
@@ -151,7 +149,7 @@ class Table(ComplexIOBase):
         df = df.replace(np.nan, None)
         rows = df.values.tolist()
 
-        return TableOutput(title=self.title, columns=output_cols, rows=rows)
+        return TableOutput(title=title, columns=output_cols, rows=rows)
 
 
 CellType = Union[PrimitiveType, StockMetadata]
@@ -173,6 +171,6 @@ class TableOutputColumn(BaseModel):
 
 class TableOutput(Output):
     output_type: Literal[OutputType.TABLE] = OutputType.TABLE
-    title: Optional[str] = None
+    title: str = ""
     columns: List[TableOutputColumn] = []
     rows: List[List[Optional[CellType]]]

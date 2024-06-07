@@ -1,5 +1,5 @@
 import pprint
-from typing import Dict, List, Optional, Tuple, Union, cast
+from typing import Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
 from prefect import flow
@@ -118,8 +118,7 @@ async def run_execution_plan(
             db.write_tool_output(output=tool_output, context=context)
         else:
             # We have an output node
-            outputs = cast(List[IOType], tool_output)
-            await publish_agent_output(outputs=outputs, context=context, db=db)
+            await publish_agent_output(outputs=[tool_output], context=context, db=db)
         if log_all_outputs:
             logger.info(f"Output of step '{step.tool_name}': {tool_output}")
 

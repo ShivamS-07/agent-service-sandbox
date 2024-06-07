@@ -1,6 +1,6 @@
-from typing import List
+from typing import List, cast
 
-from agent_service.io_type_utils import ComplexIOBase, IOType
+from agent_service.io_type_utils import ComplexIOBase, IOType, io_type
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
@@ -47,12 +47,16 @@ def convert_list_of_stocks_to_table(stocks: List[StockID]) -> Table:
     return Table(columns=columns)
 
 
-async def get_output_from_io_type(val: IOType, pg: BoostedPG) -> Output:
+async def get_output_from_io_type(val: IOType, pg: BoostedPG, title: str = "") -> Output:
     """
     This function accepts any IOType and returns a 'nice' output for the
     frontend. There are special cases that are handled specifically, otherwise
     we do our best.
     """
+    # Be a bit sneaky, check if there's a title attached to the object
+    if not title and hasattr(val, "title"):
+        title = cast(str, val.title)
+
     if isinstance(val, list):
         if not val:
             # TODO probably improve this
@@ -66,5 +70,16 @@ async def get_output_from_io_type(val: IOType, pg: BoostedPG) -> Output:
         val = {key: await get_output_from_io_type(v, pg=pg) for key, v in val.items()}
     if not isinstance(val, ComplexIOBase):
         val = Text.from_io_type(val)
-    val = await val.to_rich_output(pg)
+    val = await val.to_rich_output(pg, title=title)
     return val
+
+
+@io_type
+class TitledIOType(ComplexIOBase):
+    """Wrapper type around ANY IO type that includes a title."""
+
+    val: IOType
+    title: str = ""
+
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        return await get_output_from_io_type(val=self.val, pg=pg, title=self.title)

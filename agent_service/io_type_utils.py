@@ -109,7 +109,7 @@ class ComplexIOBase(BaseModel, ABC):
     def to_gpt_input(self) -> str:
         return str(self.__class__)
 
-    async def to_rich_output(self, pg: BoostedPG) -> Output:
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         """
         Converts a ComplexIOType to rich output that powers the frontend.
         """
@@ -272,11 +272,33 @@ def get_clean_type_name(typ: Optional[Type]) -> str:
             return typ.__name__
     except TypeError:
         pass
-    name = str(typ)
+
+    origin = get_origin(typ)
+    if origin:
+        origin_name = origin
+        type_args = get_args(typ)
+        if origin is Union:
+            if len(type_args) == 2 and type_args[1] is type(None):
+                # Here we have an Optional special case
+                origin_name = "Optional"
+                type_args = (type_args[0],)
+            else:
+                origin_name = "Union"
+        elif origin in (list, dict):
+            origin_name = origin.__name__.title()
+        clean_args = [get_clean_type_name(arg) for arg in type_args]
+        if clean_args:
+            args_str = ", ".join(clean_args)
+            name = f"{origin_name}[{args_str}]"
+        else:
+            name = origin_name  # e.g. "List" not "list"
+    else:
+        try:
+            name = typ.__name__
+        except Exception:
+            name = str(typ)
 
     # Cleanup
-    name = name.replace("agent_service.io_types.", "")
-    name = name.replace("typing.", "")
     name = name.replace("IOType", "Any")
     return name
 
