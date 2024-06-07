@@ -427,6 +427,12 @@ class TextGroup(ComplexIOBase):
         return TextOutput(val=str(strings), title=title)
 
 
+@io_type
+class EquivalentKPITexts(TextGroup):
+    val: List[KPIText]  # type: ignore
+    general_kpi_name: str
+
+
 class TextOutput(Output):
     output_type: Literal[OutputType.TEXT] = OutputType.TEXT
     val: str

@@ -10,13 +10,15 @@ from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table, TableColumnMetadata
-from agent_service.io_types.text import KPIText
+from agent_service.io_types.text import EquivalentKPITexts, KPIText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.kpi_extractor import KPIInstance, KPIMetadata, KPIRetriever
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.stock_metadata import get_stock_metadata
 
 kpi_retriever = KPIRetriever()
 db = get_psql()
@@ -24,11 +26,59 @@ db = get_psql()
 
 @dataclass
 class CompanyInformation:
-    stock_id: int
+    gbi_id: int
     company_name: str
     company_description: str
     kpi_lookup: Dict[int, KPIMetadata]
     kpi_str: str
+
+
+DELIMITER = "-------------------------------------"
+SEPERATOR = "_"
+
+KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT_OBJ = Prompt(
+    name="KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT",
+    template=(
+        "You are a financial analyst investigating the financial performance of companies have been "
+        "tasked to identify key performance indicators (KPIs) that are equivalently comparable across "
+        "a set of companies for a given topic, each company will be labeled by an index number. For each "
+        "company you will be given a description of the company along with a set of KPIs that relate to "
+        "the given topic. Each KPI shown to you will be presented on a single line with the following "
+        "format '(kpi id) kpi name'.\n\n"
+        "You must identify a KPI that appears across the set of companies that best reports on the "
+        "topic in question however note that the specific wording of the KPI may differ across companies "
+        "due to different product names or may be due to cases where some companies use 'sales' instead "
+        "of 'revenue' in their KPI list. If you are given a set of companies where many companies contain 'Revenue' "
+        "for a topic while others use 'Sales' or 'Net Sales' or vice versa, you may treat them as equivalent metrics "
+        "and consider them to be equivalent providing they are reporting on the same topic. Most critically, when "
+        "identifying equivalent KPIs you must find KPIs that report at the same level, for example, the "
+        "KPIs 'Revenue - Apples' for one farming company and 'Revenue - Fruits' for another farming company "
+        "are not equivalent as one KPI is broader than the other. You must try your best to find an equivalent "
+        "KPI for each company shown to you unless you absolutely believe an equivalent KPI, as defined above, does "
+        "not exist. Again, remember the specific wording of the equivalent KPI you're looking for may vary from "
+        "company to company.\n\n"
+        "Output your result as follows. The first line will contain a general name that accurately describes "
+        "the equivalent KPI you have identified. Then each subsequent line will contain a specific KPI id from "
+        "a company formatted as follows 'index{seperator}kpiID{seperator}justification' where index "
+        "represents the index number associated with the company, kpiID is the kpi id associated with the kpi "
+        "identified, and justification is a brief sentence that justifies why this is an equivalent kpi. "
+        "You must output one line for each company shown to you. For companies without an equivalent kpi, "
+        "output 0 as the kpiID and for the justification provide your reasoning for why you could not identify "
+        "an equivalent kpi. Note that if you cannot find a KPI that is present across all companies you must aim "
+        "to find a one that is present in the max number of companies. If you are unable to find any equivalent "
+        "KPIs across any company simply output '0'."
+    ),
+)
+
+KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_MAIN_PROMPT_OBJ = Prompt(
+    name="KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_MAIN_PROMPT",
+    template=(
+        "Given the topic '{topic}', here are the following companies with their description and KPIs. "
+        "Do not output any additional explanation or justification. "
+        "Each company's descriptions and KPIs are delimited by '{delimiter}'\n\n"
+        "{company_data}"
+    ),
+)
 
 
 KPI_RELEVANCY_SYS_PROMPT_OBJ = Prompt(
@@ -39,7 +89,7 @@ KPI_RELEVANCY_SYS_PROMPT_OBJ = Prompt(
         "asked to identify KPIs. surrounding a specific product or service, or you may be asked to identify "
         "KPIs that are the most impactful to the company's financial health/dominance. Unless explicitly told, "
         "you should avoid returning 'high-level' KPIs like 'Total Revenue' or 'EPS' and choose to return KPIs "
-        "that are low-level meaning they refer to some specific product, service, etc.)"
+        "that are low-level meaning they refer to some specific product, service, etc."
     ),
 )
 
@@ -54,7 +104,7 @@ GENERAL_IMPORTANCE_INSTRUCTION = (
 )
 
 RELEVANCY_INSTRUCTION = (
-    "For the company {company_name}, identify relevant kpis around the following topic: '{query_topic}'"
+    "For the company {company_name}, identify relevant kpis around the following topic: '{query_topic}'. "
     "Limit yourself to at most 20 KPIs. You should not aim to get 20, stop when you feel that you have identified "
     "All relevant KPIs to the topic, however if you feel there are more than 20, return the 20 most impactful "
     "KPIs. "
@@ -79,37 +129,49 @@ KPI_RELEVANCY_MAIN_PROMPT = Prompt(
 )
 
 
-def convert_data_to_table(title: str, data: Dict[str, List[KPIInstance]]) -> Table:
+def generate_columns_for_kpi(
+    kpi_inst: KPIInstance,
+    actual_col_name: str,
+    estimate_col_name: str,
+    surprise_col_name: str,
+) -> List[TableColumnMetadata]:
+    long_unit = kpi_inst.long_unit
+    unit = kpi_inst.unit
+    columns: List[TableColumnMetadata] = []
+    if long_unit == "Amount":
+        columns.append(
+            TableColumnMetadata(label=actual_col_name, col_type=TableColumnType.CURRENCY)
+        )
+        columns.append(
+            TableColumnMetadata(label=estimate_col_name, col_type=TableColumnType.CURRENCY)
+        )
+    elif long_unit == "Percent":
+        columns.append(TableColumnMetadata(label=actual_col_name, col_type=TableColumnType.PERCENT))
+        columns.append(
+            TableColumnMetadata(label=estimate_col_name, col_type=TableColumnType.PERCENT)
+        )
+    else:
+        columns.append(
+            TableColumnMetadata(label=actual_col_name, col_type=TableColumnType.FLOAT, unit=unit)
+        )
+        columns.append(
+            TableColumnMetadata(label=estimate_col_name, col_type=TableColumnType.FLOAT, unit=unit)
+        )
+    columns.append(TableColumnMetadata(label=surprise_col_name, col_type=TableColumnType.FLOAT))
+    return columns
+
+
+def convert_single_stock_data_to_table(data: Dict[str, List[KPIInstance]]) -> Table:
     data_dict: Dict[str, Any] = {}
     columns = [TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING)]
     for kpi_name, kpi_history in data.items():
         actual_col = f"{kpi_name} Actual"
         estimate_col = f"{kpi_name} Estimate"
         surprise_col = f"{kpi_name} Surprise"
-
-        unit = kpi_history[0].unit
-        if unit == "Amount":
-            columns.append(TableColumnMetadata(label=actual_col, col_type=TableColumnType.CURRENCY))
-            columns.append(
-                TableColumnMetadata(label=estimate_col, col_type=TableColumnType.CURRENCY)
-            )
-        elif unit == "Percent":
-            columns.append(TableColumnMetadata(label=actual_col, col_type=TableColumnType.PERCENT))
-            columns.append(
-                TableColumnMetadata(label=estimate_col, col_type=TableColumnType.PERCENT)
-            )
-        else:
-            columns.append(
-                TableColumnMetadata(
-                    label=actual_col, col_type=TableColumnType.FLOAT, unit=kpi_history[0].unit
-                )
-            )
-            columns.append(
-                TableColumnMetadata(
-                    label=estimate_col, col_type=TableColumnType.FLOAT, unit=kpi_history[0].unit
-                )
-            )
-        columns.append(TableColumnMetadata(label=surprise_col, col_type=TableColumnType.FLOAT))
+        new_columns = generate_columns_for_kpi(
+            kpi_history[0], actual_col, estimate_col, surprise_col
+        )
+        columns.extend(new_columns)
 
         for kpi_inst in kpi_history:
             quarter = f"Q{kpi_inst.quarter}-{kpi_inst.year}"
@@ -132,6 +194,66 @@ def convert_data_to_table(title: str, data: Dict[str, List[KPIInstance]]) -> Tab
     df_data = []
     for quarter, row in data_dict.items():
         df_data.append(row)
+
+    df = pd.DataFrame(df_data)
+    return Table.from_df_and_cols(data=df, columns=columns)
+
+
+async def convert_multi_stock_data_to_table(
+    kpi_name: str, data: Dict[int, List[KPIInstance]]
+) -> Table:
+    columns = []
+
+    columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING))
+    columns.append(TableColumnMetadata(label="Company", col_type=TableColumnType.STOCK))
+
+    kpi_inst = list(data.values())[0][0]  # Take a random kpi_inst to pass in general kpi metadata
+    actual_col_name = f"{kpi_name} (Actual)"
+    estimate_col_name = f"{kpi_name} (Estimate)"
+    surprise_col_name = f"{kpi_name} (Surpise)"
+    kpi_column = generate_columns_for_kpi(
+        kpi_inst=kpi_inst,
+        actual_col_name=actual_col_name,
+        estimate_col_name=estimate_col_name,
+        surprise_col_name=surprise_col_name,
+    )
+    columns.extend(kpi_column)
+
+    gbi_ids = list(data.keys())
+    stock_metadata_dict = await get_stock_metadata(gbi_ids=gbi_ids)
+
+    df_data = []
+    for gbi_id, kpi_history in data.items():
+        for kpi_inst in kpi_history:
+            quarter = f"Q{kpi_inst.quarter}-{kpi_inst.year}"
+            stock = stock_metadata_dict[gbi_id]
+
+            # Need to conver the StockMetadata into a StockID object
+            # to satisfy TableColumnType.STOCK
+            stock_id_obj = StockID(
+                gbi_id=stock.gbi_id,
+                symbol=stock.symbol,
+                isin=stock.isin,
+                company_name=stock.company_name,
+            )
+            # Need to convert percentages into decimals to satisfy current handling of the Percentage figures
+            actual = (
+                kpi_inst.actual * 0.01
+                if (kpi_inst.unit == "Percent" and kpi_inst.actual is not None)
+                else kpi_inst.actual
+            )
+            estimate = kpi_inst.estimate * 0.01 if kpi_inst.unit == "Percent" else kpi_inst.estimate
+            surprise = kpi_inst.surprise
+
+            df_data.append(
+                {
+                    "Quarter": quarter,
+                    "Company": stock_id_obj,
+                    actual_col_name: actual,
+                    estimate_col_name: estimate,
+                    surprise_col_name: surprise,
+                }
+            )
 
     df = pd.DataFrame(df_data)
     return Table.from_df_and_cols(data=df, columns=columns)
@@ -167,9 +289,8 @@ def get_company_data_and_kpis(gbi_id: int) -> CompanyInformation:
 
 
 async def get_relevant_kpis_for_gbi_id(
-    gbi_id: int, company_info: CompanyInformation, topic: str
+    gbi_id: int, company_info: CompanyInformation, topic: str, llm: GPT
 ) -> List[KPIText]:
-    llm = GPT(context=None, model=GPT4_O)
     instructions = RELEVANCY_INSTRUCTION.format(
         company_name=company_info.company_name, query_topic=topic
     )
@@ -206,23 +327,116 @@ class GetRelevantKPIsForStockGivenTopic(ToolArgs):
         "the key performance indicators (KPIs) that relate to a given topic for a given stock id. "
         "A stock_id must be provided to identify the stock for which important KPIs are "
         "fetched. A topic string must also be provided to specify the topic of interest. The "
-        "topic string must be consice and make mention of some aspect or metric of a "
+        "topic string must be concise and make mention of some aspect or metric of a "
         "company's financials but must not mention the company name. "
         "The data returned will be a list of KPIText objects where each KPIText object "
         "contains one of the identified KPIs. Note that the KPIs returned are specific "
         "to the stock_id passed in, KPIText entries returned in the list must not be "
-        "used interchangably or joined to other stock_id instances."
+        "used interchangably or joined to other stock_id instances. Additionally, please "
+        "note that this function does not provide any actual data for any given quarter for these KPIS."
     ),
     category=ToolCategory.KPI,
 )
 async def get_relevant_kpis_for_stock_given_topic(
     args: GetRelevantKPIsForStockGivenTopic, context: PlanRunContext
 ) -> List[KPIText]:
+    llm = GPT(context=None, model=GPT4_O)
     company_info = get_company_data_and_kpis(args.stock_id.gbi_id)
     topic_kpi_list = await get_relevant_kpis_for_gbi_id(
-        args.stock_id.gbi_id, company_info, args.topic
+        args.stock_id.gbi_id, company_info, args.topic, llm
     )
     return topic_kpi_list
+
+
+class GetRelevantKPIsForStocksGivenTopic(ToolArgs):
+    stock_ids: List[StockID]
+    shared_metric: str
+
+
+@tool(
+    description=(
+        "This function will identify and return financial metrics, key performance indicators "
+        "(KPIs), across a set of companies the that best reports on a given metric. "
+        "A list of stock ids must be provided via stock_ids to indicate the stocks "
+        "to search for the given metric for. A shared_metric string must also be provided to specify the "
+        "metric of interest. The shared_metric string must be consice and make mention of some aspect "
+        "or metric of a company but must not mention any specific company's company name. "
+        "The data returned will be a list of KPIText objects where each KPIText object "
+        "contains an identified KPI from one company that best reports on the topic inputted. "
+        "to the stock_id passed in, KPIText entries returned in the list must not be "
+        "Note that this function may not identify a KPI for every company passed in through the stock_ids ."
+        "list, however it will always at most return one KPI for each company, never more. Additionally, please "
+        "note that this function does not provide any actual data for any given quarter for these KPIS."
+    ),
+    category=ToolCategory.KPI,
+)
+async def get_relevant_kpis_for_multiple_stocks_given_topic(
+    args: GetRelevantKPIsForStocksGivenTopic, context: PlanRunContext
+) -> EquivalentKPITexts:
+    llm = GPT(context=None, model=GPT4_O)
+    company_info_list: List[CompanyInformation] = []
+    company_kpi_lists: List[List[KPIText]] = []
+    overlapping_kpi_list: List[KPIText] = []
+    company_lookup: Dict[str, CompanyInformation] = {}
+
+    tasks = []
+    for stock_id in args.stock_ids:
+        company_info = get_company_data_and_kpis(stock_id.gbi_id)
+        company_info_list.append(company_info)
+        tasks.append(
+            get_relevant_kpis_for_gbi_id(stock_id.gbi_id, company_info, args.shared_metric, llm)
+        )
+
+    company_kpi_lists = await gather_with_concurrency(tasks, n=5)
+    company_data = []
+    for i, (company_info, company_kpi_list) in enumerate(zip(company_info_list, company_kpi_lists)):
+        company_name = company_info.company_name
+        company_description = company_info.company_description
+
+        kpi_str_list = []
+        for kpi in company_kpi_list:
+            kpi_str_list.append(f"({kpi.id}) {kpi.val}")
+
+        kpi_str = "\n".join(kpi_str_list)
+        company_lookup[str(i + 1)] = company_info
+        company_data.append(
+            f"Company {i+1} - {company_name}\n"
+            f"{company_name} Description: {company_description}\n\n"
+            f"{company_name} KPIs:\n"
+            f"{kpi_str}\n"
+            f"{DELIMITER}"
+        )
+    result = await llm.do_chat_w_sys_prompt(
+        main_prompt=KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_MAIN_PROMPT_OBJ.format(
+            topic=args.shared_metric,
+            company_data="\n".join(company_data),
+            delimiter=DELIMITER,
+        ),
+        sys_prompt=KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT_OBJ.format(
+            seperator=SEPERATOR,
+        ),
+    )
+    if result == "0":
+        # GPT couldn't find anything
+        return EquivalentKPITexts(val=[], general_kpi_name="")
+
+    overlapping_kpi_gpt_resp = result.split("\n")
+    # first line from gpt contains the generalized KPI name
+    kpi_name = overlapping_kpi_gpt_resp[0]
+    # retrieve the kpis
+    for overlapping_kpi_data in overlapping_kpi_gpt_resp[1:]:
+        # We force GPT to output a justification as well but we don't actually need it
+        # ie. each line we ask it to output company_index,pid,justification
+        company_index, pid, _ = overlapping_kpi_data.split(SEPERATOR)
+        if pid == "0":
+            # gpt could not find an equivalent kpi for this company
+            continue
+        gbi_id = company_lookup[company_index].gbi_id
+        kpi_data = company_lookup[company_index].kpi_lookup.get(int(pid), None)
+        if kpi_data is not None:
+            overlapping_kpi_list.append(KPIText(val=kpi_data.name, id=kpi_data.pid, gbi_id=gbi_id))
+
+    return EquivalentKPITexts(val=overlapping_kpi_list, general_kpi_name=kpi_name)
 
 
 class GetImportantKPIsForStock(ToolArgs):
@@ -239,7 +453,8 @@ class GetImportantKPIsForStock(ToolArgs):
         "can be specified via the num_of_kpis argument. num_of_kpis does not need to be specified "
         "however. The default behavior will return the most important KPIs up to a limit of 10. "
         "The data returned will be a list of KPIText objects where each KPIText object "
-        "contains one of the identified KPIs."
+        "contains one of the identified KPIs. Additionally, please "
+        "note that this function does not provide any actual data for any given quarter for these KPIS."
     ),
     category=ToolCategory.KPI,
 )
@@ -308,11 +523,12 @@ class CompanyKPIsRequest(ToolArgs):
         "the year-quarter the starting_date falls into. By default num_prev_quarters is set to 7. "
         "You can also specify the number of quarters after the starting_date to grab data for by many consecutive "
         "quarters to grab data for by setting the num_future_quarters argument. By default num_future_quarters is "
-        "set to 0."
+        "set to 0. When a user requests KPI data for the last quarter, you may set num_future_quarters to 0 and "
+        "num_prev_quarters to 1."
     ),
     category=ToolCategory.KPI,
 )
-async def get_kpis_data_for_stock(args: CompanyKPIsRequest, context: PlanRunContext) -> Table:
+async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunContext) -> Table:
     starting_date = get_now_utc() if args.starting_date is None else args.starting_date
     kpi_metadata_dict = kpi_retriever.convert_kpi_text_to_metadata(
         gbi_id=args.stock_id.gbi_id, kpi_texts=args.kpis
@@ -326,7 +542,62 @@ async def get_kpis_data_for_stock(args: CompanyKPIsRequest, context: PlanRunCont
         num_prev_quarters=args.num_prev_quarters,
         num_future_quarters=args.num_future_quarters,
     )
-    topic_kpi_table = convert_data_to_table(title=args.table_name, data=data)
+    topic_kpi_table = convert_single_stock_data_to_table(data=data)
+    return topic_kpi_table
+
+
+class KPIsRequest(ToolArgs):
+    equivalent_kpis: EquivalentKPITexts
+    table_name: str
+    num_future_quarters: int = 0
+    num_prev_quarters: int = 7
+    starting_date: Optional[datetime.datetime] = None
+
+
+@tool(
+    description=(
+        "This function will fetch quarterly numerical data for a list of key performance indicators (KPIs) "
+        "across a set of companies. A list of kpis will be passed in via the kpis argument containing a list of "
+        "KPIText objects to indicate the kpis to grab information for. The function must also take a table_name, "
+        "this name should be brief and describe what the data represents (ie. 'Cloud Revenue' or "
+        "'Automotive Sales'). This function will always grab the data for the quarter associated with the "
+        "starting_date. If no starting date is provided the function will assume starting date is the present date. "
+        "Data from additional quarters can also be retrieved by specifying the num_prev_quarters, to indicate how "
+        "many quarters prior to the year-quarter the starting_date falls into. By default num_prev_quarters is "
+        "set to 7. You can also specify the number of quarters after the starting_date to grab data for by many "
+        "consecutive quarters to grab data for by setting the num_future_quarters argument. By default "
+        "num_future_quarters is set to 0. When a user requests KPI data for the last quarter, you may set "
+        "num_future_quarters to 0 and num_prev_quarters to 1."
+    ),
+    category=ToolCategory.KPI,
+)
+async def get_overlapping_kpis_table_for_stock(args: KPIsRequest, context: PlanRunContext) -> Table:
+    starting_date = get_now_utc() if args.starting_date is None else args.starting_date
+    kpis: List[KPIText] = args.equivalent_kpis.val  # type: ignore
+
+    company_kpi_data_lookup: Dict[int, List[KPIInstance]] = {}
+    for kpi in kpis:
+        if kpi.gbi_id is None:
+            continue
+
+        kpi_metadata = kpi_retriever.convert_kpi_text_to_metadata(
+            gbi_id=kpi.gbi_id, kpi_texts=[kpi]
+        ).get(kpi.id, None)
+
+        if kpi_metadata is not None:
+            data = kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
+                gbi_id=kpi.gbi_id,
+                kpis=[kpi_metadata],
+                starting_date=starting_date,
+                num_prev_quarters=args.num_prev_quarters,
+                num_future_quarters=args.num_future_quarters,
+            )
+            company_kpi_data_lookup[kpi.gbi_id] = data[kpi_metadata.name]
+
+    topic_kpi_table = await convert_multi_stock_data_to_table(
+        kpi_name=args.equivalent_kpis.general_kpi_name,
+        data=company_kpi_data_lookup,
+    )
     return topic_kpi_table
 
 
@@ -349,34 +620,80 @@ async def main() -> None:
         run_tasks_without_prefect=True,
         skip_db_commit=True,
     )
-    stock_id = StockID(gbi_id=714, symbol="APPL", isin="", company_name="")
-
+    appl_stock_id = StockID(gbi_id=714, symbol="APPL", isin="")
+    mtch_stock_id = StockID(gbi_id=430689, symbol="MTCH", isin="")
     gen_kpi_list: List[KPIText] = await get_important_kpis_for_stock(  # type: ignore
-        args=GetImportantKPIsForStock(stock_id=stock_id), context=plan_context
+        args=GetImportantKPIsForStock(stock_id=appl_stock_id), context=plan_context
     )
-    topic_kpi_list: List[KPIText] = await get_relevant_kpis_for_stock_given_topic(  # type: ignore
-        GetRelevantKPIsForStockGivenTopic(stock_id=stock_id, topic="Apple TV"),
+    gen_kpis_table: Table = await get_kpis_table_for_stock(  # type: ignore
+        CompanyKPIsRequest(
+            stock_id=appl_stock_id, table_name="General KPI Table", kpis=gen_kpi_list
+        ),
         context=plan_context,
     )
-
-    gen_kpis_table: Table = await get_kpis_data_for_stock(  # type: ignore
-        CompanyKPIsRequest(stock_id=stock_id, table_name="General KPI Table", kpis=gen_kpi_list),
+    topic_kpis_list: List[KPIText] = await get_relevant_kpis_for_stock_given_topic(  # type: ignore
+        GetRelevantKPIsForStockGivenTopic(stock_id=mtch_stock_id, topic="Hinge"),
         context=plan_context,
     )
+    topic_kpis_table: Table = await get_kpis_table_for_stock(  # type: ignore
+        CompanyKPIsRequest(stock_id=mtch_stock_id, table_name="Hinge", kpis=topic_kpis_list),
+        context=plan_context,
+    )
+    df = topic_kpis_table.to_df()
+    print(df.head())
+    for column in topic_kpis_table.columns:
+        print(column.metadata.label)
     df = gen_kpis_table.to_df()
     print(df.head())
     for column in gen_kpis_table.columns:
         print(column.metadata.label)
-    print("-------------------------------------------------")
 
-    topic_kpis_table: Table = await get_kpis_data_for_stock(  # type: ignore
-        CompanyKPIsRequest(
-            stock_id=stock_id, table_name="Topic KPI Table (Apple TV)", kpis=topic_kpi_list
+    ford = StockID(gbi_id=4579, symbol="", isin="")
+    tesla = StockID(gbi_id=25508, symbol="", isin="")
+    gm = StockID(gbi_id=25477, symbol="", isin="")
+    rivian = StockID(gbi_id=520178, symbol="", isin="")
+
+    stocks = [tesla, ford, gm, rivian]
+    equivalent_kpis: EquivalentKPITexts = await get_relevant_kpis_for_multiple_stocks_given_topic(  # type: ignore
+        GetRelevantKPIsForStocksGivenTopic(stock_ids=stocks, shared_metric="Automotive"),
+        context=plan_context,
+    )
+
+    equivalent_kpis_table: Table = await get_overlapping_kpis_table_for_stock(  # type: ignore
+        args=KPIsRequest(
+            equivalent_kpis=equivalent_kpis,
+            table_name="Automotive Revenue",
+            num_future_quarters=0,
+            num_prev_quarters=4,
         ),
         context=plan_context,
     )
+    df = equivalent_kpis_table.to_df()
     print(df.head())
-    for column in topic_kpis_table.columns:
+    for column in equivalent_kpis_table.columns:
+        print(column.metadata.label)
+
+    microsoft = StockID(gbi_id=6963, symbol="MSFT", isin="")
+    amazon = StockID(gbi_id=149, symbol="AMZN", isin="")
+    alphabet = StockID(gbi_id=10096, symbol="GOOG", isin="")
+
+    stocks = [microsoft, amazon, alphabet]
+    equivalent_kpis: EquivalentKPITexts = await get_relevant_kpis_for_multiple_stocks_given_topic(  # type: ignore
+        GetRelevantKPIsForStocksGivenTopic(stock_ids=stocks, shared_metric="Cloud"),
+        context=plan_context,
+    )
+    equivalent_kpis_table: Table = await get_overlapping_kpis_table_for_stock(  # type: ignore
+        args=KPIsRequest(
+            equivalent_kpis=equivalent_kpis,
+            table_name="Cloud Computing",
+            num_future_quarters=0,
+            num_prev_quarters=4,
+        ),
+        context=plan_context,
+    )
+    df = equivalent_kpis_table.to_df()
+    print(df.head())
+    for column in equivalent_kpis_table.columns:
         print(column.metadata.label)
 
 

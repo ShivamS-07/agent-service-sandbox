@@ -180,15 +180,24 @@ def parse_args() -> argparse.Namespace:
 
 async def main() -> None:
     args = parse_args()
-    await gen_and_run_plan(
-        prompt=args.prompt,
-        run_plan_without_confirmation=args.run_plan_no_confirm,
-        verbose=args.verbose,
-        user_id=args.user_id,
-        do_chat=args.do_chat,
-        replan_execution_error=args.retry_on_execution_error,
-        multiple_inputs=args.allow_additional_input,
-    )
+    continue_agent = True
+    while continue_agent:
+        await gen_and_run_plan(
+            prompt=args.prompt,
+            run_plan_without_confirmation=args.run_plan_no_confirm,
+            verbose=args.verbose,
+            user_id=args.user_id,
+            do_chat=args.do_chat,
+            replan_execution_error=args.retry_on_execution_error,
+            multiple_inputs=args.allow_additional_input,
+        )
+        while True:
+            should_continue = input("Try another prompt? (y/n)> ")
+            if should_continue.lower() == "y":
+                break
+            elif should_continue.lower() == "n":
+                continue_agent = False
+                break
 
 
 if __name__ == "__main__":

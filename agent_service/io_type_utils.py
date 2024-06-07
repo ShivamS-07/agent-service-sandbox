@@ -59,7 +59,7 @@ class TableColumnType(str, enum.Enum):
     DELTA = "delta"  # Raw float delta
     PCT_DELTA = "pct_delta"  # Float delta value where 1.0 = 100% change
 
-    # Special type that has stock metadata
+    # Special type that stores StockID instances
     STOCK = "stock"
 
     @staticmethod
