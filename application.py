@@ -36,6 +36,7 @@ from agent_service.GPT.requests import _get_gpt_service_stub
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.environment import EnvironmentUtils
+from agent_service.utils.feature_flags import is_user_agent_admin
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect_task_executor import PrefectTaskExecutor
@@ -152,7 +153,9 @@ async def get_chat_history(
         end (Optional[datetime.datetime]): end time to filter messages, inclusive
         user (User): User object from `parse_header`
     """
-    validate_user_agent_access(user.user_id, agent_id)
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        validate_user_agent_access(user.user_id, agent_id)
+
     return await application.state.agent_service_impl.get_chat_history(
         agent_id=agent_id, start=start, end=end
     )
@@ -182,8 +185,10 @@ async def get_agent_worklog_board(
         end (Optional[datetime.date]): end DATE to filter work log, inclusive
         most_recent_num_run (Optional[int]): number of most recent plan runs to return
     """
-    logger.info(f"Validating if user {user.user_id} has access to agent {agent_id}.")
-    validate_user_agent_access(user.user_id, agent_id)
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        logger.info(f"Validating if user {user.user_id} has access to agent {agent_id}.")
+        validate_user_agent_access(user.user_id, agent_id)
+
     return await application.state.agent_service_impl.get_agent_worklog_board(
         agent_id=agent_id,
         start_date=start_date,
@@ -200,7 +205,8 @@ async def get_agent_worklog_board(
 async def get_agent_worklog_output(
     agent_id: str, log_id: str, user: User = Depends(parse_header)
 ) -> GetAgentWorklogOutputResponse:
-    validate_user_agent_access(user.user_id, agent_id)
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        validate_user_agent_access(user.user_id, agent_id)
 
     return await application.state.agent_service_impl.get_agent_worklog_output(
         agent_id=agent_id, log_id=log_id
@@ -222,7 +228,8 @@ async def get_agent_task_output(
         plan_run_id (str): the run ID from Prefect
         task_id (str): the task ID of a run from Prefect
     """
-    validate_user_agent_access(user.user_id, agent_id)
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        validate_user_agent_access(user.user_id, agent_id)
 
     return await application.state.agent_service_impl.get_agent_task_output(
         agent_id=agent_id, plan_run_id=plan_run_id, task_id=task_id
@@ -242,7 +249,8 @@ async def get_agent_output(
     Args:
         agent_id (str): agent ID
     """
-    validate_user_agent_access(user.user_id, agent_id)
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        validate_user_agent_access(user.user_id, agent_id)
 
     return await application.state.agent_service_impl.get_agent_output(agent_id=agent_id)
 
@@ -259,7 +267,8 @@ async def steam_agent_events(
     Args:
         agent_id (str): agent ID
     """
-    validate_user_agent_access(user.user_id, agent_id)
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        validate_user_agent_access(user.user_id, agent_id)
 
     async def _wrap_serializer() -> AsyncContentStream:
         try:
