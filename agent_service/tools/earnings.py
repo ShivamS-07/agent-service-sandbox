@@ -3,6 +3,7 @@ import datetime
 from collections import defaultdict
 from typing import Dict, List, Optional
 
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockEarningsSummaryText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
@@ -97,6 +98,7 @@ class GetEarningsCallSummariesInput(ToolArgs):
     stock_ids: List[StockID]
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
+    date_range: Optional[DateRange] = None
 
 
 @tool(
@@ -113,6 +115,13 @@ class GetEarningsCallSummariesInput(ToolArgs):
 async def get_earnings_call_summaries(
     args: GetEarningsCallSummariesInput, context: PlanRunContext
 ) -> List[StockEarningsSummaryText]:
+    # if a date range obj was provided, fill in any missing dates
+    if args.date_range:
+        if not args.start_date:
+            args.start_date = args.date_range.start_date
+        if not args.end_date:
+            args.end_date = args.date_range.end_date
+
     topic_lookup = await _get_earnings_summary_helper(
         args.stock_ids, args.start_date, args.end_date
     )

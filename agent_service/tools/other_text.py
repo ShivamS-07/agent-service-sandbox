@@ -3,6 +3,7 @@ import json
 from typing import Dict, List, Optional
 
 from agent_service.external.sec_utils import FILINGS, SecFiling, SecMapping
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockSecFilingText, StockText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
@@ -52,6 +53,7 @@ class GetSecFilingsInput(ToolArgs):
     stock_ids: List[StockID]
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
+    date_range: Optional[DateRange] = None
 
 
 @tool(
@@ -70,6 +72,10 @@ class GetSecFilingsInput(ToolArgs):
 async def get_sec_filings(
     args: GetSecFilingsInput, context: PlanRunContext
 ) -> List[StockSecFilingText]:
+    if args.date_range:
+        args.start_date = args.date_range.start_date
+        args.end_date = args.date_range.end_date
+
     stock_filing_map = await get_sec_filings_helper(args.stock_ids, args.start_date, args.end_date)
     all_filings = []
     for filings in stock_filing_map.values():
@@ -85,6 +91,7 @@ class GetAllTextDataForStocksInput(ToolArgs):
     stock_ids: List[StockID]
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
+    date_range: Optional[DateRange] = None
 
 
 @tool(
@@ -111,6 +118,11 @@ async def get_all_text_data_for_stocks(
     args: GetAllTextDataForStocksInput, context: PlanRunContext
 ) -> List[StockText]:
     stock_ids = args.stock_ids
+
+    if args.date_range:
+        args.start_date = args.date_range.start_date
+        args.end_date = args.date_range.end_date
+
     start_date = args.start_date
     end_date = args.end_date
     logger = get_prefect_logger(__name__)

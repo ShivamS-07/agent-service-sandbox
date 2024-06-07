@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.text import Text, ThemeText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.news import (
@@ -154,7 +155,8 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
 class GetCommentaryTextsInput(ToolArgs):
     topics: List[str] = []
-    start_date: datetime.date = None  # type: ignore
+    start_date: Optional[datetime.date] = None
+    date_range: Optional[DateRange] = None
     no_specific_topic: bool = False
     portfolio_id: Optional[str] = None
 
@@ -174,6 +176,10 @@ class GetCommentaryTextsInput(ToolArgs):
 async def get_commentary_texts(
     args: GetCommentaryTextsInput, context: PlanRunContext
 ) -> List[Text]:
+    if not args.start_date:
+        if args.date_range:
+            args.start_date = args.date_range.start_date
+
     if not args.topics:
         # no topics were given so we need to find some default ones
         if args.portfolio_id:

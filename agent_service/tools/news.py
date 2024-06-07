@@ -160,6 +160,7 @@ THEME_RELEVANT_MAIN_PROMPT = Prompt(
 class GetNewsArticlesForTopicsInput(ToolArgs):
     topics: List[str]
     start_date: Optional[datetime.date] = None
+    date_range: Optional[DateRange] = None
     max_num_articles_per_topic: Optional[int] = None
 
 
@@ -180,11 +181,15 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
 async def get_news_articles_for_topics(
     args: GetNewsArticlesForTopicsInput, context: PlanRunContext
 ) -> List[NewsPoolArticleText]:
-    # TODO: if start_date is very old, it will send many reuquests to GPT
+    # TODO: if start_date is very old, it will send many requests to GPT
     # start_date is optional, if not provided, use 30 days ago
-    start_date = args.start_date
-    if not start_date:
-        start_date = (get_now_utc() - datetime.timedelta(days=30)).date()
+    if not args.start_date:
+        if args.date_range:
+            start_date = args.date_range.start_date
+        else:
+            start_date = (get_now_utc() - datetime.timedelta(days=30)).date()
+    else:
+        start_date = args.start_date
 
     # prepare embedding
     llm = GPT(model=DEFAULT_EMBEDDING_MODEL)

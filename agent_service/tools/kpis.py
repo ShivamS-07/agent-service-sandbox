@@ -1,13 +1,14 @@
 import asyncio
 import datetime
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import TableColumnType
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table, TableColumnMetadata
 from agent_service.io_types.text import EquivalentKPITexts, KPIText
@@ -501,13 +502,44 @@ async def get_important_kpis_for_stock(
     return important_kpi_list
 
 
+def interpret_date_quarter_inputs(
+    num_future_quarters: Optional[int] = None,
+    num_prev_quarters: Optional[int] = None,
+    anchor_date: Optional[datetime.datetime] = None,
+    date_range: Optional[DateRange] = None,
+) -> Tuple[int, int, datetime.datetime]:
+
+    if date_range:
+        anchor_date = datetime.datetime.combine(date_range.end_date, datetime.datetime.min.time())
+
+        num_future_quarters = 0  # we will always do a look back instead of look forward
+        num_days = (date_range.end_date - date_range.start_date).days
+        days_in_quarter = 365.25 / 4
+        # we always fetch 1 quarter for the anchor date so remove that one
+        num_prev_days = num_days - days_in_quarter
+        num_prev_days = max(0, num_prev_days)
+        num_prev_quarters = round(num_prev_days / days_in_quarter)
+
+    if num_future_quarters is None:
+        num_future_quarters = 0
+
+    if num_prev_quarters is None:
+        num_prev_quarters = 7
+
+    if anchor_date is None:
+        anchor_date = get_now_utc()
+
+    return (num_future_quarters, num_prev_quarters, anchor_date)
+
+
 class CompanyKPIsRequest(ToolArgs):
     stock_id: StockID
     kpis: List[KPIText]
     table_name: str
-    num_future_quarters: int = 0
-    num_prev_quarters: int = 7
-    starting_date: Optional[datetime.datetime] = None
+    num_future_quarters: Optional[int] = None
+    num_prev_quarters: Optional[int] = None
+    anchor_date: Optional[datetime.datetime] = None
+    date_range: Optional[DateRange] = None
 
 
 @tool(
@@ -517,19 +549,29 @@ class CompanyKPIsRequest(ToolArgs):
         "of kpis will be passed in via the kpis argument containing a list of KPIText objects to indicate "
         "the kpis to grab information for. The function must also take a table_name, this name should be brief "
         "and describe what the data represents (ie. 'Important KPIs for Apple' or 'Tesla KPIs Relating to Model X'). "
-        "This function will always grab the data for the quarter associated with the starting_date. If no "
-        "starting date is provided the function will assume starting date is the present date. Data from additional "
+        "This function will always grab the data for the quarter associated with the anchor_date. If no "
+        "anchor date is provided the function will assume anchor date is the present date. Data from additional "
         "quarters can also be retrieved by specifying the num_prev_quarters, to indicate how many quarters prior to "
-        "the year-quarter the starting_date falls into. By default num_prev_quarters is set to 7. "
-        "You can also specify the number of quarters after the starting_date to grab data for by many consecutive "
+        "the year-quarter the anchor_date falls into. By default num_prev_quarters is set to 7. "
+        "You can also specify the number of quarters after the anchor_date to grab data for by many consecutive "
         "quarters to grab data for by setting the num_future_quarters argument. By default num_future_quarters is "
         "set to 0. When a user requests KPI data for the last quarter, you may set num_future_quarters to 0 and "
         "num_prev_quarters to 1."
+        " If a date_range is provided instead then num_future_quarters will be set to 0,"
+        " anchor_date will be set to date_range.end_date,"
+        " num_prev_quarters will be inferred from the width of the date_range."
     ),
     category=ToolCategory.KPI,
 )
 async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunContext) -> Table:
-    starting_date = get_now_utc() if args.starting_date is None else args.starting_date
+    num_future_quarters, num_prev_quarters, anchor_date = interpret_date_quarter_inputs(
+        args.num_future_quarters, args.num_prev_quarters, args.anchor_date, args.date_range
+    )
+
+    args.anchor_date = anchor_date
+    args.num_future_quarters = num_future_quarters
+    args.num_prev_quarters = num_prev_quarters
+
     kpi_metadata_dict = kpi_retriever.convert_kpi_text_to_metadata(
         gbi_id=args.stock_id.gbi_id, kpi_texts=args.kpis
     )
@@ -538,7 +580,7 @@ async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunCon
     data = kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
         gbi_id=args.stock_id.gbi_id,
         kpis=kpi_list,
-        starting_date=starting_date,
+        starting_date=anchor_date,
         num_prev_quarters=args.num_prev_quarters,
         num_future_quarters=args.num_future_quarters,
     )
@@ -549,9 +591,10 @@ async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunCon
 class KPIsRequest(ToolArgs):
     equivalent_kpis: EquivalentKPITexts
     table_name: str
-    num_future_quarters: int = 0
-    num_prev_quarters: int = 7
-    starting_date: Optional[datetime.datetime] = None
+    num_future_quarters: Optional[int] = None
+    num_prev_quarters: Optional[int] = None
+    anchor_date: Optional[datetime.datetime] = None
+    date_range: Optional[DateRange] = None
 
 
 @tool(
@@ -561,18 +604,28 @@ class KPIsRequest(ToolArgs):
         "KPIText objects to indicate the kpis to grab information for. The function must also take a table_name, "
         "this name should be brief and describe what the data represents (ie. 'Cloud Revenue' or "
         "'Automotive Sales'). This function will always grab the data for the quarter associated with the "
-        "starting_date. If no starting date is provided the function will assume starting date is the present date. "
+        "anchor_date. If no starting date is provided the function will assume starting date is the present date. "
         "Data from additional quarters can also be retrieved by specifying the num_prev_quarters, to indicate how "
-        "many quarters prior to the year-quarter the starting_date falls into. By default num_prev_quarters is "
-        "set to 7. You can also specify the number of quarters after the starting_date to grab data for by many "
+        "many quarters prior to the year-quarter the anchor_date falls into. By default num_prev_quarters is "
+        "set to 7. You can also specify the number of quarters after the anchor_date to grab data for by many "
         "consecutive quarters to grab data for by setting the num_future_quarters argument. By default "
         "num_future_quarters is set to 0. When a user requests KPI data for the last quarter, you may set "
         "num_future_quarters to 0 and num_prev_quarters to 1."
+        " If a date_range is provided instead then num_future_quarters will be set to 0,"
+        " anchor_date will be set to date_range.end_date,"
+        " num_prev_quarters will be inferred from the width of the date_range."
     ),
     category=ToolCategory.KPI,
 )
 async def get_overlapping_kpis_table_for_stock(args: KPIsRequest, context: PlanRunContext) -> Table:
-    starting_date = get_now_utc() if args.starting_date is None else args.starting_date
+    num_future_quarters, num_prev_quarters, anchor_date = interpret_date_quarter_inputs(
+        args.num_future_quarters, args.num_prev_quarters, args.anchor_date, args.date_range
+    )
+
+    args.anchor_date = anchor_date
+    args.num_future_quarters = num_future_quarters
+    args.num_prev_quarters = num_prev_quarters
+
     kpis: List[KPIText] = args.equivalent_kpis.val  # type: ignore
 
     company_kpi_data_lookup: Dict[int, List[KPIInstance]] = {}
@@ -588,7 +641,7 @@ async def get_overlapping_kpis_table_for_stock(args: KPIsRequest, context: PlanR
             data = kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
                 gbi_id=kpi.gbi_id,
                 kpis=[kpi_metadata],
-                starting_date=starting_date,
+                starting_date=anchor_date,
                 num_prev_quarters=args.num_prev_quarters,
                 num_future_quarters=args.num_future_quarters,
             )

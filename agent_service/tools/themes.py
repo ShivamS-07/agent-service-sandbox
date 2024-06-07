@@ -1,5 +1,4 @@
 # Author(s): Mohammad Zarei, Julian Brooke
-
 import asyncio
 import datetime
 from collections import defaultdict
@@ -15,6 +14,7 @@ from agent_service.external.nlp_svc_client import (
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import HistoryEntry
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
     Text,
@@ -386,6 +386,7 @@ async def get_news_articles_for_theme_developments(
 
 class GetTopNThemesInput(ToolArgs):
     start_date: Optional[datetime.date] = None
+    date_range: Optional[DateRange] = None
     theme_num: int = 3
     portfolio_id: Optional[PortfolioID] = None
 
@@ -438,11 +439,16 @@ async def get_top_N_macroeconomic_themes(
         closest_range = min(date_ranges, key=lambda x: abs(x[0] - diff))
         return closest_range[1]
 
+    start_date = args.start_date
+    if not start_date:
+        if args.date_range:
+            start_date = args.date_range.start_date
+
     # TODO: fix this endpoint to get ids instead of theme names
     resp = await get_top_themes(
         user_id=context.user_id,
         section_types=["THEME"],
-        date_range=await _get_date_range(args.start_date),
+        date_range=await _get_date_range(start_date),
         number_per_section=args.theme_num,
         portfolio_id=args.portfolio_id,
     )
