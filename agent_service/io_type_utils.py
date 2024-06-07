@@ -333,12 +333,14 @@ def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> boo
     #         pass
 
     if not get_origin(expected) and not get_origin(actual):
-        return (
-            actual is expected
-            or expected is IOType
-            or actual is IOType
-            or (actual is not None and expected in actual.__bases__)
-        )
+        # This fails if "expected" is not a class, so just wrap it
+        try:
+            if actual is not None and issubclass(actual, expected):  # type: ignore
+                return True
+        except Exception:
+            pass
+
+        return actual is expected or expected is IOType or actual is IOType
 
     # Origin of generic types like List[str] -> list. For types like int, will
     # be None.

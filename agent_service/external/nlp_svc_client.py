@@ -30,6 +30,7 @@ from nlp_service_proto_v1.themes_pb2 import (
 from nlp_service_proto_v1.well_known_types_pb2 import UUID
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
+from agent_service.tools.portfolio import PortfolioID
 from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,7 @@ async def get_top_themes(
     section_types: List[str],
     date_range: str,
     number_per_section: int,
-    portfolio_id: Optional[str],
+    portfolio_id: Optional[PortfolioID],
 ) -> GetCommentaryTopicsResponse:
     with _get_service_stub() as stub:
         response: GetCommentaryTopicsResponse = await stub.GetCommentaryTopics(

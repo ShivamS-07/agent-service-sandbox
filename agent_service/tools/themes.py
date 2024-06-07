@@ -25,6 +25,7 @@ from agent_service.io_types.text import (
     ThemeText,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.portfolio import PortfolioID
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
@@ -65,6 +66,30 @@ class ThemePostgres:
         records = self.db.generic_read(sql, params={"theme_id": theme_id})
         return {record["gbi_id"]: record["is_positive_polarity"] for record in records}
 
+    def get_news_dev_about_theme(self, theme_id: str) -> List[str]:
+        sql = """
+            SELECT development_id::TEXT, is_major_development, article_count
+            FROM nlp_service.theme_developments
+            WHERE theme_id = %s
+            ORDER BY is_major_development DESC, article_count DESC
+        """
+        records = self.db.generic_read(sql, [theme_id])
+        return [record["development_id"] for record in records]
+
+    def get_news_articles_for_dev(self, development_id: str) -> List[str]:
+        sql = """
+            SELECT news_id::TEXT
+            FROM nlp_service.theme_news
+            WHERE development_id = %s
+            AND published_at >= NOW() - INTERVAL '2 years'
+            ORDER BY published_at DESC
+        """
+        records = self.db.generic_read(sql, [development_id])
+        return [record["news_id"] for record in records]
+
+
+# Initialize the db
+db = ThemePostgres()
 
 LOOKUP_PROMPT = Prompt(
     name="THEME_LOOKUP_PROMPT",
@@ -113,7 +138,6 @@ class GetMacroeconomicThemeInput(ToolArgs):
 async def get_macroeconomic_themes(
     args: GetMacroeconomicThemeInput, context: PlanRunContext
 ) -> List[ThemeText]:
-    db = ThemePostgres()
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
@@ -126,6 +150,8 @@ async def get_macroeconomic_themes(
         )
         for theme in args.theme_refs
     ]
+    # drop duplicates
+    matched_themes = set(matched_themes)
 
     themes = [
         ThemeText(id=theme_id_lookup[theme]) for theme in matched_themes if theme in theme_id_lookup
@@ -186,6 +212,7 @@ class GetMacroeconomicThemesAffectingStocksInput(ToolArgs):
     description=(
         "This function takes a list of stock identifiers and returns a list of "
         "macroeconomic themes that are affecting the stocks."
+        "This tool can be used when the themes related to a list of stocks are needed. "
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
@@ -283,19 +310,9 @@ async def get_news_developments_about_theme(
     Returns:
         List[ThemeNewsDevelopmentText]: List of news development for the themes.
     """
-    db = get_psql()
     res = []
     for theme in args.themes:
-        sql = """
-        SELECT development_id::TEXT, is_major_development, article_count
-        FROM nlp_service.theme_developments
-        WHERE theme_id = %s
-        ORDER BY is_major_development DESC, article_count DESC
-        """
-        rows = db.generic_read(sql, [theme.id])
-        if args.max_devs_per_theme:
-            rows = rows[: args.max_devs_per_theme]
-        ids = [row["development_id"] for row in rows]
+        ids = db.get_news_dev_about_theme(theme.id)
         res.extend([ThemeNewsDevelopmentText(id=id) for id in ids])
     return res
 
@@ -333,17 +350,8 @@ async def get_news_articles_for_theme_developments(
             for each theme news development.
     """
     res = []
-    db = get_psql()
     for development in args.developments_list:
-        sql = """
-        SELECT news_id::TEXT
-        FROM nlp_service.theme_news
-        WHERE development_id = %s
-        AND published_at >= NOW() - INTERVAL '2 years'
-        ORDER BY published_at DESC
-        """
-        rows = db.generic_read(sql, [development.id])
-        news_ids = [row["news_id"] for row in rows]
+        news_ids = db.get_news_articles_for_dev(development.id)
         if args.max_articles_per_development:
             news_ids = news_ids[: args.max_articles_per_development]
         res.extend([ThemeNewsDevelopmentArticlesText(id=id) for id in news_ids])
@@ -357,24 +365,27 @@ async def get_news_articles_for_theme_developments(
 class GetTopNThemesInput(ToolArgs):
     start_date: Optional[datetime.date] = None
     theme_num: int = 3
-    portfolio_id: Optional[str] = None
+    portfolio_id: Optional[PortfolioID] = None
 
 
 @tool(
     description=(
-        "This function returns the top N themes based on the date range and number of themes. "
-        "Top themes are those that seem to be trending in the news. "
-        "The tool can be used when the user does not provide any themes to focus on."
-        "You MUST NEVER use this tool when a user has provided a topic, since you are not "
-        "likely that the top themes will correspond to the themes of interest for the user, "
-        "instead you should use the get_news_articles_for_topics tool which can get general news "
-        "topics if there is not a matching theme for a topic. Never call this function and then apply a "
-        "filter to a topic, it does not make sense!"
+        "This function can be used when you need to get news themes or topics related to a user portfolio "
+        "(if portfolio_id is provided) or general news themes. "
+        "The number of themes and the start date can be specified by user. "
+        "If start date is provided use get_date_from_date_str tool to get the date. "
+        "Adjust the theme_num to get the desired number of themes/topics. "
+        "The tool can be used "
+        " - when user does not have a specific theme in mind and wants to know the top themes "
+        " - when user wants to know the top themes after a specific start date "
+        " - when user wants to know the top themes for a specific portfolio"
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
 )
-async def get_top_N_themes(args: GetTopNThemesInput, context: PlanRunContext) -> List[ThemeText]:
+async def get_top_N_macroeconomic_themes(
+    args: GetTopNThemesInput, context: PlanRunContext
+) -> List[ThemeText]:
     """
     This function returns the top N themes for a user based on the date range and number of themes.
 
@@ -434,7 +445,7 @@ async def main() -> None:
         skip_db_commit=True,
     )
     themes: List[ThemeText] = await get_macroeconomic_themes(  # type: ignore
-        args=GetMacroeconomicThemeInput(theme_refs=["Generative AI"]), context=plan_context
+        args=GetMacroeconomicThemeInput(theme_refs=["Gen AI"]), context=plan_context
     )
 
     print(themes)

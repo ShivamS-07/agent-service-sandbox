@@ -63,7 +63,7 @@ class GetPortfolioInput(ToolArgs):
 @tool(
     description=(
         "This function returns a portfolio id given a portfolio name or mention (e.g. my portfolio). "
-        "It can be used when the client mentions a 'portfolio' keyword in the chat "
+        "It MUST be used when the client mentions any 'portfolio' in the request. "
         "This function will try to match the given name with the portfolio names for that clients "
         "and return the closest match. "
     ),

@@ -59,6 +59,7 @@ class DateFromDateStrInput(ToolArgs):
         "This function takes a string which refers to a time, either absolute or "
         "relative to the current time, and converts it to a Python date. "
         "You should always input some string, never an empty string. "
+        "This function should be used when a start_date is needed given a string."
     ),
     category=ToolCategory.DATES,
     tool_registry=ToolRegistry,
@@ -104,17 +105,18 @@ class DateRangeInput(ToolArgs):
 
 @tool(
     description="""This function returns a date range 'DateRange' with dates
-that are chosen to be relative to a passed in dates or
-near today's date if no date was passed in. It is extremely useful for when a
-you need to a date range for a graph but were provided no references to a date
-or only a reference to a single date. Also useful when you need a date range
-near to a date or close to a date. Can also be used to create a custom width
-date range relative to one of the dates such as '2 years before march 2nd', or
-for '3 weeks starting on july 3rd' 'after' should fill in the
-range_starting_from, 'before' should fill in the range_ending_on. The width can
-be stated in a combination of years, months, weeks and/or days the width
-paramaters should not be negative numbers and always greater than or equal to
-zero if no width is provided, the width will default to 1 year.""",
+    that are chosen to be relative to a passed in dates or
+    near today's date if no date was passed in. It is extremely useful for when a
+    you need to a date range for a graph but were provided no references to a date
+    or only a reference to a single date. Also useful when you need a date range
+    near to a date or close to a date. Can also be used to create a custom width
+    date range relative to one of the dates such as '2 years before march 2nd', or
+    for '3 weeks starting on july 3rd' 'after' should fill in the
+    range_starting_from, 'before' should fill in the range_ending_on. The width can
+    be stated in a combination of years, months, weeks and/or days the width
+    paramaters should not be negative numbers and always greater than or equal to
+    zero if no width is provided, the width will default to 1 year.
+    """,
     category=ToolCategory.DATES,
     tool_registry=ToolRegistry,
     is_visible=False,

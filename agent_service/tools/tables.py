@@ -336,11 +336,14 @@ class GetStockListFromTableArgs(ToolArgs):
 
 
 @tool(
-    description="""Given a table with at least one column of stocks, extract
-that column into a list of stock ID's.  This is very useful for e.g. filtering
-on some numerical data in a table before extracting the stock list and fetching
-other data with it.
-This function can only be used with actual tables, it cannot be used with either
+    description="""
+    Given a table with at least one column of stocks, extract
+    that column into a list of stock ID's.  This is very useful for e.g. filtering
+    on some numerical data in a table before extracting the stock list and fetching
+    other data with it.
+    The tool can be used to convert a table with a stock column from another tool "
+    "like get_portfolio_holdings into a list of stock ID's.
+    This function can only be used with actual tables, it cannot be used with either
 lists of texts or lists of stocks
 """,
     category=ToolCategory.TABLE,

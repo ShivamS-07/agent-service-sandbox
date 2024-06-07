@@ -21,7 +21,7 @@ from agent_service.tools.themes import (
     get_macroeconomic_themes,
     get_news_articles_for_theme_developments,
     get_news_developments_about_theme,
-    get_top_N_themes,
+    get_top_N_macroeconomic_themes,
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
@@ -178,7 +178,7 @@ async def get_commentary_texts(
         # no topics were given so we need to find some default ones
         if args.portfolio_id:
             # get portfolio related topics (logic William is adding)
-            themes_texts: List[ThemeText] = await get_top_N_themes(  # type: ignore
+            themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
                 GetTopNThemesInput(
                     start_date=args.start_date, theme_num=3, portfolio_id=args.portfolio_id
                 ),
@@ -192,7 +192,7 @@ async def get_commentary_texts(
             return texts
         else:
             # get popular topics
-            themes_texts: List[ThemeText] = await get_top_N_themes(  # type: ignore
+            themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
                 GetTopNThemesInput(start_date=args.start_date, theme_num=3), context
             )
             texts = await _get_theme_related_texts(themes_texts, context)
@@ -204,7 +204,7 @@ async def get_commentary_texts(
 
     else:
         if args.portfolio_id:
-            themes_texts: List[ThemeText] = await get_top_N_themes(  # type: ignore
+            themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
                 GetTopNThemesInput(
                     start_date=args.start_date, theme_num=3, portfolio_id=args.portfolio_id
                 ),

@@ -8,7 +8,7 @@ from agent_service.tools.themes import (
     GetTopNThemesInput,
     get_news_articles_for_theme_developments,
     get_news_developments_about_theme,
-    get_top_N_themes,
+    get_top_N_macroeconomic_themes,
 )
 from agent_service.types import PlanRunContext
 
@@ -46,11 +46,11 @@ class TestGetTopNThemes(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
 
-    async def test_get_top_N_themes(self):
+    async def test_get_top_N_macroeconomic_themes(self):
         self.args = GetTopNThemesInput(
             date_range="1M",
             number_per_section=3,
         )
-        result = await get_top_N_themes(self.args, self.context)
+        result = await get_top_N_macroeconomic_themes(self.args, self.context)
         self.assertIsInstance(result[0], ThemeText)
         self.assertEqual(len(result), 3)

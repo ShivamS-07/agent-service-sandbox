@@ -166,8 +166,7 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
 @tool(
     description=(
         "This function takes a list of topics and returns a "
-        "list of news articles related to the given topics. The output is a list of NewsPoolArticleText objects, "
-        "each containing a news article. "
+        "list of news articles related to the given topics. "
         "If someone wants general information about a topic and there is no existing themes "
         "This is the best tool to call. "
         "If someone asks for a topic that could be an existing microeconomic theme, then should look "
