@@ -1,6 +1,7 @@
 import unittest
 
 from agent_service.io_type_utils import HistoryEntry, TableColumnType
+from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table, TableColumnMetadata
 from agent_service.tools.tables import (
     GetStockListFromTableArgs,
@@ -54,6 +55,32 @@ class TestTableTools(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.get_num_rows(), 3)
         self.assertEqual(len(result.columns), 3)
         df = result.to_df()
+        # Make sure the history merged correctly
+        self.assertEqual(
+            df["Security"][0],
+            StockID(
+                history=[
+                    HistoryEntry(
+                        explanation="Test 1",
+                        title="",
+                        entry_type=TableColumnType.STRING,
+                        unit=None,
+                        citations=[],
+                    ),
+                    HistoryEntry(
+                        explanation="Test 2",
+                        title="",
+                        entry_type=TableColumnType.STRING,
+                        unit=None,
+                        citations=[],
+                    ),
+                ],
+                gbi_id=112,
+                symbol="",
+                isin="",
+                company_name="",
+            ),
+        )
         self.assertEqual(set((sec.gbi_id for sec in df["Security"])), {112, 124, 149})
 
     async def test_get_stock_identifier_list_from_table(self):
@@ -64,5 +91,9 @@ class TestTableTools(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([stock.gbi_id for stock in result], [112, 124, 149])
         first_stock = result[0]
         self.assertEqual(
-            first_stock.history, [HistoryEntry(title="News Summary", explanation="blah1")]
+            first_stock.history,
+            [
+                HistoryEntry(explanation="Test 1"),
+                HistoryEntry(title="News Summary", explanation="blah1"),
+            ],
         )

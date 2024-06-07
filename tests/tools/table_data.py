@@ -2,16 +2,21 @@ import datetime
 
 import pandas as pd
 
-from agent_service.io_type_utils import TableColumnType
+from agent_service.io_type_utils import HistoryEntry, TableColumnType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table, TableColumnMetadata
 
 STOCK1 = StockID(gbi_id=72, symbol="", isin="", company_name="")
 STOCK2 = StockID(gbi_id=76, symbol="", isin="", company_name="")
 STOCK3 = StockID(gbi_id=78, symbol="", isin="", company_name="")
-STOCK4 = StockID(gbi_id=112, symbol="", isin="", company_name="")
+STOCK4 = StockID(
+    gbi_id=112, symbol="", isin="", company_name="", history=[HistoryEntry(explanation="Test 1")]
+)
 STOCK5 = StockID(gbi_id=124, symbol="", isin="", company_name="")
 STOCK6 = StockID(gbi_id=149, symbol="", isin="", company_name="")
+STOCK4_alt = StockID(
+    gbi_id=112, symbol="", isin="", company_name="", history=[HistoryEntry(explanation="Test 2")]
+)
 
 
 TEST_STOCK_DATE_TABLE1 = Table.from_df_and_cols(
@@ -160,7 +165,7 @@ TEST_STOCK_TABLE2 = Table.from_df_and_cols(
     data=pd.DataFrame(
         data={
             "Security": {
-                0: STOCK4,
+                0: STOCK4_alt,
                 1: STOCK5,
             },
             "Earnings Summary": {

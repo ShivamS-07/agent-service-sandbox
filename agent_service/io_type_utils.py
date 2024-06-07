@@ -2,6 +2,7 @@ import datetime
 import enum
 import json
 from abc import ABC
+from copy import deepcopy
 from typing import (
     Any,
     Callable,
@@ -95,6 +96,19 @@ class HistoryEntry(BaseModel):
     # Citations for the explanation
     citations: List[Citation] = []
 
+    def __hash__(self) -> int:
+        return hash((self.explanation, self.title, self.entry_type, self.unit))
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, HistoryEntry):
+            return (self.explanation, self.title, self.entry_type, self.unit) == (
+                other.explanation,
+                other.title,
+                other.entry_type,
+                other.unit,
+            )
+        return NotImplemented
+
 
 class ComplexIOBase(BaseModel, ABC):
     """
@@ -115,16 +129,45 @@ class ComplexIOBase(BaseModel, ABC):
         """
         raise NotImplementedError("This type does not have a rich output")
 
-    def with_history_entry(self, entry: HistoryEntry) -> Self:
-        self.history.append(entry)
-        return self
+    # Note on deepcopy below: mostly from paranoia about mutable data and
+    # references being shared across many objects. Deepcopying ensures that
+    # modifying the history of one object never updates the history of another
+    # object. This allows us to work in a purely functional style without
+    # worrying about mutability.
+
+    def _collapse_history_duplicates(self) -> None:
+        # Do a loop to make sure we preserve ordering
+        new_history = []
+        seen = set()
+        for entry in self.history:
+            if entry not in seen:
+                new_history.append(entry)
+                seen.add(entry)
+
+        self.history = new_history
+
+    def inject_history_entry(self, entry: HistoryEntry) -> Self:
+        new = deepcopy(self)
+        new.history.append(entry)
+        return new
 
     def extend_history_from(self, other: Self) -> Self:
-        self.history.extend(other.history)
-        return self
+        new = deepcopy(self)
+        new.history.extend(deepcopy(other.history))
+        return new
+
+    def union_history_with(self, other: Self) -> Self:
+        new = deepcopy(self)
+        new.history.extend(deepcopy(other.history))
+        new._collapse_history_duplicates()
+        return new
 
     def __hash__(self) -> int:
         return hash((type(self),) + tuple(sorted(self.model_dump().items())))
+
+    def __lt__(self, other: Any) -> bool:
+        # This can be overridden by children, for now just do it randomly
+        return hash(self) < hash(other)
 
     @classmethod
     def union_sets(cls, set1: Set[Self], set2: Set[Self]) -> Set[Self]:

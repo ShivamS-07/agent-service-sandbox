@@ -7,7 +7,7 @@ from agent_service.external.pa_svc_client import (
 )
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
-    Table,
+    StockTable,
     TableColumnMetadata,
     TableColumnType,
 )
@@ -37,7 +37,7 @@ class GetPortfolioWorkspaceHoldingsInput(ToolArgs):
 )
 async def get_portfolio_holdings(
     args: GetPortfolioWorkspaceHoldingsInput, context: PlanRunContext
-) -> Table:
+) -> StockTable:
     workspace = await get_all_holdings_in_workspace(context.user_id, args.portfolio_id)
     gbi_ids = [holding.gbi_id for holding in workspace.holdings]
     stock_meta = await get_stock_metadata(gbi_ids=gbi_ids)
@@ -46,7 +46,7 @@ async def get_portfolio_holdings(
         "Weight": [holding.weight for holding in workspace.holdings],
     }
     df = pd.DataFrame(data)
-    table = Table.from_df_and_cols(
+    table = StockTable.from_df_and_cols(
         data=df,
         columns=[
             TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),

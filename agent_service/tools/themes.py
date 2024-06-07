@@ -219,7 +219,7 @@ async def get_stocks_affected_by_theme(
     stock_ids = await StockID.from_gbi_id_list(list(final_stocks_reason.keys()))
     for stock_id in stock_ids:
         for reason in final_stocks_reason[stock_id.gbi_id]:
-            stock_id.with_history_entry(
+            stock_id.inject_history_entry(
                 HistoryEntry(explanation=reason, title="Connection to theme")
             )
 

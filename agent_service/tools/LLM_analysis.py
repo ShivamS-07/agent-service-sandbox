@@ -237,7 +237,7 @@ async def filter_news_by_topic(
     # not currently returning rationale, but will probably want it
     texts: List[str] = Text.get_all_strs(args.news_texts, include_header=True)  # type: ignore
     return [
-        text.with_history_entry(
+        text.inject_history_entry(
             HistoryEntry(explanation=reason, title=f"Connection to {args.topic}")
         )
         for text, (is_relevant, reason) in zip(
@@ -337,7 +337,7 @@ async def filter_stocks_by_profile_match(
         if is_relevant
     }
     filtered_stocks = [
-        stock.with_history_entry(
+        stock.inject_history_entry(
             HistoryEntry(
                 explanation=stock_reason_map[stock], title=f"Connection to '{args.profile}'"
             )

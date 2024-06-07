@@ -4,18 +4,21 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections import defaultdict
+from itertools import chain, zip_longest
 from json.decoder import JSONDecodeError
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import pandas as pd
 from pydantic import ValidationError
 
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import HistoryEntry
+from agent_service.io_type_utils import ComplexIOBase, HistoryEntry
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     StockTableColumn,
     Table,
+    TableColumn,
     TableColumnMetadata,
     TableColumnType,
 )
@@ -219,94 +222,115 @@ class JoinTableArgs(ToolArgs):
 
 def _join_two_tables(first: Table, second: Table) -> Table:
     # Find columns to join by, ideally a date column, stock column, or both
-    first_stock_col_meta = None
-    second_stock_col_meta = None
-    first_date_col_meta = None
-    second_date_col_meta = None
+    first_stock_col = None
+    second_stock_col = None
+    first_date_col = None
+    second_date_col = None
     other_cols = []
 
     # First, find the date and stock columns for both tables if they are present.
     for col in first.columns:
-        if not first_date_col_meta and col.metadata.col_type in (
+        if not first_date_col and col.metadata.col_type in (
             TableColumnType.DATE,
             TableColumnType.DATETIME,
         ):
-            first_date_col_meta = col.metadata
+            first_date_col = col
             continue
-        if not first_stock_col_meta and col.metadata.col_type == TableColumnType.STOCK:
-            first_stock_col_meta = col.metadata
+        if not first_stock_col and col.metadata.col_type == TableColumnType.STOCK:
+            first_stock_col = col
             continue
     for col in second.columns:
-        if not second_date_col_meta and col.metadata.col_type in (
+        if not second_date_col and col.metadata.col_type in (
             TableColumnType.DATE,
             TableColumnType.DATETIME,
         ):
-            second_date_col_meta = col.metadata
+            second_date_col = col
             continue
-        if not second_stock_col_meta and col.metadata.col_type == TableColumnType.STOCK:
-            second_stock_col_meta = col.metadata
+        if not second_stock_col and col.metadata.col_type == TableColumnType.STOCK:
+            second_stock_col = col
             continue
 
     for col in first.columns + second.columns:
         # Collect up all the columns that won't be joined on
         if (
-            (first_stock_col_meta and col.metadata == first_stock_col_meta)
-            or (first_date_col_meta and col.metadata == first_date_col_meta)
-            or (second_stock_col_meta and col.metadata == second_stock_col_meta)
-            or (second_date_col_meta and col.metadata == second_date_col_meta)
+            (first_stock_col and col.metadata == first_stock_col.metadata)
+            or (first_date_col and col.metadata == first_date_col.metadata)
+            or (second_stock_col and col.metadata == second_stock_col.metadata)
+            or (second_date_col and col.metadata == second_date_col.metadata)
         ):
             continue
         other_cols.append(col.metadata)
 
-    # Ideally we'd never need these suffixes, but included just in case so we
-    # don't show anything crazy
-    join_suffixes = (" (one)", " (two)")
-
-    first_data = first.to_df(stocks_as_hashables=True)
-    second_data = second.to_df(stocks_as_hashables=True)
     # Go case by case:
     #   1. Join on stocks AND dates
     #   2. Join on just stocks
     #   3. Join on just dates
-    if (
-        first_stock_col_meta
-        and second_stock_col_meta
-        and first_date_col_meta
-        and second_date_col_meta
-    ):
-        output_col_metas = [first_date_col_meta, first_stock_col_meta] + other_cols
-        df = pd.merge(
-            left=first_data,
-            right=second_data,
-            how="outer",
-            left_on=[first_date_col_meta.label, first_stock_col_meta.label],
-            right_on=[second_date_col_meta.label, second_stock_col_meta.label],
-            suffixes=join_suffixes,
-        )
-    elif first_stock_col_meta and second_stock_col_meta:
-        output_col_metas = [first_stock_col_meta] + other_cols
-        df = pd.merge(
-            left=first_data,
-            right=second_data,
-            how="outer",
-            left_on=first_stock_col_meta.label,
-            right_on=second_stock_col_meta.label,
-            suffixes=join_suffixes,
-        )
-    elif first_date_col_meta and second_date_col_meta:
-        output_col_metas = [first_date_col_meta] + other_cols
-        df = pd.merge(
-            left=first_data,
-            right=second_data,
-            how="outer",
-            left_on=first_date_col_meta.label,
-            right_on=second_date_col_meta.label,
-            suffixes=join_suffixes,
-        )
+
+    if first_stock_col and second_stock_col and first_date_col and second_date_col:
+        join_col_meta = [first_date_col.metadata, first_stock_col.metadata]
+        first_dict = first.to_dict(key_cols=[first_date_col.metadata, first_stock_col.metadata])
+        second_dict = second.to_dict(key_cols=[second_date_col.metadata, second_stock_col.metadata])
+    elif first_stock_col and second_stock_col:
+        join_col_meta = [first_stock_col.metadata]
+        first_dict = first.to_dict(key_cols=[first_stock_col.metadata])
+        second_dict = second.to_dict(key_cols=[second_stock_col.metadata])
+    elif first_date_col and second_date_col:
+        join_col_meta = [first_date_col.metadata]
+        first_dict = first.to_dict(key_cols=[first_date_col.metadata])
+        second_dict = second.to_dict(key_cols=[second_date_col.metadata])
     else:
         # Can't join on anything! Just concat
         return Table(columns=first.columns + second.columns)
-    return Table.from_df_and_cols(columns=output_col_metas, data=df, stocks_are_hashable_objs=True)
+
+    # At this point, we have two dictionaries mapping the "indexed" values being
+    # joined on to the row data. # Doesn't need to be fast, doing it in a simple
+    # way. Create a list for each output column, and iteratively append data to
+    # the list.
+    col_data_list: List[List[Any]] = [[] for _ in chain(join_col_meta, other_cols)]
+
+    # We need this in the case where two *different* objects have the same hash
+    # value. In that case, we'll want to be able to merge them. E.g. StockID's
+    # are hashed by GBI ID, but we need to merge their individual histories.
+    index_val_to_object_map = defaultdict(list)
+    for key in chain(first_dict.keys(), second_dict.keys()):
+        if not isinstance(key, tuple):
+            key = (key,)
+        for component in key:
+            index_val_to_object_map[component].append(component)
+
+    for key in sorted(set(first_dict.keys()).union(second_dict.keys())):
+        # The data in the first and second tables associated with this key
+        # (e.g. a StockID)
+        first_data = first_dict.get(key, [])
+        second_data = second_dict.get(key, [])
+        key_tup = (key,) if not isinstance(key, tuple) else key
+        new_key_component_list = []
+        # For some tables, key here is (date, stock). Otherwise it could be
+        # (date) or (stock)
+        for key_component in key_tup:
+            key_objects = index_val_to_object_map[key_component]
+            # We need to merge all the key objects together into a single key
+            new_key_component = key_objects[0]
+            # key_objects is a list of distinct objects that hash to the same
+            # value. E.g. two stocks with the same GBI ID but different
+            # histories.
+            for obj in key_objects[1:]:
+                if isinstance(obj, ComplexIOBase) and isinstance(new_key_component, ComplexIOBase):
+                    new_key_component = new_key_component.union_history_with(obj)
+            new_key_component_list.append(new_key_component)
+        key_tup = tuple(new_key_component_list)
+
+        # zip_longest will fill in "None" if one list is bigger than the
+        # other. E.g. in the case where a row exists in the first table but not
+        # in the second, we want to fill in None for the columns only in table 2.
+        for val, col_data in zip_longest(chain(key_tup, first_data, second_data), col_data_list):
+            col_data.append(val)
+
+    output_cols = []
+    for meta, data in zip(chain(join_col_meta, other_cols), col_data_list):
+        output_cols.append(TableColumn(metadata=meta, data=data))
+
+    return Table(columns=output_cols)
 
 
 @tool(

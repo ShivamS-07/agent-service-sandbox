@@ -425,7 +425,7 @@ async def rewrite_execution_plan(
 
     _, old_plan, plan_timestamp = await get_latest_execution_plan_from_db(agent_id, db)
     if not old_plan:  # shouldn't happen, just for mypy
-        return None
+        raise RuntimeError("Cannot rewrite a plan that does not exist!")
     if error_info:
         new_plan = await planner.rewrite_plan_after_error(error_info, chat_context, old_plan)
     else:
@@ -441,7 +441,7 @@ async def rewrite_execution_plan(
             await send_chat_message(
                 message=Message(agent_id=agent_id, message=message, is_user_message=False), db=db
             )
-        return None
+        raise RuntimeError("Failed to replan!")
 
     db.write_execution_plan(plan_id=plan_id, agent_id=agent_id, plan=new_plan)
     logger.info(f"Finished rewriting execution plan for {agent_id=}")

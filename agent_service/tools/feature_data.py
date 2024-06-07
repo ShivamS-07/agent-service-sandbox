@@ -24,6 +24,7 @@ from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
+    StockTable,
     Table,
     TableColumnMetadata,
     TableColumnType,
@@ -294,7 +295,7 @@ class FeatureDataInput(ToolArgs):
 )
 async def get_statistic_data_for_companies(
     args: FeatureDataInput, context: PlanRunContext
-) -> Table:
+) -> StockTable:
     """Returns the Time series of data for the requested field for each of the stocks_ids
     Optionally a start_date and end_date may be provided to specify a date range
     To get a specific date only set both inputs to the same date
@@ -345,7 +346,7 @@ async def get_statistic_data(
     start_date: datetime.date,
     end_date: datetime.date,
     stock_ids: Optional[List[StockID]] = None,
-) -> Table:
+) -> StockTable:
     stock_ids = stock_ids or []
     gbi_id_map = {stock.gbi_id: stock for stock in stock_ids}
     gbi_ids = list(gbi_id_map.keys())
@@ -426,7 +427,7 @@ async def get_statistic_data(
 
         # We now have a dataframe with only a few columns: Date, Statistic Name
         # currency may or may not be set.
-        return Table.from_df_and_cols(
+        return StockTable.from_df_and_cols(
             data=df,
             columns=[
                 TableColumnMetadata(label="Date", col_type=TableColumnType.DATE),
@@ -448,7 +449,7 @@ async def get_statistic_data(
         df[STOCK_ID_COL_NAME_DEFAULT] = df[STOCK_ID_COL_NAME_DEFAULT].map(gbi_id_map)
 
         # We now have a dataframe with only a few columns: Date, Stock ID, Statistic Name
-        return Table.from_df_and_cols(
+        return StockTable.from_df_and_cols(
             data=df,
             columns=[
                 TableColumnMetadata(label="Date", col_type=TableColumnType.DATE),

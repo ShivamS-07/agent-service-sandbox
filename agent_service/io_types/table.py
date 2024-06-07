@@ -1,9 +1,10 @@
 import datetime
-from typing import List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel
+from typing_extensions import Self
 
 from agent_service.io_type_utils import (
     ComplexIOBase,
@@ -83,12 +84,23 @@ class Table(ComplexIOBase):
 
         return pd.DataFrame(data=data)
 
-    @staticmethod
+    def to_dict(self, key_cols: List[TableColumnMetadata]) -> Dict[Any, List[IOType]]:
+        """
+        Creates a dictionary of data from the table, where the key is a tuple
+        from the values in key_cols, and the value is a list of the other
+        columns in the row.
+        """
+        df = self.to_df()
+        df.set_index(keys=[col.label for col in key_cols], inplace=True)
+        return df.transpose().to_dict(orient="list")  # type: ignore
+
+    @classmethod
     def from_df_and_cols(
+        cls,
         columns: List[TableColumnMetadata],
         data: pd.DataFrame,
         stocks_are_hashable_objs: bool = False,
-    ) -> "Table":
+    ) -> Self:
         out_columns: List[TableColumn] = []
         data = data.replace(np.nan, None)
         for col_meta, df_col in zip(columns, data.columns):
@@ -110,7 +122,7 @@ class Table(ComplexIOBase):
             else:
                 out_columns.append(TableColumn(metadata=col_meta, data=data[df_col].to_list()))
 
-        return Table(columns=out_columns)
+        return cls(columns=out_columns)
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         output_cols = []
@@ -153,6 +165,14 @@ class Table(ComplexIOBase):
 
 
 CellType = Union[PrimitiveType, StockMetadata]
+
+
+class StockTable(Table):
+    """
+    Wrapper around a table, used really only for type hinting.
+    """
+
+    pass
 
 
 class TableOutputColumn(BaseModel):
