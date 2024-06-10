@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing_extensions import Self
 
 from agent_service.io_type_utils import (
+    Citation,
     ComplexIOBase,
     IOType,
     PrimitiveType,
@@ -14,7 +15,7 @@ from agent_service.io_type_utils import (
     TableColumnType,
     io_type,
 )
-from agent_service.io_types.output import Output, OutputType
+from agent_service.io_types.output import CitationID, Output, OutputType
 from agent_service.io_types.stock import StockID
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.stock_metadata import StockMetadata
@@ -131,7 +132,15 @@ class Table(ComplexIOBase):
         is_first_col = True
         # Use a dataframe for convenience
         df = self.to_df()
+        citations = []
         for df_col, col in zip(df.columns, self.columns):
+            # First handle citations
+            col_citations = await Citation.resolve_all_citations(
+                citations=self.get_all_citations(), db=pg
+            )
+            citations.extend(col_citations)
+
+            # Next handle special transformations
             output_col = col.to_output_column()
             if output_col.col_type == TableColumnType.STOCK:
                 # Map to StockMetadata
@@ -157,13 +166,15 @@ class Table(ComplexIOBase):
                 # Automatically highlight the first column if it's a date column
                 output_col.is_highlighted = True
 
+            # include references to the relevant citations
+            output_col.citation_refs = [cit.id for cit in col_citations]
             output_cols.append(output_col)
             is_first_col = False
 
         df = df.replace(np.nan, None)
         rows = df.values.tolist()
 
-        return TableOutput(title=title, columns=output_cols, rows=rows)
+        return TableOutput(title=title, columns=output_cols, rows=rows, citations=citations)
 
 
 CellType = Union[PrimitiveType, StockMetadata, Score]
@@ -192,6 +203,8 @@ class TableOutputColumn(BaseModel):
     # If e.g. the first column is of special importance and should be
     # highlighted for all rows.
     is_highlighted: bool = False
+    # Refers back to citations in the base TableOutput object.
+    citation_refs: List[CitationID] = []
 
 
 class TableOutput(Output):

@@ -5,6 +5,7 @@ from typing import List, Literal, Optional, Union
 from pydantic.fields import Field
 
 from agent_service.io_type_utils import (
+    Citation,
     ComplexIOBase,
     PrimitiveType,
     TableColumnType,
@@ -80,7 +81,8 @@ class PieGraph(Graph):
         for section in self.data:
             if isinstance(section.label, StockID):
                 section.label = section.label.symbol or section.label.isin
-        return GraphOutput(graph=self, title=title)
+        citations = await Citation.resolve_all_citations(self.get_all_citations(), db=pg)
+        return GraphOutput(graph=self, title=title, citations=citations)
 
     def to_gpt_input(self) -> str:
         return f"Pie Chart with sections: {self.data}"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from itertools import chain
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Type, Union
 from uuid import uuid4
 
@@ -17,8 +18,14 @@ from agent_service.io_type_utils import (
     ScoreOutput,
     io_type,
 )
-from agent_service.io_types.output import Output, OutputType
+from agent_service.io_types.output import (
+    CitationOutput,
+    CitationType,
+    Output,
+    OutputType,
+)
 from agent_service.io_types.stock import StockID
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 
 TextIDType = Union[str, int]
@@ -40,7 +47,15 @@ class Text(ComplexIOBase):
         return False
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
-        return TextOutput(val=self.get().val, title=title)
+        # Get the citations for the current Text object, as well as any
+        # citations from "child" (input) texts.
+        tasks = [
+            Citation.resolve_all_citations(citations=self.get_all_citations(), db=pg),
+            self.get_citations_for_output(texts=[self], db=pg),
+        ]
+        outputs = await gather_with_concurrency(tasks)
+        citations = outputs[0] + outputs[1]
+        return TextOutput(val=self.get().val, title=title, citations=citations)
 
     @staticmethod
     def _to_string_recursive(val: IOType) -> IOType:
@@ -157,6 +172,17 @@ class Text(ComplexIOBase):
     def _get_strs_lookup(cls, texts: List[Self]) -> Dict[TextIDType, str]:
         return {text.id: text.val for text in texts}
 
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        """
+        Given a list of texts of this type, return a list of citations related
+        the the input texts.
+        By default, return no citations for the text.
+        """
+        return []
+
     def get(self) -> Text:
         """
         For an instance of a 'Text' subclass, resolve and return it as a standard Text object.
@@ -197,6 +223,30 @@ class StockNewsDevelopmentText(NewsText, StockText):
         rows = db.generic_read(sql, {"topic_ids": [topic.id for topic in news_topics]})
         return {row["topic_id"]: f"{row['topic_label']}:\n{row['description']}" for row in rows}
 
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        sql = """
+        SELECT DISTINCT ON (sn.topic_id)
+          news_id::TEXT, url, domain_url
+        FROM nlp_service.stock_news sn
+        JOIN nlp_service.news_sources ns ON ns.source_id = sn.source_id
+        WHERE sn.topic_id = ANY(%(topic_ids)s)
+        ORDER BY sn.topic_id, sn.is_top_source DESC, published_at DESC;
+        """
+        params = {"topic_ids": [text.id for text in texts]}
+        rows = await db.generic_read(sql, params)
+        return [
+            CitationOutput(
+                id=row["news_id"],
+                citation_type=CitationType.LINK,
+                name=row["domain_url"],
+                metadata=row["url"],
+            )
+            for row in rows
+        ]
+
 
 @io_type
 class StockNewsDevelopmentArticlesText(NewsText, StockText):
@@ -217,6 +267,28 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
         rows = get_psql().generic_read(sql, {"news_ids": [topic.id for topic in news_topics]})
         return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
 
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        sql = """
+        SELECT news_id::TEXT, url, domain_url
+        FROM nlp_service.stock_news sn
+        JOIN nlp_service.news_sources ns ON ns.source_id = sn.source_id
+        WHERE sn.news_id = ANY(%(news_ids)s)
+        """
+        params = {"news_ids": [text.id for text in texts]}
+        rows = await db.generic_read(sql, params)
+        return [
+            CitationOutput(
+                id=row["news_id"],
+                citation_type=CitationType.LINK,
+                name=row["domain_url"],
+                metadata=row["url"],
+            )
+            for row in rows
+        ]
+
 
 @io_type
 class NewsPoolArticleText(NewsText):
@@ -235,6 +307,28 @@ class NewsPoolArticleText(NewsText):
         db = get_psql()
         rows = db.generic_read(sql, {"news_ids": [topic.id for topic in news_pool]})
         return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        sql = """
+        SELECT news_id::TEXT, url, domain_url
+        FROM nlp_service.news_pool np
+        JOIN nlp_service.news_sources ns ON ns.source_id = np.source_id
+        WHERE np.news_id = ANY(%(news_ids)s)
+        """
+        params = {"news_ids": [text.id for text in texts]}
+        rows = await db.generic_read(sql, params)
+        return [
+            CitationOutput(
+                id=row["news_id"],
+                citation_type=CitationType.LINK,
+                name=row["domain_url"],
+                metadata=row["url"],
+            )
+            for row in rows
+        ]
 
 
 @io_type
@@ -292,6 +386,28 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
         db = get_psql()
         rows = db.generic_read(sql, {"news_id": [topic.id for topic in developments]})
         return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        sql = """
+        SELECT news_id::TEXT, url, domain_url
+        FROM nlp_service.theme_news tn
+        JOIN nlp_service.news_sources ns ON ns.source_id = tn.source_id
+        WHERE tn.news_id = ANY(%(news_ids)s)
+        """
+        params = {"news_ids": [text.id for text in texts]}
+        rows = await db.generic_read(sql, params)
+        return [
+            CitationOutput(
+                id=row["news_id"],
+                citation_type=CitationType.LINK,
+                name=row["domain_url"],
+                metadata=row["url"],
+            )
+            for row in rows
+        ]
 
 
 @io_type
@@ -466,3 +582,20 @@ class TextOutput(Output):
 
 class TextCitation(Citation):
     source_text: Text
+
+    @classmethod
+    async def resolve_citations(cls, citations: List[Self], db: BoostedPG) -> List[CitationOutput]:
+        # First group citations based on type of the source text.
+        text_type_map = defaultdict(list)
+        for cit in citations:
+            text_type_map[type(cit.source_text)].append(cit.source_text)
+
+        tasks = [
+            typ.get_citations_for_output(text_list, db) for typ, text_list in text_type_map.items()
+        ]
+        # List of lists, where each nested list has outputs for each type
+        outputs_nested = await gather_with_concurrency(tasks)
+        # Unnest into a single list
+        outputs = list(chain(*outputs_nested))
+
+        return outputs

@@ -1,8 +1,10 @@
 import datetime
 import enum
 import json
-from abc import ABC
+from abc import ABC, abstractmethod
+from collections import defaultdict
 from copy import deepcopy
+from itertools import chain
 from typing import (
     Any,
     Callable,
@@ -24,7 +26,8 @@ from pydantic.functional_validators import PlainValidator, model_validator
 from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandler
 from typing_extensions import Annotated, Self, TypeAliasType
 
-from agent_service.io_types.output import Output
+from agent_service.io_types.output import CitationOutput, Output
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 
 SimpleType = Union[int, str, bool, float]
@@ -86,8 +89,46 @@ class TableColumnType(str, enum.Enum):
         )
 
 
-class Citation(BaseModel):
-    pass
+class Citation(BaseModel, ABC):
+    """
+    Generic class for tracking citations internally. Any child classes should
+    implement ways to resolve these citations into output citations that will be
+    displayed to the user.
+    """
+
+    @classmethod
+    @abstractmethod
+    async def resolve_citations(cls, citations: List[Self], db: BoostedPG) -> List[CitationOutput]:
+        """
+        Given a list of citations of the class's type, resolve them to an output
+        list of citations.
+        """
+        pass
+
+    @staticmethod
+    async def resolve_all_citations(
+        citations: List["Citation"], db: BoostedPG
+    ) -> List[CitationOutput]:
+        """
+        Given a list of ANY type of citation, resolve them all and put them in a
+        list. NOTE: order is NOT preserved.
+        """
+        if not citations:
+            return []
+        citation_type_map = defaultdict(list)
+        for cit in citations:
+            citation_type_map[type(cit)].append(cit)
+
+        tasks = [
+            typ.resolve_citations(citation_list, db)
+            for typ, citation_list in citation_type_map.items()
+        ]
+        # List of lists, where each nested list has outputs for each type
+        outputs_nested = await gather_with_concurrency(tasks)
+        # Unnest into a single list
+        outputs = list(chain(*outputs_nested))
+
+        return outputs
 
 
 class Score(BaseModel):
@@ -205,6 +246,12 @@ class ComplexIOBase(BaseModel, ABC):
         new.history.extend(deepcopy(other.history))
         new._collapse_history_duplicates()
         return new
+
+    def get_all_citations(self) -> List[Citation]:
+        citations = []
+        for entry in self.history:
+            citations.extend(entry.citations)
+        return citations
 
     def __hash__(self) -> int:
         return hash((type(self),) + tuple(sorted(self.model_dump().items())))
