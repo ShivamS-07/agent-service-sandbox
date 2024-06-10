@@ -9,7 +9,7 @@ import mdutils
 from pydantic import Field
 
 from agent_service.external.sec_utils import MANAGEMENT_SECTION, RISK_FACTORS, SecFiling
-from agent_service.io_type_utils import ComplexIOBase, IOType, io_type
+from agent_service.io_type_utils import Citation, ComplexIOBase, IOType, io_type
 from agent_service.io_types.output import Output, OutputType
 from agent_service.utils.boosted_pg import BoostedPG
 
@@ -72,7 +72,10 @@ class Text(ComplexIOBase):
 
     @classmethod
     def get_all_strs(
-        cls, text: Union[Text, TextGroup, List[Any], Dict[Any, Any]], include_header: bool = False
+        cls,
+        text: Union[Text, TextGroup, List[Any], Dict[Any, Any]],
+        include_header: bool = False,
+        text_group_numbering: bool = False,
     ) -> Union[str, List[Any], Dict[Any, Any]]:
         # For any possible configuration of Texts or TextGroups in Lists, this converts that
         # configuration to the corresponding strings in list, in class specific batches
@@ -126,7 +129,7 @@ class Text(ComplexIOBase):
             if isinstance(id_rep, list):
                 return [convert_ids_to_strs(strs_lookup, sub_id_rep) for sub_id_rep in id_rep]
             if isinstance(id_rep, TextGroup):
-                return id_rep.convert_to_str(strs_lookup)
+                return id_rep.convert_to_str(strs_lookup, text_group_numbering)
             else:
                 return strs_lookup[id_rep]
 
@@ -411,14 +414,22 @@ class KPIText(Text):
 
 @io_type
 class TextGroup(ComplexIOBase):
-    val: List[StockText]
+    val: List[Text]
 
     @staticmethod
     def join(group1: TextGroup, group2: TextGroup) -> TextGroup:
         return TextGroup(val=group1.val + group2.val)
 
-    def convert_to_str(self, id_to_str: Dict[TextIDType, str]) -> str:
-        return "\n***\n".join(id_to_str[text.id] for text in self.val)
+    def convert_to_str(self, id_to_str: Dict[TextIDType, str], numbering: bool = False) -> str:
+        return "\n***\n".join(
+            [
+                (f"Text Number: {i}\n" if numbering else "") + id_to_str[text.id]
+                for i, text in enumerate(self.val)
+            ]
+        )
+
+    def get_citations(self, citation_ids: List[int]) -> List[Citation]:
+        return [TextCitation(source_text=self.val[i]) for i in citation_ids]
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         from agent_service.utils.output_construction import get_output_from_io_type
@@ -441,3 +452,7 @@ class TextOutput(Output):
 
     def __str__(self) -> str:
         return self.val
+
+
+class TextCitation(Citation):
+    source_text: Text

@@ -83,7 +83,6 @@ class TableColumnType(str, enum.Enum):
 
 
 class Citation(BaseModel):
-    # TODO
     pass
 
 
