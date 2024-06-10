@@ -335,6 +335,8 @@ async def get_news_developments_about_theme(
     res = []
     for theme in args.themes:
         ids = db.get_news_dev_about_theme(theme.id)
+        if args.max_devs_per_theme:
+            ids = ids[: args.max_devs_per_theme]
         res.extend([ThemeNewsDevelopmentText(id=id) for id in ids])
     return res
 
@@ -453,6 +455,7 @@ async def get_top_N_macroeconomic_themes(
         portfolio_id=args.portfolio_id,
     )
     theme_refs: List[str] = [str(t.name) for t in resp.topics]
+    theme_refs = theme_refs[: args.theme_num]
     themes: List[ThemeText] = await get_macroeconomic_themes(  # type: ignore
         GetMacroeconomicThemeInput(theme_refs=theme_refs), context
     )

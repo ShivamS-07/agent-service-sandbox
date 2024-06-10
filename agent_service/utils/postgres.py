@@ -107,17 +107,19 @@ class Postgres(PostgresBase):
 
     def get_all_execution_plans(
         self, agent_id: str
-    ) -> Tuple[List[ExecutionPlan], List[datetime.datetime]]:
+    ) -> Tuple[List[ExecutionPlan], List[datetime.datetime], List[str]]:
         sql = """
-            SELECT plan, created_at
+            SELECT plan, created_at, plan_id::TEXT
             FROM agent.execution_plans
             WHERE agent_id = %(agent_id)s
             ORDER BY last_updated ASC
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
-        return [ExecutionPlan.model_validate(row["plan"]) for row in rows], [
-            row["created_at"] for row in rows
-        ]
+        return (
+            [ExecutionPlan.model_validate(row["plan"]) for row in rows],
+            [row["created_at"] for row in rows],
+            [row["plan_id"] for row in rows],
+        )
 
     def get_agent_plan_runs(self, agent_id: str, limit_num: Optional[int] = None) -> List[str]:
         limit_sql = ""
@@ -131,6 +133,18 @@ class Postgres(PostgresBase):
         WHERE agent_id = %(agent_id)s
         ORDER BY created_at DESC
         {limit_sql}
+        """
+        rows = self.generic_read(sql, params=params)
+
+        return [row["plan_run_id"] for row in rows]
+
+    def get_plan_runs_for_plan_id(self, plan_id: str, agent_id: str) -> List[str]:
+        params: Dict[str, Any] = {"plan_id": plan_id, "agent_id": agent_id}
+        sql = """
+        SELECT plan_run_id::VARCHAR FROM agent.plan_runs
+        WHERE agent_id = %(agent_id)s
+        AND plan_id = %(plan_id)s
+        ORDER BY created_at DESC
         """
         rows = self.generic_read(sql, params=params)
 

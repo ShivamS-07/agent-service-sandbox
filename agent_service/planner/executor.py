@@ -498,7 +498,7 @@ async def handle_error_in_execution(
     retried, and false if not.
     """
     db = get_psql(skip_commit=context.skip_db_commit)
-    plans, plan_times = db.get_all_execution_plans(context.agent_id)
+    plans, plan_times, _ = db.get_all_execution_plans(context.agent_id)
     chat_context = db.get_chats_history_for_agent(context.agent_id)
     # check to see if EXECUTION_TRIES (3) plans have been written since last user message
     # if so, we should give up, otherwise could retry forever...
