@@ -17,7 +17,10 @@ async def run() -> None:
     run_execution_plan_deploy = await run_execution_plan.to_deployment(
         name=RUN_EXECUTION_PLAN_FLOW_NAME
     )
-    await serve(create_execution_plan_deploy, run_execution_plan_deploy, query_seconds=0.5)
+    await serve(
+        create_execution_plan_deploy,
+        run_execution_plan_deploy,
+    )
 
 
 if __name__ == "__main__":
