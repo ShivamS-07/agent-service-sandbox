@@ -89,7 +89,63 @@ class TableColumnType(str, enum.Enum):
         )
 
 
-class Citation(BaseModel, ABC):
+class SerializeableBase(BaseModel, ABC):
+    @classmethod
+    def type_name(cls) -> str:
+        return cls.__name__
+
+    @classmethod
+    def load(cls, data: Any) -> "SerializeableBase":
+        if isinstance(data, dict) and IO_TYPE_NAME_KEY in data:
+            # If we get here, then we're looking at a ComplexIOType that's been
+            # serialized. We want to return the actual type we want, so we check
+            # the map.
+            typ_name = data.pop(IO_TYPE_NAME_KEY)
+            typ = _COMPLEX_TYPE_DICT[typ_name]
+            return typ(**data)
+
+        raise ValueError(f"Cannot load data without key {IO_TYPE_NAME_KEY}: {data}")
+
+    @model_serializer(mode="wrap")
+    def _serialize_io_base(self, dumper: Callable) -> Any:
+        if not issubclass(type(self), ComplexIOBase):
+            return self
+
+        # This calls the default pydantic serializer
+        ser_dict: Dict[str, Any] = dumper(self)
+        ser_dict[IO_TYPE_NAME_KEY] = self.type_name()
+        return ser_dict
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def _model_deserializer(
+        cls, data: Any, handler: ValidatorFunctionWrapHandler, _info: ValidationInfo
+    ) -> Any:
+        if isinstance(data, dict) and IO_TYPE_NAME_KEY in data:
+            return cls.load(data)
+        return handler(data)
+
+    @classmethod
+    def load_json(cls, data: str) -> "SerializeableBase":
+        vals = json.loads(data)
+        return cls.load(vals)
+
+
+_COMPLEX_TYPE_DICT: Dict[str, Type[SerializeableBase]] = {}
+
+T = TypeVar("T", bound=SerializeableBase)
+
+
+def io_type(cls: Type[T]) -> Type[T]:
+    """
+    Simple decorator to store a mapping from class name to class.
+    """
+    _COMPLEX_TYPE_DICT[cls.type_name()] = cls
+    return cls
+
+
+@io_type
+class Citation(SerializeableBase, ABC):
     """
     Generic class for tracking citations internally. Any child classes should
     implement ways to resolve these citations into output citations that will be
@@ -131,7 +187,8 @@ class Citation(BaseModel, ABC):
         return outputs
 
 
-class Score(BaseModel):
+@io_type
+class Score(SerializeableBase):
     # Generally between 0 and 1
     val: float
 
@@ -161,7 +218,8 @@ class ScoreOutput(BaseModel):
         return ScoreOutput(val=aggregate_score, sub_scores=sub_scores)
 
 
-class HistoryEntry(BaseModel):
+@io_type
+class HistoryEntry(SerializeableBase):
     explanation: PrimitiveType
     # Default for backwards compat
     title: str = ""
@@ -186,7 +244,7 @@ class HistoryEntry(BaseModel):
         return NotImplemented
 
 
-class ComplexIOBase(BaseModel, ABC):
+class ComplexIOBase(SerializeableBase, ABC):
     """
     Parent class of non-primitive types that may act as inputs or outputs to tools.
     """
@@ -288,48 +346,6 @@ class ComplexIOBase(BaseModel, ABC):
 
         return output
 
-    @classmethod
-    def type_name(cls) -> str:
-        return cls.__name__
-
-    @model_serializer(mode="wrap")
-    def _serialize_io_base(self, dumper: Callable) -> Any:
-        if not issubclass(type(self), ComplexIOBase):
-            return self
-
-        # This calls the default pydantic serializer
-        ser_dict: Dict[str, Any] = dumper(self)
-        ser_dict[IO_TYPE_NAME_KEY] = self.type_name()
-        return ser_dict
-
-    @model_validator(mode="wrap")
-    @classmethod
-    def _model_deserializer(
-        cls, data: Any, handler: ValidatorFunctionWrapHandler, _info: ValidationInfo
-    ) -> Any:
-        if isinstance(data, dict) and IO_TYPE_NAME_KEY in data:
-            return cls.load(data)
-        return handler(data)
-
-    @classmethod
-    def load(cls, data: Any) -> "ComplexIOBase":
-        if isinstance(data, dict) and IO_TYPE_NAME_KEY in data:
-            # If we get here, then we're looking at a ComplexIOType that's been
-            # serialized. We want to return the actual type we want, so we check
-            # the map.
-            typ_name = data.pop(IO_TYPE_NAME_KEY)
-            typ = _COMPLEX_TYPE_DICT[typ_name]
-            return typ(**data)
-
-        raise ValueError(f"Cannot load data without key {IO_TYPE_NAME_KEY}: {data}")
-
-    @classmethod
-    def load_json(cls, data: str) -> "ComplexIOBase":
-        vals = json.loads(data)
-        return cls.load(vals)
-
-
-_COMPLEX_TYPE_DICT: Dict[str, Type[ComplexIOBase]] = {}
 
 IOTypeBase = TypeAliasType(  # type: ignore
     "IOTypeBase",
@@ -437,17 +453,6 @@ def get_clean_type_name(typ: Optional[Type]) -> str:
     # Cleanup
     name = name.replace("IOType", "Any")
     return name
-
-
-T = TypeVar("T", bound=ComplexIOBase)
-
-
-def io_type(cls: Type[T]) -> Type[T]:
-    """
-    Simple decorator to store a mapping from class name to class.
-    """
-    _COMPLEX_TYPE_DICT[cls.type_name()] = cls
-    return cls
 
 
 def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> bool:

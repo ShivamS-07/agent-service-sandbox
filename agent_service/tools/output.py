@@ -1,5 +1,5 @@
 from agent_service.io_type_utils import IOType
-from agent_service.tool import ToolArgs, ToolCategory, tool
+from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.output_construction import PreparedOutput
 
@@ -31,3 +31,12 @@ assign this function call to a variable!!
 )
 async def prepare_output(args: OutputArgs, context: PlanRunContext) -> PreparedOutput:
     return PreparedOutput(title=args.title, val=args.object_to_output)
+
+
+# Hack for backwards compatibility
+ToolRegistry._REGISTRY_CATEGORY_MAP[ToolCategory.OUTPUT]["output"] = (
+    ToolRegistry._REGISTRY_CATEGORY_MAP[ToolCategory.OUTPUT]["prepare_output"]
+)
+ToolRegistry._REGISTRY_ALL_TOOLS_MAP["output"] = ToolRegistry._REGISTRY_CATEGORY_MAP[
+    ToolCategory.OUTPUT
+]["prepare_output"]
