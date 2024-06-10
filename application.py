@@ -330,6 +330,18 @@ async def unshare_plan_run(
     return await application.state.agent_service_impl.unshare_plan_run(plan_run_id=req.plan_run_id)
 
 
+@router.get(
+    "/agent/get-plan-run-output/{plan_run_id}",
+    response_model=GetAgentOutputResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_plan_run_output(
+    plan_run_id: str, user: User = Depends(parse_header)
+) -> GetAgentOutputResponse:
+    validate_user_plan_run_access(user.user_id, plan_run_id, require_owner=False)
+    return await application.state.agent_service_impl.get_plan_run_output(plan_run_id=plan_run_id)
+
+
 application.include_router(router)
 
 

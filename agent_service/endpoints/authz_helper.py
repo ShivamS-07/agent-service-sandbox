@@ -134,8 +134,21 @@ def validate_user_agent_access(request_user_id: str, agent_id: str) -> None:
         )
 
 
-def validate_user_plan_run_access(request_user_id: str, plan_run_id: str) -> None:
-    agent_id = get_psql().get_plan_run_agent_id(plan_run_id)
+def validate_user_plan_run_access(
+    request_user_id: str, plan_run_id: str, require_owner: bool = True
+) -> None:
+    plan_run = get_psql().get_plan_run(plan_run_id)
+    if plan_run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Plan run {plan_run_id} not found",
+        )
+
+    # do not require auth for shared plan runs
+    if plan_run.get("shared") and not require_owner:
+        return
+
+    agent_id = plan_run.get("agent_id")
     if agent_id is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

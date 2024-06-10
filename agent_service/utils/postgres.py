@@ -148,12 +148,13 @@ class Postgres(PostgresBase):
 
         return [row["plan_run_id"] for row in rows]
 
-    def get_plan_run_agent_id(self, plan_run_id: str) -> Optional[str]:
+    def get_plan_run(self, plan_run_id: str) -> Optional[Dict[str, Any]]:
         """
-        Given a plan_run_id, return the related agent_id that the plan run belongs to
+        Given a plan_run_id, return the plan run's info.
         """
         sql = """
-        SELECT agent_id::VARCHAR FROM agent.plan_runs WHERE plan_run_id = %(plan_run_id)s LIMIT 1;
+        SELECT agent_id::VARCHAR, plan_id::VARCHAR, created_at, shared
+        FROM agent.plan_runs WHERE plan_run_id = %(plan_run_id)s LIMIT 1
         """
         params: Dict[str, Any] = {"plan_run_id": plan_run_id}
         rows = self.generic_read(sql, params=params)
@@ -161,7 +162,7 @@ class Postgres(PostgresBase):
         if not rows:
             return None
 
-        return rows[0]["agent_id"]
+        return rows[0]
 
     def insert_plan_run(self, agent_id: str, plan_id: str, plan_run_id: str) -> None:
         self.insert_into_table(

@@ -46,6 +46,31 @@ class AsyncDB:
 
         return outputs
 
+    async def get_plan_run_outputs(self, plan_run_id: str) -> List[AgentOutput]:
+        sql = """
+                SELECT ao.agent_id::VARCHAR, ao.plan_id::VARCHAR, ao.plan_run_id::VARCHAR,
+                  ao.output_id::VARCHAR, ao.is_intermediate,
+                    ao.output, ao.created_at, pr.shared
+                FROM agent.agent_outputs ao
+                LEFT JOIN agent.plan_runs pr
+                ON ao.plan_run_id = pr.plan_run_id
+                WHERE ao.plan_run_id = %(plan_run_id)s
+                ORDER BY created_at ASC;
+                """
+        rows = await self.pg.generic_read(sql, {"plan_run_id": plan_run_id})
+        if not rows:
+            return []
+
+        outputs = []
+        for row in rows:
+            output = row["output"]
+            output_value = load_io_type(output) if output else output
+            output_value = await get_output_from_io_type(output_value, pg=self.pg)
+            row["output"] = output_value
+            outputs.append(AgentOutput(**row))
+
+        return outputs
+
     async def get_task_output(
         self, agent_id: str, plan_run_id: str, task_id: str
     ) -> Optional[IOType]:

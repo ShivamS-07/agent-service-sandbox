@@ -227,3 +227,16 @@ class AgentServiceImpl:
     async def unshare_plan_run(self, plan_run_id: str) -> UnsharePlanRunResponse:
         await self.pg.set_plan_run_share_status(plan_run_id=plan_run_id, status=False)
         return UnsharePlanRunResponse(success=True)
+
+    async def get_plan_run_output(self, plan_run_id: str) -> GetAgentOutputResponse:
+        outputs = await self.pg.get_plan_run_outputs(plan_run_id=plan_run_id)
+        if not outputs:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"No output found for {plan_run_id=}"
+            )
+
+        final_outputs = [output for output in outputs if not output.is_intermediate]
+        if final_outputs:
+            return GetAgentOutputResponse(outputs=final_outputs)
+
+        return GetAgentOutputResponse(outputs=outputs)
