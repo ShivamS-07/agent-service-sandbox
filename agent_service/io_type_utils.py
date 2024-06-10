@@ -90,6 +90,8 @@ class TableColumnType(str, enum.Enum):
 
 
 class SerializeableBase(BaseModel, ABC):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     @classmethod
     def type_name(cls) -> str:
         return cls.__name__
@@ -108,7 +110,7 @@ class SerializeableBase(BaseModel, ABC):
 
     @model_serializer(mode="wrap")
     def _serialize_io_base(self, dumper: Callable) -> Any:
-        if not issubclass(type(self), ComplexIOBase):
+        if not issubclass(type(self), SerializeableBase):
             return self
 
         # This calls the default pydantic serializer
@@ -291,7 +293,7 @@ class ComplexIOBase(SerializeableBase, ABC):
 
     def inject_history_entry(self, entry: HistoryEntry) -> Self:
         new = deepcopy(self)
-        new.history.append(entry)
+        new.history.append(deepcopy(entry))
         return new
 
     def extend_history_from(self, other: Self) -> Self:
@@ -385,8 +387,8 @@ IOTypeAdapter = TypeAdapter(IOTypeBase)
 
 
 def _dump_io_type_helper(val: IOTypeBase) -> Any:
-    if isinstance(val, ComplexIOBase):
-        return val.model_dump(mode="json")
+    if isinstance(val, SerializeableBase):
+        return val.model_dump(mode="json", serialize_as_any=True)
     if isinstance(val, list):
         return [_dump_io_type_helper(elem) for elem in val]
     if isinstance(val, dict):
@@ -396,7 +398,7 @@ def _dump_io_type_helper(val: IOTypeBase) -> Any:
 
 def load_io_type_dict(val: Any) -> IOTypeBase:
     if isinstance(val, dict) and IO_TYPE_NAME_KEY in val:
-        return ComplexIOBase.load(val)
+        return SerializeableBase.load(val)
     if isinstance(val, list):
         return [load_io_type_dict(elem) for elem in val]
     if isinstance(val, dict):

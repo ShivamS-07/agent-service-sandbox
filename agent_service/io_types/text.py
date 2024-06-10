@@ -580,6 +580,7 @@ class TextOutput(Output):
         return self.val
 
 
+@io_type
 class TextCitation(Citation):
     source_text: Text
 
