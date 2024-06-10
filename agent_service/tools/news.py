@@ -58,7 +58,7 @@ async def _get_news_developments_helper(
                 # Filter topics not in the time window
                 continue
             # Only return ID's
-            topic_list.append(StockNewsDevelopmentText(id=topic.topic_id.id, gbi_id=stock.gbi_id))
+            topic_list.append(StockNewsDevelopmentText(id=topic.topic_id.id, stock_id=stock))
         output_dict[stock] = topic_list
 
     return output_dict
@@ -127,10 +127,16 @@ async def get_news_articles_for_stock_developments(
     rows = get_psql().generic_read(
         sql, {"topic_ids": [topic.id for topic in args.developments_list]}
     )
+    gbi_id_stock_map = {
+        text.stock_id.gbi_id: text.stock_id for text in args.developments_list if text.stock_id
+    }
     if not rows:
         raise Exception("No articles for these news developments over the specified time period")
     return [
-        StockNewsDevelopmentArticlesText(id=row["news_id"], gbi_id=row["gbi_id"]) for row in rows
+        StockNewsDevelopmentArticlesText(
+            id=row["news_id"], stock_id=gbi_id_stock_map.get(row["gbi_id"])
+        )
+        for row in rows
     ]
 
 

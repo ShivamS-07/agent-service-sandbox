@@ -87,9 +87,7 @@ async def _get_earnings_summary_helper(
             ).date()
             if publish_date < start_date or publish_date > end_date:
                 continue
-            stock_output.append(
-                StockEarningsSummaryText(id=row["summary_id"], gbi_id=stock_id.gbi_id)
-            )
+            stock_output.append(StockEarningsSummaryText(id=row["summary_id"], stock_id=stock_id))
         output[stock_id] = stock_output
     return output
 

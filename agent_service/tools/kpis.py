@@ -19,7 +19,6 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.kpi_extractor import KPIInstance, KPIMetadata, KPIRetriever
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prompt_utils import Prompt
-from agent_service.utils.stock_metadata import get_stock_metadata
 
 kpi_retriever = KPIRetriever()
 db = get_psql()
@@ -201,7 +200,7 @@ def convert_single_stock_data_to_table(data: Dict[str, List[KPIInstance]]) -> Ta
 
 
 async def convert_multi_stock_data_to_table(
-    kpi_name: str, data: Dict[int, List[KPIInstance]]
+    kpi_name: str, data: Dict[StockID, List[KPIInstance]]
 ) -> Table:
     columns = []
 
@@ -220,23 +219,10 @@ async def convert_multi_stock_data_to_table(
     )
     columns.extend(kpi_column)
 
-    gbi_ids = list(data.keys())
-    stock_metadata_dict = await get_stock_metadata(gbi_ids=gbi_ids)
-
     df_data = []
-    for gbi_id, kpi_history in data.items():
+    for stock_id, kpi_history in data.items():
         for kpi_inst in kpi_history:
             quarter = f"Q{kpi_inst.quarter}-{kpi_inst.year}"
-            stock = stock_metadata_dict[gbi_id]
-
-            # Need to conver the StockMetadata into a StockID object
-            # to satisfy TableColumnType.STOCK
-            stock_id_obj = StockID(
-                gbi_id=stock.gbi_id,
-                symbol=stock.symbol,
-                isin=stock.isin,
-                company_name=stock.company_name,
-            )
             # Need to convert percentages into decimals to satisfy current handling of the Percentage figures
             actual = (
                 kpi_inst.actual * 0.01
@@ -249,7 +235,7 @@ async def convert_multi_stock_data_to_table(
             df_data.append(
                 {
                     "Quarter": quarter,
-                    "Company": stock_id_obj,
+                    "Company": stock_id,
                     actual_col_name: actual,
                     estimate_col_name: estimate,
                     surprise_col_name: surprise,
@@ -289,8 +275,8 @@ def get_company_data_and_kpis(gbi_id: int) -> CompanyInformation:
     return CompanyInformation(gbi_id, company_name, short_description, kpi_lookup, kpi_str)
 
 
-async def get_relevant_kpis_for_gbi_id(
-    gbi_id: int, company_info: CompanyInformation, topic: str, llm: GPT
+async def get_relevant_kpis_for_stock_id(
+    stock_id: StockID, company_info: CompanyInformation, topic: str, llm: GPT
 ) -> List[KPIText]:
     instructions = RELEVANCY_INSTRUCTION.format(
         company_name=company_info.company_name, query_topic=topic
@@ -312,7 +298,7 @@ async def get_relevant_kpis_for_gbi_id(
         pid_metadata = company_info.kpi_lookup.get(pid, None)
         if pid_metadata:
             topic_kpi_list.append(
-                KPIText(val=pid_metadata.name, id=pid_metadata.pid, gbi_id=gbi_id)
+                KPIText(val=pid_metadata.name, id=pid_metadata.pid, stock_id=stock_id)
             )
     return topic_kpi_list
 
@@ -343,8 +329,8 @@ async def get_relevant_kpis_for_stock_given_topic(
 ) -> List[KPIText]:
     llm = GPT(context=None, model=GPT4_O)
     company_info = get_company_data_and_kpis(args.stock_id.gbi_id)
-    topic_kpi_list = await get_relevant_kpis_for_gbi_id(
-        args.stock_id.gbi_id, company_info, args.topic, llm
+    topic_kpi_list = await get_relevant_kpis_for_stock_id(
+        args.stock_id, company_info, args.topic, llm
     )
     return topic_kpi_list
 
@@ -381,12 +367,14 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
     company_lookup: Dict[str, CompanyInformation] = {}
 
     tasks = []
+    gbi_id_stock_id_map = {}
     for stock_id in args.stock_ids:
         company_info = get_company_data_and_kpis(stock_id.gbi_id)
         company_info_list.append(company_info)
         tasks.append(
-            get_relevant_kpis_for_gbi_id(stock_id.gbi_id, company_info, args.shared_metric, llm)
+            get_relevant_kpis_for_stock_id(stock_id, company_info, args.shared_metric, llm)
         )
+        gbi_id_stock_id_map[stock_id.gbi_id] = stock_id
 
     company_kpi_lists = await gather_with_concurrency(tasks, n=5)
     company_data = []
@@ -435,7 +423,11 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
         gbi_id = company_lookup[company_index].gbi_id
         kpi_data = company_lookup[company_index].kpi_lookup.get(int(pid), None)
         if kpi_data is not None:
-            overlapping_kpi_list.append(KPIText(val=kpi_data.name, id=kpi_data.pid, gbi_id=gbi_id))
+            overlapping_kpi_list.append(
+                KPIText(
+                    val=kpi_data.name, id=kpi_data.pid, stock_id=gbi_id_stock_id_map.get(gbi_id)
+                )
+            )
 
     return EquivalentKPITexts(val=overlapping_kpi_list, general_kpi_name=kpi_name)
 
@@ -497,7 +489,7 @@ async def get_important_kpis_for_stock(
         pid_metadata = company_info.kpi_lookup.get(pid, None)
         if pid_metadata:
             important_kpi_list.append(
-                KPIText(val=pid_metadata.name, id=pid_metadata.pid, gbi_id=args.stock_id.gbi_id)
+                KPIText(val=pid_metadata.name, id=pid_metadata.pid, stock_id=args.stock_id)
             )
     return important_kpi_list
 
@@ -628,24 +620,24 @@ async def get_overlapping_kpis_table_for_stock(args: KPIsRequest, context: PlanR
 
     kpis: List[KPIText] = args.equivalent_kpis.val  # type: ignore
 
-    company_kpi_data_lookup: Dict[int, List[KPIInstance]] = {}
+    company_kpi_data_lookup: Dict[StockID, List[KPIInstance]] = {}
     for kpi in kpis:
-        if kpi.gbi_id is None:
+        if kpi.stock_id is None:
             continue
 
         kpi_metadata = kpi_retriever.convert_kpi_text_to_metadata(
-            gbi_id=kpi.gbi_id, kpi_texts=[kpi]
+            gbi_id=kpi.stock_id.gbi_id, kpi_texts=[kpi]
         ).get(kpi.id, None)
 
         if kpi_metadata is not None:
             data = kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
-                gbi_id=kpi.gbi_id,
+                gbi_id=kpi.stock_id.gbi_id,
                 kpis=[kpi_metadata],
                 starting_date=anchor_date,
                 num_prev_quarters=args.num_prev_quarters,
                 num_future_quarters=args.num_future_quarters,
             )
-            company_kpi_data_lookup[kpi.gbi_id] = data[kpi_metadata.name]
+            company_kpi_data_lookup[kpi.stock_id] = data[kpi_metadata.name]
 
     topic_kpi_table = await convert_multi_stock_data_to_table(
         kpi_name=args.equivalent_kpis.general_kpi_name,

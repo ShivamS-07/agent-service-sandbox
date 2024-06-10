@@ -581,7 +581,7 @@ class Planner:
             plan_nodes.append(node)
 
         if not has_output_tool:
-            raise ExecutionPlanParsingError("No call to `output` found!")
+            raise ExecutionPlanParsingError("No call to `prepare_output` found!")
 
         return ExecutionPlan(nodes=plan_nodes)
 

@@ -43,8 +43,7 @@ async def get_sec_filings_helper(
         if (not resp) or (FILINGS not in resp) or (not resp[FILINGS]):
             continue
         stock_filing_map[stock_id] = [
-            StockSecFilingText(id=json.dumps(filing), gbi_id=stock_id.gbi_id)
-            for filing in resp[FILINGS]
+            StockSecFilingText(id=json.dumps(filing), stock_id=stock_id) for filing in resp[FILINGS]
         ]
     return stock_filing_map
 

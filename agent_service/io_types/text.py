@@ -7,10 +7,18 @@ from uuid import uuid4
 
 import mdutils
 from pydantic import Field
+from typing_extensions import Self
 
 from agent_service.external.sec_utils import MANAGEMENT_SECTION, RISK_FACTORS, SecFiling
-from agent_service.io_type_utils import Citation, ComplexIOBase, IOType, io_type
+from agent_service.io_type_utils import (
+    Citation,
+    ComplexIOBase,
+    IOType,
+    ScoreOutput,
+    io_type,
+)
 from agent_service.io_types.output import Output, OutputType
+from agent_service.io_types.stock import StockID
 from agent_service.utils.boosted_pg import BoostedPG
 
 TextIDType = Union[str, int]
@@ -21,7 +29,7 @@ class Text(ComplexIOBase):
     id: TextIDType = Field(default_factory=lambda: str(uuid4()))
     val: str = ""
     text_type: ClassVar[str] = "Misc"
-    gbi_id: Optional[int] = None
+    stock_id: Optional[StockID] = None
 
     def __hash__(self) -> int:
         return self.id.__hash__()
@@ -137,7 +145,7 @@ class Text(ComplexIOBase):
 
     @classmethod
     def get_strs_lookup(
-        cls, texts: List[Text], include_header: bool = False
+        cls, texts: List[Self], include_header: bool = False
     ) -> Dict[TextIDType, str]:
         strs_lookup = cls._get_strs_lookup(texts)
         if include_header:
@@ -146,7 +154,7 @@ class Text(ComplexIOBase):
         return strs_lookup
 
     @classmethod
-    def _get_strs_lookup(cls, texts: List[Text]) -> Dict[TextIDType, str]:
+    def _get_strs_lookup(cls, texts: List[Self]) -> Dict[TextIDType, str]:
         return {text.id: text.val for text in texts}
 
     def get(self) -> Text:
@@ -179,7 +187,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
     @classmethod
     def _get_strs_lookup(cls, news_topics: List[StockNewsDevelopmentText]) -> Dict[TextIDType, str]:  # type: ignore
         sql = """
-        SELECT topic_id::TEXT, topic_label, (topic_descriptions->-1->0)::TEXT AS description
+        SELECT topic_id::TEXT, topic_label, (topic_descriptions->-1->>0)::TEXT AS description
         FROM nlp_service.stock_news_topics
         WHERE topic_id = ANY(%(topic_ids)s)
         """
@@ -187,7 +195,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
 
         db = get_psql()
         rows = db.generic_read(sql, {"topic_ids": [topic.id for topic in news_topics]})
-        return {row["topic_id"]: f"{row['topic_label']}\n{row['description']}" for row in rows}
+        return {row["topic_id"]: f"{row['topic_label']}:\n{row['description']}" for row in rows}
 
 
 @io_type
@@ -207,7 +215,7 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
             WHERE news_id = ANY(%(news_ids)s)
         """
         rows = get_psql().generic_read(sql, {"news_ids": [topic.id for topic in news_topics]})
-        return {row["news_id"]: f"{row['headline']}\n{row['summary']}" for row in rows}
+        return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
 
 
 @io_type
@@ -226,7 +234,7 @@ class NewsPoolArticleText(NewsText):
 
         db = get_psql()
         rows = db.generic_read(sql, {"news_ids": [topic.id for topic in news_pool]})
-        return {row["news_id"]: f"{row['headline']}\n{row['summary']}" for row in rows}
+        return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
 
 
 @io_type
@@ -264,7 +272,7 @@ class ThemeNewsDevelopmentText(NewsText):
 
         db = get_psql()
         rows = db.generic_read(sql, {"development_id": [topic.id for topic in themes]})
-        return {row["development_id"]: f"{row['label']}\n{row['description']}" for row in rows}
+        return {row["development_id"]: f"{row['label']}:\n{row['description']}" for row in rows}
 
 
 @io_type
@@ -283,7 +291,7 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
 
         db = get_psql()
         rows = db.generic_read(sql, {"news_id": [topic.id for topic in developments]})
-        return {row["news_id"]: f"{row['headline']}\n{row['summary']}" for row in rows}
+        return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
 
 
 @io_type
@@ -449,6 +457,8 @@ class EquivalentKPITexts(TextGroup):
 class TextOutput(Output):
     output_type: Literal[OutputType.TEXT] = OutputType.TEXT
     val: str
+    # Optional top level score for this segment of text
+    score: Optional[ScoreOutput] = None
 
     def __str__(self) -> str:
         return self.val

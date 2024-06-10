@@ -10,6 +10,7 @@ from agent_service.io_type_utils import (
     ComplexIOBase,
     IOType,
     PrimitiveType,
+    Score,
     TableColumnType,
     io_type,
 )
@@ -19,6 +20,7 @@ from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.stock_metadata import StockMetadata
 
 STOCK_ID_COL_NAME_DEFAULT = "Security"
+SCORE_COL_NAME_DEFAULT = "Score"
 
 
 @io_type
@@ -164,7 +166,7 @@ class Table(ComplexIOBase):
         return TableOutput(title=title, columns=output_cols, rows=rows)
 
 
-CellType = Union[PrimitiveType, StockMetadata]
+CellType = Union[PrimitiveType, StockMetadata, Score]
 
 
 @io_type
@@ -173,7 +175,9 @@ class StockTable(Table):
     Wrapper around a table, used really only for type hinting.
     """
 
-    pass
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        # TODO expand stock histories into new columns, aggregate scores, etc.
+        return await super().to_rich_output(pg, title)
 
 
 class TableOutputColumn(BaseModel):

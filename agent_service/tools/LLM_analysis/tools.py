@@ -7,8 +7,9 @@ from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import Citation, HistoryEntry
-from agent_service.io_types.stock import StockAlignedTextGroups, StockID
-from agent_service.io_types.text import NewsText, Text, TextGroup
+from agent_service.io_types.stock import StockID
+from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
+from agent_service.io_types.text import NewsText, StockText, Text, TextGroup
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.LLM_analysis.constants import (
@@ -267,7 +268,7 @@ async def profile_filter_helper(
 class FilterStocksByProfileMatch(ToolArgs):
     profile: str
     stocks: List[StockID]
-    texts: List[Text]
+    texts: List[StockText]
 
 
 @tool(

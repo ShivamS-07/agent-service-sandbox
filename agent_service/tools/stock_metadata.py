@@ -23,6 +23,5 @@ async def get_company_descriptions(
     args: GetStockDescriptionInput, context: PlanRunContext
 ) -> List[StockDescriptionText]:
     return [
-        StockDescriptionText(id=stock_id.gbi_id, gbi_id=stock_id.gbi_id)
-        for stock_id in args.stock_ids
+        StockDescriptionText(id=stock_id.gbi_id, stock_id=stock_id) for stock_id in args.stock_ids
     ]

@@ -63,6 +63,9 @@ class TableColumnType(str, enum.Enum):
     # Special type that stores StockID instances
     STOCK = "stock"
 
+    # Special type that stores scores
+    SCORE = "score"
+
     @staticmethod
     def get_type_explanations() -> str:
         """
@@ -79,11 +82,42 @@ class TableColumnType(str, enum.Enum):
             "- 'pct_delta': A float value representing a change over time as a percent. "
             "100% is equal to 1.0 NOT 100. E.g. percent change of price day over day.\n"
             "- 'stock': A special column containing stock identifier information."
+            "- 'score': This is a special column type, do not use this."
         )
 
 
 class Citation(BaseModel):
     pass
+
+
+class Score(BaseModel):
+    # Generally between 0 and 1
+    val: float
+
+
+class ScoreOutput(BaseModel):
+    val: float
+    # Source of the score
+    source: Optional[str] = None
+    # At the end of a workflow, we may aggregate scores into groups with
+    # averaged values. This list stores the sub-components.
+    sub_scores: List["ScoreOutput"] = []
+
+    @staticmethod
+    def from_entry_list(entries: List["HistoryEntry"]) -> Optional["ScoreOutput"]:
+        aggregate_score = 0.0
+        num_scores = 0
+        sub_scores = []
+        for entry in entries:
+            if entry.score:
+                aggregate_score += entry.score.val
+                num_scores += 1
+                sub_scores.append(ScoreOutput(val=entry.score.val, source=entry.title))
+        if num_scores == 0:
+            return None
+
+        aggregate_score = aggregate_score / num_scores
+        return ScoreOutput(val=aggregate_score, sub_scores=sub_scores)
 
 
 class HistoryEntry(BaseModel):
@@ -94,6 +128,8 @@ class HistoryEntry(BaseModel):
     unit: Optional[str] = None
     # Citations for the explanation
     citations: List[Citation] = []
+    # Some steps in the plan may insert scores to be aggregated at the end
+    score: Optional[Score] = None
 
     def __hash__(self) -> int:
         return hash((self.explanation, self.title, self.entry_type, self.unit))
@@ -121,6 +157,15 @@ class ComplexIOBase(BaseModel, ABC):
 
     def to_gpt_input(self) -> str:
         return str(self.__class__)
+
+    def history_to_str(self) -> str:
+        """
+        Returns a string (markdown) representation of the history entries in this object.
+        """
+        strs = [
+            f"- **{entry.title}**: {entry.explanation}" for entry in self.history if entry.title
+        ]
+        return "\n".join(strs)
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         """
