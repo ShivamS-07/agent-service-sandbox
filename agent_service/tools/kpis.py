@@ -10,7 +10,11 @@ from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import Table, TableColumnMetadata
+from agent_service.io_types.table import (
+    STOCK_ID_COL_NAME_DEFAULT,
+    Table,
+    TableColumnMetadata,
+)
 from agent_service.io_types.text import EquivalentKPITexts, KPIText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.types import ChatContext, Message, PlanRunContext
@@ -161,9 +165,15 @@ def generate_columns_for_kpi(
     return columns
 
 
-def convert_single_stock_data_to_table(data: Dict[str, List[KPIInstance]]) -> Table:
+def convert_single_stock_data_to_table(
+    stock_id: StockID, data: Dict[str, List[KPIInstance]]
+) -> Table:
     data_dict: Dict[str, Any] = {}
-    columns = [TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING)]
+    columns = [
+        TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING),
+        TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+    ]
+
     for kpi_name, kpi_history in data.items():
         actual_col = f"{kpi_name} Actual"
         estimate_col = f"{kpi_name} Estimate"
@@ -174,10 +184,13 @@ def convert_single_stock_data_to_table(data: Dict[str, List[KPIInstance]]) -> Ta
         columns.extend(new_columns)
 
         for kpi_inst in kpi_history:
-            quarter = f"Q{kpi_inst.quarter}-{kpi_inst.year}"
+            quarter = f"{kpi_inst.year} Q{kpi_inst.quarter}"
 
             if quarter not in data_dict:
-                data_dict[quarter] = {"Quarter": quarter}
+                data_dict[quarter] = {
+                    "Quarter": quarter,
+                    STOCK_ID_COL_NAME_DEFAULT: stock_id,
+                }
 
             # Need to convert percentages into decimals to satisfy current handling of the Percentage figures
             data_dict[quarter][actual_col] = (
@@ -192,7 +205,7 @@ def convert_single_stock_data_to_table(data: Dict[str, List[KPIInstance]]) -> Ta
 
     # Convert the data dictionary to a list of rows
     df_data = []
-    for quarter, row in data_dict.items():
+    for _, row in data_dict.items():
         df_data.append(row)
 
     df = pd.DataFrame(df_data)
@@ -205,7 +218,9 @@ async def convert_multi_stock_data_to_table(
     columns = []
 
     columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING))
-    columns.append(TableColumnMetadata(label="Company", col_type=TableColumnType.STOCK))
+    columns.append(
+        TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)
+    )
 
     kpi_inst = list(data.values())[0][0]  # Take a random kpi_inst to pass in general kpi metadata
     actual_col_name = f"{kpi_name} (Actual)"
@@ -222,7 +237,7 @@ async def convert_multi_stock_data_to_table(
     df_data = []
     for stock_id, kpi_history in data.items():
         for kpi_inst in kpi_history:
-            quarter = f"Q{kpi_inst.quarter}-{kpi_inst.year}"
+            quarter = f"{kpi_inst.year} Q{kpi_inst.quarter}"
             # Need to convert percentages into decimals to satisfy current handling of the Percentage figures
             actual = (
                 kpi_inst.actual * 0.01
@@ -235,7 +250,7 @@ async def convert_multi_stock_data_to_table(
             df_data.append(
                 {
                     "Quarter": quarter,
-                    "Company": stock_id,
+                    STOCK_ID_COL_NAME_DEFAULT: stock_id,
                     actual_col_name: actual,
                     estimate_col_name: estimate,
                     surprise_col_name: surprise,
@@ -312,6 +327,9 @@ class GetRelevantKPIsForStockGivenTopic(ToolArgs):
     description=(
         "This function will identify and return financial metrics reporting "
         "the key performance indicators (KPIs) that relate to a given topic for a given stock id. "
+        "This function should only be invokved when a query makes mention of a singular stock, "
+        "if multiple stocks are mentioned for the same topic or subject matter, use "
+        "the get_relevant_kpis_for_multiple_stocks_given_topic function instead."
         "A stock_id must be provided to identify the stock for which important KPIs are "
         "fetched. A topic string must also be provided to specify the topic of interest. The "
         "topic string must be concise and make mention of some aspect or metric of a "
@@ -344,6 +362,7 @@ class GetRelevantKPIsForStocksGivenTopic(ToolArgs):
     description=(
         "This function will identify and return financial metrics, key performance indicators "
         "(KPIs), across a set of companies the that best reports on a given metric. "
+        "Use this function when a query refers to the same subject matter or metric over multiple stocks."
         "A list of stock ids must be provided via stock_ids to indicate the stocks "
         "to search for the given metric for. A shared_metric string must also be provided to specify the "
         "metric of interest. The shared_metric string must be consice and make mention of some aspect "
@@ -567,7 +586,6 @@ async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunCon
     kpi_metadata_dict = kpi_retriever.convert_kpi_text_to_metadata(
         gbi_id=args.stock_id.gbi_id, kpi_texts=args.kpis
     )
-
     kpi_list = list(kpi_metadata_dict.values())
     data = kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
         gbi_id=args.stock_id.gbi_id,
@@ -576,7 +594,8 @@ async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunCon
         num_prev_quarters=args.num_prev_quarters,
         num_future_quarters=args.num_future_quarters,
     )
-    topic_kpi_table = convert_single_stock_data_to_table(data=data)
+
+    topic_kpi_table = convert_single_stock_data_to_table(stock_id=args.stock_id, data=data)
     return topic_kpi_table
 
 
@@ -693,10 +712,10 @@ async def main() -> None:
     for column in gen_kpis_table.columns:
         print(column.metadata.label)
 
-    ford = StockID(gbi_id=4579, symbol="", isin="")
-    tesla = StockID(gbi_id=25508, symbol="", isin="")
-    gm = StockID(gbi_id=25477, symbol="", isin="")
-    rivian = StockID(gbi_id=520178, symbol="", isin="")
+    ford = StockID(gbi_id=4579, symbol="F", isin="")
+    tesla = StockID(gbi_id=25508, symbol="TSLA", isin="")
+    gm = StockID(gbi_id=25477, symbol="GM", isin="")
+    rivian = StockID(gbi_id=520178, symbol="RIVN", isin="")
 
     stocks = [tesla, ford, gm, rivian]
     equivalent_kpis: EquivalentKPITexts = await get_relevant_kpis_for_multiple_stocks_given_topic(  # type: ignore

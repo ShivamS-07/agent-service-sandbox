@@ -188,6 +188,7 @@ class KPIRetriever:
         # Make sure the results are sorted desc by (year, quarter)
         for name in all_historical_kpis_dict.keys():
             all_historical_kpis_dict[name] = sorted(
-                all_historical_kpis_dict[name], key=lambda d: (d.year, d.quarter), reverse=True
+                all_historical_kpis_dict[name],
+                key=lambda d: (d.year, d.quarter),
             )
         return all_historical_kpis_dict
