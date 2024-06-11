@@ -6,42 +6,27 @@ from typing import Any, Dict, List, Optional
 
 import backoff
 from gbi_common_py_utils.utils.ssm import get_param
-from sec_api import ExtractorApi, MappingApi, QueryApi  # type: ignore
+from sec_api import ExtractorApi, MappingApi, QueryApi, RenderApi  # type: ignore
 
-from agent_service.utils.async_utils import async_wrap  # type: ignore
-
-US = "US"
-CUSIP = "cusip"
-TICKER = "ticker"
-CIK = "cik"
-SEC_API_KEY_NAME = "/sec/api_key"
-
-NYSE = "nyse"
-NASDAQ = "nasdaq"
-
-FILE_10K = "10-K"
-FILE_10Q = "10-Q"
-
-FILINGS = "filings"
-FORM_TYPE = "formType"
-COMPANY_NAME = "companyName"
-LINK_TO_HTML = "linkToHtml"
-FILED_TIMESTAMP = "filedAt"
-
-DEFAULT_FILING_FORMAT = "text"
-
-MANAGEMENT_SECTION = "managementSection"
-MANAGEMENT_SECTION_10K = "7"
-MANAGEMENT_SECTION_10Q = "part1item2"
-
-RISK_FACTORS = "riskFactors"
-RISK_FACTORS_10K = "1A"
-RISK_FACTORS_10Q = "part2item1a"
-
-FILING_DOWNLOAD_LOOKUP = {
-    FILE_10K: {MANAGEMENT_SECTION: MANAGEMENT_SECTION_10K, RISK_FACTORS: RISK_FACTORS_10K},
-    FILE_10Q: {MANAGEMENT_SECTION: MANAGEMENT_SECTION_10Q, RISK_FACTORS: RISK_FACTORS_10Q},
-}
+from agent_service.utils.async_utils import async_wrap
+from agent_service.utils.sec.constants import (
+    CIK,
+    COMPANY_NAME,
+    CUSIP,
+    DEFAULT_FILING_FORMAT,
+    FILE_10K,
+    FILE_10Q,
+    FILING_DOWNLOAD_LOOKUP,
+    FILINGS,
+    FORM_TYPE,
+    LINK_TO_HTML,
+    NASDAQ,
+    NYSE,
+    SEC_API_KEY_NAME,
+    TICKER,
+    US,
+)
+from agent_service.utils.sec.supported_types import SUPPORTED_TYPE_MAPPING
 
 logger = logging.getLogger(__name__)
 
@@ -190,16 +175,20 @@ class SecFiling:
     """
 
     api_key = get_param(SEC_API_KEY_NAME)
-    query_api = QueryApi(api_key)
-    extractor_api = ExtractorApi(api_key)
+    query_api = QueryApi(api_key)  # use it to get metadata (e.g. URL) of the filings
+    extractor_api = ExtractorApi(api_key)  # use it to extract the sections from the filings
+    render_api = RenderApi(api_key)  # use it to download the full content of filings
 
-    target_file_type = {FILE_10K, FILE_10Q}
+    file_type_10kq = {FILE_10K, FILE_10Q}
 
     MAX_SEC_QUERY_SIZE = 50
 
     @classmethod
-    def build_query_for_filings(
-        cls, cik: str, start_date: Optional[datetime.date], end_date: Optional[datetime.date]
+    def build_query_for_10k_10q_filings(
+        cls,
+        cik: str,
+        start_date: Optional[datetime.date] = None,
+        end_date: Optional[datetime.date] = None,
     ) -> Dict:
         """Build the query string for the SEC Filing API
 
@@ -219,7 +208,7 @@ class SecFiling:
         end_date_str = end_date.isoformat()
         start_date_str = start_date.isoformat()
 
-        forms = " OR ".join((f'formType:"{typ}"' for typ in cls.target_file_type))
+        forms = " OR ".join((f'formType:"{typ}"' for typ in cls.file_type_10kq))
 
         query = {
             "query": {
@@ -234,7 +223,7 @@ class SecFiling:
         return query
 
     @classmethod
-    def download_section(cls, filing: Dict, section: str) -> Optional[str]:
+    def download_10k_10q_section(cls, filing: Dict, section: str) -> Optional[str]:
         """Download 10K/10Q section from sec-api.io
 
         Args:
@@ -249,7 +238,7 @@ class SecFiling:
             Optional[str]: section text or None if failed to download
         """
         try:
-            if filing[FORM_TYPE] not in cls.target_file_type:
+            if filing[FORM_TYPE] not in cls.file_type_10kq:
                 logger.warning(f"Unsupported form type: {filing[FORM_TYPE]}")
                 return None
 
@@ -273,3 +262,88 @@ class SecFiling:
                 f"Failed to download management section for {company_name=}, ({cik=}): {e}"
             )
             return None
+
+    @classmethod
+    def _build_queries_for_filings(
+        cls,
+        cik: str,
+        form_types: List[str],
+        start_date: Optional[datetime.date] = None,
+        end_date: Optional[datetime.date] = None,
+    ) -> List[Dict]:
+        """Build the query string for the SEC Filing API
+
+        Args:
+            cik (str): Stock's CIK code
+            form_types (List[str]): List of form types to search for
+            start_date (Optional[datetime.date]): Start date for the query
+            end_date (Optional[datetime.date]): End date for the query. If neither start_date nor
+        end_date is provided, the default is to search for the last 90 days
+
+        Returns:
+            List[Dict]: A list of query dictionaries. To download the filing via the query, call
+        `SecFiling.query_api.get_filings(query)`
+        """
+        form_types = [form for form in form_types if form in SUPPORTED_TYPE_MAPPING]
+        if not form_types:
+            return []
+
+        if end_date is None:
+            end_date = datetime.datetime.today() + datetime.timedelta(days=1)
+        if start_date is None:
+            # default to a quarter of data (one filing)
+            start_date = end_date - datetime.timedelta(days=90)
+
+        end_date_str = end_date.isoformat()
+        start_date_str = start_date.isoformat()
+
+        forms = " OR ".join((f'formType:"{typ}"' for typ in form_types))
+        filter_query = f"cik:{cik} AND filedAt:[{start_date_str} TO {end_date_str}] AND ({forms})"
+
+        queries = []
+        for i in range(0, 5000, cls.MAX_SEC_QUERY_SIZE):
+            queries.append(
+                {
+                    "query": {"query_string": {"query": filter_query}},
+                    "from": str(i),
+                    "size": str(i + cls.MAX_SEC_QUERY_SIZE),
+                    "sort": [{"filedAt": {"order": "desc"}}],
+                }
+            )
+
+        return queries
+
+    @classmethod
+    def get_filings(
+        cls,
+        cik: str,
+        form_types: List[str],
+        start_date: Optional[datetime.date] = None,
+        end_date: Optional[datetime.date] = None,
+    ) -> List[Dict]:
+        queries = cls._build_queries_for_filings(cik, form_types, start_date, end_date)
+        filings = []
+        try:
+            for query in queries:
+                response = cls.query_api.get_filings(query)  # It has built-in retry logic (3 times)
+                filings.extend(
+                    [
+                        filing
+                        for filing in response[FILINGS]
+                        if filing[FORM_TYPE] in SUPPORTED_TYPE_MAPPING
+                    ]
+                )
+
+                if len(response[FILINGS]) < cls.MAX_SEC_QUERY_SIZE:
+                    # If there are fewer than the max number of allowed
+                    # responses for this query, we're done.
+                    break
+        except Exception as e:
+            logger.warning(f"Failed to get the URL to the filings for CIK {cik}: {e}")
+
+        return filings
+
+    @classmethod
+    def download_filing_full_content(cls, url: str) -> str:
+        text = SecFiling.render_api.get_filing(url)
+        return html.unescape(text)

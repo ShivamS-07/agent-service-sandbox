@@ -10,7 +10,6 @@ import mdutils
 from pydantic import Field
 from typing_extensions import Self
 
-from agent_service.external.sec_utils import MANAGEMENT_SECTION, RISK_FACTORS, SecFiling
 from agent_service.io_type_utils import (
     Citation,
     ComplexIOBase,
@@ -27,6 +26,12 @@ from agent_service.io_types.output import (
 from agent_service.io_types.stock import StockID
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.sec.constants import (
+    LINK_TO_HTML,
+    MANAGEMENT_SECTION,
+    RISK_FACTORS,
+)
+from agent_service.utils.sec.sec_api import SecFiling
 
 TextIDType = Union[str, int]
 
@@ -487,7 +492,7 @@ class StockDescriptionText(StockText):
 @io_type
 class StockSecFilingText(StockText):
     """
-    The ID field is a serialized JSON object containing the latest SEC filing information.
+    The ID field is a serialized JSON object containing the SEC filing information.
     After deserialization, it will be a dictionary like below:
     {
         "id": "6c0b495bc8a221cf32387c0123aeee5a",
@@ -518,11 +523,44 @@ class StockSecFilingText(StockText):
         output: Dict[TextIDType, str] = {}
         for obj in sec_filing_list:
             filing_info = json.loads(obj.id)
-            management_section = SecFiling.download_section(filing_info, section=MANAGEMENT_SECTION)
-            risk_factor_section = SecFiling.download_section(filing_info, section=RISK_FACTORS)
+            management_section = SecFiling.download_10k_10q_section(
+                filing_info, section=MANAGEMENT_SECTION
+            )
+            risk_factor_section = SecFiling.download_10k_10q_section(
+                filing_info, section=RISK_FACTORS
+            )
 
             text = f"Management Section:\n\n{management_section}\n\nRisk Factors Section:\n\n{risk_factor_section}"  # noqa
             output[obj.id] = text
+
+        return output
+
+
+@io_type
+class StockOtherSecFilingText(StockText):
+    """
+    Unlike `SecFilingText`, this class is used to get other types of SEC filings and the helper
+    method `get_strs_lookup` is used to download the full content of the filing instead of only
+    extracting a few sections.
+    TODO: We may later merge this class with `SecFilingText` (and also extract certain sections
+    for other types)
+    """
+
+    id: str
+
+    text_type: ClassVar[str] = "SEC filing"
+
+    @classmethod
+    def _get_strs_lookup(
+        cls, sec_filing_list: List[StockOtherSecFilingText]  # type: ignore
+    ) -> Dict[TextIDType, str]:
+        # TODO: The outputs should be cached on-demand and not downloaded every time
+
+        output: Dict[TextIDType, str] = {}
+        for obj in sec_filing_list:
+            filing_info = json.loads(obj.id)
+            full_content = SecFiling.download_filing_full_content(filing_info[LINK_TO_HTML])
+            output[obj.id] = full_content
 
         return output
 

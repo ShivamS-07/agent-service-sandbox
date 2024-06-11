@@ -1,11 +1,9 @@
 import datetime
-import json
-from typing import Dict, List, Optional
+from typing import List, Optional
 
-from agent_service.external.sec_utils import FILINGS, SecFiling, SecMapping
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.text import StockSecFilingText, StockText
+from agent_service.io_types.text import StockText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.earnings import (  # get_stock_aligned_earnings_call_summaries,
     GetEarningsCallSummariesInput,
@@ -15,6 +13,7 @@ from agent_service.tools.news import (  # get_stock_aligned_news_developments,
     GetNewsDevelopmentsAboutCompaniesInput,
     get_all_news_developments_about_companies,
 )
+from agent_service.tools.sec import GetSecFilingsInput, get_10k_10q_sec_filings
 from agent_service.tools.stock_metadata import (  # get_company_descriptions_stock_aligned,
     GetStockDescriptionInput,
     get_company_descriptions,
@@ -22,67 +21,7 @@ from agent_service.tools.stock_metadata import (  # get_company_descriptions_sto
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
-
-
-async def get_sec_filings_helper(
-    stock_ids: List[StockID], start_date: Optional[datetime.date], end_date: Optional[datetime.date]
-) -> Dict[StockID, List[StockSecFilingText]]:
-    stock_filing_map = {}
-    gbi_id_metadata_map = get_psql().get_sec_metadata_from_gbi(
-        gbi_ids=[stock.gbi_id for stock in stock_ids]
-    )
-    for stock_id in stock_ids:
-        cik = await SecMapping.map_gbi_id_to_cik(stock_id.gbi_id, gbi_id_metadata_map)
-        if cik is None:
-            continue
-
-        query = SecFiling.build_query_for_filings(cik, start_date, end_date)
-        resp = SecFiling.query_api.get_filings(query)
-        if (not resp) or (FILINGS not in resp) or (not resp[FILINGS]):
-            continue
-        stock_filing_map[stock_id] = [
-            StockSecFilingText(id=json.dumps(filing), stock_id=stock_id) for filing in resp[FILINGS]
-        ]
-    return stock_filing_map
-
-
-class GetSecFilingsInput(ToolArgs):
-    stock_ids: List[StockID]
-    start_date: Optional[datetime.date] = None
-    end_date: Optional[datetime.date] = None
-    date_range: Optional[DateRange] = None
-
-
-@tool(
-    description="Given a list of stock ID's, return a list of sec filings for the stocks. "
-    "Specifically, this includes the management and risk factors sections of the 10-K and 10-Q documents "
-    "which provides detailed, up-to-date information about company operations and financial status "
-    "for the previous quarter (10-Q) or year (10-K) for any US-listed companies. "
-    "It is especially useful for finding current information about less well-known "
-    "companies which may have little or no news for a given period. "
-    "Any documents published between start_date and end_date will be included, if the end_date is "
-    "excluded it is assume to include documents up to today, if start_date is not "
-    "included, the start date is a quarter ago, which includes only the latest SEC filing.",
-    category=ToolCategory.TEXT,
-    tool_registry=ToolRegistry,
-)
-async def get_sec_filings(
-    args: GetSecFilingsInput, context: PlanRunContext
-) -> List[StockSecFilingText]:
-    if args.date_range:
-        args.start_date = args.date_range.start_date
-        args.end_date = args.date_range.end_date
-
-    stock_filing_map = await get_sec_filings_helper(args.stock_ids, args.start_date, args.end_date)
-    all_filings = []
-    for filings in stock_filing_map.values():
-        all_filings.extend(filings)
-
-    if len(all_filings) == 0:
-        raise Exception("No filings were retrieved for these stocks over this time period")
-    return all_filings
 
 
 class GetAllTextDataForStocksInput(ToolArgs):
@@ -164,7 +103,7 @@ async def get_all_text_data_for_stocks(
         logger.exception(f"failed to get earnings summaries due to error: {e}")
     await tool_log(log="Getting SEC filings", context=context)
     try:
-        sec_filings = await get_sec_filings(
+        sec_filings = await get_10k_10q_sec_filings(
             GetSecFilingsInput(stock_ids=stock_ids, start_date=start_date, end_date=end_date),
             context=context,
         )

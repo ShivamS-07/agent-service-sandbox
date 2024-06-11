@@ -1,5 +1,3 @@
-# Author(s): Mohammad Zarei
-
 import asyncio
 import datetime
 from typing import List, Optional

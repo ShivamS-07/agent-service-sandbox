@@ -165,6 +165,7 @@ class ToolCategory(str, enum.Enum):
     TEXT = "text"
     AUTOMATION = "automation"
     KPI = "key performance indicators"
+    SEC_FILINGS = "SEC Filings"
 
     def get_description(self) -> str:
         if self == ToolCategory.MISC:
@@ -225,6 +226,9 @@ class ToolCategory(str, enum.Enum):
                 "applicable to all companies such as 'Revenue' or 'EPS', these are found "
                 "under the 'statistics' category."
             )
+
+        if self == ToolCategory.SEC_FILINGS:
+            return "Tools that involve SEC filings"
 
         return ""
 

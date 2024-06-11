@@ -5,13 +5,13 @@ from typing import Any, Dict, List, Optional, Tuple
 from gbi_common_py_utils.utils.postgres import PostgresBase
 
 from agent_service.endpoints.models import AgentMetadata
-from agent_service.external.sec_utils import SecurityMetadata
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
+from agent_service.utils.sec.sec_api import SecurityMetadata
 
 PSQL_CONN = None
 PSQL_CONN_SKIP_COMMIT = None
