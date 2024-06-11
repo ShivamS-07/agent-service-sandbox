@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 
 
@@ -92,3 +93,6 @@ UNITS_LOOKUP = {
     88: UnitsData("ExaHash per second", "EH/s"),
 }
 ###########################################################################
+
+
+AGENT_WORKER_QUEUE = os.getenv("AGENT_WORKER_QUEUE", "insights-backend-dev-agent-service-worker")

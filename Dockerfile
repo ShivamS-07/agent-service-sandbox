@@ -10,4 +10,5 @@ COPY agent_service/ ./agent_service
 COPY application.py .
 COPY regression_test/ ./regression_test
 COPY prefect_serve.py .
+COPY prefect_sqs_serve.py .
 CMD ["pipenv", "run", "python", "application.py"]

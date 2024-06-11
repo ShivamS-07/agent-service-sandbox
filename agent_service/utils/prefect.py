@@ -1,12 +1,15 @@
 import datetime
 import enum
+import json
 import logging
 from dataclasses import dataclass
 from logging import Logger, LoggerAdapter
 from typing import Dict, List, Optional, Tuple, Union
 from uuid import UUID
 
+import boto3
 from async_lru import alru_cache
+from gbi_common_py_utils.utils.event_logging import json_serial
 from prefect import get_client
 from prefect.client.schemas import TaskRun
 from prefect.client.schemas.filters import (
@@ -19,17 +22,13 @@ from prefect.client.schemas.filters import (
 )
 from prefect.client.schemas.objects import State, StateType
 from prefect.context import FlowRunContext, get_run_context
-from prefect.deployments import run_deployment
 from prefect.logging.loggers import get_run_logger
 
 from agent_service.endpoints.models import Status
-from agent_service.planner.constants import (
-    CREATE_EXECUTION_PLAN_FLOW_NAME,
-    RUN_EXECUTION_PLAN_FLOW_NAME,
-    Action,
-)
+from agent_service.planner.constants import Action
 from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan
 from agent_service.types import PlanRunContext
+from agent_service.utils.constants import AGENT_WORKER_QUEUE
 from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
@@ -48,37 +47,35 @@ async def prefect_create_execution_plan(
 ) -> None:
     # Deployment name has the format "flow_name/deployment_name". For use
     # they're the same.
-    await run_deployment(
-        name=f"{CREATE_EXECUTION_PLAN_FLOW_NAME}/{CREATE_EXECUTION_PLAN_FLOW_NAME}",
-        timeout=0,
-        parameters={
-            "agent_id": agent_id,
-            "plan_id": plan_id,
-            "user_id": user_id,
-            "skip_db_commit": skip_db_commit,
-            "skip_task_cache": skip_task_cache,
-            "run_plan_in_prefect_immediately": run_plan_in_prefect_immediately,
-            "action": action,
-            "error_info": error_info.model_dump() if error_info else error_info,
-        },
-        tags=[agent_id],
-    )
+    sqs = boto3.resource("sqs", region_name="us-west-2")
+    arguments = {
+        "agent_id": agent_id,
+        "plan_id": plan_id,
+        "user_id": user_id,
+        "skip_db_commit": skip_db_commit,
+        "skip_task_cache": skip_task_cache,
+        "run_plan_in_prefect_immediately": run_plan_in_prefect_immediately,
+        "action": action,
+        "error_info": error_info.model_dump() if error_info else error_info,
+    }
+    message = {"method": "create_execution_plan", "arguments": arguments}
+    queue = sqs.get_queue_by_name(QueueName=AGENT_WORKER_QUEUE)
+    queue.send_message(MessageBody=json.dumps(message, default=json_serial))
 
 
 @async_perf_logger
 async def prefect_run_execution_plan(
     plan: ExecutionPlan, context: PlanRunContext, do_chat: bool = True
 ) -> None:
-    await run_deployment(
-        name=f"{RUN_EXECUTION_PLAN_FLOW_NAME}/{RUN_EXECUTION_PLAN_FLOW_NAME}",
-        timeout=0,
-        parameters={
-            "plan": plan.model_dump(),
-            "context": context.model_dump(),
-            "do_chat": do_chat,
-        },
-        tags=[context.agent_id],
-    )
+    sqs = boto3.resource("sqs", region_name="us-west-2")
+    arguments = {
+        "plan": plan.model_dump(),
+        "context": context.model_dump(),
+        "do_chat": do_chat,
+    }
+    message = {"method": "run_execution_plan", "arguments": arguments}
+    queue = sqs.get_queue_by_name(QueueName=AGENT_WORKER_QUEUE)
+    queue.send_message(MessageBody=json.dumps(message, default=json_serial))
 
 
 def get_task_run_name(ctx: PlanRunContext) -> str:
