@@ -3,10 +3,14 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import field_validator
 
-from agent_service.external.discover_svc_client import get_temporary_discover_block_data
+from agent_service.external.discover_svc_client import (
+    get_score_from_recommendation,
+    get_temporary_discover_block_data,
+)
 from agent_service.external.investment_policy_svc import (
     get_all_stock_investment_policies,
 )
+from agent_service.io_type_utils import HistoryEntry, Score
 from agent_service.io_types.stock import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
@@ -157,7 +161,20 @@ async def get_recommended_stocks(
         # TODO: We can loose the constraints, but this is already very loose. What to do?
         raise ValueError("Cannot find enough stocks to meet the requirement.")
 
-    gbi_ids = [row.gbi_id for row in resp.rows[: args.num_stocks_to_return]]
-    stock_ids = await StockID.from_gbi_id_list(gbi_ids)
+    rows = resp.rows[: args.num_stocks_to_return]
     gbi_id_to_stock = {stock.gbi_id: stock for stock in stock_ids}
-    return [gbi_id_to_stock[gbi_id] for gbi_id in gbi_ids]
+    outputs = []
+    for row in rows:
+        score = None
+        score_val = get_score_from_recommendation(row.combo_rec)
+        if score_val:
+            score = Score(val=score_val)
+        outputs.append(
+            gbi_id_to_stock[row.gbi_id].inject_history_entry(
+                HistoryEntry(
+                    title="Boosted Recommendation",
+                    score=score,
+                )
+            )
+        )
+    return outputs

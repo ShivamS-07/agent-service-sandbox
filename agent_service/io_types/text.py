@@ -359,6 +359,25 @@ class ThemeText(Text):
         rows = db.generic_read(sql, {"theme_id": [topic.id for topic in themes]})
         return {row["theme_id"]: row["description"] for row in rows}
 
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        sql = """
+        SELECT theme_id::TEXT, theme_name::TEXT AS name
+        FROM nlp_service.themes
+        WHERE theme_id = ANY(%(theme_id)s)
+        """
+        rows = await db.generic_read(sql, {"theme_id": [topic.id for topic in texts]})
+        return [
+            CitationOutput(
+                id=row["theme_id"],
+                citation_type=CitationType.TEXT,
+                name="Theme: " + row["name"],
+            )
+            for row in rows
+        ]
+
 
 @io_type
 class ThemeNewsDevelopmentText(NewsText):
@@ -377,6 +396,25 @@ class ThemeNewsDevelopmentText(NewsText):
         db = get_psql()
         rows = db.generic_read(sql, {"development_id": [topic.id for topic in themes]})
         return {row["development_id"]: f"{row['label']}:\n{row['description']}" for row in rows}
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        sql = """
+        SELECT development_id::TEXT, label::TEXT
+        FROM nlp_service.theme_developments
+        WHERE development_id = ANY(%(development_id)s)
+        """
+        rows = await db.generic_read(sql, {"development_id": [topic.id for topic in texts]})
+        return [
+            CitationOutput(
+                id=row["development_id"],
+                citation_type=CitationType.TEXT,
+                name="News Development: " + row["label"],
+            )
+            for row in rows
+        ]
 
 
 @io_type
@@ -454,6 +492,15 @@ class StockEarningsSummaryText(StockText):
 
         return str_lookup
 
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        # TODO
+        return [
+            CitationOutput(citation_type=CitationType.TEXT, name=text.text_type) for text in texts
+        ]
+
 
 @io_type
 class StockDescriptionText(StockText):
@@ -492,6 +539,15 @@ class StockDescriptionText(StockText):
             descriptions[row["gbi_id"]] = row["company_description"]
 
         return descriptions
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        # TODO
+        return [
+            CitationOutput(citation_type=CitationType.TEXT, name=text.text_type) for text in texts
+        ]
 
 
 @io_type
@@ -539,6 +595,15 @@ class StockSecFilingText(StockText):
             output[obj.id] = text
 
         return output
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        # TODO
+        return [
+            CitationOutput(citation_type=CitationType.TEXT, name=text.text_type) for text in texts
+        ]
 
 
 @io_type

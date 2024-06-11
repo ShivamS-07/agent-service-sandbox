@@ -12,6 +12,7 @@ from discover_service_proto_v1.discover_pb2 import (
 )
 from discover_service_proto_v1.other_messages_pb2 import (
     DiscoverDeltaHorizonEnum,
+    DiscoverRecommendationCategory,
     DiscoverRecommendationHorizon,
 )
 from gbi_common_py_utils.utils.environment import (
@@ -80,6 +81,23 @@ def delta_horizon_from_str(delta_horizon: Optional[str] = None) -> DiscoverDelta
         return DiscoverDeltaHorizonEnum.DISCOVER_DELTA_HORIZON_1Y
 
     return DiscoverDeltaHorizonEnum.DISCOVER_DELTA_HORIZON_1W
+
+
+def get_score_from_recommendation(rec: DiscoverRecommendationCategory) -> Optional[float]:
+    """
+    Given a recommendation category, return a float from 0 to 1.
+    """
+    if rec == DiscoverRecommendationCategory.DISCOVER_RECOMMENDATION_CATEGORY_STRONG_BUY:
+        return 1.0
+    elif rec == DiscoverRecommendationCategory.DISCOVER_RECOMMENDATION_CATEGORY_BUY:
+        return 0.75
+    elif rec == DiscoverRecommendationCategory.DISCOVER_RECOMMENDATION_CATEGORY_HOLD:
+        return 0.5
+    elif rec == DiscoverRecommendationCategory.DISCOVER_RECOMMENDATION_CATEGORY_SELL:
+        return 0.25
+    elif rec == DiscoverRecommendationCategory.DISCOVER_RECOMMENDATION_CATEGORY_STRONG_SELL:
+        return 0.0
+    return None
 
 
 @grpc_retry
