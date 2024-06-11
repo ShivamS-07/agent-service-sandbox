@@ -502,15 +502,37 @@ def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> boo
         # This really should be "all" instead of "any", but that would
         # require doing some nonsense with generics. This is good enough for
         # now, other issues can be discovered at runtime.
-        return any((val in params_expected for val in params_actual))
+        return any(
+            (
+                check_type_is_valid(actual=actual_val, expected=expected_val)
+                for actual_val in params_actual
+                for expected_val in params_expected
+            )
+        )
     elif orig_expected is Union and orig_actual in (None, list, dict):
         # int is valid if we expect Union[int, str]
-        return actual in params_expected or params_expected is IOType
+        return (
+            any(
+                (
+                    check_type_is_valid(actual=actual, expected=expected_val)
+                    for expected_val in params_expected
+                )
+            )
+            or params_expected is IOType
+        )
     elif orig_actual is Union and orig_expected in (None, list, dict):
         # This technically also is always incorrect, but again without nasty
         # generic stuff we need to just handle it anyway. E.g. Union[str, int]
         # should not type check for just str, but it does now for simplicity.
-        return expected in params_actual or params_expected is IOType
+        return (
+            any(
+                (
+                    check_type_is_valid(actual=actual_val, expected=expected)
+                    for actual_val in params_actual
+                )
+            )
+            or params_expected is IOType
+        )
 
     # In any case other than above, origin types must match
     if orig_actual is not orig_expected:

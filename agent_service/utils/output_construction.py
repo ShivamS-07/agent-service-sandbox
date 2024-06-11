@@ -1,33 +1,17 @@
 from collections import defaultdict
-from typing import Dict, List, cast
+from typing import Dict, List
 
 from agent_service.io_type_utils import ComplexIOBase, IOType, io_type
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import (
-    StockTableColumn,
-    Table,
-    TableColumn,
-    object_histories_to_columns,
-)
+from agent_service.io_types.table import StockTableColumn, Table, TableColumn
 from agent_service.io_types.text import StockText, Text
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 
 
 def prepare_list_of_stocks(stocks: List[StockID]) -> Table:
-    # Each stock in the list has a history associated with it (e.g. "reasons"
-    # for the text being present in this output). Every stock should have the
-    # same number of these entries, so we can construct a table. Where each
-    # stock is a row and each entry is a column. For example, the query "find
-    # companies with mcap > X and Y in their earnings call" might return a table like this:
-    # STOCK, MARKET CAP, CONNECTION TO 'Y'
-    # AAPL,  123,        blah blah
-    # GOOGL, 234,        blah blah
-
-    table_columns = object_histories_to_columns(objects=cast(List[ComplexIOBase], stocks))
-
-    columns: List[TableColumn] = [StockTableColumn(data=stocks)] + table_columns  # type: ignore
+    columns: List[TableColumn] = [StockTableColumn(data=stocks)]
     return Table(columns=columns)
 
 
