@@ -57,6 +57,7 @@ from agent_service.utils.prefect import get_prefect_logger
 # 5. complete writing_style_prompt
 # 6. complete theme_prompt and theme_ourlook_prompt
 # 7. complete watchlist_stocks_prompt
+# 8. use a portfolio by defualt for geography_prompt
 
 
 class WriteCommentaryInput(ToolArgs):
@@ -107,11 +108,16 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         geography_prompt = GEOGRAPHY_PROMPT.format(
             portfolio_geography=await get_portfolio_geography_prompt(regions_to_weight)  # type: ignore
         )
+    else:
+        await tool_log(
+            log="No portfolio name is provided. Skipping data match based on portfolio.",
+            context=context,
+        )
 
     # Organize the commentary texts into themes, developments and articles
     themes, developments, articles = await organize_commentary_texts(args.texts)
     await tool_log(
-        log=f"Collected {len(themes)} themes, {len(developments)} developments, and {len(articles)} articles.",
+        log=f"Retrieved {len(themes)} themes, {len(developments)} developments, and {len(articles)} articles.",
         context=context,
     )
     # create main prompt
@@ -140,7 +146,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
 
 class GetCommentaryTextsInput(ToolArgs):
-    topics: Optional[List[str]] = None
+    topics: List[str] = None  # type: ignore
     start_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
     portfolio_id: Optional[str] = None
@@ -152,7 +158,7 @@ class GetCommentaryTextsInput(ToolArgs):
         "This function collects and prepares all texts to be used by the write_commentary tool "
         "for writing a commentary or short articles and market summaries. "
         "This function MUST only be used for write commentary tool. "
-        "If client wants a general commentary, topics MUST be None. "
+        "If client wants a general commentary with no specific topics in mind, topics MUST be None. "
         "Adjust start_date to get the text from that date based on client request. "
         "If no start_date is provided, the function will only get text in last month. "
     ),
@@ -164,7 +170,6 @@ async def get_commentary_texts(
     if not args.start_date:
         if args.date_range:
             args.start_date = args.date_range.start_date
-
     if not args.topics:
         # no topics were given so we need to find some default ones
         if args.portfolio_id:
@@ -175,23 +180,23 @@ async def get_commentary_texts(
                 ),
                 context,
             )
-            texts = await get_theme_related_texts(themes_texts, context)
+            theme_related_texts = await get_theme_related_texts(themes_texts, context)
             await tool_log(
-                log="Retrieved texts for top 3 themes related to portfolio.",
+                log="Retrieved texts for top themes related to portfolio (id: {args.portfolio_id}).",
                 context=context,
             )
-            return texts
+            return themes_texts + theme_related_texts
         else:
             # get popular topics
             themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
                 GetTopNThemesInput(start_date=args.start_date, theme_num=3), context
             )
-            texts = await get_theme_related_texts(themes_texts, context)
+            theme_related_texts = await get_theme_related_texts(themes_texts, context)
             await tool_log(
-                log="Retrieved texts for top 3 themes for general commentary.",
+                log="No portfolio is provided. Retrieved texts for top 3 themes for general commentary.",
                 context=context,
             )
-            return texts
+            return themes_texts + theme_related_texts
 
     else:
         if args.portfolio_id:
@@ -201,14 +206,18 @@ async def get_commentary_texts(
                 ),
                 context,
             )
-            portfolio_texts = await get_theme_related_texts(themes_texts, context)
+            theme_related_texts = await get_theme_related_texts(themes_texts, context)
             await tool_log(
-                log="Retrieved texts for top 3 themes for general commentary.",
+                log=f"Retrieved texts for top 3 themes related to portfolio (id: {args.portfolio_id}).",
                 context=context,
             )
             topic_texts = await get_texts_for_topics(args, context)
-            return portfolio_texts + topic_texts
+            return themes_texts + theme_related_texts + topic_texts
         else:
+            await tool_log(
+                log=f"No portfolio is provided. Retrieving texts for the topics: {args.topics}.",
+                context=context,
+            )
             texts = await get_texts_for_topics(args, context)
             return texts
 
@@ -221,9 +230,6 @@ async def get_texts_for_topics(
     If the themes are not found, it gets the articles related to the topic.
     """
     logger = get_prefect_logger(__name__)
-    if not args.topics:
-        logger.warning("No topics provided for get_texts_for_topics function.")
-        return []
 
     texts: List = []
     for topic in args.topics:
@@ -236,10 +242,10 @@ async def get_texts_for_topics(
                 context=context,
             )
             res = await get_theme_related_texts(themes, context)  # type: ignore
-            texts.extend(res)  # type: ignore
+            texts.extend(res + themes)  # type: ignore
 
         except Exception as e:
-            logger.warning(f"failed to get theme data for topic {topic}: {e}")
+            logger.warning(f"Failed to find any news theme for topic {topic}: {e}")
             # If themes are not found, get the articles related to the topic
             await tool_log(
                 log=f"No themes found for topic: {topic}. Retrieving articles...",
@@ -256,7 +262,7 @@ async def get_texts_for_topics(
                 )
                 texts.extend(matched_articles)  # type: ignore
             except Exception as e:
-                logger.warning(f"failed to get news pool articles for topic {topic}: {e}")
+                logger.warning(f"Failed to get news pool articles for topic {topic}: {e}")
 
     if len(texts) == 0:
         raise Exception("No data collected for commentary from available sources")
