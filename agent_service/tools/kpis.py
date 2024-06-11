@@ -656,7 +656,9 @@ async def get_overlapping_kpis_table_for_stock(args: KPIsRequest, context: PlanR
                 num_prev_quarters=args.num_prev_quarters,
                 num_future_quarters=args.num_future_quarters,
             )
-            company_kpi_data_lookup[kpi.stock_id] = data[kpi_metadata.name]
+            kpi_data = data.get(kpi_metadata.name, None)
+            if kpi_data:
+                company_kpi_data_lookup[kpi.stock_id] = kpi_data
 
     topic_kpi_table = await convert_multi_stock_data_to_table(
         kpi_name=args.equivalent_kpis.general_kpi_name,
