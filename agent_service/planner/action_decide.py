@@ -104,6 +104,7 @@ async def main() -> None:
         "Make sure the summary is no more than a paragraph",
         "I need you to include Amazon in the summary as well",
         "That's good, but I also need their current stock prices",
+        "Move the text down below the graph please",
     ]
 
     action_decider = InputActionDecider("123")

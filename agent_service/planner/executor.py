@@ -296,6 +296,10 @@ async def update_execution_after_input(
         action = await decider.decide_action(chat_context, latest_plan)
 
     logger.info(f"Decided on action: {action} for {agent_id=}, {latest_plan_id=}")
+    # For now, no layout metatool
+    if action == Action.LAYOUT:
+        action = Action.NONE
+
     if action == Action.NONE or (
         action == Action.RERUN
         and (flow_run and flow_run.flow_run_type == FlowRunType.PLAN_CREATION)

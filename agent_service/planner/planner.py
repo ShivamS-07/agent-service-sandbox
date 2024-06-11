@@ -86,6 +86,8 @@ class Planner:
     @async_perf_logger
     async def create_initial_plan(self, chat_context: ChatContext) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
+
+        logger.info("Writing plan")
         first_round_tasks = [
             self._create_initial_plan(chat_context, self.fast_llm)
             for _ in range(INITIAL_PLAN_TRIES)
@@ -224,6 +226,9 @@ class Planner:
             if message.is_user_message and message.message_time > last_plan_timestamp
         ]
         logger = get_prefect_logger(__name__)
+        logger.info(
+            f"Rewriting plan after user input, append={append}, input={latest_user_messages}"
+        )
         tasks = [
             self._rewrite_plan_after_input(
                 chat_context, last_plan, latest_user_messages, append=append
@@ -242,7 +247,7 @@ class Planner:
 
             return best_plan
 
-        logger.warning(f"All of {INITIAL_PLAN_TRIES} initial plan runs failed, trying round 2")
+        logger.warning(f"All of {INITIAL_PLAN_TRIES} replan runs failed")
 
         return None
 
@@ -282,6 +287,7 @@ class Planner:
         self, error_info: ErrorInfo, chat_context: ChatContext, last_plan: ExecutionPlan
     ) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
+        logger.info(f"Rewriting plan after error, error={error_info}")
         tasks = [
             self._rewrite_plan_after_error(error_info, chat_context, last_plan)
             for _ in range(INITIAL_PLAN_TRIES)
@@ -298,7 +304,7 @@ class Planner:
 
             return best_plan
 
-        logger.warning(f"All of {INITIAL_PLAN_TRIES} initial plan runs failed")
+        logger.warning(f"All of {INITIAL_PLAN_TRIES} replan runs failed")
 
         return None
 

@@ -108,7 +108,9 @@ def _get_command(data_file: str, code_file: str) -> str:
         )
         command = f"sandbox-exec -f {helper_path} {command}"
     elif sys.platform == "win32":
-        raise RuntimeError("Windows not support, can't safely run arbitrary code")
+        logger = get_prefect_logger(__name__)
+        logger.warning("Running LLM generated code on Windows is not safe!")
+
     else:
         command = f"unshare -n -r {command}"
     return command

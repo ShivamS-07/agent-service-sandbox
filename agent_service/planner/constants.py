@@ -19,3 +19,4 @@ class Action(str, Enum):
     APPEND = "APPEND"
     REPLAN = "REPLAN"
     CREATE = "CREATE"
+    LAYOUT = "LAYOUT"

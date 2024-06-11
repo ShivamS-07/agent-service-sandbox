@@ -106,6 +106,7 @@ class GetEarningsCallSummariesInput(ToolArgs):
         " end_date defaults to today, start_date defaults to one quarter ago, which will return exactly"
         " the summary for the most recent earnings call and what the clients are usually interested"
         " in unless they explicitly state otherwise."
+        " You may alternatively provide a date_range created by the get_n_width_date_range_near_date tool"
     ),
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,

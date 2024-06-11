@@ -20,6 +20,10 @@ from agent_service.tools.LLM_analysis.prompts import (
     ANSWER_QUESTION_DESCRIPTION,
     ANSWER_QUESTION_MAIN_PROMPT,
     ANSWER_QUESTION_SYS_PROMPT,
+    COMPARISON_DESCRIPTION,
+    COMPARISON_MAIN_PROMPT,
+    COMPARISON_SYS_PROMPT,
+    EXTRA_DATA_PHRASE,
     FILTER_BY_PROFILE_DESCRIPTION,
     FILTER_BY_TOPIC_DESCRIPTION,
     PROFILE_FILTER_MAIN_PROMPT,
@@ -86,7 +90,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     )
     result = await llm.do_chat_w_sys_prompt(
         SUMMARIZE_MAIN_PROMPT.format(
-            texts=texts_str, chat_context=chat_str, topic_phrase=TOPIC_PHRASE
+            texts=texts_str, chat_context=chat_str, topic_phrase=topic_str
         ),
         SUMMARIZE_SYS_PROMPT.format(),
     )
@@ -96,6 +100,89 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         HistoryEntry(title="Summary", citations=text_group.get_citations(citation_ids))
     )
     return summary
+
+
+class CompareTextInput(ToolArgs):
+    group1: List[Text]
+    group1_label: str
+    group2: List[Text]
+    group2_label: str
+    extra_data: Optional[List[Text]] = None
+    extra_data_label: Optional[str] = None
+
+
+@tool(
+    description=COMPARISON_DESCRIPTION,
+    category=ToolCategory.LLM_ANALYSIS,
+    reads_chat=True,
+)
+async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text:
+    if context.chat is None:
+        # just for mypy, shouldn't happen
+        return Text(val="")
+    # TODO we need guardrails on this
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=DEFAULT_LLM)
+    text_group1 = TextGroup(val=args.group1)
+    group1_str: str = Text.get_all_strs(text_group1, include_header=True, text_group_numbering=True)  # type: ignore
+    text_group2 = TextGroup(val=args.group2)
+    group2_str: str = Text.get_all_strs(text_group2, include_header=True, text_group_numbering=True)  # type: ignore
+    if args.extra_data is not None and args.extra_data_label is not None:
+        extra_group = TextGroup(val=args.extra_data)
+        extra_data_str = EXTRA_DATA_PHRASE.format(
+            extra_data=Text.get_all_strs(extra_group), label=args.extra_data_label  # type: ignore
+        )
+    else:
+        extra_data_str = ""
+    chat_str = context.chat.get_gpt_input()
+    if group1_str > group2_str:
+        group1_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
+            group1_str,
+            [
+                COMPARISON_MAIN_PROMPT.template,
+                COMPARISON_SYS_PROMPT.template,
+                chat_str,
+                group2_str,
+                extra_data_str,
+            ],
+        )
+    else:
+        group2_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
+            group2_str,
+            [
+                COMPARISON_MAIN_PROMPT.template,
+                COMPARISON_SYS_PROMPT.template,
+                chat_str,
+                group1_str,
+                extra_data_str,
+            ],
+        )
+    result = await llm.do_chat_w_sys_prompt(
+        COMPARISON_MAIN_PROMPT.format(
+            group1=group1_str,
+            group2=group2_str,
+            group1_label=args.group1_label,
+            group2_label=args.group2_label,
+            extra_data=extra_data_str,
+            chat_context=chat_str,
+        ),
+        COMPARISON_SYS_PROMPT.format(),
+    )
+    print(result)
+    lines = result.replace("\n\n", "\n").split("\n")
+    citation_ids = json.loads(clean_to_json_if_needed(lines[-1]))
+    main_text = "\n".join(lines[:-1])
+    comparison = Text(val=main_text)
+    comparison = comparison.inject_history_entry(
+        HistoryEntry(
+            title="Text Comparison",
+            citations=text_group1.get_citations(citation_ids["group 1"])
+            + text_group2.get_citations(citation_ids["group 2"]),
+        )
+    )
+    return comparison
 
 
 class AnswerQuestionInput(ToolArgs):
