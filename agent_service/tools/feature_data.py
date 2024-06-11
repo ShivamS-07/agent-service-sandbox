@@ -434,6 +434,7 @@ async def get_statistic_data(
 
         # We now have a dataframe with only a few columns: Date, Statistic Name
         # currency may or may not be set.
+        df = df[df[statistic_id.stat_name].notna()]
         return StockTable.from_df_and_cols(
             data=df,
             columns=[
@@ -456,6 +457,7 @@ async def get_statistic_data(
         df[STOCK_ID_COL_NAME_DEFAULT] = df[STOCK_ID_COL_NAME_DEFAULT].map(gbi_id_map)
 
         # We now have a dataframe with only a few columns: Date, Stock ID, Statistic Name
+        df = df[df[statistic_id.stat_name].notna()]
         return StockTable.from_df_and_cols(
             data=df,
             columns=[
