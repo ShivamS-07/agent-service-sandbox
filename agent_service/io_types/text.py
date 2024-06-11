@@ -60,7 +60,12 @@ class Text(ComplexIOBase):
         ]
         outputs = await gather_with_concurrency(tasks)
         citations = outputs[0] + outputs[1]
-        return TextOutput(val=self.get().val, title=title, citations=citations)
+        return TextOutput(
+            val=self.get().val,
+            title=title,
+            citations=citations,
+            score=ScoreOutput.from_entry_list(self.history),
+        )
 
     @staticmethod
     def _to_string_recursive(val: IOType) -> IOType:

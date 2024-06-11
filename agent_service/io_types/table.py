@@ -1,5 +1,6 @@
 import datetime
-from typing import Any, Dict, List, Literal, Optional, Union
+from copy import deepcopy
+from typing import Any, Dict, List, Literal, Optional, Union, cast
 
 import numpy as np
 import pandas as pd
@@ -12,6 +13,7 @@ from agent_service.io_type_utils import (
     IOType,
     PrimitiveType,
     Score,
+    ScoreOutput,
     TableColumnType,
     io_type,
 )
@@ -59,6 +61,55 @@ class DateTableColumn(TableColumn):
     data: List[datetime.date]  # type: ignore
 
 
+def object_histories_to_columns(objects: List[ComplexIOBase]) -> List[TableColumn]:
+    """
+    Given a set of objects potentially with histories, aggregate those histories
+    into columns and return them.
+    """
+    entry_title_to_col_map = {}
+    score_col = None
+    for obj in objects:
+        # Special logic for scores. Create a single score column with aggregated scores.
+        stock_score = ScoreOutput.from_entry_list(obj.history)
+        if stock_score and not score_col:
+            score_col = TableColumn(
+                metadata=TableColumnMetadata(
+                    label=SCORE_COL_NAME_DEFAULT, col_type=TableColumnType.SCORE
+                ),
+                data=[],
+            )
+        if stock_score and score_col:
+            score_col.data.append(stock_score)
+        elif not stock_score and score_col:
+            # If we have a score column, but this object has no score, just add None
+            score_col.data.append(None)
+
+        # Now create a separate column for every entry type in the
+        # history. Entry types are grouped by "title".
+        for entry in obj.history:
+            # Hack for backwards compat, TODO will remove
+            if not entry.title:
+                continue
+            if entry.title not in entry_title_to_col_map:
+                # create the column
+                col = TableColumn(
+                    metadata=TableColumnMetadata(
+                        label=entry.title, col_type=entry.entry_type, unit=entry.unit
+                    ),
+                    data=[entry.explanation],
+                )
+                entry_title_to_col_map[entry.title] = col
+            else:
+                entry_title_to_col_map[entry.title].data.append(entry.explanation)
+
+    # Make sure the score column is the first one.
+    if score_col:
+        columns = score_col + list(entry_title_to_col_map.values())  # type: ignore
+    else:
+        columns = list(entry_title_to_col_map.values())
+    return columns
+
+
 @io_type
 class Table(ComplexIOBase):
     columns: List[TableColumn]
@@ -70,6 +121,12 @@ class Table(ComplexIOBase):
 
     def to_gpt_input(self) -> str:
         return f"[Table with {self.get_num_rows()} rows and {len(self.columns)} columns]"
+
+    def get_stock_column(self) -> Optional[TableColumnMetadata]:
+        for col in self.columns:
+            if col.metadata.col_type == TableColumnType.STOCK:
+                return col.metadata
+        return None
 
     def to_df(
         self, stocks_as_tickers_only: bool = False, stocks_as_hashables: bool = False
@@ -128,24 +185,35 @@ class Table(ComplexIOBase):
         return cls(columns=out_columns)
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        fixed_cols = []
         output_cols = []
         is_first_col = True
-        # Use a dataframe for convenience
-        df = self.to_df()
         citations = []
-        for df_col, col in zip(df.columns, self.columns):
+        for col_ref in self.columns:
+            # Make sure we don't mutate the original object
+            col = deepcopy(col_ref)
+            # A single input column might map to multiple output columns, so we
+            # need a list here.
+            additional_cols = []
+            additional_output_cols: List[TableOutputColumn] = []
             # First handle citations
             col_citations = await Citation.resolve_all_citations(
                 citations=self.get_all_citations(), db=pg
             )
             citations.extend(col_citations)
 
-            # Next handle special transformations
             output_col = col.to_output_column()
-            if output_col.col_type == TableColumnType.STOCK:
+            # Next handle special transformations
+            if col.metadata.col_type == TableColumnType.STOCK:
+                # Get expanded columns for stock scores, etc.
+                # We know col.data is a list of StockID's
+                additional_cols = object_histories_to_columns(
+                    objects=cast(List[ComplexIOBase], col.data)
+                )
+                additional_output_cols.extend((col.to_output_column() for col in additional_cols))
                 # Map to StockMetadata
-                df[df_col] = df[df_col].map(
-                    lambda val: (
+                col.data = [
+                    (
                         StockMetadata(
                             gbi_id=val.gbi_id,
                             symbol=val.symbol,
@@ -155,22 +223,33 @@ class Table(ComplexIOBase):
                         if isinstance(val, StockID)
                         else val
                     )
-                )
+                    for val in col.data
+                ]
                 if is_first_col:
                     # Automatically highlight the first column if it's a stock column
                     output_col.is_highlighted = True
+
             elif (
-                output_col.col_type in (TableColumnType.DATE, TableColumnType.DATETIME)
+                col.metadata.col_type in (TableColumnType.DATE, TableColumnType.DATETIME)
                 and is_first_col
             ):
                 # Automatically highlight the first column if it's a date column
                 output_col.is_highlighted = True
 
+            fixed_cols.append(col)
+            fixed_cols.extend(additional_cols)
+
             # include references to the relevant citations
             output_col.citation_refs = [cit.id for cit in col_citations]
             output_cols.append(output_col)
+            output_cols.extend(additional_output_cols)
             is_first_col = False
 
+        # At this point, fixed_cols and output_cols match up with each
+        # other. Create a table from fixed_cols so that we can easily convert to
+        # a row-based schema.
+        fixed_table = Table(columns=fixed_cols)
+        df = fixed_table.to_df()
         df = df.replace(np.nan, None)
         rows = df.values.tolist()
 

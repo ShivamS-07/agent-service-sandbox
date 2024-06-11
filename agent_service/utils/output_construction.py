@@ -1,21 +1,14 @@
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, cast
 
-from agent_service.io_type_utils import (
-    ComplexIOBase,
-    IOType,
-    ScoreOutput,
-    TableColumnType,
-    io_type,
-)
+from agent_service.io_type_utils import ComplexIOBase, IOType, io_type
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
-    SCORE_COL_NAME_DEFAULT,
     StockTableColumn,
     Table,
     TableColumn,
-    TableColumnMetadata,
+    object_histories_to_columns,
 )
 from agent_service.io_types.text import StockText, Text
 from agent_service.utils.async_utils import gather_with_concurrency
@@ -32,40 +25,9 @@ def prepare_list_of_stocks(stocks: List[StockID]) -> Table:
     # AAPL,  123,        blah blah
     # GOOGL, 234,        blah blah
 
-    entry_title_to_col_map = {}
-    # First column contains all stocks
-    for stock in stocks:
+    table_columns = object_histories_to_columns(objects=cast(List[ComplexIOBase], stocks))
 
-        # Special logic for scores
-        stock_score = ScoreOutput.from_entry_list(stock.history)
-        if stock_score:
-            if SCORE_COL_NAME_DEFAULT not in entry_title_to_col_map:
-                col = TableColumn(
-                    metadata=TableColumnMetadata(
-                        label=SCORE_COL_NAME_DEFAULT, col_type=TableColumnType.SCORE
-                    ),
-                    data=[],
-                )
-                entry_title_to_col_map[SCORE_COL_NAME_DEFAULT] = col
-            entry_title_to_col_map[SCORE_COL_NAME_DEFAULT].data.append(stock_score)
-
-        for entry in stock.history:
-            # Hack for backwards compat, TODO will remove
-            if not entry.title:
-                continue
-            if entry.title not in entry_title_to_col_map:
-                # create the column
-                col = TableColumn(
-                    metadata=TableColumnMetadata(
-                        label=entry.title, col_type=entry.entry_type, unit=entry.unit
-                    ),
-                    data=[entry.explanation],
-                )
-                entry_title_to_col_map[entry.title] = col
-            else:
-                entry_title_to_col_map[entry.title].data.append(entry.explanation)
-
-    columns: List[TableColumn] = [StockTableColumn(data=stocks)] + list(entry_title_to_col_map.values())  # type: ignore
+    columns: List[TableColumn] = [StockTableColumn(data=stocks)] + table_columns  # type: ignore
     return Table(columns=columns)
 
 

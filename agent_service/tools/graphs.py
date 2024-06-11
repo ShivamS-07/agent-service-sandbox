@@ -49,7 +49,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
         if not x_axis_col and col.metadata.col_type in (
             TableColumnType.DATE,
             TableColumnType.DATETIME,
-            TableColumnType.INTEGER,
+            TableColumnType.STRING,  # E.g. for quarter labels
         ):
             x_axis_col = (col, df_col)
             continue
@@ -80,7 +80,6 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
         )
 
     data = []
-    df = args.input_table.to_df()
     y_col, y_df_col = data_col
     x_col, x_df_col = x_axis_col
     if dataset_col is None:

@@ -16,6 +16,7 @@ from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, HistoryEntry
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
+    StockTable,
     StockTableColumn,
     Table,
     TableColumn,
@@ -211,9 +212,13 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
         if output_df is None:
             raise RuntimeError(f"Table transformation subprocess failed with:\n{error}")
 
-    return Table.from_df_and_cols(
+    output_table = Table.from_df_and_cols(
         columns=new_col_schema, data=output_df, stocks_are_hashable_objs=True
     )
+
+    if output_table.get_stock_column():
+        return StockTable(columns=output_table.columns)
+    return output_table
 
 
 class JoinTableArgs(ToolArgs):
@@ -352,6 +357,8 @@ async def join_tables(args: JoinTableArgs, context: PlanRunContext) -> Table:
     for table in args.input_tables[1:]:
         joined_table = _join_two_tables(joined_table, table)
 
+    if joined_table.get_stock_column():
+        return StockTable(columns=joined_table.columns)
     return joined_table
 
 

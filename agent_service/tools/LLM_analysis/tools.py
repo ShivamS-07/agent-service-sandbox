@@ -93,7 +93,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     text, citation_ids = split_text_and_citation_ids(result)
     summary = Text(val=text)
     summary = summary.inject_history_entry(
-        HistoryEntry(explanation="summary", citations=text_group.get_citations(citation_ids))
+        HistoryEntry(title="Summary", citations=text_group.get_citations(citation_ids))
     )
     return summary
 
@@ -133,7 +133,7 @@ async def answer_question_with_text_data(
     text, citation_ids = split_text_and_citation_ids(result)
     answer = Text(val=text)
     answer = answer.inject_history_entry(
-        HistoryEntry(explanation="summary", citations=text_group.get_citations(citation_ids))
+        HistoryEntry(title="Summary", citations=text_group.get_citations(citation_ids))
     )
 
     return answer

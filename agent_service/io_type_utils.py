@@ -222,8 +222,7 @@ class ScoreOutput(BaseModel):
 
 @io_type
 class HistoryEntry(SerializeableBase):
-    explanation: PrimitiveType
-    # Default for backwards compat
+    explanation: Optional[PrimitiveType] = None
     title: str = ""
     entry_type: TableColumnType = TableColumnType.STRING
     unit: Optional[str] = None
@@ -264,7 +263,9 @@ class ComplexIOBase(SerializeableBase, ABC):
         Returns a string (markdown) representation of the history entries in this object.
         """
         strs = [
-            f"- **{entry.title}**: {entry.explanation}" for entry in self.history if entry.title
+            f"- **{entry.title}**: {entry.explanation}"
+            for entry in self.history
+            if entry.title and entry.explanation
         ]
         return "\n".join(strs)
 
