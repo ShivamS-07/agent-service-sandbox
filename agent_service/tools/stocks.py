@@ -119,58 +119,132 @@ async def raw_stock_identifier_lookup(
     # Using chat context to help decide
     # Use embedding to find the closest match (e.g. "google" vs "alphabet")
     # ignore common company suffixes like Corp and Inc.
-    # get alternative name db up and query it
     # make use of custom doc company tagging machinery
 
-    # Exact symbol match
+    # Exact gbi alt name match
+    # these are hand crafted strings to be used only when needed
     sql = """
-    SELECT gbi_security_id, symbol, isin, security_region, currency, name
+    SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
+    ms.name, gan.alt_name as gan_alt_name
     FROM master_security ms
-    WHERE ms.symbol = upper(%s)
+    JOIN "data".gbi_id_alt_names gan ON gan.gbi_id = ms.gbi_security_id
+    WHERE
+    upper(gan.alt_name) = upper(%(search_term)s)
     AND ms.is_public
     AND ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
     """
-    rows = db.generic_read(sql, [args.stock_name])
+    rows = db.generic_read(sql, {"search_term": args.stock_name})
     if rows:
-        # useful for debugging
-        # print("symbol match: ", rows)
-        logger.info("found by symbol")
+        logger.info("found exact gbi alt name")
         return rows
 
-    # Exact ISIN match
-    sql = """
-    SELECT gbi_security_id, symbol, isin, security_region, currency, name
-    FROM master_security ms
-    WHERE ms.isin = upper(%s)
-    AND ms.is_public
-    AND ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
-    AND ms.is_primary_trading_item = true
-    AND ms.to_z is null
-    """
-    rows = db.generic_read(sql, [args.stock_name])
-    if rows:
-        # useful for debugging
-        # print("isin match: ", rows)
-        logger.info("found by ISIN")
-        return rows
+    # Exact symbol or name match
+    if (len(args.stock_name) <= 6 or args.stock_name.isdigit()) and 1 == len(
+        args.stock_name.split()
+    ):
+        sql = """
+        SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
+        ms.name, can.alt_name as can_alt_name
+        FROM master_security ms
+        JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
+        LEFT JOIN "data".company_alt_names can ON ssm.spiq_company_id = can.spiq_company_id
+        WHERE
+        ( ms.symbol = upper(%(search_term)s)
+        OR upper(ms.name) = upper(%(search_term)s)
+        OR upper(can.alt_name) = upper(%(search_term)s)
+        )
+        AND ms.is_public
+        AND ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
+        AND ms.is_primary_trading_item = true
+        AND ms.to_z is null
+        """
+        rows = db.generic_read(sql, {"search_term": args.stock_name})
+        if rows:
+            logger.info("found exact symbol or name match")
+            return rows
+
+    # ISINs are 12 chars long, 2 chars, 10 digits
+    if (
+        12 == len(args.stock_name)
+        and args.stock_name[0:2].isalpha()
+        and args.stock_name[2:].isdigit()
+    ):
+        # Exact ISIN match
+        sql = """
+        SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency, name,
+        ms.isin as ms_isin
+        FROM master_security ms
+        WHERE ms.isin = upper(%(search_term)s)
+        AND ms.is_public
+        AND ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+        AND ms.is_primary_trading_item = true
+        AND ms.to_z is null
+        UNION
+        -- legacy ISINs
+        SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency, name,
+        ssm.isin as ssm_isin
+        FROM master_security ms
+        JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
+        WHERE ssm.isin = upper(%(search_term)s)
+        AND ms.is_public
+        AND ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+        AND ms.is_primary_trading_item = true
+        AND ms.to_z is null
+        """
+        rows = db.generic_read(sql, {"search_term": args.stock_name})
+        if rows:
+            # useful for debugging
+            # print("isin match: ", rows)
+            logger.info("found by ISIN")
+            return rows
 
     # Word similarity name match
 
     # should we also allow 'Depositary Receipt (Common Stock)') ?
     sql = """
-    select * from (SELECT gbi_security_id, symbol, isin, security_region, currency, name,
+    select * from (SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
+    name, name as gbi_name,
     (strict_word_similarity(lower(ms.name), lower(%(search_term)s)) +
     strict_word_similarity(lower(%(search_term)s), lower(ms.name))) / 2
     AS ws
     FROM master_security ms
-    WHERE ms.asset_type = 'Common Stock'
+    WHERE
+    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
     AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
+    UNION
+    SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
+    name, alt_name as c_alt_name,
+    (strict_word_similarity(lower(alt_name), lower(%(search_term)s)) +
+    strict_word_similarity(lower(%(search_term)s), lower(alt_name))) / 2
+    AS ws
+    FROM master_security ms
+    JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
+    JOIN "data".company_alt_names can ON ssm.spiq_company_id = can.spiq_company_id
+    WHERE
+    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    AND ms.is_public
+    AND ms.is_primary_trading_item = true
+    AND ms.to_z is null
+    UNION
+    SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
+    name, alt_name as g_alt_name,
+    (strict_word_similarity(lower(alt_name), lower(%(search_term)s)) +
+    strict_word_similarity(lower(%(search_term)s), lower(alt_name))) / 2
+    AS ws
+    FROM master_security ms
+    JOIN "data".gbi_id_alt_names gan ON gan.gbi_id = ms.gbi_security_id
+    WHERE
+    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    AND ms.is_public
+    AND ms.is_primary_trading_item = true
+    AND ms.to_z is null
+
     ORDER BY ws DESC
-    LIMIT 50) as tmp_ms
+    LIMIT 100) as tmp_ms
     WHERE
     tmp_ms.ws >= 0.2
     """
@@ -189,21 +263,25 @@ async def raw_stock_identifier_lookup(
         # strong text  match
         matches = [r for r in rows if r["ws"] >= 0.9]
         if matches:
+            matches = [r for r in rows if r["ws"] >= 0.85]
             logger.info(f"found {len(matches)} nearly perfect matches")
             return matches[:10]
 
         matches = [r for r in rows if r["ws"] >= 0.6]
         if matches:
+            matches = [r for r in rows if r["ws"] >= 0.55]
             logger.info(f"found {len(matches)} strong matches")
             return matches[:20]
 
         matches = [r for r in rows if r["ws"] >= 0.4]
         if matches:
+            matches = [r for r in rows if r["ws"] >= 0.35]
             logger.info(f"found {len(matches)} medium matches")
             return matches[:30]
 
         matches = [r for r in rows if r["ws"] >= 0.3]
         if matches:
+            matches = [r for r in rows if r["ws"] >= 0.25]
             logger.info(f"found {len(matches)} weak matches")
             return matches[:40]
 
@@ -281,10 +359,39 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
         list[StockID]: The list of stock identifiers in the universe.
     """
     logger = get_prefect_logger(__name__)
-    db = get_psql()
     # TODO :
     # add a cache for the stock universe
     # switch to using GetEtfHoldingsForDate not db
+
+    etf_stock = await get_stock_info_for_universe(args, context)
+    universe_spiq_company_id = etf_stock["spiq_company_id"]
+    stock_universe_list = await get_stock_universe_list_from_universe_company_id(
+        universe_spiq_company_id, context
+    )
+
+    logger.info(
+        f"found {len(stock_universe_list)} holdings in ETF: {etf_stock} from '{args.universe_name}'"
+    )
+    await tool_log(
+        log=f"Found {len(stock_universe_list)} holdings in {etf_stock['symbol']}: {etf_stock['name']}",
+        context=context,
+    )
+
+    return stock_universe_list
+
+
+async def get_stock_info_for_universe(args: GetStockUniverseInput, context: PlanRunContext) -> Dict:
+    """Returns the company id of the best match universe.
+
+    Args:
+        args (GetStockUniverseInput): The input arguments for the stock universe lookup.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        int: company id
+    """
+    logger = get_prefect_logger(__name__)
+    db = get_psql()
 
     # Find the universe id/name by reusing the stock lookup, and then filter by ETF
     etf_stock_match = await get_stock_universe_from_etf_stock_match(args, context)
@@ -300,6 +407,7 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
         etf_rows = db.generic_read(sql, [potential_etf_gbi_ids])
         gbiid2companyid = {r["gbi_id"]: r["spiq_company_id"] for r in etf_rows}
         universe_spiq_company_id = gbiid2companyid[stock["gbi_security_id"]]
+        stock["spiq_company_id"] = universe_spiq_company_id
     else:
         logger.info(f"Could not find ETF directly for '{args.universe_name}'")
         gbi_uni_row = await get_stock_universe_gbi_stock_universe(args, context)
@@ -310,22 +418,34 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
             raise ValueError(
                 f"Could not find any stock universe related to: '{args.universe_name}'"
             )
+
+    return stock
+
+
+async def get_stock_universe_list_from_universe_company_id(
+    universe_spiq_company_id: int, context: PlanRunContext
+) -> List[StockID]:
+    """Returns the list of stock identifiers given a stock universe's company id.
+
+    Args:
+        universe_spiq_company_id: int
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        list[StockID]: The list of stock identifiers in the universe.
+    """
+    db = get_psql()
+
     # Find the stocks in the universe
     sql = """
     SELECT DISTINCT ON (gbi_id)
-    gbi_id, symbol, isin, name
+    gbi_id, symbol, ms.isin, name
     FROM "data".etf_universe_holdings euh
     JOIN master_security ms ON ms.gbi_security_id = euh.gbi_id
     WHERE spiq_company_id = %s
     AND euh.to_z > NOW()
     """
     rows = db.generic_read(sql, [universe_spiq_company_id])
-
-    logger.info(f"found {len(rows)} holdings in ETF: {stock} from '{args.universe_name}'")
-    await tool_log(
-        log=f"Found {len(rows)} holdings in {stock['symbol']}: {stock['name']}",
-        context=context,
-    )
 
     return [
         StockID(
