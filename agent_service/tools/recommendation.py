@@ -168,13 +168,16 @@ async def get_recommended_stocks(
         score = None
         score_val = get_score_from_recommendation(row.combo_rec)
         if score_val:
+            # Only inject history when we have a score
             score = Score(val=score_val)
-        outputs.append(
-            gbi_id_to_stock[row.gbi_id].inject_history_entry(
-                HistoryEntry(
-                    title="Boosted Recommendation",
-                    score=score,
+            outputs.append(
+                gbi_id_to_stock[row.gbi_id].inject_history_entry(
+                    HistoryEntry(
+                        title="Boosted Recommendation",
+                        score=score,
+                    )
                 )
             )
-        )
+        else:
+            outputs.append(gbi_id_to_stock[row.gbi_id])
     return outputs
