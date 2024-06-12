@@ -73,6 +73,11 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
         result = await stock_identifier_lookup(self.args, self.context)
         self.assertEqual(result.gbi_id, 7558)
 
+    async def test_stock_identifier_lookup_tesla2(self):
+        self.args = StockIdentifierLookupInput(stock_name="Tesla")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.gbi_id, 25508)
+
     async def test_stock_identifier_lookup_apple_similarity(self):
         self.args = StockIdentifierLookupInput(stock_name="apple")
         result = await stock_identifier_lookup(self.args, self.context)
