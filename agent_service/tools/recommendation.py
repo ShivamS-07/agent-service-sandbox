@@ -53,6 +53,20 @@ SETTINGS_TEMPLATE: Dict[str, Any] = {
 }
 
 
+def map_input_to_closest_horizon(input_horizon: str, supported_horizons: List[str]) -> str:
+    if input_horizon in supported_horizons:
+        return input_horizon
+
+    days_lookup = {"D": 1, "W": 7, "M": 30, "Y": 365}
+    input_days = int(input_horizon[:-1]) * days_lookup[input_horizon[-1]]
+    supported_horizon_to_days = {
+        horizon: int(horizon[:-1]) * days_lookup[horizon[-1]] for horizon in supported_horizons
+    }
+
+    min_pair = min(supported_horizon_to_days.items(), key=lambda x: abs(x[1] - input_days))
+    return min_pair[0]
+
+
 class GetRecommendedStocksInput(ToolArgs):
     """Note: This is to find the recommended stocks from the provided stock list. It takes into
     many factors like news, ISM, ratings, etc.
@@ -70,30 +84,26 @@ class GetRecommendedStocksInput(ToolArgs):
     def validate_horizon(cls, value: Any) -> Any:
         if not isinstance(value, str):
             raise ValueError("horizon must be a string")
-        elif value not in ("1M", "3M", "1Y"):
-            raise ValueError("horizon must be one of 1M, 3M, 1Y")
 
-        return value
+        return map_input_to_closest_horizon(value.upper(), supported_horizons=["1M", "3M", "1Y"])
 
     @field_validator("delta_horizon", mode="before")
     @classmethod
     def validate_delta_horizon(cls, value: Any) -> Any:
         if not isinstance(value, str):
             raise ValueError("delta horizon must be a string")
-        elif value not in ("1W", "1M", "3M", "6M", "9M", "1Y"):
-            raise ValueError("delta horizon must be one of 1W, 1M, 3M, 6M, 9M, 1Y")
 
-        return value
+        return map_input_to_closest_horizon(
+            value.upper(), supported_horizons=["1W", "1M", "3M", "6M", "9M", "1Y"]
+        )
 
     @field_validator("news_horizon", mode="before")
     @classmethod
     def validate_news_horizon(cls, value: Any) -> Any:
         if not isinstance(value, str):
             raise ValueError("news horizon must be a string")
-        elif value not in ("1W", "1M", "3M"):
-            raise ValueError("news horizon must be one of 1W, 1M, 3M")
 
-        return value
+        return map_input_to_closest_horizon(value.upper(), supported_horizons=["1W", "1M", "3M"])
 
 
 @tool(
@@ -127,7 +137,7 @@ async def get_recommended_stocks(
     else:
         # we perhaps can store the SP500 stocks as a log output but not for now as they are GBI IDs
         await tool_log(log="No stock IDs provided. Using S&P 500 stocks.", context=context)
-        stock_ids = await get_stock_universe(  # type: ignore
+        stock_ids: List[StockID] = await get_stock_universe(  # type: ignore
             args=GetStockUniverseInput(universe_name="SPDR S&P 500 ETF Trust"), context=context
         )
 
@@ -159,7 +169,9 @@ async def get_recommended_stocks(
     )
     if len(resp.rows) < args.num_stocks_to_return:
         # TODO: We can loose the constraints, but this is already very loose. What to do?
-        raise ValueError("Cannot find enough stocks to meet the requirement.")
+        raise ValueError(
+            f"Cannot find enough stocks to meet the requirement: {len(resp.rows)} / {args.num_stocks_to_return}"
+        )
 
     rows = resp.rows[: args.num_stocks_to_return]
     gbi_id_to_stock = {stock.gbi_id: stock for stock in stock_ids}

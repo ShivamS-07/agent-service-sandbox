@@ -8,7 +8,6 @@ import backoff
 from gbi_common_py_utils.utils.ssm import get_param
 from sec_api import ExtractorApi, MappingApi, QueryApi, RenderApi  # type: ignore
 
-from agent_service.utils.async_utils import async_wrap
 from agent_service.utils.sec.constants import (
     CIK,
     COMPANY_NAME,
@@ -63,7 +62,6 @@ class SecMapping:
         return isin.startswith(US)
 
     @classmethod
-    @async_wrap
     def map_gbi_id_to_cik(
         cls, gbi_id: int, gbi_id_metadata_map: Dict[int, SecurityMetadata]
     ) -> Optional[str]:

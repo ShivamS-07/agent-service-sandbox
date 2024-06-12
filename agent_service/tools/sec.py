@@ -21,7 +21,7 @@ async def get_sec_filings_helper(
         gbi_ids=[stock.gbi_id for stock in stock_ids]
     )
     for stock_id in stock_ids:
-        cik = await SecMapping.map_gbi_id_to_cik(stock_id.gbi_id, gbi_id_metadata_map)
+        cik = SecMapping.map_gbi_id_to_cik(stock_id.gbi_id, gbi_id_metadata_map)
         if cik is None:
             continue
 
@@ -93,7 +93,7 @@ async def get_other_sec_filings_helper(
 
     stock_filing_map = {}
     for stock_id in stock_ids:
-        cik = await SecMapping.map_gbi_id_to_cik(stock_id.gbi_id, gbi_id_metadata_map)
+        cik = SecMapping.map_gbi_id_to_cik(stock_id.gbi_id, gbi_id_metadata_map)
         if cik is None:
             continue
 
