@@ -158,19 +158,15 @@ async def statistic_identifier_lookup(
     SELECT id, name, match_name, description, ws FROM (
         select
             alt_match.id, alt_match.name, alt_match.description, alt_match.match_name,
-            sqrt(
+            (
                 strict_word_similarity(
                     lower(alt_match.match_name),
                     lower(%(search_text)s)
-                ) * (
-                    -- scale score by diff in name length
-                    cast(least(length(match_name), length(%(search_text)s)) as float)
-                    /
-                    greatest(length(match_name), length(%(search_text)s))
+                ) + strict_word_similarity(
+                    lower(%(search_text)s),
+                    lower(alt_match.match_name)
                 )
-            ) as ws
-            -- sqrt score because we're multiplying it by a length factor
-            -- once in the scaler and another time in the similarity grams match
+            ) / 2.0 as ws
         from (
             select
                 id, name, description,
@@ -231,7 +227,8 @@ class MacroFeatureDataInput(ToolArgs):
 @tool(
     description=(
         "This function returns the time series of data for a statistic_id"
-        " that is not tied to a specific stock."
+        " that is not tied to a specific stock. These are usually macroeconomic indicators like"
+        " bank interest rates, inflation and unemployment rates."
         " Optionally a start_date and end_date may be provided to specify a date range"
         " to get a specific date only set both inputs to the same date."
         " if the optional date_range argument is passed in it will override anything set in start_date and end_date "
