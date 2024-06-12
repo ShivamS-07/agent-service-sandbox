@@ -312,10 +312,12 @@ async def update_execution_after_input(
         if flow_run:
             await prefect_resume_agent_flow(flow_run)
         return None
-    elif action == Action.RERUN and flow_run:
+    elif action == Action.RERUN and (flow_run or run_tasks_without_prefect):
         # In this case, we know that the flow_run_type is PLAN_EXECUTION,
         # otherwise we'd have run the above block instead.
-        current_task_id = prefect_get_current_plan_run_task_id(flow_run)
+        current_task_id = None
+        if flow_run:
+            current_task_id = await prefect_get_current_plan_run_task_id(flow_run)
         for node in latest_plan.nodes:
             if ToolRegistry.does_tool_read_chat(node.tool_name):
                 # we've already run into a chat reading node, which means we need to rerun
@@ -502,7 +504,7 @@ async def handle_error_in_execution(
     retried, and false if not.
     """
     db = get_psql(skip_commit=context.skip_db_commit)
-    plans, plan_times = db.get_all_execution_plans(context.agent_id)
+    plans, plan_times, _ = db.get_all_execution_plans(context.agent_id)
     chat_context = db.get_chats_history_for_agent(context.agent_id)
     # check to see if EXECUTION_TRIES (3) plans have been written since last user message
     # if so, we should give up, otherwise could retry forever...

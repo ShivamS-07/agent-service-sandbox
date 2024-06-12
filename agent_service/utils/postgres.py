@@ -107,17 +107,19 @@ class Postgres(PostgresBase):
 
     def get_all_execution_plans(
         self, agent_id: str
-    ) -> Tuple[List[ExecutionPlan], List[datetime.datetime]]:
+    ) -> Tuple[List[ExecutionPlan], List[datetime.datetime], List[str]]:
         sql = """
-            SELECT plan, created_at
+            SELECT plan, created_at, plan_id::TEXT
             FROM agent.execution_plans
             WHERE agent_id = %(agent_id)s
             ORDER BY last_updated ASC
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
-        return [ExecutionPlan.model_validate(row["plan"]) for row in rows], [
-            row["created_at"] for row in rows
-        ]
+        return (
+            [ExecutionPlan.model_validate(row["plan"]) for row in rows],
+            [row["created_at"] for row in rows],
+            [row["plan_id"] for row in rows],
+        )
 
     def get_agent_plan_runs(self, agent_id: str, limit_num: Optional[int] = None) -> List[str]:
         limit_sql = ""
@@ -321,7 +323,7 @@ class Postgres(PostgresBase):
             return None
 
         row = rows[0]
-        output = load_io_type(row["output"])
+        output = load_io_type(row["log_data"])
         return output
 
     def get_short_company_description(

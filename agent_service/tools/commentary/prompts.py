@@ -67,18 +67,21 @@ COMMENTARY_PROMPT_MAIN = Prompt(
 PREVIOUS_COMMENTARY_PROMPT = Prompt(
     name="PREVIOUS_COMMENTARY_PROMPT",
     template=(
-        "Here is the previous commentary you wrote for the client, delimited by ***. "
-        "\n***\n"
-        "{commentary}"
-        "\n***\n"
-        "Only act based on one of the following cases:\n"
-        "- If client only asked for minor changes (adding more details, changing the tone, "
-        "making it shorter, etc.) you MUST use the previous commentary as a base and "
-        "make those changes. Ignore the following given texts.\n"
-        "- If client asked for adding new topics or information to previous commentary, "
-        "then you MUST analyze the following texts and adjust the previous commentary accordingly.\n"
-        "- If client asked for a completely new commentary, you MUST ignore the previous commentary "
-        "and write a new one based on the following texts. \n"
+        "Here are all the previous commentaries you wrote for the client, delimited by ******. "
+        "The more recent ones are at the top.\n"
+        "\n******\n"
+        "{previous_commentaries}"
+        "\n******\n"
+        "\nYou MUST only act based on one of the following cases:\n"
+        "\n1. **Minor Changes:** If the client asks for minor changes (such as adding more details, "
+        "changing the tone, making it shorter, etc.), you MUST find the specific commentary the client is referring to "
+        "and adjust that one accordingly. Ignore the given texts.\n"
+        "\n2. **Adding or Combining Information:** If the client asks for adding new topics or information "
+        "to one or some of the previous commentaries, or wants to combine some of the previous commentaries "
+        "with new data, then you MUST analyze the given texts and integrate the relevant information into the "
+        "specified previous commentaries. Preserve the original content of previous commentaries as much as possible.\n"
+        "\n3. **New Commentary:** If the client asks for a completely new commentary, you MUST ignore all the previous "
+        "commentaries and write a new one based on the given texts.\n"
     ),
 )
 

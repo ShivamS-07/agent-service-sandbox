@@ -3,7 +3,7 @@ import datetime
 from typing import List, Optional
 from uuid import uuid4
 
-from agent_service.GPT.constants import DEFAULT_SMART_MODEL
+from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
@@ -12,6 +12,7 @@ from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.commentary.constants import MAX_MATCHED_ARTICLES_PER_TOPIC
 from agent_service.tools.commentary.helpers import (
     get_portfolio_geography_prompt,
+    get_previous_commentary_results,
     get_region_weights_from_portfolio_holdings,
     get_theme_related_texts,
     organize_commentary_texts,
@@ -44,7 +45,6 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
-from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 
 # TODO:
@@ -65,7 +65,8 @@ class WriteCommentaryInput(ToolArgs):
 
 @tool(
     description=(
-        "This function should be used when client wants to write a commentary, articles or market summaries. "
+        "This function can be used when a client wants to write a commentary, article or summary of "
+        "market trends or specific topics."
         "This function generates a commentary either based for general market trends or "
         "based on specific topics mentioned by a client. "
         "The function creates a concise summary based on a comprehensive analysis of the provided texts. "
@@ -74,21 +75,27 @@ class WriteCommentaryInput(ToolArgs):
         "The input to the function is prepared by the get_commentary_input tool."
     ),
     category=ToolCategory.COMMENTARY,
+    reads_chat=True,
 )
 async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) -> Text:
     # Create GPT context and llm model
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
+    llm = GPT(context=gpt_context, model=GPT4_O)
 
     # get previous commentary if exists
-    db = get_psql()
-    previous_commentary = (
-        db.get_last_tool_output_for_plan(context.plan_id, context.plan_run_id, context.task_id)
-        if context.task_id is not None
+    previous_commentaries = await get_previous_commentary_results(context)
+    previous_commentaries_text = (
+        "\n***\n".join(Text.get_all_strs(previous_commentaries))
+        if len(previous_commentaries) > 0
         else None
     )
+    if previous_commentaries_text:
+        await tool_log(
+            log=f"Retrieved {len(previous_commentaries)} previous commentaries.",
+            context=context,
+        )
 
     # Prepare the portfolio geography prompt
     geography_prompt = NO_PROMPT.format()
@@ -108,7 +115,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         )
     else:
         await tool_log(
-            log="No portfolio name is provided. Skipping data match based on portfolio.",
+            log="No portfolio name is provided. Skipping portfolio based commentary.",
             context=context,
         )
 
@@ -121,8 +128,8 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     # create main prompt
     main_prompt = COMMENTARY_PROMPT_MAIN.format(
         previous_commentary_prompt=(
-            PREVIOUS_COMMENTARY_PROMPT.format(commentary=previous_commentary)
-            if previous_commentary is not None
+            PREVIOUS_COMMENTARY_PROMPT.format(previous_commentaries=previous_commentaries_text)
+            if previous_commentaries_text is not None
             else ""
         ),
         geography_prompt=geography_prompt,
@@ -152,7 +159,8 @@ class GetCommentaryTextsInput(ToolArgs):
 
 @tool(
     description=(
-        "This function can be used when a client wants to write a commentary, article or market summary. "
+        "This function can be used when a client wants to write a commentary, article or summary of "
+        "market trends or specific topics."
         "This function collects and prepares all texts to be used by the write_commentary tool "
         "for writing a commentary or short articles and market summaries. "
         "This function MUST only be used for write commentary tool. "
@@ -275,8 +283,8 @@ async def main() -> None:
     chat_context = ChatContext(messages=[user_message])
 
     context = PlanRunContext(
-        agent_id=str(uuid4()),
-        plan_id=str(uuid4()),
+        agent_id="7cb9fb8f-690e-4535-8b48-f6e63494c366",
+        plan_id="b3330500-9870-480d-bcb1-cf6fe6b487e3",
         user_id=str(uuid4()),
         plan_run_id=str(uuid4()),
         chat=chat_context,

@@ -15,6 +15,7 @@ from agent_service.tools.themes import (
     get_news_developments_about_theme,
 )
 from agent_service.types import PlanRunContext
+from agent_service.utils.postgres import get_psql
 
 
 async def get_sec_metadata_dao() -> SecuritiesMetadataDAO:
@@ -92,3 +93,33 @@ async def get_region_weights_from_portfolio_holdings(
 
     output = list(region_weight_map.items())
     return sorted(output, reverse=True, key=lambda tup: tup[1])
+
+
+async def get_previous_commentary_results(context: PlanRunContext) -> List[Text]:
+    """
+    This function gets the previous commentary results for the given agent context.
+    """
+    db = get_psql(skip_commit=False)
+    # get all plans for the agent
+    plans, _, plan_ids = db.get_all_execution_plans(context.agent_id)
+
+    # find the plan_ids that have used commentary tool
+    plan_ids_with_commentary = []
+    task_ids_with_commentary = []
+    for plan, plan_id in zip(plans, plan_ids):
+        for tool in plan.nodes:
+            if tool.tool_name == "write_commentary":
+                plan_ids_with_commentary.append(plan_id)
+                task_ids_with_commentary.append(tool.tool_task_id)
+
+    # get the previous commentary results
+    previous_commentary_results = []
+    for plan_id, task_id in zip(plan_ids_with_commentary, task_ids_with_commentary):
+        # get the last tool output of the latest plan run
+        res = db.get_last_tool_output_for_plan(context.agent_id, plan_id, task_id)
+
+        # if the output is a Text object, add it to the list
+        # this should ne adjusted when output is other stuff
+        if isinstance(res, Text):
+            previous_commentary_results.append(res)
+    return previous_commentary_results
