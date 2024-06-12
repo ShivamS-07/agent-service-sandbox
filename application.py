@@ -29,6 +29,7 @@ from agent_service.endpoints.models import (
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
     GetChatHistoryResponse,
+    GetPlanRunOutputResponse,
     SharePlanRunRequest,
     SharePlanRunResponse,
     UnsharePlanRunRequest,
@@ -332,12 +333,12 @@ async def unshare_plan_run(
 
 @router.get(
     "/agent/get-plan-run-output/{plan_run_id}",
-    response_model=GetAgentOutputResponse,
+    response_model=GetPlanRunOutputResponse,
     status_code=status.HTTP_200_OK,
 )
 async def get_plan_run_output(
     plan_run_id: str, user: User = Depends(parse_header)
-) -> GetAgentOutputResponse:
+) -> GetPlanRunOutputResponse:
     validate_user_plan_run_access(user.user_id, plan_run_id, require_owner=False)
     return await application.state.agent_service_impl.get_plan_run_output(plan_run_id=plan_run_id)
 

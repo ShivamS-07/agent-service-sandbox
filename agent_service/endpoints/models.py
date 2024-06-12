@@ -173,6 +173,11 @@ class GetAgentOutputResponse(BaseModel):
     outputs: List[AgentOutput]
 
 
+class GetPlanRunOutputResponse(BaseModel):
+    outputs: List[AgentOutput]
+    agent_name: str
+
+
 ####################################################################################################
 # AgentEvents
 ####################################################################################################

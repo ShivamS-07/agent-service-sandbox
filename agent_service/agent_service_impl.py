@@ -21,6 +21,7 @@ from agent_service.endpoints.models import (
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
     GetChatHistoryResponse,
+    GetPlanRunOutputResponse,
     SharePlanRunResponse,
     UnsharePlanRunResponse,
     UpdateAgentRequest,
@@ -228,15 +229,16 @@ class AgentServiceImpl:
         await self.pg.set_plan_run_share_status(plan_run_id=plan_run_id, status=False)
         return UnsharePlanRunResponse(success=True)
 
-    async def get_plan_run_output(self, plan_run_id: str) -> GetAgentOutputResponse:
+    async def get_plan_run_output(self, plan_run_id: str) -> GetPlanRunOutputResponse:
         outputs = await self.pg.get_plan_run_outputs(plan_run_id=plan_run_id)
         if not outputs:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"No output found for {plan_run_id=}"
             )
 
+        agent_name = await self.pg.get_agent_name(outputs[0].agent_id)
         final_outputs = [output for output in outputs if not output.is_intermediate]
         if final_outputs:
-            return GetAgentOutputResponse(outputs=final_outputs)
+            return GetPlanRunOutputResponse(outputs=final_outputs, agent_name=agent_name)
 
-        return GetAgentOutputResponse(outputs=outputs)
+        return GetPlanRunOutputResponse(outputs=outputs, agent_name=agent_name)
