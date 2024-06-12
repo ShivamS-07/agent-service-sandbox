@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import jwt
 from fastapi import HTTPException, Security, status
@@ -66,7 +66,7 @@ def get_keyid_to_key_map() -> Dict[Any, jwt.PyJWK]:
     return key_id_map
 
 
-def extract_user_from_jwt(auth_token: str) -> Optional[User]:
+def extract_user_from_jwt(auth_token: str, suppress_errors: bool = False) -> Optional[User]:
     try:
         header = jwt.get_unverified_header(auth_token)
         key_id = header.get(KEY_ID, None)
@@ -99,23 +99,34 @@ def extract_user_from_jwt(auth_token: str) -> Optional[User]:
             is_admin=is_admin,
         )
     except Exception as e:
-        logger.exception(f"Failed to parse auth_token with exception: {e}")
+        if not suppress_errors:
+            logger.exception(f"Failed to parse auth_token with exception: {e}")
         return None
 
 
-def parse_header(auth_token: Optional[str] = Security(APIKeyHeader(name="Authorization"))) -> User:
-    if not auth_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing JWT token in header"
-        )
+def parse_header(required: bool = True) -> Callable[..., Optional[User]]:
+    def _parse_header(
+        auth_token: Optional[str] = Security(APIKeyHeader(name="Authorization")),
+    ) -> Optional[User]:
+        if not auth_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing JWT token in header"
+            )
 
-    if auth_token.startswith(COGNITO_PREFIX):
-        auth_token = auth_token[len(COGNITO_PREFIX) :]
+        if auth_token.startswith(COGNITO_PREFIX):
+            auth_token = auth_token[len(COGNITO_PREFIX) :]
 
-    user = extract_user_from_jwt(auth_token)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user")
-    return user
+        user = extract_user_from_jwt(auth_token, not required)
+
+        if not user:
+            if not required:
+                return None
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user"
+            )
+        return user
+
+    return _parse_header
 
 
 ####################################################################################################
@@ -135,7 +146,7 @@ def validate_user_agent_access(request_user_id: str, agent_id: str) -> None:
 
 
 def validate_user_plan_run_access(
-    request_user_id: str, plan_run_id: str, require_owner: bool = True
+    request_user_id: Optional[str], plan_run_id: str, require_owner: bool = True
 ) -> None:
     plan_run = get_psql().get_plan_run(plan_run_id)
     if plan_run is None:
@@ -147,6 +158,13 @@ def validate_user_plan_run_access(
     # do not require auth for shared plan runs
     if plan_run.get("shared") and not require_owner:
         return
+
+    # if we don't have a valid user and it's not shared, no access
+    if request_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User must be authenticated to access plan run {plan_run_id}",
+        )
 
     agent_id = plan_run.get("agent_id")
     if agent_id is None:
