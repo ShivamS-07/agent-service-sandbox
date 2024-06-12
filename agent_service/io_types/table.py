@@ -69,6 +69,9 @@ def object_histories_to_columns(objects: List[ComplexIOBase]) -> List[TableColum
     entry_title_to_col_map = {}
     score_col = None
     for obj in objects:
+        # TODO remove this eventually, just needed until we make sure histories
+        # never have duplicates.
+        obj.dedup_history()
         # Special logic for scores. Create a single score column with aggregated scores.
         stock_score = ScoreOutput.from_entry_list(obj.history)
         if stock_score and not score_col:

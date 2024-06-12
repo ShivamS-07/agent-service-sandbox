@@ -281,7 +281,7 @@ class ComplexIOBase(SerializeableBase, ABC):
     # object. This allows us to work in a purely functional style without
     # worrying about mutability.
 
-    def _collapse_history_duplicates(self) -> None:
+    def dedup_history(self) -> None:
         # Do a loop to make sure we preserve ordering
         new_history = []
         seen = set()
@@ -295,9 +295,11 @@ class ComplexIOBase(SerializeableBase, ABC):
     def inject_history_entry(self, entry: HistoryEntry) -> Self:
         new = deepcopy(self)
         new.history.append(deepcopy(entry))
+        # TODO this should be much more efficient
+        self.dedup_history()
         return new
 
-    def extend_history_from(self, other: Self) -> Self:
+    def _extend_history_from(self, other: Self) -> Self:
         new = deepcopy(self)
         new.history.extend(deepcopy(other.history))
         return new
@@ -305,7 +307,7 @@ class ComplexIOBase(SerializeableBase, ABC):
     def union_history_with(self, other: Self) -> Self:
         new = deepcopy(self)
         new.history.extend(deepcopy(other.history))
-        new._collapse_history_duplicates()
+        new.dedup_history()
         return new
 
     def get_all_citations(self) -> List[Citation]:
@@ -331,7 +333,7 @@ class ComplexIOBase(SerializeableBase, ABC):
             if key in dict1 and key in dict2:
                 # If it's in both, merge the histories
                 new_val = dict1[key]
-                output.add(new_val.extend_history_from(dict2[key]))
+                output.add(new_val._extend_history_from(dict2[key]))
             else:
                 output.add(val)
 
@@ -345,7 +347,7 @@ class ComplexIOBase(SerializeableBase, ABC):
         for val in set1.intersection(set2):
             key = hash(val)
             new_val = dict1[key]
-            output.add(new_val.extend_history_from(dict2[key]))
+            output.add(new_val._extend_history_from(dict2[key]))
 
         return output
 
