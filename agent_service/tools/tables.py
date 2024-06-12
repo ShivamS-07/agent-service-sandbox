@@ -210,6 +210,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
             ),
             sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
         )
+        logger.info(f"Running transform code:\n{code}")
         output_df, error = _run_transform_code(df=data_df, code=code)
         if output_df is None:
             raise RuntimeError(f"Table transformation subprocess failed with:\n{error}")

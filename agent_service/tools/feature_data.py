@@ -125,8 +125,10 @@ class StatisticsIdentifierLookupInput(ToolArgs):
 @tool(
     description=(
         "This function takes a string (close price, Churn low, Market Capitalization, Coppock Curve, e.g.)"
-        " which refers to a financial indicator or statistic, and matches it to an identifier for that "
-        "statistic. You should use this before fetching any data for the statistic."
+        " which refers to a financial indicator or statistic, and matches it to an identifier for that"
+        " statistic. You should use this before fetching any data for the statistic. Note that for things like"
+        " 'percent change of price' or 'price delta', just fetch the underlying field 'price'"
+        " and compute the delta separately."
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
