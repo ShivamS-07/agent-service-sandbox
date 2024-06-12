@@ -29,6 +29,12 @@ INITIAL_PLAN_FAILED_SYS_PROMPT_STR = "{agent_description} You have been provided
 
 INITIAL_PLAN_FAILED_MAIN_PROMPT_STR = "Given the following interaction with the client, inform the client of your failure to generate a plan for satisfying their needs. Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nNow write your message to the client: "
 
+### Initial Plan Failed Suggestions Response
+
+INITIAL_PLAN_FAILED_SUGGESTIONS_SYS_PROMPT_STR = "{agent_description} You have been provided with a client request for information, but you have failed to generate an initial plan to satisfy that information need. You will tell the client that you've failed and should apologize for that failure. You will be provided with the tools available to you for this task, if you believe that there is a key functionality missing related to the user's information need, you can mention it, otherwise you should mention that the request was fairly complex and that you got confused. Next, based on the list of tools, mention some basic things you can do that are related to the information needs expressed. You must not mention any specific technical details, including the names of specific tools/functions, try to summarize across multiple tools if possible. You should not mention tools that provide mappings to identifiers, dates, etc., you should focus on higher level functionalities that would make sense to your nontechnical clients. That said, you output must be grounded in the specific tools available to you, do not make up functionalities that that do not correspond to specific tools. Your choices should be diverse, do not focus on one particular kind of tool, and do not repeat yourself. Your output should consist of a short prose paragraph followed by a bulleted list of capabilities, it should not be a letter. Be concise, limit your initial paragraph to 40 words long, and do not list more than 8 possibilities with 30 words per possibility. Here are the list of tools you have access to:\n{tools}"
+
+INITIAL_PLAN_FAILED_SUGGESTIONS_MAIN_PROMPT_STR = "Given the following interaction with the client, inform the client of your failure to generate a plan for satisfying their needs, and offer suggestions for things you do know how to do. Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nNow write your message to the client: "
+
 ### Complete Execution Response
 
 COMPLETE_EXECUTION_SYS_PROMPT_STR = "{agent_description} The client requested some information, and you have just successfully executed a plan to aimed at satisfying that information need. Tell the client you are done, and, if appropriate, directly discuss the output. However, if output provided is a full text document, a table, or a chart, the client will have direct already access to the content of the output and you only need to briefly refer to the output, for this you can simply use information in the final steps of the plan given and whatever summary information you have from the output that you think might be useful for the client. After mentioning the output, ask the client if they have more any more relevant work for you to do (but do not use those exact words). Keep it fairly brief: your total response should be no more than 80 words. You do not need to greet the client."
@@ -90,6 +96,14 @@ INITIAL_PLAN_FAILED_SYS_PROMPT = Prompt(
 INITIAL_PLAN_FAILED_MAIN_PROMPT = Prompt(
     INITIAL_PLAN_FAILED_MAIN_PROMPT_STR, "INITIAL_PLAN_FAILED_MAIN_PROMPT"
 )
+
+INITIAL_PLAN_FAILED_SUGGESTIONS_SYS_PROMPT = Prompt(
+    INITIAL_PLAN_FAILED_SUGGESTIONS_SYS_PROMPT_STR, "INITIAL_PLAN_FAILED_SUGGESTIONS_SYS_PROMPT"
+)
+INITIAL_PLAN_FAILED_SUGGESTIONS_MAIN_PROMPT = Prompt(
+    INITIAL_PLAN_FAILED_SUGGESTIONS_MAIN_PROMPT_STR, "INITIAL_PLAN_FAILED_SUGGESTIONS_MAIN_PROMPT"
+)
+
 
 COMPLETE_EXECUTION_SYS_PROMPT = Prompt(
     COMPLETE_EXECUTION_SYS_PROMPT_STR, "COMPLETE_EXECUTION_SYS_PROMPT"

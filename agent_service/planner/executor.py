@@ -211,7 +211,9 @@ async def create_execution_plan(
     if plan is None:
         if do_chat:
             chatbot = Chatbot(agent_id=agent_id)
-            message = await chatbot.generate_initial_plan_failed_response(chat_context=chat_context)
+            message = await chatbot.generate_initial_plan_failed_response_suggestions(
+                chat_context=chat_context
+            )
             await send_chat_message(
                 message=Message(agent_id=agent_id, message=message, is_user_message=False),
                 db=db,
@@ -312,8 +314,8 @@ async def update_execution_after_input(
         if flow_run:
             await prefect_resume_agent_flow(flow_run)
         return None
-    elif action == Action.RERUN and (flow_run or run_tasks_without_prefect):
-        # In this case, we know that the flow_run_type is PLAN_EXECUTION,
+    elif action == Action.RERUN:
+        # In this case, we know that the flow_run_type is PLAN_EXECUTION (or there no flow_run),
         # otherwise we'd have run the above block instead.
         current_task_id = None
         if flow_run:
@@ -441,7 +443,7 @@ async def rewrite_execution_plan(
 
     if not new_plan:
         if do_chat:
-            message = await chatbot.generate_initial_plan_failed_response(
+            message = await chatbot.generate_initial_plan_failed_response_suggestions(
                 chat_context=await get_chat_history_from_db(agent_id, db),
             )
             await send_chat_message(
@@ -520,7 +522,9 @@ async def handle_error_in_execution(
     if action == Action.NONE:
         if do_chat:
             chatbot = Chatbot(agent_id=context.agent_id)
-            message = await chatbot.generate_initial_plan_failed_response(chat_context=chat_context)
+            message = await chatbot.generate_initial_plan_failed_response_suggestions(
+                chat_context=chat_context
+            )
             await send_chat_message(
                 message=Message(agent_id=context.agent_id, message=message, is_user_message=False),
                 db=db,

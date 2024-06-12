@@ -170,7 +170,7 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
         ),
         COMPARISON_SYS_PROMPT.format(),
     )
-    print(result)
+
     lines = result.replace("\n\n", "\n").split("\n")
     citation_ids = json.loads(clean_to_json_if_needed(lines[-1]))
     main_text = "\n".join(lines[:-1])
@@ -334,7 +334,7 @@ async def profile_filter_helper(
 
     output_tuples: List[Tuple[bool, str, List[Citation]]] = []
     for result, text_group in zip(results, aligned_text_groups.val.values()):
-        print(result)
+
         try:
             rationale, answer = result.strip().replace("\n\n", "\n").split("\n")
             is_match = answer.lower().startswith("yes")

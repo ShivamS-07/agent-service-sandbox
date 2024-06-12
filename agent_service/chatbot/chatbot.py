@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Type
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
@@ -13,6 +13,8 @@ from agent_service.chatbot.prompts import (
     INITIAL_MIDPLAN_MAIN_PROMPT,
     INITIAL_MIDPLAN_SYS_PROMPT,
     INITIAL_PLAN_FAILED_MAIN_PROMPT,
+    INITIAL_PLAN_FAILED_SUGGESTIONS_MAIN_PROMPT,
+    INITIAL_PLAN_FAILED_SUGGESTIONS_SYS_PROMPT,
     INITIAL_PLAN_FAILED_SYS_PROMPT,
     INITIAL_POSTPLAN_MAIN_PROMPT,
     INITIAL_POSTPLAN_SYS_PROMPT,
@@ -31,6 +33,7 @@ from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan
+from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 
@@ -41,10 +44,12 @@ class Chatbot:
         agent_id: str,
         model: str = DEFAULT_SMART_MODEL,
         gpt_service_stub: Optional[GPTServiceStub] = None,
+        tool_registry: Type[ToolRegistry] = ToolRegistry,
     ) -> None:
         self.agent_id = agent_id
         context = create_gpt_context(GptJobType.AGENT_CHATBOT, agent_id, GptJobIdType.AGENT_ID)
         self.llm = GPT(context, model, gpt_service_stub=gpt_service_stub)
+        self.tool_registry = tool_registry
 
     async def generate_initial_preplan_response(self, chat_context: ChatContext) -> str:
         main_prompt = INITIAL_PREPLAN_MAIN_PROMPT.format(chat_context=chat_context.get_gpt_input())
@@ -74,6 +79,19 @@ class Chatbot:
         )
         sys_prompt = INITIAL_PLAN_FAILED_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=50)
+        return result
+
+    async def generate_initial_plan_failed_response_suggestions(
+        self, chat_context: ChatContext
+    ) -> str:
+        main_prompt = INITIAL_PLAN_FAILED_SUGGESTIONS_MAIN_PROMPT.format(
+            chat_context=chat_context.get_gpt_input()
+        )
+        sys_prompt = INITIAL_PLAN_FAILED_SUGGESTIONS_SYS_PROMPT.format(
+            agent_description=AGENT_DESCRIPTION, tools=self.tool_registry.get_tool_str()
+        )
+        print(sys_prompt)
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=500)
         return result
 
     async def generate_execution_complete_response(

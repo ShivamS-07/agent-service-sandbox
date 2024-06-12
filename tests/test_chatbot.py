@@ -45,7 +45,9 @@ class TestPlans(IsolatedAsyncioTestCase):
         midplan_response = await chatbot.generate_initial_midplan_response(chat_context)
         print(midplan_response)
         chat_context.messages.append(Message(message=midplan_response, is_user_message=False))
-        failed_plan_response = await chatbot.generate_initial_plan_failed_response(chat_context)
+        failed_plan_response = await chatbot.generate_initial_plan_failed_response_suggestions(
+            chat_context
+        )
         print(failed_plan_response)
         plan_nodes = [
             ToolExecutionNode(

@@ -121,9 +121,12 @@ def _run_transform_code(df: pd.DataFrame, code: str) -> Tuple[Optional[pd.DataFr
         code = code[9:]
     if code.endswith("```"):
         code = code[:-3]
-    with tempfile.NamedTemporaryFile(mode="w+") as code_file, tempfile.NamedTemporaryFile(
-        mode="w+"
-    ) as data_file:
+    delete = (
+        sys.platform != "win32"
+    )  # turning off delete is necessary for temp file to work in Windows
+    with tempfile.NamedTemporaryFile(
+        mode="w+", delete=delete
+    ) as code_file, tempfile.NamedTemporaryFile(mode="w+", delete=delete) as data_file:
         code_file.write(code)
         code_file.flush()
         serialized = df.to_json()

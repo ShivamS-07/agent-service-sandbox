@@ -78,6 +78,9 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         " provided list of stocks, the output is a list of news developments. "
         "If end_date is left out, "
         "the current date is used. If start_date is left out, 1 week ago is used."
+        "Never, ever pass an empty list of stocks to this function, you must only use this "
+        "function when you have a specific list of stocks you want news for. If you have a general "
+        "topic you want news about, use get_news_articles_for_topics"
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,

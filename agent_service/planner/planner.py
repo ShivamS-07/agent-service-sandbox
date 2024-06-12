@@ -11,6 +11,7 @@ from agent_service.planner.constants import (
     ARGUMENT_RE,
     ASSIGNMENT_RE,
     INITIAL_PLAN_TRIES,
+    MIN_SUCCESSFUL_FOR_STOP,
 )
 from agent_service.planner.planner_types import (
     ErrorInfo,
@@ -44,7 +45,7 @@ from agent_service.tool import Tool, ToolRegistry
 from agent_service.tools import *  # noqa
 from agent_service.types import ChatContext, Message
 from agent_service.utils.agent_event_utils import send_chat_message
-from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.async_utils import gather_with_concurrency, gather_with_stop
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
@@ -92,9 +93,11 @@ class Planner:
             self._create_initial_plan(chat_context, self.fast_llm)
             for _ in range(INITIAL_PLAN_TRIES)
         ]
-        first_round_results = [
-            plan for plan in await gather_with_concurrency(first_round_tasks) if plan is not None
-        ]
+        first_round_results = await gather_with_stop(first_round_tasks, MIN_SUCCESSFUL_FOR_STOP)
+
+        # [
+        #    plan for plan in await gather_with_concurrency(first_round_tasks) if plan is not None
+        # ]
         if first_round_results:
             logger.info(
                 f"{len(first_round_results)} of {INITIAL_PLAN_TRIES} initial plan runs succeeded"
@@ -235,7 +238,7 @@ class Planner:
             )
             for _ in range(INITIAL_PLAN_TRIES)
         ]
-        results = [plan for plan in await gather_with_concurrency(tasks) if plan is not None]
+        results = await gather_with_stop(tasks, stop_count=MIN_SUCCESSFUL_FOR_STOP)
         if results:
             logger.info(f"{len(results)} of {INITIAL_PLAN_TRIES} replan runs succeeded")
             results = list(set(results))  # get rid of complete duplicates and avoid best pick
@@ -292,7 +295,7 @@ class Planner:
             self._rewrite_plan_after_error(error_info, chat_context, last_plan)
             for _ in range(INITIAL_PLAN_TRIES)
         ]
-        results = [plan for plan in await gather_with_concurrency(tasks) if plan is not None]
+        results = await gather_with_stop(tasks, stop_count=MIN_SUCCESSFUL_FOR_STOP)
         if results:
             logger.info(f"{len(results)} of {INITIAL_PLAN_TRIES} replan runs succeeded")
             results = list(set(results))  # get rid of complete duplicates

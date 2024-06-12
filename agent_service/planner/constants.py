@@ -9,6 +9,7 @@ CREATE_EXECUTION_PLAN_FLOW_NAME = "create_execution_plan"
 
 INITIAL_PLAN_TRIES = 3
 EXECUTION_TRIES = 3
+MIN_SUCCESSFUL_FOR_STOP = 2
 
 WORKLOG_INTERVAL = 0.5  # every X seconds send a worklog event to FE
 

@@ -2,7 +2,16 @@ import asyncio
 import functools
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Awaitable, Callable, Collection, Coroutine, Optional, TypeVar
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Collection,
+    Coroutine,
+    List,
+    Optional,
+    TypeVar,
+)
 
 T = TypeVar("T")
 
@@ -27,6 +36,17 @@ def sync(async_fn: Callable[..., Coroutine[Any, Any, T]]) -> Callable[..., T]:
         return asyncio.run(async_fn(*args, **kwargs))
 
     return wrapper
+
+
+async def gather_with_stop(tasks: Collection[Awaitable], stop_count: int) -> List[Any]:
+    successful = []
+    for coro in asyncio.as_completed(tasks):
+        result = await coro
+        if result is not None:
+            successful.append(result)
+        if len(successful) >= stop_count:
+            break
+    return successful
 
 
 async def get_consensus(  # type: ignore
