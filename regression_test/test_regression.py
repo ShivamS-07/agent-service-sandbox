@@ -29,6 +29,13 @@ def plan_to_json(plan: ExecutionPlan) -> str:
     return json.dumps(json_list)
 
 
+def plan_to_simple_json(plan: ExecutionPlan) -> str:
+    json_list = []
+    for node in plan.nodes:
+        json_list.append({"tool_name": node.tool_name})
+    return json.dumps(json_list)
+
+
 class TestExecutionPlanner(unittest.TestCase):
 
     @classmethod
@@ -130,6 +137,7 @@ class TestExecutionPlanner(unittest.TestCase):
                     "execution_start_at_utc": execution_started_at,
                     "execution_finished_at_utc": datetime.datetime.utcnow().isoformat(),
                     "execution_plan": plan_to_json(plan=plan),
+                    "execution_plan_simple": plan_to_simple_json(plan=plan),
                     "output": dump_io_type(output),
                     "plan_id": plan_id,
                     **shared_log_data,
@@ -144,6 +152,7 @@ class TestExecutionPlanner(unittest.TestCase):
                     "execution_start_at_utc": execution_started_at,
                     "execution_finished_at_utc": datetime.datetime.utcnow().isoformat(),
                     "execution_plan": plan_to_json(plan=plan),
+                    "execution_plan_simple": plan_to_simple_json(plan=plan),
                     "error_msg": traceback.format_exc(),
                     "plan_id": plan_id,
                     **shared_log_data,
