@@ -67,6 +67,9 @@ class Text(ComplexIOBase):
             score=ScoreOutput.from_entry_list(self.history),
         )
 
+    def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        return f"<Text: {self.get().val}>"
+
     @staticmethod
     def _to_string_recursive(val: IOType) -> IOType:
         if isinstance(val, list):
@@ -664,7 +667,9 @@ class TextGroup(ComplexIOBase):
         return [TextCitation(source_text=self.val[i]) for i in citation_ids]
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
-        from agent_service.utils.output_construction import get_output_from_io_type
+        from agent_service.utils.output_utils.output_construction import (
+            get_output_from_io_type,
+        )
 
         # construct a lookup for all child texts
         strings = Text.get_all_strs(self.val)

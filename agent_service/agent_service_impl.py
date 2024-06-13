@@ -32,7 +32,7 @@ from agent_service.types import ChatContext, Message
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.output_construction import get_output_from_io_type
+from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
 from agent_service.utils.redis_queue import get_agent_event_channel, wait_for_messages
 from agent_service.utils.string_utils import is_valid_uuid

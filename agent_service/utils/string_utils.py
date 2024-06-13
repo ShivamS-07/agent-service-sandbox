@@ -140,6 +140,15 @@ def safe_json_load(obj: Optional[str]) -> Any:
     return json.loads(obj)
 
 
+def strip_code_backticks(obj: str) -> str:
+    outputs = []
+    for line in obj.split("\n"):
+        if line.startswith("```"):
+            continue
+        outputs.append(line)
+    return "\n".join(outputs)
+
+
 def is_valid_uuid(input: str) -> bool:
     try:
         uuid.UUID(input)

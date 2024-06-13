@@ -1,7 +1,7 @@
 from agent_service.io_type_utils import IOType
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
-from agent_service.utils.output_construction import PreparedOutput
+from agent_service.utils.output_utils.output_construction import PreparedOutput
 
 
 class OutputArgs(ToolArgs):

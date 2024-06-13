@@ -25,6 +25,8 @@ from agent_service.utils.stock_metadata import StockMetadata
 STOCK_ID_COL_NAME_DEFAULT = "Security"
 SCORE_COL_NAME_DEFAULT = "Score"
 
+MAX_DATAPOINTS_FOR_GPT = 50
+
 
 @io_type
 class TableColumnMetadata(ComplexIOBase):
@@ -37,6 +39,22 @@ class TableColumnMetadata(ComplexIOBase):
 class TableColumn(ComplexIOBase):
     metadata: TableColumnMetadata
     data: List[Optional[IOType]]
+
+    def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        if use_abbreviated_output:
+            return f"<TableColumn of type '{self.metadata.col_type.value}' with {len(self.data)} datapoints>"
+
+        data_to_show = self.data
+        if len(self.data) > MAX_DATAPOINTS_FOR_GPT:
+            threshold = MAX_DATAPOINTS_FOR_GPT // 2
+            data_to_show = [*self.data[:threshold], "...", *self.data[threshold:]]
+        col_str = ", ".join(
+            (
+                item.to_gpt_input() if isinstance(item, ComplexIOBase) else str(item)
+                for item in data_to_show
+            )
+        )
+        return f"<Column '{self.metadata.label}' Data: {col_str}>"
 
     def to_output_column(self) -> "TableOutputColumn":
         # TODO switch GBI ID's to tickers if needed, etc.
@@ -122,8 +140,9 @@ class Table(ComplexIOBase):
             return 0
         return len(self.columns[0].data)
 
-    def to_gpt_input(self) -> str:
-        return f"[Table with {self.get_num_rows()} rows and {len(self.columns)} columns]"
+    def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        col_strings = "\n".join((col.to_gpt_input() for col in self.columns))
+        return f"<Table with {self.get_num_rows()} rows and columns:\n{col_strings}\n>\n"
 
     def get_stock_column(self) -> Optional[TableColumnMetadata]:
         for col in self.columns:

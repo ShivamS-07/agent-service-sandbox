@@ -10,13 +10,35 @@ from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message, Notification
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.output_construction import get_output_from_io_type
+from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres
 
 
 class AsyncDB:
     def __init__(self, pg: BoostedPG):
         self.pg = pg
+
+    async def get_prev_outputs_for_agent_plan(
+        self, agent_id: str, plan_id: str, latest_plan_run_id: str
+    ) -> List[IOType]:
+        sql = """
+        SELECT plan_run_id, ARRAY_AGG(ao.output ORDER BY ao.created_at) AS outputs
+        FROM agent.agent_outputs ao
+        WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
+                AND plan_id = %(plan_id)s
+                AND plan_run_id != %(latest_plan_run_id)s
+        GROUP BY plan_run_id, created_at
+        ORDER BY plan_run_id, created_at DESC
+        LIMIT 1
+        """
+        rows = await self.pg.generic_read(
+            sql,
+            {"agent_id": agent_id, "plan_id": plan_id, "latest_plan_run_id": latest_plan_run_id},
+        )
+        if not rows:
+            return []
+        row = rows[0]
+        return [load_io_type(output) for output in row["outputs"]]
 
     async def get_agent_outputs(self, agent_id: str) -> List[AgentOutput]:
         sql = """

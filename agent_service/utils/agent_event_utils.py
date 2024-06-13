@@ -24,7 +24,7 @@ from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import Message, Notification, PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.output_construction import get_output_from_io_type
+from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
 from agent_service.utils.prefect import (
     get_prefect_plan_run_statuses,

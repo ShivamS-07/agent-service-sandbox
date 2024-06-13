@@ -74,6 +74,8 @@ class StockAlignedTextGroups(ComplexIOBase):
         return dumper(data)
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
-        from agent_service.utils.output_construction import get_output_from_io_type
+        from agent_service.utils.output_utils.output_construction import (
+            get_output_from_io_type,
+        )
 
         return await get_output_from_io_type(val=self.val, pg=pg, title=title)

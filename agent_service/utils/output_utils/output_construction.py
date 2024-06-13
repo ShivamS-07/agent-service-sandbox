@@ -8,6 +8,7 @@ from agent_service.io_types.table import StockTableColumn, Table, TableColumn
 from agent_service.io_types.text import StockText, Text
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.output_utils.utils import io_type_to_gpt_input
 
 
 def prepare_list_of_stocks(stocks: List[StockID]) -> Table:
@@ -76,6 +77,9 @@ class PreparedOutput(ComplexIOBase):
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         return await get_output_from_io_type(val=self.val, pg=pg, title=self.title)
+
+    def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        return io_type_to_gpt_input(self.val, use_abbreviated_output=use_abbreviated_output)
 
 
 # TODO remove me, for backwards compat

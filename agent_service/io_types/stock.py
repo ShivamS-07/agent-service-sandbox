@@ -29,6 +29,9 @@ class StockID(ComplexIOBase):
             return self.gbi_id < other.gbi_id
         return NotImplemented
 
+    def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        return f"<StockID: {self.company_name} ({self.symbol or self.isin})>"
+
     @staticmethod
     async def from_gbi_id_list(gbi_ids: List[int]) -> List["StockID"]:
         meta_dict = await get_stock_metadata(gbi_ids=gbi_ids)

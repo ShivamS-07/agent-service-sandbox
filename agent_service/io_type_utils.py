@@ -255,7 +255,7 @@ class ComplexIOBase(SerializeableBase, ABC):
     # Tracks the history of the object across various filters, summarizations, etc.
     history: List[HistoryEntry] = []
 
-    def to_gpt_input(self) -> str:
+    def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         return str(self.__class__)
 
     def history_to_str(self) -> str:
