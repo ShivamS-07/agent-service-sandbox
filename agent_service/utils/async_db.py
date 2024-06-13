@@ -7,7 +7,7 @@ from agent_service.io_type_utils import IOType, load_io_type
 # Make sure all io_types are registered
 from agent_service.io_types import *  # noqa
 from agent_service.planner.planner_types import ExecutionPlan
-from agent_service.types import ChatContext, Message
+from agent_service.types import ChatContext, Message, Notification
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_construction import get_output_from_io_type
@@ -278,6 +278,11 @@ class AsyncDB:
     async def insert_chat_messages(self, messages: List[Message]) -> None:
         await self.pg.multi_row_insert(
             table_name="agent.chat_messages", rows=[msg.model_dump() for msg in messages]
+        )
+
+    async def insert_notifications(self, notifications: List[Notification]) -> None:
+        await self.pg.multi_row_insert(
+            table_name="agent.notifications", rows=[notif.model_dump() for notif in notifications]
         )
 
     async def set_plan_run_share_status(self, plan_run_id: str, status: bool) -> None:

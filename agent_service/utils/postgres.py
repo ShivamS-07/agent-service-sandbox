@@ -7,7 +7,7 @@ from gbi_common_py_utils.utils.postgres import PostgresBase
 from agent_service.endpoints.models import AgentMetadata
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 from agent_service.planner.planner_types import ExecutionPlan
-from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.types import ChatContext, Message, Notification, PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
@@ -368,6 +368,15 @@ class Postgres(PostgresBase):
             (None, None)
         row = records[0]
         return (row["company_description"], row["last_updated"])
+
+    ################################################################################################
+    # Notifications
+    ################################################################################################
+
+    def insert_notifications(self, notifications: List[Notification]) -> None:
+        self.multi_row_insert(
+            table_name="agent.notifications", rows=[notif.model_dump() for notif in notifications]
+        )
 
 
 def get_psql(skip_commit: bool = False) -> Postgres:

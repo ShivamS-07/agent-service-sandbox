@@ -21,7 +21,7 @@ from agent_service.endpoints.utils import (
 )
 from agent_service.io_type_utils import IOType, load_io_type
 from agent_service.planner.planner_types import ExecutionPlan
-from agent_service.types import Message, PlanRunContext
+from agent_service.types import Message, Notification, PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_construction import get_output_from_io_type
@@ -38,11 +38,13 @@ async def send_chat_message(
     db: Optional[Union[AsyncDB, Postgres]] = None,
     insert_message_into_db: bool = True,
     skip_commit: bool = False,
+    send_notification: bool = True,
 ) -> None:
     """
     Sends a chat message from GPT to the user. Updates the redis queue as well
     as the DB. If no DB instance is passed in, uses a SYNCHRONOUS DB instead.
     """
+
     if insert_message_into_db:
         if db and isinstance(db, AsyncDB):
             await db.insert_chat_messages(messages=[message])
@@ -52,6 +54,21 @@ async def send_chat_message(
             get_psql(skip_commit=skip_commit).insert_chat_messages(messages=[message])
 
     if not message.is_user_message:
+
+        if send_notification:
+            # insert notification if not user message
+            notification = Notification(
+                agent_id=message.agent_id,
+                message_id=message.message_id,
+                summary=str(message.message),
+            )
+            if db and isinstance(db, AsyncDB):
+                await db.insert_notifications(notifications=[notification])
+            elif db and isinstance(db, Postgres):
+                db.insert_notifications(notifications=[notification])
+            else:
+                get_psql(skip_commit=skip_commit).insert_notifications(notifications=[notification])
+
         event = AgentEvent(agent_id=message.agent_id, event=MessageEvent(message=message))
         await publish_agent_event(
             agent_id=message.agent_id, serialized_event=event.model_dump_json()

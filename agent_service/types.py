@@ -23,6 +23,15 @@ class Message(BaseModel):
         return f"{tag}: {self.message}"
 
 
+class Notification(BaseModel):
+    notification_id: str = Field(default_factory=lambda: str(uuid4()))
+    agent_id: str
+    message_id: Optional[str] = None
+    summary: Optional[str] = None
+    unread: bool = True
+    created_at: datetime.datetime = Field(default_factory=get_now_utc)
+
+
 class ChatContext(BaseModel):
     messages: List[Message]
 
