@@ -29,7 +29,6 @@ from agent_service.endpoints.models import (
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
     GetChatHistoryResponse,
-    GetPlanRunOutputResponse,
     SharePlanRunRequest,
     SharePlanRunResponse,
     UnsharePlanRunRequest,
@@ -46,6 +45,7 @@ from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect_task_executor import PrefectTaskExecutor
 from agent_service.utils.sentry_utils import init_sentry
+from no_auth_endpoints import initialize_unauthed_endpoints
 
 DEFAULT_IP = "0.0.0.0"
 DEFAULT_DAL_PORT = 8000
@@ -85,7 +85,7 @@ def health() -> str:
 @router.post(
     "/agent/create-agent", response_model=CreateAgentResponse, status_code=status.HTTP_201_CREATED
 )
-async def create_agent(user: User = Depends(parse_header())) -> CreateAgentResponse:
+async def create_agent(user: User = Depends(parse_header)) -> CreateAgentResponse:
     return await application.state.agent_service_impl.create_agent(user=user)
 
 
@@ -94,7 +94,7 @@ async def create_agent(user: User = Depends(parse_header())) -> CreateAgentRespo
     response_model=DeleteAgentResponse,
     status_code=status.HTTP_200_OK,
 )
-async def delete_agent(agent_id: str, user: User = Depends(parse_header())) -> DeleteAgentResponse:
+async def delete_agent(agent_id: str, user: User = Depends(parse_header)) -> DeleteAgentResponse:
     validate_user_agent_access(user.user_id, agent_id)
     return await application.state.agent_service_impl.delete_agent(agent_id=agent_id)
 
@@ -116,7 +116,7 @@ async def update_agent(
 @router.get(
     "/agent/get-all-agents", response_model=GetAllAgentsResponse, status_code=status.HTTP_200_OK
 )
-async def get_all_agents(user: User = Depends(parse_header())) -> GetAllAgentsResponse:
+async def get_all_agents(user: User = Depends(parse_header)) -> GetAllAgentsResponse:
     return await application.state.agent_service_impl.get_all_agents(user=user)
 
 
@@ -124,7 +124,7 @@ async def get_all_agents(user: User = Depends(parse_header())) -> GetAllAgentsRe
     "/agent/chat-with-agent", response_model=ChatWithAgentResponse, status_code=status.HTTP_200_OK
 )
 async def chat_with_agent(
-    req: ChatWithAgentRequest, user: User = Depends(parse_header())
+    req: ChatWithAgentRequest, user: User = Depends(parse_header)
 ) -> ChatWithAgentResponse:
     """Chat with agent - Client should send a prompt from user
     1. Validate user has access to agent
@@ -148,7 +148,7 @@ async def get_chat_history(
     agent_id: str,
     start: Optional[datetime.datetime] = None,
     end: Optional[datetime.datetime] = None,
-    user: User = Depends(parse_header()),
+    user: User = Depends(parse_header),
 ) -> GetChatHistoryResponse:
     """Get chat history for an agent
 
@@ -156,7 +156,7 @@ async def get_chat_history(
         agent_id (str): agent ID
         start (Optional[datetime.datetime]): start time to filter messages, inclusive
         end (Optional[datetime.datetime]): end time to filter messages, inclusive
-        user (User): User object from `parse_header()`
+        user (User): User object from `parse_header`
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
         validate_user_agent_access(user.user_id, agent_id)
@@ -176,7 +176,7 @@ async def get_agent_worklog_board(
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
     most_recent_num_run: Optional[int] = None,
-    user: User = Depends(parse_header()),
+    user: User = Depends(parse_header),
 ) -> GetAgentWorklogBoardResponse:
     """Get agent worklogs to build the Work Log Board
     Except `agent_id`, all other arguments are optional and can be used to filter the work log, but
@@ -208,7 +208,7 @@ async def get_agent_worklog_board(
     status_code=status.HTTP_200_OK,
 )
 async def get_agent_task_output(
-    agent_id: str, plan_run_id: str, task_id: str, user: User = Depends(parse_header())
+    agent_id: str, plan_run_id: str, task_id: str, user: User = Depends(parse_header)
 ) -> GetAgentTaskOutputResponse:
     """Get the final outputs of a task once it's completed for Work Log Board
 
@@ -231,7 +231,7 @@ async def get_agent_task_output(
     status_code=status.HTTP_200_OK,
 )
 async def get_agent_log_output(
-    agent_id: str, plan_run_id: str, log_id: str, user: User = Depends(parse_header())
+    agent_id: str, plan_run_id: str, log_id: str, user: User = Depends(parse_header)
 ) -> GetAgentTaskOutputResponse:
     """Get the final outputs of a task once it's completed for Work Log Board
 
@@ -254,7 +254,7 @@ async def get_agent_log_output(
     status_code=status.HTTP_200_OK,
 )
 async def get_agent_output(
-    agent_id: str, user: User = Depends(parse_header())
+    agent_id: str, user: User = Depends(parse_header)
 ) -> GetAgentOutputResponse:
     """Get agent's LATEST output - An agent can have many runs and we always want the latest output
 
@@ -272,7 +272,7 @@ async def get_agent_output(
     status_code=status.HTTP_200_OK,
 )
 async def steam_agent_events(
-    agent_id: str, user: User = Depends(parse_header())
+    agent_id: str, user: User = Depends(parse_header)
 ) -> EventSourceResponse:
     """Set up a data stream that returns messages based on backend events.
 
@@ -301,7 +301,7 @@ async def steam_agent_events(
     status_code=status.HTTP_200_OK,
 )
 async def share_plan_run(
-    req: SharePlanRunRequest, user: User = Depends(parse_header())
+    req: SharePlanRunRequest, user: User = Depends(parse_header)
 ) -> ChatWithAgentResponse:
     """Share agent plan run (set shared status to true)
 
@@ -319,7 +319,7 @@ async def share_plan_run(
     status_code=status.HTTP_200_OK,
 )
 async def unshare_plan_run(
-    req: UnsharePlanRunRequest, user: User = Depends(parse_header())
+    req: UnsharePlanRunRequest, user: User = Depends(parse_header)
 ) -> ChatWithAgentResponse:
     """Unshare agent plan run (set shared status to false)
 
@@ -331,18 +331,7 @@ async def unshare_plan_run(
     return await application.state.agent_service_impl.unshare_plan_run(plan_run_id=req.plan_run_id)
 
 
-@router.get(
-    "/agent/get-plan-run-output/{plan_run_id}",
-    response_model=GetPlanRunOutputResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_plan_run_output(
-    plan_run_id: str, user: Optional[User] = Depends(parse_header(required=False))
-) -> GetPlanRunOutputResponse:
-    validate_user_plan_run_access(user.user_id if user else None, plan_run_id, require_owner=False)
-    return await application.state.agent_service_impl.get_plan_run_output(plan_run_id=plan_run_id)
-
-
+initialize_unauthed_endpoints(application)
 application.include_router(router)
 
 

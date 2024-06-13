@@ -35,6 +35,7 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
 from agent_service.utils.redis_queue import get_agent_event_channel, wait_for_messages
+from agent_service.utils.string_utils import is_valid_uuid
 from agent_service.utils.task_executor import TaskExecutor
 
 LOGGER = logging.getLogger(__name__)
@@ -229,7 +230,13 @@ class AgentServiceImpl:
         await self.pg.set_plan_run_share_status(plan_run_id=plan_run_id, status=False)
         return UnsharePlanRunResponse(success=True)
 
+    # Requires no authorization
     async def get_plan_run_output(self, plan_run_id: str) -> GetPlanRunOutputResponse:
+        if not is_valid_uuid(plan_run_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid {plan_run_id=}"
+            )
+
         outputs = await self.pg.get_plan_run_outputs(plan_run_id=plan_run_id)
         if not outputs:
             raise HTTPException(

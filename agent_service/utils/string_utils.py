@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import uuid
 from typing import Any, Dict, List, Optional
 
 from json_repair import repair_json  # type: ignore
@@ -137,6 +138,14 @@ def safe_json_load(obj: Optional[str]) -> Any:
     if obj is None:
         return None
     return json.loads(obj)
+
+
+def is_valid_uuid(input: str) -> bool:
+    try:
+        uuid.UUID(input)
+        return True
+    except ValueError:
+        return False
 
 
 if __name__ == "__main__":
