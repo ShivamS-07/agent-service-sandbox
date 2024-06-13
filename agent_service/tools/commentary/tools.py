@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import random
 from typing import List, Optional
 from uuid import uuid4
 
@@ -9,7 +10,10 @@ from agent_service.io_types.dates import DateRange
 from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
 from agent_service.io_types.text import Text, ThemeText
 from agent_service.tool import ToolArgs, ToolCategory, tool
-from agent_service.tools.commentary.constants import MAX_MATCHED_ARTICLES_PER_TOPIC
+from agent_service.tools.commentary.constants import (
+    MAX_MATCHED_ARTICLES_PER_TOPIC,
+    MAX_TOTAL_ARTICLES_PER_COMMENTARY,
+)
 from agent_service.tools.commentary.helpers import (
     get_portfolio_geography_prompt,
     get_previous_commentary_results,
@@ -72,7 +76,7 @@ class WriteCommentaryInput(ToolArgs):
         "The function creates a concise summary based on a comprehensive analysis of the provided texts. "
         "The commentary will be written in a professional tone, "
         "incorporating any specific instructions or preferences mentioned by the client during their interaction. "
-        "The input to the function is prepared by the get_commentary_input tool."
+        "The input to this function is prepared by the get_commentary_input tool."
     ),
     category=ToolCategory.COMMENTARY,
     reads_chat=True,
@@ -86,14 +90,10 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
     # get previous commentary if exists
     previous_commentaries = await get_previous_commentary_results(context)
-    previous_commentaries_text = (
-        "\n***\n".join(Text.get_all_strs(previous_commentaries))
-        if len(previous_commentaries) > 0
-        else None
-    )
-    if previous_commentaries_text:
+    previous_commentary = previous_commentaries[0] if previous_commentaries else None
+    if previous_commentary:
         await tool_log(
-            log=f"Retrieved {len(previous_commentaries)} previous commentaries.",
+            log="Retrieved previous commentary.",
             context=context,
         )
 
@@ -121,15 +121,24 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
     # Organize the commentary texts into themes, developments and articles
     themes, developments, articles = await organize_commentary_texts(args.texts)
+
+    # if number of articles is more than MAX_TOTAL_ARTICLES_PER_COMMENTARY,
+    # randomly select 300 articles
+    if len(articles) > MAX_TOTAL_ARTICLES_PER_COMMENTARY:
+        articles = random.sample(articles, MAX_TOTAL_ARTICLES_PER_COMMENTARY)
+
     await tool_log(
         log=f"Retrieved {len(themes)} themes, {len(developments)} developments, and {len(articles)} articles.",
         context=context,
     )
+
     # create main prompt
     main_prompt = COMMENTARY_PROMPT_MAIN.format(
         previous_commentary_prompt=(
-            PREVIOUS_COMMENTARY_PROMPT.format(previous_commentaries=previous_commentaries_text)
-            if previous_commentaries_text is not None
+            PREVIOUS_COMMENTARY_PROMPT.format(
+                previous_commentary=Text.get_all_strs(previous_commentary)
+            )
+            if previous_commentary is not None
             else ""
         ),
         geography_prompt=geography_prompt,
