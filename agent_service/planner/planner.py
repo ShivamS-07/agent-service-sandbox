@@ -1,5 +1,7 @@
 import asyncio
 import datetime
+import json
+import traceback
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args
 from uuid import uuid4
 
@@ -47,12 +49,26 @@ from agent_service.types import ChatContext, Message
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.async_utils import gather_with_concurrency, gather_with_stop
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.event_logging import log_event
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 
 logger = get_prefect_logger(__name__)
+
+
+def get_agent_id_from_chat_context(context: ChatContext) -> str:
+    if context.messages:
+        return context.messages[0].agent_id
+    return ""
+
+
+def plan_to_json(plan: ExecutionPlan) -> str:
+    json_list = []
+    for node in plan.nodes:
+        json_list.append(node.model_dump())
+    return json.dumps(json_list)
 
 
 def get_arg_dict(arg_str: str) -> Dict[str, str]:
@@ -164,11 +180,13 @@ class Planner:
     async def _create_initial_plan(
         self, chat_context: ChatContext, llm: Optional[GPT] = None
     ) -> Optional[ExecutionPlan]:
+        execution_plan_start = datetime.datetime.utcnow().isoformat()
         if llm is None:
             llm = self.fast_llm
 
         logger = get_prefect_logger(__name__)
         plan_str = await self._query_GPT_for_initial_plan(chat_context.get_gpt_input(), llm=llm)
+        agent_id = get_agent_id_from_chat_context(context=chat_context)
 
         try:
             steps = self._parse_plan_str(plan_str)
@@ -178,14 +196,36 @@ class Planner:
                 f"Failed to parse and validate plan with original LLM output string:\n{plan_str}"
             )
             logger.warning(f"Failed to parse and validate plan due to exception: {repr(e)}")
+            log_event(
+                event_name="agent_plan_generated",
+                event_data={
+                    "started_at_utc": execution_plan_start,
+                    "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                    "error_message": traceback.format_exc(),
+                    "plan_str": plan_str,
+                    "agent_id": agent_id,
+                    "model_id": llm.model,
+                },
+            )
             return None
-
+        log_event(
+            event_name="agent_plan_generated",
+            event_data={
+                "started_at_utc": execution_plan_start,
+                "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                "execution_plan": plan_to_json(plan=plan),
+                "plan_str": plan_str,
+                "agent_id": agent_id,
+                "model_id": llm.model,
+            },
+        )
         return plan
 
     @async_perf_logger
     async def _pick_best_plan(
         self, chat_context: ChatContext, plans: List[ExecutionPlan]
     ) -> ExecutionPlan:
+        plan_pick_started_at = datetime.datetime.utcnow().isoformat()
         plans_str = "\n\n".join(
             f"Plan {n}:\n{plan.get_formatted_plan()}" for n, plan in enumerate(plans)
         )
@@ -195,7 +235,19 @@ class Planner:
             message=chat_context.get_gpt_input(), plans=plans_str
         )
         result = await self.fast_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
-        return plans[int(result.split("\n")[-1])]
+        plan_selection = int(result.split("\n")[-1])
+        log_event(
+            event_name="agent_plan_selected",
+            event_data={
+                "plans": [plan_to_json(plan) for plan in plans],
+                "selection": plan_selection,
+                "selection_str": result,
+                "agent_id": get_agent_id_from_chat_context(context=chat_context),
+                "started_at_utc": plan_pick_started_at,
+                "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        return plans[plan_selection]
 
     @async_perf_logger
     async def _get_request_breakdown(self, chat_context: ChatContext) -> List[str]:

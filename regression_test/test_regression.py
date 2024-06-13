@@ -16,17 +16,11 @@ from agent_service.planner.executor import (
     create_execution_plan_local,
     run_execution_plan_local,
 )
+from agent_service.planner.planner import plan_to_json
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
-
-
-def plan_to_json(plan: ExecutionPlan) -> str:
-    json_list = []
-    for node in plan.nodes:
-        json_list.append(node.model_dump())
-    return json.dumps(json_list)
 
 
 def plan_to_simple_json(plan: ExecutionPlan) -> str:
@@ -168,5 +162,9 @@ class TestExecutionPlanner(unittest.TestCase):
         self.run_regression(prompt=prompt)
 
     def test_open_close_spread(self):
-        prompt = "Calculate the spread between open and close for AAPL over the past month"
+        prompt = "Calculate the spread between open and close for AAPL over the month of Jan 2024"
+        self.run_regression(prompt=prompt)
+
+    def test_main_kpi_compare(self):
+        prompt = "Compare how the main KPI for Microsoft have been discussed in the last 2 earning's calls"
         self.run_regression(prompt=prompt)
