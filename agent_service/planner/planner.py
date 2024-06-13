@@ -185,7 +185,8 @@ class Planner:
             llm = self.fast_llm
 
         logger = get_prefect_logger(__name__)
-        plan_str = await self._query_GPT_for_initial_plan(chat_context.get_gpt_input(), llm=llm)
+        prompt = chat_context.get_gpt_input()
+        plan_str = await self._query_GPT_for_initial_plan(prompt, llm=llm)
         agent_id = get_agent_id_from_chat_context(context=chat_context)
 
         try:
@@ -205,6 +206,7 @@ class Planner:
                     "plan_str": plan_str,
                     "agent_id": agent_id,
                     "model_id": llm.model,
+                    "prompt": prompt,
                 },
             )
             return None
@@ -217,6 +219,7 @@ class Planner:
                 "plan_str": plan_str,
                 "agent_id": agent_id,
                 "model_id": llm.model,
+                "prompt": prompt,
             },
         )
         return plan
