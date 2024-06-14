@@ -286,7 +286,10 @@ class FeatureDataInput(ToolArgs):
 @tool(
     description=(
         "This function returns the time series of data for a statistic_id"
-        " for each stock in the list of stock_ids. "
+        " for each stock in the list of stock_ids."
+        " if you need the same stats for the same time period for more than one companies, you must call this"
+        " function with multiple stock_ids, DO NOT call this function multiple times"
+        " with a single stock per time in those circumstances!"
         " Optionally a start_date and end_date may be provided to specify a date range"
         " to get a specific date only  then set both start_date and end_date to the same date."
         " if the optional date_range argument is passed in it will override anything set in start_date and end_date "

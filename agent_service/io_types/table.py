@@ -125,7 +125,7 @@ def object_histories_to_columns(objects: List[ComplexIOBase]) -> List[TableColum
 
     # Make sure the score column is the first one.
     if score_col:
-        columns = score_col + list(entry_title_to_col_map.values())  # type: ignore
+        columns = [score_col] + list(entry_title_to_col_map.values())
     else:
         columns = list(entry_title_to_col_map.values())
     return columns
@@ -144,10 +144,10 @@ class Table(ComplexIOBase):
         col_strings = "\n".join((col.to_gpt_input() for col in self.columns))
         return f"<Table with {self.get_num_rows()} rows and columns:\n{col_strings}\n>\n"
 
-    def get_stock_column(self) -> Optional[TableColumnMetadata]:
+    def get_stock_column(self) -> Optional[TableColumn]:
         for col in self.columns:
             if col.metadata.col_type == TableColumnType.STOCK:
-                return col.metadata
+                return col
         return None
 
     def to_df(
