@@ -174,6 +174,13 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
         return rows[0]["agent_name"]
 
+    async def get_existing_agents_names(self, user_id: str) -> List[str]:
+        sql = """
+        SELECT agent_name FROM agent.agents WHERE user_id = %(user_id)s;
+        """
+        rows = await self.pg.generic_read(sql, params={"user_id": user_id})
+        return [row["agent_name"] for row in rows]
+
     async def get_agent_worklogs(
         self,
         agent_id: str,

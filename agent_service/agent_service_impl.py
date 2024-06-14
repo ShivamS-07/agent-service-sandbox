@@ -32,6 +32,7 @@ from agent_service.endpoints.models import (
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.types import ChatContext, Message
 from agent_service.utils.agent_event_utils import send_chat_message
+from agent_service.utils.agent_name import generate_name_for_agent
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
@@ -80,7 +81,7 @@ class AgentServiceImpl:
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
         agent_id = req.agent_id
         user_msg = Message(agent_id=agent_id, message=req.prompt, is_user_message=True)
-
+        name = None
         if not req.is_first_prompt:
             try:
                 LOGGER.info(f"Inserting user's new message to DB for {agent_id=}")
@@ -114,7 +115,18 @@ class AgentServiceImpl:
                     f"Failed to generate initial response from GPT with exception: {e}"
                 )
                 return ChatWithAgentResponse(success=False, allow_retry=True)
-
+            try:
+                LOGGER.info("Generating name for agent")
+                existing_agents = await self.pg.get_existing_agents_names(user.user_id)
+                name = await generate_name_for_agent(
+                    agent_id=agent_id,
+                    chat_context=ChatContext(messages=[user_msg]),
+                    existing_names=existing_agents,
+                    gpt_service_stub=self.gpt_service_stub,
+                )
+                await self.pg.update_agent_name(agent_id=agent_id, agent_name=name)
+            except Exception as e:
+                LOGGER.exception(f"Failed to generate name for agent from GPT with exception: {e}")
             try:
                 LOGGER.info("Publishing GPT response to Redis")
                 await send_chat_message(gpt_msg, self.pg, insert_message_into_db=False)
@@ -135,7 +147,7 @@ class AgentServiceImpl:
                 LOGGER.exception("Failed to kick off execution plan creation")
                 return ChatWithAgentResponse(success=False, allow_retry=False)
 
-        return ChatWithAgentResponse(success=True, allow_retry=False)
+        return ChatWithAgentResponse(success=True, allow_retry=False, name=name)
 
     async def get_chat_history(
         self, agent_id: str, start: Optional[datetime.datetime], end: Optional[datetime.datetime]

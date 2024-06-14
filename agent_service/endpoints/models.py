@@ -104,6 +104,7 @@ class ChatWithAgentRequest(BaseModel):
 class ChatWithAgentResponse(BaseModel):
     success: bool
     allow_retry: bool
+    name: Optional[str] = None
 
 
 ####################################################################################################

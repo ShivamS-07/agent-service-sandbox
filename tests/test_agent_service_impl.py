@@ -10,6 +10,10 @@ async def generate_initial_preplan_response(chat_context):
     return "Hi this is Warren AI, how can I help you today?"
 
 
+async def generate_name_for_agent(agent_id, chat_context, existing_names, gpt_service_stub):
+    return "Macroeconomic News"
+
+
 async def send_chat_message(*args, **kwargs):
     return None
 
@@ -37,11 +41,19 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
 
     @patch("agent_service.agent_service_impl.Chatbot")
     @patch("agent_service.agent_service_impl.send_chat_message")
-    def test_chat_with_agent(self, mock_send_chat_message: MagicMock, MockChatBot: MagicMock):
+    @patch("agent_service.agent_service_impl.generate_name_for_agent")
+    def test_chat_with_agent(
+        self,
+        mock_generate_name_for_agent: MagicMock,
+        mock_send_chat_message: MagicMock,
+        MockChatBot: MagicMock,
+    ):
         mock_chatbot = MockChatBot.return_value
         mock_chatbot.generate_initial_preplan_response.side_effect = (
             generate_initial_preplan_response
         )
+
+        mock_generate_name_for_agent.side_effect = generate_name_for_agent
 
         mock_send_chat_message.side_effect = send_chat_message
 
@@ -56,6 +68,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
             ),
             user=user,
         )
+        self.assertTrue(res.name)
         self.assertTrue(res.success)
 
         res = self.chat_with_agent(
