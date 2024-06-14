@@ -5,6 +5,7 @@ from agent_service.external.pa_svc_client import (
     get_all_holdings_in_workspace,
     get_all_workspaces,
 )
+from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
     StockTable,
@@ -14,9 +15,6 @@ from agent_service.io_types.table import (
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.prefect import get_prefect_logger
-from agent_service.utils.stock_metadata import get_stock_metadata
-
-logger = get_prefect_logger(__name__)
 
 PortfolioID = str
 
@@ -38,11 +36,18 @@ class GetPortfolioWorkspaceHoldingsInput(ToolArgs):
 async def get_portfolio_holdings(
     args: GetPortfolioWorkspaceHoldingsInput, context: PlanRunContext
 ) -> StockTable:
+    logger = get_prefect_logger(__name__)
     workspace = await get_all_holdings_in_workspace(context.user_id, args.portfolio_id)
     gbi_ids = [holding.gbi_id for holding in workspace.holdings]
-    stock_meta = await get_stock_metadata(gbi_ids=gbi_ids)
+
+    logger.info(f"found {len(gbi_ids)} holdings")
+
+    stock_ids = await StockID.from_gbi_id_list(gbi_ids)
+    gbi_id2_stock_id = {s.gbi_id: s for s in stock_ids}
     data = {
-        STOCK_ID_COL_NAME_DEFAULT: [stock_meta[holding.gbi_id] for holding in workspace.holdings],
+        STOCK_ID_COL_NAME_DEFAULT: [
+            gbi_id2_stock_id[holding.gbi_id] for holding in workspace.holdings
+        ],
         "Weight": [holding.weight for holding in workspace.holdings],
     }
     df = pd.DataFrame(data)
@@ -74,6 +79,7 @@ class GetPortfolioInput(ToolArgs):
 async def convert_portfolio_mention_to_portfolio_id(
     args: GetPortfolioInput, context: PlanRunContext
 ) -> PortfolioID:
+    logger = get_prefect_logger(__name__)
     # Use PA Service to get all portfolios for the user
     workspaces = await get_all_workspaces(user_id=context.user_id)
 
@@ -88,6 +94,7 @@ async def convert_portfolio_mention_to_portfolio_id(
 
     # If only 1 perfect match, return the id
     if len(perfect_matches) == 1:
+        logger.info(f"only 1 perfect match: {perfect_matches[0]}")
         return perfect_matches[0].workspace_id.id
 
     # If more than 1 perfect matches, return the one which edited most recently
@@ -97,6 +104,7 @@ async def convert_portfolio_mention_to_portfolio_id(
             key=lambda x: x.last_updated.seconds if x.last_updated else x.created_at.seconds,
             reverse=True,
         )
+        logger.info(f"more than 1 perfect match, most recent: {sorted_perfect_matches[0]}")
         return sorted_perfect_matches[0].workspace_id.id
 
     # If no perfect matches, return the user owned portfolio which edited most recently
@@ -106,7 +114,12 @@ async def convert_portfolio_mention_to_portfolio_id(
             key=lambda x: x.last_updated.seconds if x.last_updated else x.created_at.seconds,
             reverse=True,
         )
+        logger.info(f"no perfect matches, most recent: {sorted_user_owned_portfolios[0]}")
         return sorted_user_owned_portfolios[0].workspace_id.id
 
     # If no perfect matches and no user owned portfolios, return first portfolio id
+    logger.info(
+        "no perfect matches and no user owned portfolios,"
+        f" return first portfolio id: {workspaces[0]}"
+    )
     return workspaces[0].workspace_id.id

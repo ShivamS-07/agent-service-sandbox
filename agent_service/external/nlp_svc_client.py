@@ -15,6 +15,12 @@ from nlp_service_proto_v1.commentary_pb2 import (
     GetCommentaryTopicsRequest,
     GetCommentaryTopicsResponse,
 )
+from nlp_service_proto_v1.earnings_impacts_pb2 import (
+    GetEarningsPeersAffectedByStocksRequest,
+    GetEarningsPeersAffectedByStocksResponse,
+    GetEarningsPeersAffectingStocksRequest,
+    GetEarningsPeersAffectingStocksResponse,
+)
 from nlp_service_proto_v1.news_pb2 import (
     NEWS_DELTA_HORIZON_3M,
     GetMultiCompaniesNewsTopicsRequest,
@@ -133,4 +139,40 @@ async def get_all_themes_for_user(user_id: str) -> GetAllThemesForUserResponse:
         )
         if response.status.code != 0:
             raise ValueError(f"Failed to get all themes for user: {response.status.message}")
+        return response
+
+
+@grpc_retry
+@async_perf_logger
+async def get_earnings_peers_impacted_by_stocks(
+    user_id: str, gbi_ids: List[int]
+) -> GetEarningsPeersAffectedByStocksResponse:
+    with _get_service_stub() as stub:
+        response: GetEarningsPeersAffectedByStocksResponse = (
+            await stub.GetEarningsPeersAffectedByStocks(
+                GetEarningsPeersAffectedByStocksRequest(gbi_ids=gbi_ids),
+                metadata=get_default_grpc_metadata(user_id=user_id),
+            )
+        )
+        if response.status.code != 0:
+            raise ValueError(f"Failed to get peers for: {gbi_ids}")
+        return response
+
+
+@grpc_retry
+@async_perf_logger
+async def get_earnings_peers_impacting_stocks(
+    user_id: str, gbi_ids: List[int]
+) -> GetEarningsPeersAffectingStocksResponse:
+    with _get_service_stub() as stub:
+        request = GetEarningsPeersAffectingStocksRequest(gbi_ids=gbi_ids)
+        response: GetEarningsPeersAffectingStocksResponse = (
+            await stub.GetEarningsPeersAffectingStocks(
+                request, metadata=get_default_grpc_metadata(user_id=user_id)
+            )
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to get Earnings Peers affecting Companies: {response.status.message}"
+            )
         return response
