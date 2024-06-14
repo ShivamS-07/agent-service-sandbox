@@ -393,13 +393,9 @@ def tool(
                 start = datetime.datetime.utcnow().isoformat()
                 event_data: Dict[str, Any] = {
                     "tool_name": tool_name,
-                    "agent_id": context.agent_id,
-                    "user_id": context.user_id,
-                    "task_id": context.task_id,
-                    "plan_id": context.plan_id,
-                    "plan_run_id": context.plan_run_id,
                     "start_time_utc": start,
                     "args": args.model_dump_json(),
+                    "context": context.model_dump_json(),
                 }
 
                 async def call_func() -> IOType:
