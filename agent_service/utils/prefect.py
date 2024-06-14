@@ -45,8 +45,6 @@ async def prefect_create_execution_plan(
     skip_task_cache: bool = False,
     run_plan_in_prefect_immediately: bool = True,
 ) -> None:
-    # Deployment name has the format "flow_name/deployment_name". For use
-    # they're the same.
     sqs = boto3.resource("sqs", region_name="us-west-2")
     arguments = {
         "agent_id": agent_id,
@@ -58,7 +56,11 @@ async def prefect_create_execution_plan(
         "action": action,
         "error_info": error_info.model_dump() if error_info else error_info,
     }
-    message = {"method": "create_execution_plan", "arguments": arguments}
+    message = {
+        "method": "create_execution_plan",
+        "arguments": arguments,
+        "send_time_utc": datetime.datetime.utcnow().isoformat(),
+    }
     queue = sqs.get_queue_by_name(QueueName=AGENT_WORKER_QUEUE)
     queue.send_message(MessageBody=json.dumps(message, default=json_serial))
 
@@ -73,7 +75,11 @@ async def prefect_run_execution_plan(
         "context": context.model_dump(),
         "do_chat": do_chat,
     }
-    message = {"method": "run_execution_plan", "arguments": arguments}
+    message = {
+        "method": "run_execution_plan",
+        "arguments": arguments,
+        "send_time_utc": datetime.datetime.utcnow().isoformat(),
+    }
     queue = sqs.get_queue_by_name(QueueName=AGENT_WORKER_QUEUE)
     queue.send_message(MessageBody=json.dumps(message, default=json_serial))
 
