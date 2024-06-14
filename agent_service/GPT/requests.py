@@ -27,6 +27,7 @@ from grpclib.client import Channel
 from agent_service.GPT.constants import (
     CLIENT_NAME,
     CLIENT_NAMESPACE,
+    DEFAULT_EMBEDDING_MODEL,
     DEFAULT_SMART_MODEL,
     DEFAULT_TEMPERATURE,
     JSON_RESPONSE_FORMAT,
@@ -366,12 +367,10 @@ class GPT:
         )
 
     async def embed_text(
-        self,
-        text: str,
-        no_cache: bool = False,
+        self, text: str, no_cache: bool = False, embedding_model: str = DEFAULT_EMBEDDING_MODEL
     ) -> List[float]:
         return await get_embedding(
-            model=self.model,
+            model=embedding_model,
             text=text,
             no_cache=no_cache,
             gpt_service_stub=self.gpt_service_stub,

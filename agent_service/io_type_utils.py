@@ -194,6 +194,13 @@ class Score(SerializeableBase):
     # Generally between 0 and 1
     val: float
 
+    @classmethod
+    def scale_input(cls, val: float, lb: float, ub: float) -> Self:
+        """
+        Anything that is not in [0, 1] range should use this helper method to scale
+        """
+        return cls(val=(val - lb) / (ub - lb))
+
 
 class ScoreOutput(BaseModel):
     val: float

@@ -1,3 +1,4 @@
+import datetime
 import logging
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -304,3 +305,47 @@ class Clickhouse(ClickhouseBase):
                 )
         else:
             raise ValueError("Unsupported dataset")
+
+    ################################################################################################
+    # Embeddings
+    ################################################################################################
+    def sort_news_topics_via_embeddings(
+        self,
+        news_topic_ids: List[str],
+        embedding_vector: List[float],
+        embedding_model_id: str,
+        min_created_at: Optional[datetime.datetime] = None,
+    ) -> List[str]:
+        parameters: Dict[str, Any] = {
+            "embedding_model_id": embedding_model_id,
+            "embedding_group_id": "stock_news_topic",
+            "topic_ids": news_topic_ids,
+            "embedding_vector": embedding_vector,
+        }
+
+        dt_filter = ""
+        if min_created_at is not None:
+            dt_filter = "AND parseDateTimeBestEffort(JSONExtractString(metadata, 'created_at')) >= %(min_created_at)s"
+            parameters["min_created_at"] = min_created_at
+
+        sql = f"""
+            WITH topics AS (
+                SELECT DISTINCT ON (topic_id) topic_id, embedding_vector
+                FROM embeddings.embeddings e2
+                WHERE embedding_model_id = %(embedding_model_id)s
+                    AND embedding_group_id = %(embedding_group_id)s
+                    AND topic_id IN %(topic_ids)s
+                    {dt_filter}
+                ORDER BY topic_id, updated_at DESC
+            )
+            SELECT topic_id
+            FROM topics
+            ORDER BY cosineDistance(embedding_vector, %(embedding_vector)s) ASC
+        """
+        # FIXME: `generic_read` has bad performance, so we use `query` directly
+        try:
+            result = self.clickhouse_client.query(sql, parameters=parameters)
+            return [tup[0] for tup in result.result_rows]
+        except Exception as e:
+            logger.exception(e)
+            return []
