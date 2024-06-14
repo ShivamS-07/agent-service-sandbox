@@ -24,6 +24,32 @@ PROFILE_FILTER_SYS_PROMPT_STR = "You are a financial analyst highly skilled at a
 
 PROFILE_FILTER_MAIN_PROMPT_STR = "Decide whether or not, based on the provided documents related to a company, whether or not it matches the provided profile. Here is the company name: {company_name}. Here are the documents about it, delimited by '---':\n---\n{texts}\n---\nHere is the profile:\n{profile}\nNow discussion your decision, and provide a final answer on the next line:\n"
 
+PROFILE_RUBRIC_GENERATION_SYS_PROMPT = """You are a highly skilled financial analyst. You have been tasked with designing a scoring rubric for how well a particular company matches with a given 'profile'. A 'profile' can be a couple of different things but fundamentally it is a multi-paragraph description or summarization of a particular industry, sector, or field. Your scoring rubric will be broken down into five distinct levels, 0 to 5. Where level 0 is any company that has absolutely zero relation to the 'profile' in question, level 1 is given to any company that barely matches the information given in the profile at all and a level 5 describes a company that is nearly a perfect match for the kind of company that would 'fit' what the profile describes. Design your rubric with the understanding that it will be used by an evaluator to assess individual companies to assign a level of fit to the profile you will be shown, however this evaluator will not have access to the actual profile. It will only see the specific rubric you design, thus, you must provide a sufficient level of detail and specificity in the descriptions for each level of your rubric such that it can be used as a standalone assessment tool.
+
+You will structure your output as follows. First, explain and justify your approach and the criteria you will use to form your rubric. Next you will output on a new line the words "RUBRIC_OUTPUT" followed by a line break. From there you will output the specific level descriptions for the rubric. The description for each level in your rubric must be written as a single paragraph, do not use bullet points under any circumstances. Each level will take on the following format exactly, do not output any inline styling or syntax:
+
+Level N: Description
+
+Ensure you always output five distinct levels in your rubric."""
+
+PROFILE_RUBRIC_GENERATION_MAIN_PROMPT = """Determine a scoring rubric for this by using information shown to you in the following profile:
+{profile}"""
+
+RUBRIC_EVALUATION_MAIN_PROMPT = """The company in question is: {company_name}
+
+Relation to the criteria: {reason}
+
+Format your output as follows, a number indicating the level followed by ___ and a justification section explaining and justifying why you have chosen to assigned that particular level. Your justification must not make explicit reference to the specific level asigned though. Like so:
+
+3___Here is some justification
+
+The first thing you output must always be the number associated with the level selected. Do not include any inline styling or syntax, follow the format specified exactly. If you assign a level 0, there is no need to provide a justification but you must still output the ___."""
+
+RUBRIC_EVALUATION_SYS_PROMPT = """Use the rubric below to assign a level for a given stock based on how well it fits the criteria. The rubric is shown below with a description for each level, ranging from 0 to 5:
+{rubric_str}
+
+Format your output as follows, a number indicating the level followed by ___ and a justification section explaining and justifying why you have chosen to assign that particular level. The first thing you output must always be the number associated with the level selected."""
+
 TOPIC_PHRASE = "The client has asked for the summary to be focused specifically on the following topic: {topic}. "
 
 EXTRA_DATA_PHRASE = "Here is the label for the additional data provided: {label}. And here is the data:\n---\n{extra_data}\n---\n"
@@ -90,4 +116,22 @@ PROFILE_FILTER_SYS_PROMPT = Prompt(
 PROFILE_FILTER_MAIN_PROMPT = Prompt(
     name="PROFILE_FILTER_MAIN_PROMPT",
     template=PROFILE_FILTER_MAIN_PROMPT_STR,
+)
+
+PROFILE_RUBRIC_GENERATION_MAIN_OBJ = Prompt(
+    name="PROFILE_GENERATION_MAIN", template=PROFILE_RUBRIC_GENERATION_MAIN_PROMPT
+)
+
+PROFILE_RUBRIC_GENERATION_SYS_OBJ = Prompt(
+    name="PROFILE_GENERATION_SYS", template=PROFILE_RUBRIC_GENERATION_SYS_PROMPT
+)
+
+PROFILE_PRIMER_SYS_OBJ = Prompt(name="PROFILE_PRIMER_SYS", template="")
+
+RUBRIC_EVALUATION_MAIN_OBJ = Prompt(
+    name="RUBRIC_EVALUATION_MAIN", template=RUBRIC_EVALUATION_MAIN_PROMPT
+)
+
+RUBRIC_EVALUATION_SYS_OBJ = Prompt(
+    name="RUBRIC_EVALUATION_MAIN", template=RUBRIC_EVALUATION_SYS_PROMPT
 )
