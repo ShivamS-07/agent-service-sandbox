@@ -14,6 +14,7 @@ from agent_service.planner.constants import (
     ASSIGNMENT_RE,
     INITIAL_PLAN_TRIES,
     MIN_SUCCESSFUL_FOR_STOP,
+    Action,
 )
 from agent_service.planner.planner_types import (
     ErrorInfo,
@@ -222,6 +223,7 @@ class Planner:
                     "agent_id": agent_id,
                     "model_id": llm.model,
                     "prompt": prompt,
+                    "action": Action.CREATE,
                 },
             )
             return None
@@ -235,6 +237,7 @@ class Planner:
                 "agent_id": agent_id,
                 "model_id": llm.model,
                 "prompt": prompt,
+                "action": Action.CREATE,
             },
         )
         return plan
@@ -291,7 +294,7 @@ class Planner:
         chat_context: ChatContext,
         last_plan: ExecutionPlan,
         last_plan_timestamp: datetime.datetime,
-        append: bool = False,
+        action: Action,
     ) -> Optional[ExecutionPlan]:
         latest_user_messages = [
             message
@@ -300,11 +303,11 @@ class Planner:
         ]
         logger = get_prefect_logger(__name__)
         logger.info(
-            f"Rewriting plan after user input, append={append}, input={latest_user_messages}"
+            f"Rewriting plan after user input, action={action}, input={latest_user_messages}"
         )
         tasks = [
             self._rewrite_plan_after_input(
-                chat_context, last_plan, latest_user_messages, append=append
+                chat_context, last_plan, latest_user_messages, action=action
             )
             for _ in range(INITIAL_PLAN_TRIES)
         ]
@@ -330,26 +333,54 @@ class Planner:
         chat_context: ChatContext,
         last_plan: ExecutionPlan,
         latest_messages: List[Message],
-        append: bool = False,
+        action: Action,
     ) -> Optional[ExecutionPlan]:
         # for now, just assume last step is what is new
         # TODO: multiple old plans, flexible chat cutoff
+        execution_plan_start = datetime.datetime.utcnow().isoformat()
+        agent_id = get_agent_id_from_chat_context(context=chat_context)
         logger = get_prefect_logger(__name__)
         main_chat_str = chat_context.get_gpt_input()
         new_messages = "\n".join([message.get_gpt_input() for message in latest_messages])
         old_plan_str = last_plan.get_formatted_plan()
         new_plan_str = await self._query_GPT_for_new_plan_after_input(
-            new_messages, main_chat_str, old_plan_str, append=append
+            new_messages, main_chat_str, old_plan_str, action=action
         )
-
+        append = action == Action.APPEND
+        if append:
+            plan_str = old_plan_str + "\n" + new_plan_str
+        else:
+            plan_str = new_plan_str
         try:
-            if append:
-                plan_str = old_plan_str + "\n" + new_plan_str
-            else:
-                plan_str = new_plan_str
             steps = self._parse_plan_str(plan_str)
             new_plan = self._validate_and_construct_plan(steps)
+            log_event(
+                event_name="agent_plan_generated",
+                event_data={
+                    "started_at_utc": execution_plan_start,
+                    "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                    "execution_plan": plan_to_json(plan=new_plan),
+                    "plan_str": plan_str,
+                    "agent_id": agent_id,
+                    "model_id": self.fast_llm.model,
+                    "prompt": main_chat_str,
+                    "action": action,
+                },
+            )
         except Exception:
+            log_event(
+                event_name="agent_plan_generated",
+                event_data={
+                    "started_at_utc": execution_plan_start,
+                    "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                    "error_message": traceback.format_exc(),
+                    "plan_str": plan_str,
+                    "agent_id": agent_id,
+                    "model_id": self.fast_llm.model,
+                    "prompt": main_chat_str,
+                    "action": action,
+                },
+            )
             logger.warning(f"Failed to validate replan with original LLM output string: {plan_str}")
             return None
 
@@ -357,12 +388,16 @@ class Planner:
 
     @async_perf_logger
     async def rewrite_plan_after_error(
-        self, error_info: ErrorInfo, chat_context: ChatContext, last_plan: ExecutionPlan
+        self,
+        error_info: ErrorInfo,
+        chat_context: ChatContext,
+        last_plan: ExecutionPlan,
+        action: Action,
     ) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
         logger.info(f"Rewriting plan after error, error={error_info}")
         tasks = [
-            self._rewrite_plan_after_error(error_info, chat_context, last_plan)
+            self._rewrite_plan_after_error(error_info, chat_context, last_plan, action=action)
             for _ in range(INITIAL_PLAN_TRIES)
         ]
         results = await gather_with_stop(tasks, stop_count=MIN_SUCCESSFUL_FOR_STOP)
@@ -383,8 +418,14 @@ class Planner:
 
     @async_perf_logger
     async def _rewrite_plan_after_error(
-        self, error_info: ErrorInfo, chat_context: ChatContext, last_plan: ExecutionPlan
+        self,
+        error_info: ErrorInfo,
+        chat_context: ChatContext,
+        last_plan: ExecutionPlan,
+        action: Action,
     ) -> Optional[ExecutionPlan]:
+        execution_plan_start = datetime.datetime.utcnow().isoformat()
+        agent_id = get_agent_id_from_chat_context(context=chat_context)
         logger = get_prefect_logger(__name__)
         old_plan_str = last_plan.get_formatted_plan()
         chat_str = chat_context.get_gpt_input()
@@ -398,8 +439,33 @@ class Planner:
         try:
             steps = self._parse_plan_str(new_plan_str)
             new_plan = self._validate_and_construct_plan(steps)
-
+            log_event(
+                event_name="agent_plan_generated",
+                event_data={
+                    "started_at_utc": execution_plan_start,
+                    "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                    "execution_plan": plan_to_json(plan=new_plan),
+                    "plan_str": new_plan_str,
+                    "agent_id": agent_id,
+                    "model_id": self.smart_llm.model,
+                    "prompt": error_str,
+                    "action": action,
+                },
+            )
         except Exception:
+            log_event(
+                event_name="agent_plan_generated",
+                event_data={
+                    "started_at_utc": execution_plan_start,
+                    "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                    "error_message": traceback.format_exc(),
+                    "plan_str": new_plan_str,
+                    "agent_id": agent_id,
+                    "model_id": self.smart_llm.model,
+                    "prompt": error_str,
+                    "action": action,
+                },
+            )
             logger.warning(
                 f"Failed to validate replan with original LLM output string: {new_plan_str}"
             )
@@ -421,9 +487,9 @@ class Planner:
         return await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     async def _query_GPT_for_new_plan_after_input(
-        self, new_user_input: str, existing_context: str, old_plan: str, append: bool = False
+        self, new_user_input: str, existing_context: str, old_plan: str, action: Action
     ) -> str:
-        if append:
+        if action == Action.APPEND:
             sys_prompt_template = USER_INPUT_APPEND_SYS_PROMPT
             main_prompt_template = USER_INPUT_APPEND_MAIN_PROMPT
         else:

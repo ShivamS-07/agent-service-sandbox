@@ -438,7 +438,7 @@ async def rewrite_execution_plan(
         new_plan = await planner.rewrite_plan_after_error(error_info, chat_context, old_plan)
     else:
         new_plan = await planner.rewrite_plan_after_input(
-            chat_context, old_plan, plan_timestamp, append=action == Action.APPEND
+            chat_context, old_plan, plan_timestamp, action=action
         )
 
     if not new_plan:

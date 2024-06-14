@@ -40,6 +40,13 @@ class TestSQSMessageHandler(unittest.TestCase):
         message = {"method": "create_execution_plan", "arguments": json.loads(raw_message)}
         self.handle_message(message=message)
 
+    def test_create_execution_plan_rewrite(self):
+        raw_message = """
+           {"method": "create_execution_plan", "arguments": {"agent_id": "e9bd2ab2-16c3-4934-b372-c39dd4dd7f7a", "plan_id": "08b9174b-4321-40cd-98d5-af968e58bacc", "user_id": "ac7c96d7-3e57-40e7-a1a5-8e2ce5e23639", "skip_db_commit": false, "skip_task_cache": false, "run_plan_in_prefect_immediately": true, "action": "REPLAN", "error_info": null}}
+            """
+        message = json.loads(raw_message)
+        self.handle_message(message=message)
+
     def test_run_execution_plan(self):
         raw_message = """
         {
