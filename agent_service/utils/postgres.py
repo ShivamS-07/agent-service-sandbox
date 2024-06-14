@@ -6,7 +6,7 @@ from gbi_common_py_utils.utils.postgres import PostgresBase
 
 from agent_service.endpoints.models import AgentMetadata
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
-from agent_service.planner.planner_types import ExecutionPlan
+from agent_service.planner.planner_types import ExecutionPlan, SamplePlan
 from agent_service.types import ChatContext, Message, Notification, PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.date_utils import get_now_utc
@@ -368,6 +368,28 @@ class Postgres(PostgresBase):
             (None, None)
         row = records[0]
         return (row["company_description"], row["last_updated"])
+
+    # Sample plan functions
+
+    def insert_sample_plan(self, sample_plan: SamplePlan) -> None:
+        self.insert_into_table(
+            table_name="agent.sample_plans", input=sample_plan.input, plan=sample_plan.plan
+        )
+
+    def get_all_sample_plans(self) -> List[SamplePlan]:
+        sql = """
+            SELECT sample_plan_id::TEXT, input, plan
+            FROM agent.sample_plans
+        """
+        rows = self.generic_read(sql)
+        return [
+            SamplePlan(id=row["sample_plan_id"], input=row["input"], plan=row["plan"])
+            for row in rows
+        ]
+
+    def delete_sample_plan(self, id: str) -> None:
+        sql = "DELETE FROM agent.sample_plans WHERE sample_plan_id=%(id)s"
+        self.generic_write(sql, {"id": id})
 
     ################################################################################################
     # Notifications

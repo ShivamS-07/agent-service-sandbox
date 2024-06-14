@@ -105,3 +105,12 @@ class ErrorInfo(BaseModel):
     error: str
     step: ToolExecutionNode
     change: str
+
+
+class SamplePlan(BaseModel):
+    id: str
+    input: str
+    plan: str
+
+    def get_formatted_plan(self) -> str:
+        return f"Input: {self.input}\nPlan:\n{self.plan}"

@@ -34,6 +34,7 @@ from agent_service.planner.prompts import (
     PLAN_EXAMPLE,
     PLAN_GUIDELINES,
     PLAN_RULES,
+    PLAN_SAMPLE_TEMPLATE,
     PLANNER_MAIN_PROMPT,
     PLANNER_SYS_PROMPT,
     USER_INPUT_APPEND_MAIN_PROMPT,
@@ -41,6 +42,7 @@ from agent_service.planner.prompts import (
     USER_INPUT_REPLAN_MAIN_PROMPT,
     USER_INPUT_REPLAN_SYS_PROMPT,
 )
+from agent_service.planner.utils import get_similar_sample_plans
 from agent_service.tool import Tool, ToolRegistry
 
 # Make sure all tools are imported for the planner
@@ -91,9 +93,9 @@ class Planner:
         skip_db_commit: bool = False,
     ) -> None:
         self.agent_id = agent_id
-        context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
-        self.smart_llm = GPT(context, DEFAULT_SMART_MODEL)
-        self.fast_llm = GPT(context, GPT4_O)
+        self.context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
+        self.smart_llm = GPT(self.context, DEFAULT_SMART_MODEL)
+        self.fast_llm = GPT(self.context, GPT4_O)
         self.tool_registry = tool_registry
         self.tool_string = tool_registry.get_tool_str()
         self.send_chat = send_chat
@@ -104,16 +106,27 @@ class Planner:
     async def create_initial_plan(self, chat_context: ChatContext) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
 
+        logger.info("Getting matching sample plans")
+
+        sample_plans = await get_similar_sample_plans(chat_context.get_gpt_input(), self.context)
+
+        if sample_plans:
+            sample_plans_str = "\n\n".join(
+                [sample_plan.get_formatted_plan() for sample_plan in sample_plans]
+            )
+            logger.info(f"Found relevant sample plan(s): {sample_plans_str}")
+            sample_plans_str = PLAN_SAMPLE_TEMPLATE.format(sample_plans=sample_plans_str)
+        else:
+            logger.info("No relevant sample plan(s) found")
+            sample_plans_str = ""
+
         logger.info("Writing plan")
         first_round_tasks = [
-            self._create_initial_plan(chat_context, self.fast_llm)
+            self._create_initial_plan(chat_context, self.fast_llm, sample_plans=sample_plans_str)
             for _ in range(INITIAL_PLAN_TRIES)
         ]
         first_round_results = await gather_with_stop(first_round_tasks, MIN_SUCCESSFUL_FOR_STOP)
 
-        # [
-        #    plan for plan in await gather_with_concurrency(first_round_tasks) if plan is not None
-        # ]
         if first_round_results:
             logger.info(
                 f"{len(first_round_results)} of {INITIAL_PLAN_TRIES} initial plan runs succeeded"
@@ -178,7 +191,7 @@ class Planner:
 
     @async_perf_logger
     async def _create_initial_plan(
-        self, chat_context: ChatContext, llm: Optional[GPT] = None
+        self, chat_context: ChatContext, llm: Optional[GPT] = None, sample_plans: str = ""
     ) -> Optional[ExecutionPlan]:
         execution_plan_start = datetime.datetime.utcnow().isoformat()
         if llm is None:
@@ -186,7 +199,9 @@ class Planner:
 
         logger = get_prefect_logger(__name__)
         prompt = chat_context.get_gpt_input()
-        plan_str = await self._query_GPT_for_initial_plan(prompt, llm=llm)
+        plan_str = await self._query_GPT_for_initial_plan(
+            chat_context.get_gpt_input(), llm=llm, sample_plans=sample_plans
+        )
         agent_id = get_agent_id_from_chat_context(context=chat_context)
 
         try:
@@ -392,7 +407,9 @@ class Planner:
 
         return new_plan
 
-    async def _query_GPT_for_initial_plan(self, user_input: str, llm: GPT) -> str:
+    async def _query_GPT_for_initial_plan(
+        self, user_input: str, llm: GPT, sample_plans: str = ""
+    ) -> str:
         sys_prompt = PLANNER_SYS_PROMPT.format(
             rules=PLAN_RULES,
             guidelines=PLAN_GUIDELINES,
@@ -400,7 +417,7 @@ class Planner:
             tools=self.tool_string,
         )
 
-        main_prompt = PLANNER_MAIN_PROMPT.format(message=user_input)
+        main_prompt = PLANNER_MAIN_PROMPT.format(message=user_input, sample_plans=sample_plans)
         return await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     async def _query_GPT_for_new_plan_after_input(
