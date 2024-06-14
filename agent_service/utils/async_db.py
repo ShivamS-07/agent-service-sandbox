@@ -243,7 +243,7 @@ class AsyncDB:
 
     async def create_agent(self, agent_metadata: AgentMetadata) -> None:
         await self.pg.multi_row_insert(
-            table_name="agent.agents", rows=[agent_metadata.model_dump()]
+            table_name="agent.agents", rows=[agent_metadata.to_agent_row()]
         )
 
     async def write_execution_plan(self, plan_id: str, agent_id: str, plan: ExecutionPlan) -> None:
@@ -274,11 +274,23 @@ class AsyncDB:
         Returns: A list of all agents for the user.
         """
         sql = """
-            SELECT agent_id::VARCHAR, user_id::VARCHAR, agent_name, created_at, last_updated
-            FROM agent.agents
-            WHERE user_id = %(user_id)s;
+        SELECT DISTINCT ON (a.agent_id)
+            a.agent_id::VARCHAR, a.user_id::VARCHAR, agent_name, a.created_at,
+            a.last_updated, a.automation_enabled, pr.created_at AS last_run,
+            n.summary AS latest_notification_string,
+            (
+              SELECT COUNT(*) FROM agent.notifications n2
+              WHERE n2.agent_id = a.agent_id AND n2.unread
+              GROUP BY n2.agent_id
+            ) AS unread_notification_count
+        FROM agent.agents a
+        LEFT JOIN agent.plan_runs pr ON a.agent_id = pr.agent_id
+        LEFT JOIN agent.notifications n ON a.agent_id = n.agent_id
+        WHERE user_id = %(user_id)s
+        ORDER BY a.agent_id, pr.created_at DESC, n.created_at DESC;
         """
         rows = await self.pg.generic_read(sql, params={"user_id": user_id})
+        tomorrow = get_now_utc() + datetime.timedelta(days=1)
         return [
             AgentMetadata(
                 agent_id=row["agent_id"],
@@ -286,6 +298,11 @@ class AsyncDB:
                 agent_name=row["agent_name"],
                 created_at=row["created_at"],
                 last_updated=row["last_updated"],
+                last_run=row["last_run"],
+                next_run=tomorrow,  # TEMPORARY
+                latest_notification_string=row["latest_notification_string"],
+                automation_enabled=row["automation_enabled"],
+                unread_notification_count=row["unread_notification_count"] or 0,
             )
             for row in rows
         ]
@@ -308,10 +325,17 @@ class AsyncDB:
         )
 
     async def set_plan_run_share_status(self, plan_run_id: str, status: bool) -> None:
-        return await self.pg.generic_update(
+        await self.pg.generic_update(
             table_name="agent.plan_runs",
             where={"plan_run_id": plan_run_id},
             values_to_update={"shared": status},
+        )
+
+    async def set_agent_automation_enabled(self, agent_id: str, enabled: bool) -> None:
+        await self.pg.generic_update(
+            table_name="agent.agents",
+            where={"agent_id": agent_id},
+            values_to_update={"automation_enabled": enabled},
         )
 
 

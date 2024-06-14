@@ -1,7 +1,7 @@
 import datetime
 import enum
 from enum import Enum
-from typing import List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from prefect.client.schemas.objects import StateType
 from pydantic import BaseModel, Field
@@ -43,6 +43,25 @@ class UpdateAgentResponse(BaseModel):
 
 
 ####################################################################################################
+# Agent automation enabled flag
+####################################################################################################
+class EnableAgentAutomationRequest(BaseModel):
+    agent_id: str
+
+
+class EnableAgentAutomationResponse(BaseModel):
+    success: bool
+
+
+class DisableAgentAutomationRequest(BaseModel):
+    agent_id: str
+
+
+class DisableAgentAutomationResponse(BaseModel):
+    success: bool
+
+
+####################################################################################################
 # GetAllAgents
 ####################################################################################################
 class AgentMetadata(BaseModel):
@@ -51,6 +70,22 @@ class AgentMetadata(BaseModel):
     agent_name: str
     created_at: datetime.datetime
     last_updated: datetime.datetime
+
+    last_run: Optional[datetime.datetime] = None
+    next_run: Optional[datetime.datetime] = None
+
+    latest_notification_string: Optional[str] = None
+    unread_notification_count: int = 0
+    automation_enabled: bool = False
+
+    def to_agent_row(self) -> Dict[str, Any]:
+        return {
+            "agent_id": self.agent_id,
+            "user_id": self.user_id,
+            "agent_name": self.agent_name,
+            "created_at": self.created_at,
+            "last_updated": self.last_updated,
+        }
 
 
 class GetAllAgentsResponse(BaseModel):

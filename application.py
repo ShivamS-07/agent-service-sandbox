@@ -24,6 +24,10 @@ from agent_service.endpoints.models import (
     ChatWithAgentResponse,
     CreateAgentResponse,
     DeleteAgentResponse,
+    DisableAgentAutomationRequest,
+    DisableAgentAutomationResponse,
+    EnableAgentAutomationRequest,
+    EnableAgentAutomationResponse,
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
@@ -302,7 +306,7 @@ async def steam_agent_events(
 )
 async def share_plan_run(
     req: SharePlanRunRequest, user: User = Depends(parse_header)
-) -> ChatWithAgentResponse:
+) -> SharePlanRunResponse:
     """Share agent plan run (set shared status to true)
 
     Args:
@@ -320,7 +324,7 @@ async def share_plan_run(
 )
 async def unshare_plan_run(
     req: UnsharePlanRunRequest, user: User = Depends(parse_header)
-) -> ChatWithAgentResponse:
+) -> UnsharePlanRunResponse:
     """Unshare agent plan run (set shared status to false)
 
     Args:
@@ -329,6 +333,44 @@ async def unshare_plan_run(
 
     validate_user_plan_run_access(user.user_id, req.plan_run_id)
     return await application.state.agent_service_impl.unshare_plan_run(plan_run_id=req.plan_run_id)
+
+
+@router.post(
+    "/agent/enable-automation",
+    response_model=EnableAgentAutomationResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def enable_agent_automation(
+    req: EnableAgentAutomationRequest, user: User = Depends(parse_header)
+) -> EnableAgentAutomationResponse:
+    """
+    Enable agent automation
+
+    Args:
+        agent_id (str): agent ID
+    """
+    validate_user_agent_access(user.user_id, req.agent_id)
+    return await application.state.agent_service_impl.enable_agent_automation(agent_id=req.agent_id)
+
+
+@router.post(
+    "/agent/disable-automation",
+    response_model=DisableAgentAutomationResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def disable_agent_automation(
+    req: DisableAgentAutomationRequest, user: User = Depends(parse_header)
+) -> DisableAgentAutomationResponse:
+    """
+    Disable agent automation
+
+    Args:
+        agent_id (str): agent ID
+    """
+    validate_user_agent_access(user.user_id, req.agent_id)
+    return await application.state.agent_service_impl.disable_agent_automation(
+        agent_id=req.agent_id
+    )
 
 
 initialize_unauthed_endpoints(application)

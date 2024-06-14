@@ -15,6 +15,8 @@ from agent_service.endpoints.models import (
     ChatWithAgentResponse,
     CreateAgentResponse,
     DeleteAgentResponse,
+    DisableAgentAutomationResponse,
+    EnableAgentAutomationResponse,
     ExecutionPlanTemplate,
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
@@ -229,6 +231,14 @@ class AgentServiceImpl:
     async def unshare_plan_run(self, plan_run_id: str) -> UnsharePlanRunResponse:
         await self.pg.set_plan_run_share_status(plan_run_id=plan_run_id, status=False)
         return UnsharePlanRunResponse(success=True)
+
+    async def enable_agent_automation(self, agent_id: str) -> EnableAgentAutomationResponse:
+        await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=True)
+        return EnableAgentAutomationResponse(success=True)
+
+    async def disable_agent_automation(self, agent_id: str) -> DisableAgentAutomationResponse:
+        await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=False)
+        return DisableAgentAutomationResponse(success=True)
 
     # Requires no authorization
     async def get_plan_run_output(self, plan_run_id: str) -> GetPlanRunOutputResponse:

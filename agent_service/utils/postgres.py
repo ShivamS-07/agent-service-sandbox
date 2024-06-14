@@ -54,7 +54,7 @@ class Postgres(PostgresBase):
         return rows[0]["user_id"] if rows else None
 
     def insert_agent(self, agent_metadata: AgentMetadata) -> None:
-        self.multi_row_insert(table_name="agent.agents", rows=[agent_metadata.model_dump()])
+        self.multi_row_insert(table_name="agent.agents", rows=[agent_metadata.to_agent_row()])
 
     def insert_chat_messages(self, messages: List[Message]) -> None:
         self.multi_row_insert(
