@@ -1,13 +1,16 @@
 import asyncio
+import datetime
 import json
 import logging
 import signal
+import traceback
 from typing import Any
 
 import boto3
 
 from agent_service.sqs_serve.message_handler import MessageHandler
 from agent_service.utils.constants import AGENT_WORKER_QUEUE
+from agent_service.utils.event_logging import log_event
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,7 +57,28 @@ async def poll_sqs_forever() -> None:
             sqs_message = message["Body"]
             LOGGER.info(f"Received Message: {sqs_message}")
             message_dict = json.loads(sqs_message)
-            await message_handler.handle_message(message_dict)
+
+            start_time_utc = datetime.datetime.utcnow().isoformat()
+            try:
+                await message_handler.handle_message(message_dict)
+                log_event(
+                    event_name="agent_worker_message_processed",
+                    event_data={
+                        "start_time_utc": start_time_utc,
+                        "end_time_utc": datetime.datetime.utcnow().isoformat(),
+                        "message": sqs_message,
+                    },
+                )
+            except Exception:
+                log_event(
+                    event_name="agent_worker_message_processed",
+                    event_data={
+                        "start_time_utc": start_time_utc,
+                        "end_time_utc": datetime.datetime.utcnow().isoformat(),
+                        "message": sqs_message,
+                        "error_msg": traceback.format_exc(),
+                    },
+                )
 
             LOGGER.info(f"Message Processed: {sqs_message}")
 
