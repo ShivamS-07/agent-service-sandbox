@@ -338,6 +338,21 @@ class AsyncDB:
             values_to_update={"shared": status},
         )
 
+    async def mark_notifications_as_read(
+        self, agent_id: str, timestamp: Optional[datetime.datetime]
+    ) -> None:
+        where_clause = "agent_id = %(agent_id)s"
+        if timestamp is not None:
+            where_clause += " AND created_at <= %(timestamp)s"
+
+        sql = f"""
+        UPDATE agent.notifications SET unread = FALSE WHERE {where_clause}
+        """
+
+        params = {"agent_id": agent_id, "timestamp": timestamp}
+
+        await self.pg.generic_write(sql, params=params)
+
     async def set_agent_automation_enabled(self, agent_id: str, enabled: bool) -> None:
         await self.pg.generic_update(
             table_name="agent.agents",

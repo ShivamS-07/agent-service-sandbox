@@ -269,3 +269,17 @@ class UnsharePlanRunRequest(BaseModel):
 
 class UnsharePlanRunResponse(BaseModel):
     success: bool
+
+
+####################################################################################################
+# Notifications
+####################################################################################################
+
+
+class MarkNotificationsAsReadRequest(BaseModel):
+    agent_id: str
+    timestamp: Optional[datetime.datetime] = None
+
+
+class MarkNotificationsAsReadResponse(BaseModel):
+    success: bool

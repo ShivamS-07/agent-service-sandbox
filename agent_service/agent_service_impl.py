@@ -24,6 +24,7 @@ from agent_service.endpoints.models import (
     GetAllAgentsResponse,
     GetChatHistoryResponse,
     GetPlanRunOutputResponse,
+    MarkNotificationsAsReadResponse,
     SharePlanRunResponse,
     UnsharePlanRunResponse,
     UpdateAgentRequest,
@@ -244,6 +245,12 @@ class AgentServiceImpl:
         await self.pg.set_plan_run_share_status(plan_run_id=plan_run_id, status=False)
         return UnsharePlanRunResponse(success=True)
 
+    async def mark_notifications_as_read(
+        self, agent_id: str, timestamp: Optional[datetime.datetime]
+    ) -> MarkNotificationsAsReadResponse:
+        await self.pg.mark_notifications_as_read(agent_id=agent_id, timestamp=timestamp)
+        return MarkNotificationsAsReadResponse(success=True)
+
     async def enable_agent_automation(self, agent_id: str) -> EnableAgentAutomationResponse:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=True)
         return EnableAgentAutomationResponse(success=True)
@@ -258,7 +265,6 @@ class AgentServiceImpl:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid {plan_run_id=}"
             )
-
         outputs = await self.pg.get_plan_run_outputs(plan_run_id=plan_run_id)
         if not outputs:
             raise HTTPException(

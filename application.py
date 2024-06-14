@@ -33,6 +33,8 @@ from agent_service.endpoints.models import (
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
     GetChatHistoryResponse,
+    MarkNotificationsAsReadRequest,
+    MarkNotificationsAsReadResponse,
     SharePlanRunRequest,
     SharePlanRunResponse,
     UnsharePlanRunRequest,
@@ -333,6 +335,26 @@ async def unshare_plan_run(
 
     validate_user_plan_run_access(user.user_id, req.plan_run_id)
     return await application.state.agent_service_impl.unshare_plan_run(plan_run_id=req.plan_run_id)
+
+
+@router.post(
+    "/agent/mark-notifications-as-read",
+    response_model=MarkNotificationsAsReadResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def mark_notifications_as_read(
+    req: MarkNotificationsAsReadRequest, user: User = Depends(parse_header)
+) -> MarkNotificationsAsReadResponse:
+    """Mark all agent notifications as read
+
+    Args:
+        agent_id (str): agent ID
+        timestamp (optional int): int representing timestamp in UTC
+    """
+    validate_user_agent_access(user.user_id, req.agent_id)
+    return await application.state.agent_service_impl.mark_notifications_as_read(
+        req.agent_id, req.timestamp
+    )
 
 
 @router.post(
