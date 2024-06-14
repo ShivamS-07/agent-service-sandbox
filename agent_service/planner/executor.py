@@ -435,7 +435,9 @@ async def rewrite_execution_plan(
     if not old_plan:  # shouldn't happen, just for mypy
         raise RuntimeError("Cannot rewrite a plan that does not exist!")
     if error_info:
-        new_plan = await planner.rewrite_plan_after_error(error_info, chat_context, old_plan)
+        new_plan = await planner.rewrite_plan_after_error(
+            error_info, chat_context, old_plan, action=action
+        )
     else:
         new_plan = await planner.rewrite_plan_after_input(
             chat_context, old_plan, plan_timestamp, action=action
