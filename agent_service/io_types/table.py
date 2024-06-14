@@ -12,7 +12,6 @@ from agent_service.io_type_utils import (
     ComplexIOBase,
     IOType,
     PrimitiveType,
-    Score,
     ScoreOutput,
     TableColumnType,
     io_type,
@@ -278,7 +277,7 @@ class Table(ComplexIOBase):
         return TableOutput(title=title, columns=output_cols, rows=rows, citations=citations)
 
 
-CellType = Union[PrimitiveType, StockMetadata, Score]
+CellType = Union[PrimitiveType, StockMetadata, ScoreOutput]
 
 
 @io_type
