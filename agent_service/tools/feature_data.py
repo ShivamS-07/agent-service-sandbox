@@ -232,7 +232,7 @@ class MacroFeatureDataInput(ToolArgs):
         " that is not tied to a specific stock. These are usually macroeconomic indicators like"
         " bank interest rates, inflation and unemployment rates."
         " Optionally a start_date and end_date may be provided to specify a date range"
-        " to get a specific date only set both inputs to the same date."
+        " to get a specific date only then set both start_date and end_date to the same date."
         " if the optional date_range argument is passed in it will override anything set in start_date and end_date "
         " If none of start_date, end_date, date_range are provided then it will assume the request "
         " is for the most recent date for which data exists. The statistic_id MUST be "
@@ -257,10 +257,10 @@ async def get_macro_statistic_data(args: MacroFeatureDataInput, context: PlanRun
     if args.start_date is None and args.end_date is not None:
         start_date = args.end_date
         end_date = args.end_date
-    # if only start date given, use start to start
+    # if only start date given, use start to latest()
     elif args.start_date is not None and args.end_date is None:
         start_date = args.start_date
-        end_date = args.start_date
+        end_date = get_latest_date()
     # if both dates are given use as is
     elif args.start_date is not None and args.end_date is not None:
         start_date = args.start_date
@@ -288,7 +288,7 @@ class FeatureDataInput(ToolArgs):
         "This function returns the time series of data for a statistic_id"
         " for each stock in the list of stock_ids. "
         " Optionally a start_date and end_date may be provided to specify a date range"
-        " to get a specific date only set both inputs to the same date."
+        " to get a specific date only  then set both start_date and end_date to the same date."
         " if the optional date_range argument is passed in it will override anything set in start_date and end_date "
         " If none of start_date, end_date, date_range are provided then it will assume the request "
         " is for the most recent date for which data exists. The statistic_id MUST be "
@@ -328,10 +328,10 @@ async def get_statistic_data_for_companies(
     if args.start_date is None and args.end_date is not None:
         start_date = args.end_date
         end_date = args.end_date
-    # if only start date given, use start to start
+    # if only start date given, use start to latest()
     elif args.start_date is not None and args.end_date is None:
         start_date = args.start_date
-        end_date = args.start_date
+        end_date = get_latest_date()
     # if both dates are given use as is
     elif args.start_date is not None and args.end_date is not None:
         start_date = args.start_date
