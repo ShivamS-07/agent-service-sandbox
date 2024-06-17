@@ -16,6 +16,7 @@ from agent_service.io_type_utils import (
     TableColumnType,
     io_type,
 )
+from agent_service.io_types.graph import GraphType
 from agent_service.io_types.output import CitationID, Output, OutputType
 from agent_service.io_types.stock import StockID
 from agent_service.utils.boosted_pg import BoostedPG
@@ -132,6 +133,11 @@ def object_histories_to_columns(objects: List[ComplexIOBase]) -> List[TableColum
 
 @io_type
 class Table(ComplexIOBase):
+    # Table creators can choose to prefer what kind of visualization to use in charting
+    # tools. This is utilized by `make_generic_graph` to decide how to represent the graph
+    # and is called when the user is not specific enough for the agent to have decided
+    # to use one specific graph type over another.
+    prefer_graph_type: Optional[GraphType] = None
     columns: List[TableColumn]
 
     def get_num_rows(self) -> int:

@@ -23,6 +23,7 @@ MAX_DATAPOINTS_FOR_GPT = 10
 class GraphType(str, enum.Enum):
     LINE = "line"
     PIE = "pie"
+    BAR = "bar"
 
 
 @io_type
@@ -126,6 +127,39 @@ class PieGraph(Graph):
         return f"<Pie Chart with sections: {sections}>"
 
 
+@io_type
+class BarDataPoint(ComplexIOBase):
+    label: Optional[Union[PrimitiveType, StockID]]
+    value: Optional[PrimitiveType]
+
+
+@io_type
+class BarData(ComplexIOBase):
+    index: Union[PrimitiveType, StockID]
+    # values are a list of tuples (dataset_id, value)
+    values: List[BarDataPoint]
+
+
+@io_type
+class BarGraph(Graph):
+    graph_type: Literal[GraphType.BAR] = GraphType.BAR
+    data_type: TableColumnType  # values type
+    data_unit: Optional[str] = None  # currency valued unit data
+    data: List[BarData]
+
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        for bar in self.data:
+            if isinstance(bar.index, StockID):
+                bar.index = bar.index.symbol or bar.index.isin
+            for bar_point in bar.values:
+                if isinstance(bar_point.label, StockID):
+                    bar_point.label = bar_point.label.symbol or bar_point.label.isin
+        return GraphOutput(graph=self, title=title)
+
+    def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        return f"Bar Chart: {self.data}"
+
+
 class GraphOutput(Output):
     output_type: Literal[OutputType.GRAPH] = OutputType.GRAPH
-    graph: Union[PieGraph, LineGraph] = Field(discriminator="graph_type")
+    graph: Union[PieGraph, LineGraph, BarGraph] = Field(discriminator="graph_type")
