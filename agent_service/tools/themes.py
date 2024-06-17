@@ -5,7 +5,13 @@ from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple
 
 from nlp_service_proto_v1.themes_pb2 import ThemeOutlookType
+from pa_portfolio_service_proto_v1.workspace_pb2 import StockAndWeight
+from stock_universe_service_proto_v1.security_metadata_service_pb2 import (
+    GetEtfHoldingsForDateResponse,
+)
 
+from agent_service.external import sec_meta_svc_client
+from agent_service.external.back_test_svc_client import get_themes_with_impacted_stocks
 from agent_service.external.nlp_svc_client import (
     get_all_themes_for_user,
     get_security_themes,
@@ -28,6 +34,7 @@ from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
+from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 
 # TODO: Don't use db
@@ -423,9 +430,11 @@ async def get_top_N_macroeconomic_themes(
     """
 
     # helper function to get the date range
-    async def _get_date_range(start_date: Optional[datetime.date]) -> str:
+    async def _get_date_range(
+        start_date: Optional[datetime.date],
+    ) -> Tuple[datetime.timedelta, str]:
         if start_date is None:
-            return "1M"
+            return datetime.timedelta(days=30), "1M"
         today = datetime.date.today()
         diff = today - start_date
         date_ranges = [
@@ -439,26 +448,50 @@ async def get_top_N_macroeconomic_themes(
         ]
         # Find the closest date range
         closest_range = min(date_ranges, key=lambda x: abs(x[0] - diff))
-        return closest_range[1]
+        return closest_range
 
+    logger = get_prefect_logger(__name__)
     start_date = args.start_date
     if not start_date:
         if args.date_range:
             start_date = args.date_range.start_date
+    time_delta, date_range = await _get_date_range(start_date)
+    themes: List[ThemeText] = []
+    if args.portfolio_id:
+        # TODO: fix this endpoint to get ids instead of theme names
+        resp = await get_top_themes(
+            user_id=context.user_id,
+            section_types=["THEME"],
+            date_range=date_range,
+            number_per_section=args.theme_num,
+            portfolio_id=args.portfolio_id,
+        )
+        theme_refs: List[str] = [str(t.name) for t in resp.topics]
+        theme_refs = theme_refs[: args.theme_num]
+        themes = await get_macroeconomic_themes(  # type: ignore
+            GetMacroeconomicThemeInput(theme_refs=theme_refs), context
+        )
+    # If we do not have a portfolio Id what we do is instead construct
+    # a portfolio based on the S&P 500 and find relevant themes
+    elif not args.portfolio_id:
+        logger.info("No portfolio id provided using holdings in S&P 500")
+        SPY_SP500_GBI_ID = 10076  # same on dev & prod
+        response: GetEtfHoldingsForDateResponse = await sec_meta_svc_client.get_etf_holdings(
+            SPY_SP500_GBI_ID, context.user_id
+        )
+        SPY_SP500_HOLDINGS = [
+            StockAndWeight(gbi_id=holding.gbi_id, weight=holding.weight)
+            for holding in response.etf_universe_holdings[0].holdings.weighted_securities
+        ]
+        # if start date is None default it to a
+        themes_with_impact = await get_themes_with_impacted_stocks(
+            stocks=SPY_SP500_HOLDINGS,
+            start_date=start_date if start_date else datetime.date.today() - time_delta,
+            end_date=(start_date + time_delta) if start_date else datetime.date.today(),
+            user_id=context.user_id,
+        )
+        themes = [ThemeText(id=theme.theme_id) for theme in themes_with_impact]
 
-    # TODO: fix this endpoint to get ids instead of theme names
-    resp = await get_top_themes(
-        user_id=context.user_id,
-        section_types=["THEME"],
-        date_range=await _get_date_range(start_date),
-        number_per_section=args.theme_num,
-        portfolio_id=args.portfolio_id,
-    )
-    theme_refs: List[str] = [str(t.name) for t in resp.topics]
-    theme_refs = theme_refs[: args.theme_num]
-    themes: List[ThemeText] = await get_macroeconomic_themes(  # type: ignore
-        GetMacroeconomicThemeInput(theme_refs=theme_refs), context
-    )
     return themes
 
 
