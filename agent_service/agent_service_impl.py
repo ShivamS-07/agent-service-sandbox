@@ -25,6 +25,7 @@ from agent_service.endpoints.models import (
     GetChatHistoryResponse,
     GetPlanRunOutputResponse,
     MarkNotificationsAsReadResponse,
+    NotificationEvent,
     SharePlanRunResponse,
     UnsharePlanRunResponse,
     UpdateAgentRequest,
@@ -38,7 +39,11 @@ from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
-from agent_service.utils.redis_queue import get_agent_event_channel, wait_for_messages
+from agent_service.utils.redis_queue import (
+    get_agent_event_channel,
+    get_notification_event_channel,
+    wait_for_messages,
+)
 from agent_service.utils.string_utils import is_valid_uuid
 from agent_service.utils.task_executor import TaskExecutor
 
@@ -234,6 +239,18 @@ class AgentServiceImpl:
                 resp = AgentEvent.model_validate_json(message)
                 LOGGER.info(
                     f"Got event on channel for {agent_id=} of type '{resp.event.event_type.value}'"
+                )
+                yield resp
+
+    async def stream_notification_events(
+        self, user_id: str
+    ) -> AsyncGenerator[NotificationEvent, None]:
+        LOGGER.info(f"Listening to notification events on channel for {user_id=}")
+        async with get_notification_event_channel(user_id=user_id) as channel:
+            async for message in wait_for_messages(channel):
+                resp = NotificationEvent.model_validate_json(message)
+                LOGGER.info(
+                    f"Got event on notification channel for {user_id=} of type '{resp.event.event_type.value}'"
                 )
                 yield resp
 

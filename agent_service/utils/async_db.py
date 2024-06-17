@@ -1,4 +1,5 @@
 import datetime
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import AgentMetadata, AgentOutput
@@ -147,6 +148,25 @@ class AsyncDB:
             ExecutionPlan.model_validate(rows[0]["plan"]),
             rows[0]["created_at"],
         )
+
+    @lru_cache(maxsize=128)
+    async def get_agent_owner(self, agent_id: str) -> Optional[str]:
+        """
+        This function retrieves the owner of an agent, mainly used in authorization.
+        Caches the result for 128 calls since the owner cannot change.
+
+        Args:
+            agent_id: The agent id to retrieve the owner for.
+
+        Returns: The user id of the agent owner.
+        """
+        sql = """
+            SELECT user_id::VARCHAR
+            FROM agent.agents
+            WHERE agent_id = %(agent_id)s;
+        """
+        rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
+        return rows[0]["user_id"] if rows else None
 
     async def get_agent_plan_runs(
         self, agent_id: str, limit_num: Optional[int] = None
@@ -334,6 +354,17 @@ class AsyncDB:
         await self.pg.multi_row_insert(
             table_name="agent.notifications", rows=[notif.model_dump() for notif in notifications]
         )
+
+    async def get_unread_notification_count(self, agent_id: str) -> int:
+        sql = """
+        SELECT COUNT(unread) AS unread_count FROM agent.notifications WHERE agent_id = %(agent_id)s AND unread = TRUE
+        """
+
+        rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
+        if not rows:
+            return 0
+
+        return rows[0]["unread_count"]
 
     async def set_plan_run_share_status(self, plan_run_id: str, status: bool) -> None:
         await self.pg.generic_update(

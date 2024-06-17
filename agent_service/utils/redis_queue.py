@@ -47,6 +47,7 @@ def get_redis_queue_client() -> Optional[redis.Redis]:
 
 
 CHANNEL_TEMPLATE = "agent-svc:events:{env}:{agent_id}"
+NOTIFICATION_CHANNEL_TEMPLATE = "agent-svc:notifications:{env}:{user_id}"
 
 
 @asynccontextmanager
@@ -57,6 +58,17 @@ async def get_agent_event_channel(agent_id: str) -> AsyncGenerator[PubSub, None]
         raise RuntimeError("Redis instance not found! Please specify REDIS_QUEUE_HOST")
     async with redis.pubsub() as pubsub:
         await pubsub.subscribe(CHANNEL_TEMPLATE.format(env=env, agent_id=agent_id))
+        yield pubsub
+
+
+@asynccontextmanager
+async def get_notification_event_channel(user_id: str) -> AsyncGenerator[PubSub, None]:
+    env = get_environment_tag().lower()
+    redis = get_redis_queue_client()
+    if not redis:
+        raise RuntimeError("Redis instance not found! Please specify REDIS_QUEUE_HOST")
+    async with redis.pubsub() as pubsub:
+        await pubsub.subscribe(NOTIFICATION_CHANNEL_TEMPLATE.format(env=env, user_id=user_id))
         yield pubsub
 
 
@@ -77,4 +89,15 @@ async def publish_agent_event(agent_id: str, serialized_event: str) -> None:
 
     env = get_environment_tag().lower()
     channel = CHANNEL_TEMPLATE.format(env=env, agent_id=agent_id)
+    await redis.publish(channel, serialized_event)
+
+
+async def publish_notification_event(user_id: str, serialized_event: str) -> None:
+    redis = get_redis_queue_client()
+    if not redis:
+        logger.warning("Skipping message publish on local")
+        return
+
+    env = get_environment_tag().lower()
+    channel = NOTIFICATION_CHANNEL_TEMPLATE.format(env=env, user_id=user_id)
     await redis.publish(channel, serialized_event)

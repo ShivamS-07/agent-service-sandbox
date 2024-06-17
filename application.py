@@ -301,6 +301,28 @@ async def steam_agent_events(
     return EventSourceResponse(content=_wrap_serializer())
 
 
+@router.get(
+    "/notifications/stream",
+    status_code=status.HTTP_200_OK,
+)
+async def stream_notification_events(user: User = Depends(parse_header)) -> EventSourceResponse:
+    """
+    Set up a data stream that returns messages based on notification events.
+    """
+
+    async def _wrap_serializer() -> AsyncContentStream:
+        try:
+            async for event in application.state.agent_service_impl.stream_notification_events(
+                user_id=user.user_id
+            ):
+                yield ServerSentEvent(data=event.model_dump_json(), event="notification-event")
+        except asyncio.CancelledError as e:
+            logger.info(f"Event stream client disconnected for {user.user_id=}")
+            raise e
+
+    return EventSourceResponse(content=_wrap_serializer())
+
+
 @router.post(
     "/agent/share-plan-run",
     response_model=SharePlanRunResponse,

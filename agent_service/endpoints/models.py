@@ -283,3 +283,19 @@ class MarkNotificationsAsReadRequest(BaseModel):
 
 class MarkNotificationsAsReadResponse(BaseModel):
     success: bool
+
+
+class NotificationEventType(str, enum.Enum):
+    NOTIFY_MESSAGE = "notify_message"
+
+
+class NotifyMessageEvent(BaseModel):
+    event_type: Literal[NotificationEventType.NOTIFY_MESSAGE] = NotificationEventType.NOTIFY_MESSAGE
+    agent_id: str
+    unread_count: int
+
+
+class NotificationEvent(BaseModel):
+    user_id: str
+    event: Union[NotifyMessageEvent] = Field(discriminator="event_type")
+    timestamp: datetime.datetime = Field(default_factory=get_now_utc)
