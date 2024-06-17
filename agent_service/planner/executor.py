@@ -60,14 +60,14 @@ async def run_execution_plan(
     log_all_outputs: bool = False,
     replan_execution_error: bool = True,
     run_plan_in_prefect_immediately: bool = True,
-    # This is meant for testing, basically we can fill in the variable lookup
-    # table to make sure we only run the plan starting from a certain point
-    # while passing in precomputed outputs for prior tasks.
-    override_variable_lookup: Optional[Dict[str, IOType]] = None,
+    # This is meant for testing, basically we can fill in the lookup table to
+    # make sure we only run the plan starting from a certain point while passing
+    # in precomputed outputs for prior tasks.
+    override_task_output_lookup: Optional[Dict[str, IOType]] = None,
 ) -> List[IOType]:
     logger = get_prefect_logger(__name__)
     # Maps variables to their resolved values
-    variable_lookup: Dict[str, IOType] = override_variable_lookup or {}
+    variable_lookup: Dict[str, IOType] = {}
     db = get_psql(skip_commit=context.skip_db_commit)
 
     db.insert_plan_run(
@@ -106,11 +106,9 @@ async def run_execution_plan(
         context.task_id = step.tool_task_id
 
         # if the tool output already exists in the map, just use that
-        if step.output_variable_name in variable_lookup:
-            logger.info(
-                f"Step '{step.tool_name}' already in variable lookup, using existing value..."
-            )
-            tool_output = variable_lookup[step.output_variable_name]
+        if override_task_output_lookup and step.tool_task_id in override_task_output_lookup:
+            logger.info(f"Step '{step.tool_name}' already in task lookup, using existing value...")
+            tool_output = override_task_output_lookup[step.tool_task_id]
         else:
             # Run the tool, store its output, errors and replan
             try:
@@ -622,7 +620,7 @@ async def run_execution_plan_local(
     do_chat: bool = False,
     log_all_outputs: bool = False,
     replan_execution_error: bool = False,
-    override_variable_lookup: Optional[Dict[str, IOType]] = None,
+    override_task_output_lookup: Optional[Dict[str, IOType]] = None,
 ) -> List[IOType]:
     context.run_tasks_without_prefect = True
     return await run_execution_plan.fn(
@@ -632,7 +630,7 @@ async def run_execution_plan_local(
         run_plan_in_prefect_immediately=False,
         log_all_outputs=log_all_outputs,
         replan_execution_error=replan_execution_error,
-        override_variable_lookup=override_variable_lookup,
+        override_task_output_lookup=override_task_output_lookup,
     )
 
 

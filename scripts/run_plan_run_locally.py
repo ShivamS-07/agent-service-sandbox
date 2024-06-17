@@ -74,14 +74,12 @@ async def main() -> IOType:
     context.skip_db_commit = True
 
     # Fill in the variables dict with things already computed
-    override_variable_dict = None
+    override_output_dict = None
     if args.start_with_task_id:
         task_ids_to_lookup = []
-        override_variable_dict = {}
+        override_output_dict = {}
         var_name_to_task_id = {}
         for step in plan.nodes:
-            if not step.output_variable_name:
-                continue
             if step.tool_task_id == args.start_with_task_id:
                 break
             task_ids_to_lookup.append(step.tool_task_id)
@@ -90,13 +88,12 @@ async def main() -> IOType:
         task_id_output_map = fetch_task_outputs_from_clickhouse(
             plan_run_id=args.plan_run_id, task_ids=task_ids_to_lookup, env=args.env
         )
-        for var_name, task_id in var_name_to_task_id.items():
-            if task_id in task_id_output_map:
-                override_variable_dict[var_name] = task_id_output_map[task_id]
+        for task_id, output in task_id_output_map.items():
+            override_output_dict[task_id] = output
 
     with patch(target="agent_service.planner.executor.get_psql"):
         result = await run_execution_plan_local(
-            plan=plan, context=context, override_variable_lookup=override_variable_dict
+            plan=plan, context=context, override_task_output_lookup=override_output_dict
         )
     return result
 
