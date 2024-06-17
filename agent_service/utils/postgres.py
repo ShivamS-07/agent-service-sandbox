@@ -58,7 +58,7 @@ class Postgres(PostgresBase):
 
     def insert_chat_messages(self, messages: List[Message]) -> None:
         self.multi_row_insert(
-            table_name="agent.chat_messages", rows=[msg.model_dump() for msg in messages]
+            table_name="agent.chat_messages", rows=[msg.to_message_row() for msg in messages]
         )
 
     def get_chats_history_for_agent(

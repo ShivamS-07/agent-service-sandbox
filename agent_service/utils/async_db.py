@@ -233,19 +233,23 @@ class AsyncDB:
 
         dt_filter = ""
         if start:
-            dt_filter += " AND message_time >= %(start)s"
+            dt_filter += " AND cm.message_time >= %(start)s"
             params["start"] = start
         if end:
-            dt_filter += " AND message_time <= %(end)s"
+            dt_filter += " AND cm.message_time <= %(end)s"
             params["end"] = end
 
         sql = f"""
-            SELECT message_id::VARCHAR, message, is_user_message, message_time
-            FROM agent.chat_messages
-            WHERE agent_id = %(agent_id)s{dt_filter}
-            ORDER BY message_time ASC;
+            SELECT cm.message_id::VARCHAR, cm.message, cm.is_user_message, cm.message_time,
+              COALESCE(nf.unread, FALSE) as unread
+            FROM agent.chat_messages cm
+            LEFT JOIN agent.notifications nf
+            ON cm.message_id = nf.message_id
+            WHERE cm.agent_id = %(agent_id)s{dt_filter}
+            ORDER BY cm.message_time ASC;
         """
         rows = await self.pg.generic_read(sql, params=params)
+
         return ChatContext(messages=[Message(agent_id=agent_id, **row) for row in rows])
 
     async def create_agent(self, agent_metadata: AgentMetadata) -> None:
@@ -323,7 +327,7 @@ class AsyncDB:
 
     async def insert_chat_messages(self, messages: List[Message]) -> None:
         await self.pg.multi_row_insert(
-            table_name="agent.chat_messages", rows=[msg.model_dump() for msg in messages]
+            table_name="agent.chat_messages", rows=[msg.to_message_row() for msg in messages]
         )
 
     async def insert_notifications(self, notifications: List[Notification]) -> None:

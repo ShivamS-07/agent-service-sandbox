@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -17,10 +17,20 @@ class Message(BaseModel):
     message: IOType
     is_user_message: bool
     message_time: datetime.datetime = Field(default_factory=get_now_utc)
+    unread: bool = False
 
     def get_gpt_input(self) -> str:
         tag = GPT_USER_TAG if self.is_user_message else GPT_AGENT_TAG
         return f"{tag}: {self.message}"
+
+    def to_message_row(self) -> Dict[str, Any]:
+        return {
+            "agent_id": self.agent_id,
+            "message_id": self.message_id,
+            "message": self.message,
+            "is_user_message": self.is_user_message,
+            "message_time": self.message_time,
+        }
 
 
 class Notification(BaseModel):
