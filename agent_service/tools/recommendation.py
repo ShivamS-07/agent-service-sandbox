@@ -55,7 +55,7 @@ SETTINGS_TEMPLATE: Dict[str, Any] = {
         "themes": [],
     },
     "news_settings": {
-        "sentiment_boundaries": [{"lb": -1, "ub": 1}],
+        "sentiment_boundaries": [],
         "prev_sentiment_boundaries": [],
         "weight": 0.5,
     },
