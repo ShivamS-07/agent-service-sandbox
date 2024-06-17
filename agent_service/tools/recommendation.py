@@ -191,7 +191,9 @@ async def add_scores_and_rationales_to_stocks(
 
     stocks_with_rec = []
 
-    for result, stock, text_group in zip(results, stocks, aligned_text_groups.val.values()):
+    for result, (stock, score), text_group in zip(
+        results, score_dict.items(), aligned_text_groups.val.values()
+    ):
 
         try:
             rationale, citations = result.strip().replace("\n\n", "\n").split("\n")
