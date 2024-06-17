@@ -210,6 +210,9 @@ class ScoreOutput(BaseModel):
     # averaged values. This list stores the sub-components.
     sub_scores: List["ScoreOutput"] = []
 
+    def __lt__(self, other: Self) -> bool:
+        return self.val < other.val
+
     @staticmethod
     def from_entry_list(entries: List["HistoryEntry"]) -> Optional["ScoreOutput"]:
         aggregate_score = 0.0

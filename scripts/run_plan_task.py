@@ -7,6 +7,7 @@ from gbi_common_py_utils.utils.clickhouse_base import ClickhouseBase
 from agent_service.tool import ToolArgs, ToolRegistry
 from agent_service.tools import *  # noqa
 from agent_service.types import PlanRunContext
+from agent_service.utils.logs import init_stdout_logging
 
 
 def fetch_args_from_clickhouse(
@@ -60,6 +61,7 @@ def parse_args() -> argparse.Namespace:
 
 async def main() -> None:
     args = parse_args()
+    init_stdout_logging()
     print("Fetching args from clickhouse...")
     tool_args, context = fetch_args_from_clickhouse(
         plan_run_id=args.plan_run_id,
@@ -67,6 +69,8 @@ async def main() -> None:
         task_id=args.task_id,
         env=args.env,
     )
+    # Don't connect to prefect
+    context.run_tasks_without_prefect = True
     print("Fetched args, running tool...\n--------------------")
     tool = ToolRegistry.get_tool(args.tool_name)
     result = await tool.func(args=tool_args, context=context)

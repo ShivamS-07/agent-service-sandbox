@@ -149,6 +149,12 @@ class Table(ComplexIOBase):
                 return col
         return None
 
+    def get_score_column(self) -> Optional[TableColumn]:
+        for col in self.columns:
+            if col.metadata.col_type == TableColumnType.SCORE:
+                return col
+        return None
+
     def to_df(
         self, stocks_as_tickers_only: bool = False, stocks_as_hashables: bool = False
     ) -> pd.DataFrame:
@@ -272,6 +278,10 @@ class Table(ComplexIOBase):
         fixed_table = Table(columns=fixed_cols)
         df = fixed_table.to_df()
         df = df.replace(np.nan, None)
+        # Make sure we sort before creating output (if necessary)
+        score_col = fixed_table.get_score_column()
+        if score_col:
+            df = df.sort_values(by=str(score_col.metadata.label), ascending=False)
         rows = df.values.tolist()
 
         return TableOutput(title=title, columns=output_cols, rows=rows, citations=citations)
