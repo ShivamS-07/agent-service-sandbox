@@ -1,6 +1,7 @@
 import datetime
 import unittest
 
+from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
 from agent_service.tools.feature_data import (
@@ -17,6 +18,7 @@ AAPL = StockID(gbi_id=714, isin="", symbol="AAPL", company_name="")
 AMZN = StockID(gbi_id=149, isin="", symbol="AMZN", company_name="")
 MSFT = StockID(gbi_id=6963, isin="", symbol="MSFT", company_name="")
 VZ = StockID(gbi_id=12250, isin="", symbol="VZ", company_name="")
+TOTAL_ASSETS = StatisticId(stat_id="spiq_1007", stat_name="Total Assets")
 CLOSE_PRICE = StatisticId(stat_id="spiq_close", stat_name="Close Price")
 PE_RATIO = StatisticId(stat_id="pe_ratio", stat_name="P/E Ratio")
 SPIQ_DIV_AMOUNT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount")
@@ -46,6 +48,18 @@ class TestFeatureDataLookup(unittest.IsolatedAsyncioTestCase):
         df = result.to_df()
         self.assertEqual(len(df[STOCK_ID_COL_NAME_DEFAULT].unique()), 3)  # num_stocks
         self.assertEqual(len(df["Date"].unique()), 1)  # num_dates
+        self.assertEqual(result.columns[0].metadata.col_type, TableColumnType.DATE)
+
+    async def test_feature_data_3_quarter_axes(self):
+        args = FeatureDataInput(
+            stock_ids=[AAPL, AMZN, MSFT],
+            statistic_id=TOTAL_ASSETS,
+        )
+        result = await get_statistic_data_for_companies(args, self.context)
+        df = result.to_df()
+        self.assertEqual(len(df[STOCK_ID_COL_NAME_DEFAULT].unique()), 3)  # num_stocks
+        self.assertEqual(len(df["Period"].unique()), 1)  # num_dates
+        self.assertEqual(result.columns[0].metadata.col_type, TableColumnType.STRING)
 
     async def test_feature_data_3_stock(self):
         args = FeatureDataInput(

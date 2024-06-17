@@ -137,8 +137,8 @@ class Table(ComplexIOBase):
     # tools. This is utilized by `make_generic_graph` to decide how to represent the graph
     # and is called when the user is not specific enough for the agent to have decided
     # to use one specific graph type over another.
-    prefer_graph_type: Optional[GraphType] = None
     columns: List[TableColumn]
+    prefer_graph_type: Optional[GraphType] = None
 
     def get_num_rows(self) -> int:
         if not self.columns:
