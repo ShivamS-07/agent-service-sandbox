@@ -615,6 +615,8 @@ class Planner:
             return None
         contents_str = val[1:-1]
         list_type_tup: Tuple[Type] = get_args(expected_type)
+        if list_type_tup[-1] is type(None):  # special Optional case, need to go an extra level in
+            list_type_tup = get_args(list_type_tup[0])
         list_type: Type
         if not list_type_tup:
             list_type = Any

@@ -12,6 +12,7 @@ from discover_service_proto_v1.discover_pb2 import (
 )
 from discover_service_proto_v1.other_messages_pb2 import (
     DiscoverDeltaHorizonEnum,
+    DiscoverRatingAndDelta,
     DiscoverRecommendationCategory,
     DiscoverRecommendationHorizon,
 )
@@ -24,6 +25,7 @@ from gbi_common_py_utils.utils.environment import (
 from grpclib.client import Channel
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
+from agent_service.io_type_utils import Score
 from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
@@ -98,6 +100,11 @@ def get_score_from_recommendation(rec: DiscoverRecommendationCategory) -> Option
     elif rec == DiscoverRecommendationCategory.DISCOVER_RECOMMENDATION_CATEGORY_STRONG_SELL:
         return 0.0
     return None
+
+
+def get_score_from_rating(rating: DiscoverRatingAndDelta) -> Score:
+    rating = rating.rating
+    return Score.scale_input(rating, 0, 5)
 
 
 @grpc_retry

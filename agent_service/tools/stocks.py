@@ -307,7 +307,10 @@ class MultiStockIdentifierLookupInput(ToolArgs):
 @tool(
     description=(
         "This function takes a list of strings e.g. ['microsoft', 'apple', 'TESLA', 'META'] "
-        "which refer to stocks, and converts them to a list of integer identifiers."
+        "which refer to stocks, and converts them to a list of integer identifiers. "
+        " Since most other tools take lists of stocks, you should generally use this function "
+        " to look up stocks mentioned by the client (instead of stock_identifier_lookup), "
+        " even when there is only one stock."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

@@ -503,9 +503,17 @@ def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> boo
     params_expected = get_args(expected)
 
     if actual is list:
-        return expected is list or get_origin(expected) is list
+        return (
+            expected is list
+            or orig_expected is list
+            or (orig_expected is Union and get_origin(params_expected[0]) is list)
+        )
     if actual is dict:
-        return expected is dict or get_origin(expected) is dict
+        return (
+            expected is dict
+            or orig_expected is dict
+            or (orig_expected is Union and get_origin(params_expected[0]) is dict)
+        )
 
     if orig_actual is Union and orig_expected is Union:
         # This really should be "all" instead of "any", but that would
