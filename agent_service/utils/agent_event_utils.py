@@ -59,7 +59,6 @@ async def send_chat_message(
             get_psql(skip_commit=skip_commit).insert_chat_messages(messages=[message])
 
     if not message.is_user_message:
-
         if send_notification:
             # insert notification if not user message
             notification = Notification(
@@ -170,6 +169,8 @@ async def publish_agent_updated_worklogs(
     plan: ExecutionPlan,
     db: Optional[Postgres] = None,
 ) -> None:
+    if context.run_tasks_without_prefect:
+        return
     db = db or get_psql()
     rows = db.get_agent_worklogs(context.agent_id, plan_run_ids=[context.plan_run_id])
     if not rows:

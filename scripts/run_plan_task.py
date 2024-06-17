@@ -47,7 +47,7 @@ def fetch_args_from_clickhouse(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("-p", "--plan-run-id", type=str)
+    parser.add_argument("-p", "--plan-run-id", type=str, required=True)
     parser.add_argument(
         "-t",
         "--tool-name",

@@ -60,10 +60,14 @@ async def run_execution_plan(
     log_all_outputs: bool = False,
     replan_execution_error: bool = True,
     run_plan_in_prefect_immediately: bool = True,
+    # This is meant for testing, basically we can fill in the variable lookup
+    # table to make sure we only run the plan starting from a certain point
+    # while passing in precomputed outputs for prior tasks.
+    override_variable_lookup: Optional[Dict[str, IOType]] = None,
 ) -> List[IOType]:
     logger = get_prefect_logger(__name__)
     # Maps variables to their resolved values
-    variable_lookup: Dict[str, IOType] = {}
+    variable_lookup: Dict[str, IOType] = override_variable_lookup or {}
     db = get_psql(skip_commit=context.skip_db_commit)
 
     db.insert_plan_run(
@@ -75,7 +79,7 @@ async def run_execution_plan(
     for idx, step in enumerate(plan.nodes):
         now = get_now_utc()
 
-        logger.info(f"Running step '{step.tool_name}'")
+        logger.info(f"Running step '{step.tool_name}' (Task ID: {step.tool_task_id})")
         tool = ToolRegistry.get_tool(step.tool_name)
         # First, resolve the variables
         resolved_args = {}
@@ -101,18 +105,25 @@ async def run_execution_plan(
         # Create the context
         context.task_id = step.tool_task_id
 
-        # Run the tool, store its output, errors and replan
-        try:
-            tool_output = await tool.func(args=step_args, context=context)
-        except Exception as e:
-            logger.exception(f"Step '{step.tool_name}' failed due to {e}")
-            retrying = False
-            if replan_execution_error:
-                retrying = await handle_error_in_execution(context, e, step, do_chat)
+        # if the tool output already exists in the map, just use that
+        if step.output_variable_name in variable_lookup:
+            logger.info(
+                f"Step '{step.tool_name}' already in variable lookup, using existing value..."
+            )
+            tool_output = variable_lookup[step.output_variable_name]
+        else:
+            # Run the tool, store its output, errors and replan
+            try:
+                tool_output = await tool.func(args=step_args, context=context)
+            except Exception as e:
+                logger.exception(f"Step '{step.tool_name}' failed due to {e}")
+                retrying = False
+                if replan_execution_error:
+                    retrying = await handle_error_in_execution(context, e, step, do_chat)
 
-            if retrying:
-                raise RuntimeError("Plan run attempt failed, retrying")
-            raise RuntimeError("All retry attempts failed")
+                if retrying:
+                    raise RuntimeError("Plan run attempt failed, retrying")
+                raise RuntimeError("All retry attempts failed")
 
         if not step.is_output_node:
             db.write_tool_output(output=tool_output, context=context)
@@ -611,6 +622,7 @@ async def run_execution_plan_local(
     do_chat: bool = False,
     log_all_outputs: bool = False,
     replan_execution_error: bool = False,
+    override_variable_lookup: Optional[Dict[str, IOType]] = None,
 ) -> List[IOType]:
     context.run_tasks_without_prefect = True
     return await run_execution_plan.fn(
@@ -620,6 +632,7 @@ async def run_execution_plan_local(
         run_plan_in_prefect_immediately=False,
         log_all_outputs=log_all_outputs,
         replan_execution_error=replan_execution_error,
+        override_variable_lookup=override_variable_lookup,
     )
 
 
