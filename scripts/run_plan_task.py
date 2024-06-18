@@ -15,7 +15,7 @@ def fetch_args_from_clickhouse(
 ) -> Tuple[ToolArgs, PlanRunContext]:
     c = ClickhouseBase(environment=env)
     sql = """
-    SELECT agent_id, user_id, task_id, plan_id, plan_run_id, args, context
+    SELECT agent_id, user_id, tool_name, task_id, plan_id, plan_run_id, args, context
     FROM agent.tool_calls
     WHERE plan_run_id = %(plan_run_id)s
     AND (tool_name = %(tool_name)s OR task_id = %(task_id)s)
@@ -26,7 +26,7 @@ def fetch_args_from_clickhouse(
     if not result:
         raise RuntimeError("No args found!")
     row = result[0]
-    tool = ToolRegistry.get_tool(tool_name)
+    tool = ToolRegistry.get_tool(row["tool_name"])
 
     return (
         tool.input_type.model_validate_json(row["args"]),

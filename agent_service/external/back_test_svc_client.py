@@ -12,13 +12,13 @@ from gbi_common_py_utils.utils.environment import (
     get_environment_tag,
 )
 from grpclib.client import Channel
+from pa_portfolio_service_proto_v1.backtest_data_service_grpc import (
+    BacktestDataServiceStub,
+)
 from pa_portfolio_service_proto_v1.backtest_data_service_pb2 import (
     GetThemesWithImpactedStocksRequest,
     GetThemesWithImpactedStocksResponse,
     ThemeWithImpactedStocks,
-)
-from pa_portfolio_service_proto_v1.backtest_data_service_pb2_grpc import (
-    BacktestDataServiceStub,
 )
 from pa_portfolio_service_proto_v1.workspace_pb2 import StockAndWeight
 
