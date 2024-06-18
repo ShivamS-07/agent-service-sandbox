@@ -24,6 +24,7 @@ async def gen_and_run_plan(
     do_chat: bool = False,
     replan_execution_error: bool = False,
     multiple_inputs: bool = False,
+    use_sample_plans: bool = True,
 ) -> None:
     if not prompt:
         prompt = input("Enter a prompt for the agent> ")
@@ -64,6 +65,7 @@ async def gen_and_run_plan(
         run_tasks_without_prefect=True,
         chat_context=chat,
         do_chat=do_chat,
+        use_sample_plans=use_sample_plans,
     )
     if plan is None:
         print("failed to create plan")
@@ -175,6 +177,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-c", "--do_chat", action="store_true", default=False)
     parser.add_argument("-e", "--retry_on_execution_error", action="store_true", default=False)
     parser.add_argument("-i", "--allow_additional_input", action="store_true", default=False)
+    parser.add_argument("-n", "--not_use_sample_plans", action="store_true", default=False)
     return parser.parse_args()
 
 
@@ -190,6 +193,7 @@ async def main() -> None:
             do_chat=args.do_chat,
             replan_execution_error=args.retry_on_execution_error,
             multiple_inputs=args.allow_additional_input,
+            use_sample_plans=not args.not_use_sample_plans,
         )
         while True:
             should_continue = input("Try another prompt? (y/n)> ")

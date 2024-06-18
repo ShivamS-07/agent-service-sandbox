@@ -4,6 +4,7 @@ import logging
 from typing import List, Optional, Tuple, Union
 
 from agent_service.GPT.constants import TEXT_3_LARGE
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.hypothesis.constants import (
@@ -16,12 +17,13 @@ from agent_service.utils.hypothesis.constants import (
 )
 from agent_service.utils.hypothesis.hypothesis_ai import HypothesisAI
 from agent_service.utils.hypothesis.types import (
+    CompanyEarningsTopicInfo,
     CompanyNewsTopicInfo,
     HypothesisEarningsTopicInfo,
     HypothesisInfo,
     HypothesisNewsTopicInfo,
 )
-from agent_service.utils.hypothesis.utils import get_news_topics
+from agent_service.utils.hypothesis.utils import get_earnings_topics, get_news_topics
 from agent_service.utils.postgres import get_psql
 
 logger = logging.getLogger(__name__)
@@ -149,6 +151,39 @@ class HypothesisPipeline:
         corresponding_topics = [topic_id_to_topic[topic.topic_id] for topic in relevant_topics]
         return hypothesis_topics, corresponding_topics
 
+    async def get_stock_hypothesis_earnings_topics(
+        self, summary_ids: List[str]
+    ) -> Tuple[List[HypothesisEarningsTopicInfo], List[CompanyEarningsTopicInfo]]:
+        logger.info("Getting earnings topics from DB...")
+        earnings_topics = get_earnings_topics(summary_ids)
+        if len(earnings_topics) == 0:
+            return [], []
+
+        logger.info("Searching hypothesis relevant earnings topics...")
+        relevant_topics_mask = await self.llm.check_hypothesis_relevant_topics(earnings_topics)
+
+        logger.info("Creating hypothesis earnings topics...")
+        tasks = [
+            self.llm.create_hypothesis_topic(topic)
+            for topic, is_related in zip(earnings_topics, relevant_topics_mask)
+            if is_related
+        ]
+        hypothesis_topics: List[Optional[HypothesisEarningsTopicInfo]] = (
+            await gather_with_concurrency(tasks, n=len(tasks))
+        )
+        filtered_hypothesis_topics = [topic for topic in hypothesis_topics if topic is not None]
+
+        topic_id_to_topic = {
+            (topic.topic_id, topic.summary_type, topic.summary_index): topic
+            for topic in earnings_topics
+        }
+        corresponding_topics = [
+            topic_id_to_topic[(topic.topic_id, topic.summary_type, topic.summary_index)]
+            for topic in filtered_hypothesis_topics
+        ]
+
+        return filtered_hypothesis_topics, corresponding_topics
+
     async def _hypothesis_topic_worker(
         self,
         input_queue: asyncio.Queue,
@@ -156,7 +191,7 @@ class HypothesisPipeline:
     ) -> None:
         while True:
             topic: CompanyNewsTopicInfo = await input_queue.get()
-            result = await self.llm.create_hypothesis_topic(self.hypothesis, topic)
+            result = await self.llm.create_hypothesis_topic(topic)
             if result:
                 output_list.append(result)  # type: ignore
             input_queue.task_done()

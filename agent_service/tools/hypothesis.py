@@ -3,7 +3,11 @@ from typing import Dict, List
 
 from agent_service.io_type_utils import HistoryEntry, Score
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.text import StockNewsDevelopmentText
+from agent_service.io_types.text import (
+    StockEarningsSummaryPointText,
+    StockEarningsSummaryText,
+    StockNewsDevelopmentText,
+)
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.hypothesis.hypothesis_pipeline import HypothesisPipeline
@@ -81,3 +85,81 @@ async def test_hypothesis_for_news_developments(
             filtered_news_developments.append(development)
 
     return filtered_news_developments
+
+
+class TestEarningsHypothesisInput(ToolArgs):
+    """
+    `earnings_summary_list` is a list of earnings summaries (in nlp svc context) that are
+    potentially relevant to different stocks. So in the tool we need to segerate them by stocks
+    and use a for-loop to process each stock
+    """
+
+    hypothesis: str
+    earnings_summary_list: List[StockEarningsSummaryText]
+
+
+@tool(
+    description="Given a string of a user's hypothesis, and a list of earnings summaries,"
+    " test the hypothesis based on the input earnings summaries, and return a list of earnings"
+    " summary remarks or questions bullet points that relevant to the hypothesis, with explanation"
+    " and score that explain why the point is relevant to the hypothesis, and how much it supports"
+    " or contradicts the hypothesis."
+    " You should ONLY use this tool when the user is making a hypothesis and trying to find proof"
+    " among earnings summaries."
+    " For example, if a user asks `Is NVDA the leader in AI chips space?`, you should convert"
+    " it to a statement like `NVDA is the leader in AI chips space` and test it against the earnings.",
+    category=ToolCategory.HYPOTHESIS,
+    tool_registry=ToolRegistry,
+    enabled=False,  # FIXME: Set to True when it's ready
+)
+async def test_hypothesis_for_earnings_summaries(
+    args: TestEarningsHypothesisInput, context: PlanRunContext
+) -> List[StockEarningsSummaryPointText]:
+    logger = get_prefect_logger(__name__)
+
+    # segerate earnings summaries by stocks
+    stock_to_summaries: Dict[StockID, List[StockEarningsSummaryText]] = defaultdict(list)
+    for earnings_summary in args.earnings_summary_list:
+        if earnings_summary.stock_id is None:
+            continue
+
+        stock_to_summaries[earnings_summary.stock_id].append(earnings_summary)
+
+    logger.info(f"Processing hypothesis {args.hypothesis} for {len(stock_to_summaries)} stocks")
+
+    pipeline: HypothesisPipeline = None  # type: ignore
+
+    outputs: List[StockEarningsSummaryPointText] = []
+    for stock_id, earnings_summary_list in stock_to_summaries.items():
+        if pipeline is None:
+            pipeline = HypothesisPipeline(stock_id.gbi_id, args.hypothesis)
+            await pipeline.initial_hypothesis_processing()
+        else:
+            new_hypothesis_obj = pipeline.create_hypothesis_info(stock_id.gbi_id, args.hypothesis)
+            new_hypothesis_obj.embedding = pipeline.hypothesis.embedding
+            new_hypothesis_obj.hypothesis_breakdown = pipeline.hypothesis.hypothesis_breakdown
+            pipeline.hypothesis = new_hypothesis_obj
+
+        hypothesis_earnings_topics, _ = await pipeline.get_stock_hypothesis_earnings_topics(
+            summary_ids=[summary.id for summary in earnings_summary_list]
+        )
+
+        for topic in hypothesis_earnings_topics:
+            support_score: float = topic.get_latest_support()  # type: ignore
+            outputs.append(
+                StockEarningsSummaryPointText(
+                    id=hash((topic.topic_id, topic.summary_index, topic.summary_type.value)),
+                    stock_id=stock_id,
+                    summary_id=topic.topic_id,
+                    summary_idx=topic.summary_index,
+                    summary_type=topic.summary_type.value,
+                    history=[
+                        HistoryEntry(
+                            explanation=topic.get_latest_reason(),
+                            score=Score.scale_input(val=support_score, lb=-1, ub=1),
+                        )
+                    ],
+                )
+            )
+
+    return outputs

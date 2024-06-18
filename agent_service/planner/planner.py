@@ -104,12 +104,19 @@ class Planner:
         self.db = get_psql(skip_commit=skip_db_commit)
 
     @async_perf_logger
-    async def create_initial_plan(self, chat_context: ChatContext) -> Optional[ExecutionPlan]:
+    async def create_initial_plan(
+        self, chat_context: ChatContext, use_sample_plans: bool = True
+    ) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
 
         logger.info("Getting matching sample plans")
 
-        sample_plans = await get_similar_sample_plans(chat_context.get_gpt_input(), self.context)
+        if use_sample_plans:
+            sample_plans = await get_similar_sample_plans(
+                chat_context.get_gpt_input(), self.context
+            )
+        else:
+            sample_plans = []
 
         if sample_plans:
             sample_plans_str = "\n\n".join(

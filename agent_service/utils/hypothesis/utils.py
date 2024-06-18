@@ -2,6 +2,7 @@ import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from dateutil.parser import parse as date_parse
 
 from agent_service.utils.hypothesis.constants import (
     MIN_MAX_NEWS_COUNT,
@@ -9,8 +10,10 @@ from agent_service.utils.hypothesis.constants import (
     ONE_DAY,
 )
 from agent_service.utils.hypothesis.types import (
+    CompanyEarningsTopicInfo,
     CompanyNewsInfo,
     CompanyNewsTopicInfo,
+    EarningsSummaryType,
     HypothesisNewsTopicInfo,
     NewsImpact,
     Polarity,
@@ -24,7 +27,7 @@ def get_news_topics(topic_ids: List[str]) -> List[CompanyNewsTopicInfo]:
 
     sql = """
         SELECT gbi_id, topic_id::VARCHAR, topic_label, topic_descriptions, topic_polarities,
-        created_at, updated_at, topic_impacts
+            topic_impacts
         FROM nlp_service.stock_news_topics
         WHERE topic_id = ANY(%(topic_ids)s)
         ORDER BY created_at DESC
@@ -45,8 +48,6 @@ def get_news_topics(topic_ids: List[str]) -> List[CompanyNewsTopicInfo]:
                     (Polarity(tup[0]), datetime.datetime.fromisoformat(tup[1]))
                     for tup in record["topic_polarities"]
                 ],
-                created_at=record["created_at"],
-                updated_at=record["updated_at"],
                 topic_impacts=(
                     [
                         (NewsImpact(tup[0]), datetime.datetime.fromisoformat(tup[1]))
@@ -178,3 +179,55 @@ def get_date_list(
 
 def get_recency_weights(window_days: int) -> np.ndarray:
     return np.array([i / window_days for i in range(1, window_days + 1)])
+
+
+def get_earnings_topics(summary_ids: List[str]) -> List[CompanyEarningsTopicInfo]:
+    sql = """
+        SELECT summary_id::TEXT, gbi_id, summary, sources
+        FROM nlp_service.earnings_call_summaries
+        WHERE summary_id = ANY(%(summary_ids)s)
+    """
+    rows = get_psql().generic_read(sql, params={"summary_ids": summary_ids})
+
+    outputs = []
+    for row in rows:
+        summary_id = row["summary_id"]
+        gbi_id = row["gbi_id"]
+        earnings_date = date_parse(row["sources"][0]["publishing_time"])
+        summary: Dict[str, Any] = row["summary"]
+
+        for idx, point in enumerate(summary.get("Remarks", [])):
+            outputs.append(
+                CompanyEarningsTopicInfo(
+                    topic_id=summary_id,
+                    gbi_id=gbi_id,
+                    topic_label=point["header"],
+                    topic_descriptions=[(point["detail"], earnings_date)],
+                    topic_polarities=[
+                        (Polarity.from_sentiment_str(point["sentiment"]), earnings_date)
+                    ],
+                    topic_impacts=[(NewsImpact.medium, earnings_date)],
+                    summary_index=idx,
+                    summary_type=EarningsSummaryType.REMARKS,
+                    summary_date=earnings_date,
+                )
+            )
+
+        for idx, point in enumerate(summary.get("Questions", [])):
+            outputs.append(
+                CompanyEarningsTopicInfo(
+                    topic_id=summary_id,
+                    gbi_id=gbi_id,
+                    topic_label=point["header"],
+                    topic_descriptions=[(point["detail"], earnings_date)],
+                    topic_polarities=[
+                        (Polarity.from_sentiment_str(point["sentiment"]), earnings_date)
+                    ],
+                    topic_impacts=[(NewsImpact.medium, earnings_date)],
+                    summary_index=idx,
+                    summary_type=EarningsSummaryType.QUESTIONS,
+                    summary_date=earnings_date,
+                )
+            )
+
+    return outputs

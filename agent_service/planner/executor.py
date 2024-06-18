@@ -190,6 +190,7 @@ async def create_execution_plan(
     run_tasks_without_prefect: bool = False,
     do_chat: bool = True,
     chat_context: Optional[ChatContext] = None,
+    use_sample_plans: bool = True,
 ) -> Optional[ExecutionPlan]:
     if action != Action.CREATE:
         return await rewrite_execution_plan(
@@ -216,7 +217,9 @@ async def create_execution_plan(
 
     logger.info(f"Starting creation of execution plan for {agent_id=}...")
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
-    plan = await planner.create_initial_plan(chat_context=chat_context)
+    plan = await planner.create_initial_plan(
+        chat_context=chat_context, use_sample_plans=use_sample_plans
+    )
     if plan is None:
         if do_chat:
             chatbot = Chatbot(agent_id=agent_id)
@@ -646,6 +649,7 @@ async def create_execution_plan_local(
     run_tasks_without_prefect: bool = True,
     chat_context: Optional[ChatContext] = None,
     do_chat: bool = False,
+    use_sample_plans: bool = True,
 ) -> Optional[ExecutionPlan]:
     return await create_execution_plan.fn(
         agent_id=agent_id,
@@ -659,4 +663,5 @@ async def create_execution_plan_local(
         run_tasks_without_prefect=run_tasks_without_prefect,
         chat_context=chat_context,
         do_chat=do_chat,
+        use_sample_plans=use_sample_plans,
     )

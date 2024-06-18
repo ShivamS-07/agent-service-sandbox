@@ -506,6 +506,54 @@ class StockEarningsSummaryText(StockText):
 
 
 @io_type
+class StockEarningsSummaryPointText(StockText):
+    """
+    A subclass from `StockEarningsSummaryText` that only stores a point in the summary
+    """
+
+    id: int  # hash((summary_id, summary_type, summary_idx))
+    text_type: ClassVar[str] = "Earnings Call Summary Points"
+
+    summary_id: str  # UUID in DB
+    summary_type: str  # "Remarks" or "Questions"
+    summary_idx: int  # index of the point in the summary
+
+    @classmethod
+    def _get_strs_lookup(
+        cls, earnings_summary_points: List[StockEarningsSummaryPointText]  # type: ignore
+    ) -> Dict[TextIDType, str]:
+        sql = """
+            SELECT summary_id::TEXT, summary
+            FROM nlp_service.earnings_call_summaries
+            WHERE summary_id = ANY(%(summary_ids)s)
+        """
+        from agent_service.utils.postgres import get_psql
+
+        db = get_psql()
+        summary_ids = list({point.summary_id for point in earnings_summary_points})
+        rows = db.generic_read(sql, {"summary_ids": summary_ids})
+        summary_id_to_summary = {row["summary_id"]: row["summary"] for row in rows}
+
+        str_lookup = {}
+        for point in earnings_summary_points:
+            summary_per_type = summary_id_to_summary[point.summary_id][point.summary_type]
+            if point.summary_idx < len(summary_per_type):
+                text = summary_per_type[point.summary_idx]
+                str_lookup[point.id] = f"{text['header']}: {text['detail']}"
+
+        return str_lookup  # type: ignore
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        # TODO
+        return [
+            CitationOutput(citation_type=CitationType.TEXT, name=text.text_type) for text in texts
+        ]
+
+
+@io_type
 class StockDescriptionText(StockText):
     id: int  # gbi_id
     text_type: ClassVar[str] = "Company Description"

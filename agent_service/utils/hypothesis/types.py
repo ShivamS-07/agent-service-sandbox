@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+from typing_extensions import Self
+
 
 @dataclass
 class HypothesisInfo:
@@ -25,6 +27,15 @@ class Polarity(int, Enum):
     positive = 1
     neutral = 0
     negative = -1
+
+    @classmethod
+    def from_sentiment_str(cls, sentiment_str: str) -> Self:
+        if sentiment_str == "POS":
+            return cls(1)
+        elif sentiment_str == "NEG":
+            return cls(-1)
+        else:
+            return cls(0)
 
 
 class NewsImpact(int, Enum):
@@ -59,9 +70,6 @@ class CompanyNewsTopicInfo(CompanyTopicInfo):
         None  # contains the rationale for cross company topics, not for db insert
     )
     topic_impacts: List[Tuple[NewsImpact, datetime.datetime]] = field(default_factory=list)
-
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
 
     original_topic_polarities: Optional[List[Tuple[Polarity, datetime.datetime]]] = None
     original_topic_impacts: Optional[List[Tuple[NewsImpact, datetime.datetime]]] = None
@@ -98,8 +106,6 @@ class CompanyEarningsTopicInfo(CompanyTopicInfo):
 
     peer_company_gbi_id: Optional[int] = None
 
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
     year: Optional[int] = None
     quarter: Optional[int] = None
 

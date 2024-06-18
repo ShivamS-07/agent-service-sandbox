@@ -137,20 +137,18 @@ class HypothesisAI:
         return result.lower().startswith("yes")
 
     async def create_hypothesis_topic(
-        self,
-        hypothesis: HypothesisInfo,
-        topic: Union[CompanyNewsTopicInfo, CompanyEarningsTopicInfo],
+        self, topic: Union[CompanyNewsTopicInfo, CompanyEarningsTopicInfo]
     ) -> Optional[Union[HypothesisNewsTopicInfo, HypothesisEarningsTopicInfo]]:
-        hypothesis_breakdown = hypothesis.hypothesis_breakdown or {}
+        hypothesis_breakdown = self.hypothesis.hypothesis_breakdown or {}
 
         main_prompt = HYPOTHESIS_TOPIC_ANALYSIS_MAIN_PROMPT.format(
-            company_name=hypothesis.company_name,
-            company_description=hypothesis.company_description,
+            company_name=self.hypothesis.company_name,
+            company_description=self.hypothesis.company_description,
             topic_label=topic.topic_label,
             topic_description=topic.get_latest_topic_description(),  # type: ignore
-            topic_impact=topic.get_latest_original_topic_impact(NewsImpact.low),  # type: ignore
-            topic_polarity=topic.get_latest_original_topic_polarity(),  # type: ignore
-            hypothesis=hypothesis.hypothesis_text,
+            topic_impact=topic.get_latest_topic_impact(NewsImpact.low),  # type: ignore
+            topic_polarity=topic.get_latest_topic_polarity(),  # type: ignore
+            hypothesis=self.hypothesis.hypothesis_text,
             property=hypothesis_breakdown.get(PROPERTY, ""),
             explanation=hypothesis_breakdown.get(EXPLANATION, ""),
             hypothesis_polarity=hypothesis_breakdown.get(POLARITY, "Neutral"),
@@ -184,7 +182,7 @@ class HypothesisAI:
             description_time = topic.topic_descriptions[-1][1]
 
             topic_dict = {
-                "gbi_id": hypothesis.gbi_id,
+                "gbi_id": self.hypothesis.gbi_id,
                 "topic_id": topic.topic_id,
                 "hypothesis_topic_supports": [(support_num, description_time)],
                 "hypothesis_topic_reasons": [(result_json[RATIONALE], description_time)],
