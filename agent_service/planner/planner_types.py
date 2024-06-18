@@ -45,6 +45,7 @@ class ToolExecutionNode(BaseModel):
     description: str  # A human-readable description of the node's purpose.
     output_variable_name: Optional[str] = None
     is_output_node: bool = False
+    store_output: bool = True
 
     def convert_args(self) -> str:
         return ", ".join(f"{key}={convert_arg(value)}" for key, value in self.args.items())

@@ -123,7 +123,7 @@ async def run_execution_plan(
                     raise RuntimeError("Plan run attempt failed, retrying")
                 raise RuntimeError("All retry attempts failed")
 
-        if not step.is_output_node:
+        if not step.is_output_node and step.store_output:
             db.write_tool_output(output=tool_output, context=context)
         else:
             # We have an output node

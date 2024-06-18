@@ -51,6 +51,7 @@ class GetAllTextDataForStocksInput(ToolArgs):
     category=ToolCategory.TEXT,
     tool_registry=ToolRegistry,
     is_visible=False,
+    store_output=False,
 )
 async def get_all_text_data_for_stocks(
     args: GetAllTextDataForStocksInput, context: PlanRunContext

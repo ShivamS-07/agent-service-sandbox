@@ -156,6 +156,7 @@ class PlanRunTask(BaseModel):
     start_time: Optional[datetime.datetime]  # if None then it's not started yet
     end_time: Optional[datetime.datetime]
     logs: List[PlanRunTaskLog]  # sorted by start_time ASC, could be empty
+    has_output: bool = True
 
 
 class PlanRun(BaseModel):

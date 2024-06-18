@@ -733,6 +733,7 @@ class Planner:
                 output_variable_name=step.output_var,
                 tool_task_id=str(uuid4()),
                 is_output_node=tool.is_output_tool,
+                store_output=tool.store_output,
             )
             plan_nodes.append(node)
 

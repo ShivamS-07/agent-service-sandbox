@@ -153,6 +153,7 @@ def get_plan_run_task_list(
                     start_time=task_start,
                     end_time=task_end,
                     logs=[],
+                    has_output=node.store_output,
                 )
             )
             continue
@@ -167,6 +168,7 @@ def get_plan_run_task_list(
                 start_time=task_start or logs[0].created_at,
                 end_time=task_end or logs[-1].created_at,
                 logs=logs,
+                has_output=node.store_output,
             )
         else:  # this is a task that has no logs, just task output
             log_time = task_id_to_task_output[task_id]["created_at"]
@@ -177,6 +179,7 @@ def get_plan_run_task_list(
                 start_time=task_start or log_time,
                 end_time=task_end or log_time,
                 logs=[],
+                has_output=node.store_output,
             )
         complete_tasks.append(task)
 

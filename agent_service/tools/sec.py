@@ -56,6 +56,7 @@ class GetSecFilingsInput(ToolArgs):
     "included, the start date is a quarter ago, which includes only the latest SEC filing.",
     category=ToolCategory.SEC_FILINGS,
     tool_registry=ToolRegistry,
+    store_output=False,
 )
 async def get_10k_10q_sec_filings(
     args: GetSecFilingsInput, context: PlanRunContext
@@ -128,6 +129,7 @@ class GetOtherSecFilingsInput(ToolArgs):
     " included, the start date is a quarter ago, which includes only the latest SEC filing.",
     category=ToolCategory.SEC_FILINGS,
     tool_registry=ToolRegistry,
+    store_output=False,
 )
 async def get_non_10k_10q_sec_filings(
     args: GetOtherSecFilingsInput, context: PlanRunContext

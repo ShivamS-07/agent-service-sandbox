@@ -28,6 +28,7 @@ assign this function call to a variable!!
     category=ToolCategory.OUTPUT,
     is_visible=False,
     is_output_tool=True,
+    store_output=False,
 )
 async def prepare_output(args: OutputArgs, context: PlanRunContext) -> PreparedOutput:
     return PreparedOutput(title=args.title, val=args.object_to_output)
