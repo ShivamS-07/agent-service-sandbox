@@ -86,7 +86,7 @@ def object_histories_to_columns(objects: List[ComplexIOBase]) -> List[TableColum
     """
     entry_title_to_col_map = {}
     score_col = None
-    for obj in objects:
+    for obj_i, obj in enumerate(objects):
         # TODO remove this eventually, just needed until we make sure histories
         # never have duplicates.
         obj.dedup_history()
@@ -117,11 +117,12 @@ def object_histories_to_columns(objects: List[ComplexIOBase]) -> List[TableColum
                     metadata=TableColumnMetadata(
                         label=entry.title, col_type=entry.entry_type, unit=entry.unit
                     ),
-                    data=[entry.explanation],
+                    data=[None] * len(objects),
                 )
+                col.data[obj_i] = entry.explanation
                 entry_title_to_col_map[entry.title] = col
             else:
-                entry_title_to_col_map[entry.title].data.append(entry.explanation)
+                entry_title_to_col_map[entry.title].data[obj_i] = entry.explanation
 
     # Make sure the score column is the first one.
     if score_col:
