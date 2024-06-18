@@ -100,8 +100,10 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     # Prepare the portfolio geography prompt
     geography_prompt = NO_PROMPT.format()
     if args.portfolio_id:
-        portfolio_holdings_table = await get_portfolio_holdings(
-            GetPortfolioWorkspaceHoldingsInput(portfolio_id=args.portfolio_id), context
+        portfolio_holdings_table = (
+            await get_portfolio_holdings(
+                GetPortfolioWorkspaceHoldingsInput(portfolio_id=args.portfolio_id), context
+            )
         ).to_df()  # type: ignore
         # convert DF to dict[int, float]
         weighted_holdings = portfolio_holdings_table.set_index(STOCK_ID_COL_NAME_DEFAULT)[

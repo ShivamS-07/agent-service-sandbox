@@ -86,6 +86,10 @@ If the transformation description does not relate AT ALL to pandas or any sort
 of dataframe transformation, please just return the dataframe unchanged. You
 should still not output anything other than code.
 
+Note that descriptions involving (percentage) change/gain/loss of stock price
+should be interpreted as a calculation relative to the first date in the time series,
+not the previous day
+
 The input dataframe's column schema is below. Date columns are python datetimes,
 and may need to be converted to pandas Timestamps if necessary. It has no index:
     {col_schema}
