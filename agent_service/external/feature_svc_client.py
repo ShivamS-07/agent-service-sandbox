@@ -9,7 +9,6 @@ from feature_service_proto_v1.feature_service_grpc import FeatureServiceStub
 from feature_service_proto_v1.feature_service_pb2 import (
     GetFeatureDataRequest,
     GetFeatureDataResponse,
-    TimeAxis,
 )
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
@@ -69,18 +68,7 @@ async def get_feature_data(
     to_date: datetime.date,
     target_currency: Optional[str] = None,
     ffill_days: int = 0,
-    use_natural_axis: bool = False,
 ) -> GetFeatureDataResponse:
-    """
-    Optional Params Description:
-
-    target_currency: currency to convert all outputs to. Otherwise outputs are
-        converted to the currency of the first stock in the list.
-    ffill_days: number of days to forward fill missing data.
-    use_natural_axis: if True, feature service will return axes in quarters (YYYYQ)
-        or Fiscal Quarters (FYYYYQ) instead of dates as axes depending on the best
-        display format of the specific statistic (feature).
-    """
     with _get_service_stub() as stub:
         req = GetFeatureDataRequest(
             feature_ids=statistic_ids,
@@ -89,11 +77,6 @@ async def get_feature_data(
             to_time=date_to_timestamp(to_date),
             iso_currency=target_currency,
             forward_fill_days=ffill_days,
-            prefer_time_axis=(
-                TimeAxis.TIME_AXIS_BEST_HUMAN_READABLE
-                if use_natural_axis
-                else TimeAxis.TIME_AXIS_DATE
-            ),
         )
         resp: GetFeatureDataResponse = await stub.GetFeatureData(
             req,
