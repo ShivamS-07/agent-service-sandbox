@@ -21,7 +21,7 @@ from prefect.client.schemas.filters import (
     FlowRunFilterTags,
 )
 from prefect.client.schemas.objects import State, StateType
-from prefect.context import FlowRunContext, get_run_context
+from prefect.context import FlowRunContext, TaskRunContext, get_run_context
 from prefect.logging.loggers import get_run_logger
 
 from agent_service.endpoints.models import Status
@@ -276,3 +276,13 @@ async def prefect_cancel_current_flow() -> None:
     cancelling_state: State = State(type=StateType.CANCELLED)
     async with get_client() as client:  # type: ignore
         await client.set_flow_run_state(flow_run_id=context.flow_run.id, state=cancelling_state)
+
+
+def is_inside_prefect_task() -> bool:
+    try:
+        context = get_run_context()
+    except Exception:
+        return False
+    if isinstance(context, TaskRunContext):
+        return True
+    return False

@@ -52,7 +52,7 @@ from agent_service.utils.cache_utils import (
     RedisCacheBackend,
 )
 from agent_service.utils.event_logging import log_event
-from agent_service.utils.prefect import get_task_run_name
+from agent_service.utils.prefect import get_task_run_name, is_inside_prefect_task
 
 CacheKeyType = str
 
@@ -446,7 +446,11 @@ def tool(
                 else:
                     return await call_func()
 
-            if create_prefect_task and not context.run_tasks_without_prefect:
+            if (
+                create_prefect_task
+                and not context.run_tasks_without_prefect
+                and not is_inside_prefect_task()  # don't use nested tasks
+            ):
                 # Create a prefect task that wraps the function with its caching
                 # logic. This will ensure that retried tasks will include caching.
                 tags = None
