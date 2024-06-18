@@ -2,7 +2,8 @@ import argparse
 import asyncio
 import datetime
 import logging
-from typing import Optional
+import time
+from typing import Any, Callable, Optional
 
 import uvicorn
 from fastapi import Depends, FastAPI, status
@@ -10,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRouter
 from sse_starlette.sse import AsyncContentStream, EventSourceResponse, ServerSentEvent
+from starlette.requests import Request
 
 from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.authz_helper import (
@@ -70,6 +72,15 @@ application.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@application.middleware("http")
+async def add_process_time_header(request: Request, call_next: Callable) -> Any:
+    start_time = time.time()
+    response = await call_next(request)
+    end_time = time.time()
+    logger.info(f"Request to '{request.url.path}' took {end_time - start_time}s")
+    return response
 
 
 ####################################################################################################

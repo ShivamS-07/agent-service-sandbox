@@ -8,6 +8,7 @@ from agent_service.io_types.table import StockTableColumn, Table, TableColumn
 from agent_service.io_types.text import StockText, Text
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.utils import io_type_to_gpt_input
 
 
@@ -39,6 +40,7 @@ def prepare_list_of_stock_texts(texts: List[StockText]) -> Text:
     return Text(val="\n\n".join(stock_strings))
 
 
+@async_perf_logger
 async def get_output_from_io_type(val: IOType, pg: BoostedPG, title: str = "") -> Output:
     """
     This function accepts any IOType and returns a 'nice' output for the
