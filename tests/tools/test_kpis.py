@@ -10,14 +10,14 @@ from agent_service.tools.kpis import (
     CompanyKPIsRequest,
     EquivalentKPITexts,
     GetImportantKPIsForStock,
-    GetRelevantKPIsForStockGivenTopic,
+    GetKPIForStockGivenTopic,
     GetRelevantKPIsForStocksGivenTopic,
     KPIsRequest,
     get_important_kpis_for_stock,
+    get_kpis_for_stock_given_topics,
     get_kpis_table_for_stock,
     get_overlapping_kpis_table_for_stock,
     get_relevant_kpis_for_multiple_stocks_given_topic,
-    get_relevant_kpis_for_stock_given_topic,
 )
 from agent_service.types import PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
@@ -37,8 +37,8 @@ class TestTextData(IsolatedAsyncioTestCase):
         gen_kpi_list: List[KPIText] = await get_important_kpis_for_stock(  # type: ignore
             args=GetImportantKPIsForStock(stock_id=stock_id), context=self.context
         )
-        topic_kpi_list: List[KPIText] = await get_relevant_kpis_for_stock_given_topic(  # type: ignore
-            GetRelevantKPIsForStockGivenTopic(stock_id=stock_id, topic="Apple TV"),
+        topic_kpi_list: List[KPIText] = await get_kpis_for_stock_given_topics(  # type: ignore
+            GetKPIForStockGivenTopic(stock_id=stock_id, topics=["Apple TV"]),
             context=self.context,
         )
 
@@ -69,11 +69,13 @@ class TestTextData(IsolatedAsyncioTestCase):
             args=DateRangeInput(range_ending_on=get_now_utc(), width_quarters=num_quarters),
             context=self.context,
         )
+        print(date_range)
 
-        topic_kpi_list: List[KPIText] = await get_relevant_kpis_for_stock_given_topic(  # type: ignore
-            GetRelevantKPIsForStockGivenTopic(stock_id=stock_id, topic="Net sales - iPhone Actual"),
+        topic_kpi_list: List[KPIText] = await get_kpis_for_stock_given_topics(  # type: ignore
+            GetKPIForStockGivenTopic(stock_id=stock_id, topics=["Net sales - iPhone Actual"]),
             context=self.context,
         )
+        print(topic_kpi_list)
 
         topic_kpis_table1: Table = await get_kpis_table_for_stock(  # type: ignore
             CompanyKPIsRequest(

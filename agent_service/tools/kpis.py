@@ -27,6 +27,8 @@ from agent_service.utils.prompt_utils import Prompt
 kpi_retriever = KPIRetriever()
 db = get_psql()
 
+SPECIFIC = "specific"
+
 
 @dataclass
 class CompanyInformation:
@@ -97,6 +99,18 @@ KPI_RELEVANCY_SYS_PROMPT_OBJ = Prompt(
     ),
 )
 
+KPI_SPECIFIC_KPI_SYS_PROMPT_OBJ = Prompt(
+    name="KPI_SPECIFIC_KPI_SYS_PROMPT",
+    template=(
+        "You are a financial analyst that has been tasked to identify a single specific Key Performance Indicator "
+        "(KPI) for a given company. You will be told the specific KPI in question, for example you may be "
+        "asked to identify a KPI surrounding a specific product or service, or you may be asked to identify "
+        "a KPI that is the most impactful to the company's financial health/dominance. Unless explicitly told, "
+        "you should avoid returning 'high-level' KPIs like 'Total Revenue' or 'EPS' and choose to return a KPI "
+        "that is low-level meaning it refers to some specific product, service, etc."
+    ),
+)
+
 GENERAL_IMPORTANCE_INSTRUCTION_WITH_NUM_KPIS = (
     "For the company {company_name}, identify the {num_of_kpis} most "
     "important KPIs for the company. "
@@ -129,6 +143,49 @@ KPI_RELEVANCY_MAIN_PROMPT = Prompt(
         "Return the relevant KPIs by name and the numerical identifier associated with it. Each line will contain a "
         "relevant KPI with the KPI number without the brackets followed by the KPI name separated by a comma. Do not "
         "output any additional explanation or justification. Do not output more than 10 lines."
+    ),
+)
+
+SPECIFIC_KPI_INSTRUCTION = (
+    "For the company {company_name}, identify a single KPI that is most relevant to the topic '{query_topic}'. "
+    "If there are multiple KPIs that are relevant, choose the one that is most impactful to the company. "
+)
+SPECIFIC_KPI_MAIN_PROMPT = Prompt(
+    name="SPECIFIC_KPI_MAIN_PROMPT",
+    template=(
+        "{instructions}"
+        "If you are unsure or there is not enough information given, defer to KPIs that measure "
+        "revenue/sales and take the ones with the highest amount.\n\n"
+        "To assist you, here is a brief description of {company_name}:\n"
+        "{company_description}\n\n"
+        "Below are the KPIs you are to select from, each KPI is presented on its own line with a  "
+        "numerical identifier in brackets at the start, followed by the KPI name, followed by the  "
+        "KPI value with its respective unit if applicable:\n"
+        "{kpi_str}\n\n"
+        "Return the single most relevant KPI by name and the numerical identifier associated with it."
+        "Each line will contain a relevant KPI with the KPI number without the brackets"
+        "followed by the KPI name separated by a comma."
+        "Do not output any additional explanation or justification. Do not output more than 1 line / KPI."
+    ),
+)
+
+CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT = Prompt(
+    name="CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT",
+    template=(
+        "Given the topic '{topic}', determine if the topic is specific metric or if it is a more general "
+        "product or service. A specific topic would be one that refers to a specific metric, like "
+        "revenue or user growth, while a general topic would refer to a broader aspect of the company's assets "
+        "or operations like a product. If the topic is specific, output 'Specific',"
+        " if the topic is general, output 'General'"
+    ),
+)
+
+CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ = Prompt(
+    name="CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT",
+    template=(
+        "You are a financial analyst that has been tasked to classify a topic as either a specific"
+        "metric or a general product or service. You will be given a topic and must determine if the topic is "
+        "specific or general. Output 'Specific' if the topic is specific, output 'General' if the topic is general."
     ),
 )
 
@@ -318,9 +375,9 @@ async def get_relevant_kpis_for_stock_id(
     return topic_kpi_list
 
 
-class GetRelevantKPIsForStockGivenTopic(ToolArgs):
+class GetKPIForStockGivenTopic(ToolArgs):
     stock_id: StockID
-    topic: str
+    topics: List[str]
 
 
 @tool(
@@ -331,7 +388,8 @@ class GetRelevantKPIsForStockGivenTopic(ToolArgs):
         "if multiple stocks are mentioned for the same topic or subject matter, use "
         "the get_relevant_kpis_for_multiple_stocks_given_topic function instead."
         "A stock_id must be provided to identify the stock for which important KPIs are "
-        "fetched. A topic string must also be provided to specify the topic of interest. The "
+        "fetched. A list of topic strings must also be provided to specify the topic of interest."
+        "Even if there is only one topic it will be passed in as a list with one element. The "
         "topic string must be concise and make mention of some aspect or metric of a "
         "company's financials but must not mention the company name. "
         "The data returned will be a list of KPIText objects where each KPIText object "
@@ -339,18 +397,23 @@ class GetRelevantKPIsForStockGivenTopic(ToolArgs):
         "to the stock_id passed in, KPIText entries returned in the list must not be "
         "used interchangably or joined to other stock_id instances. Additionally, please "
         "note that this function does not provide any actual data for any given quarter for these KPIS."
-    ),
-    category=ToolCategory.KPI,
+        "You must use this function in conjunction with get_kpis_table_for_stock to"
+        "retrieve the actual data for these KPIS."
+    )
 )
-async def get_relevant_kpis_for_stock_given_topic(
-    args: GetRelevantKPIsForStockGivenTopic, context: PlanRunContext
+async def get_kpis_for_stock_given_topics(
+    args: GetKPIForStockGivenTopic, context: PlanRunContext
 ) -> List[KPIText]:
     llm = GPT(context=None, model=GPT4_O)
     company_info = get_company_data_and_kpis(args.stock_id.gbi_id)
-    topic_kpi_list = await get_relevant_kpis_for_stock_id(
-        args.stock_id, company_info, args.topic, llm
-    )
-    return topic_kpi_list
+    stock_id = args.stock_id
+    kpi_list = []
+    for topic in args.topics:
+        topic_kpi_list = await classify_specific_or_general_topic(
+            stock_id, topic, company_info, llm
+        )
+        kpi_list.extend(topic_kpi_list)
+    return kpi_list
 
 
 class GetRelevantKPIsForStocksGivenTopic(ToolArgs):
@@ -511,6 +574,46 @@ async def get_important_kpis_for_stock(
                 KPIText(val=pid_metadata.name, id=pid_metadata.pid, stock_id=args.stock_id)
             )
     return important_kpi_list
+
+
+async def classify_specific_or_general_topic(
+    stock_id: StockID, topic: str, company_info: CompanyInformation, llm: GPT
+) -> List[KPIText]:
+
+    result = await llm.do_chat_w_sys_prompt(
+        main_prompt=CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT.format(topic=topic),
+        sys_prompt=CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ.format(),
+    )
+    if result.lower() == SPECIFIC:
+        topic_kpi_list = await get_specific_kpi_data_for_stock_id(
+            stock_id, company_info, [topic], llm
+        )
+    else:
+        topic_kpi_list = await get_relevant_kpis_for_stock_id(stock_id, company_info, topic, llm)
+    return topic_kpi_list
+
+
+async def get_specific_kpi_data_for_stock_id(
+    stock_id: StockID, company_info: CompanyInformation, topic: List[str], llm: GPT
+) -> List[KPIText]:
+    results = []
+    instructions = SPECIFIC_KPI_INSTRUCTION.format(
+        company_name=company_info.company_name, query_topic=topic
+    )
+    result = await llm.do_chat_w_sys_prompt(
+        SPECIFIC_KPI_MAIN_PROMPT.format(
+            instructions=instructions,
+            company_name=company_info.company_name,
+            company_description=company_info.company_description,
+            kpi_str=company_info.kpi_str,
+        ),
+        KPI_RELEVANCY_SYS_PROMPT_OBJ.format(),
+    )
+    pid = int(result.split(",")[0])
+    pid_metadata = company_info.kpi_lookup.get(pid, None)
+    if pid_metadata:
+        results.append(KPIText(val=pid_metadata.name, id=pid_metadata.pid, stock_id=stock_id))
+    return results
 
 
 def interpret_date_quarter_inputs(
@@ -694,7 +797,19 @@ async def main() -> None:
         skip_db_commit=True,
     )
     appl_stock_id = StockID(gbi_id=714, symbol="APPL", isin="")
-    mtch_stock_id = StockID(gbi_id=430689, symbol="MTCH", isin="")
+    tr_stock_id = StockID(gbi_id=10753, symbol="TRI", isin="")
+    specific_kpi = await get_specific_kpi_data_for_stock_id(  # type: ignore
+        stock_id=tr_stock_id,
+        company_info=get_company_data_and_kpis(tr_stock_id.gbi_id),
+        topics=["thomson reuters legal profession revenue"],
+        llm=GPT(context=None, model=GPT4_O),
+    )
+    specific_table: Table = await get_kpis_table_for_stock(  # type: ignore
+        CompanyKPIsRequest(stock_id=tr_stock_id, table_name="TR Revenue", kpis=specific_kpi),
+        context=plan_context,
+    )
+    df = specific_table.to_df()
+    print(df.head())
     gen_kpi_list: List[KPIText] = await get_important_kpis_for_stock(  # type: ignore
         args=GetImportantKPIsForStock(stock_id=appl_stock_id), context=plan_context
     )
@@ -704,18 +819,6 @@ async def main() -> None:
         ),
         context=plan_context,
     )
-    topic_kpis_list: List[KPIText] = await get_relevant_kpis_for_stock_given_topic(  # type: ignore
-        GetRelevantKPIsForStockGivenTopic(stock_id=mtch_stock_id, topic="Hinge"),
-        context=plan_context,
-    )
-    topic_kpis_table: Table = await get_kpis_table_for_stock(  # type: ignore
-        CompanyKPIsRequest(stock_id=mtch_stock_id, table_name="Hinge", kpis=topic_kpis_list),
-        context=plan_context,
-    )
-    df = topic_kpis_table.to_df()
-    print(df.head())
-    for column in topic_kpis_table.columns:
-        print(column.metadata.label)
     df = gen_kpis_table.to_df()
     print(df.head())
     for column in gen_kpis_table.columns:
