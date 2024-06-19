@@ -20,6 +20,10 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 
+STOCK_ID_COL_NAME_DEFAULT = "Security"
+GROWTH_LABEL = "Growth"
+VALUE_LABEL = "Value"
+
 
 class StockIdentifierLookupInput(ToolArgs):
     # name or symbol of the stock to lookup
@@ -472,7 +476,7 @@ class GetRiskExposureForStocksInput(ToolArgs):
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
-    is_visible=False,
+    is_visible=True,
 )
 async def get_risk_exposure_for_stocks(
     args: GetRiskExposureForStocksInput, context: PlanRunContext
@@ -504,7 +508,6 @@ async def get_risk_exposure_for_stocks(
     )
     df = pd.DataFrame(factors.np_data, index=factors.rows, columns=factors.columns)
     # build the table
-    STOCK_ID_COL_NAME_DEFAULT = "Security"
 
     df[STOCK_ID_COL_NAME_DEFAULT] = df.index
 
@@ -542,11 +545,11 @@ async def get_risk_exposure_for_stocks(
                 col_type=TableColumnType.FLOAT,
             ),
             TableColumnMetadata(
-                label="Value",
+                label=VALUE_LABEL,
                 col_type=TableColumnType.FLOAT,
             ),
             TableColumnMetadata(
-                label="Growth",
+                label=GROWTH_LABEL,
                 col_type=TableColumnType.FLOAT,
             ),
             TableColumnMetadata(
@@ -560,6 +563,100 @@ async def get_risk_exposure_for_stocks(
         ],
     )
     return table
+
+
+class GrowthFilterInput(ToolArgs):
+    stock_ids: Optional[List[StockID]] = None
+    min_value: float = 1
+
+
+@tool(
+    description=(
+        "This function takes a list of stock ids"
+        " and filters them acccording to how growth-y they are"
+        " if no stock_list is provided, a default list will be used"
+        " min_value will default to 1 standard deviation,"
+        " the larger the value then the filterd stocks will be even more growthy"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def growth_filter(args: GrowthFilterInput, context: PlanRunContext) -> List[StockID]:
+    stock_ids = args.stock_ids
+    if stock_ids == []:
+        # degenerate case should i log or throw?
+        await tool_log(log="No stocks left to filter by 'growth'", context=context)
+        return []
+
+    if stock_ids is None:
+        stock_uni_args = GetStockUniverseInput(universe_name="S&P 500")
+        stock_ids = await get_stock_universe(stock_uni_args, context)  # type: ignore
+        if not stock_ids:
+            raise Exception("could not retrieve default stock list")
+
+    if stock_ids is None:
+        logger = get_prefect_logger(__name__)
+        logger.info("we need universe stocks to proceed")
+        return []
+
+    risk_args = GetRiskExposureForStocksInput(stock_list=stock_ids)
+
+    risk_table = await get_risk_exposure_for_stocks(risk_args, context)
+    # mypy thinks this is not a table but a generic ComplexIO Base
+    df = risk_table.to_df()  # type: ignore
+    filtered_df = df.loc[df[GROWTH_LABEL] >= args.min_value]
+    stocks = filtered_df[STOCK_ID_COL_NAME_DEFAULT].squeeze().to_list()
+    await tool_log(log=f"Filtered {len(stock_ids)} stocks down to {len(stocks)}", context=context)
+    return stocks
+
+
+class ValueFilterInput(ToolArgs):
+    stock_ids: Optional[List[StockID]] = None
+    min_value: float = 1
+
+
+@tool(
+    description=(
+        "This function takes a list of stock ids"
+        " and filters them acccording to how value-y they are"
+        " if no stock_list is provided, a default list will be used"
+        " min_value will default to 1 standard deviation,"
+        " the larger the value then the filtered stocks will be even more valuey"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def value_filter(args: ValueFilterInput, context: PlanRunContext) -> List[StockID]:
+    stock_ids = args.stock_ids
+    if stock_ids == []:
+        # degenerate case should i log or throw?
+        await tool_log(log="No stocks left to filter by 'value'", context=context)
+        return []
+
+    if stock_ids is None:
+        stock_uni_args = GetStockUniverseInput(universe_name="S&P 500")
+        stock_ids = await get_stock_universe(stock_uni_args, context)  # type: ignore
+        if not stock_ids:
+            raise Exception("could not retrieve default stock list")
+
+    if stock_ids is None:
+        logger = get_prefect_logger(__name__)
+        logger.info("we need universe stocks to proceed")
+        return []
+
+    risk_args = GetRiskExposureForStocksInput(stock_list=stock_ids)
+
+    risk_table = await get_risk_exposure_for_stocks(risk_args, context)
+
+    # mypy thinks this is not a table but a generic ComplexIO Base
+    df = risk_table.to_df()  # type: ignore
+    filtered_df = df.loc[df[VALUE_LABEL] >= args.min_value]
+    stocks = filtered_df[STOCK_ID_COL_NAME_DEFAULT].squeeze().to_list()
+
+    await tool_log(log=f"Filtered {len(stock_ids)} stocks down to {len(stocks)}", context=context)
+    return stocks
 
 
 async def get_stock_universe_gbi_stock_universe(
@@ -711,7 +808,6 @@ def get_stocks_if_bloomberg_parsekey(
     WHERE
     ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
     AND ms.is_public
-    AND ms.is_primary_trading_item = true
     AND ms.to_z is null
     AND ms.symbol = upper(%(symbol)s)
     AND ms.security_region = upper(%(iso3)s)
@@ -722,6 +818,7 @@ def get_stocks_if_bloomberg_parsekey(
         logger.info("found bloomberg parsekey match")
         return rows
 
+    logger.info(f"Looks like a bloomberg parsekey but couldn't find a match: '{args.stock_name}'")
     return []
 
 

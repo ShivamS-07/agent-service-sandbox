@@ -7,11 +7,15 @@ from agent_service.io_types.table import Table
 from agent_service.tools.stocks import (
     GetRiskExposureForStocksInput,
     GetStockUniverseInput,
+    GrowthFilterInput,
     StockIdentifierLookupInput,
+    ValueFilterInput,
     get_risk_exposure_for_stocks,
     get_stock_info_for_universe,
     get_stock_universe,
+    growth_filter,
     stock_identifier_lookup,
+    value_filter,
 )
 from agent_service.types import PlanRunContext
 
@@ -197,3 +201,15 @@ class TestRiskExposure(IsolatedAsyncioTestCase):
         # Ensure the data in the table is the right type
         for value in result.to_df().values[0][1:]:  # skip the first entry because it's the stock
             self.assertTrue(isinstance(value, float))
+
+    async def test_get_growth_stocks(self):
+        args = GrowthFilterInput()
+        result = await growth_filter(args, self.context)
+        self.assertGreater(len(result), 10)
+        self.assertLess(len(result), 400)
+
+    async def test_get_value_stocks(self):
+        args = ValueFilterInput()
+        result = await value_filter(args, self.context)
+        self.assertGreater(len(result), 10)
+        self.assertLess(len(result), 400)

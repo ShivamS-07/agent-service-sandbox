@@ -5,8 +5,6 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
 
-ONE_HOUR = 60 * 60
-
 
 class FilterStockRegionInput(ToolArgs):
     stock_ids: List[StockID]
@@ -15,7 +13,7 @@ class FilterStockRegionInput(ToolArgs):
 
 @tool(
     description=(
-        "This function takes a list of stock ID's an ISO3 country code string"
+        "This function takes a list of stock ID's and an ISO3 country code string"
         " like 'USA' or 'CAN', and it filters the list of stocks by the given region."
         " It returns the filtered list of stock IDs."
     ),
@@ -27,6 +25,7 @@ async def filter_stocks_by_region(
 ) -> List[StockID]:
     sql = """
     SELECT gbi_security_id
+    FROM master_security
     WHERE security_region = %(region)s
     AND gbi_security_id = ANY(%(stocks)s)
     """
