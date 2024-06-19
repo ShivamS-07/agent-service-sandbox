@@ -11,11 +11,13 @@ from stock_universe_service_proto_v1.security_metadata_service_pb2 import (
 )
 
 from agent_service.external import sec_meta_svc_client
-from agent_service.external.back_test_svc_client import get_themes_with_impacted_stocks
 from agent_service.external.nlp_svc_client import (
     get_all_themes_for_user,
     get_security_themes,
     get_top_themes,
+)
+from agent_service.external.pa_backtest_svc_client import (
+    get_themes_with_impacted_stocks,
 )
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT

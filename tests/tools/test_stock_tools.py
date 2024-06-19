@@ -2,14 +2,20 @@ import logging
 import unittest
 from unittest import IsolatedAsyncioTestCase
 
+from agent_service.io_types.stock import StockID
+from agent_service.io_types.table import Table
 from agent_service.tools.stocks import (
+    GetRiskExposureForStocksInput,
     GetStockUniverseInput,
     StockIdentifierLookupInput,
+    get_risk_exposure_for_stocks,
     get_stock_info_for_universe,
     get_stock_universe,
     stock_identifier_lookup,
 )
 from agent_service.types import PlanRunContext
+
+AAPL = StockID(gbi_id=714, isin="", symbol="AAPL", company_name="Apple")
 
 
 class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
@@ -140,3 +146,21 @@ class TestStockUniverse(IsolatedAsyncioTestCase):
         self.args = GetStockUniverseInput(universe_name="TSX")
         result = await get_stock_universe(self.args, self.context)
         self.assertEqual(len(result), 60)
+
+
+class TestRiskExposure(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+
+        # uncomment for easier debugging
+        # from agent_service.utils.logs import init_test_logging
+        # init_test_logging()
+
+    async def test_get_risk_exposure_for_stocks(self):
+        self.args = GetRiskExposureForStocksInput(stock_list=[AAPL])
+        result: Table = await get_risk_exposure_for_stocks(self.args, self.context)
+        # make sure we got the table for the  right STOCK
+        self.assertEqual(result.to_df().values[0][0], AAPL)
+        # Ensure the data in the table is the right type
+        for value in result.to_df().values[0][1:]:  # skip the first entry because it's the stock
+            self.assertTrue(isinstance(value, float))

@@ -3,7 +3,7 @@ import logging
 import os
 from contextlib import contextmanager
 from functools import lru_cache
-from typing import Generator, List, Tuple
+from typing import Generator, List, Optional, Tuple
 
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
@@ -19,7 +19,11 @@ from pa_portfolio_service_proto_v1.backtest_data_service_pb2 import (
     GetThemesWithImpactedStocksRequest,
     GetThemesWithImpactedStocksResponse,
     ThemeWithImpactedStocks,
+    UniverseStockFactorExposuresRequest,
+    UniverseStockFactorExposuresResponse,
 )
+from pa_portfolio_service_proto_v1.proto_sheet_pb2 import ProtoSheet
+from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID
 from pa_portfolio_service_proto_v1.workspace_pb2 import StockAndWeight
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
@@ -57,6 +61,32 @@ def _get_service_stub() -> Generator[BacktestDataServiceStub, None, None]:
         yield BacktestDataServiceStub(channel)
     finally:
         channel.close()
+
+
+@grpc_retry
+@async_perf_logger
+async def universe_stock_factor_exposures(
+    user_id: str,
+    universe_id: str,
+    gbi_ids: Optional[List[int]] = None,
+    factors: Optional[List[str]] = None,
+    risk_model_id: Optional[int] = None,
+) -> ProtoSheet:
+    with _get_service_stub() as stub:
+        response: UniverseStockFactorExposuresResponse = await stub.UniverseStockFactorExposures(
+            UniverseStockFactorExposuresRequest(
+                universe_id=UUID(id=universe_id),
+                gbi_ids=gbi_ids,
+                factors=factors,
+                risk_model_id=risk_model_id,
+            ),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to get watchlist stocks: {response.status.code} {response.status.message}"
+            )
+        return response.exposures
 
 
 @grpc_retry

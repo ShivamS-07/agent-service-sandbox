@@ -3,8 +3,17 @@
 
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
+from gbi_common_py_utils.numpy_common import NumpySheet
+from gbi_common_py_utils.utils.environment import get_environment_tag
+
+from agent_service.external.pa_backtest_svc_client import (
+    universe_stock_factor_exposures,
+)
 from agent_service.external.stock_search_dao import async_sort_stocks_by_volume
+from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.stock import StockID
+from agent_service.io_types.table import Table, TableColumnMetadata
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -456,6 +465,107 @@ async def get_stock_universe_list_from_universe_company_id(
         )
         for row in rows
     ]
+
+
+class GetRiskExposureForStocksInput(ToolArgs):
+    stock_list: List[StockID]
+
+
+@tool(
+    description=(
+        "This function takes a list of stock ids"
+        " and returns a table of named factor exposure values for each stock"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_risk_exposure_for_stocks(
+    args: GetRiskExposureForStocksInput, context: PlanRunContext
+) -> Table:
+    env = get_environment_tag()
+    # TODO when risk model ism integration is complete
+    # accept a risk model id as input and default to NA model
+    # Default to SP 500
+    DEV_SP500_UNIVERSE_ID = "249a293b-d9e2-4905-94c1-c53034f877c9"
+    PROD_SP500_UNIVERSE_ID = "4e5f2fd3-394e-4db9-aad3-5c20abf9bf3c"
+
+    universe_id = DEV_SP500_UNIVERSE_ID
+    if env == "PROD":
+        # If we are in Prod use SPY
+        universe_id = PROD_SP500_UNIVERSE_ID
+
+    exposures = await universe_stock_factor_exposures(
+        user_id=context.user_id,
+        universe_id=universe_id,
+        # TODO default to None for now
+        risk_model_id=None,
+        gbi_ids=[stock.gbi_id for stock in args.stock_list],
+    )
+
+    # numpysheet/cube use str gbi_ids
+    gbi_id_map = {str(stock.gbi_id): stock for stock in args.stock_list}
+    factors = NumpySheet.initialize_from_proto_bytes(
+        data=exposures.SerializeToString(), cols_are_dates=False
+    )
+    df = pd.DataFrame(factors.np_data, index=factors.rows, columns=factors.columns)
+    # build the table
+    STOCK_ID_COL_NAME_DEFAULT = "Security"
+
+    df[STOCK_ID_COL_NAME_DEFAULT] = df.index
+
+    cols = list(df)
+    # move the column to head of list using index, pop and insert
+    cols.insert(0, cols.pop(cols.index(STOCK_ID_COL_NAME_DEFAULT)))
+    df = df.loc[:, cols]
+    df[STOCK_ID_COL_NAME_DEFAULT] = df[STOCK_ID_COL_NAME_DEFAULT].map(gbi_id_map)
+
+    table = Table.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(
+                label=STOCK_ID_COL_NAME_DEFAULT,
+                col_type=TableColumnType.STOCK,
+            ),
+            TableColumnMetadata(
+                label="Trading Activity",
+                col_type=TableColumnType.FLOAT,
+            ),
+            TableColumnMetadata(
+                label="Idiosyncratic",
+                col_type=TableColumnType.FLOAT,
+            ),
+            TableColumnMetadata(
+                label="Market",
+                col_type=TableColumnType.FLOAT,
+            ),
+            TableColumnMetadata(
+                label="Size",
+                col_type=TableColumnType.FLOAT,
+            ),
+            TableColumnMetadata(
+                label="Leverage",
+                col_type=TableColumnType.FLOAT,
+            ),
+            TableColumnMetadata(
+                label="Value",
+                col_type=TableColumnType.FLOAT,
+            ),
+            TableColumnMetadata(
+                label="Growth",
+                col_type=TableColumnType.FLOAT,
+            ),
+            TableColumnMetadata(
+                label="Momentum",
+                col_type=TableColumnType.FLOAT,
+            ),
+            TableColumnMetadata(
+                label="Volatility",
+                col_type=TableColumnType.FLOAT,
+            ),
+        ],
+    )
+    return table
 
 
 async def get_stock_universe_gbi_stock_universe(
