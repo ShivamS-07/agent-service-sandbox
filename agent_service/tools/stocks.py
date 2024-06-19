@@ -139,6 +139,7 @@ async def raw_stock_identifier_lookup(
     JOIN "data".gbi_id_alt_names gan ON gan.gbi_id = ms.gbi_security_id
     WHERE
     upper(gan.alt_name) = upper(%(search_term)s)
+    AND gan.enabled
     AND ms.is_public
     AND ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
     AND ms.is_primary_trading_item = true
@@ -149,31 +150,6 @@ async def raw_stock_identifier_lookup(
         logger.info("found exact gbi alt name")
         return rows
 
-    # Exact symbol or name match
-    if (len(args.stock_name) <= 6 or args.stock_name.isdigit()) and 1 == len(
-        args.stock_name.split()
-    ):
-        sql = """
-        SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
-        ms.name, can.alt_name as can_alt_name
-        FROM master_security ms
-        JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
-        LEFT JOIN "data".company_alt_names can ON ssm.spiq_company_id = can.spiq_company_id
-        WHERE
-        ( ms.symbol = upper(%(search_term)s)
-        OR upper(ms.name) = upper(%(search_term)s)
-        OR upper(can.alt_name) = upper(%(search_term)s)
-        )
-        AND ms.is_public
-        AND ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
-        AND ms.is_primary_trading_item = true
-        AND ms.to_z is null
-        """
-        rows = db.generic_read(sql, {"search_term": args.stock_name})
-        if rows:
-            logger.info("found exact symbol or name match")
-            return rows
-
     # ISINs are 12 chars long, 2 chars, 10 digits
     if (
         12 == len(args.stock_name)
@@ -183,17 +159,19 @@ async def raw_stock_identifier_lookup(
         # Exact ISIN match
         sql = """
         SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency, name,
-        ms.isin as ms_isin
+        'ms.isin' as match_col, ms.isin as match_text
         FROM master_security ms
         WHERE ms.isin = upper(%(search_term)s)
         AND ms.is_public
         AND ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
         AND ms.is_primary_trading_item = true
         AND ms.to_z is null
+
         UNION
+
         -- legacy ISINs
         SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency, name,
-        ssm.isin as ssm_isin
+        'ssm.isin' as match_col, ssm.isin as match_text
         FROM master_security ms
         JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
         WHERE ssm.isin = upper(%(search_term)s)
@@ -213,8 +191,25 @@ async def raw_stock_identifier_lookup(
 
     # should we also allow 'Depositary Receipt (Common Stock)') ?
     sql = """
-    select * from (SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
-    name, name as gbi_name,
+    select * from (
+
+    -- ticker symbol (exact match only)
+    SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
+    ms.name, 'ticker symbol' as match_col, ms.symbol as match_text,
+    1.0 AS ws
+    FROM master_security ms
+    WHERE
+    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    AND ms.is_public
+    AND ms.is_primary_trading_item = true
+    AND ms.to_z is null
+    AND ms.symbol = upper(%(search_term)s)
+
+    UNION
+
+    -- company name
+    SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
+    name, 'name' as match_col, ms.name as match_text,
     (strict_word_similarity(lower(ms.name), lower(%(search_term)s)) +
     strict_word_similarity(lower(%(search_term)s), lower(ms.name))) / 2
     AS ws
@@ -224,9 +219,12 @@ async def raw_stock_identifier_lookup(
     AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
+
     UNION
+
+    -- company alt name
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
-    name, alt_name as c_alt_name,
+    name, 'comp alt name' as match_col, alt_name as match_text,
     (strict_word_similarity(lower(alt_name), lower(%(search_term)s)) +
     strict_word_similarity(lower(%(search_term)s), lower(alt_name))) / 2
     AS ws
@@ -235,12 +233,16 @@ async def raw_stock_identifier_lookup(
     JOIN "data".company_alt_names can ON ssm.spiq_company_id = can.spiq_company_id
     WHERE
     ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    AND can.enabled
     AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
+
     UNION
+
+    -- gbi alt name
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
-    name, alt_name as g_alt_name,
+    name, 'gbi alt name' as match_col, alt_name as match_text,
     (strict_word_similarity(lower(alt_name), lower(%(search_term)s)) +
     strict_word_similarity(lower(%(search_term)s), lower(alt_name))) / 2
     AS ws
@@ -248,6 +250,7 @@ async def raw_stock_identifier_lookup(
     JOIN "data".gbi_id_alt_names gan ON gan.gbi_id = ms.gbi_security_id
     WHERE
     ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    AND gan.enabled
     AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
@@ -262,6 +265,7 @@ async def raw_stock_identifier_lookup(
         # the weaker the match the more results to be
         # considered for trading volume tie breaker
 
+        """
         # exact text  match
         matches = [r for r in rows if r["ws"] >= 1.0]
         if matches:
@@ -275,22 +279,23 @@ async def raw_stock_identifier_lookup(
             matches = [r for r in rows if r["ws"] >= 0.85]
             logger.info(f"found {len(matches)} nearly perfect matches")
             return matches[:10]
+        """
 
         matches = [r for r in rows if r["ws"] >= 0.6]
         if matches:
-            matches = [r for r in rows if r["ws"] >= 0.55]
+            matches = [r for r in rows if r["ws"] >= 0.50]
             logger.info(f"found {len(matches)} strong matches")
             return matches[:20]
 
         matches = [r for r in rows if r["ws"] >= 0.4]
         if matches:
-            matches = [r for r in rows if r["ws"] >= 0.35]
+            matches = [r for r in rows if r["ws"] >= 0.30]
             logger.info(f"found {len(matches)} medium matches")
             return matches[:30]
 
         matches = [r for r in rows if r["ws"] >= 0.3]
         if matches:
-            matches = [r for r in rows if r["ws"] >= 0.25]
+            matches = [r for r in rows if r["ws"] >= 0.20]
             logger.info(f"found {len(matches)} weak matches")
             return matches[:40]
 

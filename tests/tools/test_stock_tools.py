@@ -30,6 +30,21 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
 
         init_test_logging()
 
+    async def test_stock_identifier_lookup_ford(self):
+        self.args = StockIdentifierLookupInput(stock_name="Ford")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.gbi_id, 4579)
+
+    async def test_stock_identifier_lookup_brkb(self):
+        self.args = StockIdentifierLookupInput(stock_name="BRK/B")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.gbi_id, 1666)
+
+    async def test_stock_identifier_lookup_hilton(self):
+        self.args = StockIdentifierLookupInput(stock_name="Hilton")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.gbi_id, 30094)
+
     async def test_stock_identifier_lookup_meta(self):
         self.args = StockIdentifierLookupInput(stock_name="Meta")
         result = await stock_identifier_lookup(self.args, self.context)
@@ -135,6 +150,11 @@ class TestStockUniverse(IsolatedAsyncioTestCase):
         result = await get_stock_info_for_universe(self.args, self.context)
         self.assertEqual(result.get("symbol"), "XIU")
         self.assertEqual(result.get("gbi_security_id"), 5056)
+
+    async def test_get_stock_info_nasdaq(self):
+        self.args = GetStockUniverseInput(universe_name="Nasdaq")
+        result = await get_stock_info_for_universe(self.args, self.context)
+        self.assertEqual(result.get("symbol"), "QQQ")
 
     async def test_get_stock_universe_sp500(self):
         self.args = GetStockUniverseInput(universe_name="S&P 500")
