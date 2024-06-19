@@ -516,13 +516,12 @@ async def get_important_kpis_for_stock(
 def interpret_date_quarter_inputs(
     num_future_quarters: Optional[int] = None,
     num_prev_quarters: Optional[int] = None,
-    anchor_date: Optional[datetime.datetime] = None,
+    anchor_date: Optional[datetime.date] = None,
     date_range: Optional[DateRange] = None,
 ) -> Tuple[int, int, datetime.datetime]:
 
     if date_range:
-        anchor_date = datetime.datetime.combine(date_range.end_date, datetime.datetime.min.time())
-
+        anchor_date = date_range.end_date
         num_future_quarters = 0  # we will always do a look back instead of look forward
         num_days = (date_range.end_date - date_range.start_date).days
         days_in_quarter = 365.25 / 4
@@ -534,13 +533,18 @@ def interpret_date_quarter_inputs(
     if num_future_quarters is None:
         num_future_quarters = 0
 
+    # I think we should heavily consider setting this default to 1 or zero
+    # (which ever would find the data for exactly the quarter containing the anchor_date)
+    # and maybe change the name to quarter_containing_date
     if num_prev_quarters is None:
         num_prev_quarters = 7
 
     if anchor_date is None:
-        anchor_date = get_now_utc()
+        anchor_datetime = get_now_utc()
+    else:
+        anchor_datetime = datetime.datetime.combine(anchor_date, datetime.datetime.min.time())
 
-    return (num_future_quarters, num_prev_quarters, anchor_date)
+    return (num_future_quarters, num_prev_quarters, anchor_datetime)
 
 
 class CompanyKPIsRequest(ToolArgs):
@@ -549,7 +553,7 @@ class CompanyKPIsRequest(ToolArgs):
     table_name: str
     num_future_quarters: Optional[int] = None
     num_prev_quarters: Optional[int] = None
-    anchor_date: Optional[datetime.datetime] = None
+    anchor_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
 
 
@@ -560,8 +564,11 @@ class CompanyKPIsRequest(ToolArgs):
         "of kpis will be passed in via the kpis argument containing a list of KPIText objects to indicate "
         "the kpis to grab information for. The function must also take a table_name, this name should be brief "
         "and describe what the data represents (ie. 'Important KPIs for Apple' or 'Tesla KPIs Relating to Model X'). "
-        "This function will always grab the data for the quarter associated with the anchor_date. If no "
-        "anchor date is provided the function will assume anchor date is the present date. Data from additional "
+        "This function will always grab the data for the quarter associated with the anchor_date. "
+        "The anchor_date should be a datetime.date object, not a date-like string, "
+        "you should convert date strings into dates using the get_date_from_date_str function. "
+        "If no anchor date is provided the function will assume anchor date is the present date "
+        "or infer it from the date_range object if one was provided. Data from additional "
         "quarters can also be retrieved by specifying the num_prev_quarters, to indicate how many quarters prior to "
         "the year-quarter the anchor_date falls into. By default num_prev_quarters is set to 7. "
         "You can also specify the number of quarters after the anchor_date to grab data for by many consecutive "
@@ -604,7 +611,7 @@ class KPIsRequest(ToolArgs):
     table_name: str
     num_future_quarters: Optional[int] = None
     num_prev_quarters: Optional[int] = None
-    anchor_date: Optional[datetime.datetime] = None
+    anchor_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
 
 
@@ -615,7 +622,7 @@ class KPIsRequest(ToolArgs):
         "KPIText objects to indicate the kpis to grab information for. The function must also take a table_name, "
         "this name should be brief and describe what the data represents (ie. 'Cloud Revenue' or "
         "'Automotive Sales'). This function will always grab the data for the quarter associated with the "
-        "anchor_date. If no starting date is provided the function will assume starting date is the present date. "
+        "anchor_date. If no anchor date is provided the function will assume anchor date is the present date. "
         "Data from additional quarters can also be retrieved by specifying the num_prev_quarters, to indicate how "
         "many quarters prior to the year-quarter the anchor_date falls into. By default num_prev_quarters is "
         "set to 7. You can also specify the number of quarters after the anchor_date to grab data for by many "
