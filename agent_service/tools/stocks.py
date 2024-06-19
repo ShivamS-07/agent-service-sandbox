@@ -109,9 +109,10 @@ async def raw_stock_identifier_lookup(
     such as name, isin or symbol (JP3633400001, microsoft, apple, AAPL, TESLA, META, e.g.).
 
     This function performs a series of queries to find the stock's identifier.
-    It starts with an exact symbol match,
+    It starts with a bloomberg parsekey match,
     then an exact ISIN match,
-    followed by a word similarity name match, and finally a word similarity symbol match.
+    followed by a text similarity match to the official name and alternate names,
+    and an exact ticker symbol matches are also allowed.
     It only proceeds to the next query if the previous one returns no results.
 
 
@@ -120,7 +121,7 @@ async def raw_stock_identifier_lookup(
         context (PlanRunContext): The context of the plan run.
 
     Returns:
-        int: The integer identifier of the stock.
+        List[Dict[str, Any]]: DB rows representing the potentially matching stocks.
     """
     logger = get_prefect_logger(__name__)
     db = get_psql()
@@ -129,6 +130,11 @@ async def raw_stock_identifier_lookup(
     # Use embedding to find the closest match (e.g. "google" vs "alphabet")
     # ignore common company suffixes like Corp and Inc.
     # make use of custom doc company tagging machinery
+
+    bloomberg_rows = get_stocks_if_bloomberg_parsekey(args, context)
+    if bloomberg_rows:
+        logger.info("found bloomberg parsekey")
+        return bloomberg_rows
 
     # Exact gbi alt name match
     # these are hand crafted strings to be used only when needed
@@ -264,23 +270,6 @@ async def raw_stock_identifier_lookup(
     if rows:
         # the weaker the match the more results to be
         # considered for trading volume tie breaker
-
-        """
-        # exact text  match
-        matches = [r for r in rows if r["ws"] >= 1.0]
-        if matches:
-            # if there is more than 1 exact match we have to break the tie
-            logger.info(f"found {len(matches)} perfect matches")
-            return matches
-
-        # strong text  match
-        matches = [r for r in rows if r["ws"] >= 0.9]
-        if matches:
-            matches = [r for r in rows if r["ws"] >= 0.85]
-            logger.info(f"found {len(matches)} nearly perfect matches")
-            return matches[:10]
-        """
-
         matches = [r for r in rows if r["ws"] >= 0.6]
         if matches:
             matches = [r for r in rows if r["ws"] >= 0.50]
@@ -662,3 +651,594 @@ async def get_stock_universe_from_etf_stock_match(
         logger.info("No stock volume info available!")
 
     return stock
+
+
+def get_stocks_if_bloomberg_parsekey(
+    args: StockIdentifierLookupInput, context: PlanRunContext
+) -> List[Dict[str, Any]]:
+    """Returns the stocks with matching ticker and bloomberg exchange code
+    by mapping the exchange code to a country isoc code and matching against our DB
+
+    Examples: "IBM US", "AZN LN", "6758 JP Equity"
+
+    Args:
+        args (StockIdentifierLookupInput): The input arguments for the stock lookup.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        List of potential db matches
+    """
+    logger = get_prefect_logger(__name__)
+    db = get_psql()
+
+    search_term = args.stock_name
+    search_terms = search_term.split()
+
+    MAX_TOKENS = 2
+    EXCH_CODE_LEN = 2
+    MAX_SYMBOL_LEN = 8
+
+    if len(search_terms) == MAX_TOKENS + 1 and search_terms[-1].upper() == "EQUITY":
+        # if we did get the Equity 'yellow key', remove that token
+        # we dont need it for searching as we only support stocks currently
+        search_terms = search_terms[:2]
+
+    symbol = search_terms[0]
+    exch_code = search_terms[-1]
+    if (
+        len(search_terms) != MAX_TOKENS
+        or len(exch_code) != EXCH_CODE_LEN
+        or len(symbol) > MAX_SYMBOL_LEN
+    ):
+        # not a parsekey
+        return []
+
+    iso3 = bloomberg_exchange_to_country_iso3.get(exch_code)
+
+    if not iso3:
+        logger.info(
+            f"either '{args.stock_name}' just looked similar to a parsekey"
+            f" or we are missing an exchange code mapping for: '{exch_code}'"
+        )
+        return []
+
+    sql = """
+    -- ticker symbol + country (exact match only)
+    SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
+    ms.name, 'ticker symbol' as match_col, ms.symbol || ' ' || ms.security_region as match_text,
+    1.0 AS ws
+    FROM master_security ms
+    WHERE
+    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    AND ms.is_public
+    AND ms.is_primary_trading_item = true
+    AND ms.to_z is null
+    AND ms.symbol = upper(%(symbol)s)
+    AND ms.security_region = upper(%(iso3)s)
+    """
+
+    rows = db.generic_read(sql, {"symbol": symbol, "iso3": iso3})
+    if rows:
+        logger.info("found bloomberg parsekey match")
+        return rows
+
+    return []
+
+
+# this was built by merging a list of bloomberg exchange codes
+# and the wikipedia page for iso2/3char country codes
+# this includes both specific exchanges like 'UN' = Nasdaq
+# and also 'composite' exchanges like 'US' that aggregates all USA based exchanges
+# sources:
+# https://insights.ultumus.com/bloomberg-exchange-code-to-mic-mapping
+# https://www.inforeachinc.com/bloomberg-exchange-code-mapping
+# https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
+# see github for details
+# https://github.com/GBI-Core/agent-service/pull/274#issuecomment-2179379326
+bloomberg_exchange_to_country_iso3 = {
+    # EQUITY EXCH CODE : iso3
+    #           # BBG composite, iso2, name/desc
+    "AL": "ALB",  # AL AL ALBANIA
+    "AL": "ALB",  # AL AL ALB
+    "DU": "ARE",  # DU AE NASDAQ
+    "DH": "ARE",  # UH AE ABU
+    "DB": "ARE",  # DU AE DFM
+    "DU": "ARE",  # DU AE ARE
+    "UH": "ARE",  # UH AE ARE
+    "AM": "ARG",  # AR AR MENDOZA
+    "AF": "ARG",  # AR AR BUENOS
+    "AC": "ARG",  # AR AR BUENOS
+    "AS": "ARG",  # AR AR BUENOS
+    "AR": "ARG",  # AR AR ARG
+    "AY": "ARM",  # AY AM NASDAQ
+    "AY": "ARM",  # AY AM ARM
+    "PF": "AUS",  # AU AU ASIA
+    "AQ": "AUS",  # AU AU ASX
+    "AH": "AUS",  # AU AU CHIX
+    "SI": "AUS",  # AU AU SIM
+    "AT": "AUS",  # AU AU ASE
+    "AO": "AUS",  # AU AU NSX
+    "AU": "AUS",  # AU AU AUS
+    "AV": "AUT",  # AV AT VIENNA
+    "XA": "AUT",  # EO AT CEESEG
+    "AV": "AUT",  # AV AT AUT
+    "AZ": "AZE",  # AZ AZ BAKU
+    "AZ": "AZE",  # AZ AZ AZE
+    "BB": "BEL",  # BB BE EN
+    "BB": "BEL",  # BB BE BEL
+    "BD": "BGD",  # BD BD DHAKA
+    "BD": "BGD",  # BD BD BGD
+    "BU": "BGR",  # BU BG BULGARIA
+    "BU": "BGR",  # BU BG BGR
+    "BI": "BHR",  # BI BH BAHRAIN
+    "BI": "BHR",  # BI BH BHR
+    "BM": "BHS",  # BM BS BAHAMAS
+    "BM": "BHS",  # BM BS BHS
+    "BK": "BIH",  # BK BA BANJA
+    "BT": "BIH",  # BT BA SARAJEVO
+    "BK": "BIH",  # BK BA BIH
+    "BT": "BIH",  # BT BA BIH
+    "RB": "BLR",  # RB BY BELARUS
+    "RB": "BLR",  # RB BY BLR
+    "BH": "BMU",  # BH BM BERMUDA
+    "BH": "BMU",  # BH BM BMU
+    "VB": "BOL",  # VB BO BOLIVIA
+    "VB": "BOL",  # VB BO BOL
+    "BN": "BRA",  # BZ BR SAO
+    "BS": "BRA",  # BZ BR BM&FBOVESPA
+    "BV": "BRA",  # BZ BR BOVESPA
+    "BR": "BRA",  # BZ BR RIO
+    "BO": "BRA",  # BZ BR SOMA
+    "BZ": "BRA",  # BZ BR BRA
+    "BA": "BRB",  # BA BB BRIDGETOWN
+    "BA": "BRB",  # BA BB BRB
+    "BG": "BWA",  # BG BW GABORONE
+    "BG": "BWA",  # BG BW BWA
+    "TX": "CAN",  # CN CA CHIX
+    "DV": "CAN",  # CN CA CHIX
+    "TK": "CAN",  # CN CA LIQUIDNET
+    "DG": "CAN",  # CN CA LYNX
+    "TR": "CAN",  # CN CA TRIACT
+    "TV": "CAN",  # CN CA TRIACT
+    "QF": "CAN",  # CN CA AQTS
+    "QH": "CAN",  # CN CA AQRS
+    "TG": "CAN",  # CN CA OMEGA
+    "CJ": "CAN",  # CN CA PURE
+    "TY": "CAN",  # CN CA SIGMA
+    "TJ": "CAN",  # CN CA TMX
+    "TN": "CAN",  # CN CA ALPHAVENTURE
+    "TA": "CAN",  # CN CA ALPHATORONTO
+    "CF": "CAN",  # CN CA CANADA
+    "DS": "CAN",  # CN CA CX2
+    "DT": "CAN",  # CN CA CX2
+    "DK": "CAN",  # CN CA NASDAQ
+    "DJ": "CAN",  # CN CA NASDAQ
+    "TW": "CAN",  # CN CA INSTINET
+    "CT": "CAN",  # CN CA TORONTO
+    "CV": "CAN",  # CN CA VENTURE
+    "CN": "CAN",  # CN CA CAN
+    "BW": "CHE",  # SW CH BX
+    "SR": "CHE",  # SW CH BERNE
+    "SX": "CHE",  # SW CH SIX
+    "SE": "CHE",  # SW CH SIX
+    "VX": "CHE",  # VX CH SIX
+    "SW": "CHE",  # SW CH CHE
+    "VX": "CHE",  # VX CH CHE
+    "CE": "CHL",  # CI CL SAINT
+    "CC": "CHL",  # CI CL SANT.
+    "CI": "CHL",  # CI CL CHL
+    "C2": "CHN",  # CH CN Nrth
+    "CS": "CHN",  # CH CN SHENZHEN
+    "CG": "CHN",  # CH CN SHANGHAI
+    "C1": "CHN",  # C1 CN Nth
+    "CH": "CHN",  # CH CN CHN
+    "C1": "CHN",  # C1 CN CHN
+    "IA": "CIV",  # IA CI ABIDJAN
+    "BC": "CIV",  # BC CI BRVM
+    "ZS": "CIV",  # ZS CI SENEGAL
+    "IA": "CIV",  # IA CI CIV
+    "BC": "CIV",  # BC CI CIV
+    "ZS": "CIV",  # ZS CI CIV
+    "DE": "CMR",  # DE CM DOULASTKEXCH
+    "DE": "CMR",  # DE CM CMR
+    "CX": "COL",  # CB CO BOLSA
+    "CB": "COL",  # CB CO COL
+    "VR": "CPV",  # VR CV CAPE
+    "VR": "CPV",  # VR CV CPV
+    "CR": "CRI",  # CR CR COSTA
+    "CR": "CRI",  # CR CR CRI
+    "KY": "CYM",  # KY KY CAYMAN
+    "KY": "CYM",  # KY KY CYM
+    "CY": "CYP",  # CY CY NICOSIA
+    "YC": "CYP",  # CY CY CYPRUS
+    "CY": "CYP",  # CY CY CYP
+    "CK": "CZE",  # CP CZ PRAGUE
+    "CD": "CZE",  # CP CZ PRAGUE-SPAD
+    "KL": "CZE",  # CP CZ PRAGUE-BLOCK
+    "RC": "CZE",  # CP CZ CZECH
+    "CP": "CZE",  # CP CZ CZE
+    "GW": "DEU",  # GR DE STUTGT
+    "PG": "DEU",  # PG DE PLUS
+    "GB": "DEU",  # GR DE BERLIN
+    "GC": "DEU",  # GR DE BREMEN
+    "GD": "DEU",  # GR DE DUSSELDORF
+    "BQ": "DEU",  # BQ DE EQUIDUCT
+    "GY": "DEU",  # GR DE XETRA
+    "GQ": "DEU",  # GR DE XETRA
+    "GE": "DEU",  # GR DE XTRA
+    "GT": "DEU",  # GR DE XETRA
+    "GF": "DEU",  # GR DE FRANKFURT
+    "XD": "DEU",  # EO DE DEUTSCHE
+    "TH": "DEU",  # TH DE TRADEGATE
+    "GH": "DEU",  # GR DE HAMBURG
+    "GI": "DEU",  # GR DE HANNOVER
+    "GM": "DEU",  # GR DE MUNICH
+    "EX": "DEU",  # GR DE NEWEX
+    "QT": "DEU",  # QT DE Quotrix
+    "GS": "DEU",  # GR DE STUTTGART
+    "XS": "DEU",  # EO DE STUTTGRT
+    "GR": "DEU",  # GR DE DEU
+    "PG": "DEU",  # PG DE DEU
+    "BQ": "DEU",  # BQ DE DEU
+    "TH": "DEU",  # TH DE DEU
+    "QT": "DEU",  # QT DE DEU
+    "DD": "DNK",  # DC DK DANSK
+    "DC": "DNK",  # DC DK COPENHAGEN
+    "DF": "DNK",  # DC DK FN
+    "DC": "DNK",  # DC DK DNK
+    "AG": "DZA",  # AG DZ ALGERIASTEXC
+    "AG": "DZA",  # AG DZ DZA
+    "EG": "ECU",  # ED EC GUAYAQUIL
+    "EQ": "ECU",  # ED EC QUITO
+    "ED": "ECU",  # ED EC ECU
+    "EI": "EGY",  # EY EG NILEX
+    "EC": "EGY",  # EY EG EGX
+    "EY": "EGY",  # EY EG EGY
+    "SB": "ESP",  # SM ES BARCELONA
+    "SO": "ESP",  # SM ES BILBAO
+    "SN": "ESP",  # SM ES MADRID
+    "SQ": "ESP",  # SM ES CONTINUOUS
+    "SA": "ESP",  # SM ES VALENCIA
+    "SM": "ESP",  # SM ES ESP
+    "ET": "EST",  # ET EE TALLINN
+    "ET": "EST",  # ET EE EST
+    "FF": "FIN",  # FH FI FN
+    "FH": "FIN",  # FH FI HELSINKI
+    "FH": "FIN",  # FH FI FIN
+    "FS": "FJI",  # FS FJ SPSE
+    "FS": "FJI",  # FS FJ FJI
+    "FP": "FRA",  # FP FR PARIS
+    "FP": "FRA",  # FP FR FRA
+    "QX": "GBR",  # QX GB AQUIS
+    "EB": "GBR",  # EB GB BATS
+    "XB": "GBR",  # EO GB BOAT
+    "K3": "GBR",  # K3 GB BLINK
+    "B3": "GBR",  # B3 GB BLOCKMATCH
+    "XV": "GBR",  # EO GB BATSChiX
+    "IX": "GBR",  # IX GB CHI-X
+    "XC": "GBR",  # EO GB CHI-X
+    "L3": "GBR",  # L3 GB LIQUIDNET
+    "ES": "GBR",  # ES GB NASDAQ
+    "NQ": "GBR",  # NQ GB NASDAQ
+    "S1": "GBR",  # S1 GB SIGMA
+    "A0": "GBR",  # A0 GB ASSETMATCH
+    "DX": "GBR",  # DX GB TURQUOISE
+    "TQ": "GBR",  # TQ GB TURQUOISE
+    "LD": "GBR",  # LD GB NYSE
+    "LN": "GBR",  # LN GB LONDON
+    "LI": "GBR",  # LI GB LONDON
+    "EU": "GBR",  # EU GB EUROPEAN
+    "E1": "GBR",  # EO GB EURO
+    "XL": "GBR",  # EO GB LONDON
+    "LO": "GBR",  # LI GB LSE
+    "PZ": "GBR",  # PZ GB ISDX
+    "XP": "GBR",  # EO GB PLUS
+    "XE": "GBR",  # EO GB EURONEXT
+    "S2": "GBR",  # S2 GB UBS
+    "QX": "GBR",  # QX GB GBR
+    "EB": "GBR",  # EB GB GBR
+    "K3": "GBR",  # K3 GB GBR
+    "B3": "GBR",  # B3 GB GBR
+    "IX": "GBR",  # IX GB GBR
+    "L3": "GBR",  # L3 GB GBR
+    "ES": "GBR",  # ES GB GBR
+    "NQ": "GBR",  # NQ GB GBR
+    "S1": "GBR",  # S1 GB GBR
+    "A0": "GBR",  # A0 GB GBR
+    "DX": "GBR",  # DX GB GBR
+    "TQ": "GBR",  # TQ GB GBR
+    "LD": "GBR",  # LD GB GBR
+    "LN": "GBR",  # LN GB GBR
+    "LI": "GBR",  # LI GB GBR
+    "EU": "GBR",  # EU GB GBR
+    "PZ": "GBR",  # PZ GB GBR
+    "S2": "GBR",  # S2 GB GBR
+    "GG": "GEO",  # GG GE JSCGEORGIA
+    "GG": "GEO",  # GG GE GEO
+    "GU": "GGY",  # GU GG GUERNSEY
+    "JY": "GGY",  # JY GG JERSEY
+    "GU": "GGY",  # GU GG GGY
+    "JY": "GGY",  # JY GG GGY
+    "GN": "GHA",  # GN GH ACCRA
+    "GN": "GHA",  # GN GH GHA
+    "TL": "GIB",  # TL GI GIBRALTAR
+    "TL": "GIB",  # TL GI GIB
+    "AA": "GRC",  # GA GR ATHENS
+    "XT": "GRC",  # EO GR ATHENS
+    "AP": "GRC",  # GA GR ATHENS
+    "GA": "GRC",  # GA GR ATHENS
+    "GA": "GRC",  # GA GR GRC
+    "GL": "GTM",  # GL GT GUATEMALA
+    "GL": "GTM",  # GL GT GTM
+    "H1": "HKG",  # H1 HK Sth
+    "H2": "HKG",  # HK HK Sth
+    "HK": "HKG",  # HK HK HONG
+    "H1": "HKG",  # H1 HK HKG
+    "HK": "HKG",  # HK HK HKG
+    "HO": "HND",  # HO HN HONDURAS
+    "HO": "HND",  # HO HN HND
+    "ZA": "HRV",  # CZ HR ZAGREB
+    "CZ": "HRV",  # CZ HR HRV
+    "QM": "HUN",  # QM HU QUOTE
+    "HB": "HUN",  # HB HU BUDAPEST
+    "XH": "HUN",  # EO HU BUDAPEST
+    "QM": "HUN",  # QM HU HUN
+    "HB": "HUN",  # HB HU HUN
+    "IJ": "IDN",  # IJ ID INDONESIA
+    "IJ": "IDN",  # IJ ID IDN
+    "IG": "IND",  # IN IN MCX
+    "IB": "IND",  # IN IN BSE
+    "IH": "IND",  # IN IN DELHI
+    "IS": "IND",  # IN IN NATL
+    "IN": "IND",  # IN IN IND
+    "ID": "IRL",  # ID IE IRELAND
+    "XF": "IRL",  # EO IE DUBLIN
+    "PO": "IRL",  # PO IE ITG
+    "ID": "IRL",  # ID IE IRL
+    "PO": "IRL",  # PO IE IRL
+    "IE": "IRN",  # IE IR TEHRAN
+    "IE": "IRN",  # IE IR IRN
+    "IQ": "IRQ",  # IQ IQ IRAQ
+    "IQ": "IRQ",  # IQ IQ IRQ
+    "RF": "ISL",  # IR IS FN
+    "IR": "ISL",  # IR IS REYKJAVIK
+    "IR": "ISL",  # IR IS ISL
+    "IT": "ISR",  # IT IL TEL
+    "IT": "ISR",  # IT IL ISR
+    "TE": "ITA",  # TE IT EUROTLX
+    "HM": "ITA",  # HM IT HI-MTF
+    "IM": "ITA",  # IM IT BRSAITALIANA
+    "IC": "ITA",  # IM IT MIL
+    "XI": "ITA",  # EO IT BORSAITALOTC
+    "IF": "ITA",  # IM IT MIL
+    "TE": "ITA",  # TE IT ITA
+    "HM": "ITA",  # HM IT ITA
+    "IM": "ITA",  # IM IT ITA
+    "JA": "JAM",  # JA JM KINGSTON
+    "JA": "JAM",  # JA JM JAM
+    "JR": "JOR",  # JR JO AMMAN
+    "JR": "JOR",  # JR JO JOR
+    "JI": "JPN",  # JP JP CHI-X
+    "JD": "JPN",  # JP JP KABU.COM
+    "JE": "JPN",  # JP JP SBIJAPANNEXT
+    "JW": "JPN",  # JP JP SBIJNxt
+    "JF": "JPN",  # JP JP FUKUOKA
+    "JQ": "JPN",  # JP JP JASDAQ
+    "JN": "JPN",  # JP JP NAGOYA
+    "JO": "JPN",  # JP JP OSAKA
+    "JS": "JPN",  # JP JP SAPPORO
+    "JU": "JPN",  # JP JP SBI
+    "JG": "JPN",  # JP JP TOKYO
+    "JT": "JPN",  # JP JP TOKYO
+    "JP": "JPN",  # JP JP JPN
+    "KZ": "KAZ",  # KZ KZ KAZAKHSTAN
+    "KZ": "KAZ",  # KZ KZ KAZ
+    "KN": "KEN",  # KN KE NAIROBI
+    "KN": "KEN",  # KN KE KEN
+    "KB": "KGZ",  # KB KG KYRGYZSTAN
+    "KB": "KGZ",  # KB KG KGZ
+    "KH": "KHM",  # KH KH CAMBODIA
+    "KH": "KHM",  # KH KH KHM
+    "EK": "KNA",  # EK KN ESTN
+    "AI": "KNA",  # AI KN ANGUILLA
+    "NX": "KNA",  # NX KN ST
+    "EK": "KNA",  # EK KN KNA
+    "AI": "KNA",  # AI KN KNA
+    "NX": "KNA",  # NX KN KNA
+    "KF": "KOR",  # KF KR KOREAFRBMKT
+    "KE": "KOR",  # KS KR KONEX
+    "KP": "KOR",  # KS KR KOREA
+    "KQ": "KOR",  # KS KR KOSDAQ
+    "KF": "KOR",  # KF KR KOR
+    "KS": "KOR",  # KS KR KOR
+    "KK": "KWT",  # KK KW KUWAIT
+    "KK": "KWT",  # KK KW KWT
+    "LS": "LAO",  # LS LA LAOS
+    "LS": "LAO",  # LS LA LAO
+    "LB": "LBN",  # LB LB BEIRUT
+    "LB": "LBN",  # LB LB LBN
+    "LY": "LBY",  # LY LY LIBYANSTEXC
+    "LY": "LBY",  # LY LY LBY
+    "SL": "LKA",  # SL LK COLOMBO
+    "SL": "LKA",  # SL LK LKA
+    "LH": "LTU",  # LH LT VILNIUS
+    "LH": "LTU",  # LH LT LTU
+    "LX": "LUX",  # LX LU LUXEMBOURG
+    "LX": "LUX",  # LX LU LUX
+    "LG": "LVA",  # LR LV RIGA
+    "LR": "LVA",  # LR LV LVA
+    "MC": "MAR",  # MC MA CASABLANCA
+    "MC": "MAR",  # MC MA MAR
+    "MB": "MDA",  # MB MD MOLDOVA
+    "MB": "MDA",  # MB MD MDA
+    "MX": "MDV",  # MX MV MALDIVES
+    "MX": "MDV",  # MX MV MDV
+    "MM": "MEX",  # MM MX MEXICO
+    "MM": "MEX",  # MM MX MEX
+    "MS": "MKD",  # MS MK MACEDONIA
+    "MS": "MKD",  # MS MK MKD
+    "MV": "MLT",  # MV MT VALETTA
+    "MV": "MLT",  # MV MT MLT
+    "ME": "MNE",  # ME ME MONTENEGRO
+    "ME": "MNE",  # ME ME MNE
+    "MO": "MNG",  # MO MN MONGOLIA
+    "MO": "MNG",  # MO MN MNG
+    "MZ": "MOZ",  # MZ MZ MAPUTO
+    "MZ": "MOZ",  # MZ MZ MOZ
+    "MP": "MUS",  # MP MU SEM
+    "MP": "MUS",  # MP MU MUS
+    "MW": "MWI",  # MW MW MALAWI
+    "MW": "MWI",  # MW MW MWI
+    "MQ": "MYS",  # MQ MY MESDAQ
+    "MK": "MYS",  # MK MY BURSA
+    "MQ": "MYS",  # MQ MY MYS
+    "MK": "MYS",  # MK MY MYS
+    "NW": "NAM",  # NW NA WINDHOEK
+    "NW": "NAM",  # NW NA NAM
+    "NL": "NGA",  # NL NG LAGOS
+    "NL": "NGA",  # NL NG NGA
+    "NC": "NIC",  # NC NI NICARAGUA
+    "NC": "NIC",  # NC NI NIC
+    "MT": "NLD",  # MT NL TOM
+    "NA": "NLD",  # NA NL EN
+    "NR": "NLD",  # NR NL NYSE
+    "MT": "NLD",  # MT NL NLD
+    "NA": "NLD",  # NA NL NLD
+    "NR": "NLD",  # NR NL NLD
+    "NS": "NOR",  # NO NO NORWAY
+    "NO": "NOR",  # NO NO OSLO
+    "XN": "NOR",  # EO NO OSLO
+    "NO": "NOR",  # NO NO NOR
+    "NO": "NOR",  # NO NO NOR
+    "NK": "NPL",  # NK NP NEPAL
+    "NK": "NPL",  # NK NP NPL
+    "NZ": "NZL",  # NZ NZ NZX
+    "NZ": "NZL",  # NZ NZ NZL
+    "OM": "OMN",  # OM OM MUSCAT
+    "OM": "OMN",  # OM OM OMN
+    "PK": "PAK",  # PA PK KARACHI
+    "PA": "PAK",  # PA PK PAK
+    "PP": "PAN",  # PP PA PANAMA
+    "PP": "PAN",  # PP PA PAN
+    "PE": "PER",  # PE PE LIMA
+    "PE": "PER",  # PE PE PER
+    "PM": "PHL",  # PM PH PHILIPPINES
+    "PM": "PHL",  # PM PH PHL
+    "PB": "PNG",  # PB PG PORT
+    "PB": "PNG",  # PB PG PNG
+    "PD": "POL",  # PW PL POLAND
+    "PW": "POL",  # PW PL WARSAW
+    "PW": "POL",  # PW PL POL
+    "PX": "PRT",  # PX PT PEX
+    "PL": "PRT",  # PL PT EN
+    "PX": "PRT",  # PX PT PRT
+    "PL": "PRT",  # PL PT PRT
+    "PN": "PRY",  # PN PY ASUNCION
+    "PN": "PRY",  # PN PY PRY
+    "PS": "PSE",  # PS PS PALESTINE
+    "PS": "PSE",  # PS PS PSE
+    "QD": "QAT",  # QD QA QATAR
+    "QD": "QAT",  # QD QA QAT
+    "RZ": "ROU",  # RO RO SIBEX
+    "RE": "ROU",  # RO RO BUCHAREST
+    "RQ": "ROU",  # RO RO RASDAQ
+    "RO": "ROU",  # RO RO ROU
+    "RX": "RUS",  # RM RU MICEX
+    "RN": "RUS",  # RM RU MICEX
+    "RP": "RUS",  # RM RU MICEX
+    "RR": "RUS",  # RU RU RTS
+    "RT": "RUS",  # RU RU NP
+    "RM": "RUS",  # RM RU RUS
+    "RU": "RUS",  # RU RU RUS
+    "RW": "RWA",  # RW RW RWANDA
+    "RW": "RWA",  # RW RW RWA
+    "AB": "SAU",  # AB SA SAUDI
+    "AB": "SAU",  # AB SA SAU
+    "SP": "SGP",  # SP SG SINGAPORE
+    "SP": "SGP",  # SP SG SGP
+    "EL": "SLV",  # EL SV EL
+    "EL": "SLV",  # EL SV SLV
+    "SG": "SRB",  # SG RS BELGRADE
+    "SG": "SRB",  # SG RS SRB
+    "SK": "SVK",  # SK SK BRATISLAVA
+    "SK": "SVK",  # SK SK SVK
+    "SV": "SVN",  # SV SI LJUBLJANA
+    "XJ": "SVN",  # EO SI LJUB
+    "SV": "SVN",  # SV SI SVN
+    "BY": "SWE",  # BY SE BURGUNDY
+    "SF": "SWE",  # SS SE FN
+    "NG": "SWE",  # SS SE
+    "XG": "SWE",  # EO SE NGM
+    "XO": "SWE",  # EO SE OMX
+    "KA": "SWE",  # SS SE AKTIE
+    "SS": "SWE",  # SS SE NORDIC
+    "BY": "SWE",  # BY SE SWE
+    "SS": "SWE",  # SS SE SWE
+    "SD": "SWZ",  # SD SZ MBABANE
+    "SD": "SWZ",  # SD SZ SWZ
+    "SZ": "SYC",  # SZ SC Seychelles
+    "SZ": "SYC",  # SZ SC SYC
+    "SY": "SYR",  # SY SY DAMASCUS
+    "SY": "SYR",  # SY SY SYR
+    "TB": "THA",  # TB TH BANGKOK
+    "TB": "THA",  # TB TH THA
+    "TP": "TTO",  # TP TT PORT
+    "TP": "TTO",  # TP TT TTO
+    "TU": "TUN",  # TU TN TUNIS
+    "TU": "TUN",  # TU TN TUN
+    "TI": "TUR",  # TI TR ISTANBUL
+    "TF": "TUR",  # TI TR ISTN
+    "TS": "TUR",  # TI TR ISTN
+    "TI": "TUR",  # TI TR TUR
+    "TT": "TWN",  # TT TW GRETAI
+    "TT": "TWN",  # TT TW TAIWAN
+    "TT": "TWN",  # TT TW TWN
+    "TZ": "TZA",  # TZ TZ DAR
+    "TZ": "TZA",  # TZ TZ TZA
+    "UG": "UGA",  # UG UG UGANDA
+    "UG": "UGA",  # UG UG UGA
+    "UZ": "UKR",  # UZ UA PFTS
+    "QU": "UKR",  # UZ UA PFTS
+    "UK": "UKR",  # UZ UA RTS
+    "UZ": "UKR",  # UZ UA UKR
+    "UY": "URY",  # UY UY MONTEVIDEO
+    "UY": "URY",  # UY UY URY
+    "UP": "USA",  # US US NYSE
+    "UF": "USA",  # US US BATS
+    "VY": "USA",  # US US BATS
+    "UO": "USA",  # US US CBSX
+    "VJ": "USA",  # US US EDGA
+    "VK": "USA",  # US US EDGX
+    "UI": "USA",  # US US ISLAND
+    "VF": "USA",  # US US INVESTOR
+    "UV": "USA",  # US US OTC
+    "PQ": "USA",  # US US OTC
+    "UD": "USA",  # US US FINRA
+    "UA": "USA",  # US US NYSE
+    "UB": "USA",  # US US NSDQ
+    "UM": "USA",  # US US CHICAGO
+    "UC": "USA",  # US US NATIONAL
+    "UL": "USA",  # US US ISE
+    "UR": "USA",  # US US NASDAQ
+    "UW": "USA",  # US US NASDAQ
+    "UT": "USA",  # US US NASDAQ
+    "UQ": "USA",  # US US NASDAQ
+    "UN": "USA",  # US US NYSE
+    "UU": "USA",  # US US OTC
+    "UX": "USA",  # US US NSDQ
+    "US": "USA",  # US US USA
+    "ZU": "UZB",  # ZU UZ UZBEKISTAN
+    "ZU": "UZB",  # ZU UZ UZB
+    "VS": "VEN",  # VC VE CARACAS
+    "VC": "VEN",  # VC VE VEN
+    "VH": "VNM",  # VN VN HANOI
+    "VU": "VNM",  # VN VN HANOI
+    "VM": "VNM",  # VN VN HO
+    "VN": "VNM",  # VN VN VNM
+    "SJ": "ZAF",  # SJ ZA JOHANNESBURG
+    "SJ": "ZAF",  # SJ ZA ZAF
+    "ZL": "ZMB",  # ZL ZM LUSAKA
+    "ZL": "ZMB",  # ZL ZM ZMB
+    "ZH": "ZWE",  # ZH ZW HARARE
+    "ZH": "ZWE",  # ZH ZW ZWE
+}

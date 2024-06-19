@@ -136,6 +136,19 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
         result = await stock_identifier_lookup(self.args, self.context)
         self.assertEqual(result.gbi_id, 389721)
 
+    async def test_stock_identifier_lookup_bloomberg(self):
+        self.args = StockIdentifierLookupInput(stock_name="IBM US Equity")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.gbi_id, 5721)
+
+        self.args = StockIdentifierLookupInput(stock_name="AZN LN")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.gbi_id, 41478)  # astrazeneca
+
+        self.args = StockIdentifierLookupInput(stock_name="6758 JP")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.gbi_id, 391887)  # sony
+
 
 class TestStockUniverse(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
