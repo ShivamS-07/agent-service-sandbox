@@ -107,25 +107,13 @@ class Planner:
     async def create_initial_plan(
         self, chat_context: ChatContext, use_sample_plans: bool = True
     ) -> Optional[ExecutionPlan]:
-        logger = get_prefect_logger(__name__)
-
-        logger.info("Getting matching sample plans")
 
         if use_sample_plans:
-            sample_plans = await get_similar_sample_plans(
-                chat_context.get_gpt_input(), self.context
+            logger.info("Getting matching sample plans")
+            sample_plans_str = await self._get_sample_plan_str(
+                input=chat_context.get_gpt_input(client_only=True)
             )
         else:
-            sample_plans = []
-
-        if sample_plans:
-            sample_plans_str = "\n\n".join(
-                [sample_plan.get_formatted_plan() for sample_plan in sample_plans]
-            )
-            logger.info(f"Found relevant sample plan(s): {sample_plans_str}")
-            sample_plans_str = PLAN_SAMPLE_TEMPLATE.format(sample_plans=sample_plans_str)
-        else:
-            logger.info("No relevant sample plan(s) found")
             sample_plans_str = ""
 
         logger.info("Writing plan")
@@ -205,7 +193,6 @@ class Planner:
         if llm is None:
             llm = self.fast_llm
 
-        logger = get_prefect_logger(__name__)
         prompt = chat_context.get_gpt_input()
         plan_str = await self._query_GPT_for_initial_plan(
             chat_context.get_gpt_input(), llm=llm, sample_plans=sample_plans
@@ -302,19 +289,28 @@ class Planner:
         last_plan: ExecutionPlan,
         last_plan_timestamp: datetime.datetime,
         action: Action,
+        use_sample_plans: bool = True,
     ) -> Optional[ExecutionPlan]:
+
+        if use_sample_plans:
+            logger.info("Getting matching sample plans")
+            sample_plans_str = await self._get_sample_plan_str(
+                input=chat_context.get_gpt_input(client_only=True)
+            )
+        else:
+            sample_plans_str = ""
+
         latest_user_messages = [
             message
             for message in chat_context.messages
             if message.is_user_message and message.message_time > last_plan_timestamp
         ]
-        logger = get_prefect_logger(__name__)
         logger.info(
             f"Rewriting plan after user input, action={action}, input={latest_user_messages}"
         )
         tasks = [
             self._rewrite_plan_after_input(
-                chat_context, last_plan, latest_user_messages, action=action
+                chat_context, last_plan, latest_user_messages, sample_plans_str, action=action
             )
             for _ in range(INITIAL_PLAN_TRIES)
         ]
@@ -340,6 +336,7 @@ class Planner:
         chat_context: ChatContext,
         last_plan: ExecutionPlan,
         latest_messages: List[Message],
+        sample_plans_str: str,
         action: Action,
     ) -> Optional[ExecutionPlan]:
         # for now, just assume last step is what is new
@@ -351,7 +348,7 @@ class Planner:
         new_messages = "\n".join([message.get_gpt_input() for message in latest_messages])
         old_plan_str = last_plan.get_formatted_plan()
         new_plan_str = await self._query_GPT_for_new_plan_after_input(
-            new_messages, main_chat_str, old_plan_str, action=action
+            new_messages, main_chat_str, old_plan_str, sample_plans_str, action=action
         )
         append = action == Action.APPEND
         if append:
@@ -400,11 +397,22 @@ class Planner:
         chat_context: ChatContext,
         last_plan: ExecutionPlan,
         action: Action,
+        use_sample_plans: bool = True,
     ) -> Optional[ExecutionPlan]:
-        logger = get_prefect_logger(__name__)
+
+        if use_sample_plans:
+            logger.info("Getting matching sample plans")
+            sample_plans_str = await self._get_sample_plan_str(
+                input=chat_context.get_gpt_input(client_only=True)
+            )
+        else:
+            sample_plans_str = ""
+
         logger.info(f"Rewriting plan after error, error={error_info}")
         tasks = [
-            self._rewrite_plan_after_error(error_info, chat_context, last_plan, action=action)
+            self._rewrite_plan_after_error(
+                error_info, chat_context, last_plan, sample_plans_str, action=action
+            )
             for _ in range(INITIAL_PLAN_TRIES)
         ]
         results = await gather_with_stop(tasks, stop_count=MIN_SUCCESSFUL_FOR_STOP)
@@ -429,6 +437,7 @@ class Planner:
         error_info: ErrorInfo,
         chat_context: ChatContext,
         last_plan: ExecutionPlan,
+        sample_plans_str: str,
         action: Action,
     ) -> Optional[ExecutionPlan]:
         execution_plan_start = datetime.datetime.utcnow().isoformat()
@@ -438,9 +447,8 @@ class Planner:
         chat_str = chat_context.get_gpt_input()
         error_str = error_info.error
         step_str = error_info.step.get_plan_step_str()
-        change_str = error_info.change
         new_plan_str = await self._query_GPT_for_new_plan_after_error(
-            error_str, step_str, change_str, chat_str, old_plan_str
+            error_str, step_str, chat_str, old_plan_str, sample_plans_str
         )
 
         try:
@@ -494,7 +502,12 @@ class Planner:
         return await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     async def _query_GPT_for_new_plan_after_input(
-        self, new_user_input: str, existing_context: str, old_plan: str, action: Action
+        self,
+        new_user_input: str,
+        existing_context: str,
+        old_plan: str,
+        sample_plans_str: str,
+        action: Action,
     ) -> str:
         if action == Action.APPEND:
             sys_prompt_template = USER_INPUT_APPEND_SYS_PROMPT
@@ -510,12 +523,16 @@ class Planner:
         )
 
         main_prompt = main_prompt_template.format(
-            new_message=new_user_input, chat_context=existing_context, old_plan=old_plan
+            new_message=new_user_input,
+            chat_context=existing_context,
+            old_plan=old_plan,
+            sample_plans=sample_plans_str,
         )
+
         return await self.fast_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     async def _query_GPT_for_new_plan_after_error(
-        self, error: str, failed_step: str, change: str, chat_context: str, old_plan: str
+        self, error: str, failed_step: str, chat_context: str, old_plan: str, sample_plans_str: str
     ) -> str:
         sys_prompt = ERROR_REPLAN_SYS_PROMPT.format(
             rules=PLAN_RULES,
@@ -527,12 +544,28 @@ class Planner:
         main_prompt = ERROR_REPLAN_MAIN_PROMPT.format(
             error=error,
             failed_step=failed_step,
-            change=change,
             chat_context=chat_context,
             old_plan=old_plan,
+            sample_plans=sample_plans_str,
         )
 
         return await self.smart_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+
+    async def _get_sample_plan_str(self, input: str) -> str:
+
+        sample_plans = await get_similar_sample_plans(input, self.context)
+
+        if sample_plans:
+            sample_plans_str = "\n\n".join(
+                [sample_plan.get_formatted_plan() for sample_plan in sample_plans]
+            )
+            logger.info(f"Found relevant sample plan(s): {sample_plans_str}")
+            sample_plans_str = PLAN_SAMPLE_TEMPLATE.format(sample_plans=sample_plans_str)
+        else:
+            logger.info("No relevant sample plan(s) found")
+            sample_plans_str = ""
+
+        return sample_plans_str
 
     def _try_parse_str_literal(self, val: str) -> Optional[str]:
         if (val.startswith('"') and val.endswith('"')) or (

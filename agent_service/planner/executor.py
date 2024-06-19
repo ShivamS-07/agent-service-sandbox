@@ -205,6 +205,7 @@ async def create_execution_plan(
             run_tasks_without_prefect=run_tasks_without_prefect,
             do_chat=do_chat,
             chat_context=chat_context,
+            use_sample_plans=use_sample_plans,
         )
 
     logger = get_prefect_logger(__name__)
@@ -285,6 +286,7 @@ async def update_execution_after_input(
     run_tasks_without_prefect: bool = False,
     do_chat: bool = True,
     chat_context: Optional[ChatContext] = None,
+    use_sample_plans: bool = True,
 ) -> Optional[Tuple[str, ExecutionPlan, Action]]:
     logger = get_prefect_logger(__name__)
     decider = InputActionDecider(agent_id=agent_id)
@@ -402,6 +404,7 @@ async def update_execution_after_input(
                 skip_task_cache=skip_task_cache,
                 run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
                 run_tasks_without_prefect=run_tasks_without_prefect,
+                use_sample_plans=use_sample_plans,
             )
             if plan:
                 return new_plan_id, plan, action
@@ -430,6 +433,7 @@ async def rewrite_execution_plan(
     run_tasks_without_prefect: bool = False,
     do_chat: bool = True,
     chat_context: Optional[ChatContext] = None,
+    use_sample_plans: bool = True,
 ) -> Optional[ExecutionPlan]:
     logger = get_prefect_logger(__name__)
     planner = Planner(agent_id=agent_id)
@@ -448,11 +452,11 @@ async def rewrite_execution_plan(
         raise RuntimeError("Cannot rewrite a plan that does not exist!")
     if error_info:
         new_plan = await planner.rewrite_plan_after_error(
-            error_info, chat_context, old_plan, action=action
+            error_info, chat_context, old_plan, action=action, use_sample_plans=use_sample_plans
         )
     else:
         new_plan = await planner.rewrite_plan_after_input(
-            chat_context, old_plan, plan_timestamp, action=action
+            chat_context, old_plan, plan_timestamp, action=action, use_sample_plans=use_sample_plans
         )
 
     if not new_plan:

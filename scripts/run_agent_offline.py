@@ -123,6 +123,7 @@ async def gen_and_run_plan(
                 run_plan_in_prefect_immediately=False,
                 run_tasks_without_prefect=True,
                 do_chat=do_chat,
+                use_sample_plans=use_sample_plans,
             )
             if replanning_output is None:
                 print("failed to create plan or no replanning needed")

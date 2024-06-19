@@ -179,9 +179,7 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
         "list of news articles related to the given topics. "
         "If someone wants general information about a topic and there is no existing themes "
         "This is the best tool to call. "
-        "If someone asks for a topic that could be an existing microeconomic theme, then should look "
-        "for the theme first, but if that fails, this is right tool to use. "
-        "This function must not be used if you intend to filter by stocks, the news articles do not "
+        "This function must NEVER be used if you intend to filter stocks, the news articles do not "
         "contain information about which stocks they are relevant to."
     ),
     category=ToolCategory.NEWS,

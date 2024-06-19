@@ -680,7 +680,9 @@ class CompanyKPIsRequest(ToolArgs):
         "num_prev_quarters to 1."
         " If a date_range is provided instead then num_future_quarters will be set to 0,"
         " anchor_date will be set to date_range.end_date,"
-        " num_prev_quarters will be inferred from the width of the date_range."
+        " num_prev_quarters will be inferred from the width of the date_range. "
+        "Note this is raw KPI data, often in dollars or other currency. If the user is asking for percentages "
+        "or something similar you must transform this table!"
     ),
     category=ToolCategory.KPI,
 )

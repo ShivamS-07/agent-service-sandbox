@@ -45,8 +45,14 @@ class Notification(BaseModel):
 class ChatContext(BaseModel):
     messages: List[Message]
 
-    def get_gpt_input(self) -> str:
-        return "\n".join([message.get_gpt_input() for message in self.messages])
+    def get_gpt_input(self, client_only: bool = False) -> str:
+        return "\n".join(
+            [
+                message.get_gpt_input()
+                for message in self.messages
+                if not client_only or message.is_user_message
+            ]
+        )
 
 
 class PlanRunContext(BaseModel):

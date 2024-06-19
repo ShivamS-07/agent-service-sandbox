@@ -21,7 +21,7 @@ from agent_service.external.pa_backtest_svc_client import (
 )
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import HistoryEntry
+from agent_service.io_type_utils import HistoryEntry, Score
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
@@ -64,10 +64,12 @@ class ThemePostgres:
         records = self.db.generic_read(sql, params={"theme_id": theme_id})
         return (records[0]["positive_label"], records[0]["negative_label"])
 
-    def get_theme_stock_polarity_reason_lookup(self, theme_id: str) -> Dict[int, Tuple[bool, str]]:
+    def get_theme_stock_polarity_reason_similarity_lookup(
+        self, theme_id: str
+    ) -> Dict[int, Tuple[bool, str, float]]:
         sql = """
                 SELECT theme_id, gbi_id, is_positive_polarity, is_primary_impact,
-                reason, reason_json
+                reason, reason_json, similarity_score
                 FROM nlp_service.theme_impact_stocks
                 WHERE theme_id = %(theme_id)s AND is_primary_impact = true
         """
@@ -80,6 +82,7 @@ class ThemePostgres:
                     if record["reason_json"]
                     else record["reason"]
                 ),
+                record["similarity_score"],
             )
             for record in records
         }
@@ -193,6 +196,7 @@ class GetStocksAffectedByThemesInput(ToolArgs):
     description=(
         "This function returns a list of stocks (stock identifiers) that are either positively (if "
         "positive is True) or negatively affected (if positive is False) by the macroeconomic themes"
+        " The list of stocks includes information about how they are affect by the theme."
     ),
     category=ToolCategory.THEME,
 )
@@ -206,7 +210,7 @@ async def get_stocks_affected_by_theme(
         GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
-    final_stocks_reason: Dict[int, List[str]] = defaultdict(list)
+    final_stocks_reason: Dict[int, List[Tuple[str, float]]] = defaultdict(list)
     for theme in args.themes:
         pos_trend, neg_trend = db.get_theme_outlooks(theme.id)
         result = await llm.do_chat_w_sys_prompt(
@@ -217,22 +221,31 @@ async def get_stocks_affected_by_theme(
         )
         is_neg_trend = result == "2"
 
-        stock_polarity_reason_lookup = db.get_theme_stock_polarity_reason_lookup(theme.id)
-        for stock, (polarity, reason) in stock_polarity_reason_lookup.items():
+        stock_polarity_reason_lookup = db.get_theme_stock_polarity_reason_similarity_lookup(
+            theme.id
+        )
+        for stock, (polarity, reason, score) in stock_polarity_reason_lookup.items():
             if is_neg_trend:
                 polarity = not polarity
             if polarity == args.positive:  # matches the desired polarity
-                final_stocks_reason[stock].append(reason)
+                final_stocks_reason[stock].append((reason, score))
     if len(final_stocks_reason) == 0:
         raise Exception("Found no stocks affected by this theme/polarity combination")
     stock_ids = await StockID.from_gbi_id_list(list(final_stocks_reason.keys()))
+    final_stock_ids = []
     for stock_id in stock_ids:
-        for reason in final_stocks_reason[stock_id.gbi_id]:
-            stock_id.inject_history_entry(
-                HistoryEntry(explanation=reason, title="Connection to theme")
+        for reason, similarity in final_stocks_reason[stock_id.gbi_id]:
+            final_stock_ids.append(
+                stock_id.inject_history_entry(
+                    HistoryEntry(
+                        explanation=reason,
+                        title="Connection to theme",
+                        score=Score.scale_input(similarity, lb=0, ub=1),
+                    )
+                )
             )
 
-    return stock_ids
+    return final_stock_ids
 
 
 class GetMacroeconomicThemesAffectingStocksInput(ToolArgs):
