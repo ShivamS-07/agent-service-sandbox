@@ -15,8 +15,6 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.hypothesis.hypothesis_pipeline import HypothesisPipeline
 from agent_service.utils.prefect import get_prefect_logger
 
-ENABLED = False  # TODO: Remove this constant and set all to True when ready
-
 
 class TestNewsHypothesisInput(ToolArgs):
     """
@@ -40,7 +38,6 @@ class TestNewsHypothesisInput(ToolArgs):
     " it to a statement like `NVDA is the leader in AI chips space` and test it against the news.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
-    enabled=ENABLED,
 )
 async def test_hypothesis_for_news_developments(
     args: TestNewsHypothesisInput, context: PlanRunContext
@@ -95,6 +92,45 @@ async def test_hypothesis_for_news_developments(
     return hypothesis_news_developments
 
 
+class SummarizeNewsHypothesisInput(ToolArgs):
+    """
+    Summarize hypothesis with the filtered news developments which are the
+    outputs from tool `test_hypothesis_for_news_developments`
+    """
+
+    hypothesis: str
+    news_developments: List[StockHypothesisNewsDevelopmentText] = []
+
+
+@tool(
+    description="Given a string of a user's hypothesis, and a list of relevant news developments,"
+    " calculate the match score of how much this hypothesis is matched with these news topics and"
+    " also generate a summary to explain."
+    " This tool MUST be used when tool `test_hypothesis_for_news_developments` is used.",
+    category=ToolCategory.HYPOTHESIS,
+    tool_registry=ToolRegistry,
+)
+async def summarize_hypothesis_from_news_developments(
+    args: SummarizeNewsHypothesisInput, context: PlanRunContext
+) -> Text:
+    if not args.news_developments:
+        raise ValueError("Could not find any relevant news developments")
+
+    # gbi_id doesn't matter, as long as it's valid
+    pipeline = HypothesisPipeline(gbi_id=714, hypothesis_text=args.hypothesis)
+    await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
+
+    match_score, summary = await pipeline.calculate_match_score_and_generate_summary(
+        args.news_developments, earnings_summary_points=[]
+    )
+
+    return Text(
+        history=[
+            HistoryEntry(explanation=summary, score=Score.scale_input(match_score, lb=-1, ub=1))
+        ]
+    )
+
+
 class TestEarningsHypothesisInput(ToolArgs):
     """
     `earnings_summary_list` is a list of earnings summaries (in nlp svc context) that are
@@ -118,7 +154,6 @@ class TestEarningsHypothesisInput(ToolArgs):
     " it to a statement like `NVDA is the leader in AI chips space` and test it against the earnings.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
-    enabled=ENABLED,
 )
 async def test_hypothesis_for_earnings_summaries(
     args: TestEarningsHypothesisInput, context: PlanRunContext
@@ -172,7 +207,46 @@ async def test_hypothesis_for_earnings_summaries(
     return outputs
 
 
-class SummarizeHypothesisInput(ToolArgs):
+class SummarizeEarningsHypothesisInput(ToolArgs):
+    """
+    Summarize hypothesis with the filtered earnings summaries which are the
+    outputs from tool `test_hypothesis_for_earnings_summaries`
+    """
+
+    hypothesis: str
+    earnings_summary_points: List[StockHypothesisEarningsSummaryPointText] = []
+
+
+@tool(
+    description="Given a string of a user's hypothesis, and a list of relevant earnings summary"
+    " points, calculate the match score of how much this hypothesis is matched with these earnings"
+    " summary points and also generate a summary to explain."
+    " This tool MUST be used when tool `test_hypothesis_for_earnings_summaries` is used.",
+    category=ToolCategory.HYPOTHESIS,
+    tool_registry=ToolRegistry,
+)
+async def summarize_hypothesis_from_earnings_summaries(
+    args: SummarizeEarningsHypothesisInput, context: PlanRunContext
+) -> Text:
+    if not args.earnings_summary_points:
+        raise ValueError("Could not find any relevant earnings summary points")
+
+    # gbi_id doesn't matter, as long as it's valid
+    pipeline = HypothesisPipeline(gbi_id=714, hypothesis_text=args.hypothesis)
+    await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
+
+    match_score, summary = await pipeline.calculate_match_score_and_generate_summary(
+        news_developments=[], earnings_summary_points=args.earnings_summary_points
+    )
+
+    return Text(
+        history=[
+            HistoryEntry(explanation=summary, score=Score.scale_input(match_score, lb=-1, ub=1))
+        ]
+    )
+
+
+class SummarizeHypothesisFromVariousSourcesInput(ToolArgs):
     """
     Summarize hypothesis with the filtered news developments and earnings summaries which are the
     outputs from tool `test_hypothesis_for_news_developments` and `test_hypothesis_for_earnings_summaries`
@@ -187,13 +261,15 @@ class SummarizeHypothesisInput(ToolArgs):
     description="Given a string of a user's hypothesis, a list of relevant news developments,"
     " and a list of relevant earnings summary points, calculate the match score of how much this"
     " hypothesis is matched with these topics and also generate a summary to explain."
-    " This tool should be used after tool `test_hypothesis_for_news_developments` and/or"
-    " `test_hypothesis_for_earnings_summaries` is used and take the outputs from these tools.",
+    " This tool is normally used when the user is making a hypothesis and trying to find proof among"
+    " various sources, including news developments and earnings summaries. You should use it when"
+    " both tool `summarize_news_hypothesis` and  `summarize_earnings_hypothesis` are used.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
-    enabled=ENABLED,
 )
-async def summarize_hypothesis(args: SummarizeHypothesisInput, context: PlanRunContext) -> Text:
+async def summarize_hypothesis_from_various_sources(
+    args: SummarizeHypothesisFromVariousSourcesInput, context: PlanRunContext
+) -> Text:
     if not args.news_developments and not args.earnings_summary_points:
         raise ValueError("Could not find any relevant news developments or earnings summaries")
 
