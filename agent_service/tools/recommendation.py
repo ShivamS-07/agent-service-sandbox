@@ -164,7 +164,7 @@ async def add_scores_and_rationales_to_stocks(
             GetAllTextDataForStocksInput(stock_ids=ranked_stocks), context
         )
     aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(ranked_stocks, texts)
-    str_lookup: Dict[StockID, str] = Text.get_all_strs(  # type: ignore
+    str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
         aligned_text_groups.val, include_header=True, text_group_numbering=True
     )
 

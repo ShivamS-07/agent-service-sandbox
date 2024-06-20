@@ -84,7 +84,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     )
     llm = GPT(context=gpt_context, model=DEFAULT_LLM)
     text_group = TextGroup(val=args.texts)
-    texts_str: str = Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)  # type: ignore
+    texts_str: str = await Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)  # type: ignore
     chat_str = context.chat.get_gpt_input()
     topic = args.topic
     if topic:
@@ -133,13 +133,17 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
     )
     llm = GPT(context=gpt_context, model=DEFAULT_LLM)
     text_group1 = TextGroup(val=args.group1)
-    group1_str: str = Text.get_all_strs(text_group1, include_header=True, text_group_numbering=True)  # type: ignore
+    group1_str: str = await Text.get_all_strs(
+        text_group1, include_header=True, text_group_numbering=True
+    )  # type: ignore
     text_group2 = TextGroup(val=args.group2)
-    group2_str: str = Text.get_all_strs(text_group2, include_header=True, text_group_numbering=True)  # type: ignore
+    group2_str: str = await Text.get_all_strs(
+        text_group2, include_header=True, text_group_numbering=True
+    )  # type: ignore
     if args.extra_data is not None and args.extra_data_label is not None:
         extra_group = TextGroup(val=args.extra_data)
         extra_data_str = EXTRA_DATA_PHRASE.format(
-            extra_data=Text.get_all_strs(extra_group), label=args.extra_data_label  # type: ignore
+            extra_data=await Text.get_all_strs(extra_group), label=args.extra_data_label  # type: ignore
         )
     else:
         extra_data_str = ""
@@ -210,7 +214,7 @@ async def answer_question_with_text_data(
     )
     llm = GPT(context=gpt_context, model=DEFAULT_LLM)
     text_group = TextGroup(val=args.texts)
-    texts_str: str = Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)  # type: ignore
+    texts_str: str = await Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)  # type: ignore
     texts_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
         texts_str,
         [ANSWER_QUESTION_MAIN_PROMPT.template, ANSWER_QUESTION_SYS_PROMPT.template, args.question],
@@ -294,7 +298,7 @@ async def filter_news_by_topic(
     args: FilterNewsByTopicInput, context: PlanRunContext
 ) -> List[NewsText]:
     # not currently returning rationale, but will probably want it
-    texts: List[str] = Text.get_all_strs(args.news_texts, include_header=True)  # type: ignore
+    texts: List[str] = await Text.get_all_strs(args.news_texts, include_header=True)  # type: ignore
     return [
         text.inject_history_entry(
             HistoryEntry(explanation=reason, title=f"Connection to {args.topic}")
@@ -450,7 +454,7 @@ async def filter_stocks_by_profile_match(
     args: FilterStocksByProfileMatch, context: PlanRunContext
 ) -> List[StockID]:
     aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(args.stocks, args.texts)
-    str_lookup: Dict[StockID, str] = Text.get_all_strs(  # type: ignore
+    str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
         aligned_text_groups.val, include_header=True, text_group_numbering=True
     )
     stock_reason_map: Dict[StockID, Tuple[str, List[Citation]]] = {

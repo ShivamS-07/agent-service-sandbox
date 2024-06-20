@@ -61,15 +61,17 @@ class Text(ComplexIOBase):
         ]
         outputs = await gather_with_concurrency(tasks)
         citations = outputs[0] + outputs[1]
+        text = await self.get()
         return TextOutput(
-            val=self.get().val,
+            val=text.val,
             title=title,
             citations=citations,
             score=ScoreOutput.from_entry_list(self.history),
         )
 
-    def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
-        return f"<Text: {self.get().val}>"
+    async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        text = await self.get()
+        return f"<Text: {text.val}>"
 
     @staticmethod
     def _to_string_recursive(val: IOType) -> IOType:
@@ -108,7 +110,7 @@ class Text(ComplexIOBase):
         return Text(val=text)
 
     @classmethod
-    def get_all_strs(
+    async def get_all_strs(
         cls,
         text: Union[Text, TextGroup, List[Any], Dict[Any, Any]],
         include_header: bool = False,
@@ -147,10 +149,16 @@ class Text(ComplexIOBase):
         categories: Dict[Type[Text], List[Text]] = defaultdict(list)
         # identical structure to input texts, but as IDs
         texts_as_ids = convert_to_ids_and_categorize(text, categories)
-        strs_lookup = {}
+        strs_lookup: Dict[TextIDType, str] = {}
         # For every subclass of Text, fetch data
-        for textclass, texts in categories.items():
-            strs_lookup.update(textclass.get_strs_lookup(texts, include_header=include_header))
+        lookups: List[Dict[TextIDType, str]] = await gather_with_concurrency(
+            [
+                textclass.get_strs_lookup(texts, include_header=include_header)
+                for textclass, texts in categories.items()
+            ]
+        )
+        for lookup in lookups:
+            strs_lookup.update(lookup)
 
         def convert_ids_to_strs(
             strs_lookup: Dict[TextIDType, str],
@@ -173,17 +181,17 @@ class Text(ComplexIOBase):
         return convert_ids_to_strs(strs_lookup, texts_as_ids)
 
     @classmethod
-    def get_strs_lookup(
+    async def get_strs_lookup(
         cls, texts: List[Self], include_header: bool = False
     ) -> Dict[TextIDType, str]:
-        strs_lookup = cls._get_strs_lookup(texts)
+        strs_lookup = await cls._get_strs_lookup(texts)
         if include_header:
             for id, val in strs_lookup.items():
                 strs_lookup[id] = f"Text type: {cls.text_type}\nText:\n{val}"
         return strs_lookup
 
     @classmethod
-    def _get_strs_lookup(cls, texts: List[Self]) -> Dict[TextIDType, str]:
+    async def _get_strs_lookup(cls, texts: List[Self]) -> Dict[TextIDType, str]:
         return {text.id: text.val for text in texts}
 
     @classmethod
@@ -197,13 +205,13 @@ class Text(ComplexIOBase):
         """
         return []
 
-    def get(self) -> Text:
+    async def get(self) -> Text:
         """
         For an instance of a 'Text' subclass, resolve and return it as a standard Text object.
         """
         if not self.val:
             # resolve the text if necessary
-            lookup = self.get_strs_lookup([self])
+            lookup = await self.get_strs_lookup([self])
             return Text(val=lookup[self.id])
         else:
             return Text(val=self.val)
@@ -225,7 +233,10 @@ class StockNewsDevelopmentText(NewsText, StockText):
     text_type: ClassVar[str] = "News Development Summary"
 
     @classmethod
-    def _get_strs_lookup(cls, news_topics: List[StockNewsDevelopmentText]) -> Dict[TextIDType, str]:  # type: ignore
+    async def _get_strs_lookup(
+        cls,
+        news_topics: List[StockNewsDevelopmentText],
+    ) -> Dict[TextIDType, str]:  # type: ignore
         sql = """
         SELECT topic_id::TEXT, topic_label, (topic_descriptions->-1->>0)::TEXT AS description
         FROM nlp_service.stock_news_topics
@@ -281,7 +292,7 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
     text_type: ClassVar[str] = "News Article Summary"
 
     @classmethod
-    def _get_strs_lookup(
+    async def _get_strs_lookup(
         cls, news_topics: List[StockNewsDevelopmentArticlesText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         from agent_service.utils.postgres import get_psql
@@ -323,7 +334,7 @@ class NewsPoolArticleText(NewsText):
     text_type: ClassVar[str] = "News Article Summary"
 
     @classmethod
-    def _get_strs_lookup(cls, news_pool: List[NewsPoolArticleText]) -> Dict[str, str]:  # type: ignore
+    async def _get_strs_lookup(cls, news_pool: List[NewsPoolArticleText]) -> Dict[str, str]:  # type: ignore
         sql = """
         SELECT news_id::TEXT, headline::TEXT, summary::TEXT
         FROM nlp_service.news_pool
@@ -364,7 +375,7 @@ class ThemeText(Text):
     text_type: ClassVar[str] = "Theme Description"
 
     @classmethod
-    def _get_strs_lookup(cls, themes: List[ThemeText]) -> Dict[str, str]:  # type: ignore
+    async def _get_strs_lookup(cls, themes: List[ThemeText]) -> Dict[str, str]:  # type: ignore
         sql = """
         SELECT theme_id::TEXT, theme_description::TEXT AS description
         FROM nlp_service.themes
@@ -402,7 +413,7 @@ class ThemeNewsDevelopmentText(NewsText):
     text_type: ClassVar[str] = "News Development Summary"
 
     @classmethod
-    def _get_strs_lookup(cls, themes: List[ThemeNewsDevelopmentText]) -> Dict[str, str]:  # type: ignore
+    async def _get_strs_lookup(cls, themes: List[ThemeNewsDevelopmentText]) -> Dict[str, str]:  # type: ignore
         sql = """
         SELECT development_id::TEXT, label::TEXT, description::TEXT
         FROM nlp_service.theme_developments
@@ -440,7 +451,9 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
     text_type: ClassVar[str] = "News Article Summary"
 
     @classmethod
-    def _get_strs_lookup(cls, developments: List[ThemeNewsDevelopmentArticlesText]) -> Dict[str, str]:  # type: ignore
+    async def _get_strs_lookup(
+        cls, developments: List[ThemeNewsDevelopmentArticlesText]
+    ) -> Dict[Union[int, str], str]:
         sql = """
         SELECT news_id::TEXT, headline::TEXT, summary::TEXT
         FROM nlp_service.theme_news
@@ -481,7 +494,7 @@ class StockEarningsSummaryText(StockText):
     text_type: ClassVar[str] = "Earnings Call Summary"
 
     @classmethod
-    def _get_strs_lookup(
+    async def _get_strs_lookup(
         cls, earnings_summaries: List[StockEarningsSummaryText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         sql = """
@@ -533,7 +546,7 @@ class StockEarningsSummaryPointText(StockText):
     summary_idx: int  # index of the point in the summary
 
     @classmethod
-    def _get_strs_lookup(
+    async def _get_strs_lookup(
         cls, earnings_summary_points: List[StockEarningsSummaryPointText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         sql = """
@@ -579,10 +592,10 @@ class StockHypothesisEarningsSummaryPointText(StockEarningsSummaryPointText):
     reason: str
 
     @classmethod
-    def _get_strs_lookup(
+    async def _get_strs_lookup(
         cls, earnings_summary_points: List[StockHypothesisEarningsSummaryPointText]  # type: ignore
     ) -> Dict[TextIDType, str]:
-        return StockEarningsSummaryPointText._get_strs_lookup(earnings_summary_points)  # type: ignore  #noqa
+        return await StockEarningsSummaryPointText._get_strs_lookup(earnings_summary_points)  # type: ignore  #noqa
 
 
 @io_type
@@ -591,7 +604,7 @@ class StockDescriptionText(StockText):
     text_type: ClassVar[str] = "Company Description"
 
     @classmethod
-    def _get_strs_lookup(
+    async def _get_strs_lookup(
         cls, company_descriptions: List[StockDescriptionText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         sql = """
@@ -661,7 +674,7 @@ class StockSecFilingText(StockText):
     text_type: ClassVar[str] = "SEC filing"
 
     @classmethod
-    def _get_strs_lookup(
+    async def _get_strs_lookup(
         cls, sec_filing_list: List[StockSecFilingText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         output: Dict[TextIDType, str] = {}
@@ -704,7 +717,7 @@ class StockOtherSecFilingText(StockText):
     text_type: ClassVar[str] = "SEC filing"
 
     @classmethod
-    def _get_strs_lookup(
+    async def _get_strs_lookup(
         cls, sec_filing_list: List[StockOtherSecFilingText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         # TODO: The outputs should be cached on-demand and not downloaded every time
@@ -752,7 +765,7 @@ class TextGroup(ComplexIOBase):
         )
 
         # construct a lookup for all child texts
-        strings = Text.get_all_strs(self.val)
+        strings = await Text.get_all_strs(self.val)
         # TODO fix this implementation?
         return await get_output_from_io_type(strings, pg=pg, title=title)
 

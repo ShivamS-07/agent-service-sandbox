@@ -17,10 +17,10 @@ def prepare_list_of_stocks(stocks: List[StockID]) -> Table:
     return Table(columns=columns)
 
 
-def prepare_list_of_stock_texts(texts: List[StockText]) -> Text:
+async def prepare_list_of_stock_texts(texts: List[StockText]) -> Text:
     # Maps stocks to strings
     stock_text_map: Dict[StockID, List[str]] = defaultdict(list)
-    text_strs = StockText.get_all_strs(texts)
+    text_strs = await StockText.get_all_strs(texts)
     for text, text_str in zip(texts, text_strs):
         if text.stock_id:
             stock_text_map[text.stock_id].append(text_str)
@@ -58,7 +58,7 @@ async def get_output_from_io_type(val: IOType, pg: BoostedPG, title: str = "") -
         elif isinstance(val[0], StockID):
             val = prepare_list_of_stocks(stocks=val)
         elif isinstance(val[0], StockText):
-            val = prepare_list_of_stock_texts(texts=val)
+            val = await prepare_list_of_stock_texts(texts=val)
         else:
             val = await gather_with_concurrency([get_output_from_io_type(v, pg=pg) for v in val])
     elif isinstance(val, dict):
@@ -80,8 +80,8 @@ class PreparedOutput(ComplexIOBase):
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         return await get_output_from_io_type(val=self.val, pg=pg, title=self.title)
 
-    def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
-        return io_type_to_gpt_input(self.val, use_abbreviated_output=use_abbreviated_output)
+    async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        return await io_type_to_gpt_input(self.val, use_abbreviated_output=use_abbreviated_output)
 
 
 # TODO remove me, for backwards compat

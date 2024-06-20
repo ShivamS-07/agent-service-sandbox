@@ -34,6 +34,6 @@ class TestSecFilings(IsolatedAsyncioTestCase):
             args=GetOtherSecFilingsInput(stock_ids=[stock], form_types=["8-K", "S-1"]),
             context=self.context,
         )
-        actual_sec_filings = Text.get_all_strs(sec_filing_texts)
+        actual_sec_filings = await Text.get_all_strs(sec_filing_texts)
         # in theory it should be 2, but just in case only comparing with 0
         self.assertTrue(len(actual_sec_filings) > 0)

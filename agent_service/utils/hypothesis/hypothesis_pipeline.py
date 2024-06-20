@@ -238,10 +238,11 @@ class HypothesisPipeline:
                 news_developments, ref_time=ref_time
             )
         )
-        earnings_topics, earnings_hypothesis_topics = (
-            self._convert_hypothesis_earnings_summary_points_to_topics(
-                earnings_summary_points, ref_time=ref_time
-            )
+        (
+            earnings_topics,
+            earnings_hypothesis_topics,
+        ) = await self._convert_hypothesis_earnings_summary_points_to_topics(
+            earnings_summary_points, ref_time=ref_time
         )
 
         logger.info("Calculating match scores...")
@@ -313,7 +314,7 @@ class HypothesisPipeline:
 
         return news_topics, hypothesis_topics, news_groups
 
-    def _convert_hypothesis_earnings_summary_points_to_topics(
+    async def _convert_hypothesis_earnings_summary_points_to_topics(
         self,
         earnings_summary_points: List[StockHypothesisEarningsSummaryPointText],
         ref_time: datetime.datetime,
@@ -322,7 +323,7 @@ class HypothesisPipeline:
             return [], []
 
         logger.info("Getting earnings topics from DB...")
-        id_to_description = StockHypothesisEarningsSummaryPointText._get_strs_lookup(
+        id_to_description = await StockHypothesisEarningsSummaryPointText._get_strs_lookup(
             earnings_summary_points
         )
         earnings_topics = []

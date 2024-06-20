@@ -35,6 +35,7 @@ from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan
 from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext
+from agent_service.utils.async_utils import gather_with_concurrency, to_awaitable
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 
 
@@ -97,11 +98,17 @@ class Chatbot:
     async def generate_execution_complete_response(
         self, chat_context: ChatContext, execution_plan: ExecutionPlan, outputs: List[IOType]
     ) -> str:
-        output_list = [
-            output.to_gpt_input() if isinstance(output, ComplexIOBase) else str(output)
-            for output in outputs
-        ]
-        output_str = "\n".join(output_list)
+        output_list = await gather_with_concurrency(
+            [
+                (
+                    output.to_gpt_input()
+                    if isinstance(output, ComplexIOBase)
+                    else to_awaitable(str(output))
+                )
+                for output in outputs
+            ]
+        )
+        output_str = "\n".join(list(output_list))
         main_prompt = COMPLETE_EXECUTION_MAIN_PROMPT.format(
             chat_context=chat_context.get_gpt_input(),
             plan=execution_plan.get_plan_steps_for_gpt(),

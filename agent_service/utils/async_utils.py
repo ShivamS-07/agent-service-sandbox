@@ -75,6 +75,10 @@ async def get_consensus(  # type: ignore
     return default
 
 
+async def to_awaitable(val: T) -> T:
+    return val
+
+
 # credit: https://stackoverflow.com/questions/48483348/how-to-limit-concurrency-with-python-asyncio
 async def gather_with_concurrency(tasks: Collection[Awaitable], n: int = MAX_CONCURRENCY) -> Any:
     n = min(n, len(tasks))  # no greater than number of tasks

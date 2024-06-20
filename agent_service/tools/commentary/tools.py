@@ -138,7 +138,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     main_prompt = COMMENTARY_PROMPT_MAIN.format(
         previous_commentary_prompt=(
             PREVIOUS_COMMENTARY_PROMPT.format(
-                previous_commentary=Text.get_all_strs(previous_commentary)
+                previous_commentary=await Text.get_all_strs(previous_commentary)
             )
             if previous_commentary is not None
             else ""
@@ -147,9 +147,9 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         writing_style_prompt=WRITING_STYLE_PROMPT.format(
             writing_format=WRITING_FORMAT_TEXT_DICT.get("Long"),
         ),
-        themes="\n***\n".join(Text.get_all_strs(themes)),
-        developments="\n***\n".join(Text.get_all_strs(developments)),
-        articles="\n***\n".join(Text.get_all_strs(articles)),
+        themes="\n***\n".join(await Text.get_all_strs(themes)),
+        developments="\n***\n".join(await Text.get_all_strs(developments)),
+        articles="\n***\n".join(await Text.get_all_strs(articles)),
         chat_context=context.chat.get_gpt_input() if context.chat is not None else "",
     )
     # Write the commentary

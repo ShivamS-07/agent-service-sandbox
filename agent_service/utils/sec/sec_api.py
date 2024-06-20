@@ -43,6 +43,11 @@ class SecurityMetadata:
 class SecMapping:
     """
     The code is copied from NLPService repo
+
+    NOTE: Please keep these methods SYNCHRONOUS - this is being used in an
+    async context (agent) and we are relying on this non parallel nature to
+    help us implicitly rate limit ourselves by doing these calls sequentially
+    in lieu of a real rate limiting solution.
     """
 
     mapping_api = MappingApi(get_param(SEC_API_KEY_NAME))
@@ -170,6 +175,11 @@ class SecMapping:
 class SecFiling:
     """The class use QueryApi to find out the URLs to the latest 10K/10Q files for a given CIK
     The use ExtractorApi to download the management section of the latest 10K/10Q file
+
+    NOTE: Please keep these methods SYNCHRONOUS - this is being used in an
+    async context (agent) and we are relying on this non parallel nature to
+    help us implicitly rate limit ourselves by doing these calls sequentially
+    in lieu of a real rate limiting solution.
     """
 
     api_key = get_param(SEC_API_KEY_NAME)

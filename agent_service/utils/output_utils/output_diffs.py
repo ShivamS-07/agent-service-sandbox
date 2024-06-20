@@ -49,8 +49,8 @@ class OutputDiffer:
             # it is very complex. Will revisit.
             return OutputDiff(diff_summary_message="", should_notify=False)
 
-        latest_output_str = io_type_to_gpt_input(latest_output, use_abbreviated_output=False)
-        prev_output_str = io_type_to_gpt_input(prev_output, use_abbreviated_output=False)
+        latest_output_str = await io_type_to_gpt_input(latest_output, use_abbreviated_output=False)
+        prev_output_str = await io_type_to_gpt_input(prev_output, use_abbreviated_output=False)
         result = await self.llm.do_chat_w_sys_prompt(
             main_prompt=GENERATE_DIFF_MAIN_PROMPT.format(
                 output_schema=OutputDiff.model_json_schema(),

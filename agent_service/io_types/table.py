@@ -19,6 +19,7 @@ from agent_service.io_type_utils import (
 from agent_service.io_types.graph import GraphType
 from agent_service.io_types.output import CitationID, Output, OutputType
 from agent_service.io_types.stock import StockID
+from agent_service.utils.async_utils import gather_with_concurrency, to_awaitable
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.stock_metadata import StockMetadata
 
@@ -40,7 +41,7 @@ class TableColumn(ComplexIOBase):
     metadata: TableColumnMetadata
     data: List[Optional[IOType]]
 
-    def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+    async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         if use_abbreviated_output:
             return f"<TableColumn of type '{self.metadata.col_type.value}' with {len(self.data)} datapoints>"
 
@@ -48,12 +49,13 @@ class TableColumn(ComplexIOBase):
         if len(self.data) > MAX_DATAPOINTS_FOR_GPT:
             threshold = MAX_DATAPOINTS_FOR_GPT // 2
             data_to_show = [*self.data[:threshold], "...", *self.data[threshold:]]
-        col_str = ", ".join(
-            (
-                item.to_gpt_input() if isinstance(item, ComplexIOBase) else str(item)
+        items = await gather_with_concurrency(
+            [
+                item.to_gpt_input() if isinstance(item, ComplexIOBase) else to_awaitable(str(item))
                 for item in data_to_show
-            )
+            ]
         )
+        col_str = ", ".join(items)
         return f"<Column '{self.metadata.label}' Data: {col_str}>"
 
     def to_output_column(self) -> "TableOutputColumn":
@@ -146,8 +148,9 @@ class Table(ComplexIOBase):
             return 0
         return len(self.columns[0].data)
 
-    def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
-        col_strings = "\n".join((col.to_gpt_input() for col in self.columns))
+    async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        columns = await gather_with_concurrency([col.to_gpt_input() for col in self.columns])
+        col_strings = "\n".join(columns)
         return f"<Table with {self.get_num_rows()} rows and columns:\n{col_strings}\n>\n"
 
     def get_stock_column(self) -> Optional[TableColumn]:
