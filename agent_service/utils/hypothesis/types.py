@@ -18,10 +18,6 @@ class HypothesisInfo:
 
     embedding: Optional[List[float]] = None  # embedding of text + breakdown
 
-    hypothesis_summary: Optional[str] = None
-
-    match_scores: Optional[List[Tuple[datetime.date, float]]] = None
-
 
 class Polarity(int, Enum):
     positive = 1
@@ -62,29 +58,7 @@ class CompanyTopicInfo:
 @dataclass
 class CompanyNewsTopicInfo(CompanyTopicInfo):
     gbi_id: int = -1  # -1 is used for topics with no set company
-    topic_query: Optional[str] = None  # query for getting topic relevant news, needs to inserted
-    is_indirect: bool = (
-        False  # topic is from cross company pool, field does not need to be inserted into db
-    )
-    rationale: Optional[str] = (
-        None  # contains the rationale for cross company topics, not for db insert
-    )
     topic_impacts: List[Tuple[NewsImpact, datetime.datetime]] = field(default_factory=list)
-
-    original_topic_polarities: Optional[List[Tuple[Polarity, datetime.datetime]]] = None
-    original_topic_impacts: Optional[List[Tuple[NewsImpact, datetime.datetime]]] = None
-
-    def get_latest_original_topic_impact(
-        self, default: Optional[NewsImpact] = None
-    ) -> Optional[NewsImpact]:
-        if self.original_topic_impacts:
-            return self.original_topic_impacts[-1][0]
-        return default
-
-    def get_latest_original_topic_polarity(
-        self, default: Optional[Polarity] = None
-    ) -> Optional[Polarity]:
-        return self.original_topic_polarities[-1][0] if self.original_topic_polarities else default
 
     def get_latest_topic_impact(self, default: Optional[NewsImpact] = None) -> Optional[NewsImpact]:
         return self.topic_impacts[-1][0] if self.topic_impacts else default

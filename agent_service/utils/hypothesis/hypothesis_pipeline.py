@@ -4,26 +4,43 @@ import logging
 from typing import List, Optional, Tuple, Union
 
 from agent_service.GPT.constants import TEXT_3_LARGE
+from agent_service.io_types.text import (
+    StockHypothesisEarningsSummaryPointText,
+    StockHypothesisNewsDevelopmentText,
+)
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.hypothesis.constants import (
+    HORIZON_DELTA_LOOKUP,
     IRRELEVANT_TOPICS_THRESHOLD,
     MAX_BATCHES,
     NEWS_TOPICS_BATCH_SIZE,
+    NUM_NEWS_TOPICS_FOR_SUMMARY,
     NUM_TOPIC_WORKERS,
     NUM_TOPICS_UB,
+    PROPERTY,
     TOTAL_RELEVANT_TOPICS_THRESHOLD,
 )
 from agent_service.utils.hypothesis.hypothesis_ai import HypothesisAI
 from agent_service.utils.hypothesis.types import (
     CompanyEarningsTopicInfo,
+    CompanyNewsInfo,
     CompanyNewsTopicInfo,
+    EarningsSummaryType,
     HypothesisEarningsTopicInfo,
     HypothesisInfo,
     HypothesisNewsTopicInfo,
 )
-from agent_service.utils.hypothesis.utils import get_earnings_topics, get_news_topics
+from agent_service.utils.hypothesis.utils import (
+    convert_to_news_groups,
+    get_earnings_topics,
+    get_hypothesis_match_chart,
+    get_hypothesis_topic_weights,
+    get_max_news_count_pair_across_stocks,
+    get_news_from_topics,
+    get_news_topics,
+)
 from agent_service.utils.postgres import get_psql
 
 logger = logging.getLogger(__name__)
@@ -195,3 +212,215 @@ class HypothesisPipeline:
             if result:
                 output_list.append(result)  # type: ignore
             input_queue.task_done()
+
+    ################################################################################################
+    # Match Score and Summary
+    ################################################################################################
+    async def calculate_match_score_and_generate_summary(
+        self,
+        news_developments: List[StockHypothesisNewsDevelopmentText],
+        earnings_summary_points: List[StockHypothesisEarningsSummaryPointText],
+    ) -> Tuple[float, str]:
+        """Calculate the match score and generate the hypothesis summary based on the news
+        developments and earnings summary points.
+        Note that the news developments and earnings summary points must have `history` field filled
+        and the `explanation` and `score` will be used to create hypothesis topic objects
+        """
+
+        if not news_developments and not earnings_summary_points:
+            return 0, ""
+
+        ref_time = get_now_utc()
+
+        logger.info("Creating news and earnings topics from Text objects...")
+        news_topics, news_hypothesis_topics, news_groups = (
+            self._convert_hypothesis_news_developments_to_topics(
+                news_developments, ref_time=ref_time
+            )
+        )
+        earnings_topics, earnings_hypothesis_topics = (
+            self._convert_hypothesis_earnings_summary_points_to_topics(
+                earnings_summary_points, ref_time=ref_time
+            )
+        )
+
+        logger.info("Calculating match scores...")
+        gbi_ids = list({t.gbi_id for t in news_topics} | {t.gbi_id for t in earnings_topics})
+        max_count_pair = get_max_news_count_pair_across_stocks(gbi_ids)
+        match_score = self.calculate_match_score(
+            news_hypothesis_topics=news_hypothesis_topics,
+            news_groups=news_groups,
+            earnings_hypothesis_topics=earnings_hypothesis_topics,
+            max_count_pair=max_count_pair,
+        )
+
+        logger.info("Generating hypothesis summary...")
+        summary = await self.generate_hypothesis_summary(
+            self.hypothesis.hypothesis_breakdown[PROPERTY],  # type: ignore
+            news_topics,
+            news_hypothesis_topics,
+            news_groups,
+            earnings_topics,
+            earnings_hypothesis_topics,
+            max_count_pair,
+            match_score,
+            ref_time,
+        )
+
+        return match_score, summary
+
+    def _convert_hypothesis_news_developments_to_topics(
+        self,
+        news_developments: List[StockHypothesisNewsDevelopmentText],
+        ref_time: datetime.datetime,
+    ) -> Tuple[
+        List[CompanyNewsTopicInfo], List[HypothesisNewsTopicInfo], List[List[CompanyNewsInfo]]
+    ]:
+        if not news_developments:
+            return [], [], []
+
+        if ref_time is None:
+            ref_time = get_now_utc()
+
+        topic_ids = [development.id for development in news_developments]
+
+        logger.info("Getting news topics from DB...")
+        news_topics = get_news_topics(topic_ids)
+
+        news_topic_id_to_development = {
+            development.id: development for development in news_developments
+        }
+        hypothesis_topics = []
+        for news_topic in news_topics:
+            development = news_topic_id_to_development[news_topic.topic_id]
+            support_score = development.support_score.rescale(lb=-1, ub=1)
+            hypothesis_topics.append(
+                HypothesisNewsTopicInfo(
+                    gbi_id=news_topic.gbi_id,
+                    topic_id=news_topic.topic_id,
+                    hypothesis_topic_supports=[(support_score, ref_time)],
+                    hypothesis_topic_impacts=[],
+                    hypothesis_topic_polarities=[],
+                    hypothesis_topic_reasons=[(development.reason, ref_time)],
+                )
+            )
+
+        logger.info("Getting all related news articles and grouping...")
+        topic_ids = [development.id for development in news_developments]
+        min_time = ref_time - HORIZON_DELTA_LOOKUP["4M"]
+        news_infos = get_news_from_topics(topic_ids, min_time, ref_time)
+        news_groups = convert_to_news_groups(hypothesis_topics, news_infos)
+
+        return news_topics, hypothesis_topics, news_groups
+
+    def _convert_hypothesis_earnings_summary_points_to_topics(
+        self,
+        earnings_summary_points: List[StockHypothesisEarningsSummaryPointText],
+        ref_time: datetime.datetime,
+    ) -> Tuple[List[CompanyEarningsTopicInfo], List[HypothesisEarningsTopicInfo]]:
+        if not earnings_summary_points:
+            return [], []
+
+        logger.info("Getting earnings topics from DB...")
+        id_to_description = StockHypothesisEarningsSummaryPointText._get_strs_lookup(
+            earnings_summary_points
+        )
+        earnings_topics = []
+        hypothesis_topics = []
+        for point in earnings_summary_points:
+            earnings_topics.append(
+                CompanyEarningsTopicInfo(
+                    gbi_id=point.stock_id.gbi_id,  # type: ignore
+                    topic_id=point.summary_id,
+                    topic_label="",  # placeholder, not used
+                    topic_descriptions=[(id_to_description[point.id], ref_time)],
+                    topic_polarities=[],
+                    summary_index=point.summary_idx,
+                    summary_type=EarningsSummaryType(point.summary_type),
+                    summary_date=ref_time,  # placeholder, not used
+                    topic_impacts=[],
+                )
+            )
+            hypothesis_topics.append(
+                HypothesisEarningsTopicInfo(
+                    gbi_id=-1,
+                    topic_id=point.summary_id,
+                    summary_index=point.summary_idx,
+                    summary_type=EarningsSummaryType(point.summary_type),
+                    summary_date=ref_time,
+                    hypothesis_topic_supports=[(point.history[-1].score.rescale(lb=-1, ub=1), ref_time)],  # type: ignore # noqa
+                    hypothesis_topic_impacts=[],
+                    hypothesis_topic_polarities=[],
+                    hypothesis_topic_reasons=[(point.history[-1].explanation, ref_time)],  # type: ignore # noqa
+                )
+            )
+
+        return earnings_topics, hypothesis_topics
+
+    def calculate_match_score(
+        self,
+        news_hypothesis_topics: List[HypothesisNewsTopicInfo],
+        news_groups: List[List[CompanyNewsInfo]],
+        earnings_hypothesis_topics: List[HypothesisEarningsTopicInfo],
+        max_count_pair: Tuple[int, int],
+    ) -> float:
+        match_scores = get_hypothesis_match_chart(
+            news_hypothesis_topics=news_hypothesis_topics,
+            earnings_hypothesis_topics=earnings_hypothesis_topics,
+            news_groups=news_groups,
+            max_count_pair=max_count_pair,
+            chart_horizon="3M",
+            window_size="1M",
+        )
+        return match_scores[-1][1]
+
+    async def generate_hypothesis_summary(
+        self,
+        property: str,
+        news_topics: List[CompanyNewsTopicInfo],
+        news_hypothesis_topics: List[HypothesisNewsTopicInfo],
+        news_groups: List[List[CompanyNewsInfo]],
+        earnings_topics: List[CompanyEarningsTopicInfo],
+        earnings_hypothesis_topics: List[HypothesisEarningsTopicInfo],
+        max_count_pair: Tuple[int, int],
+        match_score: float,
+        ref_time: datetime.datetime,
+    ) -> str:
+        if not news_topics and not earnings_topics:
+            return ""
+
+        logger.info("Reordering news topics based on weights and joining as text...")
+        topic_weights = get_hypothesis_topic_weights(
+            news_hypothesis_topics, news_groups, max_count_pair, ref_time=ref_time
+        )
+        news_topic_pairs: List[Tuple[HypothesisNewsTopicInfo, CompanyNewsTopicInfo]] = [
+            (hypo_topic, topic)
+            for hypo_topic, topic, _ in sorted(
+                zip(news_hypothesis_topics, news_topics, topic_weights),
+                key=lambda x: abs(x[-1]),
+                reverse=True,
+            )
+        ]
+        news_topic_list = []
+        for i, (hypo_topic, topic) in enumerate(news_topic_pairs[:NUM_NEWS_TOPICS_FOR_SUMMARY]):
+            news_topic_list.append(
+                f"Topic {i + 1}\n"
+                f"Topic Description: {topic.get_latest_topic_description()}\n"
+                f"Topic Connection: {hypo_topic.get_latest_reason()}"
+            )
+        news_topics_str = "\n\n".join(news_topic_list)
+
+        earnings_topic_list = []
+        for i, (topic, hypo_topic) in enumerate(zip(earnings_topics, earnings_hypothesis_topics)):
+            earnings_topic_list.append(
+                f"Topic {i + 1}\nTopic Description: {topic.get_latest_topic_description()}\n"
+                f"Topic Connection: {hypo_topic.get_latest_reason()}"
+            )
+        earnings_main_topics_str = "\n\n".join(earnings_topic_list)
+
+        return await self.llm.write_hypothesis_summary(
+            property,
+            match_score,
+            news_topics_str,
+            earnings_main_topics_str,
+        )

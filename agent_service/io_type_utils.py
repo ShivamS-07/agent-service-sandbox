@@ -201,6 +201,9 @@ class Score(SerializeableBase):
         """
         return cls(val=(val - lb) / (ub - lb))
 
+    def rescale(self, lb: float, ub: float) -> float:
+        return self.val * (ub - lb) + lb
+
 
 class ScoreOutput(BaseModel):
     val: float

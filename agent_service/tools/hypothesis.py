@@ -4,14 +4,18 @@ from typing import Dict, List
 from agent_service.io_type_utils import HistoryEntry, Score
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
-    StockEarningsSummaryPointText,
     StockEarningsSummaryText,
+    StockHypothesisEarningsSummaryPointText,
+    StockHypothesisNewsDevelopmentText,
     StockNewsDevelopmentText,
+    Text,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.hypothesis.hypothesis_pipeline import HypothesisPipeline
 from agent_service.utils.prefect import get_prefect_logger
+
+ENABLED = False  # TODO: Remove this constant and set all to True when ready
 
 
 class TestNewsHypothesisInput(ToolArgs):
@@ -27,20 +31,20 @@ class TestNewsHypothesisInput(ToolArgs):
 
 @tool(
     description="Given a string of a user's hypothesis, and a list of news developments,"
-    " test the hypothesis based on the input news development, and keep the ones that are relevant."
-    " In the output, each news development will have a `history` field with the explanation and"
-    " score that explain why the development is relevant to the hypothesis, and how much it supports"
-    " or contradicts the hypothesis. You should ONLY use this tool when the user is making a"
-    " hypothesis and trying to find proof among news developments."
+    " test the hypothesis based on the input news development, and keep the relevant ones with the"
+    " explanation and score that explain why the development is relevant to the hypothesis, and how"
+    " much it supports or contradicts the hypothesis."
+    " You should ONLY use this tool when the user is making a hypothesis and trying to find proof"
+    " among news developments."
     " For example, if a user asks `Is NVDA the leader in AI chips space?`, you should convert"
     " it to a statement like `NVDA is the leader in AI chips space` and test it against the news.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
-    enabled=False,  # FIXME: Set to True when it's ready
+    enabled=ENABLED,
 )
 async def test_hypothesis_for_news_developments(
     args: TestNewsHypothesisInput, context: PlanRunContext
-) -> List[StockNewsDevelopmentText]:
+) -> List[StockHypothesisNewsDevelopmentText]:
     logger = get_prefect_logger(__name__)
 
     id_to_development = {development.id: development for development in args.news_development_list}
@@ -57,7 +61,7 @@ async def test_hypothesis_for_news_developments(
 
     pipeline: HypothesisPipeline = None  # type: ignore
 
-    filtered_news_developments: List[StockNewsDevelopmentText] = []
+    hypothesis_news_developments: List[StockHypothesisNewsDevelopmentText] = []
     for stock_id, news_development_list in stock_to_developments.items():
         if pipeline is None:
             pipeline = HypothesisPipeline(stock_id.gbi_id, args.hypothesis)
@@ -76,15 +80,19 @@ async def test_hypothesis_for_news_developments(
 
             # TODO: move the scaling logic into the class
             support_score: float = hypothesis_news_topic.get_latest_support()  # type: ignore
-            development.history.append(
-                HistoryEntry(
-                    explanation=hypothesis_news_topic.get_latest_reason(),
-                    score=Score.scale_input(val=support_score, lb=-1, ub=1),
+            scaled_score = Score.scale_input(val=support_score, lb=-1, ub=1)
+            reason: str = hypothesis_news_topic.get_latest_reason()  # type: ignore
+            hypothesis_news_developments.append(
+                StockHypothesisNewsDevelopmentText(
+                    id=news_topic.topic_id,
+                    support_score=scaled_score,
+                    reason=reason,
+                    history=[HistoryEntry(explanation=reason, score=scaled_score)],
+                    stock_id=development.stock_id,
                 )
             )
-            filtered_news_developments.append(development)
 
-    return filtered_news_developments
+    return hypothesis_news_developments
 
 
 class TestEarningsHypothesisInput(ToolArgs):
@@ -110,11 +118,11 @@ class TestEarningsHypothesisInput(ToolArgs):
     " it to a statement like `NVDA is the leader in AI chips space` and test it against the earnings.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
-    enabled=False,  # FIXME: Set to True when it's ready
+    enabled=ENABLED,
 )
 async def test_hypothesis_for_earnings_summaries(
     args: TestEarningsHypothesisInput, context: PlanRunContext
-) -> List[StockEarningsSummaryPointText]:
+) -> List[StockHypothesisEarningsSummaryPointText]:
     logger = get_prefect_logger(__name__)
 
     # segerate earnings summaries by stocks
@@ -129,7 +137,7 @@ async def test_hypothesis_for_earnings_summaries(
 
     pipeline: HypothesisPipeline = None  # type: ignore
 
-    outputs: List[StockEarningsSummaryPointText] = []
+    outputs: List[StockHypothesisEarningsSummaryPointText] = []
     for stock_id, earnings_summary_list in stock_to_summaries.items():
         if pipeline is None:
             pipeline = HypothesisPipeline(stock_id.gbi_id, args.hypothesis)
@@ -146,20 +154,59 @@ async def test_hypothesis_for_earnings_summaries(
 
         for topic in hypothesis_earnings_topics:
             support_score: float = topic.get_latest_support()  # type: ignore
+            scaled_score = Score.scale_input(val=support_score, lb=-1, ub=1)
+            reason: str = topic.get_latest_reason()  # type: ignore
             outputs.append(
-                StockEarningsSummaryPointText(
+                StockHypothesisEarningsSummaryPointText(
                     id=hash((topic.topic_id, topic.summary_index, topic.summary_type.value)),
                     stock_id=stock_id,
                     summary_id=topic.topic_id,
                     summary_idx=topic.summary_index,
                     summary_type=topic.summary_type.value,
-                    history=[
-                        HistoryEntry(
-                            explanation=topic.get_latest_reason(),
-                            score=Score.scale_input(val=support_score, lb=-1, ub=1),
-                        )
-                    ],
+                    history=[HistoryEntry(explanation=reason, score=scaled_score)],
+                    support_score=scaled_score,
+                    reason=reason,
                 )
             )
 
     return outputs
+
+
+class SummarizeHypothesisInput(ToolArgs):
+    """
+    Summarize hypothesis with the filtered news developments and earnings summaries which are the
+    outputs from tool `test_hypothesis_for_news_developments` and `test_hypothesis_for_earnings_summaries`
+    """
+
+    hypothesis: str
+    news_developments: List[StockHypothesisNewsDevelopmentText] = []
+    earnings_summary_points: List[StockHypothesisEarningsSummaryPointText] = []
+
+
+@tool(
+    description="Given a string of a user's hypothesis, a list of relevant news developments,"
+    " and a list of relevant earnings summary points, calculate the match score of how much this"
+    " hypothesis is matched with these topics and also generate a summary to explain."
+    " This tool should be used after tool `test_hypothesis_for_news_developments` and/or"
+    " `test_hypothesis_for_earnings_summaries` is used and take the outputs from these tools.",
+    category=ToolCategory.HYPOTHESIS,
+    tool_registry=ToolRegistry,
+    enabled=ENABLED,
+)
+async def summarize_hypothesis(args: SummarizeHypothesisInput, context: PlanRunContext) -> Text:
+    if not args.news_developments and not args.earnings_summary_points:
+        raise ValueError("Could not find any relevant news developments or earnings summaries")
+
+    # gbi_id doesn't matter, as long as it's valid
+    pipeline = HypothesisPipeline(gbi_id=714, hypothesis_text=args.hypothesis)
+    await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
+
+    match_score, summary = await pipeline.calculate_match_score_and_generate_summary(
+        args.news_developments, args.earnings_summary_points
+    )
+
+    return Text(
+        history=[
+            HistoryEntry(explanation=summary, score=Score.scale_input(match_score, lb=-1, ub=1))
+        ]
+    )

@@ -11,6 +11,9 @@ from agent_service.utils.hypothesis.constants import (
     CONTRADICTS,
     EXPLANATION,
     IMPACT,
+    MIXED_STR,
+    NEUTRAL_CUTOFF,
+    OPPOSE_STR,
     POLARITY,
     PROPERTY,
     RATIONALE,
@@ -18,11 +21,16 @@ from agent_service.utils.hypothesis.constants import (
     STRENGTH,
     SUPPORT_DEGREE_LOOKUP,
     SUPPORT_LOOKUP,
+    SUPPORT_STR,
     SUPPORTS,
 )
 from agent_service.utils.hypothesis.prompts import (
     HYPOTHESIS_EXPLANATION_PROMPT,
     HYPOTHESIS_RELEVANT_PROMPT,
+    HYPOTHESIS_SUMMARY_EARNINGS_TEMPLATE,
+    HYPOTHESIS_SUMMARY_MAIN_PROMPT,
+    HYPOTHESIS_SUMMARY_NEWS_TEMPLATE,
+    HYPOTHESIS_SUMMARY_SYS_PROMPT,
     HYPOTHESIS_TOPIC_ANALYSIS_MAIN_PROMPT,
     HYPOTHESIS_TOPIC_ANALYSIS_SYS_PROMPT,
 )
@@ -213,3 +221,40 @@ class HypothesisAI:
                 f"Error: {e}, GPT ouput: {result}"
             )
         return None
+
+    async def write_hypothesis_summary(
+        self,
+        property: str,
+        match_score: float,
+        news_topics_str: str,
+        earnings_main_topics_str: str,
+    ) -> str:
+        if match_score > NEUTRAL_CUTOFF:
+            conclusion = SUPPORT_STR
+        elif match_score < -NEUTRAL_CUTOFF:
+            conclusion = OPPOSE_STR
+        else:
+            conclusion = MIXED_STR
+
+        news_str = (
+            HYPOTHESIS_SUMMARY_NEWS_TEMPLATE.format(news_topics=news_topics_str)
+            if news_topics_str
+            else ""
+        )
+        earnings_str = (
+            HYPOTHESIS_SUMMARY_EARNINGS_TEMPLATE.format(
+                earnings_main_topics=earnings_main_topics_str
+            )
+            if earnings_main_topics_str
+            else ""
+        )
+
+        main_prompt = HYPOTHESIS_SUMMARY_MAIN_PROMPT.format(
+            property=property,
+            conclusion=conclusion,
+            news_str=news_str,
+            earnings_str=earnings_str,
+        )
+        return await self.gpt_smart.do_chat_w_sys_prompt(
+            main_prompt, HYPOTHESIS_SUMMARY_SYS_PROMPT.format(), max_tokens=150
+        )

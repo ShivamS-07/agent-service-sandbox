@@ -14,6 +14,7 @@ from agent_service.io_type_utils import (
     Citation,
     ComplexIOBase,
     IOType,
+    Score,
     ScoreOutput,
     io_type,
 )
@@ -259,6 +260,19 @@ class StockNewsDevelopmentText(NewsText, StockText):
             )
             for row in rows
         ]
+
+
+@io_type
+class StockHypothesisNewsDevelopmentText(StockNewsDevelopmentText):
+    """
+    Subclass from `StockNewsDevelopmentText`, stores the explanation and score for a hypothesis
+    in `history` field
+    """
+
+    text_type: ClassVar[str] = "Hypothesis News Development Summary"
+
+    support_score: Score
+    reason: str
 
 
 @io_type
@@ -512,7 +526,7 @@ class StockEarningsSummaryPointText(StockText):
     """
 
     id: int  # hash((summary_id, summary_type, summary_idx))
-    text_type: ClassVar[str] = "Earnings Call Summary Points"
+    text_type: ClassVar[str] = "Earnings Call Summary Point"
 
     summary_id: str  # UUID in DB
     summary_type: str  # "Remarks" or "Questions"
@@ -551,6 +565,24 @@ class StockEarningsSummaryPointText(StockText):
         return [
             CitationOutput(citation_type=CitationType.TEXT, name=text.text_type) for text in texts
         ]
+
+
+@io_type
+class StockHypothesisEarningsSummaryPointText(StockEarningsSummaryPointText):
+    """
+    A subclass from `StockEarningsSummaryPointText`
+    """
+
+    text_type: ClassVar[str] = "Hypothesis Earnings Call Summary Point"
+
+    support_score: Score
+    reason: str
+
+    @classmethod
+    def _get_strs_lookup(
+        cls, earnings_summary_points: List[StockHypothesisEarningsSummaryPointText]  # type: ignore
+    ) -> Dict[TextIDType, str]:
+        return StockEarningsSummaryPointText._get_strs_lookup(earnings_summary_points)  # type: ignore  #noqa
 
 
 @io_type
