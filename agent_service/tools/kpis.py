@@ -95,19 +95,11 @@ KPI_RELEVANCY_SYS_PROMPT_OBJ = Prompt(
         "asked to identify KPIs. surrounding a specific product or service, or you may be asked to identify "
         "KPIs that are the most impactful to the company's financial health/dominance. Unless explicitly told, "
         "you should avoid returning 'high-level' KPIs like 'Total Revenue' or 'EPS' and choose to return KPIs "
-        "that are low-level meaning they refer to some specific product, service, etc."
-    ),
-)
-
-KPI_SPECIFIC_KPI_SYS_PROMPT_OBJ = Prompt(
-    name="KPI_SPECIFIC_KPI_SYS_PROMPT",
-    template=(
-        "You are a financial analyst that has been tasked to identify a single specific Key Performance Indicator "
-        "(KPI) for a given company. You will be told the specific KPI in question, for example you may be "
-        "asked to identify a KPI surrounding a specific product or service, or you may be asked to identify "
-        "a KPI that is the most impactful to the company's financial health/dominance. Unless explicitly told, "
-        "you should avoid returning 'high-level' KPIs like 'Total Revenue' or 'EPS' and choose to return a KPI "
-        "that is low-level meaning it refers to some specific product, service, etc."
+        "that are low-level meaning they refer to some specific product, service, etc. That being said, if you "
+        "are directly asked for these KPIs word for word. That is to say, if the input given to you is 'EPS' "
+        "then of course you should return EPS. Similarly if you are explicitly asked for 'Total Revenue' "
+        "then you should return a KPI that captures total revenue. You should not return total revenue for "
+        "things like 'total revenue from iPhone'."
     ),
 )
 
@@ -522,7 +514,10 @@ class GetImportantKPIsForStock(ToolArgs):
 @tool(
     description=(
         "This function will identify and return financial metrics reporting "
-        "the most important key performance indicators (KPIs) for a given stock id. "
+        " key performance indicators (KPIs) for a given stock id when a user has not specified or provided "
+        "any details as to the KPIs they are interested in or have stated want to see the most important "
+        "KPIs of a specific company. If the user has specified an area or areas of interest within the company you "
+        "must use the function get_kpis_for_stock_given_topics instead. "
         "A stock_id must be provided to identify the stock for which important KPIs are "
         "fetched. Optionally, an argument for the specific amount of kpis to be retrieved "
         "can be specified via the num_of_kpis argument. num_of_kpis does not need to be specified "
@@ -798,7 +793,8 @@ async def main() -> None:
         run_tasks_without_prefect=True,
         skip_db_commit=True,
     )
-    appl_stock_id = StockID(gbi_id=714, symbol="APPL", isin="")
+
+    # Testing Specific KPI Retrieval Using Direct Helper Function Call
     tr_stock_id = StockID(gbi_id=10753, symbol="TRI", isin="")
     specific_kpi = await get_specific_kpi_data_for_stock_id(  # type: ignore
         stock_id=tr_stock_id,
@@ -812,6 +808,27 @@ async def main() -> None:
     )
     df = specific_table.to_df()
     print(df.head())
+
+    # Testing Specific KPI Retrieval Using Agent Tool
+    appl_stock_id = StockID(gbi_id=714, symbol="APPL", isin="")
+    gen_kpi_list: List[KPIText] = await get_kpis_for_stock_given_topics(  # type: ignore
+        args=GetKPIForStockGivenTopic(
+            stock_id=appl_stock_id, topics=["Total Revenue", "Revenue from China"]
+        ),
+        context=plan_context,
+    )
+    gen_kpis_table: Table = await get_kpis_table_for_stock(  # type: ignore
+        CompanyKPIsRequest(
+            stock_id=appl_stock_id, table_name="General KPI Table", kpis=gen_kpi_list
+        ),
+        context=plan_context,
+    )
+    df = gen_kpis_table.to_df()
+    print(df.head())
+    for column in gen_kpis_table.columns:
+        print(column.metadata.label)
+
+    # Testing Important KPI Retrieval Using Agent Tool
     gen_kpi_list: List[KPIText] = await get_important_kpis_for_stock(  # type: ignore
         args=GetImportantKPIsForStock(stock_id=appl_stock_id), context=plan_context
     )
@@ -826,6 +843,7 @@ async def main() -> None:
     for column in gen_kpis_table.columns:
         print(column.metadata.label)
 
+    # Testing Overlapping KPI Retrieval Using Agent Tool
     ford = StockID(gbi_id=4579, symbol="F", isin="")
     tesla = StockID(gbi_id=25508, symbol="TSLA", isin="")
     gm = StockID(gbi_id=25477, symbol="GM", isin="")
