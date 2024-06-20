@@ -285,6 +285,28 @@ async def get_agent_output(
 
 
 @router.get(
+    "/agent/get-agent-output/{agent_id}/{plan_run_id}",
+    response_model=GetAgentOutputResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_agent_plan_output(
+    agent_id: str, plan_run_id: str, user: User = Depends(parse_header)
+) -> GetAgentOutputResponse:
+    """Get agent's output for a specific plan_run_id
+
+    Args:
+        agent_id (str): agent ID
+        plan_run_id (str): plan run ID
+    """
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        validate_user_agent_access(user.user_id, agent_id)
+
+    return await application.state.agent_service_impl.get_agent_plan_output(
+        agent_id=agent_id, plan_run_id=plan_run_id
+    )
+
+
+@router.get(
     "/agent/stream/{agent_id}",
     status_code=status.HTTP_200_OK,
 )

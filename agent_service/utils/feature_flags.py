@@ -12,6 +12,7 @@ def is_user_agent_admin(user_id: str, default: bool = False) -> bool:
     - `get_agent_worklog_output`
     - `get_agent_task_output`
     - `get_agent_output`
+    - `get_agent_plan_output`
     - `steam_agent_events`
     """
 

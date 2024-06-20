@@ -232,6 +232,22 @@ class AgentServiceImpl:
 
         return GetAgentOutputResponse(outputs=outputs)
 
+    async def get_agent_plan_output(
+        self, agent_id: str, plan_run_id: str
+    ) -> GetAgentOutputResponse:
+        outputs = await self.pg.get_agent_outputs(agent_id=agent_id, plan_run_id=plan_run_id)
+        if not outputs:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No output found for {agent_id=} and {plan_run_id=}",
+            )
+
+        final_outputs = [output for output in outputs if not output.is_intermediate]
+        if final_outputs:
+            return GetAgentOutputResponse(outputs=final_outputs)
+
+        return GetAgentOutputResponse(outputs=outputs)
+
     async def stream_agent_events(self, agent_id: str) -> AsyncGenerator[AgentEvent, None]:
         LOGGER.info(f"Listening to events on channel for {agent_id=}")
         async with get_agent_event_channel(agent_id=agent_id) as channel:

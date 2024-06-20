@@ -41,21 +41,32 @@ class AsyncDB:
         row = rows[0]
         return [load_io_type(output) for output in row["outputs"]]
 
-    async def get_agent_outputs(self, agent_id: str) -> List[AgentOutput]:
-        sql = """
+    async def get_agent_outputs(
+        self, agent_id: str, plan_run_id: Optional[str] = None
+    ) -> List[AgentOutput]:
+        where_clause = """
+            ao.plan_run_id IN (
+                    SELECT plan_run_id FROM agent.agent_outputs
+                    WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
+                    ORDER BY created_at DESC LIMIT 1
+                )
+        """
+
+        params: Dict[str, Any] = {"agent_id": agent_id}
+        if plan_run_id:
+            where_clause = "ao.plan_run_id = %(plan_run_id)s AND ao.output NOTNULL AND ao.is_intermediate = false"
+            params["plan_run_id"] = plan_run_id
+
+        sql = f"""
                 SELECT ao.plan_id::VARCHAR, ao.plan_run_id::VARCHAR, ao.output_id::VARCHAR, ao.is_intermediate,
                     ao.output, ao.created_at, pr.shared
                 FROM agent.agent_outputs ao
                 LEFT JOIN agent.plan_runs pr
                 ON ao.plan_run_id = pr.plan_run_id
-                WHERE ao.plan_run_id IN (
-                    SELECT plan_run_id FROM agent.agent_outputs
-                    WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
-                    ORDER BY created_at DESC LIMIT 1
-                )
+                WHERE {where_clause}
                 ORDER BY created_at ASC;
                 """
-        rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
+        rows = await self.pg.generic_read(sql, params)
         if not rows:
             return []
 
