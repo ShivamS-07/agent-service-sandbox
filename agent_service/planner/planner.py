@@ -699,7 +699,13 @@ class Planner:
 
             arg_info = expected_args[arg]
 
+            # GPT isn't supposed to put Nones in the input but in case it does, we can just skip it
+            # (Optional variables must always default to None!)
+            if val == "None":
+                continue
+
             # For literals, we can parse out an actual value at "compile" time
+
             parsed_val = self._try_parse_primitive_literal(val, expected_type=arg_info.annotation)
             if parsed_val is None:
                 parsed_val = self._try_parse_list_literal(

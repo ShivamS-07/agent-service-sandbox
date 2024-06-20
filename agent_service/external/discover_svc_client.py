@@ -7,12 +7,12 @@ from typing import Any, Dict, Generator, Optional, Tuple
 
 from discover_service_proto_v1.disco_service_grpc import DiscoverServiceStub
 from discover_service_proto_v1.discover_pb2 import (
+    DiscoverBlockRow,
     GetTemporaryDiscoverBlockDataRequest,
     GetTemporaryDiscoverBlockDataResponse,
 )
 from discover_service_proto_v1.other_messages_pb2 import (
     DiscoverDeltaHorizonEnum,
-    DiscoverRatingAndDelta,
     DiscoverRecommendationCategory,
     DiscoverRecommendationHorizon,
 )
@@ -102,9 +102,16 @@ def get_score_from_recommendation(rec: DiscoverRecommendationCategory) -> Option
     return None
 
 
-def get_score_from_rating(rating: DiscoverRatingAndDelta) -> Score:
-    rating = rating.rating
-    return Score.scale_input(rating, 0, 5)
+def get_news_sentiment_score(row: DiscoverBlockRow) -> Score:
+    return Score.scale_input(row.news_sentiment_score.value, -1, 1)
+
+
+def get_rating_score(row: DiscoverBlockRow) -> Score:
+    return Score.scale_input(float(row.rating_and_delta.rating), 0, 5)
+
+
+def get_recommendation_score(row: DiscoverBlockRow) -> Score:
+    return Score.average(get_news_sentiment_score(row), get_rating_score(row))
 
 
 @grpc_retry

@@ -80,7 +80,9 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         "the current date is used. If start_date is left out, 1 week ago is used."
         "Never, ever pass an empty list of stocks to this function, you must only use this "
         "function when you have a specific list of stocks you want news for. If you have a general "
-        "topic you want news about, use get_news_articles_for_topics"
+        "topic you want news about, use get_news_articles_for_topics. "
+        "If the user asks about news sentiment, do NOT use this function, use the recommendation "
+        "tool."
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,

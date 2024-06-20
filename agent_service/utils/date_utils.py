@@ -3,6 +3,8 @@ from typing import Optional, Tuple
 
 from google.protobuf.timestamp_pb2 import Timestamp
 
+DAYS_LOOKUP = {"D": 1, "W": 7, "M": 30, "Y": 365}
+
 
 def get_now_utc() -> datetime.datetime:
     return datetime.datetime.now(tz=datetime.timezone.utc)
@@ -20,3 +22,12 @@ def date_to_pb_timestamp(dt: Optional[datetime.date]) -> Timestamp:
 
     ts.FromDatetime(datetime.datetime(dt.year, dt.month, dt.day))
     return ts
+
+
+def convert_horizon_to_days(horizon: str) -> int:
+    return int(horizon[:-1]) * DAYS_LOOKUP[horizon[-1]]
+
+
+def convert_horizon_to_date(horizon: str) -> datetime.date:
+    days = convert_horizon_to_days(horizon)
+    return datetime.date.today() - datetime.timedelta(days=days)

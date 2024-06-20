@@ -194,6 +194,12 @@ class Score(SerializeableBase):
     # Generally between 0 and 1
     val: float
 
+    def __lt__(self, other: Self) -> bool:
+        return self.val < other.val
+
+    def rescale(self, lb: float, ub: float) -> float:
+        return self.val * (ub - lb) + lb
+
     @classmethod
     def scale_input(cls, val: float, lb: float, ub: float) -> Self:
         """
@@ -201,8 +207,12 @@ class Score(SerializeableBase):
         """
         return cls(val=(val - lb) / (ub - lb))
 
-    def rescale(self, lb: float, ub: float) -> float:
-        return self.val * (ub - lb) + lb
+    @classmethod
+    def average(cls, score_1: Self, score_2: Self) -> Self:
+        """
+        Average two scores
+        """
+        return cls(val=(score_1.val + score_2.val) / 2)
 
 
 class ScoreOutput(BaseModel):

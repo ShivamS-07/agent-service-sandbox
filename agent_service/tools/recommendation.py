@@ -5,7 +5,8 @@ from typing import Any, Dict, List, Optional
 from pydantic import field_validator
 
 from agent_service.external.discover_svc_client import (
-    get_score_from_rating,
+    get_news_sentiment_score,
+    get_recommendation_score,
     get_temporary_discover_block_data,
 )
 from agent_service.external.investment_policy_svc import (
@@ -19,6 +20,10 @@ from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
 from agent_service.io_types.text import StockText, Text
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.news import (
+    GetNewsDevelopmentsAboutCompaniesInput,
+    get_all_news_developments_about_companies,
+)
 from agent_service.tools.other_text import (
     GetAllTextDataForStocksInput,
     get_all_text_data_for_stocks,
@@ -27,6 +32,10 @@ from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency, identity
+from agent_service.utils.date_utils import (
+    convert_horizon_to_date,
+    convert_horizon_to_days,
+)
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -124,10 +133,9 @@ def map_input_to_closest_horizon(input_horizon: str, supported_horizons: List[st
     if input_horizon in supported_horizons:
         return input_horizon
 
-    days_lookup = {"D": 1, "W": 7, "M": 30, "Y": 365}
-    input_days = int(input_horizon[:-1]) * days_lookup[input_horizon[-1]]
+    input_days = convert_horizon_to_days(input_horizon)
     supported_horizon_to_days = {
-        horizon: int(horizon[:-1]) * days_lookup[horizon[-1]] for horizon in supported_horizons
+        horizon: convert_horizon_to_days(horizon) for horizon in supported_horizons
     }
 
     min_pair = min(supported_horizon_to_days.items(), key=lambda x: abs(x[1] - input_days))
@@ -135,17 +143,34 @@ def map_input_to_closest_horizon(input_horizon: str, supported_horizons: List[st
 
 
 async def add_scores_and_rationales_to_stocks(
-    score_dict: Dict[StockID, Score], is_buy: Optional[bool], context: PlanRunContext
+    ranked_stocks: List[StockID],
+    score_dict: Dict[StockID, Score],
+    is_buy: Optional[bool],
+    context: PlanRunContext,
+    news_horizon: Optional[str] = None,
 ) -> List[StockID]:
 
-    stocks = list(score_dict)
-    texts: List[StockText] = await get_all_text_data_for_stocks(  # type: ignore
-        GetAllTextDataForStocksInput(stock_ids=stocks), context
-    )
-    aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(stocks, texts)
+    if news_horizon:
+        horizon_date = convert_horizon_to_date(news_horizon)
+        texts: List[StockText] = await get_all_news_developments_about_companies(  # type: ignore
+            GetNewsDevelopmentsAboutCompaniesInput(
+                stock_ids=ranked_stocks, start_date=horizon_date
+            ),
+            context,
+        )
+
+    else:
+        texts: List[StockText] = await get_all_text_data_for_stocks(  # type: ignore
+            GetAllTextDataForStocksInput(stock_ids=ranked_stocks), context
+        )
+    aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(ranked_stocks, texts)
     str_lookup: Dict[StockID, str] = Text.get_all_strs(  # type: ignore
         aligned_text_groups.val, include_header=True, text_group_numbering=True
     )
+
+    ranked_stocks = [
+        stock for stock in ranked_stocks if stock in str_lookup
+    ]  # filter out those with no data
 
     gpt_context = create_gpt_context(
         GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
@@ -163,12 +188,13 @@ async def add_scores_and_rationales_to_stocks(
     )
 
     tasks = []
-    for stock, score in score_dict.items():
+    for stock in ranked_stocks:
         text_str = str_lookup[stock]
         text_str = tokenizer.chop_input_to_allowed_length(text_str, used)
         if text_str == "":  # no text, skip
             tasks.append(identity(""))
         if is_buy is None:
+            score = score_dict[stock]
             direction_str = SCORE_DIRECTION.format(score=score.val)
         elif is_buy:
             direction_str = BUY_DIRECTION
@@ -191,10 +217,8 @@ async def add_scores_and_rationales_to_stocks(
 
     stocks_with_rec = []
 
-    for result, (stock, score), text_group in zip(
-        results, score_dict.items(), aligned_text_groups.val.values()
-    ):
-
+    for result, stock in zip(results, ranked_stocks):
+        text_group = aligned_text_groups.val[stock]
         try:
             rationale, citations = result.strip().replace("\n\n", "\n").split("\n")
             citation_idxs = json.loads(clean_to_json_if_needed(citations))
@@ -208,7 +232,7 @@ async def add_scores_and_rationales_to_stocks(
                 HistoryEntry(
                     explanation=rationale,
                     title="Recommendation",
-                    score=score,
+                    score=score_dict[stock],
                     citations=citations,
                 )
             )
@@ -227,8 +251,10 @@ class GetStockRecommendationsInput(ToolArgs):
     buy: Optional[bool] = None  # whether to get buy or sell recommendations
     horizon: str = "1M"  # 1M, 3M, 1Y
     delta_horizon: str = "1M"  # 1W, 1M, 3M, 6M, 9M, 1Y
-    # news_horizon: str = "1W"  # 1W, 1M, 3M
-    num_stocks_to_return: int = 5
+    news_horizon: str = "1M"  # 1W, 1M, 3M
+    news_only: bool = False
+    num_stocks_to_return: Optional[int] = None
+    star_rating_threshold: Optional[float] = None
 
     @field_validator("horizon", mode="before")
     @classmethod
@@ -248,12 +274,12 @@ class GetStockRecommendationsInput(ToolArgs):
             value.upper(), supported_horizons=["1W", "1M", "3M", "6M", "9M", "1Y"]
         )
 
-    # @field_validator("news_horizon", mode="before")
-    # @classmethod
-    # def validate_news_horizon(cls, value: Any) -> Any:
-    #     if not isinstance(value, str):
-    #         raise ValueError("news horizon must be a string")
-    #     return map_input_to_closest_horizon(value.upper(), supported_horizons=["1W", "1M", "3M"])
+    @field_validator("news_horizon", mode="before")
+    @classmethod
+    def validate_news_horizon(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            raise ValueError("news horizon must be a string")
+        return map_input_to_closest_horizon(value.upper(), supported_horizons=["1W", "1M", "3M"])
 
 
 @tool(
@@ -261,27 +287,49 @@ class GetStockRecommendationsInput(ToolArgs):
         "This function provides stock recommendations and/or text justifying those recommendations"
         "There are two major modes, controlled by the filter boolean. If filter is on (True), the function"
         "will filter the provided stock list (or the S&P 500, if no stock list is provided) to a list of "
-        "recommended buys (if buy = True) or recommended sells/shorts (if buy = False), the selection of "
-        "stock for this is based on a machine learning algorithm. "
-        "Note that the buy variable must NOT be None if filter is True. The num_stocks_to_return variable is "
-        "used to control how many stocks are returned in filter mode (it is not used when filter is False). "
-        "An example of a request that would use this function with filter=True is: "
-        "`Give me 10 stocks you like/don't like`. "
+        "recommended buys (if buy = True) or recommended sells/shorts (if buy = False), the rankings of the "
+        "outputted stocks for this is based on a machine learning algorithm. "
+        "Note that the buy variable must NEVER, EVER be None if filter is True. "
         "Each stock selected with this function will include reasoning about why the stock is a buy or sell."
-        "Filter should be set to False if the client is asking for recommendations for a specific, fixed set "
-        " of stocks. "
+        "Either num_stock_to_return or star_rating_threshold can be used to define how the filter works. If "
+        "The client indicates some number of recommendations they want, then num_stocks_to_return should be set "
+        "to that number (or some reasonable interpretation, if vague, like `a few` can be mapped to 3)"
+        "An example of a request that would use this function with filter=True and num_stocks_to_return is set is: "
+        "`Give me 10 stocks you like/don't like`. "
+        "If the client just asks directly for some recommendations, you should set num_stocks_to_return to 5"
+        "If the client instead indicates they just want all positive or negative recommendations within "
+        "some set of stocks, the star_rating_threshold should be set to 2.5, the middle of a 5 point star "
+        "rating scale. "
+        "If the client indicates a particular number of stars (or a score), then use that as the "
+        "threshold, otherwise, if it is more vague, an appropriate corresponding rating should be selected. "
+        "If the client indicates they want stocks above the star rating, use buy=True, else buy=False "
+        "For example, if a client says they want to see only `deeply troubled` stocks, then filter should be True, "
+        "buy must be set to False, and a star_rating_threshold choice of 1.0 is appropriate. "
+        "Always express the star_rating_threshold as a float. "
+        "Generally you will only use either start_rating_threshold or num_stocks_to_return. If both are set "
+        "both kinds of filters will be applied."
         "When filter is false, this function returns the same set of stockIDs as its input, but "
         "a recommendation rationale will be included. If buy = True, a rationale for buying each stock will "
         "be added, if buy = False, a rationale for selling/shorting the stock will be added. If buy == None, "
         "then the rationale will be based on justifying the score from a machine learning algorithm. "
-        "So, if a user says to `give me a reason to buy/sell NVDA`, you would use filter = False, and "
+        "So, if a client says to `give me a reason to buy/sell NVDA`, you would use filter = False, and "
         "buy = true/false, respectively "
-        "but if the user asks `Should I buy NVDA?` filter is still False, but buy should be None, and the "
+        "but if the client asks `Should I buy NVDA?` filter is still False, but buy should be None, and the "
         "rationale will reflect a post hoc rationalization of the machine-provided rating for the stock. "
         "Investment horizon and delta horizon are used for in the ML algorithm to decide how far into "
         "The future (investment horizon) or into the past (delta) to consider, you should increase them from the "
-        "defaults only when the user express some specific interest in a longer term view. "
-        "If no stock ID's are provided (which should only happen when filter=True), the S&P 500 stocks are used"
+        "defaults only when the client expresses some specific interest in a longer term view. "
+        "By default, the ML algorithm uses a mixture of quantitative information and news sentiment. "
+        "You should use also use this function (and not filter_stocks_by_profile!) with the news_only flag "
+        "when the client wants to filter stocks based on news semtiment, ."
+        "When you get such a request, e.g. `filter to stocks with only positive "
+        "news sentiment`, the optional news_only should be set to True, and only news information will be used in "
+        "rating and corresponding rationale. "
+        "This function looks up the news for the relevant stocks internally, you do not need to run "
+        "the get_all_news_developments_about_companies function before this one!"
+        "In news only mode, the news_horizon specifically controls how far back the algorithm looks for news "
+        "when doing the sentiment calculation and the rationale."
+        "If no stock ID's are provided (which must only happen when filter=True!), the S&P 500 stocks are used"
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -296,16 +344,11 @@ async def get_stock_recommendations(
     logger = get_prefect_logger(__name__)
 
     if args.stock_ids:
-        if args.filter:
+        if args.filter and args.num_stocks_to_return:
             if len(args.stock_ids) < args.num_stocks_to_return:
                 raise ValueError(
                     "The number of stocks to return is greater than the number of stocks provided."
                 )
-            elif len(args.stock_ids) == args.num_stocks_to_return:
-                logger.warning(
-                    "The number of stocks to return is equal to the number of stocks provided. Return directly"  # noqa
-                )
-                return args.stock_ids
         stock_ids = args.stock_ids
     else:
         if not args.filter:
@@ -332,49 +375,75 @@ async def get_stock_recommendations(
         "Medium Match",
     ]
 
-    if not args.filter:  # don't want to filter on matches
+    if not args.filter or args.news_only:  # don't want ism filter or news only requests
         settings_blob["ism_settings"]["match_labels"].extend(["Weak Match", "Poor Match"])
 
     if args.buy is None or args.buy:
-        if args.filter:
-            settings_blob["rating_settings"]["boundary"]["lb"] = 2.5
-        else:
-            settings_blob["rating_settings"]["boundary"]["lb"] = 0.0001
-        # settings_blob["news_settings"]["sentiment_boundaries"] = [{"lb": 0, "ub": 1}]
+        settings_blob["rating_settings"]["boundary"]["lb"] = 0.0001
+        settings_blob["news_settings"]["sentiment_boundaries"] = [{"lb": -0.9999, "ub": 1}]
     else:
-        if args.filter:
-            settings_blob["rating_settings"]["boundary"]["ub"] = 2.5
-        else:
-            settings_blob["rating_settings"]["boundary"]["ub"] = 4.9999
-        # settings_blob["news_settings"]["sentiment_boundaries"] = [{"lb": -1, "ub": 0}]
+        settings_blob["rating_settings"]["boundary"]["ub"] = 4.9999
+        settings_blob["news_settings"]["sentiment_boundaries"] = [{"lb": -1, "ub": 0.9999}]
 
     await tool_log(log=f"Getting stock ratings for {len(stock_ids)} stocks", context=context)
 
     resp = await get_temporary_discover_block_data(
         context.user_id, settings_blob, args.horizon, args.delta_horizon
     )
-    if args.filter and len(resp.rows) < args.num_stocks_to_return:
-        # TODO: We can loose the constraints, but this is already very loose. What to do?
-        raise ValueError(
-            f"Cannot find enough stocks to meet the requirement: {len(resp.rows)} / {args.num_stocks_to_return}"
-        )
 
-    logger.info(f"Got scores for {len(resp.rows)} stocks")
+    rows = list(resp.rows)
 
-    if args.filter:
-        rows = resp.rows[: args.num_stocks_to_return]
-        logger.info(f"Filtered to {args.num_stocks_to_return} stocks")
-    else:
-        rows = list(resp.rows)
+    logger.info(f"Got scores for {len(rows)} stocks")
 
     if len(rows) == 0:
-        raise Exception("Could not get ratings for any stocks")
+        raise Exception("Could not get ratings for any of the stocks provided")
 
     gbi_id_to_stock = {stock.gbi_id: stock for stock in stock_ids}
     score_dict = {}
     for row in rows:
-        score_dict[gbi_id_to_stock[row.gbi_id]] = get_score_from_rating(row.rating_and_delta)
+        if args.news_only:
+            score = get_news_sentiment_score(row)
+        else:
+            score = get_recommendation_score(row)
+        score_dict[gbi_id_to_stock[row.gbi_id]] = score
 
-    await tool_log(log=f"Writing reasoning for {len(score_dict)} stocks", context=context)
+    ranked_stocks = sorted(
+        score_dict, key=lambda x: score_dict[x], reverse=args.buy or args.buy is None
+    )
 
-    return await add_scores_and_rationales_to_stocks(score_dict, args.buy, context)
+    if args.filter:
+        if (
+            args.num_stocks_to_return is None and args.star_rating_threshold is None
+        ):  # if GPT is stupid
+            args.star_rating_threshold = 2.5
+
+        if args.star_rating_threshold:
+            threshold = args.star_rating_threshold / 5
+            if args.buy:
+                ranked_stocks = [
+                    stock for stock in ranked_stocks if score_dict[stock].val > threshold
+                ]
+            else:
+                ranked_stocks = [
+                    stock for stock in ranked_stocks if score_dict[stock].val < threshold
+                ]
+
+        if args.num_stocks_to_return:
+            ranked_stocks = ranked_stocks[: args.num_stocks_to_return]
+
+        logger.info(f"Filtered to {len(ranked_stocks)} stocks")
+
+    if not args.news_only:
+        news_horizon = None
+    else:
+        news_horizon = args.news_horizon
+
+    await tool_log(log="Writing reasoning", context=context)
+
+    final_stocks = await add_scores_and_rationales_to_stocks(
+        ranked_stocks, score_dict, args.buy, context, news_horizon=news_horizon
+    )
+
+    await tool_log(log=f"Finished recommendation for {len(ranked_stocks)} stocks", context=context)
+
+    return final_stocks
