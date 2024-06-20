@@ -16,7 +16,7 @@ NAME_AGENT_MAIN_PROMPT_STR = """
     Here is the client request: {chat_context}.
     Try to use names that user can easily distinguish from the following: {existing_names}.
     Limit your response to only the name. Be formal, very specific and short.
-    The words don't need to be glued together.
+    The words don't need to be glued together. Don't use quotes.
 """
 
 NAME_AGENT_SYS_PROMPT = Prompt(NAME_AGENT_SYS_PROMPT_STR, "NAME_AGENT_SYS_PROMPT")

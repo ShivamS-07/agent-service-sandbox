@@ -50,68 +50,83 @@ class TestSQSMessageHandler(unittest.TestCase):
     def test_run_execution_plan(self):
         raw_message = """
         {
-  "do_chat": true,
-  "log_all_outputs": false,
-  "replan_execution_error": true,
-  "run_plan_in_prefect_immediately": true,
-  "plan": {
-    "nodes": [
-      {
-        "args": {
-          "universe_name": "S&P 500"
-        },
-        "tool_name": "get_stock_universe",
-        "description": "Get the list of S&P 500 stocks",
-        "tool_task_id": "5b7c0f96-6276-4f5a-b354-a49651415900",
-        "is_output_node": false,
-        "output_variable_name": "sp500_stocks"
-      },
-      {
-        "args": {
-          "buy": true,
-          "horizon": "1M",
-          "stock_ids": {
-            "var_name": "sp500_stocks"
-          },
-          "news_horizon": "1W",
-          "delta_horizon": "1M",
-          "num_stocks_to_return": 1
-        },
-        "tool_name": "get_recommended_stocks",
-        "description": "Get the top recommended stock to buy from the S&P 500",
-        "tool_task_id": "667d1dd9-1a12-471b-85a0-c59a040380c8",
-        "is_output_node": true,
-        "output_variable_name": "top_stock"
-      }
-    ]
-  },
-  "context": {
-    "chat": {
-      "messages": [
-        {
-          "message": "What is the best S&P 500 stock?",
-          "agent_id": "870a70cd-2aa4-4e09-af73-026bb86ac8e2",
-          "message_id": "b9f54c6d-9155-4232-81f2-95aa9e1c2972",
-          "message_time": "2024-06-04T20:03:11.005202+00:00",
-          "is_user_message": true
-        },
-        {
-          "message": "Understood, you're looking for the top-performing S&P 500 stock. I'm on it, considering the best approach to identify that for you.",
-          "agent_id": "870a70cd-2aa4-4e09-af73-026bb86ac8e2",
-          "message_id": "9b475298-a765-44c3-8fd3-ba5dca614d33",
-          "message_time": "2024-06-04T20:03:12.686646+00:00",
-          "is_user_message": false
+           "plan":{
+              "nodes":[
+                 {
+                    "tool_name":"get_stock_universe",
+                    "tool_task_id":"dc1fd5a5-835c-4353-b94f-ea0a1a74e4be",
+                    "args":{
+                       "universe_name":"S&P 500"
+                    },
+                    "description":"Get the list of S&P 500 stocks",
+                    "output_variable_name":"stock_ids",
+                    "is_output_node":false,
+                    "store_output":true
+                 },
+                 {
+                    "tool_name":"get_stock_recommendations",
+                    "tool_task_id":"2ecc404f-fb7c-46f5-9ac9-b3078179ccb5",
+                    "args":{
+                       "stock_ids":{
+                          "var_name":"stock_ids"
+                       },
+                       "filter":true,
+                       "buy":true,
+                       "num_stocks_to_return":1
+                    },
+                    "description":"Get the top recommended stock from the S&P 500",
+                    "output_variable_name":"recommended_stock",
+                    "is_output_node":false,
+                    "store_output":true
+                 },
+                 {
+                    "tool_name":"prepare_output",
+                    "tool_task_id":"a542593a-062a-4de6-9ef1-09461a30ef8a",
+                    "args":{
+                       "object_to_output":{
+                          "var_name":"recommended_stock"
+                       },
+                       "title":"Top Recommended S&P 500 Stock"
+                    },
+                    "description":"Output the top recommended stock",
+                    "output_variable_name":"output",
+                    "is_output_node":true,
+                    "store_output":false
+                 }
+              ]
+           },
+           "context":{
+              "agent_id":"1298b4ea-ca8b-4d62-af03-2df2b0c13cc5",
+              "plan_id":"3c9c0714-0842-4a61-9101-5df5effd794c",
+              "user_id":"6c14fe54-de50-4d05-9533-57541715064f",
+              "plan_run_id":"919ac09c-7cee-4efd-9764-98dbd4455c1b",
+              "chat":{
+                 "messages":[
+                    {
+                       "agent_id":"1298b4ea-ca8b-4d62-af03-2df2b0c13cc5",
+                       "message_id":"97b14200-1276-4c2d-a1d8-eac71d716c44",
+                       "message":"What is the best S&P 500 stock?",
+                       "is_user_message":true,
+                       "message_time":"2024-06-19T18:01:03.574113+00:00",
+                       "unread":false
+                    },
+                    {
+                       "agent_id":"1298b4ea-ca8b-4d62-af03-2df2b0c13cc5",
+                       "message_id":"abaddb83-98b5-4b29-94c8-bd020b7175ff",
+                       "message":"Understood, you're looking for insights on the top-performing S&P 500 stock. I'll start considering how to approach this for you.",
+                       "is_user_message":false,
+                       "message_time":"2024-06-19T18:01:05.959762+00:00",
+                       "unread":false
+                    }
+                 ]
+              },
+              "task_id":null,
+              "skip_db_commit":false,
+              "skip_task_cache":false,
+              "run_tasks_without_prefect":false
+           },
+           "do_chat":true
         }
-      ]
-    },
-    "plan_id": "34a47450-5340-4d88-ad62-06a11c7463a4",
-    "task_id": null,
-    "user_id": "ac7c96d7-3e57-40e7-a1a5-8e2ce5e23639",
-    "agent_id": "870a70cd-2aa4-4e09-af73-026bb86ac8e2",        
-    "skip_task_cache": false,
-    "run_tasks_without_prefect": false
-  }
-}
         """
         arguments = json.loads(raw_message)
         arguments["context"]["plan_run_id"] = str(uuid.uuid4())
