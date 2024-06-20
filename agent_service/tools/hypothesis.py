@@ -125,9 +125,7 @@ async def summarize_hypothesis_from_news_developments(
     )
 
     return Text(
-        history=[
-            HistoryEntry(explanation=summary, score=Score.scale_input(match_score, lb=-1, ub=1))
-        ]
+        val=summary, history=[HistoryEntry(score=Score.scale_input(match_score, lb=-1, ub=1))]
     )
 
 
@@ -240,9 +238,7 @@ async def summarize_hypothesis_from_earnings_summaries(
     )
 
     return Text(
-        history=[
-            HistoryEntry(explanation=summary, score=Score.scale_input(match_score, lb=-1, ub=1))
-        ]
+        val=summary, history=[HistoryEntry(score=Score.scale_input(match_score, lb=-1, ub=1))]
     )
 
 
@@ -282,7 +278,5 @@ async def summarize_hypothesis_from_various_sources(
     )
 
     return Text(
-        history=[
-            HistoryEntry(explanation=summary, score=Score.scale_input(match_score, lb=-1, ub=1))
-        ]
+        val=summary, history=[HistoryEntry(score=Score.scale_input(match_score, lb=-1, ub=1))]
     )
