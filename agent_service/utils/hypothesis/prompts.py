@@ -19,8 +19,16 @@ HYPOTHESIS_SUMMARY_NEWS_TEMPLATE = (
     "Here are the news topics, delimited by ---:\n---\n{news_topics}\n---\n---\n"
 )
 HYPOTHESIS_SUMMARY_EARNINGS_TEMPLATE = "Here are the earning topics extracted across the companies' last two earning calls, delimited by ---:\n---\n{earnings_main_topics}\n"
-HYPOTHESIS_SUMMARY_MAIN_PROMPT_STR = "Summarize the pieces of information given to you into an argument about to the following situation. Here is the target situation: {property}\n{news_str}{earnings_str}And here is the conclusion your argument should have: {conclusion}. Now write your argument in two to four complete sentences: "
-
+HYPOTHESIS_SUMMARY_NEWS_REFERENCE_TEMPLATE = ". Provide a list of indexes for the referenced news topics and store into the same JSON with the key as `news_references`"
+HYPOTHESIS_SUMMARY_EARNINGS_REFERENCE_TEMPLATE = ". Provide a list of indexes for the referenced earnings topics and store into the same JSON with the key as `earnings_references`"
+HYPOTHESIS_SUMMARY_MAIN_PROMPT_STR = (
+    "Summarize the pieces of information given to you into an argument about to the following situation."
+    " Here is the target situation: {property}\n"
+    "{news_str}{earnings_str}"
+    "And here is the conclusion your argument should have: {conclusion}."
+    " Now write your argument in two to four complete sentences and store in a JSON format with the key as `summary`"
+    "{news_ref}{earnings_ref}:"
+)
 ### Dataclasses
 
 HYPOTHESIS_PROPERTY_PROMPT = Prompt(HYPOTHESIS_PROPERTY_PROMPT_STR, "HYPOTHESIS_PROPERTY_PROMPT")

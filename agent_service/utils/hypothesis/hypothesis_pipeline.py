@@ -220,7 +220,12 @@ class HypothesisPipeline:
         self,
         news_developments: List[StockHypothesisNewsDevelopmentText],
         earnings_summary_points: List[StockHypothesisEarningsSummaryPointText],
-    ) -> Tuple[float, str]:
+    ) -> Tuple[
+        float,
+        str,
+        List[StockHypothesisNewsDevelopmentText],
+        List[StockHypothesisEarningsSummaryPointText],
+    ]:
         """Calculate the match score and generate the hypothesis summary based on the news
         developments and earnings summary points.
         Note that the news developments and earnings summary points must have `history` field filled
@@ -228,7 +233,7 @@ class HypothesisPipeline:
         """
 
         if not news_developments and not earnings_summary_points:
-            return 0, ""
+            return 0, "", [], []
 
         ref_time = get_now_utc()
 
@@ -256,19 +261,32 @@ class HypothesisPipeline:
         )
 
         logger.info("Generating hypothesis summary...")
-        summary = await self.generate_hypothesis_summary(
-            self.hypothesis.hypothesis_breakdown[PROPERTY],  # type: ignore
-            news_topics,
-            news_hypothesis_topics,
-            news_groups,
-            earnings_topics,
-            earnings_hypothesis_topics,
-            max_count_pair,
-            match_score,
-            ref_time,
+        summary, news_ref_hypo_topics, earnings_ref_hypo_topics = (
+            await self.generate_hypothesis_summary(
+                self.hypothesis.hypothesis_breakdown[PROPERTY],  # type: ignore
+                news_topics,
+                news_hypothesis_topics,
+                news_groups,
+                earnings_topics,
+                earnings_hypothesis_topics,
+                max_count_pair,
+                match_score,
+                ref_time,
+            )
         )
 
-        return match_score, summary
+        id_to_development = {development.id: development for development in news_developments}
+        tup_to_point = {
+            (p.summary_id, p.summary_idx, p.summary_type): p for p in earnings_summary_points
+        }
+
+        ref_news_developments = [id_to_development[t.topic_id] for t in news_ref_hypo_topics]
+        ref_earnings_points = [
+            tup_to_point[(t.topic_id, t.summary_index, t.summary_type)]
+            for t in earnings_ref_hypo_topics
+        ]
+
+        return match_score, summary, ref_news_developments, ref_earnings_points
 
     def _convert_hypothesis_news_developments_to_topics(
         self,
@@ -386,9 +404,9 @@ class HypothesisPipeline:
         max_count_pair: Tuple[int, int],
         match_score: float,
         ref_time: datetime.datetime,
-    ) -> str:
+    ) -> Tuple[str, List[HypothesisNewsTopicInfo], List[HypothesisEarningsTopicInfo]]:
         if not news_topics and not earnings_topics:
-            return ""
+            return "", [], []
 
         logger.info("Reordering news topics based on weights and joining as text...")
         topic_weights = get_hypothesis_topic_weights(
@@ -402,7 +420,7 @@ class HypothesisPipeline:
                 reverse=True,
             )
         ]
-        news_topic_list = []
+        news_topic_list: List[str] = []
         for i, (hypo_topic, topic) in enumerate(news_topic_pairs[:NUM_NEWS_TOPICS_FOR_SUMMARY]):
             news_topic_list.append(
                 f"Topic {i + 1}\n"
@@ -411,7 +429,7 @@ class HypothesisPipeline:
             )
         news_topics_str = "\n\n".join(news_topic_list)
 
-        earnings_topic_list = []
+        earnings_topic_list: List[str] = []
         for i, (topic, hypo_topic) in enumerate(zip(earnings_topics, earnings_hypothesis_topics)):
             earnings_topic_list.append(
                 f"Topic {i + 1}\nTopic Description: {topic.get_latest_topic_description()}\n"
@@ -419,9 +437,21 @@ class HypothesisPipeline:
             )
         earnings_main_topics_str = "\n\n".join(earnings_topic_list)
 
-        return await self.llm.write_hypothesis_summary(
+        summary_dict = await self.llm.write_hypothesis_summary(
             property,
             match_score,
             news_topics_str,
             earnings_main_topics_str,
         )
+
+        summary: str = summary_dict["summary"]  # type: ignore
+
+        news_ref_idxs: List[int] = summary_dict.get("news_references", [])  # type: ignore
+        news_ref_hypo_topics = [news_topic_pairs[idx - 1][0] for idx in news_ref_idxs]
+
+        earnings_ref_idxs: List[int] = summary_dict.get("earnings_references", [])  # type: ignore
+        earnings_ref_hypo_topics = [
+            earnings_hypothesis_topics[idx - 1] for idx in earnings_ref_idxs
+        ]
+
+        return summary, news_ref_hypo_topics, earnings_ref_hypo_topics

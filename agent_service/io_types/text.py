@@ -603,9 +603,7 @@ class StockEarningsSummaryPointText(StockText):
     summary_idx: int  # index of the point in the summary
 
     @classmethod
-    async def _get_strs_lookup(
-        cls, earnings_summary_points: List[StockEarningsSummaryPointText]  # type: ignore
-    ) -> Dict[TextIDType, str]:
+    async def _get_strs_lookup(cls, earnings_summary_points: List[Self]) -> Dict[TextIDType, str]:
         sql = """
             SELECT summary_id::TEXT, summary
             FROM nlp_service.earnings_call_summaries
@@ -631,10 +629,22 @@ class StockEarningsSummaryPointText(StockText):
     async def get_citations_for_output(
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
-        # TODO
-        return [
-            CitationOutput(citation_type=CitationType.TEXT, name=text.text_type) for text in texts
-        ]
+        str_lookup = await cls._get_strs_lookup(texts)
+
+        outputs = []
+        for text in texts:
+            point_str = str_lookup.get(text.id)
+            if point_str:
+                outputs.append(
+                    CitationOutput(
+                        id=text.summary_id,
+                        citation_type=CitationType.TEXT,
+                        name=cls.text_type,
+                        metadata=str((text.summary_type, text.summary_idx)),
+                    )
+                )
+
+        return outputs
 
 
 @io_type

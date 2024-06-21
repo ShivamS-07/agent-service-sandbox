@@ -27,8 +27,10 @@ from agent_service.utils.hypothesis.constants import (
 from agent_service.utils.hypothesis.prompts import (
     HYPOTHESIS_EXPLANATION_PROMPT,
     HYPOTHESIS_RELEVANT_PROMPT,
+    HYPOTHESIS_SUMMARY_EARNINGS_REFERENCE_TEMPLATE,
     HYPOTHESIS_SUMMARY_EARNINGS_TEMPLATE,
     HYPOTHESIS_SUMMARY_MAIN_PROMPT,
+    HYPOTHESIS_SUMMARY_NEWS_REFERENCE_TEMPLATE,
     HYPOTHESIS_SUMMARY_NEWS_TEMPLATE,
     HYPOTHESIS_SUMMARY_SYS_PROMPT,
     HYPOTHESIS_TOPIC_ANALYSIS_MAIN_PROMPT,
@@ -228,7 +230,25 @@ class HypothesisAI:
         match_score: float,
         news_topics_str: str,
         earnings_main_topics_str: str,
-    ) -> str:
+    ) -> Dict[str, Union[str, List[int]]]:
+        """Generate a summary of the hypothesis analysis.
+
+        Args:
+            property (str): A sentence describing the hypothesis statement, right now it's the same
+                as the hypothesis text.
+            match_score (float): how much the hypothesis matches news and earnings topics, -1 to 1
+            news_topics_str (str): A joined string of news topics that are relevant to the
+                hypothesis. If not news topics, it should be an empty string.
+            earnings_main_topics_str (str): A joined string of earnings topics that are relevant to
+                the hypothesis. If not earnings topics, it should be an empty string.
+
+        Returns:
+            Dict[str, Union[str, List[int]]]: {
+                "summary": str,
+                "news_topics_references": List[int],  # key is optional
+                "earnings_topics_references": List[int]  # key is optional
+            }
+        """
         if match_score > NEUTRAL_CUTOFF:
             conclusion = SUPPORT_STR
         elif match_score < -NEUTRAL_CUTOFF:
@@ -236,25 +256,32 @@ class HypothesisAI:
         else:
             conclusion = MIXED_STR
 
-        news_str = (
-            HYPOTHESIS_SUMMARY_NEWS_TEMPLATE.format(news_topics=news_topics_str)
-            if news_topics_str
-            else ""
-        )
-        earnings_str = (
-            HYPOTHESIS_SUMMARY_EARNINGS_TEMPLATE.format(
+        if news_topics_str:
+            news_str = HYPOTHESIS_SUMMARY_NEWS_TEMPLATE.format(news_topics=news_topics_str)
+            news_ref = HYPOTHESIS_SUMMARY_NEWS_REFERENCE_TEMPLATE
+        else:
+            news_str = ""
+            news_ref = ""
+
+        if earnings_main_topics_str:
+            earnings_str = HYPOTHESIS_SUMMARY_EARNINGS_TEMPLATE.format(
                 earnings_main_topics=earnings_main_topics_str
             )
-            if earnings_main_topics_str
-            else ""
-        )
+            earnings_ref = HYPOTHESIS_SUMMARY_EARNINGS_REFERENCE_TEMPLATE
+        else:
+            earnings_str = ""
+            earnings_ref = ""
 
         main_prompt = HYPOTHESIS_SUMMARY_MAIN_PROMPT.format(
             property=property,
             conclusion=conclusion,
             news_str=news_str,
             earnings_str=earnings_str,
+            news_ref=news_ref,
+            earnings_ref=earnings_ref,
         )
-        return await self.gpt_smart.do_chat_w_sys_prompt(
+
+        json_str = await self.gpt_smart.do_chat_w_sys_prompt(
             main_prompt, HYPOTHESIS_SUMMARY_SYS_PROMPT.format(), max_tokens=150
         )
+        return json.loads(clean_to_json_if_needed(json_str))

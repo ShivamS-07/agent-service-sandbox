@@ -9,6 +9,7 @@ from agent_service.io_types.text import (
     StockHypothesisNewsDevelopmentText,
     StockNewsDevelopmentText,
     Text,
+    TextCitation,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
@@ -120,13 +121,15 @@ async def summarize_hypothesis_from_news_developments(
     pipeline = HypothesisPipeline(gbi_id=714, hypothesis_text=args.hypothesis)
     await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
 
-    match_score, summary = await pipeline.calculate_match_score_and_generate_summary(
-        args.news_developments, earnings_summary_points=[]
+    match_score, summary, ref_news_developments, _ = (
+        await pipeline.calculate_match_score_and_generate_summary(
+            args.news_developments, earnings_summary_points=[]
+        )
     )
 
-    return Text(
-        val=summary, history=[HistoryEntry(score=Score.scale_input(match_score, lb=-1, ub=1))]
-    )
+    score = Score.scale_input(match_score, lb=-1, ub=1)
+    citations = [TextCitation(source_text=topic) for topic in ref_news_developments]
+    return Text(val=summary, history=[HistoryEntry(score=score, citations=citations)])  # type: ignore  # noqa
 
 
 class TestEarningsHypothesisInput(ToolArgs):
@@ -233,13 +236,15 @@ async def summarize_hypothesis_from_earnings_summaries(
     pipeline = HypothesisPipeline(gbi_id=714, hypothesis_text=args.hypothesis)
     await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
 
-    match_score, summary = await pipeline.calculate_match_score_and_generate_summary(
-        news_developments=[], earnings_summary_points=args.earnings_summary_points
+    match_score, summary, _, ref_earnings_points = (
+        await pipeline.calculate_match_score_and_generate_summary(
+            news_developments=[], earnings_summary_points=args.earnings_summary_points
+        )
     )
 
-    return Text(
-        val=summary, history=[HistoryEntry(score=Score.scale_input(match_score, lb=-1, ub=1))]
-    )
+    score = Score.scale_input(match_score, lb=-1, ub=1)
+    citations = [TextCitation(source_text=topic) for topic in ref_earnings_points]
+    return Text(val=summary, history=[HistoryEntry(score=score, citations=citations)])  # type: ignore  # noqa
 
 
 class SummarizeHypothesisFromVariousSourcesInput(ToolArgs):
@@ -273,10 +278,14 @@ async def summarize_hypothesis_from_various_sources(
     pipeline = HypothesisPipeline(gbi_id=714, hypothesis_text=args.hypothesis)
     await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
 
-    match_score, summary = await pipeline.calculate_match_score_and_generate_summary(
-        args.news_developments, args.earnings_summary_points
+    match_score, summary, ref_news_developments, ref_earnings_points = (
+        await pipeline.calculate_match_score_and_generate_summary(
+            args.news_developments, args.earnings_summary_points
+        )
     )
 
-    return Text(
-        val=summary, history=[HistoryEntry(score=Score.scale_input(match_score, lb=-1, ub=1))]
-    )
+    score = Score.scale_input(match_score, lb=-1, ub=1)
+    citations = [
+        TextCitation(source_text=topic) for topic in ref_news_developments + ref_earnings_points
+    ]
+    return Text(val=summary, history=[HistoryEntry(score=score, citations=citations)])  # type: ignore  # noqa
