@@ -316,9 +316,7 @@ async def make_bar_graph(args: MakeBarGraphArgs, context: PlanRunContext) -> Bar
         data = [
             BarData(
                 index=index_val,
-                values=[
-                    BarDataPoint(label=k, value=v) for k, v in record.items() if not pd.isna(v)
-                ],
+                values=[BarDataPoint(label=k, value=v) for k, v in record.items()],
             )
             for index_val, record in zip(pivoted_df.index, records)
             if not pd.isna(index_val)
