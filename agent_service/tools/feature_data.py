@@ -7,10 +7,12 @@ import numpy as np
 import pandas as pd
 from cachetools import TTLCache, cached
 from data_access_layer.core.dao.features.features_dao import FeaturesDAO
+from feature_service_proto_v1.feature_service_common_messages_pb2 import (
+    FEATURE_VALUE_UNITS_PERCENT,
+    FEATURE_VALUE_UNITS_PRICE,
+    FEATURE_VALUE_UNITS_UNIT,
+)
 from feature_service_proto_v1.feature_service_pb2 import (
-    FEATURE_UNITS_PERCENT,
-    FEATURE_UNITS_PRICE,
-    FEATURE_UNITS_UNIT,
     GetFeatureDataResponse,
     TimeAxis,
 )
@@ -445,10 +447,10 @@ async def get_statistic_data(
     df = df.replace(0, np.nan).dropna(axis="index", how="all")
 
     # wrangle units
-    units = dict(result.feature_units).get(statistic_id.stat_id, FEATURE_UNITS_UNIT)
-    if units == FEATURE_UNITS_PRICE:
+    units = dict(result.feature_value_units).get(statistic_id.stat_id, FEATURE_VALUE_UNITS_UNIT)
+    if units == FEATURE_VALUE_UNITS_PRICE:
         value_coltype = TableColumnType.CURRENCY
-    elif units == FEATURE_UNITS_PERCENT:
+    elif units == FEATURE_VALUE_UNITS_PERCENT:
         value_coltype = TableColumnType.PERCENT
     else:
         value_coltype = TableColumnType.FLOAT

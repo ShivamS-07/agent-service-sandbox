@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "86ca69060cdd774a73fb29083cdc5619cfd0cd442efffd8824463d88e873f65a"
+            "sha256": "c2ae3efb38ccb139d11d6216e4aba6d6de17744db07c28bc69b8af0082b19eb9"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -180,7 +180,7 @@
                 "sha256:4640d96be84d82d02ed59ea2b7105a0f7b33abe8703703cd0ab0bf87c427522f",
                 "sha256:7405140ff1230c310e51dc27b3145b9092d659ce68ff733fb0cefe3ee42be028"
             ],
-            "markers": "python_version < '3.12.0'",
+            "markers": "python_version < '3.12'",
             "version": "==4.0.3"
         },
         "asyncpg": {
@@ -883,7 +883,7 @@
         },
         "feature-service-proto-v1": {
             "index": "gbi",
-            "version": "==1.47.0"
+            "version": "==1.48.0"
         },
         "frozenlist": {
             "hashes": [
@@ -977,7 +977,7 @@
             "version": "==2024.6.0"
         },
         "gbi-common-proto-v1": {
-            "markers": "python_version >= '3.0'",
+            "markers": "python_version >= '3'",
             "version": "==1.13.0"
         },
         "gbi-common-py-utils": {
@@ -1065,7 +1065,7 @@
                 "sha256:fd096eb7ffef17c456cfa587523c5f92321ae02427ff955bebe9e3c63bc9f0da",
                 "sha256:fe754d231288e1e64323cfad462fcee8f0288654c10bdf4f603a39ed923bef33"
             ],
-            "markers": "python_version < '3.13' and (platform_machine == 'aarch64' or (platform_machine == 'ppc64le' or (platform_machine == 'x86_64' or (platform_machine == 'amd64' or (platform_machine == 'AMD64' or (platform_machine == 'win32' or platform_machine == 'WIN32'))))))",
+            "markers": "python_version < '3.13' and platform_machine == 'aarch64' or (platform_machine == 'ppc64le' or (platform_machine == 'x86_64' or (platform_machine == 'amd64' or (platform_machine == 'AMD64' or (platform_machine == 'win32' or platform_machine == 'WIN32')))))",
             "version": "==3.0.3"
         },
         "griffe": {
@@ -1427,7 +1427,7 @@
                 "sha256:b6326e2da0f7d425338bebf58848e830421defbce785f12ae812e65128518156",
                 "sha256:e7d69b1c20f32815bbec722330ee8af14b1287bb1c2b0afa590dbf031cadeaa0"
             ],
-            "markers": "python_version >= '3.0'",
+            "markers": "python_version >= '3'",
             "version": "==0.4.0"
         },
         "jmespath": {
@@ -1954,7 +1954,7 @@
             "version": "==2.19.3"
         },
         "proto-cube-flat-proto-v1": {
-            "markers": "python_version >= '3.0'",
+            "markers": "python_version >= '3'",
             "version": "==1.2.0"
         },
         "protobuf": {
@@ -2217,7 +2217,7 @@
                 "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3",
                 "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427"
             ],
-            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2'",
+            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'",
             "version": "==2.9.0.post0"
         },
         "python-dotenv": {
@@ -2630,7 +2630,7 @@
                 "sha256:f481f16baec5290e45aebdc2a5168ebc6d35189ae6fea7a58787613a25f6e875",
                 "sha256:fff3573c2db359f091e1589c3d7c5fc2f86f5bdb6f24252c2d8e539d4e45f412"
             ],
-            "markers": "platform_python_implementation == 'CPython' and python_version < '3.13'",
+            "markers": "python_version < '3.13' and platform_python_implementation == 'CPython'",
             "version": "==0.2.8"
         },
         "s3transfer": {
@@ -2716,7 +2716,7 @@
                 "sha256:1e61c37477a1626458e36f7b1d82aa5c9b094fa4802892072e49de9c60c4c926",
                 "sha256:8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254"
             ],
-            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2'",
+            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'",
             "version": "==1.16.0"
         },
         "sniffio": {
@@ -2859,7 +2859,7 @@
                 "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b",
                 "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f"
             ],
-            "markers": "python_version >= '2.6' and python_version not in '3.0, 3.1, 3.2'",
+            "markers": "python_version >= '2.6' and python_version not in '3.0, 3.1, 3.2, 3.3'",
             "version": "==0.10.2"
         },
         "tomli": {
