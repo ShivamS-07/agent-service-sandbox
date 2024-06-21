@@ -12,6 +12,7 @@ from feature_service_proto_v1.feature_service_pb2 import (
     FEATURE_UNITS_PRICE,
     FEATURE_UNITS_UNIT,
     GetFeatureDataResponse,
+    TimeAxis,
 )
 from gbi_common_py_utils.numpy_common.numpy_cube import NumpyCube
 from gbi_common_py_utils.numpy_common.numpy_sheet import NumpySheet
@@ -21,6 +22,7 @@ from agent_service.GPT.constants import FILTER_CONCURRENCY, HAIKU, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.dates import DateRange
+from agent_service.io_types.graph import GraphType
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
@@ -380,30 +382,64 @@ async def get_statistic_data(
         from_date=start_date,
         to_date=end_date,
         ffill_days=ffill_days,
+        use_natural_axis=True,
     )
 
     # make the dataframe with index = dates, columns = stock ids
     # or columns = statistic id (for global features)
     # since we are requesting data for a single statistic_id, we can do a simple check
     # and slice out the relevant data
-    security_data = NumpyCube.initialize_from_proto_bytes(result.security_data_cube)
-    global_data = NumpySheet.initialize_from_proto_bytes(result.global_data_sheet)
-    is_global = not (statistic_id.stat_id in security_data.row_map)
+    security_data = None
+    global_data = None
+    data_time_axis = None
+    for sec_data in result.security_data:
+        np_cube = NumpyCube.initialize_from_proto_bytes(sec_data.data_cube, cols_are_dates=False)
+        if statistic_id.stat_id in np_cube.row_map:
+            is_global = False
+            data_time_axis = sec_data.time_axis
+            security_data = np_cube
+            break
+    for gl_data in result.global_data:
+        np_sheet = NumpySheet.initialize_from_proto_bytes(gl_data.data_sheet, cols_are_dates=False)
+        if statistic_id.stat_id in np_sheet.row_map:
+            is_global = True
+            data_time_axis = gl_data.time_axis
+            global_data = np_sheet
+            break
+    assert data_time_axis is not None
+    index_name = "Date"
+    index_type = TableColumnType.DATE
+    prefer_graph_type = GraphType.LINE
+    if data_time_axis != TimeAxis.TIME_AXIS_DATE:
+        index_name = "Period"
+        index_type = TableColumnType.STRING
+        prefer_graph_type = GraphType.BAR
+
     if is_global:
+        assert global_data is not None
         data = global_data.np_data[global_data.row_map[statistic_id.stat_id], :]
         df = pd.DataFrame(
             data,
-            index=pd.to_datetime(global_data.columns),
+            index=(
+                global_data.columns
+                if index_type == TableColumnType.STRING
+                else pd.to_datetime(global_data.columns)
+            ),
             columns=[statistic_id.stat_name],
         )
     else:
+        assert security_data is not None
         if not stock_ids:
             raise ValueError("No stocks given to look up statistic for.")
         # dims are (feats, dates, secs) -> (dates, secs)
         data = security_data.np_data[security_data.row_map[statistic_id.stat_id], :, :]
         df = pd.DataFrame(
             data,
-            index=pd.to_datetime(security_data.columns),
+            index=(
+                security_data.columns
+                if index_type == TableColumnType.STRING
+                else pd.to_datetime(security_data.columns)
+            ),
             columns=[int(s) for s in security_data.fields],
         )
     df = df.replace(0, np.nan).dropna(axis="index", how="all")
@@ -431,16 +467,16 @@ async def get_statistic_data(
     )
     if is_global:
         # if global, the stock column is actually a feature column
-        df.index.rename("Date", inplace=True)
+        df.index.rename(index_name, inplace=True)
         df.reset_index(inplace=True)
 
         # We now have a dataframe with only a few columns: Date, Statistic Name
         # currency may or may not be set.
         df = df[df[statistic_id.stat_name].notna()]
-        return StockTable.from_df_and_cols(
+        stock_table = StockTable.from_df_and_cols(
             data=df,
             columns=[
-                TableColumnMetadata(label="Date", col_type=TableColumnType.DATE),
+                TableColumnMetadata(label=index_name, col_type=index_type),
                 TableColumnMetadata(
                     label=statistic_id.stat_name, col_type=value_coltype, unit=curr_unit
                 ),
@@ -448,10 +484,10 @@ async def get_statistic_data(
         )
     else:
         # if not global, augment with currency information if exists.
-        df.index.rename("Date", inplace=True)
+        df.index.rename(index_name, inplace=True)
         df.reset_index(inplace=True)
         df = df.melt(
-            id_vars=["Date"],
+            id_vars=[index_name],
             var_name=STOCK_ID_COL_NAME_DEFAULT,
             value_name=statistic_id.stat_name,
         )
@@ -460,10 +496,10 @@ async def get_statistic_data(
 
         # We now have a dataframe with only a few columns: Date, Stock ID, Statistic Name
         df = df[df[statistic_id.stat_name].notna()]
-        return StockTable.from_df_and_cols(
+        stock_table = StockTable.from_df_and_cols(
             data=df,
             columns=[
-                TableColumnMetadata(label="Date", col_type=TableColumnType.DATE),
+                TableColumnMetadata(label=index_name, col_type=index_type),
                 TableColumnMetadata(
                     label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
                 ),
@@ -472,6 +508,8 @@ async def get_statistic_data(
                 ),
             ],
         )
+    stock_table.prefer_graph_type = prefer_graph_type
+    return stock_table
 
 
 # TODO in the future we need a latest date per region
