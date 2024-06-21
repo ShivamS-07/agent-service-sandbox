@@ -7,7 +7,7 @@ from agent_service.io_type_utils import IOType, load_io_type
 
 # Make sure all io_types are registered
 from agent_service.io_types import *  # noqa
-from agent_service.planner.planner_types import ExecutionPlan
+from agent_service.planner.planner_types import ExecutionPlan, PlanStatus
 from agent_service.types import ChatContext, Message, Notification
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.date_utils import get_now_utc
@@ -143,9 +143,9 @@ class AsyncDB:
 
     async def get_latest_execution_plan(
         self, agent_id: str
-    ) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime]]:
+    ) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime], Optional[str]]:
         sql = """
-            SELECT plan_id::VARCHAR, plan, created_at
+            SELECT plan_id::VARCHAR, plan, created_at, status
             FROM agent.execution_plans
             WHERE agent_id = %(agent_id)s
             ORDER BY last_updated DESC
@@ -153,11 +153,12 @@ class AsyncDB:
         """
         rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
         if not rows:
-            return None, None, None
+            return None, None, None, None
         return (
             rows[0]["plan_id"],
             ExecutionPlan.model_validate(rows[0]["plan"]),
             rows[0]["created_at"],
+            rows[0]["status"],
         )
 
     @lru_cache(maxsize=128)
@@ -288,19 +289,35 @@ class AsyncDB:
             table_name="agent.agents", rows=[agent_metadata.to_agent_row()]
         )
 
-    async def write_execution_plan(self, plan_id: str, agent_id: str, plan: ExecutionPlan) -> None:
+    async def write_execution_plan(
+        self,
+        plan_id: str,
+        agent_id: str,
+        plan: ExecutionPlan,
+        status: PlanStatus = PlanStatus.READY,
+    ) -> None:
         sql = """
-        INSERT INTO agent.execution_plans (plan_id, agent_id, plan)
+        INSERT INTO agent.execution_plans (plan_id, agent_id, plan, created_at, last_updated, status)
         VALUES (
-          %(plan_id)s, %(agent_id)s, %(plan)s
+          %(plan_id)s, %(agent_id)s, %(plan)s, %(created_at)s, %(last_updated)s, %(status)s
         )
         ON CONFLICT (plan_id) DO UPDATE SET
           agent_id = EXCLUDED.agent_id,
           plan = EXCLUDED.plan,
-          last_updated = NOW()
+          last_updated = NOW(),
+          status = EXCLUDED.status
         """
+        created_at = last_updated = get_now_utc()  # need so skip_commit db has proper times
         await self.pg.generic_write(
-            sql, params={"plan_id": plan_id, "agent_id": agent_id, "plan": plan.model_dump_json()}
+            sql,
+            params={
+                "plan_id": plan_id,
+                "agent_id": agent_id,
+                "plan": plan.model_dump_json(),
+                "created_at": created_at,
+                "last_updated": last_updated,
+                "status": status.value,
+            },
         )
 
     async def delete_agent_by_id(self, agent_id: str) -> None:
@@ -416,10 +433,10 @@ async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) 
 
 async def get_latest_execution_plan_from_db(
     agent_id: str, db: Union[AsyncDB, Postgres]
-) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime]]:
+) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime], Optional[str]]:
     if isinstance(db, Postgres):
         return db.get_latest_execution_plan(agent_id)
     elif isinstance(db, AsyncDB):
         return await db.get_latest_execution_plan(agent_id)
     else:
-        return None, None, None
+        return None, None, None, None

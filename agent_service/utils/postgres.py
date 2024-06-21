@@ -6,7 +6,7 @@ from gbi_common_py_utils.utils.postgres import PostgresBase
 
 from agent_service.endpoints.models import AgentMetadata
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
-from agent_service.planner.planner_types import ExecutionPlan, SamplePlan
+from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, SamplePlan
 from agent_service.types import ChatContext, Message, Notification, PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.date_utils import get_now_utc
@@ -91,9 +91,9 @@ class Postgres(PostgresBase):
 
     def get_latest_execution_plan(
         self, agent_id: str
-    ) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime]]:
+    ) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime], Optional[str]]:
         sql = """
-            SELECT plan_id::VARCHAR, plan, created_at
+            SELECT plan_id::VARCHAR, plan, created_at, status
             FROM agent.execution_plans
             WHERE agent_id = %(agent_id)s
             ORDER BY last_updated DESC
@@ -101,9 +101,14 @@ class Postgres(PostgresBase):
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
         if not rows:
-            return None, None, None
+            return None, None, None, None
         row = rows[0]
-        return row["plan_id"], ExecutionPlan.model_validate(row["plan"]), row["created_at"]
+        return (
+            row["plan_id"],
+            ExecutionPlan.model_validate(row["plan"]),
+            row["created_at"],
+            row["status"],
+        )
 
     def get_all_execution_plans(
         self, agent_id: str
@@ -205,16 +210,23 @@ class Postgres(PostgresBase):
     ################################################################################################
     # Tools and Execution Plans
     ################################################################################################
-    def write_execution_plan(self, plan_id: str, agent_id: str, plan: ExecutionPlan) -> None:
+    def write_execution_plan(
+        self,
+        plan_id: str,
+        agent_id: str,
+        plan: ExecutionPlan,
+        status: PlanStatus = PlanStatus.READY,
+    ) -> None:
         sql = """
-        INSERT INTO agent.execution_plans (plan_id, agent_id, plan, created_at, last_updated)
+        INSERT INTO agent.execution_plans (plan_id, agent_id, plan, created_at, last_updated, status)
         VALUES (
-          %(plan_id)s, %(agent_id)s, %(plan)s, %(created_at)s, %(last_updated)s
+          %(plan_id)s, %(agent_id)s, %(plan)s, %(created_at)s, %(last_updated)s, %(status)s
         )
         ON CONFLICT (plan_id) DO UPDATE SET
           agent_id = EXCLUDED.agent_id,
           plan = EXCLUDED.plan,
-          last_updated = NOW()
+          last_updated = NOW(),
+          status = EXCLUDED.status
         """
 
         created_at = last_updated = get_now_utc()  # need so skip_commit db has proper times
@@ -226,6 +238,7 @@ class Postgres(PostgresBase):
                 "plan": plan.model_dump_json(),
                 "created_at": created_at,
                 "last_updated": last_updated,
+                "status": status.value,
             },
         )
 

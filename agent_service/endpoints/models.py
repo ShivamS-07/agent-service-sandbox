@@ -181,6 +181,7 @@ class ExecutionPlanTemplate(BaseModel):
 class GetAgentWorklogBoardResponse(BaseModel):
     run_history: List[PlanRun]  # sorted by time ASC, all the runs that have happened
     execution_plan_template: Optional[ExecutionPlanTemplate] = None
+    latest_plan_status: Optional[str] = None
 
 
 ####################################################################################################
@@ -222,6 +223,7 @@ class EventType(str, enum.Enum):
     MESSAGE = "message"
     OUTPUT = "output"
     NEW_PLAN = "new_plan"
+    PLAN_STATUS = "plan_status"
     WORKLOG = "worklog"
 
 
@@ -240,6 +242,11 @@ class NewPlanEvent(BaseModel):
     plan: ExecutionPlanTemplate
 
 
+class PlanStatusEvent(BaseModel):
+    event_type: Literal[EventType.PLAN_STATUS] = EventType.PLAN_STATUS
+    status: str
+
+
 class WorklogEvent(BaseModel):
     event_type: Literal[EventType.WORKLOG] = EventType.WORKLOG
     worklog: PlanRun
@@ -247,7 +254,7 @@ class WorklogEvent(BaseModel):
 
 class AgentEvent(BaseModel):
     agent_id: str
-    event: Union[MessageEvent, OutputEvent, NewPlanEvent, WorklogEvent] = Field(
+    event: Union[MessageEvent, OutputEvent, NewPlanEvent, PlanStatusEvent, WorklogEvent] = Field(
         discriminator="event_type"
     )
     timestamp: datetime.datetime = Field(default_factory=get_now_utc)

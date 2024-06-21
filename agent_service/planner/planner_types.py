@@ -1,3 +1,4 @@
+import enum
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
@@ -69,6 +70,12 @@ class ToolExecutionNode(BaseModel):
 
     def get_plan_step_str(self) -> str:
         return f"{self.output_variable_name} = {self.tool_name}({self.convert_args()})  # {self.description}"
+
+
+class PlanStatus(str, enum.Enum):
+    CREATING = "CREATING"
+    READY = "READY"
+    FAILED = "FAILED"
 
 
 class ExecutionPlan(BaseModel):

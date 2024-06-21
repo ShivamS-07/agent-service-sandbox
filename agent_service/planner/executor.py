@@ -21,6 +21,7 @@ from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import (
     ErrorInfo,
     ExecutionPlan,
+    PlanStatus,
     ToolExecutionNode,
     Variable,
 )
@@ -29,6 +30,7 @@ from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.agent_event_utils import (
     publish_agent_execution_plan,
     publish_agent_output,
+    publish_agent_plan_status,
     publish_agent_updated_worklogs,
     send_chat_message,
 )
@@ -73,6 +75,7 @@ async def run_execution_plan(
     db.insert_plan_run(
         agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
     )
+
     final_outputs = []
     tool_output = None
     prev_worklog_publish_time = get_now_utc()
@@ -218,6 +221,23 @@ async def create_execution_plan(
     )
 
     logger.info(f"Starting creation of execution plan for {agent_id=}...")
+    # insert empty execution plan and mark as creating
+    if isinstance(db, AsyncDB):
+        await db.write_execution_plan(
+            plan_id=plan_id,
+            agent_id=agent_id,
+            plan=ExecutionPlan(nodes=[]),
+            status=PlanStatus.CREATING,
+        )
+    elif isinstance(db, Postgres):
+        db.write_execution_plan(
+            plan_id=plan_id,
+            agent_id=agent_id,
+            plan=ExecutionPlan(nodes=[]),
+            status=PlanStatus.CREATING,
+        )
+    await publish_agent_plan_status(agent_id=agent_id, status=PlanStatus.CREATING)
+
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
     plan = await planner.create_initial_plan(
         chat_context=chat_context, use_sample_plans=use_sample_plans
@@ -232,6 +252,22 @@ async def create_execution_plan(
                 message=Message(agent_id=agent_id, message=message, is_user_message=False),
                 db=db,
             )
+        # mark as failed
+        if isinstance(db, AsyncDB):
+            await db.write_execution_plan(
+                plan_id=plan_id,
+                agent_id=agent_id,
+                plan=ExecutionPlan(nodes=[]),
+                status=PlanStatus.FAILED,
+            )
+        elif isinstance(db, Postgres):
+            db.write_execution_plan(
+                plan_id=plan_id,
+                agent_id=agent_id,
+                plan=ExecutionPlan(nodes=[]),
+                status=PlanStatus.FAILED,
+            )
+        await publish_agent_plan_status(agent_id=agent_id, status=PlanStatus.FAILED)
         raise RuntimeError("Failed to create execution plan!")
 
     plan_run_id = str(uuid4())
@@ -299,7 +335,7 @@ async def update_execution_after_input(
 
     chatbot = Chatbot(agent_id=agent_id)
 
-    latest_plan_id, latest_plan, _ = db.get_latest_execution_plan(agent_id)
+    latest_plan_id, latest_plan, _, _ = db.get_latest_execution_plan(agent_id)
 
     if latest_plan is None or latest_plan_id is None:
         # we must still be creating the first plan, let's just redo it
@@ -448,9 +484,27 @@ async def rewrite_execution_plan(
     logger.info(f"Starting rewrite of execution plan for {agent_id=}...")
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
 
-    _, old_plan, plan_timestamp = await get_latest_execution_plan_from_db(agent_id, db)
+    _, old_plan, plan_timestamp, _ = await get_latest_execution_plan_from_db(agent_id, db)
     if not old_plan:  # shouldn't happen, just for mypy
         raise RuntimeError("Cannot rewrite a plan that does not exist!")
+
+    # mark old execution plan as creating
+    if isinstance(db, AsyncDB):
+        await db.write_execution_plan(
+            plan_id=plan_id,
+            agent_id=agent_id,
+            plan=old_plan,
+            status=PlanStatus.CREATING,
+        )
+    elif isinstance(db, Postgres):
+        db.write_execution_plan(
+            plan_id=plan_id,
+            agent_id=agent_id,
+            plan=old_plan,
+            status=PlanStatus.CREATING,
+        )
+    await publish_agent_plan_status(agent_id=agent_id, status=PlanStatus.CREATING)
+
     if error_info:
         new_plan = await planner.rewrite_plan_after_error(
             error_info, chat_context, old_plan, action=action, use_sample_plans=use_sample_plans
@@ -468,9 +522,18 @@ async def rewrite_execution_plan(
             await send_chat_message(
                 message=Message(agent_id=agent_id, message=message, is_user_message=False), db=db
             )
+            # failed to replan, mark as failed
+            if isinstance(db, AsyncDB):
+                await db.write_execution_plan(
+                    plan_id=plan_id, agent_id=agent_id, plan=old_plan, status=PlanStatus.FAILED
+                )
+            elif isinstance(db, Postgres):
+                db.write_execution_plan(
+                    plan_id=plan_id, agent_id=agent_id, plan=old_plan, status=PlanStatus.FAILED
+                )
+        await publish_agent_plan_status(agent_id=agent_id, status=PlanStatus.FAILED)
         raise RuntimeError("Failed to replan!")
 
-    db.write_execution_plan(plan_id=plan_id, agent_id=agent_id, plan=new_plan)
     logger.info(f"Finished rewriting execution plan for {agent_id=}")
     logger.info(f"New Execution Plan:\n{new_plan.get_formatted_plan()}")
 

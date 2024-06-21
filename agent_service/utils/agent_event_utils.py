@@ -14,6 +14,7 @@ from agent_service.endpoints.models import (
     OutputEvent,
     PlanRun,
     PlanRunTaskLog,
+    PlanStatusEvent,
     Status,
     WorklogEvent,
 )
@@ -22,7 +23,7 @@ from agent_service.endpoints.utils import (
     reset_plan_run_status_if_needed,
 )
 from agent_service.io_type_utils import IOType, load_io_type
-from agent_service.planner.planner_types import ExecutionPlan
+from agent_service.planner.planner_types import ExecutionPlan, PlanStatus
 from agent_service.types import Message, Notification, PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
@@ -142,13 +143,21 @@ async def publish_agent_execution_plan(
     if db:
         if isinstance(db, AsyncDB):
             await db.write_execution_plan(
-                plan_id=context.plan_id, agent_id=context.agent_id, plan=plan
+                plan_id=context.plan_id,
+                agent_id=context.agent_id,
+                plan=plan,
+                status=PlanStatus.READY,
             )
         elif isinstance(db, Postgres):
-            db.write_execution_plan(plan_id=context.plan_id, agent_id=context.agent_id, plan=plan)
+            db.write_execution_plan(
+                plan_id=context.plan_id,
+                agent_id=context.agent_id,
+                plan=plan,
+                status=PlanStatus.READY,
+            )
     else:  # probably never hits this
         await AsyncDB(SyncBoostedPG()).write_execution_plan(
-            plan_id=context.plan_id, agent_id=context.agent_id, plan=plan
+            plan_id=context.plan_id, agent_id=context.agent_id, plan=plan, status=PlanStatus.READY
         )
 
     event = AgentEvent(
@@ -162,6 +171,15 @@ async def publish_agent_execution_plan(
     )
 
     await publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json())
+
+
+async def publish_agent_plan_status(agent_id: str, status: PlanStatus) -> None:
+    await publish_agent_event(
+        agent_id=agent_id,
+        serialized_event=AgentEvent(
+            agent_id=agent_id, event=PlanStatusEvent(status=status.value)
+        ).model_dump_json(),
+    )
 
 
 async def publish_agent_updated_worklogs(
