@@ -7,6 +7,7 @@ from agent_service.tools.other_text import (
     get_all_text_data_for_stocks,
 )
 from agent_service.types import PlanRunContext
+from tests.tools.test_custom_docs import CUSTOM_DOC_DEV_TEST_USER
 
 
 class TestTextData(IsolatedAsyncioTestCase):
@@ -15,7 +16,8 @@ class TestTextData(IsolatedAsyncioTestCase):
         logging.getLogger("asyncio").setLevel(logging.ERROR)
 
     async def asyncSetUp(self):
-        self.context = PlanRunContext.get_dummy()
+        # use the custom doc context as this will fetch custom documents as well
+        self.context = PlanRunContext.get_dummy(user_id=CUSTOM_DOC_DEV_TEST_USER)
 
     async def test_get_all_text_data(self):
 

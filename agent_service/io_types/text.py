@@ -10,6 +10,7 @@ import mdutils
 from pydantic import Field
 from typing_extensions import Self
 
+from agent_service.external.custom_data_svc_client import get_custom_doc_articles_info
 from agent_service.io_type_utils import (
     Citation,
     ComplexIOBase,
@@ -367,6 +368,62 @@ class NewsPoolArticleText(NewsText):
             )
             for row in rows
         ]
+
+
+@io_type
+class CustomDocumentSummaryText(StockText):
+    id: str
+    requesting_user: str
+    text_type: ClassVar[str] = "User Document Summary"
+
+    @classmethod
+    async def _get_strs_lookup(cls, articles_text: List[CustomDocumentSummaryText]) -> Dict[str, str]:  # type: ignore
+        # group by user id - we are assuming that anyone who is authed for the agent
+        # has priv to see any documents utilized by the agent.
+        articles_text_by_user: Dict[str, List[CustomDocumentSummaryText]] = defaultdict(list)
+        for doc in articles_text:
+            articles_text_by_user[doc.requesting_user].append(doc)
+
+        texts: Dict[str, str] = {}
+        for user, articles in articles_text_by_user.items():
+            article_info = await get_custom_doc_articles_info(
+                user, [article.id for article in articles]
+            )
+            for id, chunk_info in dict(article_info.file_chunk_info).items():
+                texts[id] = f"{chunk_info.headline}\n{chunk_info.summary}"
+        return texts
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, articles_text: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        # group by user id - we are assuming that anyone who is authed for the agent
+        # has priv to see any documents utilized by the agent.
+        articles_text_by_user: Dict[str, List[CustomDocumentSummaryText]] = defaultdict(list)
+        for doc in articles_text:
+            articles_text_by_user[doc.requesting_user].append(doc)
+
+        citations = []
+        for user, articles in articles_text_by_user.items():
+            article_info = await get_custom_doc_articles_info(
+                user, [article.id for article in articles]
+            )
+            for id, chunk_info in dict(article_info.file_chunk_info).items():
+                file_paths = list(chunk_info.file_paths)
+                if len(file_paths) == 0:
+                    citation_name = chunk_info.file_id
+                else:
+                    # pick an arbitrary custom file path
+                    citation_name = file_paths[0]
+
+                citations.append(
+                    CitationOutput(
+                        id=id,
+                        citation_type=CitationType.TEXT,
+                        name=f"User Document: {citation_name}",
+                    )
+                )
+        return citations
 
 
 @io_type

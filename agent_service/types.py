@@ -74,11 +74,14 @@ class PlanRunContext(BaseModel):
     run_tasks_without_prefect: bool = False
 
     @staticmethod
-    def get_dummy() -> "PlanRunContext":
+    def get_dummy(
+        *,
+        user_id: Optional[str] = None,
+    ) -> "PlanRunContext":
         return PlanRunContext(
             agent_id=str(uuid4()),
             plan_id=str(uuid4()),
-            user_id=str(uuid4()),
+            user_id=user_id or str(uuid4()),
             task_id=str(uuid4()),
             plan_run_id=str(uuid4()),
             skip_db_commit=True,
