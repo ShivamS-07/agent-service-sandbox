@@ -17,17 +17,33 @@ from agent_service.io_types.table import (
 )
 from agent_service.io_types.text import EquivalentKPITexts, KPIText
 from agent_service.tool import ToolArgs, ToolCategory, tool
+from agent_service.tools.kpis.constants import DELIMITER, SEPERATOR, SPECIFIC
+from agent_service.tools.kpis.prompts import (
+    CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT_OBJ,
+    CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ,
+    GENERAL_IMPORTANCE_INSTRUCTION,
+    GENERAL_IMPORTANCE_INSTRUCTION_WITH_NUM_KPIS,
+    GET_KPI_TABLE_FOR_STOCK_DESC,
+    GET_KPIS_FOR_STOCK_GIVEN_TOPICS_DESC,
+    GET_OVERLAPPING_KPIS_TABLE_FOR_STOCK_DESC,
+    GET_RELEVANT_KPIS_FOR_MULTIPLE_STOCKS_GIVEN_TOPIC_DESC,
+    IMPORTANT_KPIS_FOR_STOCK_DESC,
+    KPI_RELEVANCY_MAIN_PROMPT_OBJ,
+    KPI_RELEVANCY_SYS_PROMPT_OBJ,
+    OVERLAPPING_KPIS_ACROSS_COMPANIES_MAIN_PROMPT_OBJ,
+    OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT_OBJ,
+    RELEVANCY_INSTRUCTION,
+    SPECIFIC_KPI_INSTRUCTION,
+    SPECIFIC_KPI_MAIN_PROMPT_OBJ,
+)
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.kpi_extractor import KPIInstance, KPIMetadata, KPIRetriever
 from agent_service.utils.postgres import get_psql
-from agent_service.utils.prompt_utils import Prompt
 
 kpi_retriever = KPIRetriever()
 db = get_psql()
-
-SPECIFIC = "specific"
 
 
 @dataclass
@@ -37,149 +53,6 @@ class CompanyInformation:
     company_description: str
     kpi_lookup: Dict[int, KPIMetadata]
     kpi_str: str
-
-
-DELIMITER = "-------------------------------------"
-SEPERATOR = "_"
-
-KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT_OBJ = Prompt(
-    name="KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT",
-    template=(
-        "You are a financial analyst investigating the financial performance of companies have been "
-        "tasked to identify key performance indicators (KPIs) that are equivalently comparable across "
-        "a set of companies for a given topic, each company will be labeled by an index number. For each "
-        "company you will be given a description of the company along with a set of KPIs that relate to "
-        "the given topic. Each KPI shown to you will be presented on a single line with the following "
-        "format '(kpi id) kpi name'.\n\n"
-        "You must identify a KPI that appears across the set of companies that best reports on the "
-        "topic in question however note that the specific wording of the KPI may differ across companies "
-        "due to different product names or may be due to cases where some companies use 'sales' instead "
-        "of 'revenue' in their KPI list. If you are given a set of companies where many companies contain 'Revenue' "
-        "for a topic while others use 'Sales' or 'Net Sales' or vice versa, you may treat them as equivalent metrics "
-        "and consider them to be equivalent providing they are reporting on the same topic. Most critically, when "
-        "identifying equivalent KPIs you must find KPIs that report at the same level, for example, the "
-        "KPIs 'Revenue - Apples' for one farming company and 'Revenue - Fruits' for another farming company "
-        "are not equivalent as one KPI is broader than the other. You must try your best to find an equivalent "
-        "KPI for each company shown to you unless you absolutely believe an equivalent KPI, as defined above, does "
-        "not exist. Again, remember the specific wording of the equivalent KPI you're looking for may vary from "
-        "company to company.\n\n"
-        "Output your result as follows. The first line will contain a general name that accurately describes "
-        "the equivalent KPI you have identified. Then each subsequent line will contain a specific KPI id from "
-        "a company formatted as follows 'index{seperator}kpiID{seperator}justification' where index "
-        "represents the index number associated with the company, kpiID is the kpi id associated with the kpi "
-        "identified, and justification is a brief sentence that justifies why this is an equivalent kpi. "
-        "You must output one line for each company shown to you. For companies without an equivalent kpi, "
-        "output 0 as the kpiID and for the justification provide your reasoning for why you could not identify "
-        "an equivalent kpi. Note that if you cannot find a KPI that is present across all companies you must aim "
-        "to find a one that is present in the max number of companies. If you are unable to find any equivalent "
-        "KPIs across any company simply output '0'."
-    ),
-)
-
-KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_MAIN_PROMPT_OBJ = Prompt(
-    name="KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_MAIN_PROMPT",
-    template=(
-        "Given the topic '{topic}', here are the following companies with their description and KPIs. "
-        "Do not output any additional explanation or justification. "
-        "Each company's descriptions and KPIs are delimited by '{delimiter}'\n\n"
-        "{company_data}"
-    ),
-)
-
-
-KPI_RELEVANCY_SYS_PROMPT_OBJ = Prompt(
-    name="KPI_RELEVANCY_SYS_PROMPT",
-    template=(
-        "You are a financial analyst that has been tasked to identify relevant Key Performance Indicators "
-        "(KPIs) for a given company. You will be told the specific KPIs in question, for example you may be "
-        "asked to identify KPIs. surrounding a specific product or service, or you may be asked to identify "
-        "KPIs that are the most impactful to the company's financial health/dominance. Unless explicitly told, "
-        "you should avoid returning 'high-level' KPIs like 'Total Revenue' or 'EPS' and choose to return KPIs "
-        "that are low-level meaning they refer to some specific product, service, etc. That being said, if you "
-        "are directly asked for these KPIs word for word. That is to say, if the input given to you is 'EPS' "
-        "then of course you should return EPS. Similarly if you are explicitly asked for 'Total Revenue' "
-        "then you should return a KPI that captures total revenue. You should not return total revenue for "
-        "things like 'total revenue from iPhone'."
-    ),
-)
-
-GENERAL_IMPORTANCE_INSTRUCTION_WITH_NUM_KPIS = (
-    "For the company {company_name}, identify the {num_of_kpis} most "
-    "important KPIs for the company. "
-)
-
-GENERAL_IMPORTANCE_INSTRUCTION = (
-    "For the company {company_name}, identify the most important KPIs for the company. Limit yourself to a max "
-    "of 10 KPIs. "
-)
-
-RELEVANCY_INSTRUCTION = (
-    "For the company {company_name}, identify relevant kpis around the following topic: '{query_topic}'. "
-    "Limit yourself to at most 20 KPIs. You should not aim to get 20, stop when you feel that you have identified "
-    "All relevant KPIs to the topic, however if you feel there are more than 20, return the 20 most impactful "
-    "KPIs. "
-)
-
-KPI_RELEVANCY_MAIN_PROMPT = Prompt(
-    name="KPI_RETRIEVAL_MAIN_PROMPT",
-    template=(
-        "{instructions}"
-        "If you are unsure or there is not enough information given, defer to KPIs that measure "
-        "revenue/sales and take the ones with the highest amount.\n\n"
-        "To assist you, here is a brief description of {company_name}:\n"
-        "{company_description}\n\n"
-        "Below are the KPIs you are to select from, each KPI is presented on its own line with a numerical identifier "
-        "in brackets at the start, followed by the KPI name, followed by the KPI value with its respective unit if "
-        "applicable:\n"
-        "{kpi_str}\n\n"
-        "Return the relevant KPIs by name and the numerical identifier associated with it. Each line will contain a "
-        "relevant KPI with the KPI number without the brackets followed by the KPI name separated by a comma. Do not "
-        "output any additional explanation or justification. Do not output more than 10 lines."
-    ),
-)
-
-SPECIFIC_KPI_INSTRUCTION = (
-    "For the company {company_name}, identify a single KPI that is most relevant to the topic '{query_topic}'. "
-    "If there are multiple KPIs that are relevant, choose the one that is most impactful to the company. "
-)
-SPECIFIC_KPI_MAIN_PROMPT = Prompt(
-    name="SPECIFIC_KPI_MAIN_PROMPT",
-    template=(
-        "{instructions}"
-        "If you are unsure or there is not enough information given, defer to KPIs that measure "
-        "revenue/sales and take the ones with the highest amount.\n\n"
-        "To assist you, here is a brief description of {company_name}:\n"
-        "{company_description}\n\n"
-        "Below are the KPIs you are to select from, each KPI is presented on its own line with a  "
-        "numerical identifier in brackets at the start, followed by the KPI name, followed by the  "
-        "KPI value with its respective unit if applicable:\n"
-        "{kpi_str}\n\n"
-        "Return the single most relevant KPI by name and the numerical identifier associated with it."
-        "Each line will contain a relevant KPI with the KPI number without the brackets"
-        "followed by the KPI name separated by a comma."
-        "Do not output any additional explanation or justification. Do not output more than 1 line / KPI."
-    ),
-)
-
-CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT = Prompt(
-    name="CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT",
-    template=(
-        "Given the topic '{topic}', determine if the topic is specific metric or if it is a more general "
-        "product or service. A specific topic would be one that refers to a specific metric, like "
-        "revenue or user growth, while a general topic would refer to a broader aspect of the company's assets "
-        "or operations like a product. If the topic is specific, output 'Specific',"
-        " if the topic is general, output 'General'"
-    ),
-)
-
-CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ = Prompt(
-    name="CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT",
-    template=(
-        "You are a financial analyst that has been tasked to classify a topic as either a specific"
-        "metric or a general product or service. You will be given a topic and must determine if the topic is "
-        "specific or general. Output 'Specific' if the topic is specific, output 'General' if the topic is general."
-    ),
-)
 
 
 def generate_columns_for_kpi(
@@ -346,7 +219,7 @@ async def get_relevant_kpis_for_stock_id(
         company_name=company_info.company_name, query_topic=topic
     )
     result = await llm.do_chat_w_sys_prompt(
-        KPI_RELEVANCY_MAIN_PROMPT.format(
+        KPI_RELEVANCY_MAIN_PROMPT_OBJ.format(
             instructions=instructions,
             company_name=company_info.company_name,
             company_description=company_info.company_description,
@@ -373,25 +246,8 @@ class GetKPIForStockGivenTopic(ToolArgs):
 
 
 @tool(
-    description=(
-        "This function will identify and return financial metrics reporting "
-        "the key performance indicators (KPIs) that relate to a given topic for a given stock id. "
-        "This function should only be invokved when a query makes mention of a singular stock, "
-        "if multiple stocks are mentioned for the same topic or subject matter, use "
-        "the get_relevant_kpis_for_multiple_stocks_given_topic function instead."
-        "A stock_id must be provided to identify the stock for which important KPIs are "
-        "fetched. A list of topic strings must also be provided to specify the topic of interest."
-        "Even if there is only one topic it will be passed in as a list with one element. The "
-        "topic string must be concise and make mention of some aspect or metric of a "
-        "company's financials but must not mention the company name. "
-        "The data returned will be a list of KPIText objects where each KPIText object "
-        "contains one of the identified KPIs. Note that the KPIs returned are specific "
-        "to the stock_id passed in, KPIText entries returned in the list must not be "
-        "used interchangably or joined to other stock_id instances. Additionally, please "
-        "note that this function does not provide any actual data for any given quarter for these KPIS."
-        "You must use this function in conjunction with get_kpis_table_for_stock to"
-        "retrieve the actual data for these KPIS."
-    )
+    description=GET_KPIS_FOR_STOCK_GIVEN_TOPICS_DESC,
+    category=ToolCategory.KPI,
 )
 async def get_kpis_for_stock_given_topics(
     args: GetKPIForStockGivenTopic, context: PlanRunContext
@@ -414,21 +270,7 @@ class GetRelevantKPIsForStocksGivenTopic(ToolArgs):
 
 
 @tool(
-    description=(
-        "This function will identify and return financial metrics, key performance indicators "
-        "(KPIs), across a set of companies the that best reports on a given metric. "
-        "Use this function when a query refers to the same subject matter or metric over multiple stocks."
-        "A list of stock ids must be provided via stock_ids to indicate the stocks "
-        "to search for the given metric for. A shared_metric string must also be provided to specify the "
-        "metric of interest. The shared_metric string must be consice and make mention of some aspect "
-        "or metric of a company but must not mention any specific company's company name. "
-        "The data returned will be a list of KPIText objects where each KPIText object "
-        "contains an identified KPI from one company that best reports on the topic inputted. "
-        "to the stock_id passed in, KPIText entries returned in the list must not be "
-        "Note that this function may not identify a KPI for every company passed in through the stock_ids ."
-        "list, however it will always at most return one KPI for each company, never more. Additionally, please "
-        "note that this function does not provide any actual data for any given quarter for these KPIS."
-    ),
+    description=GET_RELEVANT_KPIS_FOR_MULTIPLE_STOCKS_GIVEN_TOPIC_DESC,
     category=ToolCategory.KPI,
 )
 async def get_relevant_kpis_for_multiple_stocks_given_topic(
@@ -470,12 +312,12 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
             f"{DELIMITER}"
         )
     result = await llm.do_chat_w_sys_prompt(
-        main_prompt=KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_MAIN_PROMPT_OBJ.format(
+        main_prompt=OVERLAPPING_KPIS_ACROSS_COMPANIES_MAIN_PROMPT_OBJ.format(
             topic=args.shared_metric,
             company_data="\n".join(company_data),
             delimiter=DELIMITER,
         ),
-        sys_prompt=KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT_OBJ.format(
+        sys_prompt=OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT_OBJ.format(
             seperator=SEPERATOR,
         ),
     )
@@ -490,6 +332,11 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
     for overlapping_kpi_data in overlapping_kpi_gpt_resp[1:]:
         # We force GPT to output a justification as well but we don't actually need it
         # ie. each line we ask it to output company_index,pid,justification
+
+        # Sometimes adds extra line breaks and we get an empty str, safe to ignore
+        if overlapping_kpi_data == "":
+            continue
+
         company_index, pid, _ = overlapping_kpi_data.split(SEPERATOR)
         if pid == "0":
             # gpt could not find an equivalent kpi for this company
@@ -512,20 +359,7 @@ class GetImportantKPIsForStock(ToolArgs):
 
 
 @tool(
-    description=(
-        "This function will identify and return financial metrics reporting "
-        " key performance indicators (KPIs) for a given stock id when a user has not specified or provided "
-        "any details as to the KPIs they are interested in or have stated want to see the most important "
-        "KPIs of a specific company. If the user has specified an area or areas of interest within the company you "
-        "must use the function get_kpis_for_stock_given_topics instead. "
-        "A stock_id must be provided to identify the stock for which important KPIs are "
-        "fetched. Optionally, an argument for the specific amount of kpis to be retrieved "
-        "can be specified via the num_of_kpis argument. num_of_kpis does not need to be specified "
-        "however. The default behavior will return the most important KPIs up to a limit of 10. "
-        "The data returned will be a list of KPIText objects where each KPIText object "
-        "contains one of the identified KPIs. Additionally, please "
-        "note that this function does not provide any actual data for any given quarter for these KPIS."
-    ),
+    description=IMPORTANT_KPIS_FOR_STOCK_DESC,
     category=ToolCategory.KPI,
 )
 async def get_important_kpis_for_stock(
@@ -539,7 +373,7 @@ async def get_important_kpis_for_stock(
             company_name=company_info.company_name, num_of_kpis=args.num_of_kpis
         )
         result = await llm.do_chat_w_sys_prompt(
-            KPI_RELEVANCY_MAIN_PROMPT.format(
+            KPI_RELEVANCY_MAIN_PROMPT_OBJ.format(
                 instructions=instructions,
                 company_name=company_info.company_name,
                 company_description=company_info.company_description,
@@ -550,7 +384,7 @@ async def get_important_kpis_for_stock(
     else:
         instructions = GENERAL_IMPORTANCE_INSTRUCTION.format(company_name=company_info.company_name)
         result = await llm.do_chat_w_sys_prompt(
-            KPI_RELEVANCY_MAIN_PROMPT.format(
+            KPI_RELEVANCY_MAIN_PROMPT_OBJ.format(
                 instructions=instructions,
                 company_name=company_info.company_name,
                 company_description=company_info.company_description,
@@ -576,9 +410,10 @@ async def classify_specific_or_general_topic(
 ) -> List[KPIText]:
 
     result = await llm.do_chat_w_sys_prompt(
-        main_prompt=CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT.format(topic=topic),
+        main_prompt=CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT_OBJ.format(topic=topic),
         sys_prompt=CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ.format(),
     )
+    print(result)
     if result.lower() == SPECIFIC:
         topic_kpi_list = await get_specific_kpi_data_for_stock_id(
             stock_id, company_info, [topic], llm
@@ -596,7 +431,7 @@ async def get_specific_kpi_data_for_stock_id(
         company_name=company_info.company_name, query_topic=topic
     )
     result = await llm.do_chat_w_sys_prompt(
-        SPECIFIC_KPI_MAIN_PROMPT.format(
+        SPECIFIC_KPI_MAIN_PROMPT_OBJ.format(
             instructions=instructions,
             company_name=company_info.company_name,
             company_description=company_info.company_description,
@@ -656,29 +491,7 @@ class CompanyKPIsRequest(ToolArgs):
 
 
 @tool(
-    description=(
-        "This function will fetch quarterly numerical data for a list of key performance indicators (KPIs) "
-        "for a given company. A stock_id is required to indicate the company to grab the KPI data for. A list "
-        "of kpis will be passed in via the kpis argument containing a list of KPIText objects to indicate "
-        "the kpis to grab information for. The function must also take a table_name, this name should be brief "
-        "and describe what the data represents (ie. 'Important KPIs for Apple' or 'Tesla KPIs Relating to Model X'). "
-        "This function will always grab the data for the quarter associated with the anchor_date. "
-        "The anchor_date should be a datetime.date object, not a date-like string, "
-        "you should convert date strings into dates using the get_date_from_date_str function. "
-        "If no anchor date is provided the function will assume anchor date is the present date "
-        "or infer it from the date_range object if one was provided. Data from additional "
-        "quarters can also be retrieved by specifying the num_prev_quarters, to indicate how many quarters prior to "
-        "the year-quarter the anchor_date falls into. By default num_prev_quarters is set to 7. "
-        "You can also specify the number of quarters after the anchor_date to grab data for by many consecutive "
-        "quarters to grab data for by setting the num_future_quarters argument. By default num_future_quarters is "
-        "set to 0. When a user requests KPI data for the last quarter, you may set num_future_quarters to 0 and "
-        "num_prev_quarters to 1."
-        " If a date_range is provided instead then num_future_quarters will be set to 0,"
-        " anchor_date will be set to date_range.end_date,"
-        " num_prev_quarters will be inferred from the width of the date_range. "
-        "Note this is raw KPI data, often in dollars or other currency. If the user is asking for percentages "
-        "or something similar you must transform this table!"
-    ),
+    description=GET_KPI_TABLE_FOR_STOCK_DESC,
     category=ToolCategory.KPI,
 )
 async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunContext) -> Table:
@@ -716,23 +529,7 @@ class KPIsRequest(ToolArgs):
 
 
 @tool(
-    description=(
-        "This function will fetch quarterly numerical data for a list of key performance indicators (KPIs) "
-        "across a set of companies. A list of kpis will be passed in via the kpis argument containing a list of "
-        "KPIText objects to indicate the kpis to grab information for. The function must also take a table_name, "
-        "this name should be brief and describe what the data represents (ie. 'Cloud Revenue' or "
-        "'Automotive Sales'). This function will always grab the data for the quarter associated with the "
-        "anchor_date. If no anchor date is provided the function will assume anchor date is the present date. "
-        "Data from additional quarters can also be retrieved by specifying the num_prev_quarters, to indicate how "
-        "many quarters prior to the year-quarter the anchor_date falls into. By default num_prev_quarters is "
-        "set to 7. You can also specify the number of quarters after the anchor_date to grab data for by many "
-        "consecutive quarters to grab data for by setting the num_future_quarters argument. By default "
-        "num_future_quarters is set to 0. When a user requests KPI data for the last quarter, you may set "
-        "num_future_quarters to 0 and num_prev_quarters to 1."
-        " If a date_range is provided instead then num_future_quarters will be set to 0,"
-        " anchor_date will be set to date_range.end_date,"
-        " num_prev_quarters will be inferred from the width of the date_range."
-    ),
+    description=GET_OVERLAPPING_KPIS_TABLE_FOR_STOCK_DESC,
     category=ToolCategory.KPI,
 )
 async def get_overlapping_kpis_table_for_stock(args: KPIsRequest, context: PlanRunContext) -> Table:

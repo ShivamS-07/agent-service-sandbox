@@ -6,7 +6,7 @@ from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table
 from agent_service.io_types.text import KPIText
 from agent_service.tools.dates import DateRangeInput, get_n_width_date_range_near_date
-from agent_service.tools.kpis import (
+from agent_service.tools.kpis.tools import (
     CompanyKPIsRequest,
     EquivalentKPITexts,
     GetImportantKPIsForStock,
