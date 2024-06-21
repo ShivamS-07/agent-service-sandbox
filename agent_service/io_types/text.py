@@ -395,12 +395,12 @@ class CustomDocumentSummaryText(StockText):
 
     @classmethod
     async def get_citations_for_output(
-        cls, articles_text: List[Self], db: BoostedPG
+        cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
         # group by user id - we are assuming that anyone who is authed for the agent
         # has priv to see any documents utilized by the agent.
         articles_text_by_user: Dict[str, List[CustomDocumentSummaryText]] = defaultdict(list)
-        for doc in articles_text:
+        for doc in texts:
             articles_text_by_user[doc.requesting_user].append(doc)
 
         citations = []
