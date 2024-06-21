@@ -58,8 +58,8 @@ class CompanyInformation:
 def generate_columns_for_kpi(
     kpi_inst: KPIInstance,
     actual_col_name: str,
-    estimate_col_name: str,
-    surprise_col_name: str,
+    estimate_col_name: Optional[str] = None,
+    surprise_col_name: Optional[str] = None,
 ) -> List[TableColumnMetadata]:
     long_unit = kpi_inst.long_unit
     unit = kpi_inst.unit
@@ -68,38 +68,52 @@ def generate_columns_for_kpi(
         columns.append(
             TableColumnMetadata(label=actual_col_name, col_type=TableColumnType.CURRENCY)
         )
-        columns.append(
-            TableColumnMetadata(label=estimate_col_name, col_type=TableColumnType.CURRENCY)
-        )
+        if estimate_col_name:
+            columns.append(
+                TableColumnMetadata(label=estimate_col_name, col_type=TableColumnType.CURRENCY)
+            )
     elif long_unit == "Percent":
         columns.append(TableColumnMetadata(label=actual_col_name, col_type=TableColumnType.PERCENT))
-        columns.append(
-            TableColumnMetadata(label=estimate_col_name, col_type=TableColumnType.PERCENT)
-        )
+        if estimate_col_name:
+            columns.append(
+                TableColumnMetadata(label=estimate_col_name, col_type=TableColumnType.PERCENT)
+            )
     else:
         columns.append(
             TableColumnMetadata(label=actual_col_name, col_type=TableColumnType.FLOAT, unit=unit)
         )
-        columns.append(
-            TableColumnMetadata(label=estimate_col_name, col_type=TableColumnType.FLOAT, unit=unit)
-        )
-    columns.append(TableColumnMetadata(label=surprise_col_name, col_type=TableColumnType.FLOAT))
+        if estimate_col_name:
+            columns.append(
+                TableColumnMetadata(
+                    label=estimate_col_name, col_type=TableColumnType.FLOAT, unit=unit
+                )
+            )
+    if surprise_col_name:
+        columns.append(TableColumnMetadata(label=surprise_col_name, col_type=TableColumnType.FLOAT))
     return columns
 
 
 def convert_single_stock_data_to_table(
-    stock_id: StockID, data: Dict[str, List[KPIInstance]]
+    stock_id: StockID, data: Dict[str, List[KPIInstance]], simple_output: bool
 ) -> Table:
     data_dict: Dict[str, Any] = {}
-    columns = [
-        TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING),
-        TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-    ]
+
+    columns: List[TableColumnMetadata] = []
+    if not simple_output:
+        columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING))
+    columns.append(
+        TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)
+    )
 
     for kpi_name, kpi_history in data.items():
         actual_col = f"{kpi_name} Actual"
-        estimate_col = f"{kpi_name} Estimate"
-        surprise_col = f"{kpi_name} Surprise"
+        estimate_col = None
+        surprise_col = None
+
+        if not simple_output:
+            estimate_col = f"{kpi_name} Estimate"
+            surprise_col = f"{kpi_name} Surprise"
+
         new_columns = generate_columns_for_kpi(
             kpi_history[0], actual_col, estimate_col, surprise_col
         )
@@ -109,10 +123,15 @@ def convert_single_stock_data_to_table(
             quarter = f"{kpi_inst.year} Q{kpi_inst.quarter}"
 
             if quarter not in data_dict:
-                data_dict[quarter] = {
-                    "Quarter": quarter,
-                    STOCK_ID_COL_NAME_DEFAULT: stock_id,
-                }
+                if simple_output:
+                    data_dict[quarter] = {
+                        STOCK_ID_COL_NAME_DEFAULT: stock_id,
+                    }
+                else:
+                    data_dict[quarter] = {
+                        "Quarter": quarter,
+                        STOCK_ID_COL_NAME_DEFAULT: stock_id,
+                    }
 
             # Need to convert percentages into decimals to satisfy current handling of the Percentage figures
             data_dict[quarter][actual_col] = (
@@ -120,10 +139,12 @@ def convert_single_stock_data_to_table(
                 if (kpi_inst.unit == "Percent" and kpi_inst.actual is not None)
                 else kpi_inst.actual
             )
-            data_dict[quarter][estimate_col] = (
-                kpi_inst.estimate * 0.01 if kpi_inst.unit == "Percent" else kpi_inst.estimate
-            )
-            data_dict[quarter][surprise_col] = kpi_inst.surprise
+
+            if not simple_output:
+                data_dict[quarter][estimate_col] = (
+                    kpi_inst.estimate * 0.01 if kpi_inst.unit == "Percent" else kpi_inst.estimate
+                )
+                data_dict[quarter][surprise_col] = kpi_inst.surprise
 
     # Convert the data dictionary to a list of rows
     df_data = []
@@ -135,19 +156,27 @@ def convert_single_stock_data_to_table(
 
 
 async def convert_multi_stock_data_to_table(
-    kpi_name: str, data: Dict[StockID, List[KPIInstance]]
+    kpi_name: str, data: Dict[StockID, List[KPIInstance]], simple_table: bool
 ) -> Table:
-    columns = []
+    columns: List[TableColumnMetadata] = []
 
-    columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING))
+    if not simple_table:
+        columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING))
+
     columns.append(
         TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)
     )
 
     kpi_inst = list(data.values())[0][0]  # Take a random kpi_inst to pass in general kpi metadata
     actual_col_name = f"{kpi_name} (Actual)"
-    estimate_col_name = f"{kpi_name} (Estimate)"
-    surprise_col_name = f"{kpi_name} (Surpise)"
+
+    if simple_table:
+        estimate_col_name = None
+        surprise_col_name = None
+    else:
+        estimate_col_name = f"{kpi_name} (Estimate)"
+        surprise_col_name = f"{kpi_name} (Surpise)"
+
     kpi_column = generate_columns_for_kpi(
         kpi_inst=kpi_inst,
         actual_col_name=actual_col_name,
@@ -166,18 +195,29 @@ async def convert_multi_stock_data_to_table(
                 if (kpi_inst.unit == "Percent" and kpi_inst.actual is not None)
                 else kpi_inst.actual
             )
-            estimate = kpi_inst.estimate * 0.01 if kpi_inst.unit == "Percent" else kpi_inst.estimate
-            surprise = kpi_inst.surprise
 
-            df_data.append(
-                {
-                    "Quarter": quarter,
-                    STOCK_ID_COL_NAME_DEFAULT: stock_id,
-                    actual_col_name: actual,
-                    estimate_col_name: estimate,
-                    surprise_col_name: surprise,
-                }
-            )
+            if not simple_table:
+                estimate = (
+                    kpi_inst.estimate * 0.01 if kpi_inst.unit == "Percent" else kpi_inst.estimate
+                )
+                surprise = kpi_inst.surprise
+
+                df_data.append(
+                    {
+                        "Quarter": quarter,
+                        STOCK_ID_COL_NAME_DEFAULT: stock_id,
+                        actual_col_name: actual,
+                        estimate_col_name: estimate,
+                        surprise_col_name: surprise,
+                    }
+                )
+            else:
+                df_data.append(
+                    {
+                        STOCK_ID_COL_NAME_DEFAULT: stock_id,
+                        actual_col_name: actual,
+                    }
+                )
 
     df = pd.DataFrame(df_data)
     return Table.from_df_and_cols(data=df, columns=columns)
@@ -413,7 +453,6 @@ async def classify_specific_or_general_topic(
         main_prompt=CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT_OBJ.format(topic=topic),
         sys_prompt=CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ.format(),
     )
-    print(result)
     if result.lower() == SPECIFIC:
         topic_kpi_list = await get_specific_kpi_data_for_stock_id(
             stock_id, company_info, [topic], llm
@@ -488,6 +527,7 @@ class CompanyKPIsRequest(ToolArgs):
     num_prev_quarters: Optional[int] = None
     anchor_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
+    simple_output: bool = False
 
 
 @tool(
@@ -498,10 +538,13 @@ async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunCon
     num_future_quarters, num_prev_quarters, anchor_date = interpret_date_quarter_inputs(
         args.num_future_quarters, args.num_prev_quarters, args.anchor_date, args.date_range
     )
-
     args.anchor_date = anchor_date
     args.num_future_quarters = num_future_quarters
     args.num_prev_quarters = num_prev_quarters
+
+    if args.simple_output:
+        args.num_future_quarters = 0
+        args.num_prev_quarters = 0
 
     kpi_metadata_dict = kpi_retriever.convert_kpi_text_to_metadata(
         gbi_id=args.stock_id.gbi_id, kpi_texts=args.kpis
@@ -510,12 +553,14 @@ async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunCon
     data = kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
         gbi_id=args.stock_id.gbi_id,
         kpis=kpi_list,
-        starting_date=anchor_date,
+        starting_date=args.anchor_date,
         num_prev_quarters=args.num_prev_quarters,
         num_future_quarters=args.num_future_quarters,
     )
 
-    topic_kpi_table = convert_single_stock_data_to_table(stock_id=args.stock_id, data=data)
+    topic_kpi_table = convert_single_stock_data_to_table(
+        stock_id=args.stock_id, data=data, simple_output=args.simple_output
+    )
     return topic_kpi_table
 
 
@@ -526,6 +571,7 @@ class KPIsRequest(ToolArgs):
     num_prev_quarters: Optional[int] = None
     anchor_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
+    simple_output: bool = False
 
 
 @tool(
@@ -536,10 +582,13 @@ async def get_overlapping_kpis_table_for_stock(args: KPIsRequest, context: PlanR
     num_future_quarters, num_prev_quarters, anchor_date = interpret_date_quarter_inputs(
         args.num_future_quarters, args.num_prev_quarters, args.anchor_date, args.date_range
     )
-
     args.anchor_date = anchor_date
     args.num_future_quarters = num_future_quarters
     args.num_prev_quarters = num_prev_quarters
+
+    if args.simple_output:
+        args.num_future_quarters = 0
+        args.num_prev_quarters = 0
 
     kpis: List[KPIText] = args.equivalent_kpis.val  # type: ignore
 
@@ -556,7 +605,7 @@ async def get_overlapping_kpis_table_for_stock(args: KPIsRequest, context: PlanR
             data = kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
                 gbi_id=kpi.stock_id.gbi_id,
                 kpis=[kpi_metadata],
-                starting_date=anchor_date,
+                starting_date=args.anchor_date,
                 num_prev_quarters=args.num_prev_quarters,
                 num_future_quarters=args.num_future_quarters,
             )
@@ -567,6 +616,7 @@ async def get_overlapping_kpis_table_for_stock(args: KPIsRequest, context: PlanR
     topic_kpi_table = await convert_multi_stock_data_to_table(
         kpi_name=args.equivalent_kpis.general_kpi_name,
         data=company_kpi_data_lookup,
+        simple_table=args.simple_output,
     )
     return topic_kpi_table
 
@@ -591,20 +641,24 @@ async def main() -> None:
         skip_db_commit=True,
     )
 
-    # Testing Specific KPI Retrieval Using Direct Helper Function Call
+    # Testing Specific KPI Retrieval Using Direct Helper Function Call & Using Simple Output
     tr_stock_id = StockID(gbi_id=10753, symbol="TRI", isin="")
     specific_kpi = await get_specific_kpi_data_for_stock_id(  # type: ignore
         stock_id=tr_stock_id,
         company_info=get_company_data_and_kpis(tr_stock_id.gbi_id),
-        topics=["thomson reuters legal profession revenue"],
+        topic=["thomson reuters legal profession revenue"],
         llm=GPT(context=None, model=GPT4_O),
     )
     specific_table: Table = await get_kpis_table_for_stock(  # type: ignore
-        CompanyKPIsRequest(stock_id=tr_stock_id, table_name="TR Revenue", kpis=specific_kpi),
+        CompanyKPIsRequest(
+            stock_id=tr_stock_id, table_name="TR Revenue", kpis=specific_kpi, simple_output=True
+        ),
         context=plan_context,
     )
     df = specific_table.to_df()
     print(df.head())
+    for column in specific_table.columns:
+        print(column.metadata.label)
 
     # Testing Specific KPI Retrieval Using Agent Tool
     appl_stock_id = StockID(gbi_id=714, symbol="APPL", isin="")
@@ -681,6 +735,7 @@ async def main() -> None:
             table_name="Cloud Computing",
             num_future_quarters=0,
             num_prev_quarters=4,
+            simple_output=True,
         ),
         context=plan_context,
     )

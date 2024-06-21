@@ -74,10 +74,19 @@ class KPIRetriever:
                     long_unit=est_data.long_unit,
                     currency=est_data.currency,
                 )
+                found_matching_actuals = False
+
                 for acc_data in actuals:
                     if (est_data.year, est_data.quarter) == (acc_data.year, acc_data.quarter):
                         kpi_instance.surprise = _compute_surprise(acc_data.value, est_data.value)
                         kpi_instance.actual = acc_data.value
+                        found_matching_actuals = True
+
+                # TODO: Current workaround for showing actual data until we get a live dataprovider
+                if not found_matching_actuals:
+                    kpi_instance.actual = est_data.value
+                    kpi_instance.surprise = 0.0
+
                 kpi_instances.append(kpi_instance)
             kpi_instances_dict[kpi_name] = kpi_instances
         return kpi_instances_dict
@@ -115,7 +124,9 @@ class KPIRetriever:
             starting_date=max_date,
         )
 
-        if len(actuals_kpi_data) == 0 or len(estimates_kpi_data) == 0:
+        # TODO: Currently removing the check for actuals due to lack of live data, will always
+        # by 0 for current/future only queries
+        if len(estimates_kpi_data) == 0:
             logger.error(f"Couldn't find KPI data for {gbi} for the following kpis:\n{kpis}")
             return {}
 
