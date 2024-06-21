@@ -455,7 +455,7 @@ async def classify_specific_or_general_topic(
     )
     if result.lower() == SPECIFIC:
         topic_kpi_list = await get_specific_kpi_data_for_stock_id(
-            stock_id, company_info, [topic], llm
+            stock_id, company_info, topic, llm
         )
     else:
         topic_kpi_list = await get_relevant_kpis_for_stock_id(stock_id, company_info, topic, llm)
@@ -463,7 +463,7 @@ async def classify_specific_or_general_topic(
 
 
 async def get_specific_kpi_data_for_stock_id(
-    stock_id: StockID, company_info: CompanyInformation, topic: List[str], llm: GPT
+    stock_id: StockID, company_info: CompanyInformation, topic: str, llm: GPT
 ) -> List[KPIText]:
     results = []
     instructions = SPECIFIC_KPI_INSTRUCTION.format(
@@ -646,7 +646,7 @@ async def main() -> None:
     specific_kpi = await get_specific_kpi_data_for_stock_id(  # type: ignore
         stock_id=tr_stock_id,
         company_info=get_company_data_and_kpis(tr_stock_id.gbi_id),
-        topic=["thomson reuters legal profession revenue"],
+        topic="thomson reuters legal profession revenue",
         llm=GPT(context=None, model=GPT4_O),
     )
     specific_table: Table = await get_kpis_table_for_stock(  # type: ignore
