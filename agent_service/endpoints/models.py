@@ -301,6 +301,7 @@ class NotifyMessageEvent(BaseModel):
     event_type: Literal[NotificationEventType.NOTIFY_MESSAGE] = NotificationEventType.NOTIFY_MESSAGE
     agent_id: str
     unread_count: int
+    latest_notification_string: Optional[str] = None
 
 
 class NotificationEvent(BaseModel):

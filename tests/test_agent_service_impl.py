@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import ChatWithAgentRequest, UpdateAgentRequest
+from agent_service.types import Notification
 from tests.test_agent_service_impl_base import TestAgentServiceImplBase
 
 
@@ -93,3 +94,27 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
             agent_id=agent_id, plan_run_id=plan_run_id, task_id=task_id
         )
         self.assertIsNotNone(res)
+
+    def test_pg_notification_event_info(self):
+        # create a new agent
+        test_user = str(uuid.uuid4())
+        user = User(user_id=test_user, is_admin=False, is_super_admin=False, auth_token="")
+        res = self.create_agent(user=user)
+        agent_id = res.agent_id
+
+        # insert a notification
+        self.loop.run_until_complete(
+            self.pg.insert_notifications(
+                notifications=[Notification(agent_id=agent_id, summary="Hello!", unread=True)]
+            )
+        )
+
+        # get notification event info
+        notif_res = self.loop.run_until_complete(
+            self.pg.get_notification_event_info(agent_id=agent_id)
+        )
+        self.assertIsNotNone(notif_res)
+        self.assertEqual(notif_res.get("unread_count"), 1)
+        self.assertEqual(notif_res.get("latest_notification_string"), "Hello!")
+
+        self.delete_agent(agent_id=agent_id)

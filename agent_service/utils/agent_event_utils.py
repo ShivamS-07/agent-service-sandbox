@@ -81,21 +81,32 @@ async def send_chat_message(
             # publish notification event if tied to a user ID
             if user_id:
                 if db and isinstance(db, AsyncDB):
-                    unread_count = await db.get_unread_notification_count(agent_id=message.agent_id)
-                elif db and isinstance(db, Postgres):
-                    unread_count = db.get_unread_notification_count(agent_id=message.agent_id)
-                else:
-                    unread_count = get_psql(skip_commit=skip_commit).get_unread_notification_count(
+                    notification_event_info = await db.get_notification_event_info(
                         agent_id=message.agent_id
                     )
+                elif db and isinstance(db, Postgres):
+                    notification_event_info = db.get_notification_event_info(
+                        agent_id=message.agent_id
+                    )
+                else:
+                    notification_event_info = get_psql(
+                        skip_commit=skip_commit
+                    ).get_notification_event_info(agent_id=message.agent_id)
 
-                notification_event = NotificationEvent(
-                    user_id=user_id,
-                    event=NotifyMessageEvent(agent_id=message.agent_id, unread_count=unread_count),
-                )
-                await publish_notification_event(
-                    user_id=user_id, serialized_event=notification_event.model_dump_json()
-                )
+                if notification_event_info:
+                    notification_event = NotificationEvent(
+                        user_id=user_id,
+                        event=NotifyMessageEvent(
+                            agent_id=message.agent_id,
+                            unread_count=notification_event_info["unread_count"],
+                            latest_notification_string=notification_event_info[
+                                "latest_notification_string"
+                            ],
+                        ),
+                    )
+                    await publish_notification_event(
+                        user_id=user_id, serialized_event=notification_event.model_dump_json()
+                    )
 
         event = AgentEvent(agent_id=message.agent_id, event=MessageEvent(message=message))
         await publish_agent_event(

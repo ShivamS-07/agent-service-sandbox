@@ -383,16 +383,23 @@ class AsyncDB:
             table_name="agent.notifications", rows=[notif.model_dump() for notif in notifications]
         )
 
-    async def get_unread_notification_count(self, agent_id: str) -> int:
+    async def get_notification_event_info(self, agent_id: str) -> Optional[Dict[str, Any]]:
         sql = """
-        SELECT COUNT(unread) AS unread_count FROM agent.notifications WHERE agent_id = %(agent_id)s AND unread = TRUE
+        SELECT summary AS latest_notification_string,
+        (
+            SELECT COUNT(unread) FROM agent.notifications
+            WHERE agent_id = %(agent_id)s AND unread = TRUE
+        ) AS unread_count
+        FROM agent.notifications
+        WHERE agent_id = %(agent_id)s
+        ORDER BY created_at DESC LIMIT 1;
         """
 
         rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
         if not rows:
-            return 0
+            return None
 
-        return rows[0]["unread_count"]
+        return rows[0]
 
     async def set_plan_run_share_status(self, plan_run_id: str, status: bool) -> None:
         await self.pg.generic_update(
