@@ -121,7 +121,8 @@ SELL_DIRECTION = "In particular, you must write an argument that focuses on evid
 SCORE_DIRECTION = (
     "In particular, you should write an argument which is compatible with a score of {score} on"
     " a 0 to 1 scale. If the score is above 0.6 you should focus on evidence for investing in the"
-    " stock, and if it is below 0.4 you should focus on evidence that would disuade investors."
+    " stock, and if it is below 0.4 you should focus on evidence that would disuade investors. You "
+    " must never directly mention this score in your output!"
 )
 
 
