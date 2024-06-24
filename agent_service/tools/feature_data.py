@@ -369,12 +369,12 @@ async def get_statistic_data(
     gbi_ids = list(gbi_id_map.keys())
     # if one date given, turn on ffill.
     ffill_days = 0
-    if start_date == end_date:
-        ffill_days = 180
 
     use_natural_axis = True  # use the axis the data prefers (quarterly or data)
 
-    if force_daily:  # turns quarterly into daily so it can be combined with other daily data
+    if force_daily or (end_date - start_date).days < 90:
+        # need to turn quarterly into daily and forward fill if it is going to be combined with daily
+        # or if the range is less than a quarter
         ffill_days = 180
         use_natural_axis = False
 
