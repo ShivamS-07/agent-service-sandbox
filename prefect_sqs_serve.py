@@ -44,11 +44,12 @@ async def poll_sqs_forever() -> None:
             QueueUrl=queue_url,
             AttributeNames=["All"],
             MessageAttributeNames=["All"],
+            VisibilityTimeout=60 * 60 * 4,  # 4 hours to be safe
             MaxNumberOfMessages=1,
             WaitTimeSeconds=20,
         )
 
-        if "Messages" not in messages:
+        if not messages or "Messages" not in messages:
             continue
 
         for message in messages["Messages"]:
@@ -79,6 +80,7 @@ async def poll_sqs_forever() -> None:
                         "error_msg": traceback.format_exc(),
                     },
                 )
+                LOGGER.exception("Encountered exception processing message")
 
             LOGGER.info(f"Message Processed: {sqs_message}")
 
