@@ -80,8 +80,9 @@ async def run_execution_plan(
     tool_output = None
     prev_worklog_publish_time = get_now_utc()
     for idx, step in enumerate(plan.nodes):
+        if db.is_cancelled(id_to_check=context.plan_run_id):
+            raise Exception("Execution plan has been cancelled")
         now = get_now_utc()
-
         logger.info(f"Running step '{step.tool_name}' (Task ID: {step.tool_task_id})")
         tool = ToolRegistry.get_tool(step.tool_name)
         # First, resolve the variables
@@ -118,6 +119,9 @@ async def run_execution_plan(
                 tool_output = await tool.func(args=step_args, context=context)
             except Exception as e:
                 logger.exception(f"Step '{step.tool_name}' failed due to {e}")
+                if db.is_cancelled(id_to_check=context.plan_run_id):
+                    # NEVER replan if the plan is already cancelled.
+                    raise Exception("Execution plan has been cancelled")
                 retrying = False
                 if replan_execution_error:
                     retrying = await handle_error_in_execution(context, e, step, do_chat)
@@ -162,6 +166,9 @@ async def run_execution_plan(
 
     # TODO right now we don't handle output tools, and we just output the last
     # thing. Should fix that.
+
+    if db.is_cancelled(id_to_check=context.plan_run_id):
+        raise Exception("Execution plan has been cancelled")
 
     logger.info(f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=}")
     if do_chat:
@@ -387,7 +394,7 @@ async def update_execution_after_input(
                     return latest_plan_id, latest_plan, action
 
                 if flow_run:
-                    await prefect_cancel_agent_flow(flow_run)
+                    await prefect_cancel_agent_flow(flow_run, db=db)
                 plan_run_id = str(uuid4())
                 ctx = PlanRunContext(
                     agent_id=agent_id,
@@ -429,7 +436,7 @@ async def update_execution_after_input(
                 message=Message(agent_id=agent_id, message=message, is_user_message=False), db=db
             )
         if flow_run:
-            await prefect_cancel_agent_flow(flow_run)
+            await prefect_cancel_agent_flow(flow_run, db=db)
         new_plan_id = str(uuid4())
         if run_tasks_without_prefect:
             plan = await create_execution_plan_local(

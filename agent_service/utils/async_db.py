@@ -80,6 +80,13 @@ class AsyncDB:
 
         return outputs
 
+    async def is_cancelled(self, id_to_check: str) -> bool:
+        sql = """
+        select * from agent.cancelled_ids where cancelled_id = %s
+        """
+        rows = await self.pg.generic_read(sql, [id_to_check])
+        return len(rows) > 0
+
     async def get_plan_run_outputs(self, plan_run_id: str) -> List[AgentOutput]:
         sql = """
                 SELECT ao.agent_id::VARCHAR, ao.plan_id::VARCHAR, ao.plan_run_id::VARCHAR,

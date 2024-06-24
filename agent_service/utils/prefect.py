@@ -21,7 +21,7 @@ from prefect.client.schemas.filters import (
     FlowRunFilterTags,
 )
 from prefect.client.schemas.objects import State, StateType
-from prefect.context import FlowRunContext, TaskRunContext, get_run_context
+from prefect.context import TaskRunContext, get_run_context
 from prefect.logging.loggers import get_run_logger
 
 from agent_service.endpoints.models import Status
@@ -30,6 +30,7 @@ from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan
 from agent_service.types import PlanRunContext
 from agent_service.utils.constants import AGENT_WORKER_QUEUE
 from agent_service.utils.logs import async_perf_logger
+from agent_service.utils.postgres import Postgres
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +181,7 @@ class PrefectFlowRun:
     flow_run_type: FlowRunType
     # When we pause a run, store its prior state here for resuming.
     prior_state: State
+    name: str
 
 
 async def prefect_pause_current_agent_flow(agent_id: str) -> Optional[PrefectFlowRun]:
@@ -219,11 +221,17 @@ async def prefect_pause_current_agent_flow(agent_id: str) -> Optional[PrefectFlo
     # If the run has a parent, it's an execution, otherwise it's a creation.
     if run.parent_task_run_id:
         return PrefectFlowRun(
-            flow_run_id=run.id, flow_run_type=FlowRunType.PLAN_EXECUTION, prior_state=prior_state
+            flow_run_id=run.id,
+            flow_run_type=FlowRunType.PLAN_EXECUTION,
+            prior_state=prior_state,
+            name=run.name,
         )
     else:
         return PrefectFlowRun(
-            flow_run_id=run.id, flow_run_type=FlowRunType.PLAN_CREATION, prior_state=prior_state
+            flow_run_id=run.id,
+            flow_run_type=FlowRunType.PLAN_CREATION,
+            prior_state=prior_state,
+            name=run.name,
         )
 
 
@@ -233,11 +241,10 @@ async def prefect_resume_agent_flow(run: PrefectFlowRun) -> None:
         await client.set_flow_run_state(flow_run_id=run.flow_run_id, state=run.prior_state)
 
 
-async def prefect_cancel_agent_flow(run: PrefectFlowRun) -> None:
+async def prefect_cancel_agent_flow(run: PrefectFlowRun, db: Postgres) -> None:
     logger.info(f"Cancelling flow run {run.flow_run_id}")
-    cancelling_state: State = State(type=StateType.CANCELLED)
-    async with get_client() as client:  # type: ignore
-        await client.set_flow_run_state(flow_run_id=run.flow_run_id, state=cancelling_state)
+    db.insert_into_table(table_name="agent.cancelled_ids", cancelled_id=run.name)
+    logger.info(f"Cancelling flow run {run.flow_run_id}")
 
 
 async def prefect_get_current_plan_run_task_id(run: PrefectFlowRun) -> Optional[str]:
@@ -256,26 +263,6 @@ async def prefect_get_current_plan_run_task_id(run: PrefectFlowRun) -> Optional[
             return task_id
 
     return None
-
-
-async def prefect_cancel_current_flow() -> None:
-    try:
-        context = get_run_context()
-    except Exception:
-        # Ignore any issues to handle local runs
-        return
-    logger = get_prefect_logger(__name__)
-    if not isinstance(context, FlowRunContext):
-        logger.error("Cannot cancel flow from within a task...")
-        return
-
-    if not context.flow_run:
-        logger.error("Cannot cancel flow with no flow running...")
-        return
-
-    cancelling_state: State = State(type=StateType.CANCELLED)
-    async with get_client() as client:  # type: ignore
-        await client.set_flow_run_state(flow_run_id=context.flow_run.id, state=cancelling_state)
 
 
 def is_inside_prefect_task() -> bool:

@@ -179,6 +179,13 @@ class Postgres(PostgresBase):
             plan_run_id=plan_run_id,
         )
 
+    def is_cancelled(self, id_to_check: str) -> bool:
+        sql = """
+        select * from agent.cancelled_ids where cancelled_id = %s
+        """
+        rows = self.generic_read(sql, [id_to_check])
+        return len(rows) > 0
+
     def get_agent_worklogs(
         self,
         agent_id: str,
