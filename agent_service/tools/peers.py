@@ -48,7 +48,7 @@ GET_PEER_GROUP_FOR_STOCK_SYS_PROMPT = Prompt(
     the ISIN of the stock if it is publicly traded, else return False
     the Stock Symbol if it is publicly traded, else return False
     a 2 to 3 sentence justification of why you have chosen them to belong to the peer group
-    all delineated with the separator {separator}.
+    all on the same line, all delineated with the separator {separator}.
     Output only plain text.
     Do not number the list.
     Do not output any additional justification or explanation.
@@ -215,17 +215,21 @@ async def get_peer_group_for_stock(
         for initial_peer in initial_peers[1:]:
             # check line is not empty
             if initial_peer:
-                # company name, ISIN, stock symbol, justification
-                peer_lst = initial_peer.split(SEPARATOR)
-                # filter out non-public companies
-                if peer_lst[1].lower() != "false" or peer_lst[2].lower() != "false":
-                    peer_obj = {
-                        "company_name": peer_lst[0],
-                        "isin": peer_lst[1],
-                        "symbol": peer_lst[2],
-                        "justification": peer_lst[3],
-                    }
-                    initial_peer_group.append(peer_obj)
+                try:
+                    # company name, ISIN, stock symbol, justification
+                    peer_lst = initial_peer.split(SEPARATOR)
+                    # filter out non-public companies
+                    if peer_lst[1].lower() != "false" or peer_lst[2].lower() != "false":
+                        peer_obj = {
+                            "company_name": peer_lst[0],
+                            "isin": peer_lst[1],
+                            "symbol": peer_lst[2],
+                            "justification": peer_lst[3],
+                        }
+                        initial_peer_group.append(peer_obj)
+                except IndexError:
+                    logger.warning(f"Peers parsing failed for line: {initial_peer}, skipping")
+                    continue
 
     # Dict[gbi_id, StockID]
     peer_stock_ids: Dict[int, StockID] = {}
