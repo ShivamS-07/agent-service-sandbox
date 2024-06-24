@@ -1,15 +1,20 @@
 import argparse
 import asyncio
+import dataclasses
 import datetime
+import json
 import logging
 import time
-from typing import Any, Callable, Optional
+import traceback
+import uuid
+from typing import Any, Callable, Dict, Optional
 
 import uvicorn
 from fastapi import Depends, FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRouter
+from gbi_common_py_utils.utils.event_logging import log_event
 from sse_starlette.sse import AsyncContentStream, EventSourceResponse, ServerSentEvent
 from starlette.requests import Request
 
@@ -73,13 +78,69 @@ application.add_middleware(
     allow_headers=["*"],
 )
 
+REQUEST_COUNTER = int(time.time())
+
+
+@dataclasses.dataclass
+class AuditInfo:
+    path: str
+    internal_request_id: str
+    received_timestamp: datetime.datetime
+    request_body: Optional[Dict[str, Any]] = None
+
+    response_timestamp: Optional[datetime.datetime] = None
+    internal_processing_time: Optional[float] = None
+    total_processing_time: Optional[float] = None
+    error: Optional[str] = None
+    client_timestamp: Optional[str] = None
+    client_request_id: Optional[str] = None
+    request_number: int = -1
+
+    def to_json_dict(self) -> Dict[str, Any]:
+        data = dataclasses.asdict(self)
+
+        return {key: value for key, value in data.items() if value is not None}
+
 
 @application.middleware("http")
 async def add_process_time_header(request: Request, call_next: Callable) -> Any:
-    start_time = time.time()
-    response = await call_next(request)
-    end_time = time.time()
-    logger.info(f"Request to '{request.url.path}' took {end_time - start_time}s")
+    received_timestamp = datetime.datetime.utcnow()
+    global REQUEST_COUNTER
+    REQUEST_COUNTER += 1
+    client_timestamp = request.headers.get("clienttimestamp", None)
+    if client_timestamp:
+        client_timestamp = (
+            client_timestamp[:-1] if client_timestamp.endswith("Z") else client_timestamp
+        )
+    audit_info = AuditInfo(
+        path=request.url.path,
+        internal_request_id=str(uuid.uuid4()),
+        received_timestamp=received_timestamp,
+        client_timestamp=client_timestamp,
+        client_request_id=request.headers.get("clientrequestid", None),
+        request_number=REQUEST_COUNTER,
+    )
+    try:
+        request_body = await request.body()
+        audit_info.request_body = json.loads(request_body) if request_body else None
+    except Exception:
+        audit_info.error = traceback.format_exc()
+
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        error = traceback.format_exc()
+        audit_info.error = audit_info.error + "/n" + error if audit_info.error else error
+        log_event(event_name="AgentService-RequestError", event_data=audit_info.to_json_dict())
+        raise e
+    response_timestamp = datetime.datetime.utcnow()
+    audit_info.response_timestamp = response_timestamp
+    audit_info.internal_processing_time = (response_timestamp - received_timestamp).total_seconds()
+    if audit_info.client_timestamp:
+        audit_info.total_processing_time = (
+            response_timestamp - datetime.datetime.fromisoformat(audit_info.client_timestamp)
+        ).total_seconds()
+    log_event(event_name="AgentService-RequestCompleted", event_data=audit_info.to_json_dict())
     return response
 
 
