@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from agent_service.io_types.graph import GraphOutput
 from agent_service.io_types.table import TableOutput
 from agent_service.io_types.text import TextOutput
+from agent_service.planner.planner_types import PlanStatus
 from agent_service.types import Message
 from agent_service.utils.date_utils import get_now_utc
 
@@ -245,7 +246,7 @@ class NewPlanEvent(BaseModel):
 
 class PlanStatusEvent(BaseModel):
     event_type: Literal[EventType.PLAN_STATUS] = EventType.PLAN_STATUS
-    status: str
+    status: PlanStatus
 
 
 class WorklogEvent(BaseModel):

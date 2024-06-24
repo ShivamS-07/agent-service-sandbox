@@ -39,9 +39,8 @@ from agent_service.utils.async_db import (
     get_chat_history_from_db,
     get_latest_execution_plan_from_db,
 )
-from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.postgres import Postgres, get_psql
+from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
 from agent_service.utils.prefect import (
     FlowRunType,
     get_prefect_logger,
@@ -52,6 +51,18 @@ from agent_service.utils.prefect import (
     prefect_resume_agent_flow,
     prefect_run_execution_plan,
 )
+
+
+async def check_cancelled(
+    db: Union[Postgres, AsyncDB], plan_id: Optional[str] = None, plan_run_id: Optional[str] = None
+) -> bool:
+    if not plan_id and not plan_run_id:
+        return False
+    ids = [val for val in (plan_id, plan_run_id) if val is not None]
+    if isinstance(db, Postgres):
+        return db.is_cancelled(ids_to_check=ids)
+    else:
+        return await db.is_cancelled(ids_to_check=ids)
 
 
 @flow(name=RUN_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{context.plan_run_id}")
@@ -80,7 +91,8 @@ async def run_execution_plan(
     tool_output = None
     prev_worklog_publish_time = get_now_utc()
     for idx, step in enumerate(plan.nodes):
-        if db.is_cancelled(id_to_check=context.plan_run_id):
+        # Check both the plan_id and plan_run_id to prevent race conditions
+        if await check_cancelled(db=db, plan_id=context.plan_id, plan_run_id=context.plan_run_id):
             raise Exception("Execution plan has been cancelled")
         now = get_now_utc()
         logger.info(f"Running step '{step.tool_name}' (Task ID: {step.tool_task_id})")
@@ -119,7 +131,9 @@ async def run_execution_plan(
                 tool_output = await tool.func(args=step_args, context=context)
             except Exception as e:
                 logger.exception(f"Step '{step.tool_name}' failed due to {e}")
-                if db.is_cancelled(id_to_check=context.plan_run_id):
+                if await check_cancelled(
+                    db=db, plan_id=context.plan_id, plan_run_id=context.plan_run_id
+                ):
                     # NEVER replan if the plan is already cancelled.
                     raise Exception("Execution plan has been cancelled")
                 retrying = False
@@ -164,10 +178,7 @@ async def run_execution_plan(
             final_outputs.append(tool_output)
         logger.info(f"Finished step '{step.tool_name}'")
 
-    # TODO right now we don't handle output tools, and we just output the last
-    # thing. Should fix that.
-
-    if db.is_cancelled(id_to_check=context.plan_run_id):
+    if await check_cancelled(db=db, plan_id=context.plan_id, plan_run_id=context.plan_run_id):
         raise Exception("Execution plan has been cancelled")
 
     logger.info(f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=}")
@@ -203,6 +214,7 @@ async def create_execution_plan(
     chat_context: Optional[ChatContext] = None,
     use_sample_plans: bool = True,
 ) -> Optional[ExecutionPlan]:
+    db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
     if action != Action.CREATE:
         return await rewrite_execution_plan(
             agent_id=agent_id,
@@ -217,38 +229,31 @@ async def create_execution_plan(
             do_chat=do_chat,
             chat_context=chat_context,
             use_sample_plans=use_sample_plans,
+            db=db,
         )
 
     logger = get_prefect_logger(__name__)
     planner = Planner(agent_id=agent_id, skip_db_commit=skip_db_commit, send_chat=do_chat)
-    db: Union[AsyncDB, Postgres] = (
-        AsyncDB(pg=AsyncPostgresBase())
-        if not skip_db_commit
-        else get_psql(skip_commit=skip_db_commit)
-    )
 
     logger.info(f"Starting creation of execution plan for {agent_id=}...")
-    # insert empty execution plan and mark as creating
-    if isinstance(db, AsyncDB):
-        await db.write_execution_plan(
-            plan_id=plan_id,
-            agent_id=agent_id,
-            plan=ExecutionPlan(nodes=[]),
-            status=PlanStatus.CREATING,
-        )
-    elif isinstance(db, Postgres):
-        db.write_execution_plan(
-            plan_id=plan_id,
-            agent_id=agent_id,
-            plan=ExecutionPlan(nodes=[]),
-            status=PlanStatus.CREATING,
-        )
-    await publish_agent_plan_status(agent_id=agent_id, status=PlanStatus.CREATING)
+    await publish_agent_plan_status(
+        agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CREATING, db=db
+    )
 
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
+    if await check_cancelled(db=db, plan_id=plan_id):
+        await publish_agent_plan_status(
+            agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
+        )
+        raise RuntimeError("Plan creation has been cancelled.")
     plan = await planner.create_initial_plan(
         chat_context=chat_context, use_sample_plans=use_sample_plans
     )
+    if await check_cancelled(db=db, plan_id=plan_id):
+        await publish_agent_plan_status(
+            agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
+        )
+        raise RuntimeError("Plan creation has been cancelled.")
     if plan is None:
         if do_chat:
             chatbot = Chatbot(agent_id=agent_id)
@@ -259,22 +264,9 @@ async def create_execution_plan(
                 message=Message(agent_id=agent_id, message=message, is_user_message=False),
                 db=db,
             )
-        # mark as failed
-        if isinstance(db, AsyncDB):
-            await db.write_execution_plan(
-                plan_id=plan_id,
-                agent_id=agent_id,
-                plan=ExecutionPlan(nodes=[]),
-                status=PlanStatus.FAILED,
-            )
-        elif isinstance(db, Postgres):
-            db.write_execution_plan(
-                plan_id=plan_id,
-                agent_id=agent_id,
-                plan=ExecutionPlan(nodes=[]),
-                status=PlanStatus.FAILED,
-            )
-        await publish_agent_plan_status(agent_id=agent_id, status=PlanStatus.FAILED)
+        await publish_agent_plan_status(
+            agent_id=agent_id, plan_id=plan_id, status=PlanStatus.FAILED, db=db
+        )
         raise RuntimeError("Failed to create execution plan!")
 
     plan_run_id = str(uuid4())
@@ -308,6 +300,12 @@ async def create_execution_plan(
         return plan
 
     logger.info(f"Submitting execution plan to Prefect for {agent_id=}, {plan_id=}, {plan_run_id=}")
+    # Check one more time for cancellation
+    if await check_cancelled(db=db, plan_id=plan_id):
+        await publish_agent_plan_status(
+            agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
+        )
+        raise RuntimeError("Plan creation has been cancelled.")
     await prefect_run_execution_plan(plan=plan, context=ctx, do_chat=do_chat)
     return plan
 
@@ -478,14 +476,11 @@ async def rewrite_execution_plan(
     do_chat: bool = True,
     chat_context: Optional[ChatContext] = None,
     use_sample_plans: bool = True,
+    db: Optional[AsyncDB] = None,
 ) -> Optional[ExecutionPlan]:
     logger = get_prefect_logger(__name__)
     planner = Planner(agent_id=agent_id)
-    db: Union[AsyncDB, Postgres] = (
-        AsyncDB(pg=AsyncPostgresBase())
-        if not skip_db_commit
-        else get_psql(skip_commit=skip_db_commit)
-    )
+    db = db or AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
     chatbot = Chatbot(agent_id=agent_id)
 
     logger.info(f"Starting rewrite of execution plan for {agent_id=}...")
@@ -495,23 +490,15 @@ async def rewrite_execution_plan(
     if not old_plan:  # shouldn't happen, just for mypy
         raise RuntimeError("Cannot rewrite a plan that does not exist!")
 
-    # mark old execution plan as creating
-    if isinstance(db, AsyncDB):
-        await db.write_execution_plan(
-            plan_id=plan_id,
-            agent_id=agent_id,
-            plan=old_plan,
-            status=PlanStatus.CREATING,
-        )
-    elif isinstance(db, Postgres):
-        db.write_execution_plan(
-            plan_id=plan_id,
-            agent_id=agent_id,
-            plan=old_plan,
-            status=PlanStatus.CREATING,
-        )
-    await publish_agent_plan_status(agent_id=agent_id, status=PlanStatus.CREATING)
+    await publish_agent_plan_status(
+        agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CREATING, db=db
+    )
 
+    if await check_cancelled(db=db, plan_id=plan_id):
+        await publish_agent_plan_status(
+            agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
+        )
+        raise RuntimeError("Plan rewrite has been cancelled.")
     if error_info:
         new_plan = await planner.rewrite_plan_after_error(
             error_info, chat_context, old_plan, action=action, use_sample_plans=use_sample_plans
@@ -521,6 +508,11 @@ async def rewrite_execution_plan(
             chat_context, old_plan, plan_timestamp, action=action, use_sample_plans=use_sample_plans
         )
 
+    if await check_cancelled(db=db, plan_id=plan_id):
+        await publish_agent_plan_status(
+            agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
+        )
+        raise RuntimeError("Plan rewrite has been cancelled.")
     if not new_plan:
         if do_chat:
             message = await chatbot.generate_initial_plan_failed_response_suggestions(
@@ -529,16 +521,9 @@ async def rewrite_execution_plan(
             await send_chat_message(
                 message=Message(agent_id=agent_id, message=message, is_user_message=False), db=db
             )
-            # failed to replan, mark as failed
-            if isinstance(db, AsyncDB):
-                await db.write_execution_plan(
-                    plan_id=plan_id, agent_id=agent_id, plan=old_plan, status=PlanStatus.FAILED
-                )
-            elif isinstance(db, Postgres):
-                db.write_execution_plan(
-                    plan_id=plan_id, agent_id=agent_id, plan=old_plan, status=PlanStatus.FAILED
-                )
-        await publish_agent_plan_status(agent_id=agent_id, status=PlanStatus.FAILED)
+        await publish_agent_plan_status(
+            agent_id=agent_id, plan_id=plan_id, status=PlanStatus.FAILED, db=db
+        )
         raise RuntimeError("Failed to replan!")
 
     logger.info(f"Finished rewriting execution plan for {agent_id=}")
@@ -582,6 +567,11 @@ async def rewrite_execution_plan(
     logger.info(
         f"Submitting new execution plan to Prefect for {agent_id=}, {plan_id=}, {plan_run_id=}"
     )
+    if await check_cancelled(db=db, plan_id=plan_id):
+        await publish_agent_plan_status(
+            agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
+        )
+        raise RuntimeError("Plan rewrite has been cancelled.")
     await prefect_run_execution_plan(plan=new_plan, context=ctx, do_chat=do_chat)
 
     return new_plan

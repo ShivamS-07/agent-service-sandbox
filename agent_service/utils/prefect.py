@@ -243,6 +243,8 @@ async def prefect_resume_agent_flow(run: PrefectFlowRun) -> None:
 
 async def prefect_cancel_agent_flow(run: PrefectFlowRun, db: Postgres) -> None:
     logger.info(f"Cancelling flow run {run.flow_run_id}")
+    # The 'name' here is the plan_id or plan_run_id. Those are set as the
+    # prefect flow name.
     db.insert_into_table(table_name="agent.cancelled_ids", cancelled_id=run.name)
     logger.info(f"Cancelling flow run {run.flow_run_id}")
 

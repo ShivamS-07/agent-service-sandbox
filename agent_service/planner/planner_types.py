@@ -76,6 +76,7 @@ class PlanStatus(str, enum.Enum):
     CREATING = "CREATING"
     READY = "READY"
     FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
 class ExecutionPlan(BaseModel):

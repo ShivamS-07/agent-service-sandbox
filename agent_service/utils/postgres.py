@@ -179,11 +179,14 @@ class Postgres(PostgresBase):
             plan_run_id=plan_run_id,
         )
 
-    def is_cancelled(self, id_to_check: str) -> bool:
-        sql = """
-        select * from agent.cancelled_ids where cancelled_id = %s
+    def is_cancelled(self, ids_to_check: List[str]) -> bool:
         """
-        rows = self.generic_read(sql, [id_to_check])
+        Returns true if ANY of the input ID's have been cancelled.
+        """
+        sql = """
+        select * from agent.cancelled_ids where cancelled_id = ANY(%(ids_to_check)s)
+        """
+        rows = self.generic_read(sql, {"ids_to_check": ids_to_check})
         return len(rows) > 0
 
     def get_agent_worklogs(
@@ -461,8 +464,8 @@ def get_psql(skip_commit: bool = False) -> Postgres:
 # TODO eventually we can get rid of this possibly? Essentially allows us to use
 # the AsyncDB functions anywhere. These will simply be blocking versions.
 class SyncBoostedPG(BoostedPG):
-    def __init__(self) -> None:
-        self.db = get_psql()
+    def __init__(self, skip_commit: bool = False) -> None:
+        self.db = get_psql(skip_commit=skip_commit)
 
     async def generic_read(self, sql: str, params: Optional[Any] = None) -> List[Dict[str, Any]]:
         return self.db.generic_read(sql, params)

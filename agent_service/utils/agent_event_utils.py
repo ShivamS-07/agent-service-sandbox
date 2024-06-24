@@ -184,11 +184,18 @@ async def publish_agent_execution_plan(
     await publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json())
 
 
-async def publish_agent_plan_status(agent_id: str, status: PlanStatus) -> None:
+async def publish_agent_plan_status(
+    agent_id: str, plan_id: str, status: PlanStatus, db: AsyncDB
+) -> None:
+    await db.update_execution_plan_status(
+        plan_id=plan_id,
+        agent_id=agent_id,
+        status=status,
+    )
     await publish_agent_event(
         agent_id=agent_id,
         serialized_event=AgentEvent(
-            agent_id=agent_id, event=PlanStatusEvent(status=status.value)
+            agent_id=agent_id, event=PlanStatusEvent(status=status)
         ).model_dump_json(),
     )
 

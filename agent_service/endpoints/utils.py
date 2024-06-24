@@ -87,7 +87,7 @@ async def get_agent_hierarchical_worklogs(
                 plan_run_end = None
             else:
                 plan_run_status = Status.from_prefect_state(prefect_flow_run.state_type)
-                is_cancelled = await db.is_cancelled(id_to_check=plan_run_id)
+                is_cancelled = await db.is_cancelled(ids_to_check=[plan_run_id])
                 if is_cancelled:
                     plan_run_status = Status.CANCELLED
                 plan_run_start = prefect_flow_run.start_time

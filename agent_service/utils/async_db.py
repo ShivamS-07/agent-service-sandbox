@@ -80,11 +80,14 @@ class AsyncDB:
 
         return outputs
 
-    async def is_cancelled(self, id_to_check: str) -> bool:
-        sql = """
-        select * from agent.cancelled_ids where cancelled_id = %s
+    async def is_cancelled(self, ids_to_check: List[str]) -> bool:
         """
-        rows = await self.pg.generic_read(sql, [id_to_check])
+        Returns true if ANY of the input ID's have been cancelled.
+        """
+        sql = """
+        select * from agent.cancelled_ids where cancelled_id = ANY(%(ids_to_check)s)
+        """
+        rows = await self.pg.generic_read(sql, {"ids_to_check": ids_to_check})
         return len(rows) > 0
 
     async def get_plan_run_outputs(self, plan_run_id: str) -> List[AgentOutput]:
@@ -294,6 +297,32 @@ class AsyncDB:
     async def create_agent(self, agent_metadata: AgentMetadata) -> None:
         await self.pg.multi_row_insert(
             table_name="agent.agents", rows=[agent_metadata.to_agent_row()]
+        )
+
+    async def update_execution_plan_status(
+        self, plan_id: str, agent_id: str, status: PlanStatus = PlanStatus.READY
+    ) -> None:
+        sql = """
+        INSERT INTO agent.execution_plans (plan_id, agent_id, plan, created_at, last_updated, status)
+        VALUES (
+          %(plan_id)s, %(agent_id)s, %(empty_plan)s, %(created_at)s, %(last_updated)s, %(status)s
+        )
+        ON CONFLICT (plan_id) DO UPDATE SET
+          last_updated = NOW(),
+          status = EXCLUDED.status
+        """
+        created_at = last_updated = get_now_utc()  # need so skip_commit db has proper times
+        await self.pg.generic_write(
+            sql,
+            params={
+                "plan_id": plan_id,
+                "agent_id": agent_id,
+                "created_at": created_at,
+                # In case this is the first insert only
+                "empty_plan": ExecutionPlan(nodes=[]).model_dump_json(),
+                "last_updated": last_updated,
+                "status": status.value,
+            },
         )
 
     async def write_execution_plan(
