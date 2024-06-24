@@ -19,7 +19,8 @@ class CitationOutput(BaseModel):
     id: CitationID = Field(default_factory=lambda: str(uuid4()))
     citation_type: CitationType
     name: str
-    metadata: Optional[str] = None
+    link: Optional[str] = None
+    summary: Optional[str] = None
 
 
 class OutputType(str, enum.Enum):
