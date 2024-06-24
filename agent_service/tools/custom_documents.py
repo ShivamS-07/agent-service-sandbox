@@ -9,6 +9,7 @@ from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import CustomDocumentSummaryText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.stocks import get_stock_ids_from_company_ids
 from agent_service.types import PlanRunContext
 
 
@@ -28,8 +29,8 @@ class GetCustomDocsInput(ToolArgs):
         " specific to custom documents or uploaded documents they have uploaded about a stock,"
         " this is the best tool to use."
         " The limit N can be specified using the"
-        " `limit` parameter and represents the concept of the N documents most relevant"
-        " to the topic."
+        " `limit` parameter and represents the concept of the most recent N documents"
+        " uploaded about a stock."
         " This function must not be used if you intend to filter by stocks, the news articles do not"
         " contain information about which stocks they are relevant to."
     ),
@@ -46,6 +47,10 @@ async def get_user_custom_documents(
         if not args.end_date:
             args.end_date = args.date_range.end_date
 
+    # arbitrary limit of 50 documents if no limit is specified
+    if args.limit is None or args.limit == 0:
+        args.limit = 50
+
     custom_doc_summaries = await get_custom_docs_by_security(
         context.user_id,
         gbi_ids=[s.gbi_id for s in args.stock_ids],
@@ -53,8 +58,16 @@ async def get_user_custom_documents(
         publish_date_end=args.end_date,
     )
 
+    cids = [document.spiq_company_id for document in custom_doc_summaries.documents]
+    cid_to_stock = await get_stock_ids_from_company_ids(
+        context, cids, prefer_gbi_ids=[s.gbi_id for s in args.stock_ids]
+    )
     output: List[CustomDocumentSummaryText] = [
-        CustomDocumentSummaryText(requesting_user=context.user_id, id=document.article_id)
+        CustomDocumentSummaryText(
+            requesting_user=context.user_id,
+            stock_id=cid_to_stock.get(document.spiq_company_id),
+            id=document.article_id,
+        )
         for document in custom_doc_summaries.documents
     ]
     if len(output) == 0:
@@ -95,6 +108,10 @@ async def get_user_custom_documents_by_topic(
         if not args.end_date:
             args.end_date = args.date_range.end_date
 
+    # arbitrary limit of 50 documents if no limit is specified
+    if args.limit is None or args.limit == 0:
+        args.limit = 50
+
     custom_doc_summaries = await get_custom_docs_by_topic(
         context.user_id,
         topic=args.topic,
@@ -103,8 +120,14 @@ async def get_user_custom_documents_by_topic(
         publish_date_end=args.end_date,
     )
 
+    cids = [document.summary.spiq_company_id for document in custom_doc_summaries.documents]
+    cid_to_stock = await get_stock_ids_from_company_ids(context, cids)
     output: List[CustomDocumentSummaryText] = [
-        CustomDocumentSummaryText(requesting_user=context.user_id, id=document.summary.article_id)
+        CustomDocumentSummaryText(
+            requesting_user=context.user_id,
+            stock_id=cid_to_stock.get(document.summary.spiq_company_id),
+            id=document.summary.article_id,
+        )
         for document in custom_doc_summaries.documents
     ]
     if len(output) == 0:

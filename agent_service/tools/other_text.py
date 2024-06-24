@@ -123,7 +123,12 @@ async def get_all_text_data_for_stocks(
     await tool_log(log="Getting user uploaded documents", context=context)
     try:
         custom_docs = await get_user_custom_documents(
-            GetCustomDocsInput(stock_ids=stock_ids, start_date=start_date, end_date=end_date),
+            GetCustomDocsInput(
+                stock_ids=stock_ids,
+                start_date=start_date,
+                end_date=end_date,
+                limit=None,
+            ),
             context=context,
         )
         all_data.extend(custom_docs)  # type: ignore

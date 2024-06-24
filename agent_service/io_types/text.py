@@ -225,7 +225,8 @@ class NewsText(Text):
 
 @io_type
 class StockText(Text):
-    pass
+    # stock_id is mandatory, or else no output will be yielded.
+    stock_id: Optional[StockID] = None
 
 
 @io_type

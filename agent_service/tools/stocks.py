@@ -1,6 +1,7 @@
 # Author(s): Mohammad Zarei, David Grohmann
 
 
+from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -452,7 +453,7 @@ async def get_stock_universe_list_from_universe_company_id(
     gbi_id, symbol, ms.isin, name
     FROM "data".etf_universe_holdings euh
     JOIN master_security ms ON ms.gbi_security_id = euh.gbi_id
-    WHERE spiq_company_id = %s
+    WHERE spiq_company_id = %s AND ms.is_public
     AND euh.to_z > NOW()
     """
     rows = db.generic_read(sql, [universe_spiq_company_id])
@@ -463,6 +464,62 @@ async def get_stock_universe_list_from_universe_company_id(
         )
         for row in rows
     ]
+
+
+async def get_stock_ids_from_company_ids(
+    context: PlanRunContext,
+    spiq_company_ids: List[int],
+    prefer_gbi_ids: Optional[List[int]] = None,
+) -> Dict[int, StockID]:
+    """Returns the list of stock identifiers given a stock universe's company id.
+
+    Args:
+        spiq_company_ids: List[int]
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        Dict[int, StockID]: Mapping from company ID to output stock ID
+    """
+    db = get_psql()
+
+    # Find the stocks in the universe
+    sql = """
+    SELECT
+        ssm.gbi_id, ms.symbol, ms.isin, ms.name, ssm.spiq_company_id
+    FROM master_security ms
+    JOIN spiq_security_mapping ssm on ssm.gbi_id = ms.gbi_security_id
+    WHERE ssm.spiq_company_id = ANY(%s)
+        AND ms.is_public
+    ORDER BY ssm.gbi_id, ms.from_z ASC
+    """
+    rows = db.generic_read(sql, [spiq_company_ids])
+
+    cid_to_rows = defaultdict(list)
+    for row in rows:
+        cid_to_rows[row["spiq_company_id"]].append(row)
+
+    cid_to_stock = {}
+    prefer_gbi_ids_set = set(prefer_gbi_ids or [])
+    for cid, rows in cid_to_rows.items():
+        for row in rows:
+            if row["gbi_id"] in prefer_gbi_ids_set:
+                cid_to_stock[cid] = StockID(
+                    gbi_id=row["gbi_id"],
+                    symbol=row["symbol"],
+                    isin=row["isin"],
+                    company_name=row["name"],
+                )
+                break
+        else:
+            pick_row = rows[0]
+            cid_to_stock[cid] = StockID(
+                gbi_id=pick_row["gbi_id"],
+                symbol=pick_row["symbol"],
+                isin=pick_row["isin"],
+                company_name=pick_row["name"],
+            )
+
+    return cid_to_stock
 
 
 class GetRiskExposureForStocksInput(ToolArgs):
