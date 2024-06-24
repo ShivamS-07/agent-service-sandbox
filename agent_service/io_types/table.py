@@ -58,6 +58,11 @@ class TableColumn(ComplexIOBase):
         col_str = ", ".join(items)
         return f"<Column '{self.metadata.label}' Data: {col_str}>"
 
+    def is_data_identical(self) -> bool:
+        if len(set(self.data)) == 1:
+            return True
+        return False
+
     def to_output_column(self) -> "TableOutputColumn":
         # TODO switch GBI ID's to tickers if needed, etc.
         return TableOutputColumn(

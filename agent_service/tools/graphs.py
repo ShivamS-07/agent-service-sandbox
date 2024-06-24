@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any, Dict, List
 
 import pandas as pd
@@ -15,7 +16,7 @@ from agent_service.io_types.graph import (
     PieGraph,
     PieSection,
 )
-from agent_service.io_types.table import Table
+from agent_service.io_types.table import Table, TableColumn
 from agent_service.tool import ToolArgs, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.prefect import get_prefect_logger
@@ -156,8 +157,15 @@ Note that the input must be a Table!
 """
 )
 async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> PieGraph:
-    cols = args.input_table.columns
-    df = args.input_table.to_df()
+    modified_table = deepcopy(args.input_table)
+    cols: List[TableColumn] = []
+    for col in args.input_table.columns:
+        if col.is_data_identical() is False:
+            cols.append(col)
+
+    # Removes any cols with duplicate data
+    modified_table.columns = cols
+    df = modified_table.to_df()
     if len(cols) < 2:
         raise RuntimeError("Must have at least index and one column to create pie chart!")
     # Do some analysis on the table to convert it to the best-fit graph.
