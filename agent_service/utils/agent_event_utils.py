@@ -249,6 +249,10 @@ async def publish_agent_updated_worklogs(
 
     plan_run_status = reset_plan_run_status_if_needed(plan_run_status, full_tasks)
 
+    # temporary fix for last (completed) event update
+    if plan_run_end is None and plan_run_status == Status.COMPLETE:
+        plan_run_end = get_now_utc()  # type: ignore
+
     plan_run = PlanRun(
         plan_run_id=context.plan_run_id,
         status=plan_run_status,
