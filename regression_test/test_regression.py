@@ -33,6 +33,7 @@ from regression_test.util import (
     validate_line_graph,
     validate_table_and_get_columns,
 )
+from tests.tools.test_custom_docs import CUSTOM_DOC_DEV_TEST_USER
 
 CH = ClickhouseBase(environment=DEV_TAG)
 SERVICE_VERSION = "374053208103.dkr.ecr.us-west-2.amazonaws.com/agent-service:afabe4a61d2205b91d22c64218ee1579dec317e2"
@@ -115,8 +116,14 @@ class TestExecutionPlanner(unittest.TestCase):
         cls.test_suite_id = str(uuid.uuid4())
         cls.llm = GPT(model=DEFAULT_CHEAP_MODEL)
 
-    def prompt_test(self, prompt: str, validate_plan: Callable, validate_output: Callable):
-        user_id = str(uuid.uuid4())
+    def prompt_test(
+        self,
+        prompt: str,
+        validate_plan: Callable,
+        validate_output: Callable,
+        user_id: Optional[str] = None,
+    ):
+        user_id = user_id or str(uuid.uuid4())
         shared_log_data = {
             "user_id": user_id,
             "test_suite_id": self.test_suite_id,
@@ -427,4 +434,18 @@ class TestExecutionPlanner(unittest.TestCase):
 
         self.prompt_test(
             prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+        )
+
+    def test_get_custom_documents_about_food(self):
+        prompt = "get me the top 5 uploaded documents about food"
+
+        def validate_output(prompt: str, output: IOType):
+            output_docs = get_output(output=output)
+            self.assertGreater(len(output_docs), 0)
+
+        self.prompt_test(
+            prompt=prompt,
+            validate_plan=validate_plan,
+            validate_output=validate_output,
+            user_id=CUSTOM_DOC_DEV_TEST_USER,
         )
