@@ -2,7 +2,7 @@ import unittest
 
 from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_types.stock import StockID
-from agent_service.tools.peers import PeersForStockInput, get_peers
+from agent_service.tools.peers import GeneralPeersForStockInput, get_general_peers
 from agent_service.types import PlanRunContext
 
 MSFT = StockID(gbi_id=6963, isin="", symbol="MSFT", company_name="Microsoft")
@@ -20,15 +20,15 @@ class TestPeers(unittest.IsolatedAsyncioTestCase):
         init_test_logging()
 
     async def test_get_peers(self):
-        args = PeersForStockInput(stock_ids=[MSFT])
-        msft_peers = await get_peers(args, self.context)
+        args = GeneralPeersForStockInput(stock_id=MSFT)
+        msft_peers = await get_general_peers(args, self.context)
         self.assertGreater(len(msft_peers), 1)
 
-        args = PeersForStockInput(stock_ids=[FORD])
-        ford_peers = await get_peers(args, self.context)
-        self.assertGreater(len(ford_peers), 1)
+        args = GeneralPeersForStockInput(stock_id=MSFT, category="Operating Systems")
+        msft_os_peers = await get_general_peers(args, self.context)
+        self.assertGreater(len(msft_os_peers), 1)
+        self.assertGreater(len(msft_peers), len(msft_os_peers))
 
-        args = PeersForStockInput(stock_ids=[FORD, MSFT])
-        both_peers = await get_peers(args, self.context)
-        self.assertGreater(len(both_peers), len(ford_peers))
-        self.assertGreater(len(both_peers), len(msft_peers))
+        args = GeneralPeersForStockInput(stock_id=FORD)
+        ford_peers = await get_general_peers(args, self.context)
+        self.assertGreater(len(ford_peers), 1)

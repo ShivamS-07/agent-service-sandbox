@@ -164,7 +164,7 @@ async def raw_stock_identifier_lookup(
     if (
         12 == len(args.stock_name)
         and args.stock_name[0:2].isalpha()
-        and args.stock_name[2:].isdigit()
+        and args.stock_name[2:].isalnum()
     ):
         # Exact ISIN match
         sql = """
