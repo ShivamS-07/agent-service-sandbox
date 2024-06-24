@@ -5,6 +5,13 @@ from contextlib import contextmanager
 from functools import lru_cache
 from typing import Generator, List, Optional, Tuple
 
+from feature_service_proto_v1.feature_metadata_service_grpc import (
+    FeatureMetadataServiceStub,
+)
+from feature_service_proto_v1.feature_metadata_service_pb2 import (
+    GetAllFeaturesMetadataRequest,
+    GetAllFeaturesMetadataResponse,
+)
 from feature_service_proto_v1.feature_service_grpc import FeatureServiceStub
 from feature_service_proto_v1.feature_service_pb2 import (
     GetFeatureDataRequest,
@@ -34,6 +41,12 @@ DEFAULT_URLS = {
     PROD_TAG: ("feature-service-prod.boosted.ai", 50051),
 }
 
+METADATA_DEFAULT_URLS = {
+    LOCAL_TAG: ("feature-metadata-service-dev.boosted.ai", 50051),
+    DEV_TAG: ("feature-metadata-service-dev.boosted.ai", 50051),
+    PROD_TAG: ("feature-metadata-service-prod.boosted.ai", 50051),
+}
+
 
 @lru_cache(maxsize=1)
 def get_url_and_port() -> Tuple[str, int]:
@@ -49,12 +62,36 @@ def get_url_and_port() -> Tuple[str, int]:
     return DEFAULT_URLS[env]
 
 
+@lru_cache(maxsize=1)
+def get_metadata_url_and_port() -> Tuple[str, int]:
+    url = os.environ.get("FEATURE_METADATA_SERVICE_URL")
+    if url is not None:
+        logger.warning(f"Found FEATURE_METADATA_SERVICE_URL override: {url}")
+        split_url, port = url.split(":")
+        return split_url, int(port)
+
+    env = get_environment_tag()
+    if env not in METADATA_DEFAULT_URLS:
+        raise ValueError(f"No URL is set for environment {env}")
+    return METADATA_DEFAULT_URLS[env]
+
+
 @contextmanager
 def _get_service_stub() -> Generator[FeatureServiceStub, None, None]:
     try:
         url, port = get_url_and_port()
         channel = Channel(url, port)
         yield FeatureServiceStub(channel)
+    finally:
+        channel.close()
+
+
+@contextmanager
+def _get_metadata_service_stub() -> Generator[FeatureMetadataServiceStub, None, None]:
+    try:
+        url, port = get_metadata_url_and_port()
+        channel = Channel(url, port)
+        yield FeatureMetadataServiceStub(channel)
     finally:
         channel.close()
 
@@ -96,6 +133,20 @@ async def get_feature_data(
             ),
         )
         resp: GetFeatureDataResponse = await stub.GetFeatureData(
+            req,
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def get_all_features_metadata(
+    user_id: str, filtered: bool = False
+) -> GetAllFeaturesMetadataResponse:
+    with _get_metadata_service_stub() as stub:
+        req = GetAllFeaturesMetadataRequest(filter_agent_enabled=filtered)
+        resp: GetAllFeaturesMetadataResponse = await stub.GetAllFeaturesMetadata(
             req,
             metadata=get_default_grpc_metadata(user_id=user_id),
         )

@@ -137,6 +137,7 @@ class StatisticsIdentifierLookupInput(ToolArgs):
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
     is_visible=False,
+    enabled=False,
 )
 async def statistic_identifier_lookup(
     args: StatisticsIdentifierLookupInput, context: PlanRunContext
@@ -246,6 +247,7 @@ class MacroFeatureDataInput(ToolArgs):
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_macro_statistic_data(args: MacroFeatureDataInput, context: PlanRunContext) -> Table:
     if args.date_range:
@@ -305,6 +307,7 @@ class FeatureDataInput(ToolArgs):
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_statistic_data_for_companies(
     args: FeatureDataInput, context: PlanRunContext
@@ -359,6 +362,7 @@ async def get_statistic_data(
     start_date: datetime.date,
     end_date: datetime.date,
     stock_ids: Optional[List[StockID]] = None,
+    force_daily: bool = False,
 ) -> StockTable:
     stock_ids = stock_ids or []
     gbi_id_map = {stock.gbi_id: stock for stock in stock_ids}
@@ -366,8 +370,13 @@ async def get_statistic_data(
     # if one date given, turn on ffill.
     ffill_days = 0
     if start_date == end_date:
-        # I think we should have a separate tool for "latest" or "last N"
         ffill_days = 180
+
+    use_natural_axis = True  # use the axis the data prefers (quarterly or data)
+
+    if force_daily:  # turns quarterly into daily so it can be combined with other daily data
+        ffill_days = 180
+        use_natural_axis = False
 
     logger = get_prefect_logger(__name__)
     logger.info(
@@ -384,7 +393,7 @@ async def get_statistic_data(
         from_date=start_date,
         to_date=end_date,
         ffill_days=ffill_days,
-        use_natural_axis=True,
+        use_natural_axis=use_natural_axis,
     )
 
     # make the dataframe with index = dates, columns = stock ids

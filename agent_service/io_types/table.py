@@ -296,6 +296,28 @@ class Table(ComplexIOBase):
 
         return TableOutput(title=title, columns=output_cols, rows=rows, citations=citations)
 
+    def delete_data_before_start_date(self, start_date: datetime.date) -> None:
+
+        date_column_idx = None
+
+        for i, column in enumerate(self.columns):
+            if column.metadata.col_type == TableColumnType.DATE:
+                date_column_idx = i
+                break
+
+        if date_column_idx is None:
+            return
+
+        date_data = self.columns[date_column_idx].data
+        to_delete_rows = set([i for i, date in enumerate(date_data) if date < start_date])  # type: ignore
+
+        for column in self.columns:
+            column.data = [
+                datapoint for i, datapoint in enumerate(column.data) if i not in to_delete_rows
+            ]
+
+        return
+
 
 CellType = Union[PrimitiveType, StockMetadata, ScoreOutput]
 
