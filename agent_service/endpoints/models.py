@@ -51,6 +51,7 @@ class EnableAgentAutomationRequest(BaseModel):
 
 class EnableAgentAutomationResponse(BaseModel):
     success: bool
+    next_run: Optional[datetime.datetime] = None
 
 
 class DisableAgentAutomationRequest(BaseModel):

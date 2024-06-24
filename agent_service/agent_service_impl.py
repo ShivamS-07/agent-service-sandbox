@@ -288,7 +288,10 @@ class AgentServiceImpl:
 
     async def enable_agent_automation(self, agent_id: str) -> EnableAgentAutomationResponse:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=True)
-        return EnableAgentAutomationResponse(success=True)
+
+        # TEMPORARY: return next run time as tomorrow
+        tomorrow = get_now_utc() + datetime.timedelta(days=1)
+        return EnableAgentAutomationResponse(success=True, next_run=tomorrow)
 
     async def disable_agent_automation(self, agent_id: str) -> DisableAgentAutomationResponse:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=False)
