@@ -16,7 +16,7 @@ from agent_service.io_types.graph import (
     PieGraph,
     PieSection,
 )
-from agent_service.io_types.table import Table, TableColumn
+from agent_service.io_types.table import Table, TableColumn, TableColumnMetadata
 from agent_service.tool import ToolArgs, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.prefect import get_prefect_logger
@@ -157,17 +157,41 @@ Note that the input must be a Table!
 """
 )
 async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> PieGraph:
+    if len(args.input_table.columns) < 2:
+        raise RuntimeError("Must have at least two columns to create pie chart!")
+
     modified_table = deepcopy(args.input_table)
     cols: List[TableColumn] = []
     for col in args.input_table.columns:
         if col.is_data_identical() is False:
             cols.append(col)
-
     # Removes any cols with duplicate data
     modified_table.columns = cols
     df = modified_table.to_df()
-    if len(cols) < 2:
-        raise RuntimeError("Must have at least index and one column to create pie chart!")
+
+    # Bit of a hack: if there is only a single row, the first column is a stock,
+    # and the rest of the columns are the same types, transpose the table.
+    column_types = [col.metadata.col_type for col in cols]
+    unique_col_types = set(column_types[1:])
+    if (
+        len(df) == 1  # one row
+        and cols[0].metadata.col_type == TableColumnType.STOCK  # first col stock
+        and len(unique_col_types) == 1  # other cols have same types
+    ):
+        new_cols = [
+            TableColumn(
+                metadata=TableColumnMetadata(label="Name", col_type=TableColumnType.STRING),
+                data=[col.metadata.label for col in cols[1:]],
+            ),  # labels of columns = first column values
+            TableColumn(
+                metadata=TableColumnMetadata(label="Value", col_type=unique_col_types.pop()),
+                data=[col.data[0] for col in cols[1:]],
+            ),  # data = second column values
+        ]
+        cols = new_cols
+        modified_table = Table(columns=new_cols)
+        df = modified_table.to_df()
+
     # Do some analysis on the table to convert it to the best-fit graph.
     label_col = None
     label_df_col = None

@@ -99,87 +99,47 @@ def convert_single_stock_data_to_table(
     data_dict: Dict[str, Any] = {}
 
     columns: List[TableColumnMetadata] = []
+    if not simple_output:
+        columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING))
+    columns.append(
+        TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)
+    )
 
-    if simple_output:
-        # simple_output only works when all KPIs in the column are comparable (shares the same unit)
-        # and only has one quarter of data for each KPI, check to make sure, raise errors where appropriate
-        for i, kpi_inst_list in enumerate(data.values()):
-            if len(kpi_inst_list) > 1:
-                raise ValueError(
-                    "When simple_output is enabled in convert_single_stock_data_to_table, "
-                    "only one datapoint for each KPI is allowed, multiple datapoints provided "
-                    f"for {kpi_inst_list[0].name}"
-                )
-            kpi_inst = kpi_inst_list[0]
+    for kpi_name, kpi_history in data.items():
+        actual_col = f"{kpi_name}"
+        estimate_col = None
+        surprise_col = None
 
-            # Take the unit used in the first KPI and check that all others in data use the
-            # same unit
-            if i == 0:
-                unit = kpi_inst.unit
-                sample_kpi = kpi_inst
-            else:
-                if kpi_inst.unit != unit:
-                    raise ValueError(
-                        "When simple_output is enabled in convert_single_stock_data_to_table, "
-                        f"all KPIs must share the same unit, but got {unit} and {kpi_inst.unit}"
-                    )
-
-        columns.extend(
-            [
-                TableColumnMetadata(
-                    label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
-                ),
-                TableColumnMetadata(label="KPI", col_type=TableColumnType.STRING),
-            ]
-        )
-
-        # Since all kpis have the same unit, we can pass in any random kpi instance to initialize a
-        # column to store the KPI values
-        kpi_value_column = generate_columns_for_kpi(sample_kpi, "Value", None, None)
-        columns.extend(kpi_value_column)
-
-        for kpi_name, kpi_history in data.items():
-            kpi_inst = kpi_history[0]  # Only has one entry
-            data_dict[kpi_inst.name] = {
-                STOCK_ID_COL_NAME_DEFAULT: stock_id,
-                "KPI": kpi_inst.name,
-                "Value": kpi_inst.actual,
-            }
-
-    else:
-        columns.extend(
-            [
-                TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING),
-                TableColumnMetadata(
-                    label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
-                ),
-            ]
-        )
-        for kpi_name, kpi_history in data.items():
+        if not simple_output:
             actual_col = f"{kpi_name} Actual"
             estimate_col = f"{kpi_name} Estimate"
             surprise_col = f"{kpi_name} Surprise"
 
-            new_columns = generate_columns_for_kpi(
-                kpi_history[0], actual_col, estimate_col, surprise_col
-            )
-            columns.extend(new_columns)
+        new_columns = generate_columns_for_kpi(
+            kpi_history[0], actual_col, estimate_col, surprise_col
+        )
+        columns.extend(new_columns)
+        for kpi_inst in kpi_history:
+            quarter = f"{kpi_inst.year} Q{kpi_inst.quarter}"
 
-            for kpi_inst in kpi_history:
-                quarter = f"{kpi_inst.year} Q{kpi_inst.quarter}"
-
-                if quarter not in data_dict:
+            if quarter not in data_dict:
+                if simple_output:
+                    data_dict[quarter] = {
+                        STOCK_ID_COL_NAME_DEFAULT: stock_id,
+                    }
+                else:
                     data_dict[quarter] = {
                         "Quarter": quarter,
                         STOCK_ID_COL_NAME_DEFAULT: stock_id,
                     }
+            # Need to convert percentages into decimals to satisfy current handling of the Percentage figures
+            data_dict[quarter][actual_col] = (
+                kpi_inst.actual * 0.01
+                if (kpi_inst.unit == "Percent" and kpi_inst.actual is not None)
+                else kpi_inst.actual
+            )
 
-                # Need to convert percentages into decimals to satisfy current handling of the Percentage figures
-                data_dict[quarter][actual_col] = (
-                    kpi_inst.actual * 0.01
-                    if (kpi_inst.unit == "Percent" and kpi_inst.actual is not None)
-                    else kpi_inst.actual
-                )
+            if not simple_output:
                 data_dict[quarter][estimate_col] = (
                     kpi_inst.estimate * 0.01 if kpi_inst.unit == "Percent" else kpi_inst.estimate
                 )
@@ -189,7 +149,6 @@ def convert_single_stock_data_to_table(
     df_data = []
     for _, row in data_dict.items():
         df_data.append(row)
-
     df = pd.DataFrame(df_data)
     return Table.from_df_and_cols(data=df, columns=columns)
 

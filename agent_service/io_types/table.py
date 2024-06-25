@@ -59,7 +59,7 @@ class TableColumn(ComplexIOBase):
         return f"<Column '{self.metadata.label}' Data: {col_str}>"
 
     def is_data_identical(self) -> bool:
-        if len(set(self.data)) == 1:
+        if len(set(self.data)) == 1 and len(self.data) > 1:
             return True
         return False
 
@@ -302,7 +302,6 @@ class Table(ComplexIOBase):
         return TableOutput(title=title, columns=output_cols, rows=rows, citations=citations)
 
     def delete_data_before_start_date(self, start_date: datetime.date) -> None:
-
         date_column_idx = None
 
         for i, column in enumerate(self.columns):
