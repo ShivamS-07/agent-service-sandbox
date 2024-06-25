@@ -1,7 +1,7 @@
 import asyncio
 import json
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O
 from agent_service.GPT.requests import GPT
@@ -9,7 +9,13 @@ from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import Citation, HistoryEntry, Score
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
-from agent_service.io_types.text import NewsText, StockText, Text, TextGroup
+from agent_service.io_types.text import (
+    NewsText,
+    StockText,
+    Text,
+    TextGroup,
+    TopicProfiles,
+)
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.LLM_analysis.constants import (
@@ -26,15 +32,16 @@ from agent_service.tools.LLM_analysis.prompts import (
     COMPARISON_DESCRIPTION,
     COMPARISON_MAIN_PROMPT,
     COMPARISON_SYS_PROMPT,
+    COMPLEX_PROFILE_FILTER_SYS_PROMPT,
     EXTRA_DATA_PHRASE,
     FILTER_BY_PROFILE_DESCRIPTION,
     FILTER_BY_TOPIC_DESCRIPTION,
     PROFILE_FILTER_MAIN_PROMPT,
-    PROFILE_FILTER_SYS_PROMPT,
     PROFILE_RUBRIC_GENERATION_MAIN_OBJ,
     PROFILE_RUBRIC_GENERATION_SYS_OBJ,
     RUBRIC_EVALUATION_MAIN_OBJ,
     RUBRIC_EVALUATION_SYS_OBJ,
+    SIMPLE_PROFILE_FILTER_SYS_PROMPT,
     SUMMARIZE_DESCRIPTION,
     SUMMARIZE_MAIN_PROMPT,
     SUMMARIZE_SYS_PROMPT,
@@ -317,30 +324,49 @@ async def profile_filter_helper(
     aligned_text_groups: StockAlignedTextGroups,
     str_lookup: Dict[StockID, str],
     profile: str,
+    is_using_complex_profile: bool,
     agent_id: str,
+    topic: str = "",
 ) -> List[Tuple[bool, str, List[Citation]]]:
     gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
     llm = GPT(context=gpt_context, model=GPT4_O)
     tokenizer = GPTTokenizer(GPT4_O)
     used = tokenizer.get_token_length(
         "\n".join(
-            [PROFILE_FILTER_MAIN_PROMPT.template, PROFILE_FILTER_SYS_PROMPT.template, profile]
+            [
+                PROFILE_FILTER_MAIN_PROMPT.template,
+                SIMPLE_PROFILE_FILTER_SYS_PROMPT.template,
+                profile,
+            ]
         )
     )
+
     tasks = []
     for stock in aligned_text_groups.val:
         text_str = str_lookup[stock]
         text_str = tokenizer.chop_input_to_allowed_length(text_str, used)
         if text_str == "":  # no text, skip
             tasks.append(identity(""))
-        tasks.append(
-            llm.do_chat_w_sys_prompt(
-                PROFILE_FILTER_MAIN_PROMPT.format(
-                    company_name=stock.company_name, texts=text_str, profile=profile
-                ),
-                PROFILE_FILTER_SYS_PROMPT.format(),
+
+        if is_using_complex_profile:
+            tasks.append(
+                llm.do_chat_w_sys_prompt(
+                    PROFILE_FILTER_MAIN_PROMPT.format(
+                        company_name=stock.company_name, texts=text_str, profile=profile
+                    ),
+                    COMPLEX_PROFILE_FILTER_SYS_PROMPT.format(topic_name=topic),
+                )
             )
-        )
+        else:
+            tasks.append(
+                llm.do_chat_w_sys_prompt(
+                    PROFILE_FILTER_MAIN_PROMPT.format(
+                        company_name=stock.company_name, texts=text_str, profile=profile
+                    ),
+                    SIMPLE_PROFILE_FILTER_SYS_PROMPT.format(),
+                )
+            )
+
     results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
 
     output_tuples: List[Tuple[bool, str, List[Citation]]] = []
@@ -425,25 +451,25 @@ async def filtered_stocks_score_assignment(
     non_zero_scoring_stocks = []
     for stock, score in zip(stocks, scores):
         level_score, explanation = score.split(SCORE_OUTPUT_DELIMITER)
-        if level_score != "0":
-            score_justification = explanation.strip()
-            non_zero_scoring_stocks.append(
-                stock.inject_history_entry(
-                    HistoryEntry(
-                        explanation=score_justification,
-                        title=f"Connection to '{profile}'",
-                        score=Score(val=SCORE_MAPPING[level_score]),
-                        citations=stock_reason_map[stock][1],
-                    )
+        # if level_score != "0":
+        score_justification = explanation.strip()
+        non_zero_scoring_stocks.append(
+            stock.inject_history_entry(
+                HistoryEntry(
+                    explanation=score_justification,
+                    title=f"Connection to '{profile}'",
+                    score=Score(val=SCORE_MAPPING[level_score]),
+                    citations=stock_reason_map[stock][1],
                 )
             )
+        )
     return non_zero_scoring_stocks
 
 
 class FilterStocksByProfileMatch(ToolArgs):
-    profile: str
     stocks: List[StockID]
     texts: List[StockText]
+    profile: Union[str, TopicProfiles]
 
 
 @tool(
@@ -457,12 +483,31 @@ async def filter_stocks_by_profile_match(
     str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
         aligned_text_groups.val, include_header=True, text_group_numbering=True
     )
+
+    profile_str: str = ""
+    if isinstance(args.profile, TopicProfiles):
+        is_using_complex_profile = True
+        profile_str = await Text.get_all_strs(  # type: ignore
+            args.profile, include_header=False, text_group_numbering=False
+        )
+    elif isinstance(args.profile, str):
+        is_using_complex_profile = False
+        profile_str = args.profile
+    else:
+        raise ValueError(
+            "profile must be either a string or a TopicProfiles object "
+            "in filter_stocks_by_profile_match function!"
+        )
     stock_reason_map: Dict[StockID, Tuple[str, List[Citation]]] = {
         stock: (reason, citations)
         for stock, (is_relevant, reason, citations) in zip(
             aligned_text_groups.val.keys(),
             await profile_filter_helper(
-                aligned_text_groups, str_lookup, args.profile, context.agent_id
+                aligned_text_groups,
+                str_lookup,
+                profile_str,
+                is_using_complex_profile,
+                context.agent_id,
             ),
         )
         if is_relevant
@@ -472,11 +517,18 @@ async def filter_stocks_by_profile_match(
         stock for stock in aligned_text_groups.val.keys() if stock in stock_reason_map
     ]
 
-    rubric_dict = await get_profile_rubric(args.profile, context.agent_id)
+    # No need for an else since we can guarantee at this point one is not None, appeases linter
+    if isinstance(args.profile, TopicProfiles):
+        # TODO: Update the rubric to handle the new extensive profile data we have, for now
+        # we just pass in the topic which is a short simple string similar to a profile string
+        profile_data_for_rubric = args.profile.topic
+    elif isinstance(args.profile, str):
+        profile_data_for_rubric = args.profile
 
+    rubric_dict = await get_profile_rubric(profile_data_for_rubric, context.agent_id)
     # Assigns scores inplace
     filtered_stocks_with_scores = await filtered_stocks_score_assignment(
-        filtered_stocks, rubric_dict, stock_reason_map, args.profile, context.agent_id
+        filtered_stocks, rubric_dict, stock_reason_map, profile_data_for_rubric, context.agent_id
     )
     return filtered_stocks_with_scores
 

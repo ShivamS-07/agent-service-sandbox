@@ -1,10 +1,5 @@
 import os
 
-from agent_service.tools.commentary import *  # noqa
-from agent_service.tools.kpis import *  # noqa
-from agent_service.tools.LLM_analysis import *  # noqa
-from agent_service.tools.profiler import *  # noqa
-
 # This is hacky, but we want to make sure that "from tools import *" gets ALL tools
 
 dirname = os.path.dirname(os.path.abspath(__file__))

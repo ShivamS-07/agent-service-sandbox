@@ -219,6 +219,12 @@ class Text(ComplexIOBase):
 
 
 @io_type
+class ProfileText(Text):
+    # val will store the profile string
+    importance_score: float
+
+
+@io_type
 class NewsText(Text):
     pass
 
@@ -848,6 +854,12 @@ class TextGroup(ComplexIOBase):
 class EquivalentKPITexts(TextGroup):
     val: List[KPIText]  # type: ignore
     general_kpi_name: str
+
+
+@io_type
+class TopicProfiles(TextGroup):
+    val: List[ProfileText]  # type: ignore
+    topic: str
 
 
 class TextOutput(Output):

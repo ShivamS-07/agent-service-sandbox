@@ -441,6 +441,16 @@ class Postgres(PostgresBase):
 
         return rows[0]
 
+    # Profile Generation
+    def get_industry_names(self, gic_type: str = "GGROUP") -> List[str]:
+        sql = """
+            SELECT name, gictype
+            FROM gic_sector
+            WHERE gictype = (%s)
+        """
+        records = self.generic_read(sql, params=[gic_type])
+        return [record["name"] for record in records]
+
 
 def get_psql(skip_commit: bool = False) -> Postgres:
     """
