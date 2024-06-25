@@ -58,8 +58,6 @@ from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 
-logger = get_prefect_logger(__name__)
-
 
 def get_agent_id_from_chat_context(context: ChatContext) -> str:
     if context.messages:
@@ -107,7 +105,7 @@ class Planner:
     async def create_initial_plan(
         self, chat_context: ChatContext, use_sample_plans: bool = True
     ) -> Optional[ExecutionPlan]:
-
+        logger = get_prefect_logger(__name__)
         if use_sample_plans:
             logger.info("Getting matching sample plans")
             sample_plans_str = await self._get_sample_plan_str(
@@ -189,6 +187,7 @@ class Planner:
     async def _create_initial_plan(
         self, chat_context: ChatContext, llm: Optional[GPT] = None, sample_plans: str = ""
     ) -> Optional[ExecutionPlan]:
+        logger = get_prefect_logger(__name__)
         execution_plan_start = datetime.datetime.utcnow().isoformat()
         if llm is None:
             llm = self.fast_llm
@@ -291,7 +290,7 @@ class Planner:
         action: Action,
         use_sample_plans: bool = True,
     ) -> Optional[ExecutionPlan]:
-
+        logger = get_prefect_logger(__name__)
         if use_sample_plans:
             logger.info("Getting matching sample plans")
             sample_plans_str = await self._get_sample_plan_str(
@@ -399,7 +398,7 @@ class Planner:
         action: Action,
         use_sample_plans: bool = True,
     ) -> Optional[ExecutionPlan]:
-
+        logger = get_prefect_logger(__name__)
         if use_sample_plans:
             logger.info("Getting matching sample plans")
             sample_plans_str = await self._get_sample_plan_str(
@@ -552,7 +551,7 @@ class Planner:
         return await self.smart_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     async def _get_sample_plan_str(self, input: str) -> str:
-
+        logger = get_prefect_logger(__name__)
         sample_plans = await get_similar_sample_plans(input, self.context)
 
         if sample_plans:
@@ -680,6 +679,7 @@ class Planner:
     def _validate_tool_arguments(
         self, tool: Tool, args: Dict[str, str], variable_lookup: Dict[str, Type[IOType]]
     ) -> PartialToolArgs:
+        logger = get_prefect_logger(__name__)
         """
         Given a tool, a set of arguments, and a variable lookup table, validate
         all the arguments for the tool given by GPT. If validation is
