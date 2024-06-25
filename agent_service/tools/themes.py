@@ -507,7 +507,7 @@ async def get_top_N_macroeconomic_themes(
         )
         themes = [ThemeText(id=theme.theme_id) for theme in themes_with_impact]
 
-    return themes
+    return themes[: args.theme_num]
 
 
 async def main() -> None:

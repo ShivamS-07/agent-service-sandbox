@@ -1,3 +1,4 @@
+import json
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
@@ -16,13 +17,20 @@ from agent_service.tools.themes import (
 )
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
+from agent_service.utils.string_utils import clean_to_json_if_needed
+
+# Helper functions
+
+
+async def split_text_and_citation_ids(GPT_ouput: str) -> Tuple[str, List[int]]:
+    lines = GPT_ouput.replace("\n\n", "\n").split("\n")
+    citation_ids = json.loads(clean_to_json_if_needed(lines[-1]))
+    main_text = "\n".join(lines[:-1])
+    return main_text, citation_ids
 
 
 async def get_sec_metadata_dao() -> SecuritiesMetadataDAO:
     return SecuritiesMetadataDAO(cache_sec_metadata=True)
-
-
-# Helper functions
 
 
 async def get_theme_related_texts(

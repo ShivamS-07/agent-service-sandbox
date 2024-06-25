@@ -6,12 +6,15 @@ from uuid import uuid4
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
+from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
-from agent_service.io_types.text import Text, ThemeText
+from agent_service.io_types.text import Text, TextGroup, ThemeText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.commentary.constants import (
+    MAX_DEVELOPMENTS_PER_TOPIC,
     MAX_MATCHED_ARTICLES_PER_TOPIC,
+    MAX_THEMES_PER_COMMENTARY,
     MAX_TOTAL_ARTICLES_PER_COMMENTARY,
 )
 from agent_service.tools.commentary.helpers import (
@@ -20,6 +23,7 @@ from agent_service.tools.commentary.helpers import (
     get_region_weights_from_portfolio_holdings,
     get_theme_related_texts,
     organize_commentary_texts,
+    split_text_and_citation_ids,
 )
 from agent_service.tools.commentary.prompts import (
     COMMENTARY_PROMPT_MAIN,
@@ -52,12 +56,14 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 from agent_service.utils.prefect import get_prefect_logger
 
 # TODO:
+
+# - How to handle large size of texts?
+#    - one option is do some filtering using another gpt to select the best texts based on user prompt
 # 1. comeplte sectors_prompt
 # 2. complete top_stocks_prompt
 # 3. complete client_type_prompt
 # 4. complete goal_prompt
-# 5. complete writing_style_prompt
-# 6. complete theme_prompt and theme_ourlook_prompt
+# 6. complete theme_prompt and theme_outlook_prompt
 # 7. complete watchlist_stocks_prompt
 # 8. use a portfolio by defualt for geography_prompt
 
@@ -71,12 +77,14 @@ class WriteCommentaryInput(ToolArgs):
     description=(
         "This function can be used when a client wants to write a commentary, article or summary of "
         "market trends or specific topics."
-        "This function generates a commentary either based for general market trends or "
+        "This function generates a commentary either for general market trends or "
         "based on specific topics mentioned by a client. "
         "The function creates a concise summary based on a comprehensive analysis of the provided texts. "
         "The commentary will be written in a professional tone, "
         "incorporating any specific instructions or preferences mentioned by the client during their interaction. "
-        "The input to this function is prepared by the get_commentary_input tool."
+        "The input to this function can be prepared by the get_commentary_input tool."
+        "Additionally, this tools MUST be used when user use phrases like 'tell me about' "
+        "or 'write a commentary on', or similar phrases."
     ),
     category=ToolCategory.COMMENTARY,
     reads_chat=True,
@@ -125,9 +133,15 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     themes, developments, articles = await organize_commentary_texts(args.texts)
 
     # if number of articles is more than MAX_TOTAL_ARTICLES_PER_COMMENTARY,
-    # randomly select 300 articles
+    # randomly select specified number of themes, developments and articles
+    if len(themes) > MAX_THEMES_PER_COMMENTARY:
+        themes = random.sample(themes, MAX_THEMES_PER_COMMENTARY)
+    if len(developments) > MAX_DEVELOPMENTS_PER_TOPIC * len(themes):
+        developments = random.sample(developments, MAX_DEVELOPMENTS_PER_TOPIC * len(themes))
     if len(articles) > MAX_TOTAL_ARTICLES_PER_COMMENTARY:
         articles = random.sample(articles, MAX_TOTAL_ARTICLES_PER_COMMENTARY)
+
+    all_texts = themes + developments + articles
 
     await tool_log(
         log=f"Retrieved {len(themes)} themes, {len(developments)} developments, and {len(articles)} articles.",
@@ -135,30 +149,42 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     )
 
     # create main prompt
+    previous_commentary_prompt = (
+        PREVIOUS_COMMENTARY_PROMPT.format(
+            previous_commentary=await Text.get_all_strs(previous_commentary)
+        )
+        if previous_commentary is not None
+        else NO_PROMPT.format()
+    )
+    writing_style_prompt = WRITING_STYLE_PROMPT.format(
+        writing_format=WRITING_FORMAT_TEXT_DICT.get("Long")
+    )
+    texts = "\n***\n".join(
+        await Text.get_all_strs(all_texts, include_header=True, text_group_numbering=True)
+    )
+    chat_context = context.chat.get_gpt_input() if context.chat is not None else ""
+
     main_prompt = COMMENTARY_PROMPT_MAIN.format(
-        previous_commentary_prompt=(
-            PREVIOUS_COMMENTARY_PROMPT.format(
-                previous_commentary=await Text.get_all_strs(previous_commentary)
-            )
-            if previous_commentary is not None
-            else ""
-        ),
+        previous_commentary_prompt=previous_commentary_prompt,
         geography_prompt=geography_prompt,
-        writing_style_prompt=WRITING_STYLE_PROMPT.format(
-            writing_format=WRITING_FORMAT_TEXT_DICT.get("Long"),
-        ),
-        themes="\n***\n".join(await Text.get_all_strs(themes)),
-        developments="\n***\n".join(await Text.get_all_strs(developments)),
-        articles="\n***\n".join(await Text.get_all_strs(articles)),
-        chat_context=context.chat.get_gpt_input() if context.chat is not None else "",
+        writing_style_prompt=writing_style_prompt,
+        texts=texts,
+        chat_context=chat_context,
     )
     # Write the commentary
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=main_prompt,
         sys_prompt=COMMENTARY_SYS_PROMPT.format(),
     )
+    text, citation_ids = await split_text_and_citation_ids(result)
+    commentary = Text(val=text)
+    commentary = commentary.inject_history_entry(
+        HistoryEntry(
+            title="Commentary", citations=TextGroup(val=all_texts).get_citations(citation_ids)
+        )
+    )
 
-    return Text(val=result)
+    return commentary
 
 
 class GetCommentaryTextsInput(ToolArgs):
@@ -197,9 +223,10 @@ async def get_commentary_texts(
                 ),
                 context,
             )
+            themes_texts = themes_texts[:MAX_THEMES_PER_COMMENTARY]
             theme_related_texts = await get_theme_related_texts(themes_texts, context)
             await tool_log(
-                log="Retrieved texts for top themes related to portfolio (id: {args.portfolio_id}).",
+                log=f"Retrieved texts for top {len(themes_texts)} themes - portfolio (id: {args.portfolio_id}).",
                 context=context,
             )
             return themes_texts + theme_related_texts
@@ -208,11 +235,13 @@ async def get_commentary_texts(
             themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
                 GetTopNThemesInput(start_date=args.start_date, theme_num=3), context
             )
+            themes_texts = themes_texts[:MAX_THEMES_PER_COMMENTARY]
             theme_related_texts = await get_theme_related_texts(themes_texts, context)
             await tool_log(
-                log="No portfolio is provided. Retrieved texts for top 3 themes for general commentary.",
+                log=f"No portfolio provided. Got texts for top {len(themes_texts)} themes for general commentary.",
                 context=context,
             )
+            print("themes_texts: ", len(themes_texts))
             return themes_texts + theme_related_texts
 
     else:
@@ -223,9 +252,10 @@ async def get_commentary_texts(
                 ),
                 context,
             )
+            themes_texts = themes_texts[:MAX_THEMES_PER_COMMENTARY]
             theme_related_texts = await get_theme_related_texts(themes_texts, context)
             await tool_log(
-                log=f"Retrieved texts for top 3 themes related to portfolio (id: {args.portfolio_id}).",
+                log=f"Retrieved texts for top {len(themes_texts)} themes - portfolio (id: {args.portfolio_id}).",
                 context=context,
             )
             topic_texts = await get_texts_for_topics(args, context)
