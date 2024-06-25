@@ -90,6 +90,8 @@ Note that descriptions involving (percentage) change/gain/loss of stock price
 should be interpreted as a calculation relative to the first date in the time series,
 not the previous day
 
+If useful for your calculations, the current date is {today}
+
 The input dataframe's column schema is below. Date columns are python datetimes,
 and may need to be converted to pandas Timestamps if necessary. It has no index:
     {col_schema}

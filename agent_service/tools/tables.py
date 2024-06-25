@@ -1,4 +1,5 @@
 import copy
+import datetime
 import json
 import os
 import subprocess
@@ -187,6 +188,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
             info=_get_df_info(data_df),
             transform=args.transformation_description,
             col_type_explain=TableColumnType.get_type_explanations(),
+            today=datetime.date.today(),
             error="",
         ),
         sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
@@ -203,6 +205,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
                 info=_get_df_info(data_df),
                 transform=args.transformation_description,
                 col_type_explain=TableColumnType.get_type_explanations(),
+                today=datetime.date.today(),
                 error=(
                     "Your last code failed with this error, please correct it:\n"
                     f"Last Code:\n\n{code}\n\n"
