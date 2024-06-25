@@ -92,6 +92,15 @@ class TableColumnType(str, enum.Enum):
 class SerializeableBase(BaseModel, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    # See https://docs.pydantic.dev/latest/concepts/serialization/#overriding-the-serialize_as_any-default-false
+    # For reasoning behind 'serialize_as_any'. We want this behavior pretty much
+    # everywhere, so we can override these methods to always use it.
+    def model_dump(self, **kwargs: Any) -> Dict[str, Any]:
+        return super().model_dump(serialize_as_any=True, **kwargs)
+
+    def model_dump_json(self, **kwargs: Any) -> str:
+        return super().model_dump_json(serialize_as_any=True, **kwargs)
+
     @classmethod
     def type_name(cls) -> str:
         return cls.__name__
@@ -414,7 +423,7 @@ IOTypeAdapter = TypeAdapter(IOTypeBase)
 
 def _dump_io_type_helper(val: IOTypeBase) -> Any:
     if isinstance(val, SerializeableBase):
-        return val.model_dump(mode="json", serialize_as_any=True)
+        return val.model_dump(mode="json")
     if isinstance(val, list):
         return [_dump_io_type_helper(elem) for elem in val]
     if isinstance(val, dict):
