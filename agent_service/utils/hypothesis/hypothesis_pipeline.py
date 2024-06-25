@@ -165,7 +165,7 @@ class HypothesisPipeline:
 
         # TODO: for now, we can assume that all the relevant topics are here, but later during updates
         # we may need to get them
-        corresponding_topics = [topic_id_to_topic[topic.topic_id] for topic in relevant_topics]
+        corresponding_topics = [topic_id_to_topic[topic.topic_id] for topic in hypothesis_topics]
         return hypothesis_topics, corresponding_topics
 
     async def get_stock_hypothesis_earnings_topics(
