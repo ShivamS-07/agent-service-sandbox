@@ -57,6 +57,7 @@ from agent_service.tools.stocks import (
     StockIdentifierLookupInput,
     stock_identifier_lookup,
 )
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.date_utils import get_now_utc
@@ -490,9 +491,11 @@ async def filter_stocks_by_profile_match(
         profile_str = await Text.get_all_strs(  # type: ignore
             args.profile, include_header=False, text_group_numbering=False
         )
+        await tool_log(f"Using advanced profile with topic: {args.profile.topic}", context=context)
     elif isinstance(args.profile, str):
         is_using_complex_profile = False
         profile_str = args.profile
+        await tool_log(f"Using simple profile: {profile_str}", context=context)
     else:
         raise ValueError(
             "profile must be either a string or a TopicProfiles object "
