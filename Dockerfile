@@ -12,4 +12,5 @@ COPY no_auth_endpoints.py .
 COPY regression_test/ ./regression_test
 COPY prefect_serve.py .
 COPY prefect_sqs_serve.py .
+COPY scripts/ ./scripts
 CMD ["pipenv", "run", "python", "application.py"]

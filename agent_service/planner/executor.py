@@ -77,6 +77,7 @@ async def run_execution_plan(
     # make sure we only run the plan starting from a certain point while passing
     # in precomputed outputs for prior tasks.
     override_task_output_lookup: Optional[Dict[str, IOType]] = None,
+    scheduled_by_automation: bool = False,
 ) -> List[IOType]:
     logger = get_prefect_logger(__name__)
     # Maps variables to their resolved values

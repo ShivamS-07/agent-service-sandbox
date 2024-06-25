@@ -1,6 +1,7 @@
 import datetime
+from collections import defaultdict
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, DefaultDict, Dict, List, Optional, Tuple
 
 from gbi_common_py_utils.utils.postgres import PostgresBase
 
@@ -450,6 +451,38 @@ class Postgres(PostgresBase):
         """
         records = self.generic_read(sql, params=[gic_type])
         return [record["name"] for record in records]
+
+    def get_scheduled_agents(self) -> List[str]:
+        sql = "SELECT agent_id FROM agent.agents WHERE automation_enabled"
+        rows = self.generic_read(sql)
+        return [row["agent_id"] for row in rows]
+
+    def get_agents_info(self, agent_ids: List[str]) -> List[Dict[str, Any]]:
+        sql = """
+        SELECT DISTINCT ON (ag.agent_id) ag.agent_id::TEXT, ag.user_id::TEXT, ep.plan_id::TEXT, ep.plan
+        FROM agent.agents ag JOIN agent.execution_plans ep ON ag.agent_id = ep.agent_id
+        WHERE ag.agent_id = ANY(%(agent_ids)s) and ep.status = 'READY'
+        ORDER BY ag.agent_id, ep.created_at DESC
+        """
+        rows = self.generic_read(sql, params={"agent_ids": agent_ids})
+        return rows
+
+    def get_chat_contexts(self, agent_ids: List[str]) -> DefaultDict[str, ChatContext]:
+        sql = """
+            SELECT cm.agent_id::VARCHAR, cm.message_id::VARCHAR, cm.message, cm.is_user_message, cm.message_time,
+              COALESCE(nf.unread, FALSE) as unread
+            FROM agent.chat_messages cm
+            LEFT JOIN agent.notifications nf
+            ON cm.message_id = nf.message_id
+            WHERE cm.agent_id = ANY(%(agent_ids)s)
+            ORDER BY cm.message_time ASC;
+        """
+
+        rows = self.generic_read(sql, params={"agent_ids": agent_ids})
+        res: DefaultDict[str, ChatContext] = defaultdict(ChatContext)
+        for row in rows:
+            res[row["agent_id"]].messages.append(Message(**row))
+        return res
 
 
 def get_psql(skip_commit: bool = False) -> Postgres:
