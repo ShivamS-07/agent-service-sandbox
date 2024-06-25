@@ -176,6 +176,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         main_prompt=main_prompt,
         sys_prompt=COMMENTARY_SYS_PROMPT.format(),
     )
+    # print(result)
     text, citation_ids = await split_text_and_citation_ids(result)
     commentary = Text(val=text)
     commentary = commentary.inject_history_entry(
