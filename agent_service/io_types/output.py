@@ -1,3 +1,4 @@
+import datetime
 import enum
 from abc import ABC
 from typing import List, Optional
@@ -21,6 +22,8 @@ class CitationOutput(BaseModel):
     name: str
     link: Optional[str] = None
     summary: Optional[str] = None
+    # Used to track when the underlying text (article, summary, etc.) was created
+    published_at: Optional[datetime.datetime] = None
 
 
 class OutputType(str, enum.Enum):

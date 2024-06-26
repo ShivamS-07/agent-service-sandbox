@@ -26,6 +26,18 @@ The last run's output is:
 Your json response:
 """
 
+TEXT_OUTPUT_TEMPLATE = Prompt(
+    name="AGENT_OUTPUT_DIFF_TEXT_OUTPUT_TEMPLATE",
+    template="""
+OUTPUT TEXT:
+'{text}'
+
+NEW TEXT CITATIONS SINCE LAST RUN, please refer ONLY to these topics when
+writing the diff since the last run, but do not quote them directly:
+{citations}
+""",
+)
+
 GENERATE_DIFF_MAIN_PROMPT = Prompt(
     name="AGENT_OUTPUT_GENERATE_DIFF_MAIN_PROMPT", template=GENERATE_DIFF
 )

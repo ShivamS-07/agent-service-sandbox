@@ -262,7 +262,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
     ) -> List[CitationOutput]:
         sql = """
         SELECT DISTINCT ON (sn.topic_id)
-          news_id::TEXT, url, domain_url, headline
+          news_id::TEXT, url, domain_url, headline, published_at
         FROM nlp_service.stock_news sn
         JOIN nlp_service.news_sources ns ON ns.source_id = sn.source_id
         WHERE sn.topic_id = ANY(%(topic_ids)s)
@@ -277,6 +277,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
                 name=row["domain_url"],
                 link=row["url"],
                 summary=row["headline"],
+                published_at=row["published_at"],
             )
             for row in rows
         ]
@@ -319,7 +320,7 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
         sql = """
-        SELECT news_id::TEXT, url, domain_url, headline
+        SELECT news_id::TEXT, url, domain_url, headline, published_at
         FROM nlp_service.stock_news sn
         JOIN nlp_service.news_sources ns ON ns.source_id = sn.source_id
         WHERE sn.news_id = ANY(%(news_ids)s)
@@ -333,6 +334,7 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
                 name=row["domain_url"],
                 link=row["url"],
                 summary=row["headline"],
+                published_at=row["published_at"],
             )
             for row in rows
         ]
@@ -361,7 +363,7 @@ class NewsPoolArticleText(NewsText):
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
         sql = """
-        SELECT news_id::TEXT, url, domain_url, headline
+        SELECT news_id::TEXT, url, domain_url, headline, published_at
         FROM nlp_service.news_pool np
         JOIN nlp_service.news_sources ns ON ns.source_id = np.source_id
         WHERE np.news_id = ANY(%(news_ids)s)
@@ -375,6 +377,7 @@ class NewsPoolArticleText(NewsText):
                 name=row["domain_url"],
                 link=row["url"],
                 summary=row["headline"],
+                published_at=row["published_at"],
             )
             for row in rows
         ]
@@ -431,6 +434,7 @@ class CustomDocumentSummaryText(StockText):
                         id=id,
                         citation_type=CitationType.TEXT,
                         name=f"User Document: {citation_name}",
+                        published_at=chunk_info.upload_time.ToDatetime(),
                     )
                 )
         return citations
@@ -459,7 +463,7 @@ class ThemeText(Text):
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
         sql = """
-        SELECT theme_id::TEXT, theme_name::TEXT AS name, theme_description
+        SELECT theme_id::TEXT, theme_name::TEXT AS name, theme_description, created_at
         FROM nlp_service.themes
         WHERE theme_id = ANY(%(theme_id)s)
         """
@@ -470,6 +474,7 @@ class ThemeText(Text):
                 citation_type=CitationType.TEXT,
                 name="Theme: " + row["name"],
                 summary=row["theme_description"],
+                published_at=row["created_at"],
             )
             for row in rows
         ]
@@ -498,7 +503,7 @@ class ThemeNewsDevelopmentText(NewsText):
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
         sql = """
-        SELECT development_id::TEXT, label::TEXT, description
+        SELECT development_id::TEXT, label::TEXT, description, development_time
         FROM nlp_service.theme_developments
         WHERE development_id = ANY(%(development_id)s)
         """
@@ -509,6 +514,7 @@ class ThemeNewsDevelopmentText(NewsText):
                 citation_type=CitationType.TEXT,
                 name="News Development: " + row["label"],
                 summary=row["description"],
+                published_at=row["development_time"],
             )
             for row in rows
         ]
@@ -539,7 +545,7 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
         sql = """
-        SELECT news_id::TEXT, url, domain_url, headline
+        SELECT news_id::TEXT, url, domain_url, headline, published_at
         FROM nlp_service.theme_news tn
         JOIN nlp_service.news_sources ns ON ns.source_id = tn.source_id
         WHERE tn.news_id = ANY(%(news_ids)s)
@@ -553,6 +559,7 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
                 name=row["domain_url"],
                 link=row["url"],
                 summary=row["headline"],
+                published_at=row["published_at"],
             )
             for row in rows
         ]
@@ -596,9 +603,21 @@ class StockEarningsSummaryText(StockText):
     async def get_citations_for_output(
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
-        # TODO
+        sql = """
+        SELECT created_timestamp FROM
+        nlp_service.earnings_call_summaries
+        WHERE summary_id = ANY(%(earnings_ids)s)
+        """
+        params = {"earnings_ids": [text.id for text in texts]}
+        rows = await db.generic_read(sql, params)
+        # TODO enhance this
         return [
-            CitationOutput(citation_type=CitationType.TEXT, name=text.text_type) for text in texts
+            CitationOutput(
+                citation_type=CitationType.TEXT,
+                name=cls.text_type,
+                published_at=row["created_timestamp"],
+            )
+            for row in rows
         ]
 
 

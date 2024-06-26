@@ -21,9 +21,14 @@ class AsyncDB:
 
     async def get_prev_outputs_for_agent_plan(
         self, agent_id: str, plan_id: str, latest_plan_run_id: str
-    ) -> List[IOType]:
+    ) -> Optional[Tuple[List[IOType], datetime.datetime]]:
+        """
+        Returns the prior list of outputs for a plan, as well as the date the outputs were created.
+        """
         sql = """
-        SELECT plan_run_id, ARRAY_AGG(ao.output ORDER BY ao.created_at) AS outputs
+        SELECT plan_run_id,
+          MAX(ao.created_at) AS prev_date,
+          ARRAY_AGG(ao.output ORDER BY ao.created_at) AS outputs
         FROM agent.agent_outputs ao
         WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
                 AND plan_id = %(plan_id)s
@@ -37,9 +42,9 @@ class AsyncDB:
             {"agent_id": agent_id, "plan_id": plan_id, "latest_plan_run_id": latest_plan_run_id},
         )
         if not rows:
-            return []
+            return None
         row = rows[0]
-        return [load_io_type(output) for output in row["outputs"]]
+        return ([load_io_type(output) for output in row["outputs"]], row["prev_date"])
 
     async def get_agent_outputs(
         self, agent_id: str, plan_run_id: Optional[str] = None
