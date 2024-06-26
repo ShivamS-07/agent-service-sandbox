@@ -28,7 +28,7 @@ def testslow(c):
 
 @task
 def test(c):
-    testfast(c)
+    testslow(c)
 
 
 @task
