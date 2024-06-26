@@ -56,11 +56,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
     # TODO can probably clean this up to not use the df at all
     df = args.input_table.to_df()
     for col, df_col in zip(cols, df.columns):
-        if not x_axis_col and col.metadata.col_type in (
-            TableColumnType.DATE,
-            TableColumnType.DATETIME,
-            TableColumnType.STRING,  # E.g. for quarter labels
-        ):
+        if not x_axis_col and col.metadata.col_type.is_date_type():
             x_axis_col = (col, df_col)
             continue
 
@@ -201,6 +197,7 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
         if not label_col and col.metadata.col_type in (
             TableColumnType.STOCK,
             TableColumnType.STRING,
+            TableColumnType.QUARTER,
         ):
             label_col = col
             label_df_col = df_col
@@ -240,6 +237,7 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
         TableColumnType.STRING,
         TableColumnType.STOCK,
         TableColumnType.BOOLEAN,
+        TableColumnType.QUARTER,
     ):
         # We have categorical data, counting is required
         return PieGraph(
@@ -294,6 +292,7 @@ async def make_bar_graph(args: MakeBarGraphArgs, context: PlanRunContext) -> Bar
             TableColumnType.DATE,
             TableColumnType.DATETIME,
             TableColumnType.STRING,
+            TableColumnType.QUARTER,
         ):
             x_axis_col = (col, df_col)
             continue

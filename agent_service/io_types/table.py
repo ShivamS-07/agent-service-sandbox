@@ -271,10 +271,7 @@ class Table(ComplexIOBase):
                     # Automatically highlight the first column if it's a stock column
                     output_col.is_highlighted = True
 
-            elif (
-                col.metadata.col_type in (TableColumnType.DATE, TableColumnType.DATETIME)
-                and is_first_col
-            ):
+            elif col.metadata.col_type.is_date_type() and is_first_col:
                 # Automatically highlight the first column if it's a date column
                 output_col.is_highlighted = True
 

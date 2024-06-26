@@ -100,7 +100,7 @@ def convert_single_stock_data_to_table(
 
     columns: List[TableColumnMetadata] = []
     if not simple_output:
-        columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING))
+        columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER))
     columns.append(
         TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)
     )
@@ -159,7 +159,7 @@ async def convert_multi_stock_data_to_table(
     columns: List[TableColumnMetadata] = []
 
     if not simple_table:
-        columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING))
+        columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER))
 
     columns.append(
         TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)

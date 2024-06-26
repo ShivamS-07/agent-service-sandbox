@@ -60,7 +60,7 @@ TIMESERIES_TABLE = Table.from_df_and_cols(
 
 TIMESERIES_TABLE_NO_DATASET = Table.from_df_and_cols(
     columns=[
-        TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING),
+        TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER),
         TableColumnMetadata(
             label="Value",
             col_type=TableColumnType.FLOAT,
@@ -99,7 +99,7 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
                     input_table=TIMESERIES_TABLE_NO_DATASET,
                 ),
                 PieGraph(
-                    label_type=TableColumnType.STRING,
+                    label_type=TableColumnType.QUARTER,
                     data_type=TableColumnType.FLOAT,
                     data=[
                         PieSection(label="2023Q1", value=1),
@@ -152,7 +152,7 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
             (
                 MakeLineGraphArgs(input_table=TIMESERIES_TABLE_NO_DATASET),
                 LineGraph(
-                    x_axis_type=TableColumnType.STRING,
+                    x_axis_type=TableColumnType.QUARTER,
                     y_axis_type=TableColumnType.FLOAT,
                     data=[
                         GraphDataset(
@@ -233,7 +233,7 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
     async def test_generic_graph(self):
         prefer_pie = Table.from_df_and_cols(
             columns=[
-                TableColumnMetadata(label="Quarter", col_type=TableColumnType.STRING),
+                TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER),
                 TableColumnMetadata(
                     label="Value",
                     col_type=TableColumnType.FLOAT,

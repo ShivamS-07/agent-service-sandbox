@@ -245,10 +245,7 @@ def _join_two_tables(first: Table, second: Table) -> Table:
 
     # First, find the date and stock columns for both tables if they are present.
     for col in first.columns:
-        if not first_date_col and col.metadata.col_type in (
-            TableColumnType.DATE,
-            TableColumnType.DATETIME,
-        ):
+        if not first_date_col and col.metadata.col_type.is_date_type():
             first_date_col = col
             continue
         if not first_stock_col and col.metadata.col_type == TableColumnType.STOCK:
@@ -256,10 +253,7 @@ def _join_two_tables(first: Table, second: Table) -> Table:
             continue
         first_other_cols.append(col.metadata)
     for col in second.columns:
-        if not second_date_col and col.metadata.col_type in (
-            TableColumnType.DATE,
-            TableColumnType.DATETIME,
-        ):
+        if not second_date_col and col.metadata.col_type.is_date_type():
             second_date_col = col
             continue
         if not second_stock_col and col.metadata.col_type == TableColumnType.STOCK:

@@ -423,7 +423,7 @@ async def get_statistic_data(
     prefer_graph_type = GraphType.LINE
     if data_time_axis != TimeAxis.TIME_AXIS_DATE:
         index_name = "Period"
-        index_type = TableColumnType.STRING
+        index_type = TableColumnType.QUARTER
         prefer_graph_type = GraphType.BAR
 
     if is_global:
@@ -433,7 +433,7 @@ async def get_statistic_data(
             data,
             index=(
                 global_data.columns
-                if index_type == TableColumnType.STRING
+                if index_type == TableColumnType.QUARTER
                 else pd.to_datetime(global_data.columns)
             ),
             columns=[statistic_id.stat_name],
@@ -448,7 +448,7 @@ async def get_statistic_data(
             data,
             index=(
                 security_data.columns
-                if index_type == TableColumnType.STRING
+                if index_type == TableColumnType.QUARTER
                 else pd.to_datetime(security_data.columns)
             ),
             columns=[int(s) for s in security_data.fields],

@@ -55,6 +55,7 @@ class TableColumnType(str, enum.Enum):
     CURRENCY = "currency"
     DATE = "date"  # YYYY-MM-DD
     DATETIME = "datetime"  # yyyy-mm-dd + ISO timestamp
+    QUARTER = "quarter"  # Year + quarter
 
     # Float value where 1.0 = 100%
     PERCENT = "percent"
@@ -79,6 +80,7 @@ class TableColumnType(str, enum.Enum):
             "- 'currency': A column containing a price or other float with a currency attached. "
             "In this case the 'unit' is the currency ISO, please keep that consistent.\n"
             "- 'date/datetime': A column containing a python date or datetime object."
+            "- 'quarter': A column containing a year + financial quarter represented as a string."
             "- 'percent': A column containing a percent value float. 100% is equal to 1.0, NOT 100. "
             "E.g. 25 percent is represented as 0.25.\n"
             "- 'delta': A float value representing a raw change over time. E.g. price change day over day.\n"
@@ -87,6 +89,9 @@ class TableColumnType(str, enum.Enum):
             "- 'stock': A special column containing stock identifier information."
             "- 'score': This is a special column type, do not use this."
         )
+
+    def is_date_type(self) -> bool:
+        return self in (TableColumnType.DATE, TableColumnType.DATETIME, TableColumnType.QUARTER)
 
 
 class SerializeableBase(BaseModel, ABC):
