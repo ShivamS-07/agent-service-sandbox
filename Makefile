@@ -22,3 +22,11 @@ verify:
 test:
 	pipenv run invoke test
 
+
+.PHONY: testfast
+testfast:
+	pipenv run invoke testfast
+
+.PHONY: testslow
+testslow:
+	pipenv run invoke testslow

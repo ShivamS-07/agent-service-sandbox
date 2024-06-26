@@ -26,7 +26,7 @@ GROSS_PROFIT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount
 GLOBAL_CAN_TO_USD_EXCH_RATE = StatisticId(stat_id="FRED_DEXCAUS", stat_name="CAD to USD")
 
 
-class TestFeatureDataLookup(unittest.IsolatedAsyncioTestCase):
+class TestFeatureDataLookup1(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
 
@@ -103,6 +103,11 @@ class TestFeatureDataLookup(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(df[STOCK_ID_COL_NAME_DEFAULT].unique()), 1)  # num_stocks
         self.assertEqual(len(df["Date"].unique()), 1)  # num_dates
 
+
+class TestFeatureDataLookup2(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+
     async def test_feature_data_dividend(self):
         args = FeatureDataInput(stock_ids=[VZ], statistic_id=SPIQ_DIV_AMOUNT)
         result = await get_statistic_data_for_companies(args, self.context)
@@ -130,7 +135,7 @@ class TestFeatureDataLookup(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(df["Date"].unique()), 1)  # num_dates
 
 
-class TestStatisticsIdentifierLookup(unittest.IsolatedAsyncioTestCase):
+class TestStatisticsIdentifierLookup1(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
         # uncomment for easier debugging
@@ -160,6 +165,15 @@ class TestStatisticsIdentifierLookup(unittest.IsolatedAsyncioTestCase):
         self.args = StatisticsIdentifierLookupInput(statistic_name="High Price")
         result = await statistic_identifier_lookup(self.args, self.context)
         self.assertEqual(result.stat_id, "spiq_high")
+
+
+class TestStatisticsIdentifierLookup2(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+        # uncomment for easier debugging
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
 
     async def test_statistic_identifier_lookup_basiceps(self):
         self.args = StatisticsIdentifierLookupInput(statistic_name="Basic EPS")

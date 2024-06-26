@@ -21,8 +21,23 @@ def verify(c):
 
 
 @task
-def test(c):
+def testslow(c):
+    print("running tests slowly serially")
     c.run("python -W ignore -m unittest discover -v -s tests")
+
+
+@task
+def test(c):
+    testfast(c)
+
+
+@task
+def testfast(c):
+    print("running tests fast in parallel")
+    c.run("pip install unittest-parallel")  # move to pipfile?
+
+    # runs each test class in its own process 32 at a time
+    c.run("unittest-parallel -v --level class --disable-process-pooling --jobs 32  -t . -s tests")
 
 
 @task

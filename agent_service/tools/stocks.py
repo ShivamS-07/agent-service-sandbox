@@ -1,8 +1,7 @@
 # Author(s): Mohammad Zarei, David Grohmann
-
-
+import json
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import pandas as pd
 from gbi_common_py_utils.numpy_common import NumpySheet
@@ -12,23 +11,140 @@ from agent_service.external.pa_backtest_svc_client import (
     universe_stock_factor_exposures,
 )
 from agent_service.external.stock_search_dao import async_sort_stocks_by_volume
+from agent_service.GPT.constants import GPT35_TURBO, NO_PROMPT
+from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table, TableColumnMetadata
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.string_utils import (
+    clean_to_json_if_needed,
+    repair_json_if_needed,
+)
 
 STOCK_ID_COL_NAME_DEFAULT = "Security"
 GROWTH_LABEL = "Growth"
 VALUE_LABEL = "Value"
 
+# constants used to massage the match scores for stocks to be in a good order
+
+# this is needed to insert a perfect match score when we do an exact match sql
+# and a score isn't automatically generated for us
+PERFECT_TEXT_MATCH = 1.0
+
+# matches that dont agree on the first word are less likely to be good
+NON_PREFIX_PENALTY = 0.7
+
+# SP CAPIQ's alt name data is useful to fill in the gaps
+# but is not extremely consistent
+# So we penalize matches on it vs the matches on the official name or boosted alt names
+#
+# Example: spiq has an alt name of 'Tesla' for this unheard of company
+# 'gbi_security_id'	'symbol'	'isin'	'name'	'spiq_company_id'
+# 25370	'TXL'	'CA8816011081'	'Tesla Exploration Ltd.'	30741740
+
+# but not for the one you are thinking of.
+# 25508	'TSLA'	'US88160R1014'	'Tesla, Inc.'	27444752
+SPIQ_ALT_NAME_PENALTY = 0.8
+
+# Any matches below this level will be discarded
+MIN_ACCEPTABLE_MATCH_SCORE = 0.2
+
 
 class StockIdentifierLookupInput(ToolArgs):
     # name or symbol of the stock to lookup
     stock_name: str
+
+
+STOCK_CONFIRMATION_PROMPT = Prompt(
+    name="STOCK_CONFIRMATION_PROMPT",
+    template="""
+Your task is to determine which company, stock, ETF or stock index the search term refers to,
+ the search term might be a common word,
+ but in this case you should try really hard to associate it with a stock or etf
+ If the search term does NOT refer to a company, stock, ETF or stock index,
+ then return an empty json: '{{}}'
+ If the search term DOES refer to a company, stock, ETF or stock index, then return
+ a json with at least the full_name field.
+ Optionally, it is not required but it would be helpful if you
+ can also return optional fields: ticker_symbol, isin, common_name, match_type, and country_iso3,
+ match_type is 'stock', 'etf', or 'index'
+ country_iso3 is the 3 letter iso country code where it is most often traded or originated from
+ common_name is a name people would typically use to refer to it,
+ it would often be a substring of the full_name (dropping common suffixes for example),
+ an acronym, an abreviation, or a nickname.
+ Only return each of the optional fields if you are confident they are correct,
+ it is ok if you do not know some or all of them.
+ you can return some and not others, the only required field is full_name.
+ in the special case of a stock index, you should return the most popular ETF
+ that is tracking that index, instead of the index itself
+ for example SP500 should return the ETF: SPY.
+ You should also return a confidence number between 1-10 :
+ where 10 is extremely confident and 1 is a hallucinated random guess.
+ You must also return a reason field to
+ explain why the answer is a good match for the search term.
+ You will also be given a list of potential search results in json format
+ from another search system.
+ The search results may or may not contain the correct entity,
+ but you should consider them as a potential answer.
+ If you are picking from the list, you should have a slight preference for
+ matches with a higher "volume" field,
+ you should prefer to pick stocks with volume greater than 1000000
+ and stocks with volume less than 1000000 should be avoided
+ If you strongly believe that none of the potential search results are correct,
+ then please suggest your own match.
+ If the search term is a product name or brand name,
+ it is extremely unlikely to be in the list and you will need to suggest your own match
+ for the company that is most associated with that product or brand.
+
+ Make sure to return this in JSON.
+ ONLY RETURN IN JSON. DO NOT RETURN NON-JSON.
+ The potential search results in json are:
+ {results}
+ The search term is: '{search}'
+ REMEMBER! If your reason is something like: "the search term closely resembles the ticker symbol"
+ then you should reconsider as ticker typos are not common, and your answer is
+ extremely likely to be wrong.
+ In that case you should find a different answer with a better reason.
+ You will be fired if your reason is close to: "the search term closely resembles the ticker symbol"
+""",
+)
+
+
+async def stock_confirmation_by_gpt(
+    context: PlanRunContext, search: str, results: List[Dict]
+) -> Optional[Dict[str, Any]]:
+    logger = get_prefect_logger(__name__)
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    # we can try different models
+    # HAIKU, SONNET, GPT4_TURBO,
+    llm = GPT(context=gpt_context, model=GPT35_TURBO)
+
+    prompt = STOCK_CONFIRMATION_PROMPT.format(search=search, results=json.dumps(results))
+
+    result_str = await llm.do_chat_w_sys_prompt(
+        main_prompt=prompt,
+        sys_prompt=NO_PROMPT,
+        output_json=True,
+    )
+
+    result_str = result_str.strip().lower()
+    clean_result_str = clean_to_json_if_needed(result_str, repair=False)
+    result_dict = repair_json_if_needed(clean_result_str, json_load=True)
+
+    logger.info(f"search: '{search}', gpt {result_dict=}")
+    if isinstance(result_dict, dict):
+        return result_dict
+
+    return None
 
 
 @tool(
@@ -59,39 +175,78 @@ async def stock_identifier_lookup(
     """
     logger = get_prefect_logger(__name__)
     logger.info(f"Attempting to map '{args.stock_name}' to a stock")
-    rows = await raw_stock_identifier_lookup(args, context)
-    if not rows:
-        raise ValueError(f"Could not find any stocks related to: '{args.stock_name}'")
 
-    if len(rows) == 1:
-        only_stock = rows[0]
-        logger.info(f"found only 1 stock {only_stock}")
+    # first we check if the search string is in a format that leads to an unambiguous match
+    exact_rows = await stock_lookup_exact(args, context)
+    if exact_rows:
+        if len(exact_rows) > 1:
+            exact_rows = await augment_stock_rows_with_volume(exact_rows)
+            exact_rows = sorted(exact_rows, key=lambda x: x.get("volume", 0), reverse=True)
+        stock = exact_rows[0]
+        logger.info(f"found exact match {stock=}")
         return StockID(
-            gbi_id=only_stock["gbi_security_id"],
-            symbol=only_stock["symbol"],
-            isin=only_stock["isin"],
-            company_name=only_stock["name"],
+            gbi_id=stock["gbi_security_id"],
+            symbol=stock["symbol"],
+            isin=stock["isin"],
+            company_name=stock["name"],
         )
 
+    # next we check for best matches by text similarity
+    rows = await stock_lookup_by_text_similarity(args, context)
     logger.info(f"found {len(rows)} best potential matching stocks")
-    # we have multiple matches, lets use dollar trading volume to choose the most likely match
-    gbiid2stocks = {r["gbi_security_id"]: r for r in rows}
-    gbi_ids = list(gbiid2stocks.keys())
-    stocks_sorted_by_volume = await async_sort_stocks_by_volume(gbi_ids)
+    rows = await augment_stock_rows_with_volume(rows)
 
-    if stocks_sorted_by_volume:
-        gbi_id = stocks_sorted_by_volume[0][0]
-        stock = gbiid2stocks.get(gbi_id)
-        if not stock:
-            stock = rows[0]
-            logger.warning("Logic error!")
-            # should not be possible
-        else:
-            logger.info(f"Top stock volumes: {stocks_sorted_by_volume[:10]}")
+    orig_stocks_sorted_by_match = sorted(rows, key=lambda x: x["final_match_score"], reverse=True)
+    orig_stocks_sorted_by_volume = sorted(rows, key=lambda x: x.get("volume", 0), reverse=True)
+
+    # send the top 3 by text match and volume to GPT for review
+    MAX_MATCH_STOCKS = 3
+    MAX_VOLUME_STOCKS = 3
+    ask_gpt = {}
+    # this sql is a UNION so it can have multiple copies of the same stock,
+    # so only keep the strongest matching one by inserting in match strength order first
+    for x in orig_stocks_sorted_by_match[:MAX_MATCH_STOCKS]:
+        if x["gbi_security_id"] not in ask_gpt:
+            ask_gpt[x["gbi_security_id"]] = x
+
+    for x in orig_stocks_sorted_by_volume[:MAX_VOLUME_STOCKS]:
+        if x["gbi_security_id"] not in ask_gpt:
+            ask_gpt[x["gbi_security_id"]] = x
+
+    search = args.stock_name
+    logger.info(
+        f"{search=} , sending these possible matches to gpt: " f"{json.dumps(ask_gpt, indent=4)}"
+    )
+    gpt_answer = await stock_confirmation_by_gpt(
+        context, search=args.stock_name, results=list(ask_gpt.values())
+    )
+
+    if gpt_answer and gpt_answer.get("full_name"):
+        # map the GPT answer back to a gbi_id
+        gpt_answer_full_name = cast(str, gpt_answer["full_name"])
+        confirm_args = StockIdentifierLookupInput(stock_name=gpt_answer_full_name)
+
+        confirm_rows = await stock_lookup_by_text_similarity(confirm_args, context)
+        logger.info(f"found {len(rows)} best matching stock to the gpt answer")
+        confirm_rows = await augment_stock_rows_with_volume(confirm_rows)
+
     else:
-        # if nothing returned from stock search then just pick the first match
-        stock = rows[0]
-        logger.info("No stock volume info available!")
+        confirm_rows = []
+
+    if confirm_rows:
+        stock = confirm_rows[0]
+        confirm_stocks_sorted_by_volume = sorted(
+            confirm_rows, key=lambda x: (x.get("volume", 0), x["final_match_score"]), reverse=True
+        )
+        # we have multiple matches, lets use dollar trading volume to choose the most likely match
+        if confirm_stocks_sorted_by_volume[0].get("volume"):
+            stock = confirm_stocks_sorted_by_volume[0]
+    elif orig_stocks_sorted_by_volume and orig_stocks_sorted_by_volume[0].get("volume"):
+        stock = orig_stocks_sorted_by_volume[0]
+    elif orig_stocks_sorted_by_match:
+        stock = orig_stocks_sorted_by_match[0]
+    else:
+        raise ValueError(f"Could not find any stocks related to: '{args.stock_name}'")
 
     logger.info(f"found stock: {stock} from '{args.stock_name}'")
     await tool_log(
@@ -107,19 +262,10 @@ async def stock_identifier_lookup(
     )
 
 
-async def raw_stock_identifier_lookup(
+async def stock_lookup_by_exact_gbi_alt_name(
     args: StockIdentifierLookupInput, context: PlanRunContext
 ) -> List[Dict[str, Any]]:
-    """Returns the the stocks with the closest text match to the input string
-    such as name, isin or symbol (JP3633400001, microsoft, apple, AAPL, TESLA, META, e.g.).
-
-    This function performs a series of queries to find the stock's identifier.
-    It starts with a bloomberg parsekey match,
-    then an exact ISIN match,
-    followed by a text similarity match to the official name and alternate names,
-    and an exact ticker symbol matches are also allowed.
-    It only proceeds to the next query if the previous one returns no results.
-
+    """Returns the stocks with an exact match to gbi id alt names table
 
     Args:
         args (StockIdentifierLookupInput): The input arguments for the stock lookup.
@@ -130,16 +276,6 @@ async def raw_stock_identifier_lookup(
     """
     logger = get_prefect_logger(__name__)
     db = get_psql()
-    # TODO:
-    # Using chat context to help decide
-    # Use embedding to find the closest match (e.g. "google" vs "alphabet")
-    # ignore common company suffixes like Corp and Inc.
-    # make use of custom doc company tagging machinery
-
-    bloomberg_rows = get_stocks_if_bloomberg_parsekey(args, context)
-    if bloomberg_rows:
-        logger.info("found bloomberg parsekey")
-        return bloomberg_rows
 
     # Exact gbi alt name match
     # these are hand crafted strings to be used only when needed
@@ -155,11 +291,30 @@ async def raw_stock_identifier_lookup(
     AND ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
+    AND source_id = 0 -- boosted custom alt_name entries
     """
     rows = db.generic_read(sql, {"search_term": args.stock_name})
     if rows:
         logger.info("found exact gbi alt name")
         return rows
+
+    return []
+
+
+async def stock_lookup_by_isin(
+    args: StockIdentifierLookupInput, context: PlanRunContext
+) -> List[Dict[str, Any]]:
+    """Returns the stocks whose ISIN exactly matches the search string
+
+    Args:
+        args (StockIdentifierLookupInput): The input arguments for the stock lookup.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        List[Dict[str, Any]]: DB rows representing the potentially matching stocks.
+    """
+    logger = get_prefect_logger(__name__)
+    db = get_psql()
 
     # ISINs are 12 chars long, 2 chars, 10 digits
     if (
@@ -198,16 +353,71 @@ async def raw_stock_identifier_lookup(
             logger.info("found by ISIN")
             return rows
 
+    return []
+
+
+async def augment_stock_rows_with_volume(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Returns the input row dicts augmented with a new 'volume' field
+
+    Returns:
+        List[Dict[str, Any]]: DB rows representing the potentially matching stocks.
+    """
+    logger = get_prefect_logger(__name__)
+    gbiid2stocks = {r["gbi_security_id"]: r for r in rows}
+    gbi_ids = list(gbiid2stocks.keys())
+    stocks_sorted_by_volume = await async_sort_stocks_by_volume(gbi_ids)
+
+    if stocks_sorted_by_volume:
+        logger.info(f"Top stock volumes: {stocks_sorted_by_volume[:10]}")
+        for gbi_id, volume in stocks_sorted_by_volume:
+            stock = gbiid2stocks.get(gbi_id)
+            if stock:
+                stock["volume"] = volume
+            else:
+                logger.warning("Logic error!")
+                # should not be possible
+    return rows
+
+
+async def stock_lookup_by_text_similarity(
+    args: StockIdentifierLookupInput, context: PlanRunContext
+) -> List[Dict[str, Any]]:
+    """Returns the stocks with the closest text similarity match in the various name fields
+    to the input string
+    such as name, isin or symbol (JP3633400001, microsoft, apple, AAPL, TESLA, META, e.g.).
+
+    Args:
+        args (StockIdentifierLookupInput): The input arguments for the stock lookup.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        List[Dict[str, Any]]: DB rows representing the potentially matching stocks.
+    """
+    logger = get_prefect_logger(__name__)
+    db = get_psql()
+
+    prefix = args.stock_name.split()[0]
+    # often the most important word in a company name is the first word,
+    # Samsung electronics, co. ltd, Samsung is important everything after is not
+    logger.info(f"checking for text similarity of {args.stock_name=} and {prefix=}")
     # Word similarity name match
 
     # should we also allow 'Depositary Receipt (Common Stock)') ?
-    sql = """
-    select * from (
+    sql = f"""
+    SELECT * FROM (
+    SELECT *,
+    -- penalize non-prefix matches
+    CASE
+        WHEN match_text ilike  %(prefix)s || '%%' THEN text_sim_score
+    ELSE text_sim_score * {NON_PREFIX_PENALTY}
+    END
+    AS final_match_score
+ FROM (
 
     -- ticker symbol (exact match only)
     SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
     ms.name, 'ticker symbol' as match_col, ms.symbol as match_text,
-    1.0 AS ws
+    {PERFECT_TEXT_MATCH} AS text_sim_score
     FROM master_security ms
     WHERE
     ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
@@ -223,7 +433,7 @@ async def raw_stock_identifier_lookup(
     name, 'name' as match_col, ms.name as match_text,
     (strict_word_similarity(lower(ms.name), lower(%(search_term)s)) +
     strict_word_similarity(lower(%(search_term)s), lower(ms.name))) / 2
-    AS ws
+    AS text_sim_score
     FROM master_security ms
     WHERE
     ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
@@ -233,12 +443,12 @@ async def raw_stock_identifier_lookup(
 
     UNION
 
-    -- company alt name
+    -- custom boosted db entries -  company alt name * 1.0
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     name, 'comp alt name' as match_col, alt_name as match_text,
     (strict_word_similarity(lower(alt_name), lower(%(search_term)s)) +
     strict_word_similarity(lower(%(search_term)s), lower(alt_name))) / 2
-    AS ws
+    AS text_sim_score
     FROM master_security ms
     JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
     JOIN "data".company_alt_names can ON ssm.spiq_company_id = can.spiq_company_id
@@ -248,6 +458,26 @@ async def raw_stock_identifier_lookup(
     AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
+    AND can.source_id = 0 -- boosted source
+
+    UNION
+
+    -- spiq provided - company alt name * 0.8
+    SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
+    name, 'comp alt name' as match_col, alt_name as match_text,
+    (strict_word_similarity(lower(alt_name), lower(%(search_term)s)) +
+    strict_word_similarity(lower(%(search_term)s), lower(alt_name))) / 2 * {SPIQ_ALT_NAME_PENALTY}
+    AS text_sim_score
+    FROM master_security ms
+    JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
+    JOIN "data".company_alt_names can ON ssm.spiq_company_id = can.spiq_company_id
+    WHERE
+    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    AND can.enabled
+    AND ms.is_public
+    AND ms.is_primary_trading_item = true
+    AND ms.to_z is null
+    AND can.source_id in (1,2,3,4) -- spiq sources
 
     UNION
 
@@ -256,7 +486,7 @@ async def raw_stock_identifier_lookup(
     name, 'gbi alt name' as match_col, alt_name as match_text,
     (strict_word_similarity(lower(alt_name), lower(%(search_term)s)) +
     strict_word_similarity(lower(%(search_term)s), lower(alt_name))) / 2
-    AS ws
+    AS text_sim_score
     FROM master_security ms
     JOIN "data".gbi_id_alt_names gan ON gan.gbi_id = ms.gbi_security_id
     WHERE
@@ -266,43 +496,121 @@ async def raw_stock_identifier_lookup(
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
 
-    ORDER BY ws DESC
-    LIMIT 100) as tmp_ms
+    ORDER BY text_sim_score DESC
+    LIMIT 200) as text_scores ) as final_scores -- word similarity score
     WHERE
-    tmp_ms.ws >= 0.2
+    final_scores.final_match_score >= {MIN_ACCEPTABLE_MATCH_SCORE}  -- score including prefix match
+    ORDER BY final_match_score DESC
+    LIMIT 100
     """
-    rows = db.generic_read(sql, {"search_term": args.stock_name})
+    rows = db.generic_read(sql, {"search_term": args.stock_name, "prefix": prefix})
     if rows:
         # the weaker the match the more results to be
         # considered for trading volume tie breaker
-        matches = [r for r in rows if r["ws"] >= 0.6]
+        matches = [r for r in rows if r["final_match_score"] >= 0.9]
         if matches:
-            matches = [r for r in rows if r["ws"] >= 0.50]
-            logger.info(f"found {len(matches)} strong matches")
+            matches = [r for r in rows if r["final_match_score"] >= 0.60]
+            logger.info(f"found {len(matches)} very strong matches: {matches[:4]}")
             return matches[:20]
 
-        matches = [r for r in rows if r["ws"] >= 0.4]
+        matches = [r for r in rows if r["final_match_score"] >= 0.6]
         if matches:
-            matches = [r for r in rows if r["ws"] >= 0.30]
+            matches = [r for r in rows if r["final_match_score"] >= 0.50]
+            logger.info(f"found {len(matches)} strong matches: {matches[:4]}")
+            return matches[:20]
+
+        matches = [r for r in rows if r["final_match_score"] >= 0.4]
+        if matches:
+            matches = [r for r in rows if r["final_match_score"] >= 0.30]
             logger.info(f"found {len(matches)} medium matches")
             return matches[:30]
 
-        matches = [r for r in rows if r["ws"] >= 0.3]
+        matches = [r for r in rows if r["final_match_score"] >= 0.3]
         if matches:
-            matches = [r for r in rows if r["ws"] >= 0.20]
+            matches = [r for r in rows if r["final_match_score"] >= 0.20]
             logger.info(f"found {len(matches)} weak matches")
             return matches[:40]
 
         # very weak text match
-        matches = [r for r in rows if r["ws"] > 0.2]
+        matches = [r for r in rows if r["final_match_score"] > 0.2]
         if matches:
             logger.info(f"found {len(matches)} very weak matches")
             return matches[:50]
 
-        if rows:
-            logger.info(
-                f"found {len(rows)} potential matches but they were all likely unrelated to the user intent"
-            )
+        logger.info(
+            f"{args.stock_name=} found {len(rows)} potential matches but "
+            "they were all likely unrelated to the user intent. "
+            f"here are a few: {rows[:4]}"
+        )
+
+    logger.info(f"{args.stock_name=} found no textual matches")
+    return []
+
+
+async def stock_lookup_exact(
+    args: StockIdentifierLookupInput, context: PlanRunContext
+) -> List[Dict[str, Any]]:
+    """Returns the stocks with an exact match to various fields that are unambiguous
+
+    Args:
+        args (StockIdentifierLookupInput): The input arguments for the stock lookup.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        List[Dict[str, Any]]: DB rows representing the potentially matching stocks.
+    """
+    logger = get_prefect_logger(__name__)
+
+    bloomberg_rows = await stock_lookup_by_bloomberg_parsekey(args, context)
+    if bloomberg_rows:
+        logger.info("found bloomberg parsekey")
+        return bloomberg_rows
+
+    isin_rows = await stock_lookup_by_isin(args, context)
+    if isin_rows:
+        logger.info("found isin match")
+        return isin_rows
+
+    gbi_alt_name_rows = await stock_lookup_by_exact_gbi_alt_name(args, context)
+    if gbi_alt_name_rows:
+        logger.info("found gbi alt name match")
+        return gbi_alt_name_rows
+
+    return []
+
+
+async def raw_stock_identifier_lookup(
+    args: StockIdentifierLookupInput, context: PlanRunContext
+) -> List[Dict[str, Any]]:
+    """Returns the stocks with the closest text match to the input string
+    such as name, isin or symbol (JP3633400001, microsoft, apple, AAPL, TESLA, META, e.g.).
+
+    This function performs a series of queries to find the stock's identifier.
+    It starts with a bloomberg parsekey match,
+    then an exact ISIN match,
+    followed by a text similarity match to the official name and alternate names,
+    and an exact ticker symbol matches are also allowed.
+    It only proceeds to the next query if the previous one returns no results.
+
+
+    Args:
+        args (StockIdentifierLookupInput): The input arguments for the stock lookup.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        List[Dict[str, Any]]: DB rows representing the potentially matching stocks.
+    """
+    logger = get_prefect_logger(__name__)
+
+    exact_rows = await stock_lookup_exact(args, context)
+    if exact_rows:
+        logger.info("found exact match")
+        return exact_rows
+
+    similar_rows = await stock_lookup_by_text_similarity(args, context)
+    if similar_rows:
+        logger.info("found text similarity match")
+        return similar_rows
 
     raise ValueError(f"Could not find any stocks related to: '{args.stock_name}'")
 
@@ -807,7 +1115,7 @@ async def get_stock_universe_from_etf_stock_match(
     return stock
 
 
-def get_stocks_if_bloomberg_parsekey(
+async def stock_lookup_by_bloomberg_parsekey(
     args: StockIdentifierLookupInput, context: PlanRunContext
 ) -> List[Dict[str, Any]]:
     """Returns the stocks with matching ticker and bloomberg exchange code
@@ -847,7 +1155,7 @@ def get_stocks_if_bloomberg_parsekey(
         # not a parsekey
         return []
 
-    iso3 = bloomberg_exchange_to_country_iso3.get(exch_code)
+    iso3 = bloomberg_exchange_to_country_iso3.get(exch_code.upper())
 
     if not iso3:
         logger.info(

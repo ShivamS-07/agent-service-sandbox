@@ -2,15 +2,37 @@ import datetime as dt
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
+import backoff
 from data_access_layer.core.dao.features.stock_search_dao import StockSearchDAO
 
 from agent_service.utils.async_utils import async_wrap
 
 logger = logging.getLogger(__name__)
 EARLIEST_START_DATE = dt.date(1990, 1, 1)
-dao = StockSearchDAO()
+dao = None
 
 
+@backoff.on_exception(
+    backoff.expo,
+    exception=Exception,
+    max_time=int(dt.timedelta(seconds=120).total_seconds()),
+    max_tries=10,
+    logger=logger,
+)
+def get_stock_search_dao() -> StockSearchDAO:
+    global dao
+    if not dao:
+        dao = StockSearchDAO()
+    return dao
+
+
+@backoff.on_exception(
+    backoff.expo,
+    exception=Exception,
+    max_time=int(dt.timedelta(seconds=120).total_seconds()),
+    max_tries=10,
+    logger=logger,
+)
 def get_stock_search_data(
     gbi_ids: List[int],
     features: List[str],
@@ -19,7 +41,7 @@ def get_stock_search_data(
 ) -> List[Dict[str, Any]]:
     start_date = start_date or EARLIEST_START_DATE
     end_date = end_date or dt.datetime.now().date()
-    records = dao.get_feature_data(
+    records = get_stock_search_dao().get_feature_data(
         gbi_ids=gbi_ids, features=features, start_date=start_date, end_date=end_date
     )
     return records
