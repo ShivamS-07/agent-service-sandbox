@@ -40,6 +40,7 @@ from agent_service.utils.async_db import (
     get_latest_execution_plan_from_db,
 )
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.output_utils.output_diffs import OutputDiffer
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
 from agent_service.utils.prefect import (
     FlowRunType,
@@ -183,7 +184,7 @@ async def run_execution_plan(
         raise Exception("Execution plan has been cancelled")
 
     logger.info(f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=}")
-    if do_chat:
+    if not scheduled_by_automation and do_chat:
         logger.info("Generating chat message...")
         chatbot = Chatbot(agent_id=context.agent_id)
         message = await chatbot.generate_execution_complete_response(
@@ -195,6 +196,36 @@ async def run_execution_plan(
             message=Message(agent_id=context.agent_id, message=message, is_user_message=False),
             db=db,
         )
+    elif scheduled_by_automation:
+        logger.info("Generating diff message...")
+        output_differ = OutputDiffer(plan=plan, context=context)
+        output_diffs = await output_differ.diff_outputs(
+            latest_outputs=final_outputs, db=SyncBoostedPG(skip_commit=context.skip_db_commit)
+        )
+        logger.info(f"Got output diffs: {output_diffs}")
+        important_diffs = [diff for diff in output_diffs if diff.should_notify]
+        if not important_diffs:
+            await send_chat_message(
+                message=Message(
+                    agent_id=context.agent_id,
+                    message="Agent updated, no important differences found.",
+                    is_user_message=False,
+                    visible_to_llm=False,
+                ),
+                db=db,
+                send_notification=False,
+            )
+        else:
+            for diff in important_diffs:
+                await send_chat_message(
+                    message=Message(
+                        agent_id=context.agent_id,
+                        message=diff.diff_summary_message,
+                        is_user_message=False,
+                        visible_to_llm=False,
+                    ),
+                    db=db,
+                )
 
     logger.info("Finished run!")
     return final_outputs
@@ -375,10 +406,12 @@ async def update_execution_after_input(
         # In this case, we know that the flow_run_type is PLAN_EXECUTION (or there no flow_run),
         # otherwise we'd have run the above block instead.
         current_task_id = None
+        seen_chat_reading_tool = False
         if flow_run:
             current_task_id = await prefect_get_current_plan_run_task_id(flow_run)
         for node in latest_plan.nodes:
             if ToolRegistry.does_tool_read_chat(node.tool_name):
+                seen_chat_reading_tool = True
                 # we've already run into a chat reading node, which means we need to rerun
                 if do_chat:
                     message = await chatbot.generate_input_update_rerun_response(
@@ -426,6 +459,16 @@ async def update_execution_after_input(
 
                 if flow_run:
                     await prefect_resume_agent_flow(flow_run)
+
+            if do_chat and not seen_chat_reading_tool and not current_task_id:
+                # At this point, we've had no tasks that are in progress and also no
+                # tasks that read the chat. In this case, we don't actually need to
+                # do anything, and really GPT should have picked the NONE option.
+                message = await chatbot.generate_input_update_no_action_response(chat_context)
+                await send_chat_message(
+                    message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                    db=db,
+                )
 
     else:
         # This handles the cases for REPLAN, APPEND, and CREATE
@@ -690,6 +733,7 @@ async def run_execution_plan_local(
     log_all_outputs: bool = False,
     replan_execution_error: bool = False,
     override_task_output_lookup: Optional[Dict[str, IOType]] = None,
+    scheduled_by_automation: bool = False,
 ) -> List[IOType]:
     context.run_tasks_without_prefect = True
     return await run_execution_plan.fn(
@@ -700,6 +744,7 @@ async def run_execution_plan_local(
         log_all_outputs=log_all_outputs,
         replan_execution_error=replan_execution_error,
         override_task_output_lookup=override_task_output_lookup,
+        scheduled_by_automation=scheduled_by_automation,
     )
 
 

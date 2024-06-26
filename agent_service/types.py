@@ -18,6 +18,7 @@ class Message(BaseModel):
     is_user_message: bool
     message_time: datetime.datetime = Field(default_factory=get_now_utc)
     unread: bool = False
+    visible_to_llm: bool = True
 
     def get_gpt_input(self) -> str:
         tag = GPT_USER_TAG if self.is_user_message else GPT_AGENT_TAG
@@ -30,6 +31,7 @@ class Message(BaseModel):
             "message": self.message,
             "is_user_message": self.is_user_message,
             "message_time": self.message_time,
+            "visible_to_llm": self.visible_to_llm,
         }
 
 
@@ -50,7 +52,7 @@ class ChatContext(BaseModel):
             [
                 message.get_gpt_input()
                 for message in self.messages
-                if not client_only or message.is_user_message
+                if (not client_only or message.is_user_message) and message.visible_to_llm
             ]
         )
 

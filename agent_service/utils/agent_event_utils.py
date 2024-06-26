@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Union, cast
 
@@ -38,6 +39,8 @@ from agent_service.utils.redis_queue import (
     publish_notification_event,
 )
 
+logger = logging.getLogger(__name__)
+
 
 async def send_chat_message(
     message: Message,
@@ -50,7 +53,7 @@ async def send_chat_message(
     Sends a chat message from GPT to the user. Updates the redis queue as well
     as the DB. If no DB instance is passed in, uses a SYNCHRONOUS DB instead.
     """
-
+    logger.info(f"Sending message: {message.message}")
     if insert_message_into_db:
         if db and isinstance(db, AsyncDB):
             await db.insert_chat_messages(messages=[message])

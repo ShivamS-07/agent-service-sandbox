@@ -25,6 +25,7 @@ async def gen_and_run_plan(
     replan_execution_error: bool = False,
     multiple_inputs: bool = False,
     use_sample_plans: bool = True,
+    mock_automation: bool = False,
 ) -> None:
     if not prompt:
         prompt = input("Enter a prompt for the agent> ")
@@ -93,6 +94,7 @@ async def gen_and_run_plan(
         do_chat=do_chat,
         log_all_outputs=verbose,
         replan_execution_error=replan_execution_error,
+        scheduled_by_automation=mock_automation,
     )
     print("Output from main run:")
     pprint(output)
@@ -179,6 +181,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-e", "--retry_on_execution_error", action="store_true", default=False)
     parser.add_argument("-i", "--allow_additional_input", action="store_true", default=False)
     parser.add_argument("-n", "--not_use_sample_plans", action="store_true", default=False)
+    parser.add_argument(
+        "-a",
+        "--mock_automation",
+        action="store_true",
+        default=False,
+        help="If true, pretend that the plan was kicked off via automation",
+    )
     return parser.parse_args()
 
 
@@ -195,6 +204,7 @@ async def main() -> None:
             replan_execution_error=args.retry_on_execution_error,
             multiple_inputs=args.allow_additional_input,
             use_sample_plans=not args.not_use_sample_plans,
+            mock_automation=args.mock_automation,
         )
         while True:
             should_continue = input("Try another prompt? (y/n)> ")

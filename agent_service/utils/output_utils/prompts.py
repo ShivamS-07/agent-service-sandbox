@@ -1,3 +1,4 @@
+from agent_service.chatbot.prompts import AGENT_DESCRIPTION
 from agent_service.utils.prompt_utils import FilledPrompt, Prompt
 
 GENERATE_DIFF = """
@@ -43,8 +44,9 @@ GENERATE_DIFF_MAIN_PROMPT = Prompt(
 )
 GENERATE_DIFF_SYS_PROMPT = FilledPrompt(
     name="AGENT_OUTPUT_GENERATE_DIFF_SYS_PROMPT",
-    filled_prompt="""
-You, a financial analyst, will be given information about the outputs from two
+    filled_prompt=f"""
+{AGENT_DESCRIPTION}
+You  will be given information about the outputs from two
 different python job runs. Your job is to describe the differences between the
 outputs in a SHORT message and decide whether the differences are important
 enought to require a notification to your boss.
