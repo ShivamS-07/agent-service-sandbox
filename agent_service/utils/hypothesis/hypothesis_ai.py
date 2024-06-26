@@ -188,7 +188,7 @@ class HypothesisAI:
                 # This gives us another chance to throw out irrelevant articles
                 return None
             degree = SUPPORT_DEGREE_LOOKUP[result_json[STRENGTH].lower()]
-            support_num = support * degree  # in range -1 to 1
+            support_num = support * degree  # [-1, -0.5, -0.1, 0.1, 0.5, 1]
             description_time = topic.topic_descriptions[-1][1]
 
             topic_dict = {

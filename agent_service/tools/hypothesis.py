@@ -78,7 +78,7 @@ async def test_hypothesis_for_news_developments(
 
             # TODO: move the scaling logic into the class
             support_score: float = hypothesis_news_topic.get_latest_support()  # type: ignore
-            scaled_score = Score.scale_input(val=support_score, lb=-10, ub=10)
+            scaled_score = Score.scale_input(val=support_score, lb=-1, ub=1)
             reason: str = hypothesis_news_topic.get_latest_reason()  # type: ignore
             hypothesis_news_developments.append(
                 StockHypothesisNewsDevelopmentText(
@@ -190,7 +190,7 @@ async def test_hypothesis_for_earnings_summaries(
 
         for topic in hypothesis_earnings_topics:
             support_score: float = topic.get_latest_support()  # type: ignore
-            scaled_score = Score.scale_input(val=support_score, lb=-10, ub=10)
+            scaled_score = Score.scale_input(val=support_score, lb=-1, ub=1)
             reason: str = topic.get_latest_reason()  # type: ignore
             outputs.append(
                 StockHypothesisEarningsSummaryPointText(

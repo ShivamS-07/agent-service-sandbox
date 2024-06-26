@@ -367,10 +367,12 @@ class HypothesisPipeline:
                     summary_index=point.summary_idx,
                     summary_type=EarningsSummaryType(point.summary_type),
                     summary_date=ref_time,
-                    hypothesis_topic_supports=[(point.history[-1].score.rescale(lb=-1, ub=1), ref_time)],  # type: ignore # noqa
+                    hypothesis_topic_supports=[
+                        (point.support_score.rescale(lb=-1, ub=1), ref_time)
+                    ],
                     hypothesis_topic_impacts=[],
                     hypothesis_topic_polarities=[],
-                    hypothesis_topic_reasons=[(point.history[-1].explanation, ref_time)],  # type: ignore # noqa
+                    hypothesis_topic_reasons=[(point.reason, ref_time)],
                 )
             )
 
@@ -432,7 +434,8 @@ class HypothesisPipeline:
         earnings_topic_list: List[str] = []
         for i, (topic, hypo_topic) in enumerate(zip(earnings_topics, earnings_hypothesis_topics)):
             earnings_topic_list.append(
-                f"Topic {i + 1}\nTopic Description: {topic.get_latest_topic_description()}\n"
+                f"Topic {i + 1}\n"
+                f"Topic Description: {topic.get_latest_topic_description()}\n"
                 f"Topic Connection: {hypo_topic.get_latest_reason()}"
             )
         earnings_main_topics_str = "\n\n".join(earnings_topic_list)
