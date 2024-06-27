@@ -33,9 +33,16 @@ class AsyncDB:
         FROM agent.agent_outputs ao
         WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
                 AND plan_id = %(plan_id)s
-                AND plan_run_id != %(latest_plan_run_id)s
-        GROUP BY plan_run_id, created_at
-        ORDER BY plan_run_id, created_at DESC
+                AND plan_run_id IN
+                  (
+                    SELECT plan_run_id FROM agent.plan_runs
+                    WHERE plan_run_id != %(latest_plan_run_id)s
+                      AND agent_id = %(agent_id)s
+                      AND plan_id = %(plan_id)s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                  )
+        GROUP BY plan_run_id
         LIMIT 1
         """
         rows = await self.pg.generic_read(

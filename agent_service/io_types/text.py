@@ -681,7 +681,7 @@ class StockEarningsSummaryPointText(StockText):
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
         sql = """
-        SELECT ecs.summary_id, ms.symbol, ecs.year, ecs.quarter, ecs.created_timestamp
+        SELECT ecs.summary_id::TEXT, ms.symbol, ecs.year, ecs.quarter, ecs.created_timestamp
         FROM nlp_service.earnings_call_summaries ecs
         JOIN master_security ms ON ecs.gbi_id = ms.gbi_security_id
         WHERE summary_id = ANY(%(earnings_ids)s)

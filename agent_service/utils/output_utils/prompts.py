@@ -12,6 +12,8 @@ long. The summary should be AT MOST two SHORT sentences.
 Do not mention the word "output". E.g. if the a new stock was added to the
 output, say "New stock added: ...".
 
+NEVER mention integer stock ID's in your output!
+
 Under NO circumstances will you say *why* something is important. Your message
 should ONLY include information about what changed in extremely brief language.
 
@@ -46,9 +48,9 @@ GENERATE_DIFF_SYS_PROMPT = FilledPrompt(
     name="AGENT_OUTPUT_GENERATE_DIFF_SYS_PROMPT",
     filled_prompt=f"""
 {AGENT_DESCRIPTION}
-You  will be given information about the outputs from two
-different python job runs. Your job is to describe the differences between the
-outputs in a SHORT message and decide whether the differences are important
-enought to require a notification to your boss.
+You will be given information about the outputs from two different python job
+runs. Your job is to describe the differences between the outputs in a SHORT
+message and decide whether the differences are important enought to require a
+notification to your boss. NEVER mention integer stock ID's in your output!
 """,
 )

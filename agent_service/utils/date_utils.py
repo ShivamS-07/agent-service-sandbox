@@ -31,3 +31,9 @@ def convert_horizon_to_days(horizon: str) -> int:
 def convert_horizon_to_date(horizon: str) -> datetime.date:
     days = convert_horizon_to_days(horizon)
     return datetime.date.today() - datetime.timedelta(days=days)
+
+
+def timezoneify(dt: datetime.datetime) -> datetime.datetime:
+    if not dt.tzinfo:
+        return dt.replace(tzinfo=datetime.timezone.utc)
+    return dt

@@ -13,6 +13,7 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.date_utils import timezoneify
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.output_utils.output_construction import PreparedOutput
 from agent_service.utils.output_utils.prompts import (
@@ -53,7 +54,8 @@ class OutputDiffer:
         new_citations = [
             f"*{citation.name}*\n{citation.summary}"
             for citation in latest_citations
-            if citation.published_at and citation.published_at > prev_date
+            # Ideally both of these should have timezones, but if not just assume they're UTC
+            if citation.published_at and timezoneify(citation.published_at) > timezoneify(prev_date)
         ]
         if not new_citations:
             return OutputDiff(diff_summary_message="No new updates.", should_notify=False)
