@@ -28,7 +28,7 @@ pydantic = {version = "==2.7.1", index = "pypi"}
 sentry-sdk = {extras = ["fastapi"], version =  "*", index = "pypi"}
 prefect = {version = "==2.19.3", index = "pypi"}
 pandas = {version = "==1.5.3", index = "pypi"}
-gbi_common_py_utils = {version = "==1.0.102", index = "gbi"}
+gbi_common_py_utils = {version = "==1.0.104", index = "gbi"}
 openai = { version = "==0.27.10", index = "pypi"}
 tiktoken = { version = "==0.7.0", index = "pypi"}
 PyJWT = {version = "==2.5.0", index = "pypi"}
