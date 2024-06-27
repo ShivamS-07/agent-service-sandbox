@@ -10,6 +10,7 @@ from agent_service.endpoints.models import PlanRun, PlanRunTask, PlanRunTaskLog,
 from agent_service.io_type_utils import load_io_type
 from agent_service.planner.planner_types import ToolExecutionNode
 from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.prefect import (
     get_prefect_plan_run_statuses,
     get_prefect_task_statuses,
@@ -18,6 +19,7 @@ from agent_service.utils.prefect import (
 logger = logging.getLogger(__name__)
 
 
+@async_perf_logger
 async def get_agent_hierarchical_worklogs(
     agent_id: str,
     db: AsyncDB,
@@ -75,6 +77,13 @@ async def get_agent_hierarchical_worklogs(
 
     logger.info(f"Found {len(plan_id_to_plan_run_ids)} plans for agent {agent_id}...")
     run_history: List[PlanRun] = []
+    all_plan_run_ids = []
+    for plan_run_ids in plan_id_to_plan_run_ids.values():
+        for plan_run_id in plan_run_ids:
+            all_plan_run_ids.append(plan_run_id)
+
+    plan_run_cancelled_ids = set(await db.get_cancelled_ids(ids_to_check=all_plan_run_ids))
+
     for plan_id, plan_run_ids in plan_id_to_plan_run_ids.items():
         logger.info(f"Processing {plan_id=}, found {len(plan_run_ids)} runs...")
         plan_nodes = plan_id_to_plan[plan_id].nodes
@@ -87,8 +96,7 @@ async def get_agent_hierarchical_worklogs(
                 plan_run_end = None
             else:
                 plan_run_status = Status.from_prefect_state(prefect_flow_run.state_type)
-                is_cancelled = await db.is_cancelled(ids_to_check=[plan_run_id])
-                if is_cancelled:
+                if plan_run_id in plan_run_cancelled_ids:
                     plan_run_status = Status.CANCELLED
                 plan_run_start = prefect_flow_run.start_time
                 plan_run_end = prefect_flow_run.end_time

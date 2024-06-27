@@ -11,6 +11,7 @@ from agent_service.planner.planner_types import ExecutionPlan, PlanStatus
 from agent_service.types import ChatContext, Message, Notification
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres
 
@@ -95,6 +96,16 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, {"ids_to_check": ids_to_check})
         return len(rows) > 0
 
+    async def get_cancelled_ids(self, ids_to_check: List[str]) -> List[str]:
+        """
+        Returns cancelled IDs from the given list.
+        """
+        sql = """
+        SELECT cancelled_id FROM agent.cancelled_ids WHERE cancelled_id = ANY(%(ids_to_check)s)
+        """
+        rows = await self.pg.generic_read(sql, {"ids_to_check": ids_to_check})
+        return [row["cancelled_id"] for row in rows]
+
     async def get_plan_run_outputs(self, plan_run_id: str) -> List[AgentOutput]:
         sql = """
                 SELECT ao.agent_id::VARCHAR, ao.plan_id::VARCHAR, ao.plan_run_id::VARCHAR,
@@ -156,6 +167,7 @@ class AsyncDB:
             return None
         return load_io_type(rows[0]["log_data"])
 
+    @async_perf_logger
     async def get_latest_execution_plan(
         self, agent_id: str
     ) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime], Optional[str]]:
@@ -195,6 +207,7 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
         return rows[0]["user_id"] if rows else None
 
+    @async_perf_logger
     async def get_agent_plan_runs(
         self, agent_id: str, limit_num: Optional[int] = None
     ) -> List[str]:
@@ -228,6 +241,7 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, params={"user_id": user_id})
         return [row["agent_name"] for row in rows]
 
+    @async_perf_logger
     async def get_agent_worklogs(
         self,
         agent_id: str,
@@ -253,11 +267,13 @@ class AsyncDB:
             FROM agent.work_logs wl
             LEFT JOIN agent.plan_runs pr
             ON wl.plan_run_id = pr.plan_run_id
+            AND wl.agent_id = pr.agent_id
             WHERE wl.agent_id = %(agent_id)s {filters}
             ORDER BY created_at DESC;
         """
         return await self.pg.generic_read(sql1, params=params)
 
+    @async_perf_logger
     async def get_execution_plans(self, plan_ids: List[str]) -> Dict[str, ExecutionPlan]:
         sql = """
             SELECT plan_id::VARCHAR, plan

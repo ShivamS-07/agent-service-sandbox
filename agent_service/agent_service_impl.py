@@ -180,6 +180,7 @@ class AgentServiceImpl:
             end (Optional[datetime.date]): end DATE to filter work log, inclusive
             most_recent_num_run (Optional[int]): number of most recent plan runs to return
         """
+
         run_history = await get_agent_hierarchical_worklogs(
             agent_id, self.pg, start_date, end_date, most_recent_num_run
         )
