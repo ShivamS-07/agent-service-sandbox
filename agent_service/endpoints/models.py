@@ -310,3 +310,13 @@ class NotificationEvent(BaseModel):
     user_id: str
     event: Union[NotifyMessageEvent] = Field(discriminator="event_type")
     timestamp: datetime.datetime = Field(default_factory=get_now_utc)
+
+
+####################################################################################################
+# Feature Flags / LD
+####################################################################################################
+
+
+class GetSecureUserResponse(BaseModel):
+    hash: str
+    context: Dict[str, Any]

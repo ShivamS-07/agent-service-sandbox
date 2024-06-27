@@ -9,8 +9,10 @@ RUN pipenv install
 COPY agent_service/ ./agent_service
 COPY application.py .
 COPY no_auth_endpoints.py .
+COPY definitions.py .
 COPY regression_test/ ./regression_test
 COPY prefect_serve.py .
 COPY prefect_sqs_serve.py .
 COPY scripts/ ./scripts
+COPY config/ ./config
 CMD ["pipenv", "run", "python", "application.py"]

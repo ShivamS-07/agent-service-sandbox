@@ -24,6 +24,7 @@ from agent_service.endpoints.models import (
     GetAllAgentsResponse,
     GetChatHistoryResponse,
     GetPlanRunOutputResponse,
+    GetSecureUserResponse,
     MarkNotificationsAsReadResponse,
     NotificationEvent,
     SharePlanRunResponse,
@@ -37,6 +38,7 @@ from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.agent_name import generate_name_for_agent
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.feature_flags import get_secure_mode_hash, get_user_context
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
 from agent_service.utils.redis_queue import (
@@ -297,6 +299,12 @@ class AgentServiceImpl:
     async def disable_agent_automation(self, agent_id: str) -> DisableAgentAutomationResponse:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=False)
         return DisableAgentAutomationResponse(success=True)
+
+    def get_secure_ld_user(self, user_id: str) -> GetSecureUserResponse:
+        ld_user = get_user_context(user_id=user_id)
+        return GetSecureUserResponse(
+            hash=get_secure_mode_hash(ld_user), context={"kind": "user", **ld_user.to_dict()}
+        )
 
     # Requires no authorization
     async def get_plan_run_output(self, plan_run_id: str) -> GetPlanRunOutputResponse:

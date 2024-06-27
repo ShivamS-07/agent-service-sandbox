@@ -40,6 +40,7 @@ from agent_service.endpoints.models import (
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
     GetChatHistoryResponse,
+    GetSecureUserResponse,
     MarkNotificationsAsReadRequest,
     MarkNotificationsAsReadResponse,
     SharePlanRunRequest,
@@ -63,7 +64,6 @@ from no_auth_endpoints import initialize_unauthed_endpoints
 DEFAULT_IP = "0.0.0.0"
 DEFAULT_DAL_PORT = 8000
 SERVICE_NAME = "AgentService"
-
 
 logger = logging.getLogger(__name__)
 
@@ -509,6 +509,17 @@ async def disable_agent_automation(
     return await application.state.agent_service_impl.disable_agent_automation(
         agent_id=req.agent_id
     )
+
+
+@router.get(
+    "/feature-flag/get-secure-user",
+    status_code=status.HTTP_200_OK,
+)
+async def get_secure_ld_user(user: User = Depends(parse_header)) -> GetSecureUserResponse:
+    """
+    Get a secure mode hash and LD user context.
+    """
+    return application.state.agent_service_impl.get_secure_ld_user(user_id=user.user_id)
 
 
 initialize_unauthed_endpoints(application)
