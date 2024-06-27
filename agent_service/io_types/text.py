@@ -621,8 +621,9 @@ class StockEarningsSummaryText(StockText):
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
         sql = """
-        SELECT created_timestamp FROM
-        nlp_service.earnings_call_summaries
+        SELECT ms.symbol, ecs.year, ecs.quarter, ecs.created_timestamp
+        FROM nlp_service.earnings_call_summaries ecs
+        JOIN master_security ms ON ecs.gbi_id = ms.gbi_security_id
         WHERE summary_id = ANY(%(earnings_ids)s)
         """
         params = {"earnings_ids": [text.id for text in texts]}
@@ -631,7 +632,8 @@ class StockEarningsSummaryText(StockText):
         return [
             CitationOutput(
                 citation_type=CitationType.TEXT,
-                name=cls.text_type,
+                # e.g. "NVDA Earnings Call - Q1 2024"
+                name=f"{row['symbol'] or ''} Earnings Call - Q{row['quarter']} {row['year']}",
                 published_at=row["created_timestamp"],
             )
             for row in rows
@@ -678,22 +680,31 @@ class StockEarningsSummaryPointText(StockText):
     async def get_citations_for_output(
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
+        sql = """
+        SELECT ecs.summary_id, ms.symbol, ecs.year, ecs.quarter, ecs.created_timestamp
+        FROM nlp_service.earnings_call_summaries ecs
+        JOIN master_security ms ON ecs.gbi_id = ms.gbi_security_id
+        WHERE summary_id = ANY(%(earnings_ids)s)
+        """
+        summary_id_text_map = {text.summary_id: text for text in texts}
+        params = {"earnings_ids": [text.summary_id for text in texts]}
         str_lookup = await cls._get_strs_lookup(texts)
-
-        outputs = []
-        for text in texts:
-            point_str = str_lookup.get(text.id)
-            if point_str:
-                outputs.append(
-                    CitationOutput(
-                        id=text.summary_id,
-                        citation_type=CitationType.TEXT,
-                        name=cls.text_type,
-                        summary=f"{text.summary_type}: {point_str}",
-                    )
-                )
-
-        return outputs
+        rows = await db.generic_read(sql, params)
+        output = []
+        for row in rows:
+            text = summary_id_text_map.get(row["summary_id"])
+            citation = CitationOutput(
+                citation_type=CitationType.TEXT,
+                # e.g. "NVDA Earnings Call - Q1 2024"
+                name=f"{row['symbol'] or ''} Earnings Call - Q{row['quarter']} {row['year']}",
+                published_at=row["created_timestamp"],
+            )
+            if text:
+                point_str = str_lookup.get(text.id)
+                if point_str:
+                    citation.summary = f"{text.summary_type}: {point_str}"
+            output.append(citation)
+        return output
 
 
 @io_type
