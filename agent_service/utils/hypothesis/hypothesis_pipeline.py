@@ -668,7 +668,7 @@ class HypothesisPipeline:
         ]
 
         custom_document_news_ref_idxs: List[int] = summary_dict.get(  # type: ignore
-            "custom_document_news_references", []
+            "custom_doc_news_references", []
         )
         custom_document_news_ref_hypo_topics = [
             custom_document_news_topic_pairs[idx - 1][0] for idx in custom_document_news_ref_idxs
