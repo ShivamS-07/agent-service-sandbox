@@ -1,3 +1,4 @@
+import ast
 import asyncio
 import datetime
 import json
@@ -644,6 +645,34 @@ class Planner:
 
         return output
 
+    def _split_list_literal_with_ast(self, val: str) -> List[str]:
+        """
+        A smarter version of string.split(",") that handles commas inside of
+        list components.
+        """
+        try:
+            expr = ast.parse(val).body[0]
+            assert isinstance(expr, ast.Expr)
+            list_expr = expr.value
+            assert isinstance(list_expr, ast.List)
+            items = list_expr.elts
+            output = []
+            for item in items:
+                if isinstance(item, ast.Constant):
+                    val = item.value
+                    if isinstance(val, str):
+                        output.append(f'"{val}"')
+                    else:
+                        output.append(str(val))
+                elif isinstance(item, ast.Name):
+                    output.append(item.id)
+            return output
+        except Exception:
+            logger = get_prefect_logger(__name__)
+            logger.exception(f"Failed to parse list with ast: {val}")
+            contents_str = val[1:-1]
+            return contents_str.split(",")
+
     def _try_parse_list_literal(
         self,
         val: str,
@@ -652,7 +681,6 @@ class Planner:
     ) -> Optional[List[Union[IOType, Variable]]]:
         if (not val.startswith("[")) or (not val.endswith("]")):
             return None
-        contents_str = val[1:-1]
         list_type_tup: Tuple[Type] = get_args(expected_type)
         if list_type_tup[-1] is type(None):  # special Optional case, need to go an extra level in
             list_type_tup = get_args(list_type_tup[0])
@@ -661,7 +689,7 @@ class Planner:
             list_type = Any
         else:
             list_type = list_type_tup[0]
-        elements = contents_str.split(",")
+        elements = self._split_list_literal_with_ast(val)
         output = []
         for i, elem in enumerate(elements):
             elem = elem.strip()

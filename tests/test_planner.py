@@ -682,7 +682,7 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
             ParsedStep(
                 output_var="stock_ids",
                 function="stock_identifier_lookup_multi",
-                arguments={"stock_names": '["Meta", "Apple", "Microsoft"]'},
+                arguments={"stock_names": '["Meta", "Apple,1", "Microsoft"]'},
                 description="Convert company names to stock identifiers",
             ),
             ParsedStep(
@@ -728,7 +728,7 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
             ),
             ToolExecutionNode(
                 tool_name="stock_identifier_lookup_multi",
-                args={"stock_names": ["Meta", "Apple", "Microsoft"]},
+                args={"stock_names": ["Meta", "Apple,1", "Microsoft"]},
                 description="Convert company names to stock identifiers",
                 output_variable_name="stock_ids",
                 is_output_node=False,
