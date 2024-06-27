@@ -7,7 +7,7 @@ import pandas as pd
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import TableColumnType
+from agent_service.io_type_utils import HistoryEntry, TableColumnType
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
@@ -15,9 +15,9 @@ from agent_service.io_types.table import (
     Table,
     TableColumnMetadata,
 )
-from agent_service.io_types.text import EquivalentKPITexts, KPIText
+from agent_service.io_types.text import EquivalentKPITexts, KPIText, Text, TextCitation
 from agent_service.tool import ToolArgs, ToolCategory, tool
-from agent_service.tools.kpis.constants import DELIMITER, SEPERATOR, SPECIFIC
+from agent_service.tools.kpis.constants import SPECIFIC
 from agent_service.tools.kpis.prompts import (
     CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT_OBJ,
     CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ,
@@ -30,8 +30,6 @@ from agent_service.tools.kpis.prompts import (
     IMPORTANT_KPIS_FOR_STOCK_DESC,
     KPI_RELEVANCY_MAIN_PROMPT_OBJ,
     KPI_RELEVANCY_SYS_PROMPT_OBJ,
-    OVERLAPPING_KPIS_ACROSS_COMPANIES_MAIN_PROMPT_OBJ,
-    OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT_OBJ,
     RELEVANCY_INSTRUCTION,
     SPECIFIC_KPI_INSTRUCTION,
     SPECIFIC_KPI_MAIN_PROMPT_OBJ,
@@ -166,12 +164,13 @@ async def convert_multi_stock_data_to_table(
     )
 
     kpi_inst = list(data.values())[0][0]  # Take a random kpi_inst to pass in general kpi metadata
-    actual_col_name = f"{kpi_name} (Actual)"
 
     if simple_table:
+        actual_col_name = f"{kpi_name}"
         estimate_col_name = None
         surprise_col_name = None
     else:
+        actual_col_name = f"{kpi_name} (Actual)"
         estimate_col_name = f"{kpi_name} (Estimate)"
         surprise_col_name = f"{kpi_name} (Surpise)"
 
@@ -295,10 +294,9 @@ async def get_kpis_for_stock_given_topics(
     stock_id = args.stock_id
     kpi_list = []
     for topic in args.topics:
-        topic_kpi_list = await classify_specific_or_general_topic(
-            stock_id, topic, company_info, llm
-        )
-        kpi_list.extend(topic_kpi_list)
+        kpi_for_topic = await classify_specific_or_general_topic(stock_id, topic, company_info, llm)
+        if kpi_for_topic is not None:
+            kpi_list.extend(kpi_for_topic)
     return kpi_list
 
 
@@ -316,9 +314,8 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
 ) -> EquivalentKPITexts:
     llm = GPT(context=None, model=GPT4_O)
     company_info_list: List[CompanyInformation] = []
-    company_kpi_lists: List[List[KPIText]] = []
+    company_kpi_lists: List[KPIText] = []
     overlapping_kpi_list: List[KPIText] = []
-    company_lookup: Dict[str, CompanyInformation] = {}
 
     tasks = []
     gbi_id_stock_id_map = {}
@@ -326,69 +323,16 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
         company_info = get_company_data_and_kpis(stock_id.gbi_id)
         company_info_list.append(company_info)
         tasks.append(
-            get_relevant_kpis_for_stock_id(stock_id, company_info, args.shared_metric, llm)
+            get_specific_kpi_data_for_stock_id(stock_id, company_info, args.shared_metric, llm)
         )
         gbi_id_stock_id_map[stock_id.gbi_id] = stock_id
 
     company_kpi_lists = await gather_with_concurrency(tasks, n=5)
-    company_data = []
-    for i, (company_info, company_kpi_list) in enumerate(zip(company_info_list, company_kpi_lists)):
-        company_name = company_info.company_name
-        company_description = company_info.company_description
 
-        kpi_str_list = []
-        for kpi in company_kpi_list:
-            kpi_str_list.append(f"({kpi.id}) {kpi.val}")
-
-        kpi_str = "\n".join(kpi_str_list)
-        company_lookup[str(i + 1)] = company_info
-        company_data.append(
-            f"Company {i+1} - {company_name}\n"
-            f"{company_name} Description: {company_description}\n\n"
-            f"{company_name} KPIs:\n"
-            f"{kpi_str}\n"
-            f"{DELIMITER}"
-        )
-    result = await llm.do_chat_w_sys_prompt(
-        main_prompt=OVERLAPPING_KPIS_ACROSS_COMPANIES_MAIN_PROMPT_OBJ.format(
-            topic=args.shared_metric,
-            company_data="\n".join(company_data),
-            delimiter=DELIMITER,
-        ),
-        sys_prompt=OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT_OBJ.format(
-            seperator=SEPERATOR,
-        ),
-    )
-    if result == "0":
-        # GPT couldn't find anything
-        return EquivalentKPITexts(val=[], general_kpi_name="")
-
-    overlapping_kpi_gpt_resp = result.split("\n")
-    # first line from gpt contains the generalized KPI name
-    kpi_name = overlapping_kpi_gpt_resp[0]
-    # retrieve the kpis
-    for overlapping_kpi_data in overlapping_kpi_gpt_resp[1:]:
-        # We force GPT to output a justification as well but we don't actually need it
-        # ie. each line we ask it to output company_index,pid,justification
-
-        # Sometimes adds extra line breaks and we get an empty str, safe to ignore
-        if overlapping_kpi_data == "":
-            continue
-
-        company_index, pid, _ = overlapping_kpi_data.split(SEPERATOR)
-        if pid == "0":
-            # gpt could not find an equivalent kpi for this company
-            continue
-        gbi_id = company_lookup[company_index].gbi_id
-        kpi_data = company_lookup[company_index].kpi_lookup.get(int(pid), None)
-        if kpi_data is not None:
-            overlapping_kpi_list.append(
-                KPIText(
-                    val=kpi_data.name, id=kpi_data.pid, stock_id=gbi_id_stock_id_map.get(gbi_id)
-                )
-            )
-
-    return EquivalentKPITexts(val=overlapping_kpi_list, general_kpi_name=kpi_name)
+    for company_info, company_kpi in zip(company_info_list, company_kpi_lists):
+        if company_kpi is not None:
+            overlapping_kpi_list.append(company_kpi)
+    return EquivalentKPITexts(val=overlapping_kpi_list, general_kpi_name=args.shared_metric)
 
 
 class GetImportantKPIsForStock(ToolArgs):
@@ -452,9 +396,12 @@ async def classify_specific_or_general_topic(
         sys_prompt=CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ.format(),
     )
     if result.lower() == SPECIFIC:
-        topic_kpi_list = await get_specific_kpi_data_for_stock_id(
-            stock_id, company_info, topic, llm
-        )
+        specific_kpi = await get_specific_kpi_data_for_stock_id(stock_id, company_info, topic, llm)
+        if specific_kpi is not None:
+            # Return it in a list to keep things consistent
+            topic_kpi_list = [specific_kpi]
+        else:
+            topic_kpi_list = []
     else:
         topic_kpi_list = await get_relevant_kpis_for_stock_id(stock_id, company_info, topic, llm)
     return topic_kpi_list
@@ -462,8 +409,7 @@ async def classify_specific_or_general_topic(
 
 async def get_specific_kpi_data_for_stock_id(
     stock_id: StockID, company_info: CompanyInformation, topic: str, llm: GPT
-) -> List[KPIText]:
-    results = []
+) -> Optional[KPIText]:
     instructions = SPECIFIC_KPI_INSTRUCTION.format(
         company_name=company_info.company_name, query_topic=topic
     )
@@ -476,11 +422,27 @@ async def get_specific_kpi_data_for_stock_id(
         ),
         KPI_RELEVANCY_SYS_PROMPT_OBJ.format(),
     )
-    pid = int(result.split(",")[0])
+
+    if result == "":
+        return None
+    data = result.split(",")
+    pid = int(data[0])
     pid_metadata = company_info.kpi_lookup.get(pid, None)
+
     if pid_metadata:
-        results.append(KPIText(val=pid_metadata.name, id=pid_metadata.pid, stock_id=stock_id))
-    return results
+        pid_name = pid_metadata.name
+        justification = data[2].strip()
+        stock_id_with_kpi_history = stock_id.inject_history_entry(
+            HistoryEntry(
+                title=f"KPI Used For {topic}",
+                explanation=justification,
+                citations=[TextCitation(source_text=Text(val=pid_name))],
+            )
+        )
+        return KPIText(
+            val=pid_metadata.name, id=pid_metadata.pid, stock_id=stock_id_with_kpi_history
+        )
+    return None
 
 
 def interpret_date_quarter_inputs(
@@ -641,7 +603,7 @@ async def main() -> None:
 
     # Testing Specific KPI Retrieval Using Direct Helper Function Call & Using Simple Output
     tr_stock_id = StockID(gbi_id=10753, symbol="TRI", isin="")
-    specific_kpi = await get_specific_kpi_data_for_stock_id(  # type: ignore
+    specific_kpi: KPIText = await get_specific_kpi_data_for_stock_id(  # type: ignore
         stock_id=tr_stock_id,
         company_info=get_company_data_and_kpis(tr_stock_id.gbi_id),
         topic="thomson reuters legal profession revenue",
@@ -649,7 +611,7 @@ async def main() -> None:
     )
     specific_table: Table = await get_kpis_table_for_stock(  # type: ignore
         CompanyKPIsRequest(
-            stock_id=tr_stock_id, table_name="TR Revenue", kpis=specific_kpi, simple_output=True
+            stock_id=tr_stock_id, table_name="TR Revenue", kpis=[specific_kpi], simple_output=True
         ),
         context=plan_context,
     )

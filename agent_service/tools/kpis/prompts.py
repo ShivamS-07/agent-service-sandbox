@@ -11,7 +11,7 @@ OVERLAPPING_KPIS_ACROSS_COMPANIES_MAIN_PROMPT = """Given the topic '{topic}', he
 
 {company_data}"""
 
-KPI_RELEVANCY_SYS_PROMPT = """You are a financial analyst that has been tasked to identify relevant Key Performance Indicators (KPIs) for a given company. You will be told the specific KPIs in question, for example you may be asked to identify KPIs. surrounding a specific product or service, or you may be asked to identify KPIs that are the most impactful to the company's financial health/dominance. Unless explicitly told, you should avoid returning 'high-level' KPIs like 'Total Revenue' or 'EPS' and choose to return KPIs that are low-level meaning they refer to some specific product, service, etc. That being said, if you are directly asked for these KPIs word for word. That is to say, if the input given to you is 'EPS' then of course you should return EPS. Similarly if you are explicitly asked for 'Total Revenue' then you should return a KPI that captures total revenue. You should not return total revenue for things like 'total revenue from iPhone'."""
+KPI_RELEVANCY_SYS_PROMPT = """You are a financial analyst that has been tasked to identify relevant Key Performance Indicators (KPIs) for a given company. You will be told the specific KPIs in question, for example you may be asked to identify KPIs. surrounding a specific product or service, or you may be asked to identify KPIs that are the most impactful to the company's financial health/dominance. Unless explicitly told that the KPI you are looking for is a 'high-level' KPI, you should never returning 'high-level' KPIs like 'Total Revenue', 'Net Revenue', or 'EPS'. You should always aim to return KPIs that are low-level meaning they refer to some specific product, service, etc. That being said, if you are directly asked for these KPIs word for word. That is to say, if the input given to you is 'EPS' then of course you should return EPS. Similarly if you are explicitly asked for 'Total Revenue' then you should return a KPI that captures total revenue. However, you should not return 'total revenue' or 'net revenue' for things like 'total revenue from iPhone' or 'sales from computers'."""
 
 GENERAL_IMPORTANCE_INSTRUCTION_WITH_NUM_KPIS = (
     "For the company {company_name}, identify the {num_of_kpis} most "
@@ -23,11 +23,11 @@ GENERAL_IMPORTANCE_INSTRUCTION = (
     "of 10 KPIs. "
 )
 
-RELEVANCY_INSTRUCTION = """For the company {company_name}, identify relevant kpis around the following topic: '{query_topic}'. Limit yourself to at most 20 KPIs. You should not aim to get 20, stop when you feel that you have identified All relevant KPIs to the topic, however if you feel there are more than 20, return the 20 most impactful KPIs."""
+RELEVANCY_INSTRUCTION = """For the company {company_name}, identify relevant kpis around the following topic: '{query_topic}'. Limit yourself to at most 20 KPIs. You should not aim to get 20, stop when you feel that you have identified All relevant KPIs to the topic, however if you feel there are more than 20, return the 20 most impactful KPIs. If you are unsure or there is not enough information given, defer to KPIs that measure revenue/sales and take the ones with the highest amount."""
 
-SPECIFIC_KPI_INSTRUCTION = """For the company {company_name}, identify a single KPI that is most relevant to the topic '{query_topic}'. If there are multiple KPIs that are relevant, choose the one that is most impactful to the company. Never output more than one KPI in your output."""
+SPECIFIC_KPI_INSTRUCTION = """For the company {company_name}, identify a single KPI that is most relevant to the metric '{query_topic}'. If there are multiple KPIs that are relevant, choose the one that is most impactful to the company. Never output more than one KPI in your output. If you cannot find a KPI that directly reports on the topic given to you return an empty string without any explanation or justification. You are not looking for a direct word-for-word match onto '{query_topic}'. You are simply looking at whether or not any of the KPIs shown to you report on this given metric."""
 
-KPI_RELEVANCY_MAIN_PROMPT = """"{instructions} If you are unsure or there is not enough information given, defer to KPIs that measure revenue/sales and take the ones with the highest amount.
+KPI_RELEVANCY_MAIN_PROMPT = """{instructions}
 
 To assist you, here is a brief description of {company_name}:
 {company_description}
@@ -35,7 +35,10 @@ To assist you, here is a brief description of {company_name}:
 Below are the KPIs you are to select from, each KPI is presented on its own line with a numerical identifier in brackets at the start, followed by the KPI name, followed by the KPI value with its respective unit if applicable:
 {kpi_str}
 
-Return the relevant KPIs by name and the numerical identifier associated with it. Each line will contain a relevant KPI with the KPI number without the brackets followed by the KPI name separated by a comma. Do not output any additional explanation or justification"""
+Return the relevant KPIs by name and the numerical identifier associated with it. Each line will contain a relevant KPI with the KPI number without the brackets followed by the KPI name separated by a comma which must be followed by a justification as to why the selected KPI directly reports on the topic given also separated by a comma. Your output should look like:
+123123, KPI NAME, JUSTIFICATION
+
+Where 123123 is the number associated with the KPI, KPI NAME is the name of the KPI, and JUSTIFICATION is the justification. Do not use commas anywhere else other than to separate the three outputs in your response."""
 
 CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT = """Given the topic '{topic}', determine if the topic is specific metric or if it is a more general product or service. A specific topic would be one that refers to a specific metric, like revenue or user growth, while a general topic would refer to a broader aspect of the company's assets or operations like a product. If the topic is specific, output 'Specific', if the topic is general, output 'General'"""
 
@@ -76,7 +79,6 @@ CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ = Prompt(
     name="CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT",
     template=CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT,
 )
-
 
 ###### TOOL DESCRIPTIONS
 IMPORTANT_KPIS_FOR_STOCK_DESC = """This function will identify and return financial metrics reporting key performance indicators (KPIs) for a given stock id when a user has not specified or provided any details as to the KPIs they are interested in or have stated want to see the most important KPIs of a specific company. If the user has specified an area or areas of interest within the company you must use the function get_kpis_for_stock_given_topics instead. A stock_id must be provided to identify the stock for which important KPIs are fetched. Optionally, an argument for the specific amount of kpis to be retrieved can be specified via the num_of_kpis argument. num_of_kpis does not need to be specified however. The default behavior will return the most important KPIs up to a limit of 10. The data returned will be a list of KPIText objects where each KPIText object contains one of the identified KPIs. Additionally, please note that this function does not provide any actual data for any given quarter for these KPIS, the Text output is simply the name of the KPI, e.g. "Cloud Revenue" and is useless for direct quantitative analysis.."""
