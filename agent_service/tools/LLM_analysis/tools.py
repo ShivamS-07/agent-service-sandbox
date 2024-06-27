@@ -3,7 +3,7 @@ import json
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple, Union
 
-from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O
+from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O, SONNET
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import Citation, HistoryEntry, Score
@@ -330,7 +330,7 @@ async def profile_filter_helper(
     topic: str = "",
 ) -> List[Tuple[bool, str, List[Citation]]]:
     gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
-    llm = GPT(context=gpt_context, model=GPT4_O)
+    llm = GPT(context=gpt_context, model=SONNET)
     tokenizer = GPTTokenizer(GPT4_O)
     used = tokenizer.get_token_length(
         "\n".join(
@@ -392,7 +392,7 @@ async def profile_filter_helper(
 
 async def get_profile_rubric(profile: str, agent_id: str) -> Dict[int, str]:
     gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
-    llm = GPT(context=gpt_context, model=GPT4_O)
+    llm = GPT(context=gpt_context, model=SONNET)
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=PROFILE_RUBRIC_GENERATION_MAIN_OBJ.format(profile=profile),
         sys_prompt=PROFILE_RUBRIC_GENERATION_SYS_OBJ.format(),
@@ -430,7 +430,7 @@ async def filtered_stocks_score_assignment(
     agent_id: str,
 ) -> List[StockID]:
     gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
-    llm = GPT(context=gpt_context, model=GPT4_O)
+    llm = GPT(context=gpt_context, model=SONNET)
     tasks = []
 
     rubric_str_list = [f"Level {k}: {v}" for k, v in rubric_dict.items()]
