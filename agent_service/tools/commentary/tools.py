@@ -142,6 +142,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         articles = random.sample(articles, MAX_TOTAL_ARTICLES_PER_COMMENTARY)
 
     all_texts = themes + developments + articles
+    all_text_group = TextGroup(val=all_texts)
 
     await tool_log(
         log=f"Retrieved {len(themes)} themes, {len(developments)} developments, and {len(articles)} articles.",
@@ -159,30 +160,27 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     writing_style_prompt = WRITING_STYLE_PROMPT.format(
         writing_format=WRITING_FORMAT_TEXT_DICT.get("Long")
     )
-    texts = "\n***\n".join(
-        await Text.get_all_strs(all_texts, include_header=True, text_group_numbering=True)
-    )
+    texts = await Text.get_all_strs(all_text_group, include_header=True, text_group_numbering=True)
     chat_context = context.chat.get_gpt_input() if context.chat is not None else ""
 
     main_prompt = COMMENTARY_PROMPT_MAIN.format(
-        previous_commentary_prompt=previous_commentary_prompt,
-        geography_prompt=geography_prompt,
-        writing_style_prompt=writing_style_prompt,
+        previous_commentary_prompt=previous_commentary_prompt.filled_prompt,
+        geography_prompt=geography_prompt.filled_prompt,
+        writing_style_prompt=writing_style_prompt.filled_prompt,
         texts=texts,
         chat_context=chat_context,
     )
+
     # Write the commentary
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=main_prompt,
         sys_prompt=COMMENTARY_SYS_PROMPT.format(),
     )
-    # print(result)
+
     text, citation_ids = await split_text_and_citation_ids(result)
     commentary = Text(val=text)
     commentary = commentary.inject_history_entry(
-        HistoryEntry(
-            title="Commentary", citations=TextGroup(val=all_texts).get_citations(citation_ids)
-        )
+        HistoryEntry(title="Commentary", citations=all_text_group.get_citations(citation_ids))
     )
 
     return commentary

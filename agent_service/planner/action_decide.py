@@ -46,9 +46,12 @@ class InputActionDecider:
         )
         result = await self.llm.do_chat_w_sys_prompt(
             main_prompt, ACTION_DECIDER_SYS_PROMPT.format()
-        )  # , max_tokens=3)
+        )
         chat_context.messages.append(latest_message)
-        return Action[result.split()[-1].strip().upper()]
+        action = Action[result.split()[-1].strip().upper()]
+        if len(reads_chat_list) == 0 and action == Action.RERUN:  # GPT shouldn't do this
+            action = Action.REPLAN
+        return action
 
 
 class ErrorActionDecider:

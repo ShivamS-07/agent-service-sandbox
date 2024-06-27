@@ -47,7 +47,6 @@ from agent_service.utils.prefect import (
     get_prefect_logger,
     prefect_cancel_agent_flow,
     prefect_create_execution_plan,
-    prefect_get_current_plan_run_task_id,
     prefect_pause_current_agent_flow,
     prefect_resume_agent_flow,
     prefect_run_execution_plan,
@@ -403,70 +402,42 @@ async def update_execution_after_input(
     elif action == Action.RERUN:
         # In this case, we know that the flow_run_type is PLAN_EXECUTION (or there no flow_run),
         # otherwise we'd have run the above block instead.
-        current_task_id = None
-        seen_chat_reading_tool = False
+        if do_chat:
+            message = await chatbot.generate_input_update_rerun_response(
+                chat_context,
+                latest_plan,
+                str(
+                    [
+                        node.tool_name
+                        for node in latest_plan.nodes
+                        if ToolRegistry.does_tool_read_chat(node.tool_name)
+                    ]
+                ),
+            )
+            await send_chat_message(
+                message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                db=db,
+            )
+
+        if run_tasks_without_prefect:
+            return latest_plan_id, latest_plan, action
+
         if flow_run:
-            current_task_id = await prefect_get_current_plan_run_task_id(flow_run)
-        for node in latest_plan.nodes:
-            if ToolRegistry.does_tool_read_chat(node.tool_name):
-                seen_chat_reading_tool = True
-                # we've already run into a chat reading node, which means we need to rerun
-                if do_chat:
-                    message = await chatbot.generate_input_update_rerun_response(
-                        chat_context, latest_plan, str(node.tool_name)
-                    )
-                    await send_chat_message(
-                        message=Message(agent_id=agent_id, message=message, is_user_message=False),
-                        db=db,
-                    )
+            await prefect_cancel_agent_flow(flow_run, db=db)
+        plan_run_id = str(uuid4())
+        ctx = PlanRunContext(
+            agent_id=agent_id,
+            plan_id=latest_plan_id,
+            user_id=user_id,
+            plan_run_id=plan_run_id,
+            skip_db_commit=skip_db_commit,
+            skip_task_cache=skip_task_cache,
+            run_tasks_without_prefect=run_tasks_without_prefect,
+            chat=chat_context,
+        )
 
-                if run_tasks_without_prefect:
-                    return latest_plan_id, latest_plan, action
-
-                if flow_run:
-                    await prefect_cancel_agent_flow(flow_run, db=db)
-                plan_run_id = str(uuid4())
-                ctx = PlanRunContext(
-                    agent_id=agent_id,
-                    plan_id=latest_plan_id,
-                    user_id=user_id,
-                    plan_run_id=plan_run_id,
-                    skip_db_commit=skip_db_commit,
-                    skip_task_cache=skip_task_cache,
-                    run_tasks_without_prefect=run_tasks_without_prefect,
-                    chat=chat_context,
-                )
-
-                # TODO: Add some Chatbot response
-
-                logger.info(
-                    f"Rerunning execution plan for {agent_id=}, {latest_plan_id=}, {plan_run_id=}"
-                )
-                await prefect_run_execution_plan(plan=latest_plan, context=ctx, do_chat=do_chat)
-                break
-
-            if node.tool_task_id == current_task_id:
-                # if we got here without breaking, means no chat reading node
-                # has been run, we can just resume
-                if do_chat:
-                    message = await chatbot.generate_input_update_no_action_response(chat_context)
-                    await send_chat_message(
-                        message=Message(agent_id=agent_id, message=message, is_user_message=False),
-                        db=db,
-                    )
-
-                if flow_run:
-                    await prefect_resume_agent_flow(flow_run)
-
-            if do_chat and not seen_chat_reading_tool and not current_task_id:
-                # At this point, we've had no tasks that are in progress and also no
-                # tasks that read the chat. In this case, we don't actually need to
-                # do anything, and really GPT should have picked the NONE option.
-                message = await chatbot.generate_input_update_no_action_response(chat_context)
-                await send_chat_message(
-                    message=Message(agent_id=agent_id, message=message, is_user_message=False),
-                    db=db,
-                )
+        logger.info(f"Rerunning execution plan for {agent_id=}, {latest_plan_id=}, {plan_run_id=}")
+        await prefect_run_execution_plan(plan=latest_plan, context=ctx, do_chat=do_chat)
 
     else:
         # This handles the cases for REPLAN, APPEND, and CREATE
