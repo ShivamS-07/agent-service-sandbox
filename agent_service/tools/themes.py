@@ -207,7 +207,7 @@ async def get_stocks_affected_by_theme(
         return []
     db = ThemePostgres()
     gpt_context = create_gpt_context(
-        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=DEFAULT_SMART_MODEL)
     final_stocks_reason: Dict[int, List[Tuple[str, float]]] = defaultdict(list)

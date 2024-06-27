@@ -210,7 +210,7 @@ async def add_scores_and_rationales_to_stocks(
     ]  # filter out those with no data
 
     gpt_context = create_gpt_context(
-        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=GPT4_O)
     tokenizer = GPTTokenizer(GPT4_O)

@@ -29,7 +29,7 @@ from agent_service.chatbot.prompts import (
     INPUT_UPDATE_RERUN_MAIN_PROMPT,
     INPUT_UPDATE_RERUN_SYS_PROMPT,
 )
-from agent_service.GPT.constants import DEFAULT_SMART_MODEL
+from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan
@@ -43,7 +43,7 @@ class Chatbot:
     def __init__(
         self,
         agent_id: str,
-        model: str = DEFAULT_SMART_MODEL,
+        model: str = GPT4_O,
         gpt_service_stub: Optional[GPTServiceStub] = None,
         tool_registry: Type[ToolRegistry] = ToolRegistry,
     ) -> None:

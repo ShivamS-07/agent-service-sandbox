@@ -88,7 +88,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         return Text(val="")
     # TODO we need guardrails on this
     gpt_context = create_gpt_context(
-        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=DEFAULT_LLM)
     text_group = TextGroup(val=args.texts)
@@ -137,7 +137,7 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
         return Text(val="")
     # TODO we need guardrails on this
     gpt_context = create_gpt_context(
-        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=DEFAULT_LLM)
     text_group1 = TextGroup(val=args.group1)
@@ -218,7 +218,7 @@ async def answer_question_with_text_data(
 ) -> Text:
     # TODO we need guardrails on this
     gpt_context = create_gpt_context(
-        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=DEFAULT_LLM)
     text_group = TextGroup(val=args.texts)
@@ -251,7 +251,7 @@ async def answer_question_with_text_data(
 async def topic_filter_helper(
     texts: List[str], topic: str, agent_id: str
 ) -> List[Tuple[bool, str]]:
-    gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
     llm = GPT(context=gpt_context, model=GPT4_O)
     tokenizer = GPTTokenizer(GPT4_O)
     used = tokenizer.get_token_length(
@@ -329,7 +329,7 @@ async def profile_filter_helper(
     agent_id: str,
     topic: str = "",
 ) -> List[Tuple[bool, str, List[Citation]]]:
-    gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
     llm = GPT(context=gpt_context, model=GPT4_O)
     tokenizer = GPTTokenizer(GPT4_O)
     used = tokenizer.get_token_length(
@@ -391,7 +391,7 @@ async def profile_filter_helper(
 
 
 async def get_profile_rubric(profile: str, agent_id: str) -> Dict[int, str]:
-    gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
     llm = GPT(context=gpt_context, model=GPT4_O)
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=PROFILE_RUBRIC_GENERATION_MAIN_OBJ.format(profile=profile),
@@ -429,7 +429,7 @@ async def filtered_stocks_score_assignment(
     profile: str,
     agent_id: str,
 ) -> List[StockID]:
-    gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
     llm = GPT(context=gpt_context, model=GPT4_O)
     tasks = []
 
