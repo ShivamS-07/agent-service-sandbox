@@ -34,6 +34,7 @@ from agent_service.tools.kpis.prompts import (
     SPECIFIC_KPI_INSTRUCTION,
     SPECIFIC_KPI_MAIN_PROMPT_OBJ,
 )
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
@@ -220,7 +221,10 @@ async def convert_multi_stock_data_to_table(
     return Table.from_df_and_cols(data=df, columns=columns)
 
 
-def get_company_data_and_kpis(gbi_id: int) -> CompanyInformation:
+async def get_company_data_and_kpis(
+    stock_id: StockID, context: PlanRunContext
+) -> Optional[CompanyInformation]:
+    gbi_id = stock_id.gbi_id
     company_name = db.get_sec_metadata_from_gbi([gbi_id])[gbi_id].company_name
     short_description = db.get_short_company_description(gbi_id)[0]
 
@@ -231,6 +235,13 @@ def get_company_data_and_kpis(gbi_id: int) -> CompanyInformation:
     kpis, kpi_data = kpi_retriever.get_all_company_kpis_current_year_quarter_via_clickhouse(
         gbi_id=gbi_id,
     )
+
+    if len(kpis) == 0:
+        await tool_log(
+            f"No KPI data available for stock {stock_id.company_name} ({stock_id.symbol})",
+            context=context,
+        )
+        return None
 
     kpi_str_list = []
     for kpi in kpis:
@@ -290,14 +301,23 @@ async def get_kpis_for_stock_given_topics(
     args: GetKPIForStockGivenTopic, context: PlanRunContext
 ) -> List[KPIText]:
     llm = GPT(context=None, model=GPT4_O)
-    company_info = get_company_data_and_kpis(args.stock_id.gbi_id)
+    company_info = await get_company_data_and_kpis(args.stock_id, context)
     stock_id = args.stock_id
     kpi_list = []
-    for topic in args.topics:
-        kpi_for_topic = await classify_specific_or_general_topic(stock_id, topic, company_info, llm)
-        if kpi_for_topic is not None:
-            kpi_list.extend(kpi_for_topic)
-    return kpi_list
+
+    if company_info:
+        for topic in args.topics:
+            kpi_for_topic = await classify_specific_or_general_topic(
+                stock_id,
+                topic,
+                company_info,
+                llm,
+                context,
+            )
+            if kpi_for_topic is not None:
+                kpi_list.extend(kpi_for_topic)
+        return kpi_list
+    return []
 
 
 class GetRelevantKPIsForStocksGivenTopic(ToolArgs):
@@ -320,12 +340,15 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
     tasks = []
     gbi_id_stock_id_map = {}
     for stock_id in args.stock_ids:
-        company_info = get_company_data_and_kpis(stock_id.gbi_id)
-        company_info_list.append(company_info)
-        tasks.append(
-            get_specific_kpi_data_for_stock_id(stock_id, company_info, args.shared_metric, llm)
-        )
-        gbi_id_stock_id_map[stock_id.gbi_id] = stock_id
+        company_info = await get_company_data_and_kpis(stock_id, context)
+        if company_info:
+            company_info_list.append(company_info)
+            tasks.append(
+                get_specific_kpi_data_for_stock_id(
+                    stock_id, company_info, args.shared_metric, llm, context
+                )
+            )
+            gbi_id_stock_id_map[stock_id.gbi_id] = stock_id
 
     company_kpi_lists = await gather_with_concurrency(tasks, n=5)
 
@@ -347,7 +370,11 @@ class GetImportantKPIsForStock(ToolArgs):
 async def get_important_kpis_for_stock(
     args: GetImportantKPIsForStock, context: PlanRunContext
 ) -> List[KPIText]:
-    company_info = get_company_data_and_kpis(args.stock_id.gbi_id)
+    company_info = await get_company_data_and_kpis(args.stock_id, context)
+
+    if company_info is None:
+        return []
+
     llm = GPT(context=None, model=GPT4_O)
 
     if args.num_of_kpis is not None:
@@ -388,7 +415,11 @@ async def get_important_kpis_for_stock(
 
 
 async def classify_specific_or_general_topic(
-    stock_id: StockID, topic: str, company_info: CompanyInformation, llm: GPT
+    stock_id: StockID,
+    topic: str,
+    company_info: CompanyInformation,
+    llm: GPT,
+    context: PlanRunContext,
 ) -> List[KPIText]:
 
     result = await llm.do_chat_w_sys_prompt(
@@ -396,7 +427,9 @@ async def classify_specific_or_general_topic(
         sys_prompt=CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ.format(),
     )
     if result.lower() == SPECIFIC:
-        specific_kpi = await get_specific_kpi_data_for_stock_id(stock_id, company_info, topic, llm)
+        specific_kpi = await get_specific_kpi_data_for_stock_id(
+            stock_id, company_info, topic, llm, context
+        )
         if specific_kpi is not None:
             # Return it in a list to keep things consistent
             topic_kpi_list = [specific_kpi]
@@ -408,7 +441,11 @@ async def classify_specific_or_general_topic(
 
 
 async def get_specific_kpi_data_for_stock_id(
-    stock_id: StockID, company_info: CompanyInformation, topic: str, llm: GPT
+    stock_id: StockID,
+    company_info: CompanyInformation,
+    topic: str,
+    llm: GPT,
+    context: PlanRunContext,
 ) -> Optional[KPIText]:
     instructions = SPECIFIC_KPI_INSTRUCTION.format(
         company_name=company_info.company_name, query_topic=topic
@@ -422,8 +459,13 @@ async def get_specific_kpi_data_for_stock_id(
         ),
         KPI_RELEVANCY_SYS_PROMPT_OBJ.format(),
     )
-
+    # Drop any line breaks since GPT should only be outputting one line anyways
+    result = result.replace("\n", "").replace("`", "")
     if result == "":
+        await tool_log(
+            f"No apprioriate KPI specific to {topic} was found for stock {stock_id.company_name} ({stock_id.symbol})",
+            context=context,
+        )
         return None
     data = result.split(",")
     pid = int(data[0])
@@ -603,22 +645,28 @@ async def main() -> None:
 
     # Testing Specific KPI Retrieval Using Direct Helper Function Call & Using Simple Output
     tr_stock_id = StockID(gbi_id=10753, symbol="TRI", isin="")
-    specific_kpi: KPIText = await get_specific_kpi_data_for_stock_id(  # type: ignore
-        stock_id=tr_stock_id,
-        company_info=get_company_data_and_kpis(tr_stock_id.gbi_id),
-        topic="thomson reuters legal profession revenue",
-        llm=GPT(context=None, model=GPT4_O),
-    )
-    specific_table: Table = await get_kpis_table_for_stock(  # type: ignore
-        CompanyKPIsRequest(
-            stock_id=tr_stock_id, table_name="TR Revenue", kpis=[specific_kpi], simple_output=True
-        ),
-        context=plan_context,
-    )
-    df = specific_table.to_df()
-    print(df.head())
-    for column in specific_table.columns:
-        print(column.metadata.label)
+    tr_company_info = await get_company_data_and_kpis(tr_stock_id, context=plan_context)
+    if tr_company_info is not None:
+        specific_kpi: KPIText = await get_specific_kpi_data_for_stock_id(  # type: ignore
+            stock_id=tr_stock_id,
+            company_info=tr_company_info,
+            topic="thomson reuters legal profession revenue",
+            llm=GPT(context=None, model=GPT4_O),
+            context=plan_context,
+        )
+        specific_table: Table = await get_kpis_table_for_stock(  # type: ignore
+            CompanyKPIsRequest(
+                stock_id=tr_stock_id,
+                table_name="TR Revenue",
+                kpis=[specific_kpi],
+                simple_output=True,
+            ),
+            context=plan_context,
+        )
+        df = specific_table.to_df()
+        print(df.head())
+        for column in specific_table.columns:
+            print(column.metadata.label)
 
     # Testing Specific KPI Retrieval Using Agent Tool
     appl_stock_id = StockID(gbi_id=714, symbol="APPL", isin="")
