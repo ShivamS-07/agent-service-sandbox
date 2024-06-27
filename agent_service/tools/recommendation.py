@@ -2,6 +2,9 @@ import copy
 import json
 from typing import Any, Dict, List, Optional
 
+from pa_portfolio_service_proto_v1.investment_policy_match_pb2 import (
+    StockInvestmentPolicySummary,
+)
 from pydantic import field_validator
 
 from agent_service.external.discover_svc_client import (
@@ -12,7 +15,12 @@ from agent_service.external.discover_svc_client import (
 from agent_service.external.investment_policy_svc import (
     get_all_stock_investment_policies,
 )
-from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O
+from agent_service.GPT.constants import (
+    DEFAULT_CHEAP_MODEL,
+    FILTER_CONCURRENCY,
+    GPT4_O,
+    NO_PROMPT,
+)
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import HistoryEntry, Score
@@ -128,6 +136,34 @@ SCORE_DIRECTION = (
 
 RECOMMENDATION_MAIN_PROMPT = Prompt(RECOMMENDATION_MAIN_PROMPT_STR, "RECOMMENDATION_MAIN_PROMPT")
 RECOMMENDATION_SYS_PROMPT = Prompt(RECOMMENDATION_SYS_PROMPT_STR, "RECOMMENDATION_SYS_PROMPT")
+
+POLICY_MAIN_PROMPT_STR = (
+    "You are an investment advisor trying to match a client's mention of an investment style/policy "
+    "to a pre-existing list. You will be given the name mentioned by the client, and the list of styles, simply "
+    "output the element of the list that best matches the mention, or return `None` if there "
+    "is nothing in the list that has any relation to the match. Here is the client mention: {policy_ref}. "
+    "And here is the list:\n{list_of_policies}\nNow output the best match:\n"
+)
+
+POLICY_MAIN_PROMPT = Prompt(POLICY_MAIN_PROMPT_STR, "POLICY_MAIN_PROMPT")
+
+
+async def pick_investment_style(
+    policy_ref: str, isms: List[StockInvestmentPolicySummary], context: PlanRunContext
+) -> Optional[StockInvestmentPolicySummary]:
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=DEFAULT_CHEAP_MODEL)
+    list_of_policies = "\n".join([ism.name for ism in isms])
+    main_prompt = POLICY_MAIN_PROMPT.format(
+        policy_ref=policy_ref, list_of_policies=list_of_policies
+    )
+    result = (await llm.do_chat_w_sys_prompt(main_prompt, NO_PROMPT)).strip()
+    for ism in isms:
+        if ism.name == result:
+            return ism
+    return None
 
 
 def map_input_to_closest_horizon(input_horizon: str, supported_horizons: List[str]) -> str:
@@ -256,6 +292,7 @@ class GetStockRecommendationsInput(ToolArgs):
     news_only: bool = False
     num_stocks_to_return: Optional[int] = None
     star_rating_threshold: Optional[float] = None
+    investment_style: Optional[str] = None
 
     @field_validator("horizon", mode="before")
     @classmethod
@@ -318,8 +355,11 @@ class GetStockRecommendationsInput(ToolArgs):
         "then the rationale will be based on justifying the score from a machine learning algorithm. "
         "So, if a client says to `give me a reason to buy/sell NVDA`, you would use filter = False, and "
         "buy = true/false, respectively "
-        "but if the client asks `Should I buy NVDA?` filter is still False, but buy should be None, and the "
+        "but if the client asks `Should I buy NVDA?` or `Tell me if I should short NVDA` then"
+        "filter is still False, but buy should be None, not True or False, and the "
         "rationale will reflect a post hoc rationalization of the machine-provided rating for the stock. "
+        "Again, make sure to use buy=None if the user wants you to choose whether or not to recommend "
+        "a particular stock or stocks"
         "Investment horizon and delta horizon are used for in the ML algorithm to decide how far into "
         "The future (investment horizon) or into the past (delta) to consider, you should increase them from the "
         "defaults only when the client expresses some specific interest in a longer term view. "
@@ -333,6 +373,8 @@ class GetStockRecommendationsInput(ToolArgs):
         "the get_all_news_developments_about_companies function before this one!"
         "In news only mode, the news_horizon specifically controls how far back the algorithm looks for news "
         "when doing the sentiment calculation and the rationale."
+        "Valid horizons for the horizon arguments are 1W, 1M, 3M, and 1Y, do not pass anything else!"
+        "If the client mentions an investment policy/style, it should be passed in as investment style. "
         "If no stock ID's are provided (which must only happen when filter=True!), the S&P 500 stocks are used"
     ),
     category=ToolCategory.STOCK,
@@ -366,9 +408,20 @@ async def get_stock_recommendations(
     ism_resp = await get_all_stock_investment_policies(context.user_id)
     ism_id = None
     if ism_resp.investment_policies:
-        ism = max(ism_resp.investment_policies, key=lambda x: x.last_updated.ToDatetime())
-        ism_id = ism.investment_policy_id.id
-        await tool_log(log=f'Using Investment Style "{ism.name}" to search stocks', context=context)
+        if args.investment_style:
+            ism = await pick_investment_style(
+                args.investment_style, list(ism_resp.investment_policies), context
+            )
+            if ism:
+                ism_id = ism.investment_policy_id.id
+
+        if ism_id is None:
+            ism = max(ism_resp.investment_policies, key=lambda x: x.last_updated.ToDatetime())
+            ism_id = ism.investment_policy_id.id
+        if ism:
+            await tool_log(
+                log=f'Using Investment Style "{ism.name}" to search stocks', context=context
+            )
 
     settings_blob = copy.deepcopy(SETTINGS_TEMPLATE)
     settings_blob["ism_settings"]["ism_id"] = ism_id

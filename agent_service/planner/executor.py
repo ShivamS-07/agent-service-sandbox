@@ -117,9 +117,6 @@ async def run_execution_plan(
             else:
                 resolved_args[arg] = val
 
-        # Now, we can create the input argument type
-        step_args = tool.input_type(**resolved_args)
-
         # Create the context
         context.task_id = step.tool_task_id
 
@@ -130,6 +127,7 @@ async def run_execution_plan(
         else:
             # Run the tool, store its output, errors and replan
             try:
+                step_args = tool.input_type(**resolved_args)
                 tool_output = await tool.func(args=step_args, context=context)
             except Exception as e:
                 logger.exception(f"Step '{step.tool_name}' failed due to {e}")
