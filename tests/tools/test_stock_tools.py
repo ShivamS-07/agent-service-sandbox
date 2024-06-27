@@ -35,7 +35,24 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
         init_test_logging()
 
 
+class TestStockIdentifierLookup0(TestStockIdentifierLookup):
+
+    async def test_stock_identifier_lookup_test(self):
+        self.args = StockIdentifierLookupInput(stock_name="advance micro devices")
+        result = await stock_identifier_lookup(self.args, self.context)
+        print("result", result)
+        self.assertEqual(result.symbol, "AMD")
+        self.assertEqual(result.gbi_id, 124)
+
+
 class TestStockIdentifierLookup1(TestStockIdentifierLookup):
+
+    async def test_stock_identifier_lookup_DLR_isin(self):
+        self.args = StockIdentifierLookupInput(stock_name="US2538681030")
+        result = await stock_identifier_lookup(self.args, self.context)
+        print("result", result)
+        self.assertEqual(result.symbol, "DLR")
+        self.assertEqual(result.gbi_id, 15303)
 
     async def test_stock_identifier_lookup_symbol_plus_name(self):
         self.args = StockIdentifierLookupInput(stock_name="ARTI Evolve ETF")
@@ -221,8 +238,26 @@ class TestStockUniverse1(IsolatedAsyncioTestCase):
         self.context = PlanRunContext.get_dummy()
 
         # uncomment for easier debugging
-        # from agent_service.utils.logs import init_test_logging
-        # init_test_logging()
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
+
+    async def test_get_stock_info_sp500(self):
+        self.args = GetStockUniverseInput(universe_name="SP500")
+        result = await get_stock_info_for_universe(self.args, self.context)
+        self.assertEqual(result.get("symbol"), "SPY")
+
+        self.args = GetStockUniverseInput(universe_name="S&P 500")
+        result = await get_stock_info_for_universe(self.args, self.context)
+        self.assertEqual(result.get("symbol"), "SPY")
+
+        self.args = GetStockUniverseInput(universe_name="SP500")
+        result = await get_stock_info_for_universe(self.args, self.context)
+        self.assertEqual(result.get("symbol"), "SPY")
+
+        self.args = GetStockUniverseInput(universe_name="SPY")
+        result = await get_stock_info_for_universe(self.args, self.context)
+        self.assertEqual(result.get("symbol"), "SPY")
 
     async def test_get_stock_info_tsx(self):
         self.args = GetStockUniverseInput(universe_name="TSX")
@@ -249,6 +284,29 @@ class TestStockUniverse2(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
 
+        # uncomment for easier debugging
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
+
+    async def test_get_stock_info_world_stocks(self):
+        self.args = GetStockUniverseInput(universe_name="Vanguard Total World Stock ETF")
+        result = await get_stock_info_for_universe(self.args, self.context)
+        print("result", result)
+        self.assertEqual(result.get("symbol"), "VT")
+
+        self.args = GetStockUniverseInput(
+            universe_name="Vanguard International Equity Index Funds - Vanguard Total World Stock ETF"
+        )
+        result = await get_stock_info_for_universe(self.args, self.context)
+        print("result", result)
+        self.assertEqual(result.get("symbol"), "VT")
+
+
+class TestStockUniverse3(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+
     async def test_get_stock_info_nasdaq(self):
         self.args = GetStockUniverseInput(universe_name="Nasdaq")
         result = await get_stock_info_for_universe(self.args, self.context)
@@ -270,8 +328,9 @@ class TestRiskExposure(IsolatedAsyncioTestCase):
         self.context = PlanRunContext.get_dummy()
 
         # uncomment for easier debugging
-        # from agent_service.utils.logs import init_test_logging
-        # init_test_logging()
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
 
     async def test_get_risk_exposure_for_stocks(self):
         self.args = GetRiskExposureForStocksInput(stock_list=[AAPL])

@@ -20,6 +20,7 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -55,6 +56,10 @@ SPIQ_ALT_NAME_PENALTY = 0.8
 
 # Any matches below this level will be discarded
 MIN_ACCEPTABLE_MATCH_SCORE = 0.2
+
+# when we are taking a GPT answer and pulling a gbi id using the name from gpt
+# we want a confident text match
+MIN_GPT_NAME_MATCH = 0.7
 
 
 class StockIdentifierLookupInput(ToolArgs):
@@ -117,6 +122,7 @@ Your task is to determine which company, stock, ETF or stock index the search te
 )
 
 
+@async_perf_logger
 async def stock_confirmation_by_gpt(
     context: PlanRunContext, search: str, results: List[Dict]
 ) -> Optional[Dict[str, Any]]:
@@ -156,6 +162,7 @@ async def stock_confirmation_by_gpt(
     tool_registry=ToolRegistry,
     is_visible=False,
 )
+@async_perf_logger
 async def stock_identifier_lookup(
     args: StockIdentifierLookupInput, context: PlanRunContext
 ) -> StockID:
@@ -179,6 +186,7 @@ async def stock_identifier_lookup(
     # first we check if the search string is in a format that leads to an unambiguous match
     exact_rows = await stock_lookup_exact(args, context)
     if exact_rows:
+        logger.info(f"found {len(exact_rows)} exact matches")
         if len(exact_rows) > 1:
             exact_rows = await augment_stock_rows_with_volume(exact_rows)
             exact_rows = sorted(exact_rows, key=lambda x: x.get("volume", 0), reverse=True)
@@ -197,7 +205,9 @@ async def stock_identifier_lookup(
     rows = await augment_stock_rows_with_volume(rows)
 
     orig_stocks_sorted_by_match = sorted(rows, key=lambda x: x["final_match_score"], reverse=True)
-    orig_stocks_sorted_by_volume = sorted(rows, key=lambda x: x.get("volume", 0), reverse=True)
+    orig_stocks_sorted_by_volume = sorted(
+        rows, key=lambda x: (x.get("volume", 0), x["final_match_score"]), reverse=True
+    )
 
     # send the top 3 by text match and volume to GPT for review
     MAX_MATCH_STOCKS = 3
@@ -223,14 +233,31 @@ async def stock_identifier_lookup(
 
     if gpt_answer and gpt_answer.get("full_name"):
         # map the GPT answer back to a gbi_id
-        gpt_answer_full_name = cast(str, gpt_answer["full_name"])
-        confirm_args = StockIdentifierLookupInput(stock_name=gpt_answer_full_name)
 
-        confirm_rows = await stock_lookup_by_text_similarity(confirm_args, context)
-        logger.info(f"found {len(rows)} best matching stock to the gpt answer")
-        confirm_rows = await augment_stock_rows_with_volume(confirm_rows)
+        gpt_answer_full_name = cast(str, gpt_answer["full_name"])
+
+        gpt_stock: Optional[Dict[str, Any]] = None
+        # first check if gpt answer is in the original set:
+        for s in orig_stocks_sorted_by_volume:
+            if gpt_answer_full_name.lower() == s.get("name", "").lower():
+                gpt_stock = s
+                logger.info(f"found gpt answer in original set: {gpt_stock=}, {gpt_answer=}")
+                break
+
+        if gpt_stock:
+            confirm_rows = [gpt_stock]
+        else:
+            # next do a full text search to map the gpt answer back to a gbi_id
+            confirm_args = StockIdentifierLookupInput(stock_name=gpt_answer_full_name)
+            confirm_rows = await stock_lookup_by_text_similarity(
+                confirm_args, context, min_match_strength=MIN_GPT_NAME_MATCH
+            )
+            logger.info(f"found {len(rows)} best matching stock to the gpt answer")
+            confirm_rows = await augment_stock_rows_with_volume(confirm_rows)
 
     else:
+        # TODO, should we assume GPT is correct that this is not a stock,
+        # or should we instead use our best db match?
         confirm_rows = []
 
     if confirm_rows:
@@ -379,8 +406,11 @@ async def augment_stock_rows_with_volume(rows: List[Dict[str, Any]]) -> List[Dic
     return rows
 
 
+@async_perf_logger
 async def stock_lookup_by_text_similarity(
-    args: StockIdentifierLookupInput, context: PlanRunContext
+    args: StockIdentifierLookupInput,
+    context: PlanRunContext,
+    min_match_strength: float = MIN_ACCEPTABLE_MATCH_SCORE,
 ) -> List[Dict[str, Any]]:
     """Returns the stocks with the closest text similarity match in the various name fields
     to the input string
@@ -389,6 +419,7 @@ async def stock_lookup_by_text_similarity(
     Args:
         args (StockIdentifierLookupInput): The input arguments for the stock lookup.
         context (PlanRunContext): The context of the plan run.
+        min_match_strength (float 0.0-1.0): the minimum text match score
 
     Returns:
         List[Dict[str, Any]]: DB rows representing the potentially matching stocks.
@@ -404,7 +435,15 @@ async def stock_lookup_by_text_similarity(
 
     # should we also allow 'Depositary Receipt (Common Stock)') ?
     sql = f"""
-    SELECT * FROM (
+    SELECT *,
+
+    -- we have to use the trigram indexes to speed up the qry
+    -- but need a low enough value so we can find the stuff we are looking for
+    -- should just be this SET cmd but it fails
+    -- SET pg_trgm.similarity_threshold = 0.2;
+    -- use set_limit() instead
+    set_limit(0.2)
+    FROM (
     SELECT *,
     -- penalize non-prefix matches
     CASE
@@ -431,8 +470,8 @@ async def stock_lookup_by_text_similarity(
     -- company name
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     name, 'name' as match_col, ms.name as match_text,
-    (strict_word_similarity(lower(ms.name), lower(%(search_term)s)) +
-    strict_word_similarity(lower(%(search_term)s), lower(ms.name))) / 2
+    (strict_word_similarity(ms.name, %(search_term)s) +
+    strict_word_similarity(%(search_term)s, ms.name)) / 2
     AS text_sim_score
     FROM master_security ms
     WHERE
@@ -440,14 +479,26 @@ async def stock_lookup_by_text_similarity(
     AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
+
+    -- this uses the trigram index which speeds up the qry
+    -- https://www.postgresql.org/docs/current/pgtrgm.html#PGTRGM-OP-TABLE
+    AND name %% %(search_term)s
+    AND %(search_term)s %% name
 
     UNION
 
     -- custom boosted db entries -  company alt name * 1.0
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     name, 'comp alt name' as match_col, alt_name as match_text,
-    (strict_word_similarity(lower(alt_name), lower(%(search_term)s)) +
-    strict_word_similarity(lower(%(search_term)s), lower(alt_name))) / 2
+
+    -- lower the score for spiq matches
+    CASE
+        WHEN can.source_id = 0
+        THEN     (strict_word_similarity(alt_name, %(search_term)s) +
+                  strict_word_similarity(%(search_term)s, alt_name)) / 2
+    ELSE (strict_word_similarity(alt_name, %(search_term)s) +
+          strict_word_similarity(%(search_term)s, alt_name)) / 2 * {SPIQ_ALT_NAME_PENALTY}
+    END
     AS text_sim_score
     FROM master_security ms
     JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
@@ -458,34 +509,16 @@ async def stock_lookup_by_text_similarity(
     AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
-    AND can.source_id = 0 -- boosted source
-
-    UNION
-
-    -- spiq provided - company alt name * 0.8
-    SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
-    name, 'comp alt name' as match_col, alt_name as match_text,
-    (strict_word_similarity(lower(alt_name), lower(%(search_term)s)) +
-    strict_word_similarity(lower(%(search_term)s), lower(alt_name))) / 2 * {SPIQ_ALT_NAME_PENALTY}
-    AS text_sim_score
-    FROM master_security ms
-    JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
-    JOIN "data".company_alt_names can ON ssm.spiq_company_id = can.spiq_company_id
-    WHERE
-    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
-    AND can.enabled
-    AND ms.is_public
-    AND ms.is_primary_trading_item = true
-    AND ms.to_z is null
-    AND can.source_id in (1,2,3,4) -- spiq sources
+    AND alt_name %% %(search_term)s
+    AND %(search_term)s %% alt_name
 
     UNION
 
     -- gbi alt name
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     name, 'gbi alt name' as match_col, alt_name as match_text,
-    (strict_word_similarity(lower(alt_name), lower(%(search_term)s)) +
-    strict_word_similarity(lower(%(search_term)s), lower(alt_name))) / 2
+    (strict_word_similarity(alt_name, %(search_term)s) +
+    strict_word_similarity(%(search_term)s, alt_name)) / 2
     AS text_sim_score
     FROM master_security ms
     JOIN "data".gbi_id_alt_names gan ON gan.gbi_id = ms.gbi_security_id
@@ -495,11 +528,15 @@ async def stock_lookup_by_text_similarity(
     AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
+    AND alt_name %% %(search_term)s
+    AND %(search_term)s %% alt_name
 
     ORDER BY text_sim_score DESC
-    LIMIT 200) as text_scores ) as final_scores -- word similarity score
+    LIMIT 200
+    ) as text_scores
+    ) as final_scores -- word similarity score
     WHERE
-    final_scores.final_match_score >= {MIN_ACCEPTABLE_MATCH_SCORE}  -- score including prefix match
+    final_scores.final_match_score >= {min_match_strength}  -- score including prefix match
     ORDER BY final_match_score DESC
     LIMIT 100
     """
@@ -604,12 +641,14 @@ async def raw_stock_identifier_lookup(
 
     exact_rows = await stock_lookup_exact(args, context)
     if exact_rows:
-        logger.info("found exact match")
+        logger.info(f"found  {len(exact_rows)} exact matches: {args=}")
         return exact_rows
 
     similar_rows = await stock_lookup_by_text_similarity(args, context)
     if similar_rows:
-        logger.info("found text similarity match")
+        logger.info(
+            f"found {len(similar_rows)} text similarity matches: {args=}," f" {similar_rows[:4]}"
+        )
         return similar_rows
 
     raise ValueError(f"Could not find any stocks related to: '{args.stock_name}'")
@@ -1037,7 +1076,7 @@ async def get_stock_universe_gbi_stock_universe(
     sql = """
     SELECT * FROM (
     SELECT etfs.spiq_company_id, etfs.name, ms.gbi_security_id, ms.symbol,
-    strict_word_similarity(lower(gsu.name), lower(%s)) AS ws,
+    strict_word_similarity(gsu.name, %s) AS ws,
     gsu.name as gsu_name
     FROM "data".etf_universes etfs
     JOIN gbi_stock_universe gsu
@@ -1094,23 +1133,12 @@ async def get_stock_universe_from_etf_stock_match(
         return rows[0]
 
     # we have multiple matches, lets use dollar trading volume to choose the most likely match
-    gbiid2stocks = {r["gbi_security_id"]: r for r in rows}
-    gbi_ids = list(gbiid2stocks.keys())
-    stocks_sorted_by_volume = await async_sort_stocks_by_volume(gbi_ids)
+    rows = await augment_stock_rows_with_volume(rows)
+    orig_stocks_sorted_by_volume = sorted(
+        rows, key=lambda x: (x.get("volume", 0), x.get("final_match_score", 0)), reverse=True
+    )
 
-    if stocks_sorted_by_volume:
-        gbi_id = stocks_sorted_by_volume[0][0]
-        stock = gbiid2stocks.get(gbi_id)
-        if not stock:
-            stock = rows[0]
-            logger.warning("Logic error!")
-            # should not be possible
-        else:
-            logger.info(f"Top stock volumes: {stocks_sorted_by_volume[:10]}")
-    else:
-        # if nothing returned from stock search then just pick the first match
-        stock = rows[0]
-        logger.info("No stock volume info available!")
+    stock = orig_stocks_sorted_by_volume[0]
 
     return stock
 

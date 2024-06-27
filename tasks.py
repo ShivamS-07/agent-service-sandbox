@@ -36,8 +36,10 @@ def testfast(c):
     print("running tests fast in parallel")
     c.run("pip install unittest-parallel")  # move to pipfile?
 
-    # runs each test class in its own process 32 at a time
-    c.run("unittest-parallel -v --level class --disable-process-pooling --jobs 32  -t . -s tests")
+    # runs each test class in its own process 8 at a time
+    c.run(
+        "nice -n19 unittest-parallel -v --level class --disable-process-pooling --jobs 8  -t . -s tests"
+    )
 
 
 @task
