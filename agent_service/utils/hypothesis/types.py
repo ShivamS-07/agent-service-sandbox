@@ -64,6 +64,19 @@ class CompanyNewsTopicInfo(CompanyTopicInfo):
         return self.topic_impacts[-1][0] if self.topic_impacts else default
 
 
+@dataclass
+class CustomDocTopicInfo(CompanyTopicInfo):
+    """
+    Since custom docs are keyed by news ID in their external source, we need to store this info.
+    """
+
+    news_id: str
+    topic_impacts: List[Tuple[NewsImpact, datetime.datetime]] = field(default_factory=list)
+
+    def get_latest_topic_impact(self, default: Optional[NewsImpact] = None) -> Optional[NewsImpact]:
+        return self.topic_impacts[-1][0] if self.topic_impacts else default
+
+
 class EarningsSummaryType(str, Enum):
     REMARKS = "Remarks"
     QUESTIONS = "Questions"

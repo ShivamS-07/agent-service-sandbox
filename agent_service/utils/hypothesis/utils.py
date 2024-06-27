@@ -26,6 +26,7 @@ from agent_service.utils.hypothesis.types import (
     CompanyEarningsTopicInfo,
     CompanyNewsInfo,
     CompanyNewsTopicInfo,
+    CustomDocTopicInfo,
     EarningsSummaryType,
     HypothesisEarningsTopicInfo,
     HypothesisNewsTopicInfo,
@@ -96,6 +97,89 @@ def get_news_from_topics(
         SELECT gbi_id, news_id::VARCHAR, topic_id::VARCHAR, headline, published_at, is_top_source
         FROM nlp_service.stock_news
         WHERE topic_id = ANY(%(topic_ids)s){time_filter}
+    """
+    rows = get_psql().generic_read(sql, params=params)
+
+    return [CompanyNewsInfo(**row) for row in rows]
+
+
+def get_custom_document_news_topics(custom_doc_news_ids: List[str]) -> List[CustomDocTopicInfo]:
+    if isinstance(custom_doc_news_ids, list) and len(custom_doc_news_ids) == 0:
+        return []
+
+    sql = """
+        SELECT
+            topic.gbi_id,
+            topic.topic_id::VARCHAR as topic_id,
+            cdn.news_id::VARCHAR as news_id,
+            topic.topic_label,
+            topic.topic_descriptions,
+            topic.topic_polarities,
+            topic.topic_impacts
+        FROM nlp_service.custom_docs_news_topics topic
+        JOIN nlp_service.custom_docs_news cdn ON cdn.topic_id = topic.topic_id
+        WHERE cdn.news_id = ANY(%(news_ids)s)
+        ORDER BY created_at DESC
+    """
+    records = get_psql().generic_read(sql, params={"news_ids": custom_doc_news_ids})
+    outputs = []
+    for record in records:
+        outputs.append(
+            CustomDocTopicInfo(
+                topic_id=record["topic_id"],
+                news_id=record["news_id"],
+                gbi_id=record["gbi_id"],
+                topic_label=record["topic_label"],
+                topic_descriptions=[
+                    (tup[0], datetime.datetime.fromisoformat(tup[1]))
+                    for tup in record["topic_descriptions"]
+                ],
+                topic_polarities=[
+                    (Polarity(tup[0]), datetime.datetime.fromisoformat(tup[1]))
+                    for tup in record["topic_polarities"]
+                ],
+                topic_impacts=(
+                    [
+                        (NewsImpact(tup[0]), datetime.datetime.fromisoformat(tup[1]))
+                        for tup in record["topic_impacts"]
+                    ]
+                    if record["topic_impacts"] is not None
+                    else []
+                ),
+            )
+        )
+
+    return outputs
+
+
+def get_custom_document_news_from_documents(
+    custom_doc_news_ids: List[str],
+    min_time: Optional[datetime.datetime] = None,
+    max_time: Optional[datetime.datetime] = None,
+) -> List[CompanyNewsInfo]:
+    params: Dict[str, Any] = {"article_ids": custom_doc_news_ids}
+
+    time_filter = ""
+    if min_time:
+        params["min_time"] = min_time
+        time_filter = "AND cdn.published_at >= %(min_time)s"
+
+    if max_time:
+        params["max_time"] = max_time
+        time_filter = "AND cdn.published_at <= %(max_time)s"
+
+    sql = f"""
+        SELECT
+            topic.gbi_id,
+            cdn.news_id::VARCHAR,
+            topic.topic_id::VARCHAR,
+            cdn.headline,
+            cdn.published_at,
+            cdn.is_top_source
+        FROM nlp_service.custom_docs_news_topics topic
+        JOIN nlp_service.custom_docs_news cdn ON cdn.topic_id = topic.topic_id
+        WHERE cdn.news_id = ANY(%(article_ids)s)
+            {time_filter}
     """
     rows = get_psql().generic_read(sql, params=params)
 

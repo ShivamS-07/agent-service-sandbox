@@ -18,16 +18,18 @@ HYPOTHESIS_SUMMARY_SYS_PROMPT_STR = "You are a financial analyst who is tasked w
 HYPOTHESIS_SUMMARY_NEWS_TEMPLATE = (
     "Here are the news topics, delimited by ---:\n---\n{news_topics}\n---\n---\n"
 )
+HYPOTHESIS_SUMMARY_CUSTOM_DOCS_NEWS_TEMPLATE = "Here are the news topics from other sources, delimited by ---:\n---\n{custom_docs_news_topics}\n---\n---\n"
 HYPOTHESIS_SUMMARY_EARNINGS_TEMPLATE = "Here are the earning topics extracted across the companies' last two earning calls, delimited by ---:\n---\n{earnings_main_topics}\n"
 HYPOTHESIS_SUMMARY_NEWS_REFERENCE_TEMPLATE = ". Provide a list of indexes for the referenced news topics and store into the same JSON with the key as `news_references`"
 HYPOTHESIS_SUMMARY_EARNINGS_REFERENCE_TEMPLATE = ". Provide a list of indexes for the referenced earnings topics and store into the same JSON with the key as `earnings_references`"
+HYPOTHESIS_SUMMARY_CUSTOM_DOCS_NEWS_REFERENCE_TEMPLATE = ". Provide a list of indexes for news topics from other sources and store into the same JSON with the key as `custom_doc_news_references`"
 HYPOTHESIS_SUMMARY_MAIN_PROMPT_STR = (
     "Summarize the pieces of information given to you into an argument about to the following situation."
     " Here is the target situation: {property}\n"
-    "{news_str}{earnings_str}"
+    "{news_str}{earnings_str}{custom_doc_news_str}"
     "And here is the conclusion your argument should have: {conclusion}."
     " Now write your argument in two to four complete sentences and store in a JSON format with the key as `summary`"
-    "{news_ref}{earnings_ref}:"
+    "{news_ref}{earnings_ref}{custom_doc_news_ref}:"
 )
 ### Dataclasses
 

@@ -1,10 +1,11 @@
 import asyncio
 import datetime
 import logging
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from agent_service.GPT.constants import TEXT_3_LARGE
 from agent_service.io_types.text import (
+    StockHypothesisCustomDocumentText,
     StockHypothesisEarningsSummaryPointText,
     StockHypothesisNewsDevelopmentText,
 )
@@ -27,6 +28,7 @@ from agent_service.utils.hypothesis.types import (
     CompanyEarningsTopicInfo,
     CompanyNewsInfo,
     CompanyNewsTopicInfo,
+    CustomDocTopicInfo,
     EarningsSummaryType,
     HypothesisEarningsTopicInfo,
     HypothesisInfo,
@@ -34,6 +36,8 @@ from agent_service.utils.hypothesis.types import (
 )
 from agent_service.utils.hypothesis.utils import (
     convert_to_news_groups,
+    get_custom_document_news_from_documents,
+    get_custom_document_news_topics,
     get_earnings_topics,
     get_hypothesis_match_chart,
     get_hypothesis_topic_weights,
@@ -201,10 +205,102 @@ class HypothesisPipeline:
 
         return filtered_hypothesis_topics, corresponding_topics
 
+    async def get_stock_hypothesis_custom_document_topics(
+        self, custom_document_news_ids: List[str]
+    ) -> Tuple[List[HypothesisNewsTopicInfo], List[CustomDocTopicInfo], Dict[str, str]]:
+        # TODO: either `news_development_list`, or the output of `_get_strs_lookup` is fine
+        news_topics = get_custom_document_news_topics(custom_document_news_ids)
+        topic_id_to_topic = {topic.topic_id: topic for topic in news_topics}
+        topic_id_to_news_id = {topic.topic_id: topic.news_id for topic in news_topics}
+
+        sorted_topic_ids = self.ch.sort_news_topics_via_embeddings(
+            news_topic_ids=list(topic_id_to_topic.keys()),
+            embedding_vector=self.hypothesis.embedding,  # type: ignore
+            embedding_model_id=TEXT_3_LARGE,
+        )
+        sorted_news_topics = [topic_id_to_topic[topic_id] for topic_id in sorted_topic_ids]
+
+        relevant_topics: List[CustomDocTopicInfo] = []
+        hypothesis_topics: List[HypothesisNewsTopicInfo] = []
+
+        topic_worker_queue: asyncio.Queue = asyncio.Queue()
+        worker_tasks: List[asyncio.Task] = []
+
+        for _ in range(NUM_TOPIC_WORKERS):
+            worker_tasks.append(
+                asyncio.create_task(
+                    self._hypothesis_topic_worker(topic_worker_queue, hypothesis_topics)
+                )
+            )
+
+        logger.info("Searching hypothesis relevant topics...")
+        for idx in range(0, len(sorted_news_topics), NEWS_TOPICS_BATCH_SIZE):
+            batch_idx = idx // NEWS_TOPICS_BATCH_SIZE + 1
+            logger.info(f"Processing batch {batch_idx} of news topics...")
+
+            topics_batch = sorted_news_topics[idx : idx + NEWS_TOPICS_BATCH_SIZE]
+            batch_size = len(topics_batch)
+            relevant_topics_mask = await self.llm.check_hypothesis_relevant_topics(topics_batch)
+
+            # add all relevant topics to the queue
+            batch_relevant_topics = [
+                topic for topic, is_related in zip(topics_batch, relevant_topics_mask) if is_related
+            ]
+            for topic in batch_relevant_topics:
+                topic_worker_queue.put_nowait(topic)
+            relevant_topics.extend(batch_relevant_topics)
+
+            # now determine if we should stop processing
+            # 0. If total relevant topics greater than threshold, we stop for now
+            # 1. if we have processed `MAX_BATCHES` batches
+            # 2. if the bottom `IRRELEVANT_TOPICS_THRESHOLD` topics are all irrelevant
+            # 3. if there are less than `TOTAL_RELEVANT_TOPICS_THRESHOLD` relevant topics in the batch
+            if len(relevant_topics) >= NUM_TOPICS_UB:
+                logger.info(f"Reached {NUM_TOPICS_UB=}. Stopping process...")
+                break
+            elif batch_idx >= MAX_BATCHES:
+                logger.info(f"Reached {MAX_BATCHES=}. Stopping process...")
+                break
+            elif len(batch_relevant_topics) < batch_size * TOTAL_RELEVANT_TOPICS_THRESHOLD:
+                logger.info(
+                    f"Batch {batch_idx} has only {len(relevant_topics)} relevant topics, less than required threshold. "
+                    "Stopping process..."
+                )
+                break
+
+            cutoff_pos = batch_size - int(batch_size * IRRELEVANT_TOPICS_THRESHOLD)
+            if all(not is_relevant for is_relevant in relevant_topics_mask[cutoff_pos:]):
+                logger.info(
+                    f"Bottom {int(IRRELEVANT_TOPICS_THRESHOLD * 100)}% topics are irrelevant in batch {batch_idx}. "
+                    "Stopping process..."
+                )
+                break
+
+        # need join to make sure we are waiting until all the contents of the queue have been processed
+        await topic_worker_queue.join()
+
+        # need cancel because our workers run forever and don't have any other way to break out of their tasks
+        for task in worker_tasks:
+            task.cancel()
+
+        # need gather to be sure all worker tasks are properly cancelled
+        await asyncio.gather(*worker_tasks, return_exceptions=True)
+
+        logger.info(f"Found {len(hypothesis_topics)} relevant hypothesis news topics")
+
+        # TODO: for now, we can assume that all the relevant topics are here, but later during updates
+        # we may need to get them
+        corresponding_topics = [topic_id_to_topic[topic.topic_id] for topic in hypothesis_topics]
+        return hypothesis_topics, corresponding_topics, topic_id_to_news_id
+
     async def _hypothesis_topic_worker(
         self,
         input_queue: asyncio.Queue,
-        output_list: Union[List[HypothesisNewsTopicInfo], List[HypothesisEarningsTopicInfo]],
+        output_list: Union[
+            List[HypothesisNewsTopicInfo],
+            List[HypothesisEarningsTopicInfo],
+            List[CustomDocTopicInfo],
+        ],
     ) -> None:
         while True:
             topic: CompanyNewsTopicInfo = await input_queue.get()
@@ -220,11 +316,13 @@ class HypothesisPipeline:
         self,
         news_developments: List[StockHypothesisNewsDevelopmentText],
         earnings_summary_points: List[StockHypothesisEarningsSummaryPointText],
+        custom_documents: List[StockHypothesisCustomDocumentText],
     ) -> Tuple[
         float,
         str,
         List[StockHypothesisNewsDevelopmentText],
         List[StockHypothesisEarningsSummaryPointText],
+        List[StockHypothesisCustomDocumentText],
     ]:
         """Calculate the match score and generate the hypothesis summary based on the news
         developments and earnings summary points.
@@ -232,8 +330,8 @@ class HypothesisPipeline:
         and the `explanation` and `score` will be used to create hypothesis topic objects
         """
 
-        if not news_developments and not earnings_summary_points:
-            return 0, "", [], []
+        if not any((news_developments, earnings_summary_points, custom_documents)):
+            return 0, "", [], [], []
 
         ref_time = get_now_utc()
 
@@ -249,6 +347,14 @@ class HypothesisPipeline:
         ) = await self._convert_hypothesis_earnings_summary_points_to_topics(
             earnings_summary_points, ref_time=ref_time
         )
+        (
+            custom_document_news_topics,
+            custom_document_hypothesis_topics,
+            custom_document_news_groups,
+        ) = await self._convert_hypothesis_custom_documents_to_topics(
+            custom_documents,
+            ref_time=ref_time,
+        )
 
         logger.info("Calculating match scores...")
         gbi_ids = list({t.gbi_id for t in news_topics} | {t.gbi_id for t in earnings_topics})
@@ -261,7 +367,7 @@ class HypothesisPipeline:
         )
 
         logger.info("Generating hypothesis summary...")
-        summary, news_ref_hypo_topics, earnings_ref_hypo_topics = (
+        summary, news_ref_hypo_topics, earnings_ref_hypo_topics, custom_document_ref_hypo_topics = (
             await self.generate_hypothesis_summary(
                 self.hypothesis.hypothesis_breakdown[PROPERTY],  # type: ignore
                 news_topics,
@@ -269,6 +375,9 @@ class HypothesisPipeline:
                 news_groups,
                 earnings_topics,
                 earnings_hypothesis_topics,
+                custom_document_news_topics,
+                custom_document_hypothesis_topics,
+                custom_document_news_groups,
                 max_count_pair,
                 match_score,
                 ref_time,
@@ -279,14 +388,24 @@ class HypothesisPipeline:
         tup_to_point = {
             (p.summary_id, p.summary_idx, p.summary_type): p for p in earnings_summary_points
         }
+        id_to_custom_doc = {doc.topic_id: doc for doc in custom_documents}
 
         ref_news_developments = [id_to_development[t.topic_id] for t in news_ref_hypo_topics]
         ref_earnings_points = [
             tup_to_point[(t.topic_id, t.summary_index, t.summary_type)]
             for t in earnings_ref_hypo_topics
         ]
+        ref_custom_document_points = [
+            id_to_custom_doc[t.topic_id] for t in custom_document_ref_hypo_topics
+        ]
 
-        return match_score, summary, ref_news_developments, ref_earnings_points
+        return (
+            match_score,
+            summary,
+            ref_news_developments,
+            ref_earnings_points,
+            ref_custom_document_points,
+        )
 
     def _convert_hypothesis_news_developments_to_topics(
         self,
@@ -378,6 +497,53 @@ class HypothesisPipeline:
 
         return earnings_topics, hypothesis_topics
 
+    async def _convert_hypothesis_custom_documents_to_topics(
+        self,
+        custom_documents: List[StockHypothesisCustomDocumentText],
+        ref_time: datetime.datetime,
+    ) -> Tuple[
+        List[CustomDocTopicInfo], List[HypothesisNewsTopicInfo], List[List[CompanyNewsInfo]]
+    ]:
+        if not custom_documents:
+            return [], [], []
+
+        if ref_time is None:
+            ref_time = get_now_utc()
+
+        logger.info("Getting news topics from DB...")
+        news_id_to_doc = {document.id: document for document in custom_documents}
+        news_topics = get_custom_document_news_topics(list(news_id_to_doc.keys()))
+        # the news ID is the custom doc ID
+        news_topic_id_to_custom_doc = {
+            news_topic.topic_id: news_id_to_doc[news_topic.news_id] for news_topic in news_topics
+        }
+
+        hypothesis_topics = []
+        for news_topic in news_topics:
+            custom_document = news_topic_id_to_custom_doc[news_topic.topic_id]
+            support_score = custom_document.support_score.rescale(lb=-1, ub=1)
+            hypothesis_topics.append(
+                HypothesisNewsTopicInfo(
+                    gbi_id=news_topic.gbi_id,
+                    topic_id=news_topic.topic_id,
+                    hypothesis_topic_supports=[(support_score, ref_time)],
+                    hypothesis_topic_impacts=[],
+                    hypothesis_topic_polarities=[],
+                    hypothesis_topic_reasons=[(custom_document.reason, ref_time)],
+                )
+            )
+
+        logger.info("Getting all related news articles and grouping...")
+        topic_ids = list(news_topic_id_to_custom_doc.keys())
+        min_time = ref_time - HORIZON_DELTA_LOOKUP["4M"]
+        custom_document_news_infos = get_custom_document_news_from_documents(
+            topic_ids, min_time, ref_time
+        )
+        custom_document_news_groups = convert_to_news_groups(
+            hypothesis_topics, custom_document_news_infos
+        )
+        return news_topics, hypothesis_topics, custom_document_news_groups
+
     def calculate_match_score(
         self,
         news_hypothesis_topics: List[HypothesisNewsTopicInfo],
@@ -403,13 +569,22 @@ class HypothesisPipeline:
         news_groups: List[List[CompanyNewsInfo]],
         earnings_topics: List[CompanyEarningsTopicInfo],
         earnings_hypothesis_topics: List[HypothesisEarningsTopicInfo],
+        custom_document_news_topics: List[CustomDocTopicInfo],
+        custom_document_hypothesis_topics: List[HypothesisNewsTopicInfo],
+        custom_document_news_groups: List[List[CompanyNewsInfo]],
         max_count_pair: Tuple[int, int],
         match_score: float,
         ref_time: datetime.datetime,
-    ) -> Tuple[str, List[HypothesisNewsTopicInfo], List[HypothesisEarningsTopicInfo]]:
-        if not news_topics and not earnings_topics:
-            return "", [], []
+    ) -> Tuple[
+        str,
+        List[HypothesisNewsTopicInfo],
+        List[HypothesisEarningsTopicInfo],
+        List[HypothesisNewsTopicInfo],
+    ]:
+        if not any((news_topics, earnings_topics, custom_document_news_topics)):
+            return "", [], [], []
 
+        # Process hypothesis for news
         logger.info("Reordering news topics based on weights and joining as text...")
         topic_weights = get_hypothesis_topic_weights(
             news_hypothesis_topics, news_groups, max_count_pair, ref_time=ref_time
@@ -431,6 +606,7 @@ class HypothesisPipeline:
             )
         news_topics_str = "\n\n".join(news_topic_list)
 
+        # Process hypothesis for earnings
         earnings_topic_list: List[str] = []
         for i, (topic, hypo_topic) in enumerate(zip(earnings_topics, earnings_hypothesis_topics)):
             earnings_topic_list.append(
@@ -440,13 +616,47 @@ class HypothesisPipeline:
             )
         earnings_main_topics_str = "\n\n".join(earnings_topic_list)
 
+        # Process hypothesis for custom documents
+        logger.info("Processing custom docs news topics...")
+        custom_document_topic_weights = get_hypothesis_topic_weights(
+            custom_document_hypothesis_topics,
+            custom_document_news_groups,
+            max_count_pair,
+            ref_time=ref_time,
+        )
+        custom_document_news_topic_pairs: List[
+            Tuple[HypothesisNewsTopicInfo, CustomDocTopicInfo]
+        ] = [
+            (hypo_topic, topic)
+            for hypo_topic, topic, _ in sorted(
+                zip(
+                    custom_document_hypothesis_topics,
+                    custom_document_news_topics,
+                    custom_document_topic_weights,
+                ),
+                key=lambda x: abs(x[-1]),
+                reverse=True,
+            )
+        ]
+        custom_document_topic_list: List[str] = []
+        for i, (hypo_topic, topic) in enumerate(
+            custom_document_news_topic_pairs[:NUM_NEWS_TOPICS_FOR_SUMMARY]
+        ):
+            custom_document_topic_list.append(
+                f"Topic {i + 1}\n"
+                f"Topic Description: {topic.get_latest_topic_description()}\n"
+                f"Topic Connection: {hypo_topic.get_latest_reason()}"
+            )
+        custom_docs_news_topics_str = "\n\n".join(custom_document_topic_list)
+
+        # Join everything together
         summary_dict = await self.llm.write_hypothesis_summary(
             property,
             match_score,
             news_topics_str,
             earnings_main_topics_str,
+            custom_docs_news_topics_str,
         )
-
         summary: str = summary_dict["summary"]  # type: ignore
 
         news_ref_idxs: List[int] = summary_dict.get("news_references", [])  # type: ignore
@@ -457,4 +667,16 @@ class HypothesisPipeline:
             earnings_hypothesis_topics[idx - 1] for idx in earnings_ref_idxs
         ]
 
-        return summary, news_ref_hypo_topics, earnings_ref_hypo_topics
+        custom_document_news_ref_idxs: List[int] = summary_dict.get(  # type: ignore
+            "custom_document_news_references", []
+        )
+        custom_document_news_ref_hypo_topics = [
+            custom_document_news_topic_pairs[idx - 1][0] for idx in custom_document_news_ref_idxs
+        ]
+
+        return (
+            summary,
+            news_ref_hypo_topics,
+            earnings_ref_hypo_topics,
+            custom_document_news_ref_hypo_topics,
+        )

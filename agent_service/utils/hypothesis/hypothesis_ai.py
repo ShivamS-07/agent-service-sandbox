@@ -27,6 +27,8 @@ from agent_service.utils.hypothesis.constants import (
 from agent_service.utils.hypothesis.prompts import (
     HYPOTHESIS_EXPLANATION_PROMPT,
     HYPOTHESIS_RELEVANT_PROMPT,
+    HYPOTHESIS_SUMMARY_CUSTOM_DOCS_NEWS_REFERENCE_TEMPLATE,
+    HYPOTHESIS_SUMMARY_CUSTOM_DOCS_NEWS_TEMPLATE,
     HYPOTHESIS_SUMMARY_EARNINGS_REFERENCE_TEMPLATE,
     HYPOTHESIS_SUMMARY_EARNINGS_TEMPLATE,
     HYPOTHESIS_SUMMARY_MAIN_PROMPT,
@@ -39,6 +41,7 @@ from agent_service.utils.hypothesis.prompts import (
 from agent_service.utils.hypothesis.types import (
     CompanyEarningsTopicInfo,
     CompanyNewsTopicInfo,
+    CustomDocTopicInfo,
     EarningsSummaryType,
     HypothesisEarningsTopicInfo,
     HypothesisInfo,
@@ -109,7 +112,10 @@ class HypothesisAI:
         self.hypothesis.embedding = embedding
 
     async def check_hypothesis_relevant_topics(
-        self, topics: Union[List[CompanyNewsTopicInfo], List[CompanyEarningsTopicInfo]]
+        self,
+        topics: Union[
+            List[CompanyNewsTopicInfo], List[CompanyEarningsTopicInfo], List[CustomDocTopicInfo]
+        ],
     ) -> List[bool]:
         tasks = []
         if self.hypothesis.hypothesis_breakdown is None:
@@ -206,6 +212,8 @@ class HypothesisAI:
 
             if isinstance(topic, CompanyNewsTopicInfo):
                 return HypothesisNewsTopicInfo(**topic_dict)  # type: ignore
+            elif isinstance(topic, CustomDocTopicInfo):
+                return HypothesisNewsTopicInfo(**topic_dict)  # type: ignore
             elif isinstance(topic, CompanyEarningsTopicInfo):
                 # Currently not involving the questions portion whatsoever so we can add this
                 # to all of our generated hypothesis_topics, will need to modify this if we scope
@@ -230,6 +238,7 @@ class HypothesisAI:
         match_score: float,
         news_topics_str: str,
         earnings_main_topics_str: str,
+        custom_docs_news_topics_str: str,
     ) -> Dict[str, Union[str, List[int]]]:
         """Generate a summary of the hypothesis analysis.
 
@@ -272,13 +281,24 @@ class HypothesisAI:
             earnings_str = ""
             earnings_ref = ""
 
+        if custom_docs_news_topics_str:
+            custom_doc_news_str = HYPOTHESIS_SUMMARY_CUSTOM_DOCS_NEWS_TEMPLATE.format(
+                custom_docs_news_topics=custom_docs_news_topics_str,
+            )
+            custom_doc_news_ref = HYPOTHESIS_SUMMARY_CUSTOM_DOCS_NEWS_REFERENCE_TEMPLATE
+        else:
+            custom_doc_news_str = ""
+            custom_doc_news_ref = ""
+
         main_prompt = HYPOTHESIS_SUMMARY_MAIN_PROMPT.format(
             property=property,
             conclusion=conclusion,
             news_str=news_str,
             earnings_str=earnings_str,
+            custom_doc_news_str=custom_doc_news_str,
             news_ref=news_ref,
             earnings_ref=earnings_ref,
+            custom_doc_news_ref=custom_doc_news_ref,
         )
 
         json_str = await self.gpt_smart.do_chat_w_sys_prompt(

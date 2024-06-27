@@ -441,6 +441,23 @@ class CustomDocumentSummaryText(StockText):
 
 
 @io_type
+class StockHypothesisCustomDocumentText(CustomDocumentSummaryText):
+    """
+    Subclass from `CustomDocumentSummaryText`, stores the explanation and score for a hypothesis
+    in `history` field.
+
+    Since these documents are external to NLP service, the topic ID is not the primary ID key
+    but rather the news_id, therefore, we must augment this object to have an additional topic_id.
+    """
+
+    text_type: ClassVar[str] = "Hypothesis Custom Document Summary"
+
+    topic_id: str
+    support_score: Score
+    reason: str
+
+
+@io_type
 class ThemeText(Text):
     id: str
     text_type: ClassVar[str] = "Theme Description"
