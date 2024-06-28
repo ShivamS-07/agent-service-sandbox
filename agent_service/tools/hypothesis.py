@@ -1,6 +1,9 @@
+import json
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
+from agent_service.GPT.constants import GPT4_O, NO_PROMPT
+from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import HistoryEntry, Score
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
@@ -12,11 +15,18 @@ from agent_service.io_types.text import (
     StockNewsDevelopmentText,
     Text,
     TextCitation,
+    TextGroup,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.hypothesis.hypothesis_pipeline import HypothesisPipeline
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.string_utils import clean_to_json_if_needed
+
+logger = get_prefect_logger(__name__)
 
 
 class TestNewsHypothesisInput(ToolArgs):
@@ -41,12 +51,11 @@ class TestNewsHypothesisInput(ToolArgs):
     " it to a statement like `NVDA is the leader in AI chips space` and test it against the news.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def test_hypothesis_for_news_developments(
     args: TestNewsHypothesisInput, context: PlanRunContext
 ) -> List[StockHypothesisNewsDevelopmentText]:
-    logger = get_prefect_logger(__name__)
-
     id_to_development = {development.id: development for development in args.news_development_list}
 
     # segerate news topics by stocks
@@ -112,6 +121,7 @@ class SummarizeNewsHypothesisInput(ToolArgs):
     " This tool MUST be used when tool `test_hypothesis_for_news_developments` is used.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def summarize_hypothesis_from_news_developments(
     args: SummarizeNewsHypothesisInput, context: PlanRunContext
@@ -134,6 +144,49 @@ async def summarize_hypothesis_from_news_developments(
     score = Score.scale_input(match_score, lb=-1, ub=1)
     citations = [TextCitation(source_text=topic) for topic in ref_news_developments]
     return Text(val=summary, history=[HistoryEntry(score=score, citations=citations)])  # type: ignore  # noqa
+
+
+class TestAndSummarizeNewsHypothesisInput(ToolArgs):
+    hypothesis: str
+    news_developments: List[StockNewsDevelopmentText]
+
+
+@tool(
+    description=(
+        "Given a list of one or more relevant news developments, this function generates a score"
+        "indicating the extent to which the provided hypothesis is supported by the "
+        "news developments, and a short summary which explains the score with reference to "
+        "the information in the news developments."
+    ),
+    category=ToolCategory.HYPOTHESIS,
+    tool_registry=ToolRegistry,
+)
+async def test_and_summarize_hypothesis_with_news_developments(
+    args: TestAndSummarizeNewsHypothesisInput, context: PlanRunContext
+) -> Text:
+    logger.info("Testing hypothesis for news...")
+    hypothesis_news_developments: List[StockHypothesisNewsDevelopmentText] = (
+        await test_hypothesis_for_news_developments(  # type: ignore
+            TestNewsHypothesisInput(
+                hypothesis=args.hypothesis, news_development_list=args.news_developments
+            ),
+            context,
+        )
+    )
+
+    await tool_log(
+        log=f"Identified {len(hypothesis_news_developments)} relevant news topics", context=context
+    )
+
+    logger.info("Summarizing news hypothesis...")
+    text: Text = await summarize_hypothesis_from_news_developments(  # type: ignore
+        SummarizeNewsHypothesisInput(
+            hypothesis=args.hypothesis, news_developments=hypothesis_news_developments
+        ),
+        context,
+    )
+
+    return text
 
 
 class TestEarningsHypothesisInput(ToolArgs):
@@ -159,6 +212,7 @@ class TestEarningsHypothesisInput(ToolArgs):
     " it to a statement like `NVDA is the leader in AI chips space` and test it against the earnings.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def test_hypothesis_for_earnings_summaries(
     args: TestEarningsHypothesisInput, context: PlanRunContext
@@ -229,6 +283,7 @@ class SummarizeEarningsHypothesisInput(ToolArgs):
     " This tool MUST be used when tool `test_hypothesis_for_earnings_summaries` is used.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def summarize_hypothesis_from_earnings_summaries(
     args: SummarizeEarningsHypothesisInput, context: PlanRunContext
@@ -251,6 +306,96 @@ async def summarize_hypothesis_from_earnings_summaries(
     score = Score.scale_input(match_score, lb=-1, ub=1)
     citations = [TextCitation(source_text=topic) for topic in ref_earnings_points]
     return Text(val=summary, history=[HistoryEntry(score=score, citations=citations)])  # type: ignore  # noqa
+
+
+EARNINGS_SUMMARY_MAIN_PROMPT_STR = (
+    "You will read some relevant earnings call summaries from one or more companies and decide to "
+    "what degree the following hypothesis is supported by the provided evidence. "
+    "If the hypothesis is relevant to a specific company, and the documents are from several related companies, "
+    "you should make sure that all documents from all companies are taken into account, and compare "
+    "these companies as comprehensively as you can to get the final conclusion. "
+    "You should output a json mapping with the three fields. "
+    "The first json field should have the key `support_score` and the value should be an integer of range of 0-10. "
+    "0 means that the provided evidence indicates with perfect certainty the 100% sure the hypothesis is false. "
+    "5 means that the provided evidence does not provide conclusive evidence either way. "
+    "10 means that the provided evidence indicates with perfect certainty the 100% sure the hypothesis is true. "
+    "If, based on the evidence provided, you believe the hypothesis is not true, you must provide a score under 5."
+    "The second field should have the key `summary` and the value should be a string consisting of a paragragh of "
+    "2 to 4 sentences. In this summary, you will discuss the evidence for the validity of the hypothesis. "
+    "It should be compatible with your score, but do not explicitly mention the score."
+    "You will justify your answer with explicit reference to facts in the earnings summaries"
+    "The third field should have the key `citations` and correspond to a list of integers, where the integers "
+    "refer to the text numbers of the provided texts. You should only cite those earnings summaries which you "
+    "specifically pull facts from. If you are provided "
+    "with only one earnings call summary, your output for citation should be [0]."
+    "If you are provided multiple earnings calls, try to cite at least two."
+    "Here is the hypothesis you are evaulating : {hypothesis}"
+    "Here are the earnings summaries: {earnings}"
+)
+
+EARNINGS_SUMMARY_MAIN_PROMPT = Prompt(
+    EARNINGS_SUMMARY_MAIN_PROMPT_STR, "EARNINGS_SUMMARY_MAIN_PROMPT"
+)
+
+EARNINGS_SUMMARY_SYS_PROMPT_STR = (
+    "You are a financial analyst who will read some relevant earnings summaries from one "
+    "or more companies and decide to what degree the following hypothesis is supported by the provided evidence. "
+)
+EARNINGS_SUMMARY_SYS_PROMPT = Prompt(EARNINGS_SUMMARY_SYS_PROMPT_STR, "EARNINGS_SUMMARY_SYS_PROMPT")
+
+
+async def get_summary_and_score_for_earnings(
+    hypothesis: str, earnings_summaries: List[StockEarningsSummaryText], agent_id: str
+) -> Tuple[Score, str, List[TextCitation]]:
+
+    earnings_text_group = TextGroup(val=earnings_summaries)  # type: ignore
+    texts_str: str = await Text.get_all_strs(
+        earnings_text_group, include_header=True, text_group_numbering=True  # type: ignore
+    )
+
+    gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
+    gpt = GPT(model=GPT4_O, context=gpt_context)
+
+    result = await gpt.do_chat_w_sys_prompt(
+        EARNINGS_SUMMARY_MAIN_PROMPT.format(hypothesis=hypothesis, earnings=texts_str),
+        EARNINGS_SUMMARY_SYS_PROMPT.format(),
+    )
+    result_json = json.loads(clean_to_json_if_needed(result))
+
+    score = Score.scale_input(result_json["support_score"], lb=0, ub=10)
+    summary: str = result_json["summary"]
+    citations: List[TextCitation] = earnings_text_group.get_citations(result_json["citations"])  # type: ignore  # noqa
+
+    return score, summary, citations
+
+
+class TestAndSummarizeEarningsHypothesisInput(ToolArgs):
+
+    hypothesis: str
+    earnings_summaries: List[StockEarningsSummaryText]
+
+
+@tool(
+    description=(
+        "Given a list of one or more relevant earnings summaries, this function generates a score"
+        "indicating the extent to which the provided hypothesis is supported by the "
+        "earnings calls, and a short summary which explains the score with reference to "
+        "the information in the earnings call summaries"
+    ),
+    category=ToolCategory.HYPOTHESIS,
+    tool_registry=ToolRegistry,
+)
+async def test_and_summarize_hypothesis_with_earnings_summaries(
+    args: TestAndSummarizeEarningsHypothesisInput, context: PlanRunContext
+) -> Text:
+    if not args.earnings_summaries:
+        raise ValueError("Could not find any relevant earnings summary points")
+
+    support_score, summary, citations = await get_summary_and_score_for_earnings(
+        args.hypothesis, args.earnings_summaries, agent_id=context.agent_id
+    )
+
+    return Text(val=summary, history=[HistoryEntry(score=support_score, citations=citations)])  # type: ignore  # noqa
 
 
 class TestCustomDocsHypothesisInput(ToolArgs):
@@ -276,6 +421,7 @@ class TestCustomDocsHypothesisInput(ToolArgs):
     " documents that the user has uploaded.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def test_hypothesis_for_custom_documents(
     args: TestCustomDocsHypothesisInput, context: PlanRunContext
@@ -356,6 +502,7 @@ class SummarizeCustomDocumentHypothesisInput(ToolArgs):
     " This tool MUST be used when tool `test_hypothesis_for_custom_documents` is used.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def summarize_hypothesis_from_custom_documents(
     args: SummarizeCustomDocumentHypothesisInput, context: PlanRunContext
@@ -380,52 +527,98 @@ async def summarize_hypothesis_from_custom_documents(
     return Text(val=summary, history=[HistoryEntry(score=score, citations=citations)])  # type: ignore  # noqa
 
 
-class SummarizeHypothesisFromVariousSourcesInput(ToolArgs):
-    """
-    Summarize hypothesis with the filtered news developments and earnings summaries which are the
-    outputs from tool `test_hypothesis_for_news_developments` and `test_hypothesis_for_earnings_summaries`
-    """
-
+class TestAndSummarizeCustomDocsHypothesisInput(ToolArgs):
     hypothesis: str
-    news_developments: List[StockHypothesisNewsDevelopmentText] = []
-    earnings_summary_points: List[StockHypothesisEarningsSummaryPointText] = []
-    custom_documents: List[StockHypothesisCustomDocumentText] = []
+    custom_documents: List[CustomDocumentSummaryText]
 
 
 @tool(
-    description="Given a string of a user's hypothesis, a list of relevant news developments,"
-    " a list of relevant earnings summary points, and a list of relevant custom document"
-    " news developments, calculate the match score of how much this"
-    " hypothesis is matched with these topics and also generate a summary to explain."
+    description=(
+        "Given a list of one or more relevant custom documents, this function generates a score"
+        "indicating the extent to which the provided hypothesis is supported by the "
+        "custom documents, and a short summary which explains the score with reference to "
+        "the information in the custom documents."
+    ),
+    category=ToolCategory.HYPOTHESIS,
+    tool_registry=ToolRegistry,
+)
+async def test_and_summarize_hypothesis_with_custom_documents(
+    args: TestAndSummarizeCustomDocsHypothesisInput, context: PlanRunContext
+) -> Text:
+    logger.info("Testing hypothesis for custom docs...")
+    hypothesis_custom_docs: List[StockHypothesisCustomDocumentText] = await test_hypothesis_for_custom_documents(  # type: ignore # noqa
+        TestCustomDocsHypothesisInput(
+            hypothesis=args.hypothesis, custom_document_list=args.custom_documents
+        ),
+        context,
+    )
+
+    await tool_log(
+        log=f"Identified {len(hypothesis_custom_docs)} relevant custom document news topics",
+        context=context,
+    )
+
+    logger.info("Summarizing custom docs hypothesis...")
+    text: Text = await summarize_hypothesis_from_custom_documents(  # type: ignore
+        SummarizeCustomDocumentHypothesisInput(
+            hypothesis=args.hypothesis, custom_documents=hypothesis_custom_docs
+        ),
+        context,
+    )
+
+    return text
+
+
+class SummarizeHypothesisFromVariousSourcesInput(ToolArgs):
+    hypothesis: str
+    hypothesis_summaries: List[Text]
+
+
+@tool(
+    description="Given a string of a user's hypothesis, a list of summary texts for the hypothesis"
+    " derived from different sources (news, earnings, custom documents, etc.), combine them into a"
+    " single summary that explains the extent to which the hypothesis is supported overall."
     " This tool is normally used when the user is making a hypothesis and trying to find proof among"
-    " various sources, including news developments and earnings summaries. You should use it when"
-    " more than one of the following tools: `summarize_hypothesis_from_news_developments`,"
-    " `summarize_hypothesis_from_earnings_summaries` and `summarize_hypothesis_from_custom_documents`"
-    " are used.",
+    " various sources. You MUST use it when more than one of the following tools are used:"
+    " `test_and_summarize_hypothesis_with_news_developments`,"
+    " `test_and_summarize_hypothesis_with_earnings_summaries` and"
+    " `test_and_summarize_hypothesis_with_custom_documents`.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
 )
 async def summarize_hypothesis_from_various_sources(
     args: SummarizeHypothesisFromVariousSourcesInput, context: PlanRunContext
 ) -> Text:
-    if not any((args.news_developments, args.earnings_summary_points, args.custom_documents)):
-        raise ValueError("Could not find any relevant news developments or earnings summaries")
+    if not args.hypothesis_summaries:
+        raise ValueError("None valid hypothesis summaries provided!")
 
-    # gbi_id doesn't matter, as long as it's valid
-    pipeline = HypothesisPipeline(gbi_id=714, hypothesis_text=args.hypothesis)
-    await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
+    avg_score = sum([s.history[0].score.val for s in args.hypothesis_summaries]) / len(args.hypothesis_summaries)  # type: ignore  # noqa
 
-    match_score, summary, ref_news_developments, ref_earnings_points, ref_custom_documents = (
-        await pipeline.calculate_match_score_and_generate_summary(
-            args.news_developments,
-            args.earnings_summary_points,
-            args.custom_documents,
-        )
+    citations = []
+    for summary in args.hypothesis_summaries:
+        citations.extend(summary.history[0].citations)
+
+    summary = await _combine_summaries(
+        agent_id=context.agent_id, summaries=[s.val for s in args.hypothesis_summaries]
     )
 
-    score = Score.scale_input(match_score, lb=-1, ub=1)
-    citations = [
-        TextCitation(source_text=topic)
-        for topic in (ref_news_developments + ref_earnings_points + ref_custom_documents)
-    ]
-    return Text(val=summary, history=[HistoryEntry(score=score, citations=citations)])  # type: ignore  # noqa
+    return Text(val=summary, history=[HistoryEntry(score=Score(val=avg_score), citations=citations)])  # type: ignore  # noqa
+
+
+async def _combine_summaries(agent_id: str, summaries: List[str]) -> str:
+    main_prompt = (
+        "You should read the following summaries and combine them into a single summary that captures "
+        " the essence of all the summaries and make sure to preserve all the evidence from all the summaries. "
+        "I will say it again, DO NOT miss any points or evidence.\n{summaries_str}"
+    )
+    summaries_str = "\n".join([f"Summary {i+1}: {s}" for i, s in enumerate(summaries)])
+
+    gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
+    gpt = GPT(model=GPT4_O, context=gpt_context)
+
+    return await gpt.do_chat_w_sys_prompt(
+        Prompt(template=main_prompt, name="COMBINE_SUMMARIES_PROMPT").format(
+            summaries_str=summaries_str
+        ),
+        NO_PROMPT,
+    )

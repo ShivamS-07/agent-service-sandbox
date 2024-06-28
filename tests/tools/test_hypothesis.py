@@ -10,8 +10,11 @@ from agent_service.tools.custom_documents import (
 from agent_service.tools.hypothesis import (
     SummarizeCustomDocumentHypothesisInput,
     SummarizeHypothesisFromVariousSourcesInput,
+    TestAndSummarizeCustomDocsHypothesisInput,
     TestCustomDocsHypothesisInput,
     summarize_hypothesis_from_custom_documents,
+    summarize_hypothesis_from_various_sources,
+    test_and_summarize_hypothesis_with_custom_documents,
     test_hypothesis_for_custom_documents,
 )
 from agent_service.types import PlanRunContext
@@ -71,20 +74,18 @@ class TestHypothesisPipeline(IsolatedAsyncioTestCase):
         all_docs = await get_user_custom_documents(get_docs_input, self.context)
         self.assertGreater(len(all_docs), 0)
 
-        test_input = TestCustomDocsHypothesisInput(
-            hypothesis="expected earnings growth",
-            custom_document_list=all_docs,
+        custom_doc_summary = await test_and_summarize_hypothesis_with_custom_documents(
+            TestAndSummarizeCustomDocsHypothesisInput(
+                hypothesis="expected earnings growth", custom_documents=all_docs
+            ),
+            self.context,
         )
-        hypothesis_text = await test_hypothesis_for_custom_documents(test_input, self.context)
 
-        summarize_input = SummarizeHypothesisFromVariousSourcesInput(
-            hypothesis="expected earnings growth",
-            news_developments=[],
-            earnings_summary_points=[],
-            custom_documents=hypothesis_text,
-        )
-        summarize_output = await summarize_hypothesis_from_custom_documents(
-            summarize_input, self.context
+        summarize_output = await summarize_hypothesis_from_various_sources(
+            SummarizeHypothesisFromVariousSourcesInput(
+                hypothesis="expected earnings growth", hypothesis_summaries=[custom_doc_summary]
+            ),
+            self.context,
         )
         result_output = await get_output_from_io_type(summarize_output, pg=get_psql())
         self.assertIsInstance(result_output, TextOutput)
