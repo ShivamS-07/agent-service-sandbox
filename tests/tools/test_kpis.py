@@ -16,7 +16,7 @@ from agent_service.tools.kpis.tools import (
     get_important_kpis_for_stock,
     get_kpis_for_stock_given_topics,
     get_kpis_table_for_stock,
-    get_overlapping_kpis_table_for_stock,
+    get_overlapping_kpis_table_for_stocks,
     get_relevant_kpis_for_multiple_stocks_given_topic,
 )
 from agent_service.types import PlanRunContext
@@ -152,7 +152,7 @@ class TestTextData(IsolatedAsyncioTestCase):
         )
 
         num_prev_quarters = 4
-        equivalent_kpis_table: Table = await get_overlapping_kpis_table_for_stock(  # type: ignore
+        equivalent_kpis_table: Table = await get_overlapping_kpis_table_for_stocks(  # type: ignore
             args=KPIsRequest(
                 equivalent_kpis=equivalent_kpis,
                 table_name="Cloud Computing",

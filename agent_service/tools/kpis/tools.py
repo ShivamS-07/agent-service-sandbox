@@ -25,7 +25,7 @@ from agent_service.tools.kpis.prompts import (
     GENERAL_IMPORTANCE_INSTRUCTION_WITH_NUM_KPIS,
     GET_KPI_TABLE_FOR_STOCK_DESC,
     GET_KPIS_FOR_STOCK_GIVEN_TOPICS_DESC,
-    GET_OVERLAPPING_KPIS_TABLE_FOR_STOCK_DESC,
+    GET_OVERLAPPING_KPIS_TABLE_FOR_STOCKS_DESC,
     GET_RELEVANT_KPIS_FOR_MULTIPLE_STOCKS_GIVEN_TOPIC_DESC,
     IMPORTANT_KPIS_FOR_STOCK_DESC,
     KPI_RELEVANCY_MAIN_PROMPT_OBJ,
@@ -577,10 +577,12 @@ class KPIsRequest(ToolArgs):
 
 
 @tool(
-    description=GET_OVERLAPPING_KPIS_TABLE_FOR_STOCK_DESC,
+    description=GET_OVERLAPPING_KPIS_TABLE_FOR_STOCKS_DESC,
     category=ToolCategory.KPI,
 )
-async def get_overlapping_kpis_table_for_stock(args: KPIsRequest, context: PlanRunContext) -> Table:
+async def get_overlapping_kpis_table_for_stocks(
+    args: KPIsRequest, context: PlanRunContext
+) -> Table:
     num_future_quarters, num_prev_quarters, anchor_date = interpret_date_quarter_inputs(
         args.num_future_quarters, args.num_prev_quarters, args.anchor_date, args.date_range
     )
@@ -717,7 +719,7 @@ async def main() -> None:
         context=plan_context,
     )
 
-    equivalent_kpis_table: Table = await get_overlapping_kpis_table_for_stock(  # type: ignore
+    equivalent_kpis_table: Table = await get_overlapping_kpis_table_for_stocks(  # type: ignore
         args=KPIsRequest(
             equivalent_kpis=equivalent_kpis,
             table_name="Automotive Revenue",
@@ -740,7 +742,7 @@ async def main() -> None:
         GetRelevantKPIsForStocksGivenTopic(stock_ids=stocks, shared_metric="Cloud"),
         context=plan_context,
     )
-    equivalent_kpis_table: Table = await get_overlapping_kpis_table_for_stock(  # type: ignore
+    equivalent_kpis_table: Table = await get_overlapping_kpis_table_for_stocks(  # type: ignore
         args=KPIsRequest(
             equivalent_kpis=equivalent_kpis,
             table_name="Cloud Computing",
