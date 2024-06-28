@@ -387,6 +387,9 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
     for stock_id, company_kpi in zip(args.stock_ids, company_kpi_lists):
         if company_kpi is not None:
             overlapping_kpi_list.append(company_kpi)
+
+    await tool_log(log=f"Found {len(overlapping_kpi_list)} relevant KPIs", context=context)
+
     return EquivalentKPITexts(val=overlapping_kpi_list, general_kpi_name=args.shared_metric)
 
 

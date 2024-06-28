@@ -174,12 +174,16 @@ async def get_general_peers(
         return await StockID.from_gbi_id_list([])
 
     llm = GPT(context=None, model=GPT4_O)
-    return await get_peer_group_for_stock(
+    stock_ids = await get_peer_group_for_stock(
         stock=args.stock_id,
         llm=llm,
         context=context,
         category=args.category,
     )
+
+    await tool_log(log=f"Found {len(stock_ids)} peers for {args.stock_id.symbol}", context=context)
+
+    return stock_ids
 
 
 async def get_peer_group_for_stock(

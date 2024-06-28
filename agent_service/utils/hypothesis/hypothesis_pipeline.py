@@ -617,7 +617,6 @@ class HypothesisPipeline:
         earnings_main_topics_str = "\n\n".join(earnings_topic_list)
 
         # Process hypothesis for custom documents
-        logger.info("Processing custom docs news topics...")
         custom_document_topic_weights = get_hypothesis_topic_weights(
             custom_document_hypothesis_topics,
             custom_document_news_groups,

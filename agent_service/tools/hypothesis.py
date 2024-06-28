@@ -1,6 +1,6 @@
 import json
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT
@@ -20,13 +20,63 @@ from agent_service.io_types.text import (
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.hypothesis.hypothesis_pipeline import HypothesisPipeline
+from agent_service.utils.hypothesis.types import (
+    CompanyNewsTopicInfo,
+    HypothesisNewsTopicInfo,
+)
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
 
 logger = get_prefect_logger(__name__)
+
+
+async def hypothesis_helper(
+    hypothesis: str,
+    stock_to_developments: Dict[StockID, List[StockNewsDevelopmentText]],
+    context: PlanRunContext,
+) -> List[Tuple[CompanyNewsTopicInfo, HypothesisNewsTopicInfo]]:
+    stock_id_to_pipeline: Dict[StockID, HypothesisPipeline] = {}
+    embedding: List[float] = None  # type: ignore
+    hypothesis_breakdown: Dict[str, Any] = None  # type: ignore
+
+    for stock_id in stock_to_developments.keys():
+        pipeline = HypothesisPipeline(stock_id.gbi_id, hypothesis)
+        if embedding is None or hypothesis_breakdown is None:
+            await pipeline.initial_hypothesis_processing()  # only need to do it once
+            embedding = pipeline.hypothesis.embedding
+            hypothesis_breakdown = pipeline.hypothesis.hypothesis_breakdown
+        else:
+            pipeline.hypothesis.embedding = embedding
+            pipeline.hypothesis.hypothesis_breakdown = hypothesis_breakdown
+
+        stock_id_to_pipeline[stock_id] = pipeline
+
+    news_topic_pairs: List[Tuple[CompanyNewsTopicInfo, HypothesisNewsTopicInfo]] = []
+
+    async def each_task(stock_id: StockID) -> None:
+        news_developments = stock_to_developments[stock_id]
+        pipeline = stock_id_to_pipeline[stock_id]
+
+        hypothesis_news_topics, news_topics = await pipeline.get_stock_hypothesis_news_topics(
+            topic_ids=[development.id for development in news_developments]
+        )
+
+        # safer to pair them here
+        news_topic_pairs.extend(zip(news_topics, hypothesis_news_topics))
+
+        await tool_log(
+            log=f"Found {len(news_topics)} relevant news topics out of {len(news_developments)} for {stock_id.symbol}",
+            context=context,
+        )
+
+    tasks = [each_task(stock_id) for stock_id in stock_to_developments.keys()]
+    await gather_with_concurrency(tasks=tasks, n=len(tasks))
+
+    return news_topic_pairs
 
 
 class TestNewsHypothesisInput(ToolArgs):
@@ -67,45 +117,24 @@ async def test_hypothesis_for_news_developments(
         stock_to_developments[development.stock_id].append(development)
 
     logger.info(f"Processing hypothesis {args.hypothesis} for {len(stock_to_developments)} stocks")
-
-    pipeline: HypothesisPipeline = None  # type: ignore
+    news_topic_pairs = await hypothesis_helper(args.hypothesis, stock_to_developments, context)
 
     hypothesis_news_developments: List[StockHypothesisNewsDevelopmentText] = []
-    for stock_id, news_development_list in stock_to_developments.items():
-        if pipeline is None:
-            pipeline = HypothesisPipeline(stock_id.gbi_id, args.hypothesis)
-            await pipeline.initial_hypothesis_processing()  # only need to do it once
-        else:
-            new_hypothesis_obj = pipeline.create_hypothesis_info(stock_id.gbi_id, args.hypothesis)
-            new_hypothesis_obj.embedding = pipeline.hypothesis.embedding
-            new_hypothesis_obj.hypothesis_breakdown = pipeline.hypothesis.hypothesis_breakdown
-            pipeline.hypothesis = new_hypothesis_obj
+    for news_topic, hypothesis_news_topic in news_topic_pairs:
+        development = id_to_development[news_topic.topic_id]
 
-        hypothesis_news_topics, news_topics = await pipeline.get_stock_hypothesis_news_topics(
-            topic_ids=[development.id for development in news_development_list]
-        )
-
-        await tool_log(
-            log=f"Found {len(news_topics)} relevant news topics for {stock_id.symbol}",
-            context=context,
-        )
-
-        for news_topic, hypothesis_news_topic in zip(news_topics, hypothesis_news_topics):
-            development = id_to_development[news_topic.topic_id]
-
-            # TODO: move the scaling logic into the class
-            support_score: float = hypothesis_news_topic.get_latest_support()  # type: ignore
-            scaled_score = Score.scale_input(val=support_score, lb=-1, ub=1)
-            reason: str = hypothesis_news_topic.get_latest_reason()  # type: ignore
-            hypothesis_news_developments.append(
-                StockHypothesisNewsDevelopmentText(
-                    id=news_topic.topic_id,
-                    support_score=scaled_score,
-                    reason=reason,
-                    history=[HistoryEntry(explanation=reason, score=scaled_score)],
-                    stock_id=development.stock_id,
-                )
+        support_score: float = hypothesis_news_topic.get_latest_support()  # type: ignore
+        scaled_score = Score.scale_input(val=support_score, lb=-1, ub=1)
+        reason: str = hypothesis_news_topic.get_latest_reason()  # type: ignore
+        hypothesis_news_developments.append(
+            StockHypothesisNewsDevelopmentText(
+                id=news_topic.topic_id,
+                support_score=scaled_score,
+                reason=reason,
+                history=[HistoryEntry(explanation=reason, score=scaled_score)],
+                stock_id=development.stock_id,
             )
+        )
 
     return hypothesis_news_developments
 

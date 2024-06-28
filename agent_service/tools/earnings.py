@@ -10,6 +10,7 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.LLM_analysis.tools import SummarizeTextInput, summarize_texts
 from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import get_psql
@@ -131,6 +132,9 @@ async def get_earnings_call_summaries(
         raise Exception(
             "Did not get any earnings call summaries for these stocks over the specified time period"
         )
+
+    await tool_log(log=f"Found {len(output)} earnings call summaries", context=context)
+
     return output
 
 

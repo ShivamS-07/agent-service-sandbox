@@ -102,6 +102,11 @@ async def get_all_news_developments_about_companies(
         output.extend(topic_list)
     if len(output) == 0:
         raise Exception("Did not get any news developments for these stocks over the time period")
+
+    await tool_log(
+        log=f"Found {len(output)} news developments for the provided stocks.", context=context
+    )
+
     return output
 
 
