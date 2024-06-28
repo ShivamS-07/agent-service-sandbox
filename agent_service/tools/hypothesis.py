@@ -84,6 +84,12 @@ async def test_hypothesis_for_news_developments(
         hypothesis_news_topics, news_topics = await pipeline.get_stock_hypothesis_news_topics(
             topic_ids=[development.id for development in news_development_list]
         )
+
+        await tool_log(
+            log=f"Found {len(news_topics)} relevant news topics for {stock_id.symbol}",
+            context=context,
+        )
+
         for news_topic, hypothesis_news_topic in zip(news_topics, hypothesis_news_topics):
             development = id_to_development[news_topic.topic_id]
 
@@ -175,7 +181,8 @@ async def test_and_summarize_hypothesis_with_news_developments(
     )
 
     await tool_log(
-        log=f"Identified {len(hypothesis_news_developments)} relevant news topics", context=context
+        log=f"Identified {len(hypothesis_news_developments)} relevant news topics in total.",
+        context=context,
     )
 
     logger.info("Summarizing news hypothesis...")
@@ -462,6 +469,12 @@ async def test_hypothesis_for_custom_documents(
                 ]
             )
         )
+
+        await tool_log(
+            log=f"Found {len(news_topics)} relevant news topics for {stock_id.symbol}",
+            context=context,
+        )
+
         for news_topic, hypothesis_news_topic in zip(news_topics, hypothesis_news_topics):
             custom_document = news_id_to_custom_doc[topic_id_to_news_id[news_topic.topic_id]]
 
@@ -554,7 +567,7 @@ async def test_and_summarize_hypothesis_with_custom_documents(
     )
 
     await tool_log(
-        log=f"Identified {len(hypothesis_custom_docs)} relevant custom document news topics",
+        log=f"Identified {len(hypothesis_custom_docs)} relevant custom document news topics in total.",
         context=context,
     )
 
