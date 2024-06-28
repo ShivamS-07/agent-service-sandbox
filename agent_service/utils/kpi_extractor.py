@@ -43,7 +43,7 @@ class KPIRetriever:
         # Assumes all kpis will be for the same gbi_id
         kpis = self.get_all_company_kpis(gbi_id=gbi_id)
 
-        relevant_pids = [kpi_text.id for kpi_text in kpi_texts]
+        relevant_pids = [kpi_text.pid for kpi_text in kpi_texts]
         kpi_lookup: Dict[int, KPIMetadata] = {}
         for kpi in kpis:
             if kpi.pid in relevant_pids:

@@ -95,6 +95,7 @@ class LineGraph(Graph):
 class PieSection(ComplexIOBase):
     label: Union[PrimitiveType, StockID]
     value: PrimitiveType
+    citation_refs: List[str] = []
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         label = self.label

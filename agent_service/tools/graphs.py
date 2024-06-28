@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from agent_service.io_type_utils import TableColumnType
+from agent_service.io_type_utils import HistoryEntry, TableColumnType
 from agent_service.io_types.graph import (
     BarData,
     BarDataPoint,
@@ -17,6 +17,7 @@ from agent_service.io_types.graph import (
     PieSection,
 )
 from agent_service.io_types.table import Table, TableColumn, TableColumnMetadata
+from agent_service.io_types.text import KPIText, TextCitation
 from agent_service.tool import ToolArgs, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.prefect import get_prefect_logger
@@ -224,15 +225,46 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
     ):
         # We have numerical data. Categories are simply the index, no
         # counting required.
-        return PieGraph(
-            label_type=label_col.metadata.col_type,
-            data_type=data_col.metadata.col_type,
-            unit=data_col.metadata.unit,
-            data=[
-                PieSection(label=idx, value=val)  # type: ignore
-                for idx, val in grouped_df[data_df_col].items()
-            ],
-        )
+        if data_col.metadata.row_descs:
+            kpi_history = HistoryEntry(
+                citations=[
+                    TextCitation(source_text=KPIText(val=kpi_name[0]))
+                    for kpi_name in data_col.metadata.row_descs.values()
+                ]
+            )
+            kpi_name_to_id_mapping = {
+                citation.source_text.val: citation.source_text.id  # type: ignore
+                for citation in kpi_history.citations
+            }
+            pie_graph_data = []
+            for i, (idx, val) in enumerate(grouped_df[data_df_col].items()):
+                pie_graph_data.append(
+                    PieSection(
+                        label=idx,  # type: ignore
+                        value=val,
+                        citation_refs=[
+                            kpi_name_to_id_mapping[kpi_name]
+                            for kpi_name in data_col.metadata.row_descs[i]
+                        ],
+                    )
+                )
+            return PieGraph(
+                label_type=label_col.metadata.col_type,
+                data_type=data_col.metadata.col_type,
+                unit=data_col.metadata.unit,
+                history=[kpi_history],
+                data=pie_graph_data,
+            )
+        else:
+            return PieGraph(
+                label_type=label_col.metadata.col_type,
+                data_type=data_col.metadata.col_type,
+                unit=data_col.metadata.unit,
+                data=[
+                    PieSection(label=idx, value=val)  # type: ignore
+                    for idx, val in grouped_df[data_df_col].items()
+                ],
+            )
     if data_col.metadata.col_type in (
         TableColumnType.STRING,
         TableColumnType.STOCK,

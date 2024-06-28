@@ -865,8 +865,19 @@ class StockOtherSecFilingText(StockText):
 
 @io_type
 class KPIText(Text):
-    id: int
+    pid: Optional[int] = None
     text_type: ClassVar[str] = "KPI"
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        output: List[CitationOutput] = []
+        for text in texts:
+            output.append(
+                CitationOutput(id=str(text.id), name=text.val, citation_type=CitationType.TEXT)
+            )
+        return output
 
 
 # These are not actual Text types, but build on top of them

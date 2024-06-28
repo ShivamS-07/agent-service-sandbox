@@ -1,13 +1,13 @@
 import asyncio
 import datetime
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import HistoryEntry, TableColumnType
+from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
@@ -15,7 +15,7 @@ from agent_service.io_types.table import (
     Table,
     TableColumnMetadata,
 )
-from agent_service.io_types.text import EquivalentKPITexts, KPIText, Text, TextCitation
+from agent_service.io_types.text import EquivalentKPITexts, KPIText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.kpis.constants import SPECIFIC
 from agent_service.tools.kpis.prompts import (
@@ -55,40 +55,72 @@ class CompanyInformation:
 
 
 def generate_columns_for_kpi(
-    kpi_inst: KPIInstance,
+    kpi_data: Union[KPIInstance, List[KPIInstance]],
     actual_col_name: str,
     estimate_col_name: Optional[str] = None,
     surprise_col_name: Optional[str] = None,
 ) -> List[TableColumnMetadata]:
-    long_unit = kpi_inst.long_unit
-    unit = kpi_inst.unit
+    if isinstance(kpi_data, List):
+        long_unit = kpi_data[0].long_unit
+        unit = kpi_data[0].unit
+        row_descs: Dict[int, List[str]] = {}
+        for i, kpi in enumerate(kpi_data):
+            # Keeping as a string to open up the option to pass multiple KPIs in the future
+            row_descs[i] = [kpi.name]
+    elif isinstance(kpi_data, KPIInstance):
+        long_unit = kpi_data.long_unit
+        unit = kpi_data.unit
+        row_descs = None  # type: ignore
+
     columns: List[TableColumnMetadata] = []
     if long_unit == "Amount":
         columns.append(
-            TableColumnMetadata(label=actual_col_name, col_type=TableColumnType.CURRENCY)
-        )
-        if estimate_col_name:
-            columns.append(
-                TableColumnMetadata(label=estimate_col_name, col_type=TableColumnType.CURRENCY)
+            TableColumnMetadata(
+                label=actual_col_name, col_type=TableColumnType.CURRENCY, row_descs=row_descs
             )
-    elif long_unit == "Percent":
-        columns.append(TableColumnMetadata(label=actual_col_name, col_type=TableColumnType.PERCENT))
-        if estimate_col_name:
-            columns.append(
-                TableColumnMetadata(label=estimate_col_name, col_type=TableColumnType.PERCENT)
-            )
-    else:
-        columns.append(
-            TableColumnMetadata(label=actual_col_name, col_type=TableColumnType.FLOAT, unit=unit)
         )
         if estimate_col_name:
             columns.append(
                 TableColumnMetadata(
-                    label=estimate_col_name, col_type=TableColumnType.FLOAT, unit=unit
+                    label=estimate_col_name, col_type=TableColumnType.CURRENCY, row_descs=row_descs
+                )
+            )
+    elif long_unit == "Percent":
+        columns.append(
+            TableColumnMetadata(
+                label=actual_col_name, col_type=TableColumnType.PERCENT, row_descs=row_descs
+            )
+        )
+        if estimate_col_name:
+            columns.append(
+                TableColumnMetadata(
+                    label=estimate_col_name, col_type=TableColumnType.PERCENT, row_descs=row_descs
+                )
+            )
+    else:
+        columns.append(
+            TableColumnMetadata(
+                label=actual_col_name,
+                col_type=TableColumnType.FLOAT,
+                unit=unit,
+                row_descs=row_descs,
+            )
+        )
+        if estimate_col_name:
+            columns.append(
+                TableColumnMetadata(
+                    label=estimate_col_name,
+                    col_type=TableColumnType.FLOAT,
+                    unit=unit,
+                    row_descs=row_descs,
                 )
             )
     if surprise_col_name:
-        columns.append(TableColumnMetadata(label=surprise_col_name, col_type=TableColumnType.FLOAT))
+        columns.append(
+            TableColumnMetadata(
+                label=surprise_col_name, col_type=TableColumnType.FLOAT, row_descs=row_descs
+            )
+        )
     return columns
 
 
@@ -164,8 +196,6 @@ async def convert_multi_stock_data_to_table(
         TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)
     )
 
-    kpi_inst = list(data.values())[0][0]  # Take a random kpi_inst to pass in general kpi metadata
-
     if simple_table:
         actual_col_name = f"{kpi_name}"
         estimate_col_name = None
@@ -175,17 +205,12 @@ async def convert_multi_stock_data_to_table(
         estimate_col_name = f"{kpi_name} (Estimate)"
         surprise_col_name = f"{kpi_name} (Surpise)"
 
-    kpi_column = generate_columns_for_kpi(
-        kpi_inst=kpi_inst,
-        actual_col_name=actual_col_name,
-        estimate_col_name=estimate_col_name,
-        surprise_col_name=surprise_col_name,
-    )
-    columns.extend(kpi_column)
-
     df_data = []
+    kpi_data_in_col = []
+
     for stock_id, kpi_history in data.items():
         for kpi_inst in kpi_history:
+            kpi_data_in_col.append(kpi_inst)
             quarter = f"{kpi_inst.year} Q{kpi_inst.quarter}"
             # Need to convert percentages into decimals to satisfy current handling of the Percentage figures
             actual = (
@@ -217,6 +242,13 @@ async def convert_multi_stock_data_to_table(
                     }
                 )
 
+    kpi_column = generate_columns_for_kpi(
+        kpi_data=kpi_data_in_col,
+        actual_col_name=actual_col_name,
+        estimate_col_name=estimate_col_name,
+        surprise_col_name=surprise_col_name,
+    )
+    columns.extend(kpi_column)
     df = pd.DataFrame(df_data)
     return Table.from_df_and_cols(data=df, columns=columns)
 
@@ -283,7 +315,7 @@ async def get_relevant_kpis_for_stock_id(
         pid_metadata = company_info.kpi_lookup.get(pid, None)
         if pid_metadata:
             topic_kpi_list.append(
-                KPIText(val=pid_metadata.name, id=pid_metadata.pid, stock_id=stock_id)
+                KPIText(val=pid_metadata.name, pid=pid_metadata.pid, stock_id=stock_id)
             )
     return topic_kpi_list
 
@@ -352,7 +384,7 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
 
     company_kpi_lists = await gather_with_concurrency(tasks, n=5)
 
-    for company_info, company_kpi in zip(company_info_list, company_kpi_lists):
+    for stock_id, company_kpi in zip(args.stock_ids, company_kpi_lists):
         if company_kpi is not None:
             overlapping_kpi_list.append(company_kpi)
     return EquivalentKPITexts(val=overlapping_kpi_list, general_kpi_name=args.shared_metric)
@@ -409,7 +441,7 @@ async def get_important_kpis_for_stock(
         pid_metadata = company_info.kpi_lookup.get(pid, None)
         if pid_metadata:
             important_kpi_list.append(
-                KPIText(val=pid_metadata.name, id=pid_metadata.pid, stock_id=args.stock_id)
+                KPIText(val=pid_metadata.name, pid=pid_metadata.pid, stock_id=args.stock_id)
             )
     return important_kpi_list
 
@@ -472,18 +504,7 @@ async def get_specific_kpi_data_for_stock_id(
     pid_metadata = company_info.kpi_lookup.get(pid, None)
 
     if pid_metadata:
-        pid_name = pid_metadata.name
-        justification = data[2].strip()
-        stock_id_with_kpi_history = stock_id.inject_history_entry(
-            HistoryEntry(
-                title=f"KPI Used For {topic}",
-                explanation=justification,
-                citations=[TextCitation(source_text=Text(val=pid_name))],
-            )
-        )
-        return KPIText(
-            val=pid_metadata.name, id=pid_metadata.pid, stock_id=stock_id_with_kpi_history
-        )
+        return KPIText(val=pid_metadata.name, pid=pid_metadata.pid, stock_id=stock_id)
     return None
 
 
@@ -595,19 +616,23 @@ async def get_overlapping_kpis_table_for_stocks(
         args.num_prev_quarters = 0
 
     kpis: List[KPIText] = args.equivalent_kpis.val  # type: ignore
+    kpi_row_mapping: Dict[int, str] = {}
 
     company_kpi_data_lookup: Dict[StockID, List[KPIInstance]] = {}
-    for kpi in kpis:
-        if kpi.stock_id is None:
-            continue
-
+    for i, kpi in enumerate(kpis):
+        # The way these KPI Texts are initialized they should always
+        # have a StockID
+        stock_id: StockID = kpi.stock_id  # type: ignore
+        kpi_row_mapping[i] = kpi.val
         kpi_metadata = kpi_retriever.convert_kpi_text_to_metadata(
-            gbi_id=kpi.stock_id.gbi_id, kpi_texts=[kpi]
-        ).get(kpi.id, None)
+            gbi_id=stock_id.gbi_id, kpi_texts=[kpi]
+        ).get(
+            kpi.pid, None  # type: ignore
+        )
 
         if kpi_metadata is not None:
             data = kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
-                gbi_id=kpi.stock_id.gbi_id,
+                gbi_id=stock_id.gbi_id,
                 kpis=[kpi_metadata],
                 starting_date=args.anchor_date,
                 num_prev_quarters=args.num_prev_quarters,
@@ -615,7 +640,7 @@ async def get_overlapping_kpis_table_for_stocks(
             )
             kpi_data = data.get(kpi_metadata.name, None)
             if kpi_data:
-                company_kpi_data_lookup[kpi.stock_id] = kpi_data
+                company_kpi_data_lookup[stock_id] = kpi_data
 
     topic_kpi_table = await convert_multi_stock_data_to_table(
         kpi_name=args.equivalent_kpis.general_kpi_name,

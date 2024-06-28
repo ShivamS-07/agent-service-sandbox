@@ -34,6 +34,7 @@ class TableColumnMetadata(ComplexIOBase):
     label: PrimitiveType
     col_type: TableColumnType
     unit: Optional[str] = None
+    row_descs: Optional[Dict[int, List[str]]] = None
 
 
 @io_type
