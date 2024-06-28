@@ -175,24 +175,32 @@ class AsyncDB:
         return load_io_type(rows[0]["log_data"])
 
     @async_perf_logger
-    async def get_latest_execution_plan(
-        self, agent_id: str
-    ) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime], Optional[str]]:
+    async def get_latest_execution_plan(self, agent_id: str) -> Tuple[
+        Optional[str],
+        Optional[ExecutionPlan],
+        Optional[datetime.datetime],
+        Optional[str],
+        Optional[str],
+    ]:
         sql = """
-            SELECT plan_id::VARCHAR, plan, created_at, status
-            FROM agent.execution_plans
-            WHERE agent_id = %(agent_id)s
+            SELECT ep.plan_id::VARCHAR, ep.plan, ep.created_at, ep.status,
+              pr.plan_run_id::VARCHAR AS upcoming_plan_run_id
+            FROM agent.execution_plans ep
+            LEFT JOIN agent.plan_runs pr
+            ON ep.plan_id = pr.plan_id
+            WHERE ep.agent_id = %(agent_id)s
             ORDER BY last_updated DESC
             LIMIT 1;
         """
         rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
         if not rows:
-            return None, None, None, None
+            return None, None, None, None, None
         return (
             rows[0]["plan_id"],
             ExecutionPlan.model_validate(rows[0]["plan"]),
             rows[0]["created_at"],
             rows[0]["status"],
+            rows[0]["upcoming_plan_run_id"],
         )
 
     @lru_cache(maxsize=128)
@@ -503,12 +511,16 @@ async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) 
         return await db.get_chats_history_for_agent(agent_id)
 
 
-async def get_latest_execution_plan_from_db(
-    agent_id: str, db: Union[AsyncDB, Postgres]
-) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime], Optional[str]]:
+async def get_latest_execution_plan_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> Tuple[
+    Optional[str],
+    Optional[ExecutionPlan],
+    Optional[datetime.datetime],
+    Optional[str],
+    Optional[str],
+]:
     if isinstance(db, Postgres):
         return db.get_latest_execution_plan(agent_id)
     elif isinstance(db, AsyncDB):
         return await db.get_latest_execution_plan(agent_id)
     else:
-        return None, None, None, None
+        return None, None, None, None, None

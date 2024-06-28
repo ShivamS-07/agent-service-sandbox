@@ -5,6 +5,7 @@ from uuid import uuid4
 from prefect import flow
 
 from agent_service.chatbot.chatbot import Chatbot
+from agent_service.endpoints.models import Status, TaskStatus
 from agent_service.io_type_utils import IOType
 from agent_service.planner.action_decide import (
     Action,
@@ -15,7 +16,6 @@ from agent_service.planner.constants import (
     CREATE_EXECUTION_PLAN_FLOW_NAME,
     EXECUTION_TRIES,
     RUN_EXECUTION_PLAN_FLOW_NAME,
-    WORKLOG_INTERVAL,
 )
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import (
@@ -28,10 +28,12 @@ from agent_service.planner.planner_types import (
 from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.agent_event_utils import (
+    get_agent_task_logs,
     publish_agent_execution_plan,
+    publish_agent_execution_status,
     publish_agent_output,
     publish_agent_plan_status,
-    publish_agent_updated_worklogs,
+    publish_agent_task_status,
     send_chat_message,
 )
 from agent_service.utils.async_db import (
@@ -39,7 +41,6 @@ from agent_service.utils.async_db import (
     get_chat_history_from_db,
     get_latest_execution_plan_from_db,
 )
-from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_utils.output_diffs import OutputDiffer
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
 from agent_service.utils.prefect import (
@@ -84,19 +85,44 @@ async def run_execution_plan(
     variable_lookup: Dict[str, IOType] = {}
     db = get_psql(skip_commit=context.skip_db_commit)
 
-    db.insert_plan_run(
-        agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
+    # publish start plan run execution
+    await publish_agent_execution_status(
+        agent_id=context.agent_id,
+        plan_run_id=context.plan_run_id,
+        plan_id=context.plan_id,
+        status=Status.RUNNING,
+        logger=logger,
     )
 
     final_outputs = []
     tool_output = None
-    prev_worklog_publish_time = get_now_utc()
-    for idx, step in enumerate(plan.nodes):
+
+    # initialize our task list for SSE purposes
+    tasks: List[TaskStatus] = [
+        TaskStatus(
+            status=Status.NOT_STARTED,
+            task_id=step.tool_task_id,
+            task_name=step.description,
+            has_output=False,
+            logs=[],
+        )
+        for step in plan.nodes
+    ]
+
+    for i, step in enumerate(plan.nodes):
         # Check both the plan_id and plan_run_id to prevent race conditions
         if await check_cancelled(db=db, plan_id=context.plan_id, plan_run_id=context.plan_run_id):
+            await publish_agent_execution_status(
+                agent_id=context.agent_id,
+                plan_run_id=context.plan_run_id,
+                plan_id=context.plan_id,
+                status=Status.CANCELLED,
+                logger=logger,
+            )
             raise Exception("Execution plan has been cancelled")
-        now = get_now_utc()
+
         logger.info(f"Running step '{step.tool_name}' (Task ID: {step.tool_task_id})")
+
         tool = ToolRegistry.get_tool(step.tool_name)
         # First, resolve the variables
         resolved_args = {}
@@ -119,6 +145,17 @@ async def run_execution_plan(
         # Create the context
         context.task_id = step.tool_task_id
 
+        # update current task to running
+        tasks[i].status = Status.RUNNING
+
+        # publish start task execution
+        await publish_agent_task_status(
+            agent_id=context.agent_id,
+            plan_run_id=context.plan_run_id,
+            tasks=tasks,
+            logger=logger,
+        )
+
         # if the tool output already exists in the map, just use that
         if override_task_output_lookup and step.tool_task_id in override_task_output_lookup:
             logger.info(f"Step '{step.tool_name}' already in task lookup, using existing value...")
@@ -130,17 +167,42 @@ async def run_execution_plan(
                 tool_output = await tool.func(args=step_args, context=context)
             except Exception as e:
                 logger.exception(f"Step '{step.tool_name}' failed due to {e}")
+
+                tasks[i].status = Status.ERROR
+                await publish_agent_task_status(
+                    agent_id=context.agent_id,
+                    plan_run_id=context.plan_run_id,
+                    tasks=tasks,
+                    logger=logger,
+                )
+
                 if await check_cancelled(
                     db=db, plan_id=context.plan_id, plan_run_id=context.plan_run_id
                 ):
+                    await publish_agent_execution_status(
+                        agent_id=context.agent_id,
+                        plan_run_id=context.plan_run_id,
+                        plan_id=context.plan_id,
+                        status=Status.CANCELLED,
+                        logger=logger,
+                    )
                     # NEVER replan if the plan is already cancelled.
                     raise Exception("Execution plan has been cancelled")
                 retrying = False
                 if replan_execution_error:
                     retrying = await handle_error_in_execution(context, e, step, do_chat)
 
+                await publish_agent_execution_status(
+                    agent_id=context.agent_id,
+                    plan_run_id=context.plan_run_id,
+                    plan_id=context.plan_id,
+                    status=Status.ERROR,
+                    logger=logger,
+                )
+
                 if retrying:
                     raise RuntimeError("Plan run attempt failed, retrying")
+
                 raise RuntimeError("All retry attempts failed")
 
         if not step.is_output_node:
@@ -152,20 +214,6 @@ async def run_execution_plan(
         if log_all_outputs:
             logger.info(f"Output of step '{step.tool_name}': {tool_output}")
 
-        if (
-            idx == 0
-            or (idx == len(plan.nodes) - 1)
-            or (now - prev_worklog_publish_time).seconds >= WORKLOG_INTERVAL
-        ):
-            try:
-                # always publish the first/last output, and also publish every second
-                logger.info(f"Publishing updated worklogs at step '{step.tool_name}'...")
-                prev_worklog_publish_time = now
-                await publish_agent_updated_worklogs(context, plan, db)
-            except Exception as e:
-                # event publishing shouldn't affect the main flow
-                logger.exception(f"Failed to publish worklogs at step '{step.tool_name}': {e}")
-
         # Store the output in the associated variable
         if step.output_variable_name:
             variable_lookup[step.output_variable_name] = tool_output
@@ -175,9 +223,31 @@ async def run_execution_plan(
             context.chat = db.get_chats_history_for_agent(agent_id=context.agent_id)
         if step.is_output_node:
             final_outputs.append(tool_output)
+
+        current_task_logs = await get_agent_task_logs(
+            agent_id=context.agent_id, task_id=context.task_id, db=db
+        )
+        tasks[i].logs = current_task_logs
+        tasks[i].status = Status.COMPLETE
+        tasks[i].has_output = step.store_output
+
+        # publish finish task execution
+        await publish_agent_task_status(
+            agent_id=context.agent_id,
+            plan_run_id=context.plan_run_id,
+            tasks=tasks,
+            logger=logger,
+        )
         logger.info(f"Finished step '{step.tool_name}'")
 
     if await check_cancelled(db=db, plan_id=context.plan_id, plan_run_id=context.plan_run_id):
+        await publish_agent_execution_status(
+            agent_id=context.agent_id,
+            plan_run_id=context.plan_run_id,
+            plan_id=context.plan_id,
+            status=Status.CANCELLED,
+            logger=logger,
+        )
         raise Exception("Execution plan has been cancelled")
 
     logger.info(f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=}")
@@ -224,6 +294,14 @@ async def run_execution_plan(
                     db=db,
                 )
 
+    # publish finish plan run task execution
+    await publish_agent_execution_status(
+        agent_id=context.agent_id,
+        plan_run_id=context.plan_run_id,
+        plan_id=context.plan_id,
+        status=Status.COMPLETE,
+        logger=logger,
+    )
     logger.info("Finished run!")
     return final_outputs
 
@@ -335,6 +413,9 @@ async def create_execution_plan(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
         raise RuntimeError("Plan creation has been cancelled.")
+
+    db = get_psql(skip_commit=ctx.skip_db_commit)
+    db.insert_plan_run(agent_id=ctx.agent_id, plan_id=ctx.plan_id, plan_run_id=ctx.plan_run_id)
     await prefect_run_execution_plan(plan=plan, context=ctx, do_chat=do_chat)
     return plan
 
@@ -369,7 +450,7 @@ async def update_execution_after_input(
 
     chatbot = Chatbot(agent_id=agent_id)
 
-    latest_plan_id, latest_plan, _, _ = db.get_latest_execution_plan(agent_id)
+    latest_plan_id, latest_plan, _, _, _ = db.get_latest_execution_plan(agent_id)
 
     if latest_plan is None or latest_plan_id is None:
         # we must still be creating the first plan, let's just redo it
@@ -437,6 +518,8 @@ async def update_execution_after_input(
         )
 
         logger.info(f"Rerunning execution plan for {agent_id=}, {latest_plan_id=}, {plan_run_id=}")
+        db = get_psql(skip_commit=ctx.skip_db_commit)
+        db.insert_plan_run(agent_id=ctx.agent_id, plan_id=ctx.plan_id, plan_run_id=ctx.plan_run_id)
         await prefect_run_execution_plan(plan=latest_plan, context=ctx, do_chat=do_chat)
 
     else:
@@ -499,7 +582,7 @@ async def rewrite_execution_plan(
     logger.info(f"Starting rewrite of execution plan for {agent_id=}...")
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
 
-    _, old_plan, plan_timestamp, _ = await get_latest_execution_plan_from_db(agent_id, db)
+    _, old_plan, plan_timestamp, _, _ = await get_latest_execution_plan_from_db(agent_id, db)
     if not old_plan:  # shouldn't happen, just for mypy
         raise RuntimeError("Cannot rewrite a plan that does not exist!")
 
@@ -585,6 +668,9 @@ async def rewrite_execution_plan(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
         raise RuntimeError("Plan rewrite has been cancelled.")
+
+    sync_db = get_psql(skip_commit=skip_db_commit)
+    sync_db.insert_plan_run(agent_id=ctx.agent_id, plan_id=ctx.plan_id, plan_run_id=ctx.plan_run_id)
     await prefect_run_execution_plan(plan=new_plan, context=ctx, do_chat=do_chat)
 
     return new_plan
@@ -665,7 +751,9 @@ async def handle_error_in_execution(
                 run_tasks_without_prefect=context.run_tasks_without_prefect,
                 chat=chat_context,
             )
-
+            db.insert_plan_run(
+                agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
+            )
             output = await run_execution_plan_local(
                 plan=plan,
                 context=context,

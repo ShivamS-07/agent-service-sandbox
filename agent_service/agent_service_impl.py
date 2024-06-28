@@ -27,6 +27,7 @@ from agent_service.endpoints.models import (
     GetSecureUserResponse,
     MarkNotificationsAsReadResponse,
     NotificationEvent,
+    PlanTemplateTask,
     SharePlanRunResponse,
     UnsharePlanRunResponse,
     UpdateAgentRequest,
@@ -188,12 +189,19 @@ class AgentServiceImpl:
         )
 
         # TODO: For now just get the latest plan. Later we can switch to LIVE plan
-        plan_id, execution_plan, _, status = await self.pg.get_latest_execution_plan(agent_id)
+        plan_id, execution_plan, _, status, upcoming_plan_run_id = (
+            await self.pg.get_latest_execution_plan(agent_id)
+        )
         if plan_id is None or execution_plan is None:
             execution_plan_template = None
         else:
             execution_plan_template = ExecutionPlanTemplate(
-                plan_id=plan_id, task_names=[node.description for node in execution_plan.nodes]
+                plan_id=plan_id,
+                upcoming_plan_run_id=upcoming_plan_run_id,
+                tasks=[
+                    PlanTemplateTask(task_id=node.tool_task_id, task_name=node.description)
+                    for node in execution_plan.nodes
+                ],
             )
 
         return GetAgentWorklogBoardResponse(

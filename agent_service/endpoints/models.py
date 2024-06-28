@@ -173,11 +173,17 @@ class PlanRun(BaseModel):
     shared: bool = False
 
 
+class PlanTemplateTask(BaseModel):
+    task_id: str
+    task_name: str
+
+
 class ExecutionPlanTemplate(BaseModel):
     """A template for the next run including the tasks that will be run."""
 
     plan_id: str
-    task_names: List[str]
+    upcoming_plan_run_id: Optional[str] = None
+    tasks: List[PlanTemplateTask]
 
 
 class GetAgentWorklogBoardResponse(BaseModel):
@@ -226,7 +232,9 @@ class EventType(str, enum.Enum):
     OUTPUT = "output"
     NEW_PLAN = "new_plan"
     PLAN_STATUS = "plan_status"
-    WORKLOG = "worklog"
+    EXECUTION_STATUS = "execution_status"
+    TASK_STATUS = "task_status"
+    TASK_LOG = "task_log"
 
 
 class MessageEvent(BaseModel):
@@ -249,16 +257,37 @@ class PlanStatusEvent(BaseModel):
     status: PlanStatus
 
 
-class WorklogEvent(BaseModel):
-    event_type: Literal[EventType.WORKLOG] = EventType.WORKLOG
-    worklog: PlanRun
+class TaskStatus(BaseModel):
+    status: Status
+    task_id: str
+    task_name: str
+    has_output: bool
+    logs: List[PlanRunTaskLog]
+
+
+class TaskStatusEvent(BaseModel):
+    event_type: Literal[EventType.TASK_STATUS] = EventType.TASK_STATUS
+    plan_run_id: str
+    tasks: List[TaskStatus]
+
+
+class ExecutionStatusEvent(BaseModel):
+    event_type: Literal[EventType.EXECUTION_STATUS] = EventType.EXECUTION_STATUS
+    status: Status
+    plan_run_id: str
+    plan_id: str
 
 
 class AgentEvent(BaseModel):
     agent_id: str
-    event: Union[MessageEvent, OutputEvent, NewPlanEvent, PlanStatusEvent, WorklogEvent] = Field(
-        discriminator="event_type"
-    )
+    event: Union[
+        MessageEvent,
+        OutputEvent,
+        NewPlanEvent,
+        PlanStatusEvent,
+        TaskStatusEvent,
+        ExecutionStatusEvent,
+    ] = Field(discriminator="event_type")
     timestamp: datetime.datetime = Field(default_factory=get_now_utc)
 
 

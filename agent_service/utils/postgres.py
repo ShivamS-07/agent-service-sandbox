@@ -90,25 +90,33 @@ class Postgres(PostgresBase):
         rows = self.generic_read(sql, params=params)
         return ChatContext(messages=[Message(agent_id=agent_id, **row) for row in rows])
 
-    def get_latest_execution_plan(
-        self, agent_id: str
-    ) -> Tuple[Optional[str], Optional[ExecutionPlan], Optional[datetime.datetime], Optional[str]]:
+    def get_latest_execution_plan(self, agent_id: str) -> Tuple[
+        Optional[str],
+        Optional[ExecutionPlan],
+        Optional[datetime.datetime],
+        Optional[str],
+        Optional[str],
+    ]:
         sql = """
-            SELECT plan_id::VARCHAR, plan, created_at, status
-            FROM agent.execution_plans
-            WHERE agent_id = %(agent_id)s
+            SELECT ep.plan_id::VARCHAR, ep.plan, ep.created_at, ep.status,
+              pr.plan_run_id::VARCHAR AS upcoming_plan_run_id
+            FROM agent.execution_plans ep
+            LEFT JOIN agent.plan_runs pr
+            ON ep.plan_id = pr.plan_id
+            WHERE ep.agent_id = %(agent_id)s
             ORDER BY last_updated DESC
             LIMIT 1;
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
         if not rows:
-            return None, None, None, None
+            return None, None, None, None, None
         row = rows[0]
         return (
             row["plan_id"],
             ExecutionPlan.model_validate(row["plan"]),
             row["created_at"],
             row["status"],
+            row["upcoming_plan_run_id"],
         )
 
     def get_all_execution_plans(
@@ -196,6 +204,7 @@ class Postgres(PostgresBase):
         start_date: Optional[datetime.date] = None,  # inclusive
         end_date: Optional[datetime.date] = None,  # exclusive
         plan_run_ids: Optional[List[str]] = None,
+        task_ids: Optional[List[str]] = None,
     ) -> List[Dict]:
         params: Dict[str, Any] = {"agent_id": agent_id}
         filters = ""
@@ -208,6 +217,9 @@ class Postgres(PostgresBase):
         if plan_run_ids:
             filters += " AND plan_run_id = ANY(%(plan_run_ids)s)"
             params["plan_run_ids"] = plan_run_ids
+        if task_ids:
+            filters += " AND task_id = ANY(%(task_ids)s)"
+            params["task_ids"] = task_ids
 
         sql1 = f"""
             SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, task_id::VARCHAR, is_task_output,
