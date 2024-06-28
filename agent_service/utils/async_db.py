@@ -400,7 +400,7 @@ class AsyncDB:
         SELECT DISTINCT ON (a.agent_id)
             a.agent_id::VARCHAR, a.user_id::VARCHAR, agent_name, a.created_at,
             a.last_updated, a.automation_enabled, pr.created_at AS last_run,
-            n.summary AS latest_notification_string,
+            m.message AS latest_agent_message,
             (
               SELECT COUNT(*) FROM agent.notifications n2
               WHERE n2.agent_id = a.agent_id AND n2.unread
@@ -409,8 +409,9 @@ class AsyncDB:
         FROM agent.agents a
         LEFT JOIN agent.plan_runs pr ON a.agent_id = pr.agent_id
         LEFT JOIN agent.notifications n ON a.agent_id = n.agent_id
+        LEFT JOIN agent.chat_messages m ON a.agent_id = m.agent_id
         WHERE user_id = %(user_id)s
-        ORDER BY a.agent_id, pr.created_at DESC, n.created_at DESC;
+        ORDER BY a.agent_id, pr.created_at DESC, n.created_at DESC, m.message_time DESC;
         """
         rows = await self.pg.generic_read(sql, params={"user_id": user_id})
         tomorrow = get_now_utc() + datetime.timedelta(days=1)
@@ -423,7 +424,7 @@ class AsyncDB:
                 last_updated=row["last_updated"],
                 last_run=row["last_run"],
                 next_run=tomorrow,  # TEMPORARY
-                latest_notification_string=row["latest_notification_string"],
+                latest_notification_string=row["latest_agent_message"],
                 automation_enabled=row["automation_enabled"],
                 unread_notification_count=row["unread_notification_count"] or 0,
             )
