@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import List
+from typing import List, Text
 
 import pandas as pd
 
@@ -30,7 +30,7 @@ class ProductSpecs:
 
 GET_PRODUCT_COMPARE_MAIN_PROMPT_STR = (
     "What are the most impactful latest {product} products from each of the following "
-    "companies {companies}? The {main_stock} product should be first. Look at the stock "
+    "companies? {companies} The {main_stock} product should be first. Look at the stock "
     "symbol and/or ISIN to identify the stock. "
     "Return a list where each entry is "
     "a pythonic dictionary representing the latest {product} from each of the "
@@ -50,13 +50,19 @@ GET_PRODUCT_COMPARE_MAIN_PROMPT_STR = (
     "You can place the units after the numbers in each "
     "returned result. Be sure to include any detailed specifications "
     "important to {product}. No other details, justification or formatting such as "
-    "``` or python should be returned. I'm sure there are newer chips, so try again. "
+    "``` or python should be returned. I'm sure there are newer results, so try again. "
     "Finally, make SURE that all specification keys are the same in all dicts in the list."
 )
 
-
-GET_PRODUCT_COMPARE_MAIN_PROMPT = Prompt(
-    name="GET_PRODUCT_COMPARE_MAIN_PROMPT", template=GET_PRODUCT_COMPARE_MAIN_PROMPT_STR
+GET_PRODUCT_SUMMARY_MAIN_PROMPT_STR = (
+    "Look at each product within the ones listed below. {table_contents} Give a short "
+    "description on each {product} product which compares it to the others as well "
+    "as prior products. As well, output a bit regarding the company's trajectory "
+    "with {product} products, and its status within the {product} field. "
+    "You can give an overall summary afterwards. "
+    "I'm only interested in the comparisons for the output, no need to restate "
+    "numerical specifications or measurements from the table. "
+    "No formatting symbols should be returned, only text."
 )
 
 GET_PRODUCT_COMPARE_SYS_PROMPT_STR = (
@@ -71,11 +77,15 @@ GET_PRODUCT_COMPARE_SYS_PROMPT = Prompt(
     name="GET_PRODUCT_COMPARE_SYS_PROMPT", template=GET_PRODUCT_COMPARE_SYS_PROMPT_STR
 )
 
+GET_PRODUCT_COMPARE_MAIN_PROMPT = Prompt(
+    name="GET_PRODUCT_COMPARE_MAIN_PROMPT", template=GET_PRODUCT_COMPARE_MAIN_PROMPT_STR
+)
+
 
 @tool(
-    description="Given a list of StockID objects and a product name/category,"
-    "return back a table of comparisons between said product between the listed companies."
-    "This resultant table should ALWAYS be rendered as a table, never create a graph out of it",
+    description="Given a list of stocks, a product name/category and a main stock, "
+    "return back a table of comparisons between said product between the listed companies. "
+    "This resultant table should ALWAYS be rendered as a table, never create a graph out of it.",
     category=ToolCategory.KPI,
     tool_registry=ToolRegistry,
 )
@@ -97,20 +107,60 @@ async def get_product_comparison_table(args: ProductCompareInput, context: PlanR
 
 async def get_llm_product_comparisons(
     stock_ids: List[StockID], category: str, main_stock: str, llm: GPT
-) -> str:
-    formatted_stock_ids = [
-        (
-            "Symbol: " + ("unavailable" if (stock_id.symbol is None) else stock_id.symbol),
-            "ISIN: " + stock_id.isin,
-        )
+) -> Text:
+    stock_id_str_list = [
+        f"Symbol: {'unavailable' if (stock_id.symbol is None) else stock_id.symbol}, ISIN: {stock_id.isin}"
         for stock_id in stock_ids
     ]
+    stock_id_list = "\n".join(stock_id_str_list)
 
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=GET_PRODUCT_COMPARE_MAIN_PROMPT.format(
             product=category,
-            companies=str(formatted_stock_ids),
+            companies=stock_id_list,
             main_stock=main_stock,
+        ),
+        sys_prompt=GET_PRODUCT_COMPARE_SYS_PROMPT.format(),
+    )
+
+    return result
+
+
+GET_PRODUCT_SUMMARY_MAIN_PROMPT = Prompt(
+    name="GET_PRODUCT_SUMMARY_MAIN_PROMPT", template=GET_PRODUCT_SUMMARY_MAIN_PROMPT_STR
+)
+
+
+class ProductSummaryInput(ToolArgs):
+    table: Table
+    category: str
+
+
+@tool(
+    description="DO NOT RUN THIS TOOL DIRECTLY AFTER get_product_comparison_table without product_output in between. "
+    "Given a table of different products from different companies, return a text "
+    "string describing each product, how they compare, and the company's status in the product's field",
+    category=ToolCategory.KPI,
+    tool_registry=ToolRegistry,
+)
+async def get_product_compare_summary(args: ProductSummaryInput, context: PlanRunContext) -> Text:
+    llm = GPT(context=None, model=GPT4_O)
+    result = await get_llm_product_summary(args.table, args.category, llm)
+    return result
+
+
+async def get_llm_product_summary(table: Table, category: str, llm: GPT) -> Text:
+    table_df = table.to_df()
+    table_str_list = [
+        ", ".join(f"{col}: {val}" for col, val in zip(table_df.columns, row))
+        for row in table_df.values
+    ]
+    table_contents = "\n".join(table_str_list)
+
+    result = await llm.do_chat_w_sys_prompt(
+        main_prompt=GET_PRODUCT_SUMMARY_MAIN_PROMPT.format(
+            table_contents=table_contents,
+            product=category,
         ),
         sys_prompt=GET_PRODUCT_COMPARE_SYS_PROMPT.format(),
     )
@@ -138,15 +188,21 @@ async def main() -> None:
     ]
 
     table_result: Table = await get_product_comparison_table(  # type: ignore
-        ProductCompareInput(stock_ids=stock_ids, category="AI chips", main_stock="NVDA"),
+        ProductCompareInput(stock_ids=stock_ids, category="AI Chips", main_stock="NVDA"),
         plan_context,
     )
-    print(table_result)
+
+    summary_result: Text = await get_product_compare_summary(  # type: ignore
+        ProductSummaryInput(table=table_result, category="AI Chips"),
+        plan_context,
+    )
 
     df = table_result.to_df()
     print(df.head())
     for column in table_result.columns:
         print(column.metadata.label)
+
+    print(summary_result)
 
 
 if __name__ == "__main__":
