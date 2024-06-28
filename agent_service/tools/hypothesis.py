@@ -327,6 +327,8 @@ EARNINGS_SUMMARY_MAIN_PROMPT_STR = (
     "5 means that the provided evidence does not provide conclusive evidence either way. "
     "10 means that the provided evidence indicates with perfect certainty the 100% sure the hypothesis is true. "
     "If, based on the evidence provided, you believe the hypothesis is not true, you must provide a score under 5."
+    "You should be skeptical of the hypothesis, if there isn't strong evidence, you should prefer a score close to 5. "
+    "It is very bad to say anything in the 8-10 range without very conclusive evidence. "
     "The second field should have the key `summary` and the value should be a string consisting of a paragragh of "
     "2 to 4 sentences. In this summary, you will discuss the evidence for the validity of the hypothesis. "
     "It should be compatible with your score, but do not explicitly mention the score."

@@ -142,8 +142,8 @@ class HypothesisPipeline:
                 break
             elif len(batch_relevant_topics) < batch_size * TOTAL_RELEVANT_TOPICS_THRESHOLD:
                 logger.info(
-                    f"Batch {batch_idx} has only {len(relevant_topics)} relevant topics, less than required threshold. "
-                    "Stopping process..."
+                    f"Batch {batch_idx} has only {len(batch_relevant_topics)} relevant topics,"
+                    " less than required threshold. Stopping process..."
                 )
                 break
 
@@ -263,8 +263,8 @@ class HypothesisPipeline:
                 break
             elif len(batch_relevant_topics) < batch_size * TOTAL_RELEVANT_TOPICS_THRESHOLD:
                 logger.info(
-                    f"Batch {batch_idx} has only {len(relevant_topics)} relevant topics, less than required threshold. "
-                    "Stopping process..."
+                    f"Batch {batch_idx} has only {len(batch_relevant_topics)} relevant topics, "
+                    "less than required threshold. Stopping process..."
                 )
                 break
 
