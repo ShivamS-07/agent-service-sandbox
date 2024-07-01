@@ -117,7 +117,7 @@ class AsyncDB:
         sql = """
                 SELECT ao.agent_id::VARCHAR, ao.plan_id::VARCHAR, ao.plan_run_id::VARCHAR,
                   ao.output_id::VARCHAR, ao.is_intermediate,
-                    ao.output, ao.created_at, pr.shared
+                    ao.output, ao.created_at, COALESCE(pr.shared, FALSE) AS shared
                 FROM agent.agent_outputs ao
                 LEFT JOIN agent.plan_runs pr
                 ON ao.plan_run_id = pr.plan_run_id
