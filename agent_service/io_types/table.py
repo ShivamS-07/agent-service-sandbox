@@ -205,8 +205,10 @@ class Table(ComplexIOBase):
         stocks_are_hashable_objs: bool = False,
     ) -> Self:
         out_columns: List[TableColumn] = []
+        expected_column_names_list = {col.label for col in columns}
         data = data.replace(np.nan, None)
-        for col_meta, df_col in zip(columns, data.columns):
+        df_columns = [col for col in data.columns if col in expected_column_names_list]
+        for col_meta, df_col in zip(columns, df_columns):
             if col_meta.col_type == TableColumnType.DATE:
                 data[df_col] = data[df_col].apply(
                     func=lambda val: val.date() if isinstance(val, pd.Timestamp) else val

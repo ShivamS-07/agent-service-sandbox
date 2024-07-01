@@ -35,6 +35,7 @@ from typing import (
     get_origin,
 )
 
+import backoff
 from prefect.tasks import Task
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
@@ -408,6 +409,9 @@ def tool(
                     "context": context.model_dump_json(),
                 }
 
+                @backoff.on_exception(
+                    backoff.constant, exception=Exception, max_tries=retries + 1, logger=logger
+                )
                 async def call_func() -> IOType:
                     try:
                         result = await func(args, context)
@@ -471,7 +475,6 @@ def tool(
                     task_run_name=get_task_run_name(ctx=context),
                     fn=main_func,
                     description=description,
-                    retries=retries,
                     timeout_seconds=timeout_seconds,
                     tags=tags,
                 )

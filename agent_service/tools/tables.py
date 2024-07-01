@@ -150,19 +150,20 @@ def _get_df_info(df: pd.DataFrame) -> str:
 
 @tool(
     description="""This is a function that allows you to do aribtrary transformations on Table objects.
-Tables are simply wrappers around pandas dataframes. For example, if you have a
-table of stock prices, and you want to compute the rolling 7-day average, you can call:
+Tables are simply wrappers around pandas dataframes. There are a few primary use cases for this function:
+- Sorting tables
+- Filtering or ranking tables based on numeric criteria
+- Aggregating tables ACROSS row or stocks
 
-    # your_table is a Table instance wrapping a pandas dataframe of price data
-    transform_table(input_table=your_table, transformation_description='Compute the rolling 7-day average')
+For things like percent change of price, or other per-stock calculations, please
+use the `get_statistic_data_for_companies` function instead. Do NOT use this.
 
 The `transformation_description` argument is a free text description of a
 transformation that will be applied to the table by an LLM, so feel free to be
-detailed in your description of the desired transformation. Ideally the
-transformation should be something mathematical, or a pandas operation like
-group-by. Anything that could be done in pandas. Simple table formatting should
-not use this. It is better to be overly detailed than not detailed enough. Note
-again that the input MUST be a table, not a list!
+detailed in your description of the desired transformation. Anything that could
+be done in pandas is supported here. Simple table formatting should not use
+this. It is better to be overly detailed than not detailed enough. Note again
+that the input MUST be a table, not a list!
 """,
     category=ToolCategory.TABLE,
 )
@@ -334,15 +335,18 @@ class GetStockListFromTableArgs(ToolArgs):
 
 
 @tool(
-    description="""
-    Given a table with at least one column of stocks, extract
-    that column into a list of stock ID's.  This is very useful for e.g. filtering
-    on some numerical data in a table before extracting the stock list and fetching
-    other data with it.
-    The tool can be used to convert a table with a stock column from another tool "
-    "like get_portfolio_holdings into a list of stock ID's.
-    This function can only be used with actual tables, it cannot be used with either
-lists of texts or lists of stocks
+    description="""Given a table with at least one column of stocks, extract
+that column into a list of stock ID's.  This is very useful for e.g. filtering
+on some numerical data in a table before extracting the stock list and fetching
+other data with it.
+The tool can be used to convert a table with a stock column from another tool
+like get_portfolio_holdings into a list of stock ID's. This function can only be
+used with actual tables, it cannot be used with either lists of texts or lists
+of stocks.
+Important: When stocks that are taken from a table are displayed to the client via the
+output tool, they will see any important statistics that have been calculated the stock,
+in table format. It is entirely redundant to display both the list of stocks and a table
+they were extracted from, you must output only one or the other, never both!
 """,
     category=ToolCategory.TABLE,
 )
@@ -372,4 +376,13 @@ async def get_stock_identifier_list_from_table(
                     explanation=col.data[i],  # type: ignore
                 )
             )
-    return list(set(stocks))
+
+    seen_stocks = set()
+    outputs = []
+    # Do another loop to maintain stock ordering
+    for stock in stocks:
+        if stock in seen_stocks:
+            continue
+        outputs.append(stock)
+        seen_stocks.add(stock)
+    return outputs

@@ -35,7 +35,10 @@ user is not specific, line graphs are best created with data that changes on a s
 time interval, for example things like stock prices, but not quarterly sales. In cases
 where you need to make a graph from a Table with data like that, this use this
 function. (Ideally the table index should be dates or some other type
-representing time.) It is extremely important that you provide enough data to
+representing time.). You should never pass a Table to this function when the table
+has also been passed to another tool for filtering/ranking, such tables are NOT
+compatible with a line graphs.
+It is extremely important that you provide enough data to
 graph. E.g. at least 7-14 datapoints to make a nice line. Note that the input
 must be a Table! If the source data is stock pricing data, financial data, or
 economic time series data, then a date range should be used to acquire the data rather than a single date or no date.
