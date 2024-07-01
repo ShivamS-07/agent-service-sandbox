@@ -61,7 +61,7 @@ async def get_agent_hierarchical_worklogs(
 
         plan_id_to_plan_run_ids[row["plan_id"]].add(row["plan_run_id"])
         plan_run_id_to_task_ids[row["plan_run_id"]].add(row["task_id"])
-        plan_run_id_to_share_status[row["plan_run_id"]] = row["shared"]
+        plan_run_id_to_share_status[row["plan_run_id"]] = row["shared"] or False
 
         if row["is_task_output"]:  # there should only be 1 task output per task
             task_id_to_task_output[row["task_id"]] = row
