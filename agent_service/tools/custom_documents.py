@@ -62,7 +62,7 @@ async def get_user_custom_documents(
         limit=args.limit,
     )
     await tool_log(
-        log=f"Got {len(custom_doc_summaries.documents)}"
+        log=f"Got {len(custom_doc_summaries.documents)} "
         + f"documents for {len(stock_ids)} companies.",
         context=context,
     )
