@@ -84,7 +84,9 @@ async def run_execution_plan(
     # Maps variables to their resolved values
     variable_lookup: Dict[str, IOType] = {}
     db = get_psql(skip_commit=context.skip_db_commit)
-
+    db.insert_plan_run(
+        agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
+    )
     # publish start plan run execution
     await publish_agent_execution_status(
         agent_id=context.agent_id,

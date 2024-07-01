@@ -181,11 +181,19 @@ class Postgres(PostgresBase):
         return rows[0]
 
     def insert_plan_run(self, agent_id: str, plan_id: str, plan_run_id: str) -> None:
-        self.insert_into_table(
-            table_name="agent.plan_runs",
-            agent_id=agent_id,
-            plan_id=plan_id,
-            plan_run_id=plan_run_id,
+        sql = """
+        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id)
+        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s)
+        ON CONFLICT (plan_run_id) DO NOTHING
+        """
+
+        self.generic_write(
+            sql,
+            params={
+                "agent_id": agent_id,
+                "plan_id": plan_id,
+                "plan_run_id": plan_run_id,
+            },
         )
 
     def is_cancelled(self, ids_to_check: List[str]) -> bool:
