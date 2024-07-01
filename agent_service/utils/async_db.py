@@ -395,6 +395,7 @@ class AsyncDB:
     async def delete_agent_by_id(self, agent_id: str) -> None:
         await self.pg.delete_from_table_where(table_name="agent.agents", agent_id=agent_id)
 
+    @async_perf_logger
     async def get_user_all_agents(self, user_id: str) -> List[AgentMetadata]:
         """
         This function retrieves all agents for a given user.
@@ -405,21 +406,39 @@ class AsyncDB:
         Returns: A list of all agents for the user.
         """
         sql = """
-        SELECT DISTINCT ON (a.agent_id)
-            a.agent_id::VARCHAR, a.user_id::VARCHAR, agent_name, a.created_at,
-            a.last_updated, a.automation_enabled, pr.created_at AS last_run,
-            m.message AS latest_agent_message,
-            (
-              SELECT COUNT(*) FROM agent.notifications n2
-              WHERE n2.agent_id = a.agent_id AND n2.unread
-              GROUP BY n2.agent_id
-            ) AS unread_notification_count
-        FROM agent.agents a
-        LEFT JOIN agent.plan_runs pr ON a.agent_id = pr.agent_id
-        LEFT JOIN agent.notifications n ON a.agent_id = n.agent_id
-        LEFT JOIN agent.chat_messages m ON a.agent_id = m.agent_id
-        WHERE user_id = %(user_id)s
-        ORDER BY a.agent_id, pr.created_at DESC, n.created_at DESC, m.message_time DESC;
+        WITH a_id AS
+          (
+            SELECT a.agent_id, a.user_id, agent_name, a.created_at,
+              a.last_updated, a.automation_enabled
+             FROM agent.agents a
+             WHERE a.user_id = %(user_id)s
+          ),
+          lr AS
+          (
+            SELECT DISTINCT ON (pr.agent_id) pr.agent_id, pr.created_at
+            FROM agent.plan_runs pr
+            ORDER BY pr.agent_id, pr.created_at DESC
+          ),
+          msg AS
+          (
+            SELECT DISTINCT ON (m.agent_id) m.agent_id, m.message
+            FROM agent.chat_messages m
+            ORDER BY m.agent_id, m.message_time DESC
+          ),
+          nu AS
+          (
+            SELECT n.agent_id, COUNT(*) AS num_unread
+            FROM agent.notifications n
+            WHERE n.unread
+                GROUP BY n.agent_id
+          )
+          SELECT a_id.agent_id::VARCHAR, a_id.user_id::VARCHAR, a_id.agent_name, a_id.created_at,
+            a_id.last_updated, a_id.automation_enabled, lr.created_at AS last_run,
+            msg.message AS latest_agent_message, nu.num_unread AS unread_notification_count
+          FROM a_id
+          LEFT JOIN lr ON lr.agent_id = a_id.agent_id
+          LEFT JOIN msg ON msg.agent_id = a_id.agent_id
+          LEFT JOIN nu ON nu.agent_id = a_id.agent_id
         """
         rows = await self.pg.generic_read(sql, params={"user_id": user_id})
         tomorrow = get_now_utc() + datetime.timedelta(days=1)
