@@ -89,6 +89,7 @@ class AsyncDB:
             output_value = load_io_type(output) if output else output
             output_value = await get_output_from_io_type(output_value, pg=self.pg)
             row["output"] = output_value
+            row["shared"] = row["shared"] or False
             outputs.append(AgentOutput(agent_id=agent_id, **row))
 
         return outputs
