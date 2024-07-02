@@ -387,8 +387,21 @@ async def steam_agent_events(
             async for event in application.state.agent_service_impl.stream_agent_events(
                 agent_id=agent_id
             ):
-                yield ServerSentEvent(data=event.model_dump_json(), event="agent-event")
-        except asyncio.CancelledError as e:
+                to_send = event.model_dump_json()
+                yield ServerSentEvent(data=to_send, event="agent-event")
+                log_event(
+                    event_name="agent-event-sent",
+                    event_data={"agent_id": agent_id, "user_id": user.user_id, "data": to_send},
+                )
+        except Exception as e:
+            log_event(
+                event_name="agent-event-sent",
+                event_data={
+                    "agent_id": agent_id,
+                    "user_id": user.user_id,
+                    "error_msg": traceback.format_exc(),
+                },
+            )
             logger.info(f"Event stream client disconnected for {agent_id=}")
             raise e
 
