@@ -86,6 +86,7 @@ class WriteCommentaryInput(ToolArgs):
         "Additionally, this tools MUST be used when user use phrases like 'tell me about' "
         "or 'write a commentary on', or similar phrases."
         "portfolio_id can be provided if user wants a commentary based on a specific portfolio. "
+        "portfolio_id can be provided if user wants a commentary based on a specific portfolio. "
     ),
     category=ToolCategory.COMMENTARY,
     reads_chat=True,
@@ -129,7 +130,6 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
             log="No portfolio name is provided. Skipping portfolio based commentary.",
             context=context,
         )
-
     # Dedupluate the texts and organize the commentary texts into themes, developments and articles
     text_ids = set()
     deduplicated_texts = []
@@ -138,7 +138,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
             text_ids.add(text.id)
             deduplicated_texts.append(text)
     await tool_log(
-        log=f"Texts size after deduplication: {len(deduplicated_texts)}",
+        log=f"Texts size after deduplication and applying text size limits: {len(deduplicated_texts)}",
         context=context,
     )
     themes, developments, articles = await organize_commentary_texts(deduplicated_texts)
@@ -181,13 +181,15 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         texts=texts,
         chat_context=chat_context,
     )
+    # save main prompt as text file
+    with open("main_prompt.txt", "w") as f:
+        f.write(main_prompt.filled_prompt)
 
     # Write the commentary
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=main_prompt,
         sys_prompt=COMMENTARY_SYS_PROMPT.format(),
     )
-
     text, citation_ids = await split_text_and_citation_ids(result)
     commentary = Text(val=text)
     commentary = commentary.inject_history_entry(
@@ -209,6 +211,7 @@ class GetCommentaryTextsInput(ToolArgs):
 @tool(
     description=(
         "This function can be used when a client wants to write a commentary, article or summary of "
+        "market trends and/or specific topics."
         "market trends and/or specific topics."
         "This function collects and prepares all texts to be used by the write_commentary tool "
         "for writing a commentary or short articles and market summaries. "
@@ -240,12 +243,12 @@ async def get_commentary_texts(
     if args.general_commentary:
         if args.portfolio_id:
             await tool_log(
-                log=f"Retrieving texts for top market themes related to portfolio (id: {args.portfolio_id}).",
+                log=f"Retrieving texts for top {args.theme_num} themes related to portfolio (id: {args.portfolio_id}).",
                 context=context,
             )
         else:
             await tool_log(
-                log="No portfolio is provided. Retrieving top market themes...",
+                log=f"No portfolio is provided. Retrieving top {args.theme_num} market themes...",
                 context=context,
             )
         # get top themes

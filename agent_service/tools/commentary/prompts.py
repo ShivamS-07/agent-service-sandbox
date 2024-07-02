@@ -22,7 +22,7 @@ COMMENTARY_SYS_PROMPT = Prompt(
         "and each one starts with a Text Number. "
         "When you have finished your commentary, on the last line, "
         "you MUST write a list of integers and nothing else (e.g. `[2, 5, 9]`) "
-        "which corresponds to Text Number of source texts that you used for your commentary. "
+        "which corresponds to Text Number of sources that you used for your commentary. "
         "You MUST be extremely selective, "
         "and list only those texts from which you directly pulled majority or main information. "
         "DO NOT include sources with minor or duplicate information. "
@@ -59,7 +59,8 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "\n-----\n"
         "{chat_context}"
         "\n-----\n"
-        "Now please craft a macroeconomic commentary and provide a list of references."
+        "Now please craft a macroeconomic commentary and provide a list of text numbers "
+        "which MUST ONLY include top sources (less than 50 sources). "
     ),
 )
 
@@ -81,6 +82,7 @@ PREVIOUS_COMMENTARY_PROMPT = Prompt(
         "previous commentary. Preserve the original content of previous commentary as much as possible.\n"
         "\n3. **New Commentary:** If the client asks for a completely new commentary, you MUST ignore the previous "
         "commentary and write a new one based on the given texts.\n"
+        "DO NOT return the same commentary as the previous one. "
     ),
 )
 
