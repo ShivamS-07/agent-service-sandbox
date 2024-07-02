@@ -8,6 +8,7 @@ from typing import Generator, List, Optional, Tuple
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
     LOCAL_TAG,
+    PROD_TAG,
     get_environment_tag,
 )
 from grpclib.client import Channel
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_URLS = {
     LOCAL_TAG: ("custom-data-service-dev.boosted.ai", 50051),
     DEV_TAG: ("custom-data-service-dev.boosted.ai", 50051),
+    PROD_TAG: ("custom-data-service-prod.boosted.ai", 50051),
 }
 
 
