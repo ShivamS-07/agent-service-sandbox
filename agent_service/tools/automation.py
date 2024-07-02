@@ -16,6 +16,7 @@ class SetupScheduleInput(ToolArgs):
     category=ToolCategory.AUTOMATION,
     tool_registry=ToolRegistry,
     is_visible=True,
+    enabled=False,
 )
 async def set_schedule(args: SetupScheduleInput, context: PlanRunContext) -> str:
     # This is a mock
@@ -45,6 +46,7 @@ class DeleteScheduleInput(ToolArgs):
     category=ToolCategory.AUTOMATION,
     tool_registry=ToolRegistry,
     is_visible=True,
+    enabled=False,
 )
 async def delete_schedule(args: DeleteScheduleInput, context: PlanRunContext) -> str:
     # This is a mock
@@ -69,6 +71,7 @@ class PauseScheduleInput(ToolArgs):
     category=ToolCategory.AUTOMATION,
     tool_registry=ToolRegistry,
     is_visible=True,
+    enabled=False,
 )
 async def pause_schedule(args: PauseScheduleInput, context: PlanRunContext) -> str:
     # This is a mock
@@ -98,6 +101,7 @@ class SetNotificationCriteria(ToolArgs):
     category=ToolCategory.AUTOMATION,
     tool_registry=ToolRegistry,
     is_visible=True,
+    enabled=False,
 )
 async def set_notification(args: SetNotificationCriteria, context: PlanRunContext) -> str:
     # This is a mock
@@ -118,6 +122,7 @@ class DeleteNotificationCriteria(ToolArgs):
     category=ToolCategory.AUTOMATION,
     tool_registry=ToolRegistry,
     is_visible=True,
+    enabled=False,
 )
 async def delete_notification(args: DeleteNotificationCriteria, context: PlanRunContext) -> str:
     # This is a mock
@@ -138,6 +143,7 @@ class NotifyUserInput(ToolArgs):
     category=ToolCategory.AUTOMATION,
     tool_registry=ToolRegistry,
     is_visible=False,
+    enabled=False,
 )
 async def notify_user(args: NotifyUserInput, context: PlanRunContext) -> str:
     # This is a mock
