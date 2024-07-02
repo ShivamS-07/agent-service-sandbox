@@ -218,6 +218,7 @@ class Planner:
                     "model_id": llm.model,
                     "prompt": prompt,
                     "action": Action.CREATE,
+                    "sample_plans": sample_plans,
                 },
             )
             return None
@@ -232,6 +233,7 @@ class Planner:
                 "model_id": llm.model,
                 "prompt": prompt,
                 "action": Action.CREATE,
+                "sample_plans": sample_plans,
             },
         )
         return plan
@@ -369,6 +371,7 @@ class Planner:
                     "model_id": self.fast_llm.model,
                     "prompt": main_chat_str,
                     "action": action,
+                    "sample_plans": sample_plans_str,
                 },
             )
         except Exception:
@@ -383,6 +386,7 @@ class Planner:
                     "model_id": self.fast_llm.model,
                     "prompt": main_chat_str,
                     "action": action,
+                    "sample_plans": sample_plans_str,
                 },
             )
             logger.warning(f"Failed to validate replan with original LLM output string: {plan_str}")
@@ -465,6 +469,7 @@ class Planner:
                     "model_id": self.smart_llm.model,
                     "prompt": error_str,
                     "action": action,
+                    "sample_plans": sample_plans_str,
                 },
             )
         except Exception:
@@ -479,6 +484,7 @@ class Planner:
                     "model_id": self.smart_llm.model,
                     "prompt": error_str,
                     "action": action,
+                    "sample_plans": sample_plans_str,
                 },
             )
             logger.warning(
