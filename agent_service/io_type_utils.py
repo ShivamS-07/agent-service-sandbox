@@ -224,11 +224,11 @@ class Score(SerializeableBase):
         return cls(val=(val - lb) / (ub - lb))
 
     @classmethod
-    def average(cls, score_1: Self, score_2: Self) -> Self:
+    def average(cls, scores: List[Self]) -> Self:
         """
-        Average two scores
+        Average any number of scores
         """
-        return cls(val=(score_1.val + score_2.val) / 2)
+        return cls(val=sum([sub_score.val for sub_score in scores]) / len(scores) if scores else 0)
 
 
 class ScoreOutput(BaseModel):

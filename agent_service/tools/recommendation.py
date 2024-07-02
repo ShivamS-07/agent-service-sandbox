@@ -1,5 +1,6 @@
 import copy
 import json
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from pa_portfolio_service_proto_v1.investment_policy_match_pb2 import (
@@ -9,7 +10,7 @@ from pydantic import field_validator
 
 from agent_service.external.discover_svc_client import (
     get_news_sentiment_score,
-    get_recommendation_score,
+    get_rating_score,
     get_temporary_discover_block_data,
 )
 from agent_service.external.investment_policy_svc import (
@@ -48,6 +49,28 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
+
+
+@dataclass
+class RecommendationScores:
+    news_score: Optional[Score] = None
+    rating_score: Optional[Score] = None
+    # maybe more later
+
+    def get_overall(self) -> Score:
+        return Score.average([score for score in [self.news_score, self.rating_score] if score])
+
+    def add_score_history(self, stock: StockID) -> StockID:
+        if self.news_score:
+            stock = stock.inject_history_entry(
+                HistoryEntry(title="News Rating", score=self.news_score)
+            )
+        if self.rating_score:
+            stock = stock.inject_history_entry(
+                HistoryEntry(title="Quant Rating", score=self.rating_score)
+            )
+        return stock
+
 
 # Define as the template. When you want to use it, please DEEPCOPY it!
 SETTINGS_TEMPLATE: Dict[str, Any] = {
@@ -181,7 +204,7 @@ def map_input_to_closest_horizon(input_horizon: str, supported_horizons: List[st
 
 async def add_scores_and_rationales_to_stocks(
     ranked_stocks: List[StockID],
-    score_dict: Dict[StockID, Score],
+    score_dict: Dict[StockID, RecommendationScores],
     is_buy: Optional[bool],
     context: PlanRunContext,
     news_horizon: Optional[str] = None,
@@ -231,7 +254,7 @@ async def add_scores_and_rationales_to_stocks(
         if text_str == "":  # no text, skip
             tasks.append(identity(""))
         if is_buy is None:
-            score = score_dict[stock]
+            score = score_dict[stock].get_overall()
             direction_str = SCORE_DIRECTION.format(score=score.val)
         elif is_buy:
             direction_str = BUY_DIRECTION
@@ -256,6 +279,7 @@ async def add_scores_and_rationales_to_stocks(
 
     for result, stock in zip(results, ranked_stocks):
         text_group = aligned_text_groups.val[stock]
+        scores = score_dict[stock]
         try:
             rationale, citations = result.strip().replace("\n\n", "\n").split("\n")
             citation_idxs = json.loads(clean_to_json_if_needed(citations))
@@ -264,16 +288,17 @@ async def add_scores_and_rationales_to_stocks(
             rationale = ""
             citations = []
 
-        stocks_with_rec.append(
-            stock.inject_history_entry(
-                HistoryEntry(
-                    explanation=rationale,
-                    title="Recommendation",
-                    score=score_dict[stock],
-                    citations=citations,
-                )
+        stock = stock.inject_history_entry(
+            HistoryEntry(
+                explanation=rationale,
+                title="Recommendation Reasoning",
+                citations=citations,
             )
         )
+
+        stock = scores.add_score_history(stock)
+
+        stocks_with_rec.append(stock)
 
     return stocks_with_rec
 
@@ -348,8 +373,11 @@ class GetStockRecommendationsInput(ToolArgs):
         "both kinds of filters will be applied."
         "When filter is false, this function returns the same set of stockIDs as its input, but they will be "
         "sorted by their score and a recommendation rationale will be included."
-        "You should use filter = False if the user is asking for just a ranking and/or recommendation for "
-        "a specific list of stocks (including an entire stock universe or portfolio) without filtering"
+        "You should use filter = False if the client is asking for just a ranking and/or recommendation for "
+        "a specific list of stocks, without filtering. This includes asking for recommendations for all "
+        "stock in a users portfolio for another stock universe. Do not filter if the client clearly wants "
+        "output for all stocks, not just subset; if they mention `all` stocks or `each` stock, then "
+        "you probably want filter=False"
         "If buy = True, a rationale for buying each stock will "
         "be added, if buy = False, a rationale for selling/shorting the stock will be added. If buy == None, "
         "then the rationale will be based on justifying the score from a machine learning algorithm. "
@@ -408,6 +436,7 @@ async def get_stock_recommendations(
     ism_resp = await get_all_stock_investment_policies(context.user_id)
     ism_id = None
     if ism_resp.investment_policies:
+        ism = None
         if args.investment_style:
             ism = await pick_investment_style(
                 args.investment_style, list(ism_resp.investment_policies), context
@@ -415,9 +444,10 @@ async def get_stock_recommendations(
             if ism:
                 ism_id = ism.investment_policy_id.id
 
-        if ism_id is None:
-            ism = max(ism_resp.investment_policies, key=lambda x: x.last_updated.ToDatetime())
-            ism_id = ism.investment_policy_id.id
+        # Removing this for now, maybe we want some way to do something like it later though
+        # if ism_id is None:
+        #     ism = max(ism_resp.investment_policies, key=lambda x: x.last_updated.ToDatetime())
+        #     ism_id = ism.investment_policy_id.id
         if ism:
             await tool_log(
                 log=f'Using Investment Style "{ism.name}" to search stocks', context=context
@@ -456,16 +486,19 @@ async def get_stock_recommendations(
         raise Exception("Could not get ratings for any of the stocks provided")
 
     gbi_id_to_stock = {stock.gbi_id: stock for stock in stock_ids}
-    score_dict = {}
+    score_dict: Dict[StockID, RecommendationScores] = {}
     for row in rows:
-        if args.news_only:
-            score = get_news_sentiment_score(row)
-        else:
-            score = get_recommendation_score(row)
-        score_dict[gbi_id_to_stock[row.gbi_id]] = score
+        stock_id = gbi_id_to_stock[row.gbi_id]
+        rec_scores = RecommendationScores()
+        rec_scores.news_score = get_news_sentiment_score(row)
+        if not args.news_only:
+            rec_scores.rating_score = get_rating_score(row)
+        score_dict[stock_id] = rec_scores
 
     ranked_stocks = sorted(
-        score_dict, key=lambda x: score_dict[x], reverse=args.buy or args.buy is None
+        score_dict,
+        key=lambda x: score_dict[x].get_overall().val,
+        reverse=args.buy or args.buy is None,
     )
 
     if args.filter:
@@ -478,11 +511,15 @@ async def get_stock_recommendations(
             threshold = args.star_rating_threshold / 5
             if args.buy:
                 ranked_stocks = [
-                    stock for stock in ranked_stocks if score_dict[stock].val > threshold
+                    stock
+                    for stock in ranked_stocks
+                    if score_dict[stock].get_overall().val > threshold
                 ]
             else:
                 ranked_stocks = [
-                    stock for stock in ranked_stocks if score_dict[stock].val < threshold
+                    stock
+                    for stock in ranked_stocks
+                    if score_dict[stock].get_overall().val < threshold
                 ]
 
         if args.num_stocks_to_return:

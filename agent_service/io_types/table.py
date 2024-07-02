@@ -116,8 +116,7 @@ def object_histories_to_columns(objects: List[ComplexIOBase]) -> List[TableColum
         # Now create a separate column for every entry type in the
         # history. Entry types are grouped by "title".
         for entry in obj.history:
-            # Hack for backwards compat, TODO will remove
-            if not entry.title:
+            if not entry.title or not entry.explanation:
                 continue
             if entry.title not in entry_title_to_col_map:
                 # create the column

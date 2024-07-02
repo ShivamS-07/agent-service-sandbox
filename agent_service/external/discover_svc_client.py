@@ -110,10 +110,6 @@ def get_rating_score(row: DiscoverBlockRow) -> Score:
     return Score.scale_input(float(row.rating_and_delta.rating), 0, 5)
 
 
-def get_recommendation_score(row: DiscoverBlockRow) -> Score:
-    return Score.average(get_news_sentiment_score(row), get_rating_score(row))
-
-
 @grpc_retry
 @async_perf_logger
 async def get_temporary_discover_block_data(
