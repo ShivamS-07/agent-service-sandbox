@@ -1,6 +1,8 @@
 import datetime
 from typing import Optional, Tuple
 
+import pytz
+from dateutil.parser import parse as date_parse
 from google.protobuf.timestamp_pb2 import Timestamp
 
 DAYS_LOOKUP = {"D": 1, "W": 7, "M": 30, "Y": 365}
@@ -37,3 +39,7 @@ def timezoneify(dt: datetime.datetime) -> datetime.datetime:
     if not dt.tzinfo:
         return dt.replace(tzinfo=datetime.timezone.utc)
     return dt
+
+
+def parse_date_str_in_utc(date_str: str) -> datetime.datetime:
+    return date_parse(date_str).astimezone(pytz.utc)

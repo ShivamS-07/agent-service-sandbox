@@ -1,5 +1,6 @@
 import datetime
 import json
+from collections import defaultdict
 from typing import Dict, List, Optional
 
 from agent_service.io_types.dates import DateRange
@@ -8,7 +9,6 @@ from agent_service.io_types.text import StockOtherSecFilingText, StockSecFilingT
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
-from agent_service.utils.sec.constants import FILINGS
 from agent_service.utils.sec.sec_api import SecFiling, SecMapping
 from agent_service.utils.sec.supported_types import SUPPORTED_TYPE_MAPPING
 
@@ -16,22 +16,23 @@ from agent_service.utils.sec.supported_types import SUPPORTED_TYPE_MAPPING
 async def get_sec_filings_helper(
     stock_ids: List[StockID], start_date: Optional[datetime.date], end_date: Optional[datetime.date]
 ) -> Dict[StockID, List[StockSecFilingText]]:
-    stock_filing_map = {}
-    gbi_id_metadata_map = get_psql().get_sec_metadata_from_gbi(
-        gbi_ids=[stock.gbi_id for stock in stock_ids]
-    )
-    for stock_id in stock_ids:
-        cik = SecMapping.map_gbi_id_to_cik(stock_id.gbi_id, gbi_id_metadata_map)
-        if cik is None:
-            continue
+    stock_filing_map = defaultdict(list)
 
-        query = SecFiling.build_query_for_10k_10q_filings(cik, start_date, end_date)
-        resp = SecFiling.query_api.get_filings(query)
-        if (not resp) or (FILINGS not in resp) or (not resp[FILINGS]):
-            continue
-        stock_filing_map[stock_id] = [
-            StockSecFilingText(id=json.dumps(filing), stock_id=stock_id) for filing in resp[FILINGS]
-        ]
+    gbi_id_to_stock_id = {stock.gbi_id: stock for stock in stock_ids}
+
+    filing_gbi_pairs, filing_to_db_id = SecFiling.get_10k_10q_filings(
+        gbi_ids=list(gbi_id_to_stock_id.keys()),
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    for filing_str, gbi_id in filing_gbi_pairs:
+        stock_id = gbi_id_to_stock_id[gbi_id]
+        db_id = filing_to_db_id.get(filing_str, None)
+        stock_filing_map[stock_id].append(
+            StockSecFilingText(id=filing_str, stock_id=stock_id, db_id=db_id)
+        )
+
     return stock_filing_map
 
 

@@ -28,11 +28,7 @@ from agent_service.io_types.output import (
 from agent_service.io_types.stock import StockID
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
-from agent_service.utils.sec.constants import (
-    LINK_TO_HTML,
-    MANAGEMENT_SECTION,
-    RISK_FACTORS,
-)
+from agent_service.utils.sec.constants import LINK_TO_HTML
 from agent_service.utils.sec.sec_api import SecFiling
 
 TextIDType = Union[str, int]
@@ -805,22 +801,27 @@ class StockSecFilingText(StockText):
 
     text_type: ClassVar[str] = "SEC filing"
 
+    db_id: Optional[str] = None
+
     @classmethod
     async def _get_strs_lookup(
         cls, sec_filing_list: List[StockSecFilingText]  # type: ignore
     ) -> Dict[TextIDType, str]:
+        # Get the available content from DB first
         output: Dict[TextIDType, str] = {}
-        for obj in sec_filing_list:
-            filing_info = json.loads(obj.id)
-            management_section = SecFiling.download_10k_10q_section(
-                filing_info, section=MANAGEMENT_SECTION
-            )
-            risk_factor_section = SecFiling.download_10k_10q_section(
-                filing_info, section=RISK_FACTORS
-            )
 
-            text = f"Management Section:\n\n{management_section}\n\nRisk Factors Section:\n\n{risk_factor_section}"  # noqa
-            output[obj.id] = text
+        db_id_to_text_id = {filing.db_id: filing.id for filing in sec_filing_list if filing.db_id}
+        output.update(SecFiling.get_concat_10k_10q_sections_from_db(db_id_to_text_id))  # type: ignore
+
+        # Get the rest from SEC API directly
+        filing_gbi_pairs = [
+            (filing.id, filing.stock_id.gbi_id)
+            for filing in sec_filing_list
+            if not filing.db_id and filing.stock_id
+        ]
+        output.update(
+            SecFiling.get_concat_10k_10q_sections_from_api(filing_gbi_pairs, insert_to_db=True)  # type: ignore
+        )
 
         return output
 
@@ -844,7 +845,7 @@ class StockOtherSecFilingText(StockText):
     for other types)
     """
 
-    id: str
+    id: str  # SEC filing info or database table ID
 
     text_type: ClassVar[str] = "SEC filing"
 

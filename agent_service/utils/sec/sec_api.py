@@ -1,13 +1,16 @@
 import datetime
 import html
+import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import backoff
 from gbi_common_py_utils.utils.ssm import get_param
 from sec_api import ExtractorApi, MappingApi, QueryApi, RenderApi  # type: ignore
 
+from agent_service.utils.clickhouse import Clickhouse
+from agent_service.utils.date_utils import parse_date_str_in_utc
 from agent_service.utils.sec.constants import (
     CIK,
     COMPANY_NAME,
@@ -15,12 +18,15 @@ from agent_service.utils.sec.constants import (
     DEFAULT_FILING_FORMAT,
     FILE_10K,
     FILE_10Q,
+    FILED_TIMESTAMP,
     FILING_DOWNLOAD_LOOKUP,
     FILINGS,
     FORM_TYPE,
     LINK_TO_HTML,
+    MANAGEMENT_SECTION,
     NASDAQ,
     NYSE,
+    RISK_FACTORS,
     SEC_API_KEY_NAME,
     TICKER,
     US,
@@ -192,7 +198,49 @@ class SecFiling:
     MAX_SEC_QUERY_SIZE = 50
 
     @classmethod
-    def build_query_for_10k_10q_filings(
+    def get_10k_10q_filings(
+        cls,
+        gbi_ids: List[int],
+        start_date: Optional[datetime.date] = None,
+        end_date: Optional[datetime.date] = None,
+    ) -> Tuple[List[Tuple[str, int]], Dict[str, str]]:
+        """
+        Given a list of GBI IDs, and a date range, return 2 things:
+        1. A list of pairs (10K/Q filing string, GBI ID)
+        2. A dictionary mapping the available filings to their database table IDs
+
+        Use this method to know what filings are available in our own DB and use IDs to fetch them later,
+        and what are needed to fetch through API
+        """
+        from agent_service.utils.postgres import get_psql
+
+        gbi_id_metadata_map = get_psql().get_sec_metadata_from_gbi(gbi_ids=gbi_ids)
+
+        if end_date is None:
+            end_date = datetime.datetime.today() + datetime.timedelta(days=1)
+        if start_date is None:
+            # default to a quarter of data (one filing)
+            start_date = end_date - datetime.timedelta(days=90)
+
+        filing_to_db_id = cls._get_db_ids_for_filings(gbi_ids, start_date, end_date)
+
+        filing_gbi_pairs: List[Tuple[str, int]] = []
+        for gbi_id in gbi_ids:
+            cik = SecMapping.map_gbi_id_to_cik(gbi_id, gbi_id_metadata_map)
+            if cik is None:
+                continue
+
+            query = SecFiling._build_query_for_10k_10q_filings(cik, start_date, end_date)
+            resp: Optional[Dict] = SecFiling.query_api.get_filings(query)
+            if (not resp) or (FILINGS not in resp) or (not resp[FILINGS]):
+                continue
+
+            filing_gbi_pairs.extend([(json.dumps(filing), gbi_id) for filing in resp[FILINGS]])
+
+        return filing_gbi_pairs, filing_to_db_id
+
+    @classmethod
+    def _build_query_for_10k_10q_filings(
         cls,
         cik: str,
         start_date: Optional[datetime.date] = None,
@@ -231,7 +279,7 @@ class SecFiling:
         return query
 
     @classmethod
-    def download_10k_10q_section(cls, filing: Dict, section: str) -> Optional[str]:
+    def _download_10k_10q_section(cls, filing: Dict, section: str) -> Optional[str]:
         """Download 10K/10Q section from sec-api.io
 
         Args:
@@ -355,3 +403,96 @@ class SecFiling:
     def download_filing_full_content(cls, url: str) -> str:
         text = SecFiling.render_api.get_filing(url)
         return html.unescape(text)
+
+    @classmethod
+    def _get_db_ids_for_filings(
+        cls, gbi_ids: List[int], start_date: datetime.date, end_date: datetime.date
+    ) -> Dict[str, str]:
+        """
+        Given a list of SEC filings, return a list of database table IDs for the available filings
+        """
+
+        sql = """
+            SELECT id::TEXT, filing::TEXT
+            FROM sec.sec_filings
+            WHERE gbi_id IN %(gbi_ids)s AND filedAt >= %(start_date)s AND filedAt <= %(end_date)s
+        """
+        ch = Clickhouse()
+        result = ch.clickhouse_client.query(
+            sql, parameters={"gbi_ids": gbi_ids, "start_date": start_date, "end_date": end_date}
+        )
+        return {tup[1]: tup[0] for tup in result.result_rows}
+
+    @classmethod
+    def get_concat_10k_10q_sections_from_db(
+        cls, db_id_to_text_id: Dict[str, str]
+    ) -> Dict[str, str]:
+        sql = """
+            SELECT id::TEXT, riskFactors, managementSection
+            FROM sec.sec_filings
+            WHERE formType in ('10-K', '10-Q') AND id IN %(db_ids)s
+        """
+        ch = Clickhouse()
+        result = ch.clickhouse_client.query(
+            sql, parameters={"db_ids": list(db_id_to_text_id.keys())}
+        )
+
+        output = {}
+        for tup in result.result_rows:
+            risk_factor_section = tup[1]
+            management_section = tup[2]
+            text = (
+                f"Management Section:\n\n{management_section}\n\n"
+                f"Risk Factors Section:\n\n{risk_factor_section}"
+            )
+
+            filing_id = db_id_to_text_id[tup[0]]
+            output[filing_id] = text
+
+        return output
+
+    @classmethod
+    def get_concat_10k_10q_sections_from_api(
+        cls, filing_gbi_pairs: List[Tuple[str, int]], insert_to_db: bool = True
+    ) -> Dict[str, str]:
+        output = {}
+        records_to_upload_to_db: List[Dict] = []
+        for filing_info_str, gbi_id in filing_gbi_pairs:
+            filing_info = json.loads(filing_info_str)
+
+            # NOTE that these downloaded sections are processed, not the raw data
+            management_section = SecFiling._download_10k_10q_section(
+                filing_info, section=MANAGEMENT_SECTION
+            )
+            risk_factor_section = SecFiling._download_10k_10q_section(
+                filing_info, section=RISK_FACTORS
+            )
+
+            text = (
+                f"Management Section:\n\n{management_section}\n\n"
+                f"Risk Factors Section:\n\n{risk_factor_section}"
+            )
+            output[filing_info_str] = text
+
+            records_to_upload_to_db.append(
+                {
+                    "gbi_id": gbi_id,
+                    CIK: filing_info[CIK],
+                    FORM_TYPE: filing_info[FORM_TYPE],  # '10-Q' or '10-K
+                    FILED_TIMESTAMP: parse_date_str_in_utc(filing_info[FILED_TIMESTAMP]),
+                    "filing": filing_info_str,
+                    "content": text,  # management_section + risk_factor_section
+                    MANAGEMENT_SECTION: management_section,
+                    RISK_FACTORS: risk_factor_section,
+                }
+            )
+
+        if insert_to_db and records_to_upload_to_db:
+            cls._insert_10k_10q_sections_to_db(records_to_upload_to_db)
+
+        return output
+
+    @classmethod
+    def _insert_10k_10q_sections_to_db(cls, rows: List[Dict]) -> None:
+        ch = Clickhouse()
+        ch.multi_row_insert(table_name="sec.sec_filings", rows=rows)
