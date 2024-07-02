@@ -85,6 +85,7 @@ class WriteCommentaryInput(ToolArgs):
         "The input to this function can be prepared by the get_commentary_input tool."
         "Additionally, this tools MUST be used when user use phrases like 'tell me about' "
         "or 'write a commentary on', or similar phrases."
+        "portfolio_id can be provided if user wants a commentary based on a specific portfolio. "
     ),
     category=ToolCategory.COMMENTARY,
     reads_chat=True,
@@ -129,8 +130,18 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
             context=context,
         )
 
-    # Organize the commentary texts into themes, developments and articles
-    themes, developments, articles = await organize_commentary_texts(args.texts)
+    # Dedupluate the texts and organize the commentary texts into themes, developments and articles
+    text_ids = set()
+    deduplicated_texts = []
+    for text in args.texts:
+        if text.id not in text_ids:
+            text_ids.add(text.id)
+            deduplicated_texts.append(text)
+    await tool_log(
+        log=f"Texts size after deduplication: {len(deduplicated_texts)}",
+        context=context,
+    )
+    themes, developments, articles = await organize_commentary_texts(deduplicated_texts)
 
     # if number of articles is more than MAX_TOTAL_ARTICLES_PER_COMMENTARY,
     # randomly select specified number of themes, developments and articles
@@ -191,81 +202,78 @@ class GetCommentaryTextsInput(ToolArgs):
     start_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
     portfolio_id: Optional[str] = None
+    general_commentary: Optional[bool] = False
+    theme_num: Optional[int] = 3
 
 
 @tool(
     description=(
         "This function can be used when a client wants to write a commentary, article or summary of "
-        "market trends or specific topics."
+        "market trends and/or specific topics."
         "This function collects and prepares all texts to be used by the write_commentary tool "
         "for writing a commentary or short articles and market summaries. "
         "This function MUST only be used for write commentary tool. "
-        "If client wants a general commentary with no specific topics in mind, topics MUST be None. "
         "Adjust start_date to get the text from that date based on client request. "
         "If no start_date is provided, the function will only get text in last month. "
+        "general_commentary should be set to True if client wants to know about general market updates, "
+        "trends or news."
+        "topics is a list of topics user mentioned in the request. "
+        "If user wants a commentary on market trends, with focus on specific topics, "
+        "topics should be provided and general_commentary should be set to True."
+        "theme_num is the number of top themes to be retrieved for the commentary."
+        "theme_num can be changed based on client request."
+        "portfolio_id can be provided if user wants a commentary based on a specific portfolio."
     ),
     category=ToolCategory.COMMENTARY,
 )
 async def get_commentary_texts(
     args: GetCommentaryTextsInput, context: PlanRunContext
 ) -> List[Text]:
+
+    texts: List[Text] = []
+
     if not args.start_date:
         if args.date_range:
             args.start_date = args.date_range.start_date
-    if not args.topics:
-        # no topics were given so we need to find some default ones
-        if args.portfolio_id:
-            # get portfolio related topics (logic William is adding)
-            themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
-                GetTopNThemesInput(
-                    start_date=args.start_date, theme_num=3, portfolio_id=args.portfolio_id
-                ),
-                context,
-            )
-            themes_texts = themes_texts[:MAX_THEMES_PER_COMMENTARY]
-            theme_related_texts = await get_theme_related_texts(themes_texts, context)
-            await tool_log(
-                log=f"Retrieved texts for top {len(themes_texts)} themes - portfolio (id: {args.portfolio_id}).",
-                context=context,
-            )
-            return themes_texts + theme_related_texts
-        else:
-            # get popular topics
-            themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
-                GetTopNThemesInput(start_date=args.start_date, theme_num=3), context
-            )
-            themes_texts = themes_texts[:MAX_THEMES_PER_COMMENTARY]
-            theme_related_texts = await get_theme_related_texts(themes_texts, context)
-            await tool_log(
-                log=f"No portfolio provided. Got texts for top {len(themes_texts)} themes for general commentary.",
-                context=context,
-            )
-            print("themes_texts: ", len(themes_texts))
-            return themes_texts + theme_related_texts
 
-    else:
+    # If general_commentary is True, get the top themes and related texts
+    if args.general_commentary:
         if args.portfolio_id:
-            themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
-                GetTopNThemesInput(
-                    start_date=args.start_date, theme_num=3, portfolio_id=args.portfolio_id
-                ),
-                context,
-            )
-            themes_texts = themes_texts[:MAX_THEMES_PER_COMMENTARY]
-            theme_related_texts = await get_theme_related_texts(themes_texts, context)
             await tool_log(
-                log=f"Retrieved texts for top {len(themes_texts)} themes - portfolio (id: {args.portfolio_id}).",
+                log=f"Retrieving texts for top market themes related to portfolio (id: {args.portfolio_id}).",
                 context=context,
             )
-            topic_texts = await get_texts_for_topics(args, context)
-            return themes_texts + theme_related_texts + topic_texts
         else:
             await tool_log(
-                log=f"No portfolio is provided. Retrieving texts for the topics: {args.topics}.",
+                log="No portfolio is provided. Retrieving top market themes...",
                 context=context,
             )
-            texts = await get_texts_for_topics(args, context)
-            return texts
+        # get top themes
+        theme_num: int = args.theme_num if args.theme_num else 3
+        themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
+            GetTopNThemesInput(
+                start_date=args.start_date, theme_num=theme_num, portfolio_id=args.portfolio_id
+            ),
+            context,
+        )
+        themes_texts = themes_texts[:MAX_THEMES_PER_COMMENTARY]
+        theme_related_texts = await get_theme_related_texts(themes_texts, context)
+        texts.extend(themes_texts + theme_related_texts)
+        await tool_log(
+            log=f"Retrieved {len(texts)} theme related texts for top market trends.",
+            context=context,
+        )
+
+    # If topics are provided, get the texts for the topics
+    if args.topics:
+        topic_texts = await get_texts_for_topics(args, context)
+        await tool_log(
+            log=f"Retrieved {len(topic_texts)} texts for topics {args.topics}.",
+            context=context,
+        )
+        texts.extend(topic_texts)
+
+    return texts
 
 
 async def get_texts_for_topics(
@@ -318,7 +326,7 @@ async def get_texts_for_topics(
 
 # Test
 async def main() -> None:
-    input_text = "Write a commentary on impact of cloud computing on military industrial complex."
+    input_text = "Write a general commentary with focus on impact of cloud computing on military industrial complex."
     user_message = Message(message=input_text, is_user_message=True, message_time=get_now_utc())
     chat_context = ChatContext(messages=[user_message])
 
@@ -336,21 +344,8 @@ async def main() -> None:
         GetCommentaryTextsInput(
             topics=["cloud computing", "military industrial complex"],
             start_date=datetime.date(2024, 4, 1),
-        ),
-        context,
-    )
-    print("Length of texts: ", len(texts))  # type: ignore
-    args = WriteCommentaryInput(
-        texts=texts,  # type: ignore
-    )
-    result = await write_commentary(args, context)
-    print(result)
-    print("-------------------------------------------------")
-    print("-------------------------------------------------")
-    print("General commentary")
-    texts = await get_commentary_texts(
-        GetCommentaryTextsInput(
-            start_date=datetime.date(2024, 4, 1),
+            general_commentary=True,
+            theme_num=4,
         ),
         context,
     )
