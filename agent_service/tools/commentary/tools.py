@@ -11,7 +11,6 @@ from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
 from agent_service.io_types.text import Text, TextGroup, ThemeText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.commentary.constants import (
-    MAX_DEVELOPMENTS_PER_TOPIC,
     MAX_MATCHED_ARTICLES_PER_TOPIC,
     MAX_THEMES_PER_COMMENTARY,
     MAX_TOTAL_ARTICLES_PER_COMMENTARY,
@@ -70,7 +69,7 @@ from agent_service.utils.prefect import get_prefect_logger
 
 
 class WriteCommentaryInput(ToolArgs):
-    texts: List[Text]
+    inputs: List[Text]  # type: ignore
     portfolio_id: Optional[PortfolioID] = None
 
 
@@ -118,25 +117,19 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
             log="No portfolio name is provided. Skipping portfolio based commentary.",
             context=context,
         )
+
     # Dedupluate the texts and organize the commentary texts into themes, developments and articles
     text_ids = set()
     deduplicated_texts = []
-    for text in args.texts:
-        if text.id not in text_ids:
-            text_ids.add(text.id)
-            deduplicated_texts.append(text)
-    await tool_log(
-        log=f"Texts size after deduplication and applying text size limits: {len(deduplicated_texts)}",
-        context=context,
-    )
+    for text in args.inputs:
+        if isinstance(text, Text):
+            if text.id not in text_ids:
+                text_ids.add(text.id)
+                deduplicated_texts.append(text)
     themes, developments, articles = await organize_commentary_texts(deduplicated_texts)
 
     # if number of articles is more than MAX_TOTAL_ARTICLES_PER_COMMENTARY,
     # randomly select specified number of themes, developments and articles
-    if len(themes) > MAX_THEMES_PER_COMMENTARY:
-        themes = random.sample(themes, MAX_THEMES_PER_COMMENTARY)
-    if len(developments) > MAX_DEVELOPMENTS_PER_TOPIC * len(themes):
-        developments = random.sample(developments, MAX_DEVELOPMENTS_PER_TOPIC * len(themes))
     if len(articles) > MAX_TOTAL_ARTICLES_PER_COMMENTARY:
         articles = random.sample(articles, MAX_TOTAL_ARTICLES_PER_COMMENTARY)
 
