@@ -245,8 +245,10 @@ class SecFiling:
             )
             for query in queries:
                 resp: Optional[Dict] = SecFiling.query_api.get_filings(query=query)
-                if (not resp) or (FILINGS not in resp) or (not resp[FILINGS]):
+                if (not resp) or (FILINGS not in resp):
                     continue
+                elif not resp[FILINGS]:
+                    break
 
                 filing_gbi_pairs.extend([(json.dumps(filing), gbi_id) for filing in resp[FILINGS]])
 
@@ -300,7 +302,7 @@ class SecFiling:
                 {
                     "query": {"query_string": {"query": filter_query}},
                     "from": str(i),
-                    "size": str(i + cls.MAX_SEC_QUERY_SIZE),
+                    "size": cls.MAX_SEC_QUERY_SIZE,
                     "sort": [{"filedAt": {"order": "desc"}}],
                 }
             )
