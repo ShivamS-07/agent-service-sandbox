@@ -22,6 +22,7 @@ from agent_service.utils.sec.constants import (
     FILING_DOWNLOAD_LOOKUP,
     FILINGS,
     FORM_TYPE,
+    LINK_TO_FILING_DETAILS,
     LINK_TO_HTML,
     MANAGEMENT_SECTION,
     NASDAQ,
@@ -197,10 +198,14 @@ class SecFiling:
 
     MAX_SEC_QUERY_SIZE = 50
 
+    ################################################################################################
+    # Get Filings (metadata)
+    ################################################################################################
     @classmethod
-    def get_10k_10q_filings(
+    def get_filings(
         cls,
         gbi_ids: List[int],
+        form_types: List[str],
         start_date: Optional[datetime.date] = None,
         end_date: Optional[datetime.date] = None,
     ) -> Tuple[List[Tuple[str, int]], Dict[str, str]]:
@@ -212,128 +217,67 @@ class SecFiling:
         Use this method to know what filings are available in our own DB and use IDs to fetch them later,
         and what are needed to fetch through API
         """
-        from agent_service.utils.postgres import get_psql
-
-        gbi_id_metadata_map = get_psql().get_sec_metadata_from_gbi(gbi_ids=gbi_ids)
+        form_types = [form for form in form_types if form in SUPPORTED_TYPE_MAPPING]
+        if not form_types:
+            raise Exception("Couldn't find any supported SEC filing types in the request.")
 
         if end_date is None:
-            end_date = datetime.datetime.today() + datetime.timedelta(days=1)
+            end_date = datetime.date.today() + datetime.timedelta(days=1)
         if start_date is None:
             # default to a quarter of data (one filing)
             start_date = end_date - datetime.timedelta(days=90)
 
-        filing_to_db_id = cls._get_db_ids_for_filings(gbi_ids, start_date, end_date)
+        filing_to_db_id = cls._get_db_ids_for_filings(
+            gbi_ids, form_types=form_types, start_date=start_date, end_date=end_date
+        )
 
+        from agent_service.utils.postgres import get_psql
+
+        gbi_id_metadata_map = get_psql().get_sec_metadata_from_gbi(gbi_ids=gbi_ids)
         filing_gbi_pairs: List[Tuple[str, int]] = []
         for gbi_id in gbi_ids:
             cik = SecMapping.map_gbi_id_to_cik(gbi_id, gbi_id_metadata_map)
             if cik is None:
                 continue
 
-            query = SecFiling._build_query_for_10k_10q_filings(cik, start_date, end_date)
-            resp: Optional[Dict] = SecFiling.query_api.get_filings(query)
-            if (not resp) or (FILINGS not in resp) or (not resp[FILINGS]):
-                continue
+            queries = SecFiling._build_queries_for_filings(
+                cik, form_types=form_types, start_date=start_date, end_date=end_date
+            )
+            for query in queries:
+                resp: Optional[Dict] = SecFiling.query_api.get_filings(query=query)
+                if (not resp) or (FILINGS not in resp) or (not resp[FILINGS]):
+                    continue
 
-            filing_gbi_pairs.extend([(json.dumps(filing), gbi_id) for filing in resp[FILINGS]])
+                filing_gbi_pairs.extend([(json.dumps(filing), gbi_id) for filing in resp[FILINGS]])
+
+                if len(resp[FILINGS]) < cls.MAX_SEC_QUERY_SIZE:
+                    # If there are fewer than the max number of allowed
+                    # responses for this query, we're done.
+                    break
+
+        logger.info(
+            f"Found {len(filing_gbi_pairs)} filings for {len(gbi_ids)} stocks "
+            f"between {start_date} and {end_date}. "
+            f"Found {len(filing_to_db_id)} filings cached in the database."
+        )
 
         return filing_gbi_pairs, filing_to_db_id
-
-    @classmethod
-    def _build_query_for_10k_10q_filings(
-        cls,
-        cik: str,
-        start_date: Optional[datetime.date] = None,
-        end_date: Optional[datetime.date] = None,
-    ) -> Dict:
-        """Build the query string for the SEC Filing API
-
-        Args:
-            cik (str): Stock's CIK code
-
-        Returns:
-            Dict: A query in dictionary format. To download the filing via the query, call
-        `SecFiling.query_api.get_filings(query)`
-        """
-        if end_date is None:
-            end_date = datetime.datetime.today() + datetime.timedelta(days=1)
-        if start_date is None:
-            # default to a quarter of data (one filing)
-            start_date = end_date - datetime.timedelta(days=90)
-
-        end_date_str = end_date.isoformat()
-        start_date_str = start_date.isoformat()
-
-        forms = " OR ".join((f'formType:"{typ}"' for typ in cls.file_type_10kq))
-
-        query = {
-            "query": {
-                "query_string": {
-                    "query": f"cik:{cik} AND filedAt:[{start_date_str} TO {end_date_str}] AND ({forms})"  # noqa
-                }
-            },
-            "from": "0",
-            "size": str(cls.MAX_SEC_QUERY_SIZE),
-            "sort": [{"filedAt": {"order": "desc"}}],
-        }
-        return query
-
-    @classmethod
-    def _download_10k_10q_section(cls, filing: Dict, section: str) -> Optional[str]:
-        """Download 10K/10Q section from sec-api.io
-
-        Args:
-            filing (Dict): A dictionary with the following fields: ['id', 'accessionNo', 'cik',
-        'ticker', 'companyName', 'companyNameLong', 'formType', 'description', 'filedAt',
-        'linkToTxt', 'linkToHtml', 'linkToXbrl', 'linkToFilingDetails', 'entities', 'periodOfReport'
-        'documentFormatFiles', 'dataFiles', 'seriesAndClassesContractsInformation']
-            section (str): the section to download. For now only supports MANAGEMENT_SECTION or
-        RISK_FACTORS
-
-        Returns:
-            Optional[str]: section text or None if failed to download
-        """
-        try:
-            if filing[FORM_TYPE] not in cls.file_type_10kq:
-                logger.warning(f"Unsupported form type: {filing[FORM_TYPE]}")
-                return None
-
-            sec_section: Optional[str] = FILING_DOWNLOAD_LOOKUP[filing[FORM_TYPE]].get(
-                section, None
-            )
-            if sec_section is None:
-                logger.warning(f"Unsupported section: {section}")
-                return None
-
-            html_text = cls.extractor_api.get_section(
-                filing_url=filing[LINK_TO_HTML],
-                section=sec_section,
-                return_type=DEFAULT_FILING_FORMAT,
-            )
-            return html.unescape(html_text)
-        except Exception as e:
-            cik = filing.get(CIK, None)
-            company_name = filing.get(COMPANY_NAME, None)
-            logger.warning(
-                f"Failed to download management section for {company_name=}, ({cik=}): {e}"
-            )
-            return None
 
     @classmethod
     def _build_queries_for_filings(
         cls,
         cik: str,
         form_types: List[str],
-        start_date: Optional[datetime.date] = None,
-        end_date: Optional[datetime.date] = None,
+        start_date: datetime.date,
+        end_date: datetime.date,
     ) -> List[Dict]:
         """Build the query string for the SEC Filing API
 
         Args:
             cik (str): Stock's CIK code
             form_types (List[str]): List of form types to search for
-            start_date (Optional[datetime.date]): Start date for the query
-            end_date (Optional[datetime.date]): End date for the query. If neither start_date nor
+            start_date (datetime.date): Start date for the query
+            end_date (datetime.date): End date for the query. If neither start_date nor
         end_date is provided, the default is to search for the last 90 days
 
         Returns:
@@ -343,12 +287,6 @@ class SecFiling:
         form_types = [form for form in form_types if form in SUPPORTED_TYPE_MAPPING]
         if not form_types:
             return []
-
-        if end_date is None:
-            end_date = datetime.datetime.today() + datetime.timedelta(days=1)
-        if start_date is None:
-            # default to a quarter of data (one filing)
-            start_date = end_date - datetime.timedelta(days=90)
 
         end_date_str = end_date.isoformat()
         start_date_str = start_date.isoformat()
@@ -370,59 +308,39 @@ class SecFiling:
         return queries
 
     @classmethod
-    def get_filings(
-        cls,
-        cik: str,
-        form_types: List[str],
-        start_date: Optional[datetime.date] = None,
-        end_date: Optional[datetime.date] = None,
-    ) -> List[Dict]:
-        queries = cls._build_queries_for_filings(cik, form_types, start_date, end_date)
-        filings = []
-        try:
-            for query in queries:
-                response = cls.query_api.get_filings(query)  # It has built-in retry logic (3 times)
-                filings.extend(
-                    [
-                        filing
-                        for filing in response[FILINGS]
-                        if filing[FORM_TYPE] in SUPPORTED_TYPE_MAPPING
-                    ]
-                )
-
-                if len(response[FILINGS]) < cls.MAX_SEC_QUERY_SIZE:
-                    # If there are fewer than the max number of allowed
-                    # responses for this query, we're done.
-                    break
-        except Exception as e:
-            logger.warning(f"Failed to get the URL to the filings for CIK {cik}: {e}")
-
-        return filings
-
-    @classmethod
-    def download_filing_full_content(cls, url: str) -> str:
-        text = SecFiling.render_api.get_filing(url)
-        return html.unescape(text)
-
-    @classmethod
     def _get_db_ids_for_filings(
-        cls, gbi_ids: List[int], start_date: datetime.date, end_date: datetime.date
+        cls,
+        gbi_ids: List[int],
+        form_types: List[str],
+        start_date: datetime.date,
+        end_date: datetime.date,
     ) -> Dict[str, str]:
         """
         Given a list of SEC filings, return a list of database table IDs for the available filings
         """
 
         sql = """
-            SELECT id::TEXT, filing::TEXT
+            SELECT DISTINCT ON (formType, gbi_id, filedAt)
+                id::TEXT, filing
             FROM sec.sec_filings
-            WHERE gbi_id IN %(gbi_ids)s AND filedAt >= %(start_date)s AND filedAt <= %(end_date)s
+            WHERE gbi_id IN %(gbi_ids)s AND formType IN %(form_types)s
+                AND filedAt >= %(start_date)s AND filedAt <= %(end_date)s
         """
         ch = Clickhouse()
         result = ch.clickhouse_client.query(
-            sql, parameters={"gbi_ids": gbi_ids, "start_date": start_date, "end_date": end_date}
+            sql,
+            parameters={
+                "gbi_ids": gbi_ids,
+                "form_types": form_types,
+                "start_date": start_date,
+                "end_date": end_date,
+            },
         )
         return {tup[1]: tup[0] for tup in result.result_rows}
 
+    ################################################################################################
+    # Get sections for 10K/10Q filings
+    ################################################################################################
     @classmethod
     def get_concat_10k_10q_sections_from_db(
         cls, db_id_to_text_id: Dict[str, str]
@@ -467,12 +385,19 @@ class SecFiling:
             risk_factor_section = SecFiling._download_10k_10q_section(
                 filing_info, section=RISK_FACTORS
             )
-
             text = (
                 f"Management Section:\n\n{management_section}\n\n"
                 f"Risk Factors Section:\n\n{risk_factor_section}"
             )
             output[filing_info_str] = text
+
+            # LINK_TO_HTML is ok for extracting sections, but LINK_TO_FILING_DETAILS is needed for full content
+            # See examples here:
+            # LINK_TO_HTML: https://www.sec.gov/Archives/edgar/data/320193/000032019324000069/0000320193-24-000069-index.htm  # noqa
+            # LINK_TO_FILING_DETAILS: https://www.sec.gov/Archives/edgar/data/320193/000032019324000069/aapl-20240330.htm  # noqa
+
+            full_content = SecFiling.render_api.get_filing(url=filing_info[LINK_TO_FILING_DETAILS])
+            processed_full_content = html.unescape(full_content)
 
             records_to_upload_to_db.append(
                 {
@@ -481,18 +406,108 @@ class SecFiling:
                     FORM_TYPE: filing_info[FORM_TYPE],  # '10-Q' or '10-K
                     FILED_TIMESTAMP: parse_date_str_in_utc(filing_info[FILED_TIMESTAMP]),
                     "filing": filing_info_str,
-                    "content": text,  # management_section + risk_factor_section
+                    "content": processed_full_content,
                     MANAGEMENT_SECTION: management_section,
                     RISK_FACTORS: risk_factor_section,
                 }
             )
 
         if insert_to_db and records_to_upload_to_db:
-            cls._insert_10k_10q_sections_to_db(records_to_upload_to_db)
+            ch = Clickhouse()
+            ch.multi_row_insert(table_name="sec.sec_filings", rows=records_to_upload_to_db)
 
         return output
 
     @classmethod
-    def _insert_10k_10q_sections_to_db(cls, rows: List[Dict]) -> None:
+    def _download_10k_10q_section(cls, filing: Dict, section: str) -> Optional[str]:
+        """Download 10K/10Q section from sec-api.io
+
+        Args:
+            filing (Dict): A dictionary with the following fields: ['id', 'accessionNo', 'cik',
+        'ticker', 'companyName', 'companyNameLong', 'formType', 'description', 'filedAt',
+        'linkToTxt', 'linkToHtml', 'linkToXbrl', 'linkToFilingDetails', 'entities', 'periodOfReport'
+        'documentFormatFiles', 'dataFiles', 'seriesAndClassesContractsInformation']
+            section (str): the section to download. For now only supports MANAGEMENT_SECTION or
+        RISK_FACTORS
+
+        Returns:
+            Optional[str]: section text or None if failed to download
+        """
+        try:
+            if filing[FORM_TYPE] not in cls.file_type_10kq:
+                logger.warning(f"Unsupported form type: {filing[FORM_TYPE]}")
+                return None
+
+            sec_section: Optional[str] = FILING_DOWNLOAD_LOOKUP[filing[FORM_TYPE]].get(
+                section, None
+            )
+            if sec_section is None:
+                logger.warning(f"Unsupported section: {section}")
+                return None
+
+            html_text = cls.extractor_api.get_section(
+                filing_url=filing[LINK_TO_HTML],
+                section=sec_section,
+                return_type=DEFAULT_FILING_FORMAT,
+            )
+            return html.unescape(html_text)
+        except Exception as e:
+            cik = filing.get(CIK, None)
+            company_name = filing.get(COMPANY_NAME, None)
+            logger.warning(
+                f"Failed to download management section for {company_name=}, ({cik=}): {e}"
+            )
+            return None
+
+    ################################################################################################
+    # Get full content of filings
+    ################################################################################################
+    @classmethod
+    def get_filings_content_from_db(cls, db_id_to_text_id: Dict[str, str]) -> Dict[str, str]:
+        sql = """
+            SELECT id::TEXT, content
+            FROM sec.sec_filings
+            WHERE id IN %(db_ids)s
+        """
         ch = Clickhouse()
-        ch.multi_row_insert(table_name="sec.sec_filings", rows=rows)
+        result = ch.clickhouse_client.query(
+            sql, parameters={"db_ids": list(db_id_to_text_id.keys())}
+        )
+
+        output = {}
+        for tup in result.result_rows:
+            filing_id = db_id_to_text_id[tup[0]]
+            output[filing_id] = tup[1]
+
+        return output
+
+    @classmethod
+    def get_filings_content_from_api(
+        cls, filing_gbi_pairs: List[Tuple[str, int]], insert_to_db: bool = True
+    ) -> Dict[str, str]:
+        output = {}
+        records_to_upload_to_db: List[Dict] = []
+        for filing_info_str, gbi_id in filing_gbi_pairs:
+            filing_info = json.loads(filing_info_str)
+
+            text = SecFiling.render_api.get_filing(url=filing_info[LINK_TO_FILING_DETAILS])
+            processed_text = html.unescape(text)
+
+            output[filing_info_str] = processed_text
+
+            records_to_upload_to_db.append(
+                {
+                    "gbi_id": gbi_id,
+                    CIK: filing_info[CIK],
+                    FORM_TYPE: filing_info[FORM_TYPE],
+                    FILED_TIMESTAMP: parse_date_str_in_utc(filing_info[FILED_TIMESTAMP]),
+                    "filing": filing_info_str,
+                    "content": processed_text,
+                }
+            )
+
+        if insert_to_db and records_to_upload_to_db:
+            ch = Clickhouse()
+            ch.multi_row_insert(table_name="sec.sec_filings", rows=records_to_upload_to_db)
+
+        return output

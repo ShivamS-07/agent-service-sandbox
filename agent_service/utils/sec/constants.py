@@ -14,6 +14,7 @@ FILINGS = "filings"
 FORM_TYPE = "formType"
 COMPANY_NAME = "companyName"
 LINK_TO_HTML = "linkToHtml"
+LINK_TO_FILING_DETAILS = "linkToFilingDetails"
 FILED_TIMESTAMP = "filedAt"
 
 DEFAULT_FILING_FORMAT = "text"

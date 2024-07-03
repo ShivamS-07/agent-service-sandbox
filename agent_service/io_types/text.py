@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from itertools import chain
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Type, Union
@@ -28,7 +27,6 @@ from agent_service.io_types.output import (
 from agent_service.io_types.stock import StockID
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
-from agent_service.utils.sec.constants import LINK_TO_HTML
 from agent_service.utils.sec.sec_api import SecFiling
 
 TextIDType = Union[str, int]
@@ -845,21 +843,31 @@ class StockOtherSecFilingText(StockText):
     for other types)
     """
 
-    id: str  # SEC filing info or database table ID
+    id: str  # SEC filing info
 
     text_type: ClassVar[str] = "SEC filing"
+
+    db_id: Optional[str] = None
 
     @classmethod
     async def _get_strs_lookup(
         cls, sec_filing_list: List[StockOtherSecFilingText]  # type: ignore
     ) -> Dict[TextIDType, str]:
-        # TODO: The outputs should be cached on-demand and not downloaded every time
-
+        # Get the available content from DB first
         output: Dict[TextIDType, str] = {}
-        for obj in sec_filing_list:
-            filing_info = json.loads(obj.id)
-            full_content = SecFiling.download_filing_full_content(filing_info[LINK_TO_HTML])
-            output[obj.id] = full_content
+
+        db_id_to_text_id = {filing.db_id: filing.id for filing in sec_filing_list if filing.db_id}
+        output.update(SecFiling.get_filings_content_from_db(db_id_to_text_id))  # type: ignore
+
+        # Get the rest from SEC API directly
+        filing_gbi_pairs = [
+            (filing.id, filing.stock_id.gbi_id)
+            for filing in sec_filing_list
+            if not filing.db_id and filing.stock_id
+        ]
+        output.update(
+            SecFiling.get_filings_content_from_api(filing_gbi_pairs, insert_to_db=True)  # type: ignore
+        )
 
         return output
 

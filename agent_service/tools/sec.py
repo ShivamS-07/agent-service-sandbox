@@ -1,5 +1,4 @@
 import datetime
-import json
 from collections import defaultdict
 from typing import Dict, List, Optional
 
@@ -8,9 +7,8 @@ from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockOtherSecFilingText, StockSecFilingText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
-from agent_service.utils.postgres import get_psql
-from agent_service.utils.sec.sec_api import SecFiling, SecMapping
-from agent_service.utils.sec.supported_types import SUPPORTED_TYPE_MAPPING
+from agent_service.utils.sec.constants import FILE_10K, FILE_10Q
+from agent_service.utils.sec.sec_api import SecFiling
 
 
 async def get_sec_filings_helper(
@@ -20,8 +18,9 @@ async def get_sec_filings_helper(
 
     gbi_id_to_stock_id = {stock.gbi_id: stock for stock in stock_ids}
 
-    filing_gbi_pairs, filing_to_db_id = SecFiling.get_10k_10q_filings(
+    filing_gbi_pairs, filing_to_db_id = SecFiling.get_filings(
         gbi_ids=list(gbi_id_to_stock_id.keys()),
+        form_types=[FILE_10K, FILE_10Q],
         start_date=start_date,
         end_date=end_date,
     )
@@ -82,27 +81,21 @@ async def get_other_sec_filings_helper(
     start_date: Optional[datetime.date],
     end_date: Optional[datetime.date],
 ) -> Dict[StockID, List[StockOtherSecFilingText]]:
-    # TODO: We need to cache the downloaded filings on-demand
-
-    form_types = [form for form in form_types if form in SUPPORTED_TYPE_MAPPING]
-    if not form_types:
-        raise Exception("Couldn't find any supported SEC filing types in the request.")
-
-    # TODO: I think we should have a table to store the mapping
-    gbi_id_metadata_map = get_psql().get_sec_metadata_from_gbi(
-        gbi_ids=[stock.gbi_id for stock in stock_ids]
+    gbi_id_to_stock_id = {stock.gbi_id: stock for stock in stock_ids}
+    filing_gbi_pairs, filing_to_db_id = SecFiling.get_filings(
+        gbi_ids=list(gbi_id_to_stock_id.keys()),
+        form_types=form_types,
+        start_date=start_date,
+        end_date=end_date,
     )
 
-    stock_filing_map = {}
-    for stock_id in stock_ids:
-        cik = SecMapping.map_gbi_id_to_cik(stock_id.gbi_id, gbi_id_metadata_map)
-        if cik is None:
-            continue
-
-        filings = SecFiling.get_filings(cik, form_types, start_date, end_date)
-        stock_filing_map[stock_id] = [
-            StockOtherSecFilingText(id=json.dumps(filing), stock_id=stock_id) for filing in filings
-        ]
+    stock_filing_map = defaultdict(list)
+    for filing_str, gbi_id in filing_gbi_pairs:
+        stock_id = gbi_id_to_stock_id[gbi_id]
+        db_id = filing_to_db_id.get(filing_str, None)
+        stock_filing_map[stock_id].append(
+            StockOtherSecFilingText(id=filing_str, stock_id=stock_id, db_id=db_id)
+        )
 
     if not stock_filing_map:
         raise Exception("No filings were found.")
