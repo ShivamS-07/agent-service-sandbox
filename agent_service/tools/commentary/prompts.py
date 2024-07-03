@@ -151,3 +151,38 @@ WRITING_FORMAT_TEXT_DICT = {
 
 
 NO_PROMPT = Prompt(name="NO_PROMPT", template="")
+
+
+GET_COMMENTARY_INPUTS_DESCRIPTION = (
+    "This function can be used when a client wants to write a commentary, article or summary of "
+    "market trends and/or specific topics."
+    "market trends and/or specific topics."
+    "This function collects and prepares all texts to be used by the write_commentary tool "
+    "for writing a commentary or short articles and market summaries. "
+    "This function MUST only be used for write commentary tool and NO WHERE ELSE. "
+    "Adjust start_date to get the text from that date based on client request. "
+    "If no start_date is provided, the function will only get text in last month. "
+    "general_commentary should be set to True if client wants to know about general market updates, "
+    "trends or news."
+    "topics is a list of topics user mentioned in the request. "
+    "If user wants a commentary on market trends, with focus on specific topics, "
+    "topics should be provided and general_commentary should be set to True."
+    "theme_num is the number of top themes to be retrieved for the commentary."
+    "theme_num can be changed based on client request."
+    "portfolio_id can be provided if user wants a commentary based on a specific portfolio."
+)
+
+WRITE_COMMENTARY_DESCRIPTION = (
+    "This function can be used when a client wants to write a commentary, article or summary of "
+    "market trends or specific topics."
+    "This function generates a commentary either for general market trends or "
+    "based on specific topics mentioned by a client. "
+    "The function creates a concise summary based on a comprehensive analysis of the provided texts. "
+    "The commentary will be written in a professional tone, "
+    "incorporating any specific instructions or preferences mentioned by the client during their interaction. "
+    "The input to this function MUST be prepared by the get_commentary_input tool."
+    "This function MUST NOT be used if get_commentary_input tool is not used. "
+    "Additionally, this tools MUST be used when user use phrases like 'tell me about' "
+    "or 'write a commentary on', or similar phrases."
+    "portfolio_id can be provided if user wants a commentary based on a specific portfolio. "
+)

@@ -5,9 +5,9 @@ from uuid import uuid4
 
 from agent_service.io_types.text import Text
 from agent_service.tools.commentary.tools import (
-    GetCommentaryTextsInput,
+    GetCommentaryInputsInput,
     WriteCommentaryInput,
-    get_commentary_texts,
+    get_commentary_inputs,
     write_commentary,
 )
 from agent_service.types import ChatContext, Message, PlanRunContext
@@ -36,8 +36,8 @@ class TestCommentary(IsolatedAsyncioTestCase):
     @unittest.skip("Skipping for now until we can mock GPT output easily")
     async def test_write_commentary(self):
 
-        texts = await get_commentary_texts(
-            GetCommentaryTextsInput(
+        texts = await get_commentary_inputs(
+            GetCommentaryInputsInput(
                 topics=["cloud computing", "military industrial complex"],
                 start_date=datetime.date(2024, 4, 1),
             ),

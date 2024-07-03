@@ -13,6 +13,7 @@ from agent_service.io_types.table import (
     TableColumnType,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.prefect import get_prefect_logger
 
@@ -97,31 +98,35 @@ async def convert_portfolio_mention_to_portfolio_id(
     # If only 1 perfect match, return the id
     if len(perfect_matches) == 1:
         logger.info(f"only 1 perfect match: {perfect_matches[0]}")
-        return perfect_matches[0].workspace_id.id
+
+        portfolio = perfect_matches[0]
 
     # If more than 1 perfect matches, return the one which edited most recently
-    if len(perfect_matches) > 1:
+    elif len(perfect_matches) > 1:
         sorted_perfect_matches = sorted(
             perfect_matches,
             key=lambda x: x.last_updated.seconds if x.last_updated else x.created_at.seconds,
             reverse=True,
         )
-        logger.info(f"more than 1 perfect match, most recent: {sorted_perfect_matches[0]}")
-        return sorted_perfect_matches[0].workspace_id.id
+        logger.info(f"More than 1 perfect match, most recent: {sorted_perfect_matches[0]}")
+
+        portfolio = sorted_perfect_matches[0]
 
     # If no perfect matches, return the user owned portfolio which edited most recently
-    if len(user_owned_portfolios) > 0:
+    elif len(user_owned_portfolios) > 0:
         sorted_user_owned_portfolios = sorted(
             user_owned_portfolios,
             key=lambda x: x.last_updated.seconds if x.last_updated else x.created_at.seconds,
             reverse=True,
         )
         logger.info(f"no perfect matches, most recent: {sorted_user_owned_portfolios[0]}")
-        return sorted_user_owned_portfolios[0].workspace_id.id
-
-    # If no perfect matches and no user owned portfolios, return first portfolio id
-    logger.info(
-        "no perfect matches and no user owned portfolios,"
-        f" return first portfolio id: {workspaces[0]}"
-    )
-    return workspaces[0].workspace_id.id
+        portfolio = sorted_user_owned_portfolios[0]
+    else:
+        # If no perfect matches and no user owned portfolios, return first portfolio id
+        logger.info(
+            "no perfect matches and no user owned portfolios,"
+            f" return first portfolio id: {workspaces[0]}"
+        )
+        portfolio = workspaces[0]
+    await tool_log(log=f"Portfolio found: {portfolio.name}", context=context)
+    return portfolio.workspace_id.id

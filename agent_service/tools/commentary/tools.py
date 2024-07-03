@@ -28,8 +28,10 @@ from agent_service.tools.commentary.prompts import (
     COMMENTARY_PROMPT_MAIN,
     COMMENTARY_SYS_PROMPT,
     GEOGRAPHY_PROMPT,
+    GET_COMMENTARY_INPUTS_DESCRIPTION,
     NO_PROMPT,
     PREVIOUS_COMMENTARY_PROMPT,
+    WRITE_COMMENTARY_DESCRIPTION,
     WRITING_FORMAT_TEXT_DICT,
     WRITING_STYLE_PROMPT,
 )
@@ -73,20 +75,7 @@ class WriteCommentaryInput(ToolArgs):
 
 
 @tool(
-    description=(
-        "This function can be used when a client wants to write a commentary, article or summary of "
-        "market trends or specific topics."
-        "This function generates a commentary either for general market trends or "
-        "based on specific topics mentioned by a client. "
-        "The function creates a concise summary based on a comprehensive analysis of the provided texts. "
-        "The commentary will be written in a professional tone, "
-        "incorporating any specific instructions or preferences mentioned by the client during their interaction. "
-        "The input to this function can be prepared by the get_commentary_input tool."
-        "Additionally, this tools MUST be used when user use phrases like 'tell me about' "
-        "or 'write a commentary on', or similar phrases."
-        "portfolio_id can be provided if user wants a commentary based on a specific portfolio. "
-        "portfolio_id can be provided if user wants a commentary based on a specific portfolio. "
-    ),
+    description=WRITE_COMMENTARY_DESCRIPTION,
     category=ToolCategory.COMMENTARY,
     reads_chat=True,
 )
@@ -180,9 +169,9 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         texts=texts,
         chat_context=chat_context,
     )
-    # save main prompt as text file
-    with open("main_prompt.txt", "w") as f:
-        f.write(main_prompt.filled_prompt)
+    # save main prompt as text file for debugging
+    # with open("main_prompt.txt", "w") as f:
+    #     f.write(main_prompt.filled_prompt)
 
     # Write the commentary
     result = await llm.do_chat_w_sys_prompt(
@@ -198,7 +187,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     return commentary
 
 
-class GetCommentaryTextsInput(ToolArgs):
+class GetCommentaryInputsInput(ToolArgs):
     topics: List[str] = None  # type: ignore
     date_range: Optional[DateRange] = None
     portfolio_id: Optional[str] = None
@@ -207,28 +196,11 @@ class GetCommentaryTextsInput(ToolArgs):
 
 
 @tool(
-    description=(
-        "This function can be used when a client wants to write a commentary, article or summary of "
-        "market trends and/or specific topics."
-        "market trends and/or specific topics."
-        "This function collects and prepares all texts to be used by the write_commentary tool "
-        "for writing a commentary or short articles and market summaries. "
-        "This function MUST only be used for write commentary tool. "
-        "Adjust the date range to get the text from that date range based on client request. "
-        "If no date_range is provided, the function will only get text in last month. "
-        "general_commentary should be set to True if client wants to know about general market updates, "
-        "trends or news."
-        "topics is a list of topics user mentioned in the request. "
-        "If user wants a commentary on market trends, with focus on specific topics, "
-        "topics should be provided and general_commentary should be set to True."
-        "theme_num is the number of top themes to be retrieved for the commentary."
-        "theme_num can be changed based on client request."
-        "portfolio_id can be provided if user wants a commentary based on a specific portfolio."
-    ),
+    description=GET_COMMENTARY_INPUTS_DESCRIPTION,
     category=ToolCategory.COMMENTARY,
 )
-async def get_commentary_texts(
-    args: GetCommentaryTextsInput, context: PlanRunContext
+async def get_commentary_inputs(
+    args: GetCommentaryInputsInput, context: PlanRunContext
 ) -> List[Text]:
 
     texts: List[Text] = []
@@ -274,7 +246,7 @@ async def get_commentary_texts(
 
 
 async def get_texts_for_topics(
-    args: GetCommentaryTextsInput, context: PlanRunContext
+    args: GetCommentaryInputsInput, context: PlanRunContext
 ) -> List[Text]:
     """
     This function gets the texts for the given topics. If the themes are found, it gets the related texts.
@@ -337,8 +309,8 @@ async def main() -> None:
         skip_task_cache=True,
         run_tasks_without_prefect=True,
     )
-    texts = await get_commentary_texts(
-        GetCommentaryTextsInput(
+    texts = await get_commentary_inputs(
+        GetCommentaryInputsInput(
             topics=["cloud computing", "military industrial complex"],
             date_range=None,
             general_commentary=True,
