@@ -409,7 +409,6 @@ async def get_news_articles_for_theme_developments(
 
 
 class GetTopNThemesInput(ToolArgs):
-    start_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
     theme_num: int = 3
     portfolio_id: Optional[PortfolioID] = None
@@ -466,10 +465,10 @@ async def get_top_N_macroeconomic_themes(
         return closest_range
 
     logger = get_prefect_logger(__name__)
-    start_date = args.start_date
-    if not start_date:
-        if args.date_range:
-            start_date = args.date_range.start_date
+    if args.date_range:
+        start_date = args.date_range.start_date
+    else:
+        start_date = None
     time_delta, date_range = await _get_date_range(start_date)
     themes: List[ThemeText] = []
     if args.portfolio_id:

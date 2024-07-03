@@ -549,9 +549,6 @@ class CompanyKPIsRequest(ToolArgs):
     stock_id: StockID
     kpis: List[KPIText]
     table_name: str
-    num_future_quarters: Optional[int] = None
-    num_prev_quarters: Optional[int] = None
-    anchor_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
     simple_output: bool = False
 
@@ -562,15 +559,12 @@ class CompanyKPIsRequest(ToolArgs):
 )
 async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunContext) -> Table:
     num_future_quarters, num_prev_quarters, anchor_date = interpret_date_quarter_inputs(
-        args.num_future_quarters, args.num_prev_quarters, args.anchor_date, args.date_range
+        None, None, None, args.date_range
     )
-    args.anchor_date = anchor_date
-    args.num_future_quarters = num_future_quarters
-    args.num_prev_quarters = num_prev_quarters
 
     if args.simple_output:
-        args.num_future_quarters = 0
-        args.num_prev_quarters = 0
+        num_future_quarters = 0
+        num_prev_quarters = 0
 
     kpi_metadata_dict = kpi_retriever.convert_kpi_text_to_metadata(
         gbi_id=args.stock_id.gbi_id, kpi_texts=args.kpis
@@ -579,9 +573,9 @@ async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunCon
     data = kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
         gbi_id=args.stock_id.gbi_id,
         kpis=kpi_list,
-        starting_date=args.anchor_date,
-        num_prev_quarters=args.num_prev_quarters,
-        num_future_quarters=args.num_future_quarters,
+        starting_date=anchor_date,
+        num_prev_quarters=num_prev_quarters,
+        num_future_quarters=num_future_quarters,
     )
 
     topic_kpi_table = convert_single_stock_data_to_table(
@@ -593,9 +587,6 @@ async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunCon
 class KPIsRequest(ToolArgs):
     equivalent_kpis: EquivalentKPITexts
     table_name: str
-    num_future_quarters: Optional[int] = None
-    num_prev_quarters: Optional[int] = None
-    anchor_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
     simple_output: bool = False
 
@@ -608,15 +599,12 @@ async def get_overlapping_kpis_table_for_stocks(
     args: KPIsRequest, context: PlanRunContext
 ) -> Table:
     num_future_quarters, num_prev_quarters, anchor_date = interpret_date_quarter_inputs(
-        args.num_future_quarters, args.num_prev_quarters, args.anchor_date, args.date_range
+        None, None, None, args.date_range
     )
-    args.anchor_date = anchor_date
-    args.num_future_quarters = num_future_quarters
-    args.num_prev_quarters = num_prev_quarters
 
     if args.simple_output:
-        args.num_future_quarters = 0
-        args.num_prev_quarters = 0
+        num_future_quarters = 0
+        num_prev_quarters = 0
 
     kpis: List[KPIText] = args.equivalent_kpis.val  # type: ignore
     kpi_row_mapping: Dict[int, str] = {}
@@ -637,9 +625,9 @@ async def get_overlapping_kpis_table_for_stocks(
             data = kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
                 gbi_id=stock_id.gbi_id,
                 kpis=[kpi_metadata],
-                starting_date=args.anchor_date,
-                num_prev_quarters=args.num_prev_quarters,
-                num_future_quarters=args.num_future_quarters,
+                starting_date=anchor_date,
+                num_prev_quarters=num_prev_quarters,
+                num_future_quarters=num_future_quarters,
             )
             kpi_data = data.get(kpi_metadata.name, None)
             if kpi_data:
@@ -751,8 +739,10 @@ async def main() -> None:
         args=KPIsRequest(
             equivalent_kpis=equivalent_kpis,
             table_name="Automotive Revenue",
-            num_future_quarters=0,
-            num_prev_quarters=4,
+            date_range=DateRange(
+                start_date=datetime.date.fromisoformat("2023-07-02"),
+                end_date=datetime.date.fromisoformat("2024-07-02"),
+            ),
         ),
         context=plan_context,
     )
@@ -774,8 +764,10 @@ async def main() -> None:
         args=KPIsRequest(
             equivalent_kpis=equivalent_kpis,
             table_name="Cloud Computing",
-            num_future_quarters=0,
-            num_prev_quarters=4,
+            date_range=DateRange(
+                start_date=datetime.date.fromisoformat("2023-07-02"),
+                end_date=datetime.date.fromisoformat("2024-07-02"),
+            ),
             simple_output=True,
         ),
         context=plan_context,

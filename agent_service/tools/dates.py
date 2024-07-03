@@ -1,19 +1,26 @@
+import asyncio
 import datetime
+import json
 import math
 from typing import Optional, Union
 
 import dateparser
 
-from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL
+from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.dates import DateRange
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
-from agent_service.types import PlanRunContext
+from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.string_utils import clean_to_json_if_needed
 
 MAX_RETRIES = 3
+
+START_DATE = "start_date"
+END_DATE = "end_date"
 
 # PROMPTS
 
@@ -64,6 +71,7 @@ class DateFromDateStrInput(ToolArgs):
     category=ToolCategory.DATES,
     tool_registry=ToolRegistry,
     is_visible=False,
+    enabled=False,
 )
 async def get_date_from_date_str(
     args: DateFromDateStrInput, context: PlanRunContext
@@ -90,6 +98,96 @@ async def get_date_from_date_str(
         return val.date()
 
     return val.date()
+
+
+DATE_RANGE_SYS_PROMPT = Prompt(
+    name="LLM_DATE_SYS_PROMPT",
+    template=(
+        "You are an assistant designed to process a string that refers to some kind of date range"
+        "and convert it into a proper date range, with each of the start_date and end_date in "
+        "YYYY-MM-DD format. You will be provided with the string reference to the date, as well as"
+        "the larger chat context in which it occurs, and today's date. Do your best to select "
+        "a range that makes sense in the context. If one of the start or end dates is clearly "
+        "underspecified, you should make a sensible decision based on the larger context, with "
+        "the idea that people are most interested in recent data "
+        "(today should be the default end of your range!) "
+        "and probably want at least of a year of data for when doing line graphs of statistics"
+        "and at least a quarter of data for most text data. Try to satisfy any stated client "
+        "needs as much as possible, and for both the start and end date you must output a specific date "
+        "Please distinguish carefully between single-day ranges in the past (Apple's stock price from June 25th) "
+        "and a date range from that date to the present (e.g. Apple's stock price since June 25th). "
+        "In the first case, the end_date should be the same as the start date (June 25th), in the "
+        "second case the end date is usually today unless otherwise specified."
+        "Your output will be a json with keys `start_date` and `end_date`. "
+        "For example, if the input is 'last two months,' and today's date is 2024-07-15, you should "
+        'return:\n {{"start_date":"2024-5-15", "end_date":"2024-07-15"}}'
+        "Generally you should assume that weeks/months/quarters/years refer to 7/30/90/356 days "
+        "respectively, though if a user asks for a range 'since the beginning of last quarter' for "
+        "the same today as above, your output would be: "
+        '{{"start_date":"2024-4-1", "end_date":"2024-07-15"}} '
+        "since July 15 in in Q3, and April 1st is the beginning of Q2. "
+        "Do not include any wrapper around the JSON. (no ```)"
+    ),
+)
+
+DATE_RANGE_MAIN_PROMPT = Prompt(
+    name="LLM_DATE_MAIN_PROMPT",
+    template=(
+        "Convert the following string to a date range."
+        "The string is as follows:\n"
+        "{string_date}\n"
+        "Here is the larger context in which it appears:\n{chat_context}"
+        "Today's date is {today_date}."
+        "Now output a json with start_date and end_date keys, with the dates in YYYY-MM-DD format"
+    ),
+)
+
+
+class GetDateRangeInput(ToolArgs):
+    date_range_str: str
+
+
+@tool(
+    description="""This function returns a date range object which includes
+    start and end dates based on a sensible interpretation of the provided date_range_str.
+    Note the function has access to client's chat context to help interpret the date, however
+    it is essential that the specific date range can be unambiguously
+    identified relevant to any other date ranges possibly mentioned in the context.
+    chat context, do not make up a date range, just use the default for the function
+    (i.e. do not pass just "one year" to this function if "one year" appears twice in the client input)
+    A single date is also valid date range.
+    If only the start or end of the range is clearly
+    specified, just include that information, and the tool will make a sensible decision for
+    underspecified part of the range. Never pass in an empty string.
+    Note that not every date range the user mentions should be converted into a date range
+    using this function, statistics that are defined using some kind of date range,
+    e.g. "percentage gain over the last quarter", will be handled inside the get statistic tool.
+    Also, in many cases the default date range for a particular function/tool is exactly what is
+    needed and there is no need to build a date range, please check carefully for each tool before
+    calling this function. You must never, ever run this function with a date_range_str that does
+    not appear explicitly in the client's request (the chat context)!!!!!
+    """,
+    category=ToolCategory.DATES,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_date_range(args: GetDateRangeInput, context: PlanRunContext) -> DateRange:
+    # use gpt to parse the date string
+    llm = GPT(model=GPT4_O)
+    result = await llm.do_chat_w_sys_prompt(
+        main_prompt=DATE_RANGE_MAIN_PROMPT.format(
+            string_date=args.date_range_str,
+            today_date=datetime.date.today().isoformat(),
+            chat_context=context.chat.get_gpt_input(client_only=True) if context.chat else "",
+        ),
+        sys_prompt=DATE_RANGE_SYS_PROMPT.format(),
+    )
+    date_range_json = json.loads(clean_to_json_if_needed(result))
+    await tool_log(
+        log=f"for {args.date_range_str}, {date_range_json}",
+        context=context,
+    )
+    return DateRange(start_date=date_range_json[START_DATE], end_date=date_range_json[END_DATE])
 
 
 class DateRangeInput(ToolArgs):
@@ -120,6 +218,7 @@ class DateRangeInput(ToolArgs):
     category=ToolCategory.DATES,
     tool_registry=ToolRegistry,
     is_visible=False,
+    enabled=False,
 )
 async def get_n_width_date_range_near_date(
     args: DateRangeInput, context: PlanRunContext
@@ -197,3 +296,30 @@ async def get_n_width_date_range_near_date(
     )
     logger.info(f"returning {res=}")
     return res
+
+
+async def main() -> None:
+    # input_text = "Need a summary of all the earnings calls since Dec 3rd that might impact stocks in the TSX composite"  # noqa: E501
+    input_text = "Graph Apple's stock price starting from the beginning of last year to 3 months ago"  # noqa: E501
+    user_message = Message(message=input_text, is_user_message=True, message_time=get_now_utc())
+    chat_context = ChatContext(messages=[user_message])
+    plan_context = PlanRunContext(
+        agent_id="123",
+        plan_id="123",
+        user_id="123",
+        plan_run_id="123",
+        chat=chat_context,
+        run_tasks_without_prefect=True,
+        skip_db_commit=True,
+    )
+
+    date_range = await get_date_range(
+        GetDateRangeInput(date_range_str="from the beginning of last year to 3 months ago"),
+        plan_context,
+    )  # Get the date for one month ago
+
+    print(date_range)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

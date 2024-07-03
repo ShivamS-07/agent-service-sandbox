@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 import random
 from typing import List, Optional
 from uuid import uuid4
@@ -201,7 +200,6 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
 class GetCommentaryTextsInput(ToolArgs):
     topics: List[str] = None  # type: ignore
-    start_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
     portfolio_id: Optional[str] = None
     general_commentary: Optional[bool] = False
@@ -216,8 +214,8 @@ class GetCommentaryTextsInput(ToolArgs):
         "This function collects and prepares all texts to be used by the write_commentary tool "
         "for writing a commentary or short articles and market summaries. "
         "This function MUST only be used for write commentary tool. "
-        "Adjust start_date to get the text from that date based on client request. "
-        "If no start_date is provided, the function will only get text in last month. "
+        "Adjust the date range to get the text from that date range based on client request. "
+        "If no date_range is provided, the function will only get text in last month. "
         "general_commentary should be set to True if client wants to know about general market updates, "
         "trends or news."
         "topics is a list of topics user mentioned in the request. "
@@ -235,10 +233,6 @@ async def get_commentary_texts(
 
     texts: List[Text] = []
 
-    if not args.start_date:
-        if args.date_range:
-            args.start_date = args.date_range.start_date
-
     # If general_commentary is True, get the top themes and related texts
     if args.general_commentary:
         if args.portfolio_id:
@@ -255,7 +249,7 @@ async def get_commentary_texts(
         theme_num: int = args.theme_num if args.theme_num else 3
         themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
             GetTopNThemesInput(
-                start_date=args.start_date, theme_num=theme_num, portfolio_id=args.portfolio_id
+                date_range=args.date_range, theme_num=theme_num, portfolio_id=args.portfolio_id
             ),
             context,
         )
@@ -312,7 +306,7 @@ async def get_texts_for_topics(
                 matched_articles = await get_news_articles_for_topics(
                     GetNewsArticlesForTopicsInput(
                         topics=[topic],
-                        start_date=args.start_date,
+                        date_range=args.date_range,
                         max_num_articles_per_topic=MAX_MATCHED_ARTICLES_PER_TOPIC,
                     ),
                     context,
@@ -346,7 +340,7 @@ async def main() -> None:
     texts = await get_commentary_texts(
         GetCommentaryTextsInput(
             topics=["cloud computing", "military industrial complex"],
-            start_date=datetime.date(2024, 4, 1),
+            date_range=None,
             general_commentary=True,
             theme_num=4,
         ),

@@ -1,4 +1,5 @@
 import copy
+import datetime
 import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -25,6 +26,7 @@ from agent_service.GPT.constants import (
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import HistoryEntry, Score
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
 from agent_service.io_types.text import StockText, Text
@@ -214,7 +216,8 @@ async def add_scores_and_rationales_to_stocks(
         horizon_date = convert_horizon_to_date(news_horizon)
         texts: List[StockText] = await get_all_news_developments_about_companies(  # type: ignore
             GetNewsDevelopmentsAboutCompaniesInput(
-                stock_ids=ranked_stocks, start_date=horizon_date
+                stock_ids=ranked_stocks,
+                date_range=DateRange(start_date=horizon_date, end_date=datetime.date.today()),
             ),
             context,
         )

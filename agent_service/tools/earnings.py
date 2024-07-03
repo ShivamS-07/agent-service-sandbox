@@ -7,7 +7,7 @@ from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockEarningsSummaryText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
-from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
+from agent_service.tools.dates import GetDateRangeInput, get_date_range
 from agent_service.tools.LLM_analysis.tools import SummarizeTextInput, summarize_texts
 from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
 from agent_service.tools.tool_log import tool_log
@@ -95,16 +95,14 @@ async def _get_earnings_summary_helper(
 
 class GetEarningsCallSummariesInput(ToolArgs):
     stock_ids: List[StockID]
-    start_date: Optional[datetime.date] = None
-    end_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
 
 
 @tool(
     description=(
         "This returns a list of all earnings call summaries for one or more stocks "
-        " that were published between start_date and end_date. "
-        " end_date defaults to today, start_date defaults to one quarter ago, which will return exactly"
+        " that were published within the provided date range. "
+        " If no date range is provided, it defaults to the last quarter, containing the "
         " the summary for the most recent earnings call and what the clients are usually interested"
         " in unless they explicitly state otherwise."
         " You may alternatively provide a date_range created by the get_n_width_date_range_near_date tool"
@@ -117,14 +115,13 @@ async def get_earnings_call_summaries(
 ) -> List[StockEarningsSummaryText]:
     # if a date range obj was provided, fill in any missing dates
     if args.date_range:
-        if not args.start_date:
-            args.start_date = args.date_range.start_date
-        if not args.end_date:
-            args.end_date = args.date_range.end_date
+        start_date = args.date_range.start_date
+        end_date = args.date_range.end_date
+    else:
+        start_date = None
+        end_date = None
 
-    topic_lookup = await _get_earnings_summary_helper(
-        args.stock_ids, args.start_date, args.end_date
-    )
+    topic_lookup = await _get_earnings_summary_helper(args.stock_ids, start_date, end_date)
     output: List[StockEarningsSummaryText] = []
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
@@ -151,10 +148,9 @@ async def main() -> None:
         run_tasks_without_prefect=True,
         skip_db_commit=True,
     )
-    start_date = await get_date_from_date_str(
-        DateFromDateStrInput(date_str="3 month ago"), plan_context
+    date_range = await get_date_range(
+        GetDateRangeInput(date_range_str="last month"), plan_context
     )  # Get the date for one month ago
-    print(start_date)
     stock_ids = await get_stock_universe(
         GetStockUniverseInput(universe_name="TSX Composite"), plan_context
     )
@@ -167,7 +163,7 @@ async def main() -> None:
     print(len(impacting_stocks))  # type: ignore
 
     earnings_summaries = await get_earnings_call_summaries(
-        GetEarningsCallSummariesInput(stock_ids=impacting_stocks, start_date=start_date), plan_context  # type: ignore
+        GetEarningsCallSummariesInput(stock_ids=impacting_stocks, date_range=date_range), plan_context  # type: ignore
     )
 
     print(len(earnings_summaries))  # type: ignore

@@ -1,7 +1,7 @@
 import asyncio
 import datetime
 import json
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional
 
 from agent_service.external.feature_svc_client import get_all_features_metadata
 from agent_service.GPT.constants import GPT4_O
@@ -34,6 +34,8 @@ from agent_service.utils.string_utils import clean_to_json_if_needed
 
 TRADING_TO_CALENDAR_RATIO = 8 / 5
 
+DEFAULT_TIME_DELTA = datetime.timedelta(days=356)
+
 DECOMPOSITION_SYS_PROMPT_STR = "You are a financial analyst who is trying to prepare data to satisfy a client's particular information need. You will be given a reference to a statistic that the user needs, the larger conversational context in which this statistic was mentioned, and a large collection of basic statistics which your database has time series data for. Your goal is to translate this client statistic reference into one or more of the provided basic statistics and, if necessary, an explanation of any mathematical operations required to translate the selected statistic(s) into the statistic that will satisfy the client. Specifically, you will output a json with four keys. The first key should be called `output_timeseries`. This should be a boolean that is true if the final output will consist of timeseries data, and false otherwise. For many simple, single day requests (e.g. `what is the market cap of Apple?`) and most stock ranking and filtering tasks a timeseries output is NOT what the client wants, and so output_timeseries must be False, even sometimes when there is a delta that mentions time (e.g. for the request `pick the top 10 stocks by price delta over the last month` we are ranking the stocks based on a single number per stock, the price delta over the last month, and so output_timeseries should be False). However, if the goal is graphing some statistic over time (e.g. `show me Apple's P/E over the last year`), we do need a time series of data, so output_timeseries should be true. Again, think very carefully about the final use case of the data as indicated in the chat context before outputting this key (again, graphs need timeseries, ranking/filtering of stocks just needs the latest datapoint for each stock), and make sure your calculation below is consistent with your choice. The second key should be called `components` and should be a json list of strings corresponding directly to statistics in the provided list that are either are, or are useful for calculating the required client-desired statistic. It is preferable to have one statistic if that is all you need to fully satisfy the client need, do not make your derivation needlessly complicated. It is also preferable to pick basic statistics that exactly match statistics mentioned in the input, when possible (e.g. if the client asks for ratio like price to earnings, you would choose price to earnings directly from the list rather than stock price and earnings separately). You should never, ever need multiple statistics like X High, X Low, and X Median unless they are explicitly asked for (they are NOT useful for delta calculations, which should involve calculation over a time series of a single statistic); just pick one! If there appears to be absolutely no way to get the desired statistic from the provided basic statistics, components should be an empty list. The third key, `calculation` will be a description of any mathematical operations that must be applied to the component statistics to get the desired statistic (either an individual value for each stock, or a time series, depending on is_timeseries). This description should be clear and specific and directly refer to any statistics mentioned in the first line. If the client need is clearly a time series, the calculation must transform the input time series into an output time series. If a time series is desired (output_timeseries is true), you must NOT do a calculation which makes sense only for the last date of the time series, turning the time series into a single point! For example, if you are calculating a price change graph, you must calculate a price change for every day of the time series! To remind you of this, use a term such as daily with your statistic in your calculation explanation (e.g. daily price delta) when the output is a timeseries. Again, for some needs, including ranking, filtering tasks, a timeseries is NOT required. In these cases you should NOT use the terms daily, weekly, or monthly, and you should only output a single datapoint per stock!!! As much as possible, you should pass the client's original wording to the calculation function; if the input uses `week` or `month`, you MUST output `week` or `month` in your calculation instructions. It is critical, in particular, that your reference to output variable in the calculation uses exactly the same wording as the client did (e.g., if the client said `performance`, your calculation description must indicate that you are calculating `performance`, and not only refer to your interpretation of perfromance). If you listed only one statistic in the `components` key and you are confident that that statistic is in fact exactly what the client wants, you must be output an empty string for the `calculation` key, however you should be very confident that the client will be satisfied with this result, it should be a near or exact match. For the fourth key, `extra_timespan`, you should consider whether you need to retrieve additional historical time series data for the statistic(s) listed under components to calculate the relevant client-desired statistic. For example, to calculate a 1M moving average, you need 1M of additional data (the first datapoint in the time series requires 1M of data before it), and to calculate a delta for one year (e.g performance gain over the last year) you will need an extra year of data. The timespan needed will often (though not always) be mentioned directly in the statistic. If the statistic requires some kind of window but the client has not said so explcitly, you can select one that seems reasonable, and include it both your calcuation and extra_timespan. Express the timespan of additional data you need as a string in standard financial format (e.g. 1D, 3M, 1Y), output an empty string if no such additional data is needed (which is very common, for instance you would need no such extra data for standard ratio like Price to Earnings). A few additional guidelines:\n- You should interpret stock price to mean close price\n- Any reference to stock price change (gain/loss/delta) must be calculated relative to the first day of the period which is being calculated over, you must be explicit in your calculation description what that first day is\n-- Generally (unless the client says otherwise), you must interpret the `performance` of stocks as referring to the percentage change of stock price, note that a daily percentage change means the percentage change for each day from the begining of the period!\n- keep percentages in decimal form, do not multiply by 100\n-When there is ambiguity, you should always interpret weeks, months, and years as spans of time relative to the present rather than a specific date/year/month. If the user says `for the last month`, that means over the last thirty (calendar) days and NOT since the first day of the month. You must never jump to the conclusion that the client is talking about the first/last day of a week/month/year unless that is exactly the wording used!\n- If multiple basic statistics seem like they could be used for a specific part of the calculation, you should be biased towards chosing simpler statistics (i.e. those without modifiers)\n- Make sure you are only calculating the provided statistic referenced, you should not include any other calculations mentioned in the chat context\n- Do not output a wrapper around your json (no ```json!)\n- Do not mention the specific stocks from the chat, your output should work for any stock\n- Be concise, unless the calculation is very complex, a single sentence of no more than 40 words is strongly preferred, you do not need a formula."  # noqa: E501
 
 DECOMPOSITION_MAIN_PROMPT_STR = "Identify which of the following list of statistics is, or can be used to derive the statistic referenced by the user, as understood in the larger chat context, and provide a mathematical description of how such a derivation would occur, as needed. Here is the client mention of the statistic: {statistic_description}\nHere is the larger chat context, delimited by `---`:\n---\n{chat_context}\n---\nAnd here is the long list of statistics you have data for, also delimited by `---`:\n---\n{statistic_list}\n---\nNow output your json consisting of a list of relevant statistics, and an explanation of how to derive the client's statistic from those statistics, and, if applicable, the amount additional time series data that must be requested beyond the timespan asked for by the client:\n"  # noqa: E501
@@ -52,8 +54,6 @@ DECOMPOSITION_MAIN_PROMPT = Prompt(
 class GetStatisticDataForCompaniesInput(ToolArgs):
     statistic_reference: str
     stock_ids: List[StockID]
-    start_date: Optional[datetime.date] = None
-    end_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
 
 
@@ -104,11 +104,11 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
         " If you need the same statistic for the same time period for more than one company, you must call this"
         " function with multiple stock_ids, DO NOT call this function multiple times"
         " with a single stock per time in those circumstances!"
-        " Optionally a start_date and end_date may be provided to specify a date range"
-        " to get a specific date only then set both start_date and end_date to the same date."
-        " if the optional date_range argument is passed in it will override anything set in start_date and end_date "
-        " If none of start_date, end_date, date_range are provided then it will assume the request "
-        " is for the most recent date for which data exists."
+        " If no date_range is provided then this tool will read the context decide whether or not a timeseries"
+        " is the output: if it is, the range will default to a year ending today, and if instead a single date is "
+        " required it will assume the request is for the most recent date for which data exists."
+        " You must not get a date range if the client has not specified one in their request, just use the"
+        " default!"
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
@@ -125,7 +125,6 @@ async def get_statistic_data_for_companies(
 
     stat_ref = args.statistic_reference
     stocks = args.stock_ids
-    start_date, end_date = get_start_end_dates(args)
 
     resp = await get_all_features_metadata(context.user_id, filtered=True)
     all_statistic_lookup = {
@@ -157,6 +156,27 @@ async def get_statistic_data_for_companies(
         log=f"Analyzed {stat_ref}, component variables: {stat_list}, calculation: {calculation}, {is_timeseries=}",
         context=context,
     )
+
+    if args.date_range:
+        start_date, end_date = args.date_range.start_date, args.date_range.end_date
+        if start_date == end_date and is_timeseries:
+            # we are doing a time series, so we'd better have a range
+            start_date = end_date - DEFAULT_TIME_DELTA
+        elif start_date != end_date and not is_timeseries:
+            # we are not doing a time series, so only want one day
+            latest_date = get_latest_date()
+            if end_date > latest_date:
+                end_date = latest_date
+            start_date = end_date
+    else:
+        latest_date = get_latest_date()
+        if is_timeseries:
+            end_date = latest_date
+            start_date = latest_date - DEFAULT_TIME_DELTA
+        else:
+            end_date = latest_date
+            start_date = latest_date
+
     if added_timespan:
         extra_days = convert_horizon_to_days(added_timespan)
         if (
@@ -224,8 +244,6 @@ async def get_statistic_data_for_companies(
 
 class MacroFeatureDataInput(ToolArgs):
     statistic_reference: str
-    start_date: Optional[datetime.date] = None
-    end_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
     # in the future we may want to take a currency as well
 
@@ -239,11 +257,6 @@ class MacroFeatureDataInput(ToolArgs):
         " embededed in a more complex, per-stock variable, use `get_statistic_data_for_companies`, "
         " use this function only when the client wants to view macroeconomic variables directly, e.g. "
         " `plot interest rates for the last 5 years`."
-        " Optionally a start_date and end_date may be provided to specify a date range"
-        " to get a specific date only then set both start_date and end_date to the same date."
-        " if the optional date_range argument is passed in it will override anything set in start_date and end_date. "
-        " If none of start_date, end_date, date_range are provided then it will assume the request "
-        " is for the most recent date for which data exists."
         " If the user does not mention any date or time frame, you should assume they "
         " want the most recent datapoint and call without specifying either start_date or end_date."
     ),
@@ -251,7 +264,13 @@ class MacroFeatureDataInput(ToolArgs):
     tool_registry=ToolRegistry,
 )
 async def get_macro_statistic_data(args: MacroFeatureDataInput, context: PlanRunContext) -> Table:
-    start_date, end_date = get_start_end_dates(args)
+    if args.date_range:
+        start_date, end_date = args.date_range.start_date, args.date_range.end_date
+    else:
+        latest_date = get_latest_date()
+        end_date = latest_date
+        start_date = latest_date
+
     # Just a sample look up
     # TODO: Add LLM decomposition to this too? Probably much less commmon
     stat_id: StatisticId = await statistic_identifier_lookup(  # type:ignore
@@ -259,35 +278,6 @@ async def get_macro_statistic_data(args: MacroFeatureDataInput, context: PlanRun
         context=context,
     )
     return await get_statistic_data(context, stat_id, start_date, end_date)
-
-
-def get_start_end_dates(
-    args: Union[GetStatisticDataForCompaniesInput, MacroFeatureDataInput],
-) -> Tuple[datetime.date, datetime.date]:
-
-    if args.date_range:
-        args.start_date = args.date_range.start_date
-        args.end_date = args.date_range.end_date
-
-    # if no dates given, use latest date
-    if args.start_date is None and args.end_date is None:
-        latest_date = get_latest_date()
-        start_date = latest_date
-        end_date = latest_date
-    # if only end date given, use end to end
-    if args.start_date is None and args.end_date is not None:
-        start_date = args.end_date
-        end_date = args.end_date
-    # if only start date given, use start to latest()
-    elif args.start_date is not None and args.end_date is None:
-        start_date = args.start_date
-        end_date = get_latest_date()
-    # if both dates are given use as is
-    elif args.start_date is not None and args.end_date is not None:
-        start_date = args.start_date
-        end_date = args.end_date
-
-    return start_date, end_date
 
 
 async def main() -> None:
@@ -314,8 +304,7 @@ async def main() -> None:
             args=GetStatisticDataForCompaniesInput(
                 statistic_reference=stat,
                 stock_ids=await StockID.from_gbi_id_list([714, 6963]),
-                start_date=start_date,
-                end_date=end_date,
+                date_range=DateRange(start_date=start_date, end_date=end_date),
             ),
             context=plan_context,
         )

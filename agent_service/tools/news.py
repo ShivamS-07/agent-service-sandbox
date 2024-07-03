@@ -66,8 +66,6 @@ async def _get_news_developments_helper(
 
 class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
     stock_ids: List[StockID]
-    start_date: Optional[datetime.date] = None
-    end_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
 
 
@@ -76,8 +74,7 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         "This function calls an internal API which provides all the news developments "
         "with articles between the start date and the end date that are relevant to the"
         " provided list of stocks, the output is a list of news developments. "
-        "If end_date is left out, "
-        "the current date is used. If start_date is left out, 1 week ago is used."
+        "The default date_range is the last week. "
         "Never, ever pass an empty list of stocks to this function, you must only use this "
         "function when you have a specific list of stocks you want news for. If you have a general "
         "topic you want news about, use get_news_articles_for_topics. "
@@ -90,10 +87,11 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
 async def get_all_news_developments_about_companies(
     args: GetNewsDevelopmentsAboutCompaniesInput, context: PlanRunContext
 ) -> List[StockNewsDevelopmentText]:
-    start_date = args.start_date
-    end_date = args.end_date
     if args.date_range:
         start_date, end_date = args.date_range.start_date, args.date_range.end_date
+    else:
+        start_date = None
+        end_date = None
     topic_lookup = await _get_news_developments_helper(
         args.stock_ids, context.user_id, start_date, end_date
     )
@@ -175,7 +173,6 @@ THEME_RELEVANT_MAIN_PROMPT = Prompt(
 
 class GetNewsArticlesForTopicsInput(ToolArgs):
     topics: List[str]
-    start_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
     max_num_articles_per_topic: Optional[int] = None
 
@@ -186,8 +183,10 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
         "list of news articles related to the given topics. "
         "If someone wants general information about a topic and there is no existing themes "
         "This is the best tool to call. "
+        "If you do not set max_num_articles_per_topic, all are returned. "
         "This function must NEVER be used if you intend to filter stocks, the news articles do not "
-        "contain information about which stocks they are relevant to."
+        "contain information about which stocks they are relevant to. "
+        "The default date range is the previous month."
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,
@@ -197,13 +196,10 @@ async def get_news_articles_for_topics(
 ) -> List[NewsPoolArticleText]:
     # TODO: if start_date is very old, it will send many requests to GPT
     # start_date is optional, if not provided, use 30 days ago
-    if not args.start_date:
-        if args.date_range:
-            start_date = args.date_range.start_date
-        else:
-            start_date = (get_now_utc() - datetime.timedelta(days=30)).date()
+    if args.date_range:
+        start_date = args.date_range.start_date
     else:
-        start_date = args.start_date
+        start_date = (get_now_utc() - datetime.timedelta(days=30)).date()
 
     # prepare embedding
     llm = GPT(model=DEFAULT_EMBEDDING_MODEL)

@@ -62,18 +62,12 @@ async def get_all_text_data_for_stocks(
 ) -> List[StockText]:
     stock_ids = args.stock_ids
 
-    if args.date_range:
-        args.start_date = args.date_range.start_date
-        args.end_date = args.date_range.end_date
-
-    start_date = args.start_date
-    end_date = args.end_date
     logger = get_prefect_logger(__name__)
-    if not start_date:
+    if not args.date_range:
         start_date = (get_now_utc() - datetime.timedelta(days=90)).date()
-    if not end_date:
         # Add an extra day to be sure we don't miss anything with timezone weirdness
         end_date = get_now_utc().date() + datetime.timedelta(days=1)
+        args.date_range = DateRange(start_date=start_date, end_date=end_date)
 
     all_data: List[StockText] = []
 
@@ -89,9 +83,7 @@ async def get_all_text_data_for_stocks(
     await tool_log(log="Getting news developments", context=context)
     try:
         news_data = await get_all_news_developments_about_companies(
-            GetNewsDevelopmentsAboutCompaniesInput(
-                stock_ids=stock_ids, start_date=start_date, end_date=end_date
-            ),
+            GetNewsDevelopmentsAboutCompaniesInput(stock_ids=stock_ids, date_range=args.date_range),
             context=context,
         )
         all_data.extend(news_data)  # type: ignore
@@ -101,9 +93,7 @@ async def get_all_text_data_for_stocks(
     await tool_log(log="Getting earnings summaries", context=context)
     try:
         earnings_data = await get_earnings_call_summaries(
-            GetEarningsCallSummariesInput(
-                stock_ids=stock_ids, start_date=start_date, end_date=end_date
-            ),
+            GetEarningsCallSummariesInput(stock_ids=stock_ids, date_range=args.date_range),
             context=context,
         )
         all_data.extend(earnings_data)  # type: ignore
@@ -113,7 +103,7 @@ async def get_all_text_data_for_stocks(
     await tool_log(log="Getting SEC filings", context=context)
     try:
         sec_filings = await get_10k_10q_sec_filings(
-            GetSecFilingsInput(stock_ids=stock_ids, start_date=start_date, end_date=end_date),
+            GetSecFilingsInput(stock_ids=stock_ids, date_range=args.date_range),
             context=context,
         )
         all_data.extend(sec_filings)  # type: ignore
@@ -125,8 +115,7 @@ async def get_all_text_data_for_stocks(
         custom_docs = await get_user_custom_documents(
             GetCustomDocsInput(
                 stock_ids=stock_ids,
-                start_date=start_date,
-                end_date=end_date,
+                date_range=args.date_range,
                 limit=None,
             ),
             context=context,

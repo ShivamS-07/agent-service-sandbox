@@ -48,7 +48,6 @@ class TestGetTopNThemes(IsolatedAsyncioTestCase):
 
     async def test_get_top_N_macroeconomic_themes(self):
         self.args = GetTopNThemesInput(
-            date_range="1M",
             number_per_section=3,
         )
         result = await get_top_N_macroeconomic_themes(self.args, self.context)

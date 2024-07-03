@@ -1,4 +1,3 @@
-import datetime
 from typing import List, Optional
 
 from agent_service.external.custom_data_svc_client import (
@@ -17,8 +16,6 @@ from agent_service.types import PlanRunContext
 class GetCustomDocsInput(ToolArgs):
     stock_ids: List[StockID]
     limit: Optional[int] = None
-    start_date: Optional[datetime.date] = None
-    end_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
 
 
@@ -33,8 +30,6 @@ class GetCustomDocsInput(ToolArgs):
         " The limit N can be specified using the"
         " `limit` parameter and represents the concept of the most recent N documents"
         " uploaded about a stock."
-        " This function must not be used if you intend to filter by stocks, the news articles do not"
-        " contain information about which stocks they are relevant to."
     ),
     category=ToolCategory.TEXT,
     tool_registry=ToolRegistry,
@@ -44,10 +39,11 @@ async def get_user_custom_documents(
 ) -> List[CustomDocumentSummaryText]:
     # if a date range obj was provided, fill in any missing dates
     if args.date_range:
-        if not args.start_date:
-            args.start_date = args.date_range.start_date
-        if not args.end_date:
-            args.end_date = args.date_range.end_date
+        start_date = args.date_range.start_date
+        end_date = args.date_range.end_date
+    else:
+        start_date = None
+        end_date = None
 
     # arbitrary limit of 50 company documents if no limit is specified
     if args.limit is None or args.limit == 0:
@@ -57,8 +53,8 @@ async def get_user_custom_documents(
     custom_doc_summaries = await get_custom_docs_by_security(
         context.user_id,
         gbi_ids=stock_ids,
-        publish_date_start=args.start_date,
-        publish_date_end=args.end_date,
+        publish_date_start=start_date,
+        publish_date_end=end_date,
         limit=args.limit,
     )
     await tool_log(
@@ -88,8 +84,6 @@ async def get_user_custom_documents(
 class GetCustomDocsByTopicInput(ToolArgs):
     topic: str
     limit: Optional[int] = None
-    start_date: Optional[datetime.date] = None
-    end_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
 
 
@@ -104,6 +98,8 @@ class GetCustomDocsByTopicInput(ToolArgs):
         " If someone explicitly wants summarized information specific to custom"
         " documents or uploaded documents they have uploaded about a topic, or related"
         " to a phrase or keyword, this is the best tool to use."
+        " Do not use the output of this function for in a stock filter function, the documents"
+        " do not contain information about associated stocks."
     ),
     category=ToolCategory.TEXT,
     tool_registry=ToolRegistry,
@@ -113,10 +109,11 @@ async def get_user_custom_documents_by_topic(
 ) -> List[CustomDocumentSummaryText]:
     # if a date range obj was provided, fill in any missing dates
     if args.date_range:
-        if not args.start_date:
-            args.start_date = args.date_range.start_date
-        if not args.end_date:
-            args.end_date = args.date_range.end_date
+        start_date = args.date_range.start_date
+        end_date = args.date_range.end_date
+    else:
+        start_date = None
+        end_date = None
 
     # arbitrary limit of 10 topic-vector-similarity fdocs if no limit is specified
     # TODO: pass this through a secondary LLM filter to be more confident in result.
@@ -126,8 +123,8 @@ async def get_user_custom_documents_by_topic(
     custom_doc_summaries = await get_custom_docs_by_topic(
         context.user_id,
         topic=args.topic,
-        publish_date_start=args.start_date,
-        publish_date_end=args.end_date,
+        publish_date_start=start_date,
+        publish_date_end=end_date,
         limit=args.limit,
     )
     await tool_log(

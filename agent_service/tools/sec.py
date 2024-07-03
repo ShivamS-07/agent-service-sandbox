@@ -38,8 +38,6 @@ async def get_sec_filings_helper(
 
 class GetSecFilingsInput(ToolArgs):
     stock_ids: List[StockID]
-    start_date: Optional[datetime.date] = None
-    end_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
 
 
@@ -52,9 +50,8 @@ class GetSecFilingsInput(ToolArgs):
     "for `10-K` or `10-Q` filings."
     "It is especially useful for finding current information about less well-known "
     "companies which may have little or no news for a given period. "
-    "Any documents published between start_date and end_date will be included, if the end_date is "
-    "excluded it is assume to include documents up to today, if start_date is not "
-    "included, the start date is a quarter ago, which includes only the latest SEC filing.",
+    "Any documents published within the date_range are included. Date_range will "
+    "default to the last quarter, which includes the latest SEC filing.",
     category=ToolCategory.SEC_FILINGS,
     tool_registry=ToolRegistry,
     store_output=False,
@@ -63,10 +60,13 @@ async def get_10k_10q_sec_filings(
     args: GetSecFilingsInput, context: PlanRunContext
 ) -> List[StockSecFilingText]:
     if args.date_range:
-        args.start_date = args.date_range.start_date
-        args.end_date = args.date_range.end_date
+        start_date = args.date_range.start_date
+        end_date = args.date_range.end_date
+    else:
+        start_date = None
+        end_date = None
 
-    stock_filing_map = await get_sec_filings_helper(args.stock_ids, args.start_date, args.end_date)
+    stock_filing_map = await get_sec_filings_helper(args.stock_ids, start_date, end_date)
     all_filings = []
     for filings in stock_filing_map.values():
         all_filings.extend(filings)
@@ -136,11 +136,14 @@ async def get_non_10k_10q_sec_filings(
     args: GetOtherSecFilingsInput, context: PlanRunContext
 ) -> List[StockOtherSecFilingText]:
     if args.date_range:
-        args.start_date = args.date_range.start_date
-        args.end_date = args.date_range.end_date
+        start_date = args.date_range.start_date
+        end_date = args.date_range.end_date
+    else:
+        start_date = None
+        end_date = None
 
     stock_filing_map = await get_other_sec_filings_helper(
-        args.stock_ids, args.form_types, args.start_date, args.end_date
+        args.stock_ids, args.form_types, start_date, end_date
     )
     all_filings = []
     for filings in stock_filing_map.values():
