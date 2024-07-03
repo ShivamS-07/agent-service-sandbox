@@ -7,6 +7,7 @@ import jwt
 from fastapi import HTTPException, Security, status
 from fastapi.security.api_key import APIKeyHeader
 from gbi_common_py_utils.utils.ssm import get_param
+from starlette.requests import Request
 
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.postgres import get_psql
@@ -103,7 +104,12 @@ def extract_user_from_jwt(auth_token: str) -> Optional[User]:
         return None
 
 
-def parse_header(auth_token: Optional[str] = Security(APIKeyHeader(name="Authorization"))) -> User:
+def parse_header(
+    request: Request, auth_token: Optional[str] = Security(APIKeyHeader(name="Authorization"))
+) -> User:
+    user_info = getattr(request.state, "user_info", None)
+    if user_info:
+        return user_info
     if not auth_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing JWT token in header"

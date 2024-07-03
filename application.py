@@ -86,6 +86,7 @@ class AuditInfo:
     path: str
     internal_request_id: str
     received_timestamp: datetime.datetime
+    user_id: Optional[str] = None
     request_body: Optional[Dict[str, Any]] = None
 
     response_timestamp: Optional[datetime.datetime] = None
@@ -102,6 +103,18 @@ class AuditInfo:
         return {key: value for key, value in data.items() if value is not None}
 
 
+def update_audit_info_with_response_info(
+    audit_info: AuditInfo, received_timestamp: datetime.datetime
+) -> None:
+    response_timestamp = datetime.datetime.utcnow()
+    audit_info.response_timestamp = response_timestamp
+    audit_info.internal_processing_time = (response_timestamp - received_timestamp).total_seconds()
+    if audit_info.client_timestamp:
+        audit_info.total_processing_time = (
+            response_timestamp - datetime.datetime.fromisoformat(audit_info.client_timestamp)
+        ).total_seconds()
+
+
 @application.middleware("http")
 async def add_process_time_header(request: Request, call_next: Callable) -> Any:
     received_timestamp = datetime.datetime.utcnow()
@@ -112,6 +125,7 @@ async def add_process_time_header(request: Request, call_next: Callable) -> Any:
         client_timestamp = (
             client_timestamp[:-1] if client_timestamp.endswith("Z") else client_timestamp
         )
+
     audit_info = AuditInfo(
         path=request.url.path,
         internal_request_id=str(uuid.uuid4()),
@@ -121,6 +135,11 @@ async def add_process_time_header(request: Request, call_next: Callable) -> Any:
         request_number=REQUEST_COUNTER,
     )
     try:
+        authorization = request.headers.get("Authorization", None)
+        if authorization:
+            user_info = parse_header(request=request, auth_token=authorization)
+            request.state.user_info = user_info
+            audit_info.user_id = user_info.user_id
         request_body = await request.body()
         audit_info.request_body = json.loads(request_body) if request_body else None
     except Exception:
@@ -131,15 +150,14 @@ async def add_process_time_header(request: Request, call_next: Callable) -> Any:
     except Exception as e:
         error = traceback.format_exc()
         audit_info.error = audit_info.error + "/n" + error if audit_info.error else error
+        update_audit_info_with_response_info(
+            audit_info=audit_info, received_timestamp=received_timestamp
+        )
         log_event(event_name="AgentService-RequestError", event_data=audit_info.to_json_dict())
         raise e
-    response_timestamp = datetime.datetime.utcnow()
-    audit_info.response_timestamp = response_timestamp
-    audit_info.internal_processing_time = (response_timestamp - received_timestamp).total_seconds()
-    if audit_info.client_timestamp:
-        audit_info.total_processing_time = (
-            response_timestamp - datetime.datetime.fromisoformat(audit_info.client_timestamp)
-        ).total_seconds()
+    update_audit_info_with_response_info(
+        audit_info=audit_info, received_timestamp=received_timestamp
+    )
     log_event(event_name="AgentService-RequestCompleted", event_data=audit_info.to_json_dict())
     return response
 
