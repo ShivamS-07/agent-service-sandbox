@@ -50,11 +50,12 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PRIORITY = os.getenv("GPT_SERVICE_DEFAULT_PRIORITY", "LOW")
 STUB = None
+CHANNEL = None
 
 # unit tests that inherit from IsolatedAsyncioTestCase broken by this stub cache because
 # IsolatedAsyncioTestCase creates a new event loop for each test case and thus we need a new
 # connection for each test case
-USE_GLOBAL_STUB = False
+USE_GLOBAL_STUB = os.getenv("NEW_GPT_SERVICE_CONNECTION_FOR_EACH_REQUEST", "") == ""
 
 
 def use_global_stub() -> bool:
@@ -68,13 +69,14 @@ def set_use_global_stub(val: bool) -> None:
 
 def _get_gpt_service_stub() -> Tuple[GPTServiceStub, Channel]:
     global STUB
+    global CHANNEL
     if STUB and use_global_stub():
-        return STUB
+        return STUB, CHANNEL
     url = os.getenv("GPT_SERVICE_URL", "gpt-service-2.boosted.ai:50051")
     host, port = url.split(":")
-    channel = Channel(host=host, port=int(port))
-    STUB = GPTServiceStub(channel)
-    return STUB, channel
+    CHANNEL = Channel(host=host, port=int(port))
+    STUB = GPTServiceStub(CHANNEL)
+    return STUB, CHANNEL
 
 
 async def query_gpt_worker(
@@ -180,7 +182,7 @@ async def _query_gpt_worker(
         request_priority=f"GPT_SVC_PRIORITY_{priority}",
         extra_params=extra_params,
     )
-    stub = _get_gpt_service_stub() if not gpt_service_stub else gpt_service_stub
+    stub, channel = _get_gpt_service_stub() if not gpt_service_stub else (gpt_service_stub, None)
     metadata = [
         ("clienttimestamp", client_timestamp),
         ("clientname", CLIENT_NAME),
@@ -191,12 +193,11 @@ async def _query_gpt_worker(
     if no_cache or os.environ.get("NO_GPT_CACHE", "0") == "1":
         metadata.append(("nocache", "true"))
 
-    stub, channel = _get_gpt_service_stub()
     result: QueryGPTResponse = await stub.QueryGPT(
         request, timeout=MAX_GPT_WORKER_TIMEOUT, metadata=metadata
     )
 
-    if not use_global_stub():
+    if not use_global_stub() and channel:
         # explicitly close the channel after each call during unittests
         channel.close()
 
