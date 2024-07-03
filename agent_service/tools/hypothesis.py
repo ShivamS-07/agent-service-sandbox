@@ -192,6 +192,9 @@ class TestAndSummarizeNewsHypothesisInput(ToolArgs):
         "indicating the extent to which the provided hypothesis is supported by the "
         "news developments, and a short summary which explains the score with reference to "
         "the information in the news developments."
+        "This hypothesis must be focused on a specific stock or a small group of stocks, this function "
+        "must NOT be used to filter stocks more generally! (i.e. Do not use it for "
+        " `Give/find me stocks...` type queries, use the filter by profile tool)"
     ),
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
@@ -419,6 +422,9 @@ class TestAndSummarizeEarningsHypothesisInput(ToolArgs):
         "indicating the extent to which the provided hypothesis is supported by the "
         "earnings calls, and a short summary which explains the score with reference to "
         "the information in the earnings call summaries"
+        "This hypothesis must be focused on a specific stock or a small group of stocks, this function "
+        "must NOT be used to filter stocks more generally! (i.e. Do not use it for "
+        " `Give/find me stocks...` type queries, use the filter by profile tool)"
     ),
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
