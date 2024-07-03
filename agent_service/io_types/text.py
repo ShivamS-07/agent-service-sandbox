@@ -910,7 +910,11 @@ class TextGroup(ComplexIOBase):
 
     def get_citations(self, citation_ids: List[int]) -> List[Citation]:
         # do int(i) just in case GPT screwed up
-        return [TextCitation(source_text=self.val[int(i)]) for i in citation_ids]
+        return [
+            TextCitation(source_text=self.val[int(i)])
+            for i in citation_ids
+            if 0 <= int(i) < len(self.val)
+        ]
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         from agent_service.utils.output_utils.output_construction import (
