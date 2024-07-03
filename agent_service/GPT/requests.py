@@ -55,7 +55,7 @@ CHANNEL = None
 # unit tests that inherit from IsolatedAsyncioTestCase broken by this stub cache because
 # IsolatedAsyncioTestCase creates a new event loop for each test case and thus we need a new
 # connection for each test case
-USE_GLOBAL_STUB = os.getenv("NEW_GPT_SERVICE_CONNECTION_FOR_EACH_REQUEST", "") == ""
+USE_GLOBAL_STUB = os.getenv("USE_GLOBAL_STUB", "") != ""
 
 
 def use_global_stub() -> bool:
