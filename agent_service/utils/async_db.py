@@ -1,5 +1,4 @@
 import datetime
-from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import AgentMetadata, AgentOutput
@@ -205,7 +204,6 @@ class AsyncDB:
             rows[0]["upcoming_plan_run_id"],
         )
 
-    @lru_cache(maxsize=128)
     async def get_agent_owner(self, agent_id: str) -> Optional[str]:
         """
         This function retrieves the owner of an agent, mainly used in authorization.

@@ -567,7 +567,7 @@ async def get_agent_debug_info(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
-    return application.state.agent_service_impl.get_agent_debug_info(agent_id=agent_id)
+    return await application.state.agent_service_impl.get_agent_debug_info(agent_id=agent_id)
 
 
 initialize_unauthed_endpoints(application)

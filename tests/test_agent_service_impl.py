@@ -1,12 +1,12 @@
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 
+import application
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import ChatWithAgentRequest, UpdateAgentRequest
 from agent_service.types import Notification
-from application import get_agent_debug_info
 from tests.test_agent_service_impl_base import TestAgentServiceImplBase
 
 
@@ -122,21 +122,21 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
 
         self.delete_agent(agent_id=agent_id)
 
-    @patch("application.application")
+    @patch("application.application.state", new_callable=AsyncMock)
     def test_get_agent_debug_info(self, mock_application):
-        mock_application.status.return_value = self.agent_service_impl
+        mock_application.agent_service_impl = self.agent_service_impl
         test_user = str(uuid.uuid4())
         user = User(user_id=test_user, is_admin=False, is_super_admin=True, auth_token="")
         # Agent with no info in logs
         agent_id = "a440f037-a0d6-4fb1-9abc-1aec0a8db684"
         debug_info = self.loop.run_until_complete(
-            get_agent_debug_info(user=user, agent_id=agent_id)
+            application.get_agent_debug_info(user=user, agent_id=agent_id)
         )
         self.assertTrue(debug_info.agent_owner_id)
         # Agent with info in logs
         agent_id = "ed2a1603-3a6c-4b53-9d01-59566217e6e9"
         debug_info = self.loop.run_until_complete(
-            get_agent_debug_info(user=user, agent_id=agent_id)
+            application.get_agent_debug_info(user=user, agent_id=agent_id)
         )
         self.assertTrue(debug_info.agent_owner_id)
         self.assertTrue(debug_info.all_generated_plans)
@@ -149,5 +149,5 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         )
         with self.assertRaises(HTTPException):
             self.loop.run_until_complete(
-                get_agent_debug_info(user=unauthorized_user, agent_id=agent_id)
+                application.get_agent_debug_info(user=unauthorized_user, agent_id=agent_id)
             )
