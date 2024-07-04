@@ -164,6 +164,14 @@ detailed in your description of the desired transformation. Anything that could
 be done in pandas is supported here. Simple table formatting should not use
 this. It is better to be overly detailed than not detailed enough. Note again
 that the input MUST be a table, not a list!
+You must never pass a vague transformation_description into this tool, you must always be fully
+explicit about the operations, particularly filtering. If the client only mentioned, for example,
+a filtering to "high" or "good" values without providing a definition of what "high" or "good"
+means, the transformation_description must not use words like "high" or "good", and instead
+include an exact numerical cutoff appropriate to the particular statistic mentioned.
+For example, a high market cap might be considered 10 billion, so if a user asked for high
+market cap companies, the transformation_description should explicitly ask for a filtering of
+stock to those with market cap greater than 10 billion.
 """,
     category=ToolCategory.TABLE,
 )

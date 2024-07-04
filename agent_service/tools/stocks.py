@@ -876,7 +876,19 @@ class GetRiskExposureForStocksInput(ToolArgs):
 @tool(
     description=(
         "This function takes a list of stock ids"
-        " and returns a table of named factor exposure values for each stock"
+        " and returns a table of named factor exposure values for each stock."
+        " The table has the following factors: value, leverage, growth, volatility, "
+        "momentum, trading activity, size, and market. The values in the table are "
+        "normalized, you can filter this table with the `transform_table' tool as follows: "
+        "use > 1 to get 'high' scores, > 2 to get 'very high' scores "
+        " < -1 to get 'low' scores, and -2 to get 'very low' scores. "
+        "Use this tool if the user asks to filter/rank by one of these factors specifically, "
+        "but you must never use it unless the client says corresponds exactly or almost "
+        "exactly to one of the relevant factors, you must use one or more of the provided "
+        "factor names exactly in your instructions to the transform_table table, if you cannot do that "
+        "you should probably filter by profile instead."
+        "Do not use this tool if the user asks for a particular statistic, even if it is"
+        "closely related to one of these factors, use the get_statistic tool instead."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -981,6 +993,8 @@ class GrowthFilterInput(ToolArgs):
         " if no stock_list is provided, a default list will be used"
         " min_value will default to 1 standard deviation,"
         " the larger the value then the filterd stocks will be even more growthy"
+        " you must only use this function if the client specifically asks to filter by"
+        " growth, do not use it for specific statistics, even if they are growth-related"
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -1027,6 +1041,8 @@ class ValueFilterInput(ToolArgs):
         " if no stock_list is provided, a default list will be used"
         " min_value will default to 1 standard deviation,"
         " the larger the value then the filtered stocks will be even more valuey"
+        " you must only use this function if the client specifically asks to filter by"
+        " value, do not use it for specific statistics, even if they are value-related"
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
