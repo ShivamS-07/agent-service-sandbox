@@ -349,3 +349,46 @@ class Clickhouse(ClickhouseBase):
         except Exception as e:
             logger.exception(e)
             return []
+
+    ################################################################################################
+    # Agent Debug Info
+    ################################################################################################
+    def get_agent_debug_plan_selections(self, agent_id: str) -> List[Dict[str, Any]]:
+        sql = """
+            SELECT plans, selection_str, selection, service_version, start_time_utc,
+            end_time_utc, duration_seconds
+            FROM agent.plan_selections
+            WHERE agent_id = %(agent_id)s
+            ORDER BY end_time_utc DESC
+            """
+        return self.generic_read(sql, {"agent_id": agent_id})
+
+    def get_agent_debug_plans(self, agent_id: str) -> List[Dict[str, Any]]:
+        sql = """
+        SELECT execution_plan, action, model_id, plan_str, error_msg, service_version,
+        start_time_utc, end_time_utc, duration_seconds, sample_plans
+        FROM agent.plans
+        WHERE agent_id = %(agent_id)s
+        ORDER BY end_time_utc DESC
+        """
+        return self.generic_read(sql, {"agent_id": agent_id})
+
+    def get_agent_debug_tool_calls(self, agent_id: str) -> List[Dict[str, Any]]:
+        sql = """
+        SELECT  plan_id, plan_run_id, task_id, tool_name, args, result, start_time_utc,
+        end_time_utc, service_version, duration_seconds
+        FROM agent.tool_calls
+        WHERE agent_id = %(agent_id)s
+        ORDER BY plan_id, plan_run_id, task_id
+        """
+        return self.generic_read(sql, {"agent_id": agent_id})
+
+    def get_agent_debug_worker_sqs_log(self, agent_id: str) -> List[Dict[str, Any]]:
+        sql = """
+        SELECT plan_id, plan_run_id, method, arguments, message, send_time_utc,
+        wait_time_seconds,  error_msg,start_time_utc, end_time_utc, duration_seconds
+        FROM agent.worker_sqs_log
+        WHERE agent_id = %(agent_id)s
+        ORDER BY end_time_utc DESC
+        """
+        return self.generic_read(sql, {"agent_id": agent_id})

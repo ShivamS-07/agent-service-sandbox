@@ -10,7 +10,7 @@ import uuid
 from typing import Any, Callable, Dict, Optional
 
 import uvicorn
-from fastapi import Depends, FastAPI, status
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRouter
@@ -35,6 +35,7 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationRequest,
     EnableAgentAutomationResponse,
+    GetAgentDebugInfoResponse,
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
@@ -53,6 +54,7 @@ from agent_service.endpoints.models import (
 from agent_service.GPT.requests import _get_gpt_service_stub
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
+from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.feature_flags import is_user_agent_admin
 from agent_service.utils.logs import init_stdout_logging
@@ -553,6 +555,21 @@ async def get_secure_ld_user(user: User = Depends(parse_header)) -> GetSecureUse
     return application.state.agent_service_impl.get_secure_ld_user(user_id=user.user_id)
 
 
+@router.get(
+    "/debug/{agent_id}",
+    response_model=GetAgentDebugInfoResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_agent_debug_info(
+    agent_id: str, user: User = Depends(parse_header)
+) -> GetSecureUserResponse:
+    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
+        )
+    return application.state.agent_service_impl.get_agent_debug_info(agent_id=agent_id)
+
+
 initialize_unauthed_endpoints(application)
 application.include_router(router)
 
@@ -593,5 +610,6 @@ if __name__ == "__main__":
         task_executor=PrefectTaskExecutor(),
         gpt_service_stub=_get_gpt_service_stub()[0],
         async_db=AsyncDB(pg=AsyncPostgresBase()),
+        clickhouse_db=Clickhouse(),
     )
     uvicorn.run(application, host=args.address, port=args.port)

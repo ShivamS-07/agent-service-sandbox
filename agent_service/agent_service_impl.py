@@ -1,6 +1,6 @@
 import datetime
 import logging
-from typing import AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 from uuid import uuid4
 
 from fastapi import HTTPException, status
@@ -18,6 +18,7 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationResponse,
     ExecutionPlanTemplate,
+    GetAgentDebugInfoResponse,
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
@@ -38,6 +39,7 @@ from agent_service.types import ChatContext, Message
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.agent_name import generate_name_for_agent
 from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.feature_flags import get_secure_mode_hash, get_user_context
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
@@ -55,9 +57,14 @@ LOGGER = logging.getLogger(__name__)
 
 class AgentServiceImpl:
     def __init__(
-        self, task_executor: TaskExecutor, gpt_service_stub: GPTServiceStub, async_db: AsyncDB
+        self,
+        task_executor: TaskExecutor,
+        gpt_service_stub: GPTServiceStub,
+        async_db: AsyncDB,
+        clickhouse_db: Clickhouse,
     ):
         self.pg = async_db
+        self.ch = clickhouse_db
         self.task_executor = task_executor
         self.gpt_service_stub = gpt_service_stub
 
@@ -332,3 +339,21 @@ class AgentServiceImpl:
             return GetPlanRunOutputResponse(outputs=final_outputs, agent_name=agent_name)
 
         return GetPlanRunOutputResponse(outputs=outputs, agent_name=agent_name)
+
+    async def get_agent_debug_info(self, agent_id: str) -> GetAgentDebugInfoResponse:
+        agent_owner_id: Optional[str] = await self.pg.get_agent_owner(agent_id)
+        plan_selections: List[Dict[str, Any]] = self.ch.get_agent_debug_plan_selections(
+            agent_id=agent_id
+        )
+        all_generated_plans: List[Dict[str, Any]] = self.ch.get_agent_debug_plans(agent_id=agent_id)
+        worker_sqs_log: List[Dict[str, Any]] = self.ch.get_agent_debug_worker_sqs_log(
+            agent_id=agent_id
+        )
+        tool_calls: List[Dict[str, Any]] = self.ch.get_agent_debug_tool_calls(agent_id=agent_id)
+        return GetAgentDebugInfoResponse(
+            agent_owner_id=agent_owner_id,
+            plan_selections=plan_selections,
+            all_generated_plans=all_generated_plans,
+            worker_sqs_log=worker_sqs_log,
+            tool_calls=tool_calls,
+        )

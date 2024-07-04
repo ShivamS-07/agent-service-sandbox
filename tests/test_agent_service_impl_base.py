@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.logs import init_stdout_logging
 from tests.skip_commit_boosted_db import SkipCommitBoostedPG
 
@@ -47,6 +48,7 @@ class TestAgentServiceImplBase(unittest.TestCase):
             task_executor=DoNothingTaskExecutor(),
             gpt_service_stub=cls.gpt_service_stub,
             async_db=cls.pg,
+            clickhouse_db=Clickhouse(),
         )
 
     @classmethod
