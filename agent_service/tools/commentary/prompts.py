@@ -182,7 +182,9 @@ WRITE_COMMENTARY_DESCRIPTION = (
     "incorporating any specific instructions or preferences mentioned by the client during their interaction. "
     "The input to this function MUST be prepared by the get_commentary_input tool."
     "This function MUST NOT be used if get_commentary_input tool is not used. "
-    "Additionally, this tools MUST be used when user use phrases like 'tell me about' "
-    "or 'write a commentary on', or similar phrases."
+    "Additionally, this tools MUST be used when user use phrases like 'tell me about', "
+    "'write a commentary on', 'Share your thoughts', 'Give me the details on', "
+    "'Provide some insight into', 'Describe', 'Give me an overview of', 'what do you think about', "
+    "or any other similar phrases."
     "portfolio_id can be provided if user wants a commentary based on a specific portfolio. "
 )
