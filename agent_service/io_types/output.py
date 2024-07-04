@@ -24,6 +24,7 @@ class CitationOutput(BaseModel):
     summary: Optional[str] = None
     # Used to track when the underlying text (article, summary, etc.) was created
     published_at: Optional[datetime.datetime] = None
+    article_id: Optional[str] = None
 
 
 class OutputType(str, enum.Enum):
