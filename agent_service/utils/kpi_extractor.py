@@ -150,7 +150,7 @@ class KPIRetriever:
         kpis: List[KPIMetadata],
         dataset: VisAlphaDataset = VisAlphaDataset.COMPANY_DATASET,
         num_prev_quarters: int = 0,
-        num_future_quarters: int = 7,
+        num_future_quarters: int = 0,
         year: Optional[int] = None,
         quarter: Optional[int] = None,
         starting_date: Optional[datetime.datetime] = None,

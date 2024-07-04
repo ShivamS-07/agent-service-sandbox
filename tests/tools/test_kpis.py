@@ -44,7 +44,9 @@ class TestTextData(IsolatedAsyncioTestCase):
 
         gen_kpis_table: Table = await get_kpis_table_for_stock(  # type: ignore
             CompanyKPIsRequest(
-                stock_id=stock_id, table_name="General KPI Table", kpis=gen_kpi_list
+                stock_id=stock_id,
+                table_name="General KPI Table",
+                kpis=gen_kpi_list,
             ),
             context=self.context,
         )
@@ -57,8 +59,8 @@ class TestTextData(IsolatedAsyncioTestCase):
             context=self.context,
         )
 
-        # default is current day + 7 more quarters
-        self.assertEqual(8, topic_kpis_table.get_num_rows())
+        # Default behavour expects one quarter
+        self.assertEqual(1, topic_kpis_table.get_num_rows())
 
     async def test_kpi_daterange(self):
 
@@ -69,15 +71,13 @@ class TestTextData(IsolatedAsyncioTestCase):
             start_date=datetime.date.fromisoformat("2023-07-02"),
             end_date=datetime.date.fromisoformat("2024-07-02"),
         )
-        print(date_range)
 
         topic_kpi_list: List[KPIText] = await get_kpis_for_stock_given_topics(  # type: ignore
             GetKPIForStockGivenTopic(stock_id=stock_id, topics=["Net sales - iPhone Actual"]),
             context=self.context,
         )
-        print(topic_kpi_list)
 
-        topic_kpis_table1: Table = await get_kpis_table_for_stock(  # type: ignore
+        topic_kpis_table: Table = await get_kpis_table_for_stock(  # type: ignore
             CompanyKPIsRequest(
                 stock_id=stock_id,
                 table_name="Topic KPI Table (iPhones)",
@@ -88,44 +88,17 @@ class TestTextData(IsolatedAsyncioTestCase):
         )
 
         # current quarter + num_quarters prev to that
-        self.assertEqual(num_quarters, topic_kpis_table1.get_num_rows())
-        self.assertGreater(len(topic_kpis_table1.columns), 2)
+        self.assertEqual(num_quarters, topic_kpis_table.get_num_rows())
+        self.assertGreater(len(topic_kpis_table.columns), 2)
 
-        topic_kpis_table2: Table = await get_kpis_table_for_stock(  # type: ignore
-            CompanyKPIsRequest(
-                stock_id=stock_id,
-                table_name="Topic KPI Table (iPhones)",
-                kpis=topic_kpi_list[:1],
-                date_range=date_range,
-            ),
-            context=self.context,
-        )
-
-        # 4 quarters of total with should be 1 quarter for current date + 3 prev quarters = 4 total
-        self.assertEqual(num_quarters, topic_kpis_table2.get_num_rows())
-        self.assertEqual(topic_kpis_table1.get_num_rows(), topic_kpis_table2.get_num_rows())
-        self.assertEqual(topic_kpis_table1, topic_kpis_table2)
-
-        # 8 quarter wide date range should be equivalent to the default behavior with no args
+        # 8 quarter wide date range
         num_quarters = 8
         date_range = DateRange(
             start_date=datetime.date.fromisoformat("2022-07-02"),
             end_date=datetime.date.fromisoformat("2024-07-02"),
         )
 
-        topic_kpis_table1: Table = await get_kpis_table_for_stock(  # type: ignore
-            CompanyKPIsRequest(
-                stock_id=stock_id,
-                table_name="Topic KPI Table (iPhones)",
-                kpis=topic_kpi_list[:1],
-            ),
-            context=self.context,
-        )
-
-        # current quarter + num_quarters prev to that
-        self.assertEqual(num_quarters, topic_kpis_table1.get_num_rows())
-
-        topic_kpis_table2: Table = await get_kpis_table_for_stock(  # type: ignore
+        topic_kpis_table: Table = await get_kpis_table_for_stock(  # type: ignore
             CompanyKPIsRequest(
                 stock_id=stock_id,
                 table_name="Topic KPI Table (iPhones)",
@@ -134,10 +107,8 @@ class TestTextData(IsolatedAsyncioTestCase):
             ),
             context=self.context,
         )
-
-        self.assertEqual(num_quarters, topic_kpis_table2.get_num_rows())
-        self.assertEqual(topic_kpis_table1.get_num_rows(), topic_kpis_table2.get_num_rows())
-        self.assertEqual(topic_kpis_table1, topic_kpis_table2)
+        self.assertEqual(num_quarters, topic_kpis_table.get_num_rows())
+        self.assertGreater(len(topic_kpis_table.columns), 2)
 
     async def test_kpi_multi_stock(self):
 

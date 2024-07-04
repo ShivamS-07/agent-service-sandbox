@@ -370,6 +370,36 @@ class Postgres(PostgresBase):
         output = load_io_type(row["log_data"])
         return output
 
+    def get_short_company_descriptions_for_gbi_ids(
+        self, gbi_ids: List[int]
+    ) -> Dict[int, Tuple[Optional[str], Optional[datetime.datetime]]]:
+        """
+        Given a list of gbi ids, return a mapping from gbi id to its company
+        description and last updated time. If the long description isn't
+        present, fall back to the short description.
+        """
+        sql = """
+        SELECT
+          ssm.gbi_id,
+          cds.company_description_short AS company_description,
+          cds.last_updated AT TIME ZONE 'UTC' AS last_updated
+        FROM spiq_security_mapping ssm
+        LEFT JOIN nlp_service.company_descriptions_short cds
+          ON ssm.spiq_company_id = cds.spiq_company_id
+        WHERE ssm.gbi_id = ANY(%s);
+        """
+        records = self.generic_read(sql, params=[gbi_ids])
+        return {r["gbi_id"]: (r["company_description"], r["last_updated"]) for r in records}
+
+    def get_currency_exchange_to_usd(self, iso: str, date: datetime.date) -> float:
+        sql = """
+        SELECT exchange_rate FROM data.currency_exchange
+        WHERE iso = %(iso)s AND price_date = %(price_date)s
+        """
+        records = self.generic_read(sql, params={"iso": iso, "price_date": date})
+        # We take the inverse to get the exchange rate from the iso -> usd
+        return 1 / float(records[0].get("exchange_rate"))
+
     def get_short_company_description(
         self, gbi_id: int
     ) -> Tuple[Optional[str], Optional[datetime.datetime]]:

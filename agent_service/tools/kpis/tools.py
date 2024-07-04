@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -17,7 +18,11 @@ from agent_service.io_types.table import (
 )
 from agent_service.io_types.text import EquivalentKPITexts, KPIText
 from agent_service.tool import ToolArgs, ToolCategory, tool
-from agent_service.tools.kpis.constants import SPECIFIC
+from agent_service.tools.kpis.constants import (
+    LONG_UNIT_FOR_CURRENCY,
+    LONG_UNIT_FOR_NUM,
+    SPECIFIC,
+)
 from agent_service.tools.kpis.prompts import (
     CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT_OBJ,
     CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ,
@@ -51,6 +56,7 @@ class CompanyInformation:
     company_name: str
     company_description: str
     kpi_lookup: Dict[int, KPIMetadata]
+    kpi_index_to_pid_mapping: Dict[int, int]
     kpi_str: str
 
 
@@ -259,7 +265,6 @@ async def get_company_data_and_kpis(
     gbi_id = stock_id.gbi_id
     company_name = db.get_sec_metadata_from_gbi([gbi_id])[gbi_id].company_name
     short_description = db.get_short_company_description(gbi_id)[0]
-
     # If we're unable to get the short description then pass in an empty string
     if short_description is None:
         short_description = ""
@@ -276,20 +281,24 @@ async def get_company_data_and_kpis(
         return None
 
     kpi_str_list = []
-    for kpi in kpis:
+    index_to_pid_mapping = {}
+    for i, kpi in enumerate(kpis):
         kpi_insts = kpi_data.get(kpi.pid, [])
         if len(kpi_insts):
             kpi_inst = kpi_insts[0]
-            if kpi_inst.long_unit == "Amount":
-                kpi_str_list.append(f"({kpi.pid}) {kpi.name}: ${kpi_inst.value:.2f}")
-            elif kpi_inst.long_unit == "Number":
-                kpi_str_list.append(f"({kpi.pid}) {kpi.name}: {kpi_inst.value:3f}")
+            if kpi_inst.long_unit == LONG_UNIT_FOR_CURRENCY:
+                kpi_str_list.append(f"({i+1}) {kpi.name}: ${kpi_inst.value:.2f}")
+            elif kpi_inst.long_unit == LONG_UNIT_FOR_NUM:
+                kpi_str_list.append(f"({i+1}) {kpi.name}: {kpi_inst.value:3f}")
             else:
-                kpi_str_list.append(f"({kpi.pid}) {kpi.name}: {kpi_inst.value:.2f} {kpi_inst.unit}")
+                kpi_str_list.append(f"({i+1}) {kpi.name}: {kpi_inst.value:.2f} {kpi_inst.unit}")
+            index_to_pid_mapping[i + 1] = kpi.pid
 
     kpi_lookup = {kpi.pid: kpi for kpi in kpis}
     kpi_str = "\n".join(kpi_str_list)
-    return CompanyInformation(gbi_id, company_name, short_description, kpi_lookup, kpi_str)
+    return CompanyInformation(
+        gbi_id, company_name, short_description, kpi_lookup, index_to_pid_mapping, kpi_str
+    )
 
 
 async def get_relevant_kpis_for_stock_id(
@@ -310,7 +319,8 @@ async def get_relevant_kpis_for_stock_id(
     topic_kpi_list: List[KPIText] = []
 
     for line in result.split("\n"):
-        pid = int(line.split(",")[0])
+        index_num = int(line.split(",")[0])
+        pid = company_info.kpi_index_to_pid_mapping[index_num]
         # Check to make sure we have an actual pid that can map to data
         pid_metadata = company_info.kpi_lookup.get(pid, None)
         if pid_metadata:
@@ -352,6 +362,42 @@ async def get_kpis_for_stock_given_topics(
     return []
 
 
+def get_earliest_date_for_year_quarter(year: int, quarter: int) -> datetime.date:
+    quarter_start_month = {
+        1: 1,  # Q1 start
+        2: 4,  # Q2 start
+        3: 7,  # Q3 start
+        4: 10,  # Q4 start
+    }
+
+    if quarter not in quarter_start_month:
+        raise ValueError("Quarter must be between 1 and 4")
+
+    month = quarter_start_month[quarter]
+    return datetime.date(year, month, 1)
+
+
+def convert_kpi_currency_to_usd(kpi_data: List[KPIInstance]) -> List[KPIInstance]:
+    converted_kpi_data: List[KPIInstance] = []
+    for kpi_inst in kpi_data:
+        approx_kpi_posted_date = get_earliest_date_for_year_quarter(kpi_inst.year, kpi_inst.quarter)
+        iso = kpi_inst.currency
+        if isinstance(iso, str):
+            exchange_rate = db.get_currency_exchange_to_usd(iso, approx_kpi_posted_date)
+            converted_kpi_inst = deepcopy(kpi_inst)
+            if converted_kpi_inst.actual:
+                converted_kpi_inst.actual = converted_kpi_inst.actual * exchange_rate
+            if converted_kpi_inst.estimate:
+                converted_kpi_inst.estimate = converted_kpi_inst.estimate * exchange_rate
+            converted_kpi_inst.currency = "USD"
+            converted_kpi_data.append(converted_kpi_inst)
+        else:
+            # There are cases where "Amount" is not a monetary value
+            converted_kpi_inst = deepcopy(kpi_inst)
+            converted_kpi_data.append(converted_kpi_inst)
+    return converted_kpi_data
+
+
 class GetRelevantKPIsForStocksGivenTopic(ToolArgs):
     stock_ids: List[StockID]
     shared_metric: str
@@ -372,7 +418,7 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
     tasks = []
     gbi_id_stock_id_map = {}
     for stock_id in args.stock_ids:
-        company_info = await get_company_data_and_kpis(stock_id, context)
+        company_info = await get_company_data_and_kpis(stock_id, context=context)
         if company_info:
             company_info_list.append(company_info)
             tasks.append(
@@ -382,14 +428,13 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
             )
             gbi_id_stock_id_map[stock_id.gbi_id] = stock_id
 
-    company_kpi_lists = await gather_with_concurrency(tasks, n=5)
+    company_kpi_lists = await gather_with_concurrency(tasks, n=20)
 
     for stock_id, company_kpi in zip(args.stock_ids, company_kpi_lists):
         if company_kpi is not None:
             overlapping_kpi_list.append(company_kpi)
 
     await tool_log(log=f"Found {len(overlapping_kpi_list)} relevant KPIs", context=context)
-
     return EquivalentKPITexts(val=overlapping_kpi_list, general_kpi_name=args.shared_metric)
 
 
@@ -439,7 +484,8 @@ async def get_important_kpis_for_stock(
     important_kpi_list: List[KPIText] = []
 
     for line in result.split("\n"):
-        pid = int(line.split(",")[0])
+        index_num = int(line.split(",")[0])
+        pid = company_info.kpi_index_to_pid_mapping[index_num]
         # Check to make sure we have an actual pid that can map to data
         pid_metadata = company_info.kpi_lookup.get(pid, None)
         if pid_metadata:
@@ -503,11 +549,17 @@ async def get_specific_kpi_data_for_stock_id(
         )
         return None
     data = result.split(",")
-    pid = int(data[0])
+    index_num = int(data[0])
+    pid = company_info.kpi_index_to_pid_mapping[index_num]
     pid_metadata = company_info.kpi_lookup.get(pid, None)
 
     if pid_metadata:
         return KPIText(val=pid_metadata.name, pid=pid_metadata.pid, stock_id=stock_id)
+    else:
+        await tool_log(
+            f"Failed to map {data[1].strip()} (ID: pid) to an existing KPI",
+            context=context,
+        )
     return None
 
 
@@ -528,14 +580,12 @@ def interpret_date_quarter_inputs(
         num_prev_days = max(0, num_prev_days)
         num_prev_quarters = round(num_prev_days / days_in_quarter)
 
+    # If both future and prev quarters are none, assume 0 for both
+    # this will then just get the current quarter associated with anchor_datetime
     if num_future_quarters is None:
         num_future_quarters = 0
-
-    # I think we should heavily consider setting this default to 1 or zero
-    # (which ever would find the data for exactly the quarter containing the anchor_date)
-    # and maybe change the name to quarter_containing_date
     if num_prev_quarters is None:
-        num_prev_quarters = 7
+        num_prev_quarters = 0
 
     if anchor_date is None:
         anchor_datetime = get_now_utc()
@@ -631,7 +681,11 @@ async def get_overlapping_kpis_table_for_stocks(
             )
             kpi_data = data.get(kpi_metadata.name, None)
             if kpi_data:
-                company_kpi_data_lookup[stock_id] = kpi_data
+                if kpi_data[0].long_unit == LONG_UNIT_FOR_CURRENCY:
+                    modified_kpi_data = convert_kpi_currency_to_usd(kpi_data)
+                    company_kpi_data_lookup[stock_id] = modified_kpi_data
+                else:
+                    company_kpi_data_lookup[stock_id] = kpi_data
 
     topic_kpi_table = await convert_multi_stock_data_to_table(
         kpi_name=args.equivalent_kpis.general_kpi_name,
@@ -751,19 +805,20 @@ async def main() -> None:
     for column in equivalent_kpis_table.columns:
         print(column.metadata.label)
 
-    microsoft = StockID(gbi_id=6963, symbol="MSFT", isin="")
-    amazon = StockID(gbi_id=149, symbol="AMZN", isin="")
-    alphabet = StockID(gbi_id=10096, symbol="GOOG", isin="")
+    # Testing currency conversion
+    nintendo = StockID(gbi_id=398171, symbol="Nintendo", isin="")
+    sony = StockID(gbi_id=391887, symbol="Sony", isin="")
+    ea = StockID(gbi_id=3458, symbol="EA", isin="")
 
-    stocks = [microsoft, amazon, alphabet]
+    stocks = [nintendo, sony, ea]
     equivalent_kpis: EquivalentKPITexts = await get_relevant_kpis_for_multiple_stocks_given_topic(  # type: ignore
-        GetRelevantKPIsForStocksGivenTopic(stock_ids=stocks, shared_metric="Cloud"),
+        GetRelevantKPIsForStocksGivenTopic(stock_ids=stocks, shared_metric="Total Revenue"),
         context=plan_context,
     )
     equivalent_kpis_table: Table = await get_overlapping_kpis_table_for_stocks(  # type: ignore
         args=KPIsRequest(
             equivalent_kpis=equivalent_kpis,
-            table_name="Cloud Computing",
+            table_name="Total Revenue",
             date_range=DateRange(
                 start_date=datetime.date.fromisoformat("2023-07-02"),
                 end_date=datetime.date.fromisoformat("2024-07-02"),
