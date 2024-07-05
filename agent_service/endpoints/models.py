@@ -359,6 +359,6 @@ class GetSecureUserResponse(BaseModel):
 class GetAgentDebugInfoResponse(BaseModel):
     agent_owner_id: Optional[str]
     all_generated_plans: List[Dict[str, Any]]
-    plan_selections: List[Dict[str, Any]]
-    tool_calls: List[Dict[str, Any]]
-    worker_sqs_log: List[Dict[str, Any]]
+    plan_selections: Dict[datetime.datetime, Any]
+    tool_calls: Dict[Union[str], Any]
+    worker_sqs_log: Dict[str, Any]

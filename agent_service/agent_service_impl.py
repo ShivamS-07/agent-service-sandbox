@@ -342,14 +342,12 @@ class AgentServiceImpl:
 
     async def get_agent_debug_info(self, agent_id: str) -> GetAgentDebugInfoResponse:
         agent_owner_id: Optional[str] = await self.pg.get_agent_owner(agent_id)
-        plan_selections: List[Dict[str, Any]] = self.ch.get_agent_debug_plan_selections(
+        plan_selections: Dict[datetime.datetime, Any] = self.ch.get_agent_debug_plan_selections(
             agent_id=agent_id
         )
         all_generated_plans: List[Dict[str, Any]] = self.ch.get_agent_debug_plans(agent_id=agent_id)
-        worker_sqs_log: List[Dict[str, Any]] = self.ch.get_agent_debug_worker_sqs_log(
-            agent_id=agent_id
-        )
-        tool_calls: List[Dict[str, Any]] = self.ch.get_agent_debug_tool_calls(agent_id=agent_id)
+        worker_sqs_log: Dict[str, Any] = self.ch.get_agent_debug_worker_sqs_log(agent_id=agent_id)
+        tool_calls: Dict[str, Any] = self.ch.get_agent_debug_tool_calls(agent_id=agent_id)
         return GetAgentDebugInfoResponse(
             agent_owner_id=agent_owner_id,
             plan_selections=plan_selections,

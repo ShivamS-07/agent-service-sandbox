@@ -1,5 +1,7 @@
 import datetime
+import json
 import logging
+from collections import defaultdict
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -353,7 +355,7 @@ class Clickhouse(ClickhouseBase):
     ################################################################################################
     # Agent Debug Info
     ################################################################################################
-    def get_agent_debug_plan_selections(self, agent_id: str) -> List[Dict[str, Any]]:
+    def get_agent_debug_plan_selections(self, agent_id: str) -> Dict[datetime.datetime, Any]:
         sql = """
             SELECT plans, selection_str, selection, service_version, start_time_utc,
             end_time_utc, duration_seconds
@@ -361,7 +363,18 @@ class Clickhouse(ClickhouseBase):
             WHERE agent_id = %(agent_id)s
             ORDER BY end_time_utc DESC
             """
-        return self.generic_read(sql, {"agent_id": agent_id})
+        res: Dict[datetime.datetime, Any] = {}
+        rows = self.generic_read(sql, {"agent_id": agent_id})
+        for row in rows:
+            row["plans"] = json.loads(row["plans"])
+            for i, plan in enumerate(row["plans"]):
+                plans_dict = json.loads(plan)
+                steps_dict: Dict[str, Any] = defaultdict(dict)
+                for step in plans_dict:
+                    steps_dict[f"{step['tool_name']}_{step['tool_task_id']}"] = step
+                row["plans"][i] = steps_dict
+            res[row["start_time_utc"]] = row
+        return res
 
     def get_agent_debug_plans(self, agent_id: str) -> List[Dict[str, Any]]:
         sql = """
@@ -371,9 +384,16 @@ class Clickhouse(ClickhouseBase):
         WHERE agent_id = %(agent_id)s
         ORDER BY end_time_utc DESC
         """
-        return self.generic_read(sql, {"agent_id": agent_id})
+        rows = self.generic_read(sql, {"agent_id": agent_id})
+        for row in rows:
+            execution_plan_dict = json.loads(row["execution_plan"])
+            steps_dict: Dict[str, Any] = defaultdict(dict)
+            for step in execution_plan_dict:
+                steps_dict[f"{step['tool_name']}_{step['tool_task_id']}"] = step
+            row["execution_plan"] = steps_dict
+        return rows
 
-    def get_agent_debug_tool_calls(self, agent_id: str) -> List[Dict[str, Any]]:
+    def get_agent_debug_tool_calls(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         SELECT  plan_id, plan_run_id, task_id, tool_name, args, result, start_time_utc,
         end_time_utc, service_version, duration_seconds
@@ -381,9 +401,14 @@ class Clickhouse(ClickhouseBase):
         WHERE agent_id = %(agent_id)s
         ORDER BY plan_id, plan_run_id, task_id
         """
-        return self.generic_read(sql, {"agent_id": agent_id})
+        rows = self.generic_read(sql, {"agent_id": agent_id})
+        res: Dict[str, Any] = defaultdict(dict)
+        for row in rows:
+            tool_name, task_id = row["tool_name"], row["task_id"]
+            res[tool_name][task_id] = row
+        return res
 
-    def get_agent_debug_worker_sqs_log(self, agent_id: str) -> List[Dict[str, Any]]:
+    def get_agent_debug_worker_sqs_log(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         SELECT plan_id, plan_run_id, method, arguments, message, send_time_utc,
         wait_time_seconds,  error_msg,start_time_utc, end_time_utc, duration_seconds
@@ -391,4 +416,10 @@ class Clickhouse(ClickhouseBase):
         WHERE agent_id = %(agent_id)s
         ORDER BY end_time_utc DESC
         """
-        return self.generic_read(sql, {"agent_id": agent_id})
+        res: Dict[str, Any] = defaultdict(dict)
+        rows = self.generic_read(sql, {"agent_id": agent_id})
+        for row in rows:
+            row["message"] = json.loads(row["message"])
+            row["arguments"] = json.loads(row["arguments"])
+            res[row["method"]][row["send_time_utc"]] = row
+        return res
