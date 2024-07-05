@@ -399,13 +399,15 @@ class Clickhouse(ClickhouseBase):
         end_time_utc, service_version, duration_seconds
         FROM agent.tool_calls
         WHERE agent_id = %(agent_id)s
-        ORDER BY plan_id, plan_run_id, task_id
+        ORDER BY end_time_utc DESC
         """
         rows = self.generic_read(sql, {"agent_id": agent_id})
-        res: Dict[str, Any] = defaultdict(dict)
+        res: Dict[str, Any] = defaultdict(list)
         for row in rows:
-            tool_name, task_id = row["tool_name"], row["task_id"]
-            res[tool_name][task_id] = row
+            tool_name = row["tool_name"]
+            row["args"] = json.dumps(row["args"])
+            row["result"] = json.dumps(row["result"])
+            res[tool_name].append(row)
         return res
 
     def get_agent_debug_worker_sqs_log(self, agent_id: str) -> Dict[str, Any]:
