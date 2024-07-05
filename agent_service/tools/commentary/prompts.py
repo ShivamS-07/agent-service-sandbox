@@ -50,6 +50,8 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "you. NEVER PUT SOURCES INLINE. Use the following information to generate this text. \n"
         "{previous_commentary_prompt}"
         "{geography_prompt}"
+        "{watchlist_prompt}"
+        "{client_type_prompt}"
         "{writing_style_prompt}"
         "Here are, all texts for your analysis, delimited by #####:\n"
         "\n#####\n"
@@ -99,6 +101,69 @@ GEOGRAPHY_PROMPT = Prompt(
         "{portfolio_geography} "
     ),
 )
+
+WATCHLIST_PROMPT = Prompt(
+    name="WATCHLIST_PROMPT",
+    template=(
+        "The following are a set of stocks that are on client's watchlist, as well as some "
+        "metadata. You can use these if you need to discuss how a topic might impact a "
+        "stock that is not in the portfolio. Please reference these stocks ONLY when they "
+        "are explicitly mentioned in a topic. DO NOT MENTION THESE SPECIFIC COMPANIES "
+        "UNLESS MENTIONED IN YOUR INPUT. "
+        "### Watchlist Stocks "
+        "{watchlist_stocks} "
+    ),
+)
+
+CLIENTELE_TYPE_PROMPT = Prompt(
+    name="CLIENTELE_TYPE_PROMPT",
+    template=(
+        "Below is a short description of who your clients are. Please don't mention this "
+        "specifically, just use it to guide your language and tone, and to decide how "
+        "topics relate to your portfolio. Also take very special note of any requests to "
+        "change the output's formatting in this section. Do your best to obey "
+        "formatting requests. "
+        "### Client Type "
+        "{client_type} "
+    ),
+)
+# GOALS
+
+TECHNICAL_CLIENTELE = (
+    "You are especially skilled in communicating to the masses through reputable financial"
+    " publications and great at summarizing top level points and explaining technical and"
+    " difficult financial topics. You are to write at a professional grade level, use"
+    " finance specific jargon when needed but do not over do it. Expect your audience to"
+    " be very interested in finance. Write in a storytelling way to engage your audience,"
+    " writing in this way means you are to make it easier for a reader to perceive the"
+    " information. Your aim is to make the connection between your audience and your"
+    " writing stronger. You must explain the information in an intuitive and native way."
+    " You must remember that you are a professional and you are communicating to your"
+    " sophisticated, adult clients who are paying you a lot of money. You must write in a"
+    " professional manner."
+)
+
+
+SIMPLE_CLIENTELE = (
+    "You are especially skilled in communicating to the masses through large newspaper"
+    " publications and great at summarizing top level points and explaining concepts in"
+    " laypeople terms. You are to write at a 9th grade level, and cannot use any finance"
+    " specific jargon that is incomprehensible to the average person. Expect your audience"
+    " to have little interest in finance. Write in a storytelling way to engage your"
+    " audience, writing in this way means you are to make it easier for a reader to"
+    " perceive the information. Your aim is to make the connection between your audience"
+    " and your writing stronger. You must explain the information in an intuitive and"
+    " native way. You must remember that you are a professional and you are communicating"
+    " to your sophisticated, adult clients who are paying you a lot of money. You must"
+    " write in a professional manner."
+)
+
+
+CLIENTELE_TEXT_DICT = {
+    "Technical": TECHNICAL_CLIENTELE,
+    "Simple": SIMPLE_CLIENTELE,
+}
+
 
 WRITING_STYLE_PROMPT = Prompt(
     name="WRITING_STYLE_PROMPT",
@@ -156,7 +221,6 @@ NO_PROMPT = Prompt(name="NO_PROMPT", template="")
 GET_COMMENTARY_INPUTS_DESCRIPTION = (
     "This function can be used when a client wants to write a commentary, article or summary of "
     "market trends and/or specific topics."
-    "market trends and/or specific topics."
     "This function collects and prepares all texts to be used by the write_commentary tool "
     "for writing a commentary or short articles and market summaries. "
     "This function MUST only be used for write commentary tool and NO WHERE ELSE. "
@@ -187,4 +251,8 @@ WRITE_COMMENTARY_DESCRIPTION = (
     "'Provide some insight into', 'Describe', 'Give me an overview of', 'what do you think about', "
     "or any other similar phrases."
     "portfolio_id can be provided if user wants a commentary based on a specific portfolio. "
+    "use_watchlist_stocks can be set to True if user wants to include information about stocks in a "
+    "their watchlist. The default value is False."
+    "client_type MUST be either 'Technical' or 'Simple'. Choose based on client's request. "
+    "writing_format MUST be either 'Long', 'Short' or 'Bullets'. Choose based on client's request."
 )

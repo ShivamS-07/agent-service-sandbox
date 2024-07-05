@@ -24,12 +24,17 @@ from agent_service.tools.commentary.helpers import (
     split_text_and_citation_ids,
 )
 from agent_service.tools.commentary.prompts import (
+    CLIENTELE_TEXT_DICT,
+    CLIENTELE_TYPE_PROMPT,
     COMMENTARY_PROMPT_MAIN,
     COMMENTARY_SYS_PROMPT,
     GEOGRAPHY_PROMPT,
     GET_COMMENTARY_INPUTS_DESCRIPTION,
+    LONG_WRITING_STYLE,
     NO_PROMPT,
     PREVIOUS_COMMENTARY_PROMPT,
+    SIMPLE_CLIENTELE,
+    WATCHLIST_PROMPT,
     WRITE_COMMENTARY_DESCRIPTION,
     WRITING_FORMAT_TEXT_DICT,
     WRITING_STYLE_PROMPT,
@@ -50,6 +55,10 @@ from agent_service.tools.themes import (
     get_top_N_macroeconomic_themes,
 )
 from agent_service.tools.tool_log import tool_log
+from agent_service.tools.watchlist import (
+    GetStocksForUserAllWatchlistsInput,
+    get_stocks_for_user_all_watchlists,
+)
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
@@ -57,20 +66,20 @@ from agent_service.utils.prefect import get_prefect_logger
 
 # TODO:
 
-# - How to handle large size of texts?
-#    - one option is do some filtering using another gpt to select the best texts based on user prompt
+
 # 1. comeplte sectors_prompt
 # 2. complete top_stocks_prompt
-# 3. complete client_type_prompt
 # 4. complete goal_prompt
 # 6. complete theme_prompt and theme_outlook_prompt
-# 7. complete watchlist_stocks_prompt
 # 8. use a portfolio by defualt for geography_prompt
 
 
 class WriteCommentaryInput(ToolArgs):
-    inputs: List[Text]  # type: ignore
+    inputs: List[Text]
+    client_type: Optional[str] = "Simple"
+    writing_format: Optional[str] = "Long"
     portfolio_id: Optional[PortfolioID] = None
+    use_watchlist_stocks: Optional[bool] = False
 
 
 @tool(
@@ -141,7 +150,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         context=context,
     )
 
-    # create main prompt
+    # Prepare previous commentary prompt
     previous_commentary_prompt = (
         PREVIOUS_COMMENTARY_PROMPT.format(
             previous_commentary=await Text.get_all_strs(previous_commentary)
@@ -149,15 +158,46 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         if previous_commentary is not None
         else NO_PROMPT.format()
     )
-    writing_style_prompt = WRITING_STYLE_PROMPT.format(
-        writing_format=WRITING_FORMAT_TEXT_DICT.get("Long")
+    # Prepare watchlist prompt
+    watchlist_prompt = NO_PROMPT.format()
+    if args.use_watchlist_stocks:
+        await tool_log(
+            log="Watchlist stocks are used. Retrieving watchlist stocks for commentary.",
+            context=context,
+        )
+        watchlist_stocks = await get_stocks_for_user_all_watchlists(
+            GetStocksForUserAllWatchlistsInput(), context
+        )
+        watchlist_prompt = WATCHLIST_PROMPT.format(
+            watchlist_stocks=", ".join([await stock.to_gpt_input() for stock in watchlist_stocks])  # type: ignore
+        )
+    else:
+        await tool_log(
+            log="Watchlist stocks are not used. Skipping watchlist based commentary.",
+            context=context,
+        )
+
+    # Prepare client type prompt
+    client_type = args.client_type if args.client_type else "Simple"
+    client_type_prompt = CLIENTELE_TYPE_PROMPT.format(
+        client_type=CLIENTELE_TEXT_DICT.get(client_type, SIMPLE_CLIENTELE)
     )
+
+    # Prepare writing style prompt
+    writing_format = args.writing_format if args.writing_format else "Long"
+    writing_style_prompt = WRITING_STYLE_PROMPT.format(
+        writing_format=WRITING_FORMAT_TEXT_DICT.get(writing_format, LONG_WRITING_STYLE)
+    )
+    # Prepare texts prompt
     texts = await Text.get_all_strs(all_text_group, include_header=True, text_group_numbering=True)
     chat_context = context.chat.get_gpt_input() if context.chat is not None else ""
 
+    # Prepare the main prompt using the above prompts
     main_prompt = COMMENTARY_PROMPT_MAIN.format(
         previous_commentary_prompt=previous_commentary_prompt.filled_prompt,
         geography_prompt=geography_prompt.filled_prompt,
+        watchlist_prompt=watchlist_prompt.filled_prompt,
+        client_type_prompt=client_type_prompt.filled_prompt,
         writing_style_prompt=writing_style_prompt.filled_prompt,
         texts=texts,
         chat_context=chat_context,
@@ -167,6 +207,10 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     #     f.write(main_prompt.filled_prompt)
 
     # Write the commentary
+    await tool_log(
+        log=f"Writing commentary for '{client_type}' client in '{writing_format}' format.",
+        context=context,
+    )
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=main_prompt,
         sys_prompt=COMMENTARY_SYS_PROMPT.format(),
