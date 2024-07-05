@@ -34,6 +34,7 @@ from agent_service.GPT.constants import (
     MAX_GPT_WORKER_TIMEOUT,
     TEXT_RESPONSE_FORMAT,
 )
+from agent_service.unit_test_util import RUNNING_IN_UNIT_TEST
 from agent_service.utils.gpt_logging import (
     GPT_TASK_TYPE,
     MAIN_PROMPT_NAME,
@@ -306,7 +307,10 @@ class GPT:
     ) -> None:
         self.model = model
         self.context = context
-        self.gpt_service_stub = gpt_service_stub
+        should_create_stub = gpt_service_stub and not RUNNING_IN_UNIT_TEST
+        self.gpt_service_stub = (
+            _get_gpt_service_stub()[0] if should_create_stub else gpt_service_stub
+        )
 
     async def do_chat_w_sys_prompt(
         self,
