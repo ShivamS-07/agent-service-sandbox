@@ -132,17 +132,17 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         debug_info = self.loop.run_until_complete(
             application.get_agent_debug_info(user=user, agent_id=agent_id)
         )
-        self.assertTrue(debug_info.agent_owner_id)
+        self.assertTrue(debug_info.debug.agent_owner_id)
         # Agent with info in logs
         agent_id = "ed2a1603-3a6c-4b53-9d01-59566217e6e9"
         debug_info = self.loop.run_until_complete(
             application.get_agent_debug_info(user=user, agent_id=agent_id)
         )
-        self.assertTrue(debug_info.agent_owner_id)
-        self.assertTrue(debug_info.all_generated_plans)
-        self.assertTrue(debug_info.plan_selections)
-        self.assertTrue(debug_info.tool_calls)
-        self.assertTrue(debug_info.worker_sqs_log)
+        self.assertTrue(debug_info.debug.agent_owner_id)
+        self.assertTrue(debug_info.debug.all_generated_plans)
+        self.assertTrue(debug_info.debug.plan_selections)
+        self.assertTrue(debug_info.debug.tool_calls)
+        self.assertTrue(debug_info.debug.worker_sqs_log)
         test_unauthorized_user = str(uuid.uuid4())
         unauthorized_user = User(
             user_id=test_unauthorized_user, is_admin=False, is_super_admin=False, auth_token=""

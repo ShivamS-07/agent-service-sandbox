@@ -1,7 +1,7 @@
 import datetime
 import json
 import logging
-from collections import defaultdict
+from collections import OrderedDict
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -355,7 +355,7 @@ class Clickhouse(ClickhouseBase):
     ################################################################################################
     # Agent Debug Info
     ################################################################################################
-    def get_agent_debug_plan_selections(self, agent_id: str) -> Dict[datetime.datetime, Any]:
+    def get_agent_debug_plan_selections(self, agent_id: str) -> List[Dict[str, Any]]:
         sql = """
             SELECT plans, selection_str, selection, service_version, start_time_utc,
             end_time_utc, duration_seconds
@@ -363,17 +363,17 @@ class Clickhouse(ClickhouseBase):
             WHERE agent_id = %(agent_id)s
             ORDER BY end_time_utc DESC
             """
-        res: Dict[datetime.datetime, Any] = {}
+        res: List[Dict[str, Any]] = []
         rows = self.generic_read(sql, {"agent_id": agent_id})
         for row in rows:
             row["plans"] = json.loads(row["plans"])
             for i, plan in enumerate(row["plans"]):
                 plans_dict = json.loads(plan)
-                steps_dict: Dict[str, Any] = defaultdict(dict)
+                steps_dict: Dict[str, Any] = OrderedDict()
                 for step in plans_dict:
                     steps_dict[f"{step['tool_name']}_{step['tool_task_id']}"] = step
                 row["plans"][i] = steps_dict
-            res[row["start_time_utc"]] = row
+            res.append(row)
         return res
 
     def get_agent_debug_plans(self, agent_id: str) -> List[Dict[str, Any]]:
@@ -386,28 +386,31 @@ class Clickhouse(ClickhouseBase):
         """
         rows = self.generic_read(sql, {"agent_id": agent_id})
         for row in rows:
-            execution_plan_dict = json.loads(row["execution_plan"])
-            steps_dict: Dict[str, Any] = defaultdict(dict)
-            for step in execution_plan_dict:
-                steps_dict[f"{step['tool_name']}_{step['tool_task_id']}"] = step
+            steps_dict: Dict[str, Any] = OrderedDict()
+            if row["execution_plan"]:
+                execution_plan_dict = json.loads(row["execution_plan"])
+                for step in execution_plan_dict:
+                    steps_dict[f"{step['tool_name']}_{step['tool_task_id']}"] = step
             row["execution_plan"] = steps_dict
         return rows
 
     def get_agent_debug_tool_calls(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         SELECT  plan_id, plan_run_id, task_id, tool_name, args, result, start_time_utc,
-        end_time_utc, service_version, duration_seconds
+        end_time_utc, service_version, duration_seconds, error_msg
         FROM agent.tool_calls
         WHERE agent_id = %(agent_id)s
         ORDER BY end_time_utc DESC
         """
         rows = self.generic_read(sql, {"agent_id": agent_id})
-        res: Dict[str, Any] = defaultdict(list)
+        res: Dict[str, Any] = OrderedDict()
         for row in rows:
             tool_name = row["tool_name"]
-            row["args"] = json.dumps(row["args"])
-            row["result"] = json.dumps(row["result"])
-            res[tool_name].append(row)
+            if row["args"]:
+                row["args"] = json.loads(row["args"])
+            if row["result"]:
+                row["result"] = json.loads(row["result"])
+            res[f"{tool_name}_{row['plan_run_id']}_{row['task_id']}"] = row
         return res
 
     def get_agent_debug_worker_sqs_log(self, agent_id: str) -> Dict[str, Any]:
@@ -418,7 +421,9 @@ class Clickhouse(ClickhouseBase):
         WHERE agent_id = %(agent_id)s
         ORDER BY end_time_utc DESC
         """
-        res: Dict[str, Any] = defaultdict(dict)
+        res: Dict[str, Any] = dict()
+        res["run_execution_plan"] = OrderedDict()
+        res["create_execution_plan"] = OrderedDict()
         rows = self.generic_read(sql, {"agent_id": agent_id})
         for row in rows:
             row["message"] = json.loads(row["message"])

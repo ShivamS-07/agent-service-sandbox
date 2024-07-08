@@ -354,11 +354,21 @@ class GetSecureUserResponse(BaseModel):
 ####################################################################################################
 # Debug info
 ####################################################################################################
+class Tooltips(BaseModel):
+    plan_selections: str
+    all_generated_plans: str
+    worker_sqs_log: str
+    tool_calls: str
+
+
+class Debug(BaseModel):
+    agent_owner_id: Optional[str]
+    plan_selections: List[Dict[str, Any]]
+    all_generated_plans: List[Dict[str, Any]]
+    worker_sqs_log: Dict[str, Any]
+    tool_calls: Dict[str, Any]
 
 
 class GetAgentDebugInfoResponse(BaseModel):
-    agent_owner_id: Optional[str]
-    all_generated_plans: Dict[str, Any]
-    plan_selections: Dict[str, Any]
-    tool_calls: Dict[str, Any]
-    worker_sqs_log: Dict[str, Any]
+    tooltips: Tooltips
+    debug: Debug

@@ -14,6 +14,7 @@ from agent_service.endpoints.models import (
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     CreateAgentResponse,
+    Debug,
     DeleteAgentResponse,
     DisableAgentAutomationResponse,
     EnableAgentAutomationResponse,
@@ -30,6 +31,7 @@ from agent_service.endpoints.models import (
     NotificationEvent,
     PlanTemplateTask,
     SharePlanRunResponse,
+    Tooltips,
     UnsharePlanRunResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
@@ -342,43 +344,39 @@ class AgentServiceImpl:
 
     async def get_agent_debug_info(self, agent_id: str) -> GetAgentDebugInfoResponse:
         agent_owner_id: Optional[str] = await self.pg.get_agent_owner(agent_id)
-        plan_selections_with_helper_text: Dict[str, Any] = {}
-        plan_selections: Dict[datetime.datetime, Any] = self.ch.get_agent_debug_plan_selections(
+        plan_selections: List[Dict[str, Any]] = self.ch.get_agent_debug_plan_selections(
             agent_id=agent_id
         )
-        plan_selections_with_helper_text["plan_selections"] = plan_selections
-        plan_selections_with_helper_text["helper_text"] = (
-            "Lists all the instances when multiple plans were generated  and compared against each "
-            "other to create the best plan for agent. It is ordered by the timestamp of plan "
-            "selections. selection_str is the GPT response on comparing the plans. "
-            "selection is the index of plans which was selected."
-        )
-        all_generated_plans_with_helper_text: Dict[str, Any] = {}
         all_generated_plans: List[Dict[str, Any]] = self.ch.get_agent_debug_plans(agent_id=agent_id)
-        all_generated_plans_with_helper_text["all_generated_plans"] = all_generated_plans
-        all_generated_plans_with_helper_text["helper_text"] = (
-            "Lists all plans that were generated for the agent. This includes the plans that were generated and "
-            "compared agaist other plans to create the best plan for agent. It is ordered by the timestamp when plan "
-            "was generated."
-        )
-        worker_sqs_log_with_helper_text: Dict[str, Any] = {}
         worker_sqs_log: Dict[str, Any] = self.ch.get_agent_debug_worker_sqs_log(agent_id=agent_id)
-        worker_sqs_log_with_helper_text["worker_sqs_log"] = worker_sqs_log
-        worker_sqs_log_with_helper_text["helper_text"] = (
-            "Lists the messages processed for both running the execution plan and creating the execution plan. It is "
-            "ordered by by the timestamp when message was processed."
-        )
-        tool_calls_with_helper_text: Dict[str, Any] = {}
         tool_calls: Dict[str, Any] = self.ch.get_agent_debug_tool_calls(agent_id=agent_id)
-        tool_calls_with_helper_text["tool_calls"] = tool_calls
-        tool_calls_with_helper_text["helper_text"] = (
-            "List all tool calls grouped by tool name in context of this agent. The tool calls are ordered by the "
-            "timestamp when call completed."
-        )
         return GetAgentDebugInfoResponse(
-            agent_owner_id=agent_owner_id,
-            plan_selections=plan_selections_with_helper_text,
-            all_generated_plans=all_generated_plans_with_helper_text,
-            worker_sqs_log=worker_sqs_log_with_helper_text,
-            tool_calls=tool_calls_with_helper_text,
+            tooltips=Tooltips(
+                plan_selections=(
+                    "Lists all the instances when multiple plans were generated and compared against each "
+                    "other to create the best plan for agent. It is ordered by the timestamp of plan "
+                    "selections. selection_str is the GPT response on comparing the plans. "
+                    "selection is the index of plans which was selected."
+                ),
+                all_generated_plans=(
+                    "Lists all plans that were generated for the agent. This includes the plans that were generated "
+                    "and compared against other plans to create the best plan for agent."
+                    "It is ordered by the timestamp when plan was generated."
+                ),
+                worker_sqs_log=(
+                    "Lists the messages processed for both running the execution plan and creating the execution plan."
+                    "It is ordered by by the timestamp when message was processed."
+                ),
+                tool_calls=(
+                    "List all tool calls grouped by tool name in context of this agent."
+                    "The tool calls are ordered by the timestamp when call completed."
+                ),
+            ),
+            debug=Debug(
+                agent_owner_id=agent_owner_id,
+                plan_selections=plan_selections,
+                all_generated_plans=all_generated_plans,
+                worker_sqs_log=worker_sqs_log,
+                tool_calls=tool_calls,
+            ),
         )
