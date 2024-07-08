@@ -1,10 +1,15 @@
 import datetime
 import logging
 import os
+from collections import defaultdict
 from contextlib import contextmanager
 from functools import lru_cache
-from typing import Generator, List, Optional, Tuple
+from typing import Dict, Generator, List, Optional, Tuple
 
+from feature_service_proto_v1.earnings_pb2 import (
+    GetEarningsReleasesInRangeRequest,
+    GetEarningsReleasesInRangeResponse,
+)
 from feature_service_proto_v1.feature_metadata_service_grpc import (
     FeatureMetadataServiceStub,
 )
@@ -30,6 +35,7 @@ from agent_service.external.grpc_utils import (
     date_to_timestamp,
     get_default_grpc_metadata,
     grpc_retry,
+    timestamp_to_date,
 )
 from agent_service.utils.logs import async_perf_logger
 
@@ -151,3 +157,32 @@ async def get_all_features_metadata(
             metadata=get_default_grpc_metadata(user_id=user_id),
         )
         return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def get_earnings_releases_in_range(
+    gbi_ids: List[int], start_date: datetime.date, end_date: datetime.date, user_id: str = ""
+) -> Dict[int, List[datetime.date]]:
+    """
+    Given a list of stocks and a date range, return a mapping from gbi id to a
+    list of earnings release dates within the range. Note that if no earnings
+    call for a stock appears in the range, it will not be in the output dict.
+    """
+    with _get_service_stub() as stub:
+        req = GetEarningsReleasesInRangeRequest(
+            gbi_ids=gbi_ids,
+            start_date=date_to_timestamp(start_date),
+            end_date=date_to_timestamp(end_date),
+        )
+        resp: GetEarningsReleasesInRangeResponse = await stub.GetEarningsReleasesInRange(
+            req, metadata=get_default_grpc_metadata(user_id=user_id)
+        )
+    output: Dict[int, List[datetime.date]] = defaultdict(list)
+    for date_releases in resp.data:
+        for gbi_id in date_releases.gbi_ids:
+            date = timestamp_to_date(date_releases.release_date)
+            if date:
+                output[gbi_id].append(date)
+
+    return output

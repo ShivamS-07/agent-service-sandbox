@@ -3,8 +3,16 @@ import datetime
 from collections import defaultdict
 from typing import Dict, List, Optional
 
+from agent_service.external.feature_svc_client import get_earnings_releases_in_range
+from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
+from agent_service.io_types.table import (
+    StockTable,
+    StockTableColumn,
+    TableColumn,
+    TableColumnMetadata,
+)
 from agent_service.io_types.text import StockEarningsSummaryText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.dates import GetDateRangeInput, get_date_range
@@ -133,6 +141,58 @@ async def get_earnings_call_summaries(
     await tool_log(log=f"Found {len(output)} earnings call summaries", context=context)
 
     return output
+
+
+class GetEarningsCallDatesInput(ToolArgs):
+    stock_ids: List[StockID]
+    date_range: Optional[DateRange] = None
+
+
+@tool(
+    description=(
+        "This returns a stock table with stocks and dates for earnings calls that"
+        " occurred within the specified date range. "
+        " If no date range is provided, it defaults to fetching earnings calls occurring today."
+        " You may alternatively provide a date_range created by the get_n_width_date_range_near_date tool."
+        " Note that this does NOT return texts or summaries of the earnings calls, ONLY dates."
+    ),
+    category=ToolCategory.EARNINGS,
+    tool_registry=ToolRegistry,
+)
+async def get_earnings_call_dates(
+    args: GetEarningsCallSummariesInput, context: PlanRunContext
+) -> StockTable:
+    # if a date range obj was provided, fill in any missing dates
+    if args.date_range:
+        start_date = args.date_range.start_date
+        end_date = args.date_range.end_date
+    else:
+        start_date = datetime.date.today()
+        end_date = datetime.date.today()
+
+    gbi_id_stock_map = {stock.gbi_id: stock for stock in args.stock_ids}
+    gbi_dates_map = await get_earnings_releases_in_range(
+        gbi_ids=list(gbi_id_stock_map.keys()),
+        start_date=start_date,
+        end_date=end_date,
+        user_id=context.user_id,
+    )
+    rows = []
+    for gbi_id, dates in gbi_dates_map.items():
+        for date in dates:
+            rows.append((gbi_id, date))
+
+    return StockTable(
+        columns=[
+            StockTableColumn(data=[gbi_id_stock_map[row[0]] for row in rows]),
+            TableColumn(
+                data=[row[1] for row in rows],
+                metadata=TableColumnMetadata(
+                    label="Earnings Call Date", col_type=TableColumnType.DATE
+                ),
+            ),
+        ]
+    )
 
 
 async def main() -> None:
