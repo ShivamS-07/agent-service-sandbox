@@ -326,11 +326,9 @@ async def profile_filter_helper(
     str_lookup: Dict[StockID, str],
     profile: str,
     is_using_complex_profile: bool,
-    agent_id: str,
+    llm: GPT,
     topic: str = "",
 ) -> List[Tuple[bool, str, List[Citation]]]:
-    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
-    llm = GPT(context=gpt_context, model=SONNET)
     tokenizer = GPTTokenizer(GPT4_O)
     used = tokenizer.get_token_length(
         "\n".join(
@@ -501,16 +499,16 @@ async def filter_stocks_by_profile_match(
             "profile must be either a string or a TopicProfiles object "
             "in filter_stocks_by_profile_match function!"
         )
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=SONNET)
     stock_reason_map: Dict[StockID, Tuple[str, List[Citation]]] = {
         stock: (reason, citations)
         for stock, (is_relevant, reason, citations) in zip(
             aligned_text_groups.val.keys(),
             await profile_filter_helper(
-                aligned_text_groups,
-                str_lookup,
-                profile_str,
-                is_using_complex_profile,
-                context.agent_id,
+                aligned_text_groups, str_lookup, profile_str, is_using_complex_profile, llm=llm
             ),
         )
         if is_relevant
