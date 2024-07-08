@@ -13,6 +13,7 @@ from gbi_common_py_utils.utils.ssm import get_param
 from urllib3.exceptions import MaxRetryError, NewConnectionError
 
 from agent_service.io_types.output import CitationOutput, CitationType
+from agent_service.utils.string_utils import clean_to_json_if_needed
 
 API_KEY_PARAM = "/perigon/api_key"
 PERIGON_GPT_URL_TEMPLATE = (
@@ -64,12 +65,11 @@ class PerigonClient:
                 json_objects = raw_content.split("\n")
                 parsed_objects = []
                 for obj in json_objects:
-                    if obj.strip():  # Skip any empty lines
+                    if obj:
                         try:
-                            parsed_objects.append(json.loads(obj))
-                        except json.JSONDecodeError as json_err:
-                            print(f"JSON decode error: {json_err}")
-                            print(f"Problematic content: {obj}")
+                            parsed_objects.append(json.loads(clean_to_json_if_needed(obj)))
+                        except JSONDecodeError as e:
+                            logger.warning(f"Failed to parse json from perigon due to {e}")
             except (ConnectionError, JSONDecodeError) as e:
                 response = None  # in case of json.loads() crash, force retry
                 retries += 1
@@ -87,14 +87,17 @@ class PerigonClient:
                 # removes [#] and ** from the summary
                 summary = re.sub(r"\[\d+\]|\*\*", "", obj.get("content", ""))
             elif obj.get("object") == "NEWS_ARTICLE":
-                references.append(
-                    CitationOutput(
-                        citation_type=CitationType.LINK,
-                        name=obj.get("title", ""),
-                        link=obj.get("url"),
-                        published_at=obj.get("pubDate"),
-                        # perigon article id
-                        article_id=obj.get("articleId"),
+                try:
+                    references.append(
+                        CitationOutput(
+                            citation_type=CitationType.LINK,
+                            name=obj["title"],
+                            link=obj["url"],
+                            published_at=obj.get("pubDate"),
+                            # perigon article id
+                            article_id=obj.get("articleId"),
+                        )
                     )
-                )
+                except KeyError as e:
+                    logger.warning(f"Failed to get citation from perigon due to {e}")
         return PerigonNewsText(query=query, summary=summary, citations=references)
