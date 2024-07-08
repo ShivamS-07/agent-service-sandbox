@@ -13,7 +13,6 @@ from gbi_common_py_utils.utils.environment import (
     LOCAL_TAG,
     get_environment_tag,
 )
-from gbi_common_py_utils.utils.event_logging import log_event
 from google.protobuf.struct_pb2 import Struct
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 from gpt_service_proto_v1.service_pb2 import (
@@ -35,6 +34,7 @@ from agent_service.GPT.constants import (
     TEXT_RESPONSE_FORMAT,
 )
 from agent_service.unit_test_util import RUNNING_IN_UNIT_TEST
+from agent_service.utils.event_logging import log_event
 from agent_service.utils.gpt_logging import (
     GPT_TASK_TYPE,
     MAIN_PROMPT_NAME,
@@ -77,6 +77,12 @@ def _get_gpt_service_stub() -> Tuple[GPTServiceStub, Channel]:
     host, port = url.split(":")
     CHANNEL = Channel(host=host, port=int(port))
     STUB = GPTServiceStub(CHANNEL)
+    stack_trace = traceback.format_stack()
+    stack_trace_str = "".join(stack_trace)
+    log_event(
+        event_name="agent_service_gpt_service_connection_created",
+        event_data={"stack_trace": stack_trace_str},
+    )
     return STUB, CHANNEL
 
 

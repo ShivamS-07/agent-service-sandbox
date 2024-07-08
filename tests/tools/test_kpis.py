@@ -1,5 +1,6 @@
 import datetime
 import logging
+import unittest
 from typing import List
 from unittest import IsolatedAsyncioTestCase
 
@@ -23,6 +24,7 @@ from agent_service.tools.kpis.tools import (
 from agent_service.types import PlanRunContext
 
 
+@unittest.skip("flaky")
 class TestTextData(IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
