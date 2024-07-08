@@ -10,7 +10,7 @@ from gbi_common_py_utils.utils.ssm import get_param
 from sec_api import ExtractorApi, MappingApi, QueryApi, RenderApi  # type: ignore
 
 from agent_service.utils.clickhouse import Clickhouse
-from agent_service.utils.date_utils import parse_date_str_in_utc
+from agent_service.utils.date_utils import get_now_utc, parse_date_str_in_utc
 from agent_service.utils.sec.constants import (
     CIK,
     COMPANY_NAME,
@@ -72,6 +72,46 @@ class SecMapping:
         roundabout method for getting the CIK via the ticker and company name.
         """
         return isin.startswith(US)
+
+    @classmethod
+    def get_gbi_cik_mapping_from_db(cls, gbi_ids: List[int]) -> Dict[int, Optional[str]]:
+        from agent_service.utils.postgres import get_psql
+
+        # `cik` is nullable, null means not supported by SEC
+        sql = """
+            SELECT gbi_id, cik
+            FROM nlp_service.gbi_cik_mapping
+            WHERE gbi_id = ANY(%(gbi_ids)s)
+        """
+        rows = get_psql().generic_read(sql, {"gbi_ids": gbi_ids})
+        return {row["gbi_id"]: row["cik"] for row in rows}
+
+    @classmethod
+    def get_gbi_cik_mapping_from_api(
+        cls, gbi_ids: List[int], insert_to_db: bool = True
+    ) -> Dict[int, Optional[str]]:
+        if not gbi_ids:
+            return {}
+
+        from agent_service.utils.postgres import get_psql
+
+        gbi_id_metadata_map = get_psql().get_sec_metadata_from_gbi(gbi_ids=gbi_ids)
+        mapping = {gbi_id: cls.map_gbi_id_to_cik(gbi_id, gbi_id_metadata_map) for gbi_id in gbi_ids}
+
+        if insert_to_db:
+            now = get_now_utc()
+            rows_to_insert = [
+                {"gbi_id": gbi_id, "cik": mapping[gbi_id], "inserted_time": now}
+                for gbi_id in gbi_ids
+            ]
+            get_psql().multi_row_generic_insert_or_update(
+                table_name="nlp_service.gbi_cik_mapping",
+                rows_to_insert=rows_to_insert,
+                conflict="gbi_id",
+                columns_to_update=["cik", "inserted_time"],
+            )
+
+        return mapping
 
     @classmethod
     def map_gbi_id_to_cik(
@@ -231,12 +271,22 @@ class SecFiling:
             gbi_ids, form_types=form_types, start_date=start_date, end_date=end_date
         )
 
-        from agent_service.utils.postgres import get_psql
+        # Get the CIK mapping for the GBI IDs from DB
+        gbi_cik_mapping = SecMapping.get_gbi_cik_mapping_from_db(gbi_ids)
 
-        gbi_id_metadata_map = get_psql().get_sec_metadata_from_gbi(gbi_ids=gbi_ids)
+        no_cached_gbi_ids = [gbi_id for gbi_id in gbi_ids if gbi_id not in gbi_cik_mapping]
+        gbi_cik_mapping_from_api = SecMapping.get_gbi_cik_mapping_from_api(no_cached_gbi_ids)
+
+        logger.info(
+            f"Found {len(gbi_cik_mapping)} out of {len(gbi_ids)} CIKs cached in the database."
+        )
+
         filing_gbi_pairs: List[Tuple[str, int]] = []
         for gbi_id in gbi_ids:
-            cik = SecMapping.map_gbi_id_to_cik(gbi_id, gbi_id_metadata_map)
+            if gbi_id in gbi_cik_mapping:
+                cik = gbi_cik_mapping[gbi_id]
+            else:
+                cik = gbi_cik_mapping_from_api.get(gbi_id, None)
             if cik is None:
                 continue
 
