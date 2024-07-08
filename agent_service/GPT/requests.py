@@ -68,7 +68,7 @@ def set_use_global_stub(val: bool) -> None:
     USE_GLOBAL_STUB = val
 
 
-def _get_gpt_service_stub() -> Tuple[GPTServiceStub, Channel]:
+def _get_gpt_service_stub(context: Optional[Dict] = None) -> Tuple[GPTServiceStub, Channel]:
     global STUB
     global CHANNEL
     if STUB and use_global_stub():
@@ -79,9 +79,11 @@ def _get_gpt_service_stub() -> Tuple[GPTServiceStub, Channel]:
     STUB = GPTServiceStub(CHANNEL)
     stack_trace = traceback.format_stack()
     stack_trace_str = "".join(stack_trace)
+    if not context:
+        context = {}
     log_event(
         event_name="agent_service_gpt_service_connection_created",
-        event_data={"stack_trace": stack_trace_str},
+        event_data={"stack_trace": stack_trace_str, "context": context},
     )
     return STUB, CHANNEL
 
@@ -313,9 +315,9 @@ class GPT:
     ) -> None:
         self.model = model
         self.context = context
-        should_create_stub = gpt_service_stub and not RUNNING_IN_UNIT_TEST
+        should_create_stub = not gpt_service_stub and not RUNNING_IN_UNIT_TEST
         self.gpt_service_stub = (
-            _get_gpt_service_stub()[0] if should_create_stub else gpt_service_stub
+            _get_gpt_service_stub(context=context)[0] if should_create_stub else gpt_service_stub
         )
 
     async def do_chat_w_sys_prompt(
