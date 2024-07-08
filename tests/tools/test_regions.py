@@ -5,9 +5,23 @@ from agent_service.io_types.stock import StockID
 from agent_service.tools.regions import FilterStockRegionInput, filter_stocks_by_region
 from agent_service.types import PlanRunContext
 
-MSFT = StockID(gbi_id=6963, isin="", symbol="MSFT", company_name="Microsoft")
-FORD = StockID(gbi_id=4579, isin="", symbol="F", company_name="Ford")
-RBC = StockID(gbi_id=12838, isin="", symbol="RY", company_name="RBC")
+MSFT = StockID(gbi_id=6963, isin="", symbol="MSFT", company_name="Microsoft Corporation")  # USA
+FORD = StockID(gbi_id=4579, isin="", symbol="F", company_name="Ford Motor Company")  # USA
+RBC = StockID(gbi_id=12838, isin="", symbol="RY", company_name="Royal Bank of Canada")  # CAN
+CHN = StockID(
+    gbi_id=397877,
+    isin="",
+    symbol="601398",
+    company_name="Industrial and Commercial Bank of China Limited",
+)  # CHN
+TOY = StockID(gbi_id=389721, isin="", symbol="7203", company_name="Toyota Motor Corporation")  # JPN
+TCS = StockID(
+    gbi_id=387282, isin="", symbol="TCS", company_name="Tata Consultancy Services Limited"
+)  # IND
+SIE = StockID(
+    gbi_id=194452, isin="", symbol="SIE", company_name="Siemens Aktiengesellschaft"
+)  # DEU
+ES = StockID(gbi_id=193085, isin="", symbol="ES", company_name="Esso S.A.F.")  # FRA
 
 
 class TestRegions(unittest.IsolatedAsyncioTestCase):
@@ -34,3 +48,46 @@ class TestRegions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, len(stocks))
         self.assertNotEqual(stocks[0].gbi_id, RBC.gbi_id)
         self.assertNotEqual(stocks[1].gbi_id, RBC.gbi_id)
+
+    async def test_region_filter_with_region_names(self):
+        stock_ids = [MSFT, FORD, RBC, CHN, TOY, TCS, SIE, ES]
+
+        # Test NORTHERN_AMERICA region
+        args = FilterStockRegionInput(region_name="NORTH_AMERICA", stock_ids=stock_ids)
+        stocks = await filter_stocks_by_region(args=args, context=self.context)
+        self.assertEqual(3, len(stocks))
+        self.assertTrue(any(stock.symbol == "MSFT" for stock in stocks))
+        self.assertTrue(any(stock.symbol == "F" for stock in stocks))
+        self.assertTrue(any(stock.symbol == "RY" for stock in stocks))
+
+        # Test ASIA region
+        args = FilterStockRegionInput(region_name="ASIA", stock_ids=stock_ids)
+        stocks = await filter_stocks_by_region(args=args, context=self.context)
+        self.assertEqual(3, len(stocks))
+        self.assertTrue(any(stock.symbol == "601398" for stock in stocks))
+        self.assertTrue(any(stock.symbol == "7203" for stock in stocks))
+        self.assertTrue(any(stock.symbol == "TCS" for stock in stocks))
+
+        # Test EUROPE region
+        args = FilterStockRegionInput(region_name="EUROPE", stock_ids=stock_ids)
+        stocks = await filter_stocks_by_region(args=args, context=self.context)
+        self.assertEqual(2, len(stocks))
+        self.assertTrue(any(stock.symbol == "SIE" for stock in stocks))
+        self.assertTrue(any(stock.symbol == "ES" for stock in stocks))
+
+    async def test_region_filter_with_subregions(self):
+        stock_ids = [MSFT, FORD, RBC, CHN, TOY, TCS, SIE, ES]
+
+        # Test EASTERN_ASIA subregion
+        args = FilterStockRegionInput(region_name="EASTERN_ASIA", stock_ids=stock_ids)
+        stocks = await filter_stocks_by_region(args=args, context=self.context)
+        self.assertEqual(2, len(stocks))
+        self.assertTrue(any(stock.symbol == "601398" for stock in stocks))
+        self.assertTrue(any(stock.symbol == "7203" for stock in stocks))
+
+        # Test WESTERN_EUROPE subregion
+        args = FilterStockRegionInput(region_name="WESTERN_EUROPE", stock_ids=stock_ids)
+        stocks = await filter_stocks_by_region(args=args, context=self.context)
+        self.assertEqual(2, len(stocks))
+        self.assertTrue(any(stock.symbol == "SIE" for stock in stocks))
+        self.assertTrue(any(stock.symbol == "ES" for stock in stocks))
