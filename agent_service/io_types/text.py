@@ -905,6 +905,7 @@ class TextGroup(ComplexIOBase):
             [
                 (f"Text Number: {i}\n" if numbering else "") + id_to_str[text.id]
                 for i, text in enumerate(self.val)
+                if text.id in id_to_str
             ]
         )
 
