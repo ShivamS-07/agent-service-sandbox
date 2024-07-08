@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from itertools import chain
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Type, Union
@@ -27,6 +28,7 @@ from agent_service.io_types.output import (
 from agent_service.io_types.stock import StockID
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.sec.constants import LINK_TO_FILING_DETAILS
 from agent_service.utils.sec.sec_api import SecFiling
 
 TextIDType = Union[str, int]
@@ -870,6 +872,16 @@ class StockOtherSecFilingText(StockText):
         )
 
         return output
+
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        # the downloaded filings is very messy and not human readable
+        # return a link to the filing on SEC website instead
+        filing_dict = json.loads(self.id)
+        ticker = filing_dict["ticker"]
+        form_type = filing_dict["formType"]
+        url = filing_dict[LINK_TO_FILING_DETAILS]
+        val = f"See {ticker}'s {form_type} filings on [SEC official website]({url})"  # markdown
+        return TextOutput(output_type=OutputType.TEXT, val=val, title=title)
 
 
 @io_type
