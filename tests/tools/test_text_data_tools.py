@@ -23,7 +23,7 @@ class TestTextData(IsolatedAsyncioTestCase):
 
         all_data = await get_all_text_data_for_stocks(
             args=GetAllTextDataForStocksInput(
-                stock_ids=[StockID(gbi_id=18654, symbol="", isin="", company_name="")]
+                stock_ids=[StockID(gbi_id=2781, symbol="", isin="", company_name="")]
             ),
             context=self.context,
         )
