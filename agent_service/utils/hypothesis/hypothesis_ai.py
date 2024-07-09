@@ -3,6 +3,8 @@ import json
 import logging
 from typing import Dict, List, Optional, Union
 
+from gpt_service_proto_v1.service_grpc import GPTServiceStub
+
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, SONNET, TEXT_3_LARGE
 from agent_service.GPT.requests import GPT
 from agent_service.utils.async_utils import gather_with_concurrency
@@ -61,9 +63,12 @@ class HypothesisAI:
         hypothesis_info: HypothesisInfo,
         context: Optional[Dict[str, str]] = None,
         ref_time: Optional[datetime.datetime] = None,
+        gpt_service_stub: Optional[GPTServiceStub] = None,
     ) -> None:
-        self.gpt_smart = GPT(model=SONNET, context=context)
-        self.gpt_cheap = GPT(model=DEFAULT_CHEAP_MODEL, context=context)
+        self.gpt_smart = GPT(model=SONNET, context=context, gpt_service_stub=gpt_service_stub)
+        self.gpt_cheap = GPT(
+            model=DEFAULT_CHEAP_MODEL, context=context, gpt_service_stub=gpt_service_stub
+        )
 
         self.hypothesis = hypothesis_info
         self.ref_time = ref_time if ref_time else get_now_utc()
