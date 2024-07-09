@@ -15,6 +15,7 @@ from agent_service.io_types.table import (
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.constants import get_B3_prefix
 from agent_service.utils.prefect import get_prefect_logger
 
 PortfolioID = str
@@ -61,6 +62,7 @@ async def get_portfolio_holdings(
             TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
         ],
     )
+    await tool_log(f"Found {len(stock_ids)} holdings in portfolio", context=context)
     return table
 
 
@@ -128,5 +130,10 @@ async def convert_portfolio_mention_to_portfolio_id(
             f" return first portfolio id: {workspaces[0]}"
         )
         portfolio = workspaces[0]
-    await tool_log(log=f"Portfolio found: {portfolio.name}", context=context)
+
+    base_url = f"{get_B3_prefix()}/dashboard/portfolios/summary"
+    portfolio_name_with_link_markdown = (
+        f"[{portfolio.name}]({base_url}/{portfolio.workspace_id.id})"
+    )
+    await tool_log(log=f"Portfolio found: {portfolio_name_with_link_markdown}", context=context)
     return portfolio.workspace_id.id

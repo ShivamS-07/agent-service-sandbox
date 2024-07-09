@@ -1,6 +1,14 @@
 import os
 from dataclasses import dataclass
 
+from gbi_common_py_utils.utils.environment import (
+    DEV_TAG,
+    LOCAL_TAG,
+    PROD_TAG,
+    STAGING_TAG,
+    get_environment_tag,
+)
+
 
 # Constants for visible_alpha.py
 @dataclass
@@ -99,3 +107,20 @@ AGENT_WORKER_QUEUE = os.getenv("AGENT_WORKER_QUEUE", "insights-backend-dev-agent
 AGENT_AUTOMATION_WORKER_QUEUE = os.getenv(
     "AGENT_AUTOMATION_WORKER_QUEUE", "insights-backend-dev-agent-automation-worker"
 )
+
+
+def get_B3_prefix() -> str:
+    """
+    Returns the appropriate B3 prefix URL based on the current environment.
+
+    Returns:
+        str: The B3 prefix URL
+    """
+    env: str = get_environment_tag()
+
+    if env == PROD_TAG or env == STAGING_TAG:
+        return "https://insights.boosted.ai"
+    elif env == DEV_TAG or env == LOCAL_TAG:
+        return "https://insights-dev.boosted.ai"
+    else:
+        raise ValueError(f"Unknown environment: {env}")
