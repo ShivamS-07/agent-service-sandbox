@@ -531,7 +531,10 @@ async def filter_stocks_by_profile_match(
     filtered_stocks_with_scores = await filtered_stocks_score_assignment(
         filtered_stocks, rubric_dict, stock_reason_map, profile_data_for_rubric, context.agent_id
     )
-    await tool_log(f"Filtered {len(filtered_stocks_with_scores)} stocks for profile {profile_str}")
+    await tool_log(
+        f"Filtered {len(filtered_stocks_with_scores)} stocks for profile: {profile_str}",
+        context=context,
+    )
     return filtered_stocks_with_scores
 
 
