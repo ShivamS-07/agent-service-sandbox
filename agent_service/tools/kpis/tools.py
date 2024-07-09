@@ -136,8 +136,7 @@ def convert_single_stock_data_to_table(
     data_dict: Dict[str, Any] = {}
 
     columns: List[TableColumnMetadata] = []
-    if not simple_output:
-        columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER))
+    columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER))
     columns.append(
         TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)
     )
@@ -160,15 +159,10 @@ def convert_single_stock_data_to_table(
             quarter = f"{kpi_inst.year} Q{kpi_inst.quarter}"
 
             if quarter not in data_dict:
-                if simple_output:
-                    data_dict[quarter] = {
-                        STOCK_ID_COL_NAME_DEFAULT: stock_id,
-                    }
-                else:
-                    data_dict[quarter] = {
-                        "Quarter": quarter,
-                        STOCK_ID_COL_NAME_DEFAULT: stock_id,
-                    }
+                data_dict[quarter] = {
+                    "Quarter": quarter,
+                    STOCK_ID_COL_NAME_DEFAULT: stock_id,
+                }
             # Need to convert percentages into decimals to satisfy current handling of the Percentage figures
             data_dict[quarter][actual_col] = (
                 kpi_inst.actual * 0.01
@@ -195,8 +189,7 @@ async def convert_multi_stock_data_to_table(
 ) -> Table:
     columns: List[TableColumnMetadata] = []
 
-    if not simple_table:
-        columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER))
+    columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER))
 
     columns.append(
         TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)
@@ -612,10 +605,6 @@ async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunCon
         None, None, None, args.date_range
     )
 
-    if args.simple_output:
-        num_future_quarters = 0
-        num_prev_quarters = 0
-
     kpi_metadata_dict = kpi_retriever.convert_kpi_text_to_metadata(
         gbi_id=args.stock_id.gbi_id, kpi_texts=args.kpis
     )
@@ -651,10 +640,6 @@ async def get_overlapping_kpis_table_for_stocks(
     num_future_quarters, num_prev_quarters, anchor_date = interpret_date_quarter_inputs(
         None, None, None, args.date_range
     )
-
-    if args.simple_output:
-        num_future_quarters = 0
-        num_prev_quarters = 0
 
     kpis: List[KPIText] = args.equivalent_kpis.val  # type: ignore
     kpi_row_mapping: Dict[int, str] = {}
