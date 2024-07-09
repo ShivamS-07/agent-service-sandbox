@@ -155,11 +155,11 @@ class Planner:
 
         if breakdown_plan:
             logger.info("Round 2 breakdown run succeeded, using best breakdown plan")
+            logger.info(f"New Plan:\n{breakdown_plan.get_formatted_plan()}")
         else:
             logger.warning("Round 2 planning failed, giving up")
 
         # otherwise, return the best breakdown version if any
-        logger.info(f"New Plan:\n{breakdown_plan.get_formatted_plan()}")
         return breakdown_plan
 
     async def _get_plan_from_breakdown(self, chat_context: ChatContext) -> Optional[ExecutionPlan]:
