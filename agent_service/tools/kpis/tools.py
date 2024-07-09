@@ -136,7 +136,13 @@ def convert_single_stock_data_to_table(
     data_dict: Dict[str, Any] = {}
 
     columns: List[TableColumnMetadata] = []
-    columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER))
+
+    quarter_year_set = {
+        (kpi.quarter, kpi.year) for kpi_history in data.values() for kpi in kpi_history
+    }
+
+    if len(quarter_year_set) > 1:
+        columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER))
     columns.append(
         TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)
     )
@@ -159,10 +165,13 @@ def convert_single_stock_data_to_table(
             quarter = f"{kpi_inst.year} Q{kpi_inst.quarter}"
 
             if quarter not in data_dict:
-                data_dict[quarter] = {
-                    "Quarter": quarter,
-                    STOCK_ID_COL_NAME_DEFAULT: stock_id,
-                }
+                if len(quarter_year_set) > 1:
+                    data_dict[quarter] = {
+                        "Quarter": quarter,
+                        STOCK_ID_COL_NAME_DEFAULT: stock_id,
+                    }
+                else:
+                    data_dict[quarter] = {STOCK_ID_COL_NAME_DEFAULT: stock_id}
             # Need to convert percentages into decimals to satisfy current handling of the Percentage figures
             data_dict[quarter][actual_col] = (
                 kpi_inst.actual * 0.01
@@ -189,8 +198,12 @@ async def convert_multi_stock_data_to_table(
 ) -> Table:
     columns: List[TableColumnMetadata] = []
 
-    columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER))
+    quarter_year_set = {
+        (kpi.quarter, kpi.year) for kpi_history in data.values() for kpi in kpi_history
+    }
 
+    if len(quarter_year_set) > 1:
+        columns.append(TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER))
     columns.append(
         TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)
     )
@@ -224,22 +237,41 @@ async def convert_multi_stock_data_to_table(
                 )
                 surprise = kpi_inst.surprise
 
-                df_data.append(
-                    {
-                        "Quarter": quarter,
-                        STOCK_ID_COL_NAME_DEFAULT: stock_id,
-                        actual_col_name: actual,
-                        estimate_col_name: estimate,
-                        surprise_col_name: surprise,
-                    }
-                )
+                if len(quarter_year_set) > 1:
+                    df_data.append(
+                        {
+                            "Quarter": quarter,
+                            STOCK_ID_COL_NAME_DEFAULT: stock_id,
+                            actual_col_name: actual,
+                            estimate_col_name: estimate,
+                            surprise_col_name: surprise,
+                        }
+                    )
+                else:
+                    df_data.append(
+                        {
+                            STOCK_ID_COL_NAME_DEFAULT: stock_id,
+                            actual_col_name: actual,
+                            estimate_col_name: estimate,
+                            surprise_col_name: surprise,
+                        }
+                    )
             else:
-                df_data.append(
-                    {
-                        STOCK_ID_COL_NAME_DEFAULT: stock_id,
-                        actual_col_name: actual,
-                    }
-                )
+                if len(quarter_year_set) > 1:
+                    df_data.append(
+                        {
+                            "Quarter": quarter,
+                            STOCK_ID_COL_NAME_DEFAULT: stock_id,
+                            actual_col_name: actual,
+                        }
+                    )
+                else:
+                    df_data.append(
+                        {
+                            STOCK_ID_COL_NAME_DEFAULT: stock_id,
+                            actual_col_name: actual,
+                        }
+                    )
 
     kpi_column = generate_columns_for_kpi(
         kpi_data=kpi_data_in_col,
