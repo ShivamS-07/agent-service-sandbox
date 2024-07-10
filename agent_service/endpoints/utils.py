@@ -51,8 +51,8 @@ async def get_agent_hierarchical_worklogs(
     plan_id_to_plan_run_ids: Dict[str, Set[str]] = defaultdict(set)
     plan_run_id_to_task_ids: Dict[str, Set[str]] = defaultdict(set)
     plan_run_id_to_share_status: Dict[str, bool] = {}
-    task_id_to_logs: Dict[str, List[PlanRunTaskLog]] = defaultdict(list)
-    task_id_to_task_output: Dict[str, Dict[str, Any]] = defaultdict(dict)
+    plan_run_id_task_id_to_logs: Dict[Tuple[str, str], List[PlanRunTaskLog]] = defaultdict(list)
+    plan_run_id_task_id_to_task_output: Dict[Tuple[str, str], Dict[str, Any]] = defaultdict(dict)
 
     for row in rows:
         if row["plan_id"] not in plan_id_to_plan:
@@ -64,9 +64,9 @@ async def get_agent_hierarchical_worklogs(
         plan_run_id_to_share_status[row["plan_run_id"]] = row["shared"] or False
 
         if row["is_task_output"]:  # there should only be 1 task output per task
-            task_id_to_task_output[row["task_id"]] = row
+            plan_run_id_task_id_to_task_output[(row["plan_run_id"], row["task_id"])] = row
         else:
-            task_id_to_logs[row["task_id"]].append(
+            plan_run_id_task_id_to_logs[(row["plan_run_id"], row["task_id"])].append(
                 PlanRunTaskLog(
                     log_id=row["log_id"],
                     log_message=cast(str, load_io_type(row["log_message"])),
@@ -104,8 +104,8 @@ async def get_agent_hierarchical_worklogs(
             full_tasks = get_plan_run_task_list(
                 plan_run_id,
                 plan_nodes,
-                task_id_to_logs,
-                task_id_to_task_output,
+                plan_run_id_task_id_to_logs,
+                plan_run_id_task_id_to_task_output,
                 run_task_pair_to_status,
             )
 
@@ -136,8 +136,8 @@ async def get_agent_hierarchical_worklogs(
 def get_plan_run_task_list(
     plan_run_id: str,
     plan_nodes: List[ToolExecutionNode],
-    task_id_to_logs: Dict[str, List[PlanRunTaskLog]],
-    task_id_to_task_output: Dict[str, Dict[str, Any]],
+    plan_run_id_task_id_to_logs: Dict[Tuple[str, str], List[PlanRunTaskLog]],
+    plan_run_id_task_id_to_task_output: Dict[Tuple[str, str], Dict[str, Any]],
     run_task_pair_to_status: Dict[Tuple[str, str], TaskRun],
 ) -> List[PlanRunTask]:
     # we want each run to have the full list of tasks with different statuses
@@ -145,6 +145,7 @@ def get_plan_run_task_list(
     complete_tasks: List[PlanRunTask] = []
     for node in plan_nodes:
         task_id = node.tool_task_id
+        task_key = (plan_run_id, task_id)
         prefect_task_run = run_task_pair_to_status.get((plan_run_id, task_id), None)
         if prefect_task_run is None:
             task_status = Status.NOT_STARTED
@@ -155,7 +156,10 @@ def get_plan_run_task_list(
             task_start = prefect_task_run.start_time
             task_end = prefect_task_run.end_time
 
-        if task_id not in task_id_to_task_output and task_id not in task_id_to_logs:
+        if (
+            task_key not in plan_run_id_task_id_to_task_output
+            and task_key not in plan_run_id_task_id_to_logs
+        ):
             incomplete_tasks.append(
                 PlanRunTask(
                     task_id=task_id,
@@ -169,8 +173,8 @@ def get_plan_run_task_list(
             )
             continue
 
-        if task_id in task_id_to_logs:  # this is a task that has logs
-            logs = task_id_to_logs[task_id]
+        if task_key in plan_run_id_task_id_to_logs:  # this is a task that has logs
+            logs = plan_run_id_task_id_to_logs[task_key]
             logs.sort(key=lambda x: x.created_at)
             task = PlanRunTask(
                 task_id=task_id,
@@ -182,7 +186,7 @@ def get_plan_run_task_list(
                 has_output=node.store_output,
             )
         else:  # this is a task that has no logs, just task output
-            log_time = task_id_to_task_output[task_id]["created_at"]
+            log_time = plan_run_id_task_id_to_task_output[task_key]["created_at"]
             task = PlanRunTask(
                 task_id=task_id,
                 task_name=node.description,
