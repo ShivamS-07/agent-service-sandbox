@@ -8,3 +8,4 @@ build/
 .vscode/*
 tmp/*
 .jython_cache/*
+.idea/

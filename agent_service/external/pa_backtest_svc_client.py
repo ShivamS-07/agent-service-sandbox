@@ -18,6 +18,9 @@ from pa_portfolio_service_proto_v1.backtest_data_service_grpc import (
 from pa_portfolio_service_proto_v1.backtest_data_service_pb2 import (
     GetThemesWithImpactedStocksRequest,
     GetThemesWithImpactedStocksResponse,
+    GetUniverseSectorPerformanceForDateRangeRequest,
+    GetUniverseSectorPerformanceForDateRangeResponse,
+    SectorPerformance,
     ThemeWithImpactedStocks,
     UniverseStockFactorExposuresRequest,
     UniverseStockFactorExposuresResponse,
@@ -104,3 +107,23 @@ async def get_themes_with_impacted_stocks(
             req, metadata=get_default_grpc_metadata(user_id=user_id)
         )
     return list(resp.data)
+
+
+@grpc_retry
+@async_perf_logger
+async def get_universe_sector_performance_for_date_range(
+    start_date: datetime.date, end_date: datetime.date, stock_universe_id: str, user_id: str
+) -> List[SectorPerformance]:
+    req = GetUniverseSectorPerformanceForDateRangeRequest(
+        start_date=date_to_pb_timestamp(start_date),
+        end_date=date_to_pb_timestamp(end_date),
+        stock_universe_id=UUID(id=stock_universe_id),
+    )
+    with _get_service_stub() as stub:
+        resp: GetUniverseSectorPerformanceForDateRangeResponse = (
+            await stub.GetUniverseSectorPerformanceForDateRange(
+                req, metadata=get_default_grpc_metadata(user_id=user_id)
+            )
+        )
+
+    return list(resp.sector_performance_list)
