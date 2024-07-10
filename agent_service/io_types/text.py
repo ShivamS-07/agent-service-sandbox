@@ -887,6 +887,7 @@ class StockOtherSecFilingText(StockText):
 @io_type
 class KPIText(Text):
     pid: Optional[int] = None
+    explanation: Optional[str] = None  # To be used as a way to store why a KPI has been selected
     text_type: ClassVar[str] = "KPI"
 
     @classmethod
@@ -896,7 +897,12 @@ class KPIText(Text):
         output: List[CitationOutput] = []
         for text in texts:
             output.append(
-                CitationOutput(id=str(text.id), name=text.val, citation_type=CitationType.TEXT)
+                CitationOutput(
+                    id=str(text.id),
+                    name=text.val,
+                    citation_type=CitationType.TEXT,
+                    summary=text.explanation,
+                )
             )
         return output
 

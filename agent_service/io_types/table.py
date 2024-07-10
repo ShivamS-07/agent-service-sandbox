@@ -1,5 +1,6 @@
 import datetime
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional, Union, cast
 
 import numpy as np
@@ -29,12 +30,18 @@ SCORE_COL_NAME_DEFAULT = "Score"
 MAX_DATAPOINTS_FOR_GPT = 50
 
 
+@dataclass
+class RowDescription:
+    name: str
+    explanation: str
+
+
 @io_type
 class TableColumnMetadata(ComplexIOBase):
     label: PrimitiveType
     col_type: TableColumnType
     unit: Optional[str] = None
-    row_descs: Optional[Dict[int, List[str]]] = None
+    row_descs: Optional[Dict[int, List[RowDescription]]] = None
 
 
 @io_type

@@ -231,8 +231,12 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
         if data_col.metadata.row_descs:
             kpi_history = HistoryEntry(
                 citations=[
-                    TextCitation(source_text=KPIText(val=kpi_name[0]))
-                    for kpi_name in data_col.metadata.row_descs.values()
+                    TextCitation(
+                        source_text=KPIText(
+                            val=kpi_desc[0].name, explanation=kpi_desc[0].explanation
+                        )
+                    )
+                    for kpi_desc in data_col.metadata.row_descs.values()
                 ]
             )
             kpi_name_to_id_mapping = {
@@ -246,8 +250,8 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
                         label=idx,  # type: ignore
                         value=val,
                         citation_refs=[
-                            kpi_name_to_id_mapping[kpi_name]
-                            for kpi_name in data_col.metadata.row_descs[i]
+                            kpi_name_to_id_mapping[kpi_desc.name]
+                            for kpi_desc in data_col.metadata.row_descs[i]
                         ],
                     )
                 )

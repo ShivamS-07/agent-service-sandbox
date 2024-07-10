@@ -13,6 +13,7 @@ from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
+    RowDescription,
     Table,
     TableColumnMetadata,
 )
@@ -28,11 +29,11 @@ from agent_service.tools.kpis.prompts import (
     CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ,
     GENERAL_IMPORTANCE_INSTRUCTION,
     GENERAL_IMPORTANCE_INSTRUCTION_WITH_NUM_KPIS,
+    GENERAL_KPIS_FOR_STOCK_DESC,
     GET_KPI_TABLE_FOR_STOCK_DESC,
     GET_KPIS_FOR_STOCK_GIVEN_TOPICS_DESC,
     GET_OVERLAPPING_KPIS_TABLE_FOR_STOCKS_DESC,
     GET_RELEVANT_KPIS_FOR_MULTIPLE_STOCKS_GIVEN_TOPIC_DESC,
-    IMPORTANT_KPIS_FOR_STOCK_DESC,
     KPI_RELEVANCY_MAIN_PROMPT_OBJ,
     KPI_RELEVANCY_SYS_PROMPT_OBJ,
     RELEVANCY_INSTRUCTION,
@@ -45,6 +46,7 @@ from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.kpi_extractor import KPIInstance, KPIMetadata, KPIRetriever
 from agent_service.utils.postgres import get_psql
+from agent_service.utils.prefect import get_prefect_logger
 
 kpi_retriever = KPIRetriever()
 db = get_psql()
@@ -62,6 +64,7 @@ class CompanyInformation:
 
 def generate_columns_for_kpi(
     kpi_data: Union[KPIInstance, List[KPIInstance]],
+    kpi_explanation_lookup: Dict[str, str],
     actual_col_name: str,
     estimate_col_name: Optional[str] = None,
     surprise_col_name: Optional[str] = None,
@@ -69,10 +72,12 @@ def generate_columns_for_kpi(
     if isinstance(kpi_data, List):
         long_unit = kpi_data[0].long_unit
         unit = kpi_data[0].unit
-        row_descs: Dict[int, List[str]] = {}
+        row_descs: Dict[int, List[RowDescription]] = {}
         for i, kpi in enumerate(kpi_data):
             # Keeping as a string to open up the option to pass multiple KPIs in the future
-            row_descs[i] = [kpi.name]
+            row_descs[i] = [
+                RowDescription(name=kpi.name, explanation=kpi_explanation_lookup.get(kpi.name, ""))
+            ]
     elif isinstance(kpi_data, KPIInstance):
         long_unit = kpi_data.long_unit
         unit = kpi_data.unit
@@ -157,8 +162,14 @@ def convert_single_stock_data_to_table(
             estimate_col = f"{kpi_name} Estimate"
             surprise_col = f"{kpi_name} Surprise"
 
+        # Currently pass in an empty dict for explanations, if in the future we want to add
+        # citations to this function we'll need to update this
         new_columns = generate_columns_for_kpi(
-            kpi_history[0], actual_col, estimate_col, surprise_col
+            kpi_history[0],
+            {},
+            actual_col,
+            estimate_col,
+            surprise_col,
         )
         columns.extend(new_columns)
         for kpi_inst in kpi_history:
@@ -194,7 +205,10 @@ def convert_single_stock_data_to_table(
 
 
 async def convert_multi_stock_data_to_table(
-    kpi_name: str, data: Dict[StockID, List[KPIInstance]], simple_table: bool
+    kpi_name: str,
+    data: Dict[StockID, List[KPIInstance]],
+    kpi_explanation_lookups: Dict[str, str],
+    simple_table: bool,
 ) -> Table:
     columns: List[TableColumnMetadata] = []
 
@@ -275,6 +289,7 @@ async def convert_multi_stock_data_to_table(
 
     kpi_column = generate_columns_for_kpi(
         kpi_data=kpi_data_in_col,
+        kpi_explanation_lookup=kpi_explanation_lookups,
         actual_col_name=actual_col_name,
         estimate_col_name=estimate_col_name,
         surprise_col_name=surprise_col_name,
@@ -463,17 +478,17 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
     return EquivalentKPITexts(val=overlapping_kpi_list, general_kpi_name=args.shared_metric)
 
 
-class GetImportantKPIsForStock(ToolArgs):
+class GetGeneralKPIsForStock(ToolArgs):
     stock_id: StockID
     num_of_kpis: Optional[int] = None
 
 
 @tool(
-    description=IMPORTANT_KPIS_FOR_STOCK_DESC,
+    description=GENERAL_KPIS_FOR_STOCK_DESC,
     category=ToolCategory.KPI,
 )
-async def get_important_kpis_for_stock(
-    args: GetImportantKPIsForStock, context: PlanRunContext
+async def get_general_kpis_for_specific_stock(
+    args: GetGeneralKPIsForStock, context: PlanRunContext
 ) -> List[KPIText]:
     company_info = await get_company_data_and_kpis(args.stock_id, context)
 
@@ -506,7 +521,7 @@ async def get_important_kpis_for_stock(
             ),
             KPI_RELEVANCY_SYS_PROMPT_OBJ.format(),
         )
-    important_kpi_list: List[KPIText] = []
+    general_kpi_list: List[KPIText] = []
 
     for line in result.split("\n"):
         index_num = int(line.split(",")[0])
@@ -514,10 +529,10 @@ async def get_important_kpis_for_stock(
         # Check to make sure we have an actual pid that can map to data
         pid_metadata = company_info.kpi_lookup.get(pid, None)
         if pid_metadata:
-            important_kpi_list.append(
+            general_kpi_list.append(
                 KPIText(val=pid_metadata.name, pid=pid_metadata.pid, stock_id=args.stock_id)
             )
-    return important_kpi_list
+    return general_kpi_list
 
 
 async def classify_specific_or_general_topic(
@@ -575,11 +590,14 @@ async def get_specific_kpi_data_for_stock_id(
         return None
     data = result.split(",")
     index_num = int(data[0])
+    explanation = data[2].strip()
     pid = company_info.kpi_index_to_pid_mapping[index_num]
     pid_metadata = company_info.kpi_lookup.get(pid, None)
 
     if pid_metadata:
-        return KPIText(val=pid_metadata.name, pid=pid_metadata.pid, stock_id=stock_id)
+        return KPIText(
+            val=pid_metadata.name, pid=pid_metadata.pid, stock_id=stock_id, explanation=explanation
+        )
     else:
         await tool_log(
             f"Failed to map {data[1].strip()} (ID: pid) to an existing KPI",
@@ -669,19 +687,19 @@ class KPIsRequest(ToolArgs):
 async def get_overlapping_kpis_table_for_stocks(
     args: KPIsRequest, context: PlanRunContext
 ) -> Table:
+    logger = get_prefect_logger(__name__)
     num_future_quarters, num_prev_quarters, anchor_date = interpret_date_quarter_inputs(
         None, None, None, args.date_range
     )
 
     kpis: List[KPIText] = args.equivalent_kpis.val  # type: ignore
-    kpi_row_mapping: Dict[int, str] = {}
 
     company_kpi_data_lookup: Dict[StockID, List[KPIInstance]] = {}
+    kpi_explanation_lookup: Dict[str, str] = {}
     for i, kpi in enumerate(kpis):
         # The way these KPI Texts are initialized they should always
         # have a StockID
         stock_id: StockID = kpi.stock_id  # type: ignore
-        kpi_row_mapping[i] = kpi.val
         kpi_metadata = kpi_retriever.convert_kpi_text_to_metadata(
             gbi_id=stock_id.gbi_id, kpi_texts=[kpi]
         ).get(
@@ -704,8 +722,18 @@ async def get_overlapping_kpis_table_for_stocks(
                 else:
                     company_kpi_data_lookup[stock_id] = kpi_data
 
+                # Only add to the lookup if a string explanation exists
+                if isinstance(kpi.explanation, str):
+                    kpi_explanation_lookup[kpi.val] = kpi.explanation
+                else:
+                    logger.warning(
+                        f"No explanation was provided for the KPI {kpi.val} "
+                        f"under {stock_id.company_name} ({stock_id.symbol})"
+                    )
+
     topic_kpi_table = await convert_multi_stock_data_to_table(
         kpi_name=args.equivalent_kpis.general_kpi_name,
+        kpi_explanation_lookups=kpi_explanation_lookup,
         data=company_kpi_data_lookup,
         simple_table=args.simple_output,
     )
@@ -780,8 +808,8 @@ async def main() -> None:
         print(column.metadata.label)
 
     # Testing Important KPI Retrieval Using Agent Tool
-    gen_kpi_list: List[KPIText] = await get_important_kpis_for_stock(  # type: ignore
-        args=GetImportantKPIsForStock(stock_id=appl_stock_id), context=plan_context
+    gen_kpi_list: List[KPIText] = await get_general_kpis_for_specific_stock(  # type: ignore
+        args=GetGeneralKPIsForStock(stock_id=appl_stock_id), context=plan_context
     )
     gen_kpis_table: Table = await get_kpis_table_for_stock(  # type: ignore
         CompanyKPIsRequest(

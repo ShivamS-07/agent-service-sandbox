@@ -11,11 +11,11 @@ from agent_service.io_types.text import KPIText
 from agent_service.tools.kpis.tools import (
     CompanyKPIsRequest,
     EquivalentKPITexts,
-    GetImportantKPIsForStock,
+    GetGeneralKPIsForStock,
     GetKPIForStockGivenTopic,
     GetRelevantKPIsForStocksGivenTopic,
     KPIsRequest,
-    get_important_kpis_for_stock,
+    get_general_kpis_for_specific_stock,
     get_kpis_for_stock_given_topics,
     get_kpis_table_for_stock,
     get_overlapping_kpis_table_for_stocks,
@@ -36,8 +36,8 @@ class TestTextData(IsolatedAsyncioTestCase):
     async def test_kpi_defaults(self):
         stock_id = StockID(gbi_id=714, symbol="APPL", isin="", company_name="")
 
-        gen_kpi_list: List[KPIText] = await get_important_kpis_for_stock(  # type: ignore
-            args=GetImportantKPIsForStock(stock_id=stock_id), context=self.context
+        gen_kpi_list: List[KPIText] = await get_general_kpis_for_specific_stock(  # type: ignore
+            args=GetGeneralKPIsForStock(stock_id=stock_id), context=self.context
         )
         topic_kpi_list: List[KPIText] = await get_kpis_for_stock_given_topics(  # type: ignore
             GetKPIForStockGivenTopic(stock_id=stock_id, topics=["Apple TV"]),
