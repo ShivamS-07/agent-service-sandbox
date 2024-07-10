@@ -356,7 +356,7 @@ async def create_execution_plan(
         )
         raise RuntimeError("Plan creation has been cancelled.")
     plan = await planner.create_initial_plan(
-        chat_context=chat_context, use_sample_plans=use_sample_plans
+        chat_context=chat_context, use_sample_plans=use_sample_plans, plan_id=plan_id
     )
     if await check_cancelled(db=db, plan_id=plan_id):
         await publish_agent_plan_status(
@@ -599,11 +599,21 @@ async def rewrite_execution_plan(
         raise RuntimeError("Plan rewrite has been cancelled.")
     if error_info:
         new_plan = await planner.rewrite_plan_after_error(
-            error_info, chat_context, old_plan, action=action, use_sample_plans=use_sample_plans
+            error_info,
+            chat_context,
+            old_plan,
+            action=action,
+            use_sample_plans=use_sample_plans,
+            plan_id=plan_id,
         )
     else:
         new_plan = await planner.rewrite_plan_after_input(
-            chat_context, old_plan, plan_timestamp, action=action, use_sample_plans=use_sample_plans
+            chat_context,
+            old_plan,
+            plan_timestamp,
+            action=action,
+            use_sample_plans=use_sample_plans,
+            plan_id=plan_id,
         )
 
     if await check_cancelled(db=db, plan_id=plan_id):

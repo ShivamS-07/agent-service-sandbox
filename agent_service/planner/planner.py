@@ -104,7 +104,7 @@ class Planner:
 
     @async_perf_logger
     async def create_initial_plan(
-        self, chat_context: ChatContext, use_sample_plans: bool = True
+        self, chat_context: ChatContext, plan_id: str, use_sample_plans: bool = True
     ) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
         if use_sample_plans:
@@ -117,7 +117,9 @@ class Planner:
 
         logger.info("Writing plan")
         first_round_tasks = [
-            self._create_initial_plan(chat_context, self.fast_llm, sample_plans=sample_plans_str)
+            self._create_initial_plan(
+                chat_context, plan_id=plan_id, llm=self.fast_llm, sample_plans=sample_plans_str
+            )
             for _ in range(INITIAL_PLAN_TRIES)
         ]
         first_round_results = await gather_with_stop(first_round_tasks, MIN_SUCCESSFUL_FOR_STOP)
@@ -129,7 +131,9 @@ class Planner:
             first_round_results = list(set(first_round_results))  # get rid of complete duplicates
             # GPT 4O seems to have done it now need to just pick
             if len(first_round_results) > 1:
-                best_plan = await self._pick_best_plan(chat_context, first_round_results)
+                best_plan = await self._pick_best_plan(
+                    chat_context, first_round_results, plan_id=plan_id
+                )
             else:
                 best_plan = first_round_results[0]
 
@@ -142,7 +146,7 @@ class Planner:
 
         second_round_tasks = [
             self._create_initial_plan(chat_context, self.smart_llm),
-            self._get_plan_from_breakdown(chat_context),
+            self._get_plan_from_breakdown(chat_context, plan_id=plan_id),
         ]
 
         turbo_plan, breakdown_plan = await gather_with_concurrency(second_round_tasks)
@@ -162,7 +166,9 @@ class Planner:
         # otherwise, return the best breakdown version if any
         return breakdown_plan
 
-    async def _get_plan_from_breakdown(self, chat_context: ChatContext) -> Optional[ExecutionPlan]:
+    async def _get_plan_from_breakdown(
+        self, chat_context: ChatContext, plan_id: str
+    ) -> Optional[ExecutionPlan]:
         request_breakdown = await self._get_request_breakdown(chat_context)
         breakdown_tasks = [
             self._create_initial_plan(
@@ -176,7 +182,9 @@ class Planner:
         if breakdown_results:
             if len(breakdown_results) > 1:
                 # TODO: Combine best plans instead of just picking the best one?
-                best_plan = await self._pick_best_plan(chat_context, breakdown_results)
+                best_plan = await self._pick_best_plan(
+                    chat_context, breakdown_results, plan_id=plan_id
+                )
             else:
                 best_plan = breakdown_results[0]
         else:
@@ -186,7 +194,11 @@ class Planner:
 
     @async_perf_logger
     async def _create_initial_plan(
-        self, chat_context: ChatContext, llm: Optional[GPT] = None, sample_plans: str = ""
+        self,
+        chat_context: ChatContext,
+        plan_id: str,
+        llm: Optional[GPT] = None,
+        sample_plans: str = "",
     ) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
         execution_plan_start = datetime.datetime.utcnow().isoformat()
@@ -219,6 +231,7 @@ class Planner:
                     "prompt": prompt,
                     "action": Action.CREATE,
                     "sample_plans": sample_plans,
+                    "plan_id": plan_id,
                 },
             )
             return None
@@ -234,13 +247,14 @@ class Planner:
                 "prompt": prompt,
                 "action": Action.CREATE,
                 "sample_plans": sample_plans,
+                "plan_id": plan_id,
             },
         )
         return plan
 
     @async_perf_logger
     async def _pick_best_plan(
-        self, chat_context: ChatContext, plans: List[ExecutionPlan]
+        self, chat_context: ChatContext, plans: List[ExecutionPlan], plan_id: str
     ) -> ExecutionPlan:
         plan_pick_started_at = datetime.datetime.utcnow().isoformat()
         plans_str = "\n\n".join(
@@ -262,6 +276,7 @@ class Planner:
                 "agent_id": get_agent_id_from_chat_context(context=chat_context),
                 "started_at_utc": plan_pick_started_at,
                 "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                "plan_id": plan_id,
             },
         )
         return plans[plan_selection]
@@ -291,6 +306,7 @@ class Planner:
         last_plan: ExecutionPlan,
         last_plan_timestamp: datetime.datetime,
         action: Action,
+        plan_id: str,
         use_sample_plans: bool = True,
     ) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
@@ -312,7 +328,12 @@ class Planner:
         )
         tasks = [
             self._rewrite_plan_after_input(
-                chat_context, last_plan, latest_user_messages, sample_plans_str, action=action
+                chat_context,
+                last_plan,
+                latest_user_messages,
+                sample_plans_str,
+                action=action,
+                plan_id=plan_id,
             )
             for _ in range(INITIAL_PLAN_TRIES)
         ]
@@ -322,7 +343,7 @@ class Planner:
             results = list(set(results))  # get rid of complete duplicates and avoid best pick
             # GPT 4O seems to have done it now need to just pick
             if len(results) > 1:
-                best_plan = await self._pick_best_plan(chat_context, results)
+                best_plan = await self._pick_best_plan(chat_context, results, plan_id=plan_id)
             else:
                 best_plan = results[0]
 
@@ -340,6 +361,7 @@ class Planner:
         latest_messages: List[Message],
         sample_plans_str: str,
         action: Action,
+        plan_id: str,
     ) -> Optional[ExecutionPlan]:
         # for now, just assume last step is what is new
         # TODO: multiple old plans, flexible chat cutoff
@@ -372,6 +394,7 @@ class Planner:
                     "prompt": main_chat_str,
                     "action": action,
                     "sample_plans": sample_plans_str,
+                    "plan_id": plan_id,
                 },
             )
         except Exception:
@@ -387,6 +410,7 @@ class Planner:
                     "prompt": main_chat_str,
                     "action": action,
                     "sample_plans": sample_plans_str,
+                    "plan_id": plan_id,
                 },
             )
             logger.warning(f"Failed to validate replan with original LLM output string: {plan_str}")
@@ -401,6 +425,7 @@ class Planner:
         chat_context: ChatContext,
         last_plan: ExecutionPlan,
         action: Action,
+        plan_id: str,
         use_sample_plans: bool = True,
     ) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
@@ -415,7 +440,12 @@ class Planner:
         logger.info(f"Rewriting plan after error, error={error_info}")
         tasks = [
             self._rewrite_plan_after_error(
-                error_info, chat_context, last_plan, sample_plans_str, action=action
+                error_info,
+                chat_context,
+                last_plan,
+                sample_plans_str,
+                action=action,
+                plan_id=plan_id,
             )
             for _ in range(INITIAL_PLAN_TRIES)
         ]
@@ -425,7 +455,7 @@ class Planner:
             results = list(set(results))  # get rid of complete duplicates
             # GPT 4O seems to have done it now need to just pick
             if len(results) > 1:
-                best_plan = await self._pick_best_plan(chat_context, results)
+                best_plan = await self._pick_best_plan(chat_context, results, plan_id=plan_id)
             else:
                 best_plan = results[0]
 
@@ -443,6 +473,7 @@ class Planner:
         last_plan: ExecutionPlan,
         sample_plans_str: str,
         action: Action,
+        plan_id: str,
     ) -> Optional[ExecutionPlan]:
         execution_plan_start = datetime.datetime.utcnow().isoformat()
         agent_id = get_agent_id_from_chat_context(context=chat_context)
@@ -470,6 +501,7 @@ class Planner:
                     "prompt": error_str,
                     "action": action,
                     "sample_plans": sample_plans_str,
+                    "plan_id": plan_id,
                 },
             )
         except Exception:
@@ -485,6 +517,7 @@ class Planner:
                     "prompt": error_str,
                     "action": action,
                     "sample_plans": sample_plans_str,
+                    "plan_id": plan_id,
                 },
             )
             logger.warning(
