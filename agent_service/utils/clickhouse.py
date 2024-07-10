@@ -418,8 +418,10 @@ class Clickhouse(ClickhouseBase):
             tool_name = row["tool_name"]
             row["start_time_utc"] = row["start_time_utc"].replace(tzinfo=tz).isoformat()
             row["end_time_utc"] = row["end_time_utc"].replace(tzinfo=tz).isoformat()
+            env_upper = self._env.upper()
             row["replay_command"] = (
-                f"pipenv run python run_plan_task.py --env {self._env.upper()} --replay-id {row['replay_id']}"
+                f"ENVIRONMENT={env_upper} pipenv run python run_plan_task.py "
+                f"--env {env_upper} --replay-id {row['replay_id']}"
             )
             if row["args"]:
                 row["args"] = json.loads(row["args"])
