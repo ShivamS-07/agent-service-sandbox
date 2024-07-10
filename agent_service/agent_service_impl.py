@@ -1,5 +1,6 @@
 import datetime
 import logging
+from collections import defaultdict
 from typing import Any, AsyncGenerator, Dict, List, Optional
 from uuid import uuid4
 
@@ -350,33 +351,44 @@ class AgentServiceImpl:
         all_generated_plans: List[Dict[str, Any]] = self.ch.get_agent_debug_plans(agent_id=agent_id)
         worker_sqs_log: Dict[str, Any] = self.ch.get_agent_debug_worker_sqs_log(agent_id=agent_id)
         tool_calls: Dict[str, Any] = self.ch.get_agent_debug_tool_calls(agent_id=agent_id)
-        return GetAgentDebugInfoResponse(
-            tooltips=Tooltips(
-                plan_selections=(
-                    "Lists all the instances when multiple plans were generated and compared against each "
-                    "other to create the best plan for agent. It is ordered by the timestamp of plan "
-                    "selections. selection_str is the GPT response on comparing the plans. "
-                    "selection is the index of plans which was selected."
-                ),
-                all_generated_plans=(
-                    "Lists all plans that were generated for the agent. This includes the plans that were generated "
-                    "and compared against other plans to create the best plan for agent."
-                    "It is ordered by the timestamp when plan was generated."
-                ),
-                worker_sqs_log=(
-                    "Lists the messages processed for both running the execution plan and creating the execution plan."
-                    "It is ordered by by the timestamp when message was processed."
-                ),
-                tool_calls=(
-                    "List all tool calls grouped by tool name in context of this agent."
-                    "The tool calls are ordered by the timestamp when call completed."
-                ),
-            ),
-            debug=Debug(
-                agent_owner_id=agent_owner_id,
-                plan_selections=plan_selections,
-                all_generated_plans=all_generated_plans,
-                worker_sqs_log=worker_sqs_log,
-                tool_calls=tool_calls,
-            ),
+        tool_tips = Tooltips(
+            create_execution_plans="Contains one entry for every 'create_execution_plan' SQS "
+            "message processed, grouped by plan_id. Each entry will include "
+            "all of the information from the sqs message and additionally "
+            "will include every generated plan and each plan selection",
+            run_execution_plans="Contains one entry for each 'run_execution_plan' SQS message "
+            "processed for this agent, grouped by plan_id and plan_run_id. "
+            "Includes all tool_calls.",
         )
+        run_execution_plans: Dict[Any, Any] = defaultdict(dict)
+        for _, value in worker_sqs_log["run_execution_plan"].items():
+            top_level_key = f"plan_id={value['plan_id']}"
+            plan_run_id = value["plan_run_id"]
+            inner_key = f"plan_run_id={plan_run_id}"
+
+            if inner_key not in run_execution_plans[top_level_key]:
+                run_execution_plans[top_level_key][inner_key] = {}
+            run_execution_plans[top_level_key][inner_key]["sqs_info"] = value
+            for tool_plan_run_id, tool_value in tool_calls.items():
+                if tool_plan_run_id == plan_run_id:
+                    run_execution_plans[top_level_key][inner_key]["tool_calls"] = tool_value
+        create_execution_plans: Dict[Any, Any] = defaultdict(dict)
+        for _, value in worker_sqs_log["create_execution_plan"].items():
+            plan_id = value["plan_id"]
+            top_level_key = f"plan_id={plan_id}"
+            create_execution_plans[top_level_key] = {}
+            create_execution_plans[top_level_key]["sqs_info"] = value
+            create_execution_plans[top_level_key]["all_generated_plans"] = []
+            create_execution_plans[top_level_key]["plan_selections"] = []
+            for plan in all_generated_plans:
+                if plan["plan_id"] == plan_id:
+                    create_execution_plans[top_level_key]["all_generated_plans"].append(plan)
+            for plan_selection in plan_selections:
+                if plan_selection["plan_id"] == plan_id:
+                    create_execution_plans[top_level_key]["plan_selections"].append(plan_selection)
+        debug = Debug(
+            run_execution_plans=run_execution_plans,
+            create_execution_plans=create_execution_plans,
+            agent_owner_id=agent_owner_id,
+        )
+        return GetAgentDebugInfoResponse(tooltips=tool_tips, debug=debug)

@@ -357,7 +357,7 @@ class Clickhouse(ClickhouseBase):
     ################################################################################################
     def get_agent_debug_plan_selections(self, agent_id: str) -> List[Dict[str, Any]]:
         sql = """
-            SELECT plans, selection_str, selection, service_version, start_time_utc,
+            SELECT plans, selection_str, selection, plan_id, service_version, start_time_utc,
             end_time_utc, duration_seconds
             FROM agent.plan_selections
             WHERE agent_id = %(agent_id)s
@@ -381,7 +381,7 @@ class Clickhouse(ClickhouseBase):
 
     def get_agent_debug_plans(self, agent_id: str) -> List[Dict[str, Any]]:
         sql = """
-        SELECT execution_plan, action, model_id, plan_str, error_msg, service_version,
+        SELECT execution_plan, action, model_id, plan_str, plan_id, error_msg, service_version,
         start_time_utc, end_time_utc, duration_seconds, sample_plans
         FROM agent.plans
         WHERE agent_id = %(agent_id)s
@@ -403,7 +403,7 @@ class Clickhouse(ClickhouseBase):
     def get_agent_debug_tool_calls(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         SELECT  plan_id, plan_run_id, task_id, tool_name, args, result, start_time_utc,
-        end_time_utc, service_version, duration_seconds, error_msg
+        end_time_utc, service_version, duration_seconds, error_msg, replay_id
         FROM agent.tool_calls
         WHERE agent_id = %(agent_id)s
         ORDER BY end_time_utc DESC
@@ -418,6 +418,9 @@ class Clickhouse(ClickhouseBase):
             tool_name = row["tool_name"]
             row["start_time_utc"] = row["start_time_utc"].replace(tzinfo=tz).isoformat()
             row["end_time_utc"] = row["end_time_utc"].replace(tzinfo=tz).isoformat()
+            row["replay_command"] = (
+                f"pipenv run python run_plan_task.py --env {self._env.upper()} --replay-id {row['replay_id']}"
+            )
             if row["args"]:
                 row["args"] = json.loads(row["args"])
             if row["result"]:

@@ -127,10 +127,8 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
 
     def test_get_agent_debug_info(self):
 
-        agent_id = "ed2a1603-3a6c-4b53-9d01-59566217e6e9"
+        agent_id = "7aa1a451-5811-4881-9d39-e596efb538cd"
         debug_info = self.get_agent_debug_info(agent_id=agent_id)
         self.assertIsNotNone(debug_info)
-        self.assertIsNotNone(debug_info.debug.all_generated_plans)
-        self.assertIsNotNone(debug_info.debug.plan_selections)
-        self.assertIsNotNone(debug_info.debug.tool_calls)
-        self.assertIsNotNone(debug_info.debug.worker_sqs_log)
+        self.assertIsNotNone(debug_info.debug.run_execution_plans)
+        self.assertIsNotNone(debug_info.debug.create_execution_plans)
