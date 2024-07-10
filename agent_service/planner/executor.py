@@ -512,7 +512,7 @@ async def update_execution_after_input(
                     [
                         node.tool_name
                         for node in latest_plan.nodes
-                        if ToolRegistry.does_tool_read_chat(node.tool_name)
+                        if ToolRegistry.get_tool(node.tool_name).reads_chat
                     ]
                 ),
             )

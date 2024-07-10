@@ -126,6 +126,10 @@ DATE_RANGE_SYS_PROMPT = Prompt(
         "the same today as above, your output would be: "
         '{{"start_date":"2024-4-1", "end_date":"2024-07-15"}} '
         "since July 15 in in Q3, and April 1st is the beginning of Q2. "
+        "Be very careful if the context suggests that multiple non-overlapping ranges are required, "
+        "such as in a comparison. If you are interpreting 'previous month' in the context of "
+        "a request to compare last month to the previous month, since last month is the last 30 days "
+        "the previous month must be the 30 days before that."
         "Do not include any wrapper around the JSON. (no ```)"
     ),
 )

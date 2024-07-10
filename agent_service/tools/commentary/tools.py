@@ -34,6 +34,7 @@ from agent_service.tools.commentary.prompts import (
     NO_PROMPT,
     PREVIOUS_COMMENTARY_PROMPT,
     SIMPLE_CLIENTELE,
+    UPDATE_COMMENTARY_INSTRUCTIONS,
     WATCHLIST_PROMPT,
     WRITE_COMMENTARY_DESCRIPTION,
     WRITING_FORMAT_TEXT_DICT,
@@ -86,6 +87,7 @@ class WriteCommentaryInput(ToolArgs):
     description=WRITE_COMMENTARY_DESCRIPTION,
     category=ToolCategory.COMMENTARY,
     reads_chat=True,
+    update_instructions=UPDATE_COMMENTARY_INSTRUCTIONS,
 )
 async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) -> Text:
     # Create GPT context and llm model

@@ -32,6 +32,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     COMPARISON_DESCRIPTION,
     COMPARISON_MAIN_PROMPT,
     COMPARISON_SYS_PROMPT,
+    COMPARISON_UPDATE_INSTRUCTIONS,
     COMPLEX_PROFILE_FILTER_SYS_PROMPT,
     EXTRA_DATA_PHRASE,
     FILTER_BY_PROFILE_DESCRIPTION,
@@ -45,6 +46,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     SUMMARIZE_DESCRIPTION,
     SUMMARIZE_MAIN_PROMPT,
     SUMMARIZE_SYS_PROMPT,
+    SUMMARIZE_UPDATE_INSTRUCTIONS,
     TOPIC_FILTER_MAIN_PROMPT,
     TOPIC_FILTER_SYS_PROMPT,
     TOPIC_PHRASE,
@@ -81,6 +83,7 @@ class SummarizeTextInput(ToolArgs):
     description=SUMMARIZE_DESCRIPTION,
     category=ToolCategory.LLM_ANALYSIS,
     reads_chat=True,
+    update_instructions=SUMMARIZE_UPDATE_INSTRUCTIONS,
 )
 async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> Text:
     if context.chat is None:
@@ -130,6 +133,7 @@ class CompareTextInput(ToolArgs):
     description=COMPARISON_DESCRIPTION,
     category=ToolCategory.LLM_ANALYSIS,
     reads_chat=True,
+    update_instructions=COMPARISON_UPDATE_INSTRUCTIONS,
 )
 async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text:
     if context.chat is None:

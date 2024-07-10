@@ -126,6 +126,7 @@ class Tool:
     return_type: Type[IOType]
     description: str
     reads_chat: bool
+    update_instructions: Optional[str]
     is_output_tool: bool = False
     store_output: bool = True
 
@@ -278,10 +279,6 @@ class ToolRegistry:
         return tool_name in cls._REGISTRY_ALL_TOOLS_MAP
 
     @classmethod
-    def does_tool_read_chat(cls, tool_name: str) -> bool:
-        return cls._REGISTRY_ALL_TOOLS_MAP[tool_name].reads_chat
-
-    @classmethod
     def get_tool_str(cls) -> str:
         output = []
         for tool_category, tool_dict in cls._REGISTRY_CATEGORY_MAP.items():
@@ -311,6 +308,7 @@ def tool(
     is_visible: bool = True,
     enabled: bool = True,
     reads_chat: bool = False,
+    update_instructions: Optional[str] = None,
     tool_registry: Type[ToolRegistry] = ToolRegistry,
     is_output_tool: bool = False,
     store_output: bool = True,
@@ -357,6 +355,12 @@ def tool(
     tool_registry: A class type for the registry. Useful for testing or tiered registries.
 
     store_output: If true, stores the tool's output in a table for later lookups.
+
+    reads_chat: If true, indicates that the tool reads the chat and so updates can occur
+      without a replan
+
+    update_instructions: Should be included for any tool which reads the chat or otherwise
+      requires special consideration inside the action decider
     """
 
     def tool_deco(func: ToolFunc) -> ToolFunc:
@@ -495,6 +499,7 @@ def tool(
                     return_type=sig.return_annotation,
                     description=description,
                     reads_chat=reads_chat,
+                    update_instructions=update_instructions,
                     is_output_tool=is_output_tool,
                     store_output=store_output,
                 ),

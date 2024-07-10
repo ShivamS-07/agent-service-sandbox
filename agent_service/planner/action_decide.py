@@ -36,14 +36,19 @@ class InputActionDecider:
 
     async def decide_action(self, chat_context: ChatContext, current_plan: ExecutionPlan) -> Action:
         reads_chat_list = []
+        instruction_list = []
         for step in current_plan.nodes:
-            if ToolRegistry.does_tool_read_chat(step.tool_name):
+            tool = ToolRegistry.get_tool(step.tool_name)
+            if tool.reads_chat:
                 reads_chat_list.append(step.tool_name)
+            if tool.update_instructions:
+                instruction_list.append(f"{step.tool_name}: {tool.update_instructions}")
 
         latest_message = chat_context.messages.pop()
         main_prompt = ACTION_DECIDER_MAIN_PROMPT.format(
             plan=current_plan.get_formatted_plan(),
             reads_chat_list=reads_chat_list,
+            decision_instructions="\n".join(instruction_list),
             chat_context=chat_context.get_gpt_input(),
             message=latest_message.get_gpt_input(),
         )

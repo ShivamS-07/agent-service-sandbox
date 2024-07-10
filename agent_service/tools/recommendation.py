@@ -284,7 +284,9 @@ async def add_scores_and_rationales_to_stocks(
         text_group = aligned_text_groups.val[stock]
         scores = score_dict[stock]
         try:
-            rationale, citations = result.strip().replace("\n\n", "\n").split("\n")
+            lines = result.strip().replace("\n\n", "\n").split("\n")
+            rationale = "\n".join(lines[:-1])
+            citations = lines[-1]
             citation_idxs = json.loads(clean_to_json_if_needed(citations))
             citations = text_group.get_citations(citation_idxs)
         except ValueError:
@@ -400,6 +402,10 @@ class GetStockRecommendationsInput(ToolArgs):
         "When you get such a request, e.g. `filter to stocks with only positive "
         "news sentiment`, the optional news_only should be set to True, and only news information will be used in "
         "rating and corresponding rationale. "
+        "If the client asks for recommendations AND includes a requirement that news be positivie, it is "
+        "perfectly reasonable to run this tool twice, first with news_only=True, and the second time "
+        "with news_only=False. You should never use the filter by profile function for filtering by simple "
+        "news sentiment!!!!"
         "This function looks up the news for the relevant stocks internally, you do not need to run "
         "the get_all_news_developments_about_companies function before this one!"
         "In news only mode, the news_horizon specifically controls how far back the algorithm looks for news "
@@ -411,6 +417,13 @@ class GetStockRecommendationsInput(ToolArgs):
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
     reads_chat=True,
+    update_instructions=(
+        "Since the most of the important functionalities of this function are controlled by arguments "
+        "to the function, nearly any change that involves the operation of this function requires a "
+        "full replan. This includes anything that directly or indirectly affects the selection of the "
+        "of recommended stocks. The only circumstance where a rerun is appropriate is if the user has "
+        "asked only for a change in the style or focus of the recommendation texts."
+    ),
 )
 async def get_stock_recommendations(
     args: GetStockRecommendationsInput, context: PlanRunContext

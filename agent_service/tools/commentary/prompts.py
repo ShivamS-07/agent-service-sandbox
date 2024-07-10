@@ -256,3 +256,17 @@ WRITE_COMMENTARY_DESCRIPTION = (
     "client_type MUST be either 'Technical' or 'Simple'. Choose based on client's request. "
     "writing_format MUST be either 'Long', 'Short' or 'Bullets'. Choose based on client's request."
 )
+
+UPDATE_COMMENTARY_INSTRUCTIONS = (
+    "Only a single call to write_commentary is allowed in each plan. "
+    "If the user is asking for a modification of a commentary, you must output either Replan or Rerun."
+    "You should output Replan only if the commentary needs a change to the inputs to the write commentary. "
+    "This includes major changes to the length which require a different writing format, and "
+    " changes to the major topics that are passed to the commentary input function. "
+    "Otherwise, if the user is asking for minor modifications to the content/format of the commentary "
+    "without changing the input data or other arguments to the write_commentary function, you should output Rerun. "
+    "This generally includes any deletion of specific material. "
+    "You must never, ever use the Append action for plans involving modifications of commentaries, "
+    " even if the user is talking about `adding` to the commentary`. "
+    "I repeat: Do not use the Append action for requests involving any kind of modification of commentaries."
+)
