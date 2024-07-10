@@ -26,7 +26,7 @@ class TestHypothesis(TestExecutionPlanner):
         prompt = "Pharmaceutical industry growth"
 
         def validate_output(prompt: str, output: IOType):
-            output_text = get_output(output=output)
+            output_text = get_output(output=output[1])
             self.loop.run_until_complete(
                 validate_and_compare_text(llm=self.llm, output_text=output_text, prompt=prompt)
             )

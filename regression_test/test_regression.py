@@ -30,7 +30,7 @@ from agent_service.utils.output_utils.output_construction import PreparedOutput
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
 
 CH = ClickhouseBase(environment=DEV_TAG)
-SERVICE_VERSION = "374053208103.dkr.ecr.us-west-2.amazonaws.com/agent-service:afabe4a61d2205b91d22c64218ee1579dec317e2"
+SERVICE_VERSION = "374053208103.dkr.ecr.us-west-2.amazonaws.com/agent-service:9174a9ec8ae0de7c46b51775ed12d74806f2fd45"
 
 
 class PlanGenerationError(Exception):
@@ -117,7 +117,7 @@ class TestExecutionPlanner(unittest.TestCase):
         validate_output: Callable,
         user_id: Optional[str] = None,
     ):
-        user_id = user_id or str(uuid.uuid4())
+        user_id = user_id or "6c14fe54-de50-4d05-9533-57541715064f"
         shared_log_data = {
             "user_id": user_id,
             "test_suite_id": self.test_suite_id,

@@ -9,8 +9,9 @@ from regression_test.util import validate_and_compare_text
 
 
 class TestMarketCommentary(TestExecutionPlanner):
-    def test_market_commentary(self):
-        prompt = "Write a market commentary of everything that has happened over the past week?"
+
+    def test_market_commentary_past_month(self):
+        prompt = "Write a commentary on market performance over the past month"
 
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output=output)

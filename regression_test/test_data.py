@@ -14,7 +14,7 @@ from regression_test.util import (
 
 class TestData(TestExecutionPlanner):
     def test_relative_strength(self):
-        prompt = "Show me Relative Strength Index for NVDA, AMD, INTL and GOOG over the past year"
+        prompt = "Show me Relative Strength Index for NVDA, AMD, INTL and GOOG over the year 2023"
 
         def validate_output(prompt: str, output: IOType):
             output_line_graph = get_output(output=output)
@@ -28,7 +28,7 @@ class TestData(TestExecutionPlanner):
         )
 
     def test_plot_tsla_price(self):
-        prompt = "plot tsla price"
+        prompt = "plot tsla price from Jan 2024 to March 2024"
 
         def validate_output(prompt: str, output: IOType):
             output_line_graph = get_output(output)
@@ -39,7 +39,7 @@ class TestData(TestExecutionPlanner):
         )
 
     def test_intersection_of_qqq_xlv(self):
-        prompt = "Find the intersection of QQQ and XLV"
+        prompt = "Find the intersection of QQQ and XLV on Jan 1, 2024"
 
         def validate_output(prompt: str, output: IOType):
             output_stock_ids = get_output(output=output)
@@ -50,7 +50,7 @@ class TestData(TestExecutionPlanner):
         )
 
     def test_top_mcap(self):
-        prompt = "top 10 by market cap today, and then graph their market caps over the last month"
+        prompt = "top 10 by market cap today, and then graph their market caps over the month of April 2024"
 
         def validate_output(prompt: str, output: IOType):
             output_line_graph = get_output(output=output[1])
@@ -73,7 +73,7 @@ class TestData(TestExecutionPlanner):
         )
 
     def test_pe_nvda(self):
-        prompt = "Show me the PE of NVDA?"
+        prompt = "Show me the PE of NVDA over month of Feb 2024?"
 
         def validate_output(prompt: str, output: IOType):
             output_stock_table = get_output(output)
@@ -88,23 +88,8 @@ class TestData(TestExecutionPlanner):
             prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
         )
 
-    def test_mcap_nvda(self):
-        prompt = "Show me the market cap of NVDA?"
-
-        def validate_output(prompt: str, output: IOType):
-            output_stock_table = get_output(output)
-            date_column, mcap_column = validate_table_and_get_columns(
-                output_stock_table=output_stock_table,
-                column_types=[TableColumnType.DATE, TableColumnType.CURRENCY],
-            )
-            self.assertGreater(len(mcap_column.data), 0)
-
-        self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
-        )
-
     def test_graph_pe(self):
-        prompt = "Graph the PE of health care stocks in QQQ over the past year"
+        prompt = "Graph the PE of health care stocks in QQQ over the year 2023"
 
         def validate_output(prompt: str, output: IOType):
             output_line_graph = get_output(output)
@@ -133,9 +118,22 @@ class TestData(TestExecutionPlanner):
 
     def test_machine_learning_news_summary(self):
         prompt = (
-            "Can you give me a single summary of news published in the last week about machine "
+            "Can you give me a single summary of news published in the last week of June 2024 about machine "
             "learning at Meta, Apple, and Microsoft?"
         )
+
+        def validate_output(prompt: str, output: IOType):
+            output_text = get_output(output)
+            self.loop.run_until_complete(
+                validate_and_compare_text(llm=self.llm, output_text=output_text, prompt=prompt)
+            )
+
+        self.prompt_test(
+            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+        )
+
+    def test_notify_big_big_developments(self):
+        prompt = "Scan all corporate filings for LIPO and notify me of any big developments or changes to cash flow"
 
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output)

@@ -42,7 +42,7 @@ class TestSQSMessageHandler(unittest.TestCase):
 
     def test_create_execution_plan_rewrite(self):
         raw_message = """
-           {"method": "create_execution_plan", "arguments": {"agent_id": "e9bd2ab2-16c3-4934-b372-c39dd4dd7f7a", "plan_id": "08b9174b-4321-40cd-98d5-af968e58bacc", "user_id": "ac7c96d7-3e57-40e7-a1a5-8e2ce5e23639", "skip_db_commit": false, "skip_task_cache": false, "run_plan_in_prefect_immediately": true, "action": "REPLAN", "error_info": null}}
+           {"method": "create_execution_plan", "arguments": {"agent_id": "fb0400ef-c7d5-4d8e-8817-ad489e29a24e", "plan_id": "806cda01-8329-451a-8a58-974953f04cd6", "user_id": "6c14fe54-de50-4d05-9533-57541715064f", "skip_db_commit": false, "skip_task_cache": false, "run_plan_in_prefect_immediately": true, "action": "REPLAN", "error_info": null}}
             """
         message = json.loads(raw_message)
         self.handle_message(message=message)

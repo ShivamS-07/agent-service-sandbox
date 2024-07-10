@@ -145,7 +145,7 @@ class Planner:
         logger.warning(f"All of {INITIAL_PLAN_TRIES} initial plan runs failed, trying round 2")
 
         second_round_tasks = [
-            self._create_initial_plan(chat_context, self.smart_llm),
+            self._create_initial_plan(chat_context, plan_id, self.smart_llm),
             self._get_plan_from_breakdown(chat_context, plan_id=plan_id),
         ]
 
@@ -172,7 +172,7 @@ class Planner:
         request_breakdown = await self._get_request_breakdown(chat_context)
         breakdown_tasks = [
             self._create_initial_plan(
-                ChatContext(messages=[Message(message=subneed, is_user_message=True)])
+                ChatContext(messages=[Message(message=subneed, is_user_message=True)]), plan_id
             )
             for subneed in request_breakdown
         ]

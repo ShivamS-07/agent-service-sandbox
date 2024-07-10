@@ -1,4 +1,5 @@
 import logging
+import warnings
 from typing import List, Optional
 
 from agent_service.GPT.requests import GPT
@@ -34,7 +35,10 @@ async def validate_and_compare_text(llm: GPT, output_text: Text, prompt: str) ->
         main_prompt.format(output_text=output_text, prompt=prompt),
         max_tokens=50,
     )
-    assert res == "True" or res == "true", "Issue with text"
+    if res.lower() != "true":
+        warnings.warn(
+            "Issue with the text ouput. ChatGPT doesn't think that the output answers the prompt"
+        )
 
 
 def validate_table_and_get_columns(

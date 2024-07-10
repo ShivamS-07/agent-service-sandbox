@@ -24,7 +24,7 @@ class TestKPI(TestExecutionPlanner):
         )
 
     def test_main_kpi_compare(self):
-        prompt = "Compare how the main KPI for Microsoft have been discussed in the last 2 earning's calls"
+        prompt = "Compare how the main KPI for Microsoft have been discussed in the first 2 earning's calls of 2024"
 
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output)
