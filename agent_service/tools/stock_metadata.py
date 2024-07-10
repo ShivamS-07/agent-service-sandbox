@@ -3,6 +3,7 @@ from typing import List
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockDescriptionText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 
 
@@ -22,6 +23,10 @@ class GetStockDescriptionInput(ToolArgs):
 async def get_company_descriptions(
     args: GetStockDescriptionInput, context: PlanRunContext
 ) -> List[StockDescriptionText]:
+    await tool_log(
+        log="Collecting company/stocks descriptions.",
+        context=context,
+    )
     return [
         StockDescriptionText(id=stock_id.gbi_id, stock_id=stock_id) for stock_id in args.stock_ids
     ]

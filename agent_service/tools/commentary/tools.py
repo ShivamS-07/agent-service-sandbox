@@ -3,7 +3,7 @@ import random
 from typing import List, Optional
 from uuid import uuid4
 
-from agent_service.GPT.constants import GPT4_O
+from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.dates import DateRange
@@ -31,7 +31,6 @@ from agent_service.tools.commentary.prompts import (
     GEOGRAPHY_PROMPT,
     GET_COMMENTARY_INPUTS_DESCRIPTION,
     LONG_WRITING_STYLE,
-    NO_PROMPT,
     PREVIOUS_COMMENTARY_PROMPT,
     SIMPLE_CLIENTELE,
     UPDATE_COMMENTARY_INSTRUCTIONS,
@@ -106,7 +105,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         )
 
     # Prepare the portfolio geography prompt
-    geography_prompt = NO_PROMPT.format()
+    geography_prompt = NO_PROMPT
     if args.portfolio_id:
         portfolio_holdings_table = (
             await get_portfolio_holdings(
@@ -158,10 +157,10 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
             previous_commentary=await Text.get_all_strs(previous_commentary)
         )
         if previous_commentary is not None
-        else NO_PROMPT.format()
+        else NO_PROMPT
     )
     # Prepare watchlist prompt
-    watchlist_prompt = NO_PROMPT.format()
+    watchlist_prompt = NO_PROMPT
     if args.use_watchlist_stocks:
         await tool_log(
             log="Watchlist stocks are used. Retrieving watchlist stocks for commentary.",

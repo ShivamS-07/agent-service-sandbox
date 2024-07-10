@@ -11,14 +11,21 @@ from agent_service.external.pa_backtest_svc_client import (
     universe_stock_factor_exposures,
 )
 from agent_service.external.stock_search_dao import async_sort_stocks_by_volume
-from agent_service.GPT.constants import GPT35_TURBO, NO_PROMPT
+from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT35_TURBO, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.stock import StockID
+from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
 from agent_service.io_types.table import Table, TableColumnMetadata
+from agent_service.io_types.text import Text
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.stock_metadata import (
+    GetStockDescriptionInput,
+    get_company_descriptions,
+)
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
@@ -1229,6 +1236,90 @@ async def stock_lookup_by_bloomberg_parsekey(
 
     logger.info(f"Looks like a bloomberg parsekey but couldn't find a match: '{args.stock_name}'")
     return []
+
+
+class StockMarketSegmentFilterInput(ToolArgs):
+    stock_ids: List[StockID]
+    segment_text: str
+
+
+STOCK_MARKET_SEGMENT_FILTER_MAIN_PROMPT = Prompt(
+    name="STOCK_MARKET_SEGMENT_FILTER_MAIN_PROMPT",
+    template=(
+        "Your task to determine whether the following stock is a good match for the given market segment. "
+        "You can use the stock description to help you make this determination. "
+        "If you think the stock is a good match, return 'yes'. "
+        "If you think the stock is not a good match, return 'no'. "
+        "You answer MUST be one of the following: <yes, no>. "
+        "\n###Stock Description\n"
+        "{stock_description}"
+        "\nMarket Segment\n"
+        "{segment_text}"
+        "\nNow is this stock a good match for the given market segment? (yes/no)"
+    ),
+)
+
+
+@tool(
+    description=(
+        "This function takes a list of stock ids and a market segment text "
+        "such as tech, health, gaming, ai chips, organic groceries, semiconductor, etc., "
+        "and filters them acccording to how well they match the given market segment. "
+        "Filtering is done based on the company/stock description text. "
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def market_segment_filter(
+    args: StockMarketSegmentFilterInput, context: PlanRunContext
+) -> List[StockID]:
+    # get company/stock descriptions
+    description_texts = await get_company_descriptions(
+        GetStockDescriptionInput(
+            stock_ids=args.stock_ids,
+        ),
+        context,
+    )
+
+    # create aligned stock text groups and get all the text strings
+    aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(
+        args.stock_ids, description_texts  # type: ignore
+    )
+    stock_description_map: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
+        aligned_text_groups.val, include_header=True, text_group_numbering=True
+    )
+    # filter out those with no data
+    stocks = [stock for stock in args.stock_ids if stock in stock_description_map]
+
+    # initiate GPT context and llm model
+    llm = GPT(model=GPT35_TURBO)
+    # create GPT call tasks
+    tasks = []
+    for stock in stocks:
+        tasks.append(
+            llm.do_chat_w_sys_prompt(
+                STOCK_MARKET_SEGMENT_FILTER_MAIN_PROMPT.format(
+                    stock_description=stock_description_map[stock],
+                    segment_text=args.segment_text,
+                ),
+                sys_prompt=NO_PROMPT,
+            )
+        )
+    results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
+
+    # filter out stocks that are not a good match
+    filtered_stocks = []
+    for stock, result in zip(stocks, results):
+        if result.lower() == "yes":
+            filtered_stocks.append(stock)
+
+    if not filtered_stocks:
+        raise ValueError(
+            f"No stocks are a good match for the given market segment: '{args.segment_text}'"
+        )
+
+    return filtered_stocks
 
 
 # this was built by merging a list of bloomberg exchange codes

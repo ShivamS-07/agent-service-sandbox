@@ -215,9 +215,6 @@ WRITING_FORMAT_TEXT_DICT = {
 }
 
 
-NO_PROMPT = Prompt(name="NO_PROMPT", template="")
-
-
 GET_COMMENTARY_INPUTS_DESCRIPTION = (
     "This function can be used when a client wants to write a commentary, article or summary of "
     "market trends and/or specific topics."
