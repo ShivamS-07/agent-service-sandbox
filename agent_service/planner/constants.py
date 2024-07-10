@@ -21,3 +21,4 @@ class Action(str, Enum):
     REPLAN = "REPLAN"
     CREATE = "CREATE"
     LAYOUT = "LAYOUT"
+    NOTIFICATION = "NOTIFICATION"

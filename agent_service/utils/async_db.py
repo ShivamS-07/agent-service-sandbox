@@ -522,6 +522,25 @@ class AsyncDB:
             values_to_update={"automation_enabled": enabled},
         )
 
+    async def insert_agent_custom_notification_prompt(self, agent_id: str, prompt: str) -> None:
+        sql = """
+        INSERT INTO agent.custom_notifications (agent_id, notification_prompt)
+        VALUES (%(agent_id)s, %(prompt)s)
+        """
+        await self.pg.generic_write(sql, {"agent_id": agent_id, "prompt": prompt})
+
+    async def get_latest_agent_custom_notification_prompt(self, agent_id: str) -> Optional[str]:
+        sql = """
+        SELECT notification_prompt FROM agent.custom_notifications
+        WHERE agent_id=%(agent_id)s
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+        rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
+        if not rows:
+            return None
+        return rows[0]["notification_prompt"]
+
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:
     if isinstance(db, Postgres):

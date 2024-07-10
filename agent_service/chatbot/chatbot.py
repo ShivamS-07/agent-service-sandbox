@@ -28,6 +28,8 @@ from agent_service.chatbot.prompts import (
     INPUT_UPDATE_REPLAN_PREPLAN_SYS_PROMPT,
     INPUT_UPDATE_RERUN_MAIN_PROMPT,
     INPUT_UPDATE_RERUN_SYS_PROMPT,
+    NOTIFICATION_UPDATE_MAIN_PROMPT,
+    NOTIFICATION_UPDATE_SYS_PROMPT,
 )
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
@@ -184,4 +186,12 @@ class Chatbot:
         )
         sys_prompt = ERROR_REPLAN_POSTPLAN_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=80)
+        return result
+
+    async def generate_notification_response(self, chat_context: ChatContext) -> str:
+        main_prompt = NOTIFICATION_UPDATE_MAIN_PROMPT.format(
+            chat_context=chat_context.get_gpt_input(),
+        )
+        sys_prompt = NOTIFICATION_UPDATE_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=60)
         return result

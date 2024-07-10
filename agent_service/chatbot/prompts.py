@@ -77,6 +77,13 @@ ERROR_REPLAN_POSTPLAN_SYS_PROMPT_STR = "{agent_description} Your client sent you
 
 ERROR_REPLAN_POSTPLAN_MAIN_PROMPT_STR = "Given the following interaction with the client, let the user know about the changes you have made to the plan in response to an earlier problem in execution, and that you are now carrying out this new plan (but please rephrase this idea in your own words). Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\nHere is the old plan:\n---\n{old_plan}\n---\nHere is the updated plan:\n---\n{new_plan}\n---\n. Now write your response to the client: "
 
+### Notification
+
+NOTIFICATION_UPDATE_SYS_PROMPT_STR = "{agent_description} Your client sent you a request for information and you created a plan (in the form of a python script) for satisfying that request. The client is now asking for a notification on the plan or an update to that notification. In your own words, tell the user you have added/updated the conditions under which notifications will occur. Please restate the change to the notification criteria. If the user is just asking what the current notifications are, just state them. Your response should be very brief, you should limit your response to 60 words."
+
+NOTIFICATION_UPDATE_MAIN_PROMPT_STR = "Given the following interaction with the client, let the user know you have modified the notification criteria as requested, assuming they have such a request (but please rephrase this idea in your own words). Here is transcript of your interaction with the client so far, delimited by ---, which should include the notification-related request at the end:\n---\n{chat_context}\n---\n. Now write your response to the client: "
+
+
 ### Dataclasses
 
 INITIAL_PREPLAN_SYS_PROMPT = Prompt(INITIAL_PREPLAN_SYS_PROMPT_STR, "INITIAL_PREPLAN_SYS_PROMPT")
@@ -152,4 +159,12 @@ ERROR_REPLAN_POSTPLAN_SYS_PROMPT = Prompt(
 )
 ERROR_REPLAN_POSTPLAN_MAIN_PROMPT = Prompt(
     ERROR_REPLAN_POSTPLAN_MAIN_PROMPT_STR, "ERROR_REPLAN_POSTPLAN_MAIN_PROMPT"
+)
+
+NOTIFICATION_UPDATE_SYS_PROMPT = Prompt(
+    NOTIFICATION_UPDATE_SYS_PROMPT_STR, "NOTIFICATION_UPDATE_SYS_PROMPT"
+)
+
+NOTIFICATION_UPDATE_MAIN_PROMPT = Prompt(
+    NOTIFICATION_UPDATE_MAIN_PROMPT_STR, "NOTIFICATION_UPDATE_MAIN_PROMPT"
 )

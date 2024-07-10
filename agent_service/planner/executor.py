@@ -267,7 +267,10 @@ async def run_execution_plan(
         )
     elif scheduled_by_automation:
         logger.info("Generating diff message...")
-        output_differ = OutputDiffer(plan=plan, context=context)
+        custom_notifications = db.get_latest_agent_custom_notification_prompt(context.agent_id)
+        output_differ = OutputDiffer(
+            plan=plan, context=context, custom_notifications=custom_notifications
+        )
         output_diffs = await output_differ.diff_outputs(
             latest_outputs=final_outputs, db=SyncBoostedPG(skip_commit=context.skip_db_commit)
         )
@@ -482,6 +485,22 @@ async def update_execution_after_input(
         if flow_run:
             await prefect_resume_agent_flow(flow_run)
         return None
+
+    elif action == action.NOTIFICATION:
+        current_notifications = db.get_latest_agent_custom_notification_prompt(agent_id)
+        if current_notifications:
+            new_notifications = await decider.update_custom_notifications(
+                chat_context, current_notifications
+            )
+        else:
+            new_notifications = await decider.create_custom_notifications(chat_context)
+        db.insert_agent_custom_notification_prompt(agent_id, new_notifications)
+        if do_chat:
+            message = await chatbot.generate_notification_response(chat_context)
+            await send_chat_message(
+                message=Message(agent_id=agent_id, message=message, is_user_message=False), db=db
+            )
+
     elif action == Action.RERUN:
         # In this case, we know that the flow_run_type is PLAN_EXECUTION (or there no flow_run),
         # otherwise we'd have run the above block instead.

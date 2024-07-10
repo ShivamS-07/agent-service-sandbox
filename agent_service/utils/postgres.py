@@ -492,6 +492,28 @@ class Postgres(PostgresBase):
 
         return rows[0]
 
+    def insert_agent_custom_notification_prompt(self, agent_id: str, prompt: str) -> None:
+        sql = """
+        INSERT INTO agent.custom_notifications (agent_id, notification_prompt, created_at)
+        VALUES (%(agent_id)s, %(prompt)s, %(created_at)s)
+        """
+        # need to manually insert created_at for offline tool
+        self.generic_write(
+            sql, {"agent_id": agent_id, "prompt": prompt, "created_at": get_now_utc()}
+        )
+
+    def get_latest_agent_custom_notification_prompt(self, agent_id: str) -> Optional[str]:
+        sql = """
+        SELECT notification_prompt FROM agent.custom_notifications
+        WHERE agent_id=%(agent_id)s
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+        rows = self.generic_read(sql, {"agent_id": agent_id})
+        if not rows:
+            return None
+        return rows[0]["notification_prompt"]
+
     # Profile Generation
     def get_industry_names(self, gic_type: str = "GGROUP") -> List[str]:
         sql = """

@@ -17,6 +17,8 @@ from agent_service.utils.date_utils import timezoneify
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.output_utils.output_construction import PreparedOutput
 from agent_service.utils.output_utils.prompts import (
+    BASIC_NOTIFICATION_TEMPLATE,
+    CUSTOM_NOTIFICATION_TEMPLATE,
     GENERATE_DIFF_MAIN_PROMPT,
     GENERATE_DIFF_SYS_PROMPT,
     TEXT_OUTPUT_TEMPLATE,
@@ -35,11 +37,13 @@ class OutputDiffer:
         self,
         plan: ExecutionPlan,
         context: PlanRunContext,
+        custom_notifications: Optional[str],
         model: str = GPT4_O,
         gpt_service_stub: Optional[GPTServiceStub] = None,
     ):
         self.context = context
         self.plan = plan
+        self.custom_notifications = custom_notifications
         gpt_context = create_gpt_context(
             GptJobType.AGENT_CHATBOT, self.context.agent_id, GptJobIdType.AGENT_ID
         )
@@ -60,6 +64,13 @@ class OutputDiffer:
         if not new_citations:
             return OutputDiff(diff_summary_message="No new updates.", should_notify=False)
 
+        if self.custom_notifications:
+            notification_instructions_str = CUSTOM_NOTIFICATION_TEMPLATE.format(
+                custom_notifications=self.custom_notifications
+            )
+        else:
+            notification_instructions_str = BASIC_NOTIFICATION_TEMPLATE
+
         main_prompt = GENERATE_DIFF_MAIN_PROMPT.format(
             output_schema=OutputDiff.model_json_schema(),
             latest_output=TEXT_OUTPUT_TEMPLATE.format(
@@ -67,6 +78,7 @@ class OutputDiffer:
                 citations="\n".join(new_citations),
             ).filled_prompt,
             prev_output=f"'{(await prev_output.get()).val}'",
+            notification_instructions=notification_instructions_str,
         )
         result = await self.llm.do_chat_w_sys_prompt(
             main_prompt=main_prompt,
@@ -84,11 +96,20 @@ class OutputDiffer:
             )
         latest_output_str = await io_type_to_gpt_input(latest_output, use_abbreviated_output=False)
         prev_output_str = await io_type_to_gpt_input(prev_output, use_abbreviated_output=False)
+
+        if self.custom_notifications:
+            notification_instructions_str = CUSTOM_NOTIFICATION_TEMPLATE.format(
+                custom_notifications=self.custom_notifications
+            )
+        else:
+            notification_instructions_str = BASIC_NOTIFICATION_TEMPLATE
+
         result = await self.llm.do_chat_w_sys_prompt(
             main_prompt=GENERATE_DIFF_MAIN_PROMPT.format(
                 output_schema=OutputDiff.model_json_schema(),
                 latest_output=latest_output_str,
                 prev_output=prev_output_str,
+                notification_instructions=notification_instructions_str,
             ),
             sys_prompt=GENERATE_DIFF_SYS_PROMPT,
             output_json=True,
@@ -100,6 +121,8 @@ class OutputDiffer:
         self,
         latest_outputs: List[IOType],
         db: BoostedPG,
+        prev_outputs: Optional[List[IOType]] = None,
+        prev_date: Optional[datetime.datetime] = None,
     ) -> List[OutputDiff]:
         """
         Given a list of the latest outputs for an agent, return a list of output
@@ -108,25 +131,26 @@ class OutputDiffer:
         """
 
         async_db = AsyncDB(pg=db)
-        prev_outputs_and_date = await async_db.get_prev_outputs_for_agent_plan(
-            agent_id=self.context.agent_id,
-            plan_id=self.context.plan_id,
-            latest_plan_run_id=self.context.plan_run_id,
-        )
-        # If this is the first run of the plan, or the previous output is
-        # misisng for some reason, notify just to be safe.
-        if prev_outputs_and_date is None:
-            return [
-                OutputDiff(
-                    diff_summary_message="Agent completed with new outputs!",
-                    should_notify=True,
-                )
-            ]
+        if not prev_outputs or not prev_date:
+            prev_outputs_and_date = await async_db.get_prev_outputs_for_agent_plan(
+                agent_id=self.context.agent_id,
+                plan_id=self.context.plan_id,
+                latest_plan_run_id=self.context.plan_run_id,
+            )
+            # If this is the first run of the plan, or the previous output is
+            # misisng for some reason, notify just to be safe.
+            if prev_outputs_and_date is None:
+                return [
+                    OutputDiff(
+                        diff_summary_message="Agent completed with new outputs!",
+                        should_notify=True,
+                    )
+                ]
 
-        # Assuming the plan is the same, the number of outputs should ideally be
-        # the same also. If not, we can't easily compare, so notify just to be
-        # safe.
-        prev_outputs, prev_date = prev_outputs_and_date
+            # Assuming the plan is the same, the number of outputs should ideally be
+            # the same also. If not, we can't easily compare, so notify just to be
+            # safe.
+            prev_outputs, prev_date = prev_outputs_and_date
         if len(prev_outputs) != len(latest_outputs):
             return [
                 OutputDiff(

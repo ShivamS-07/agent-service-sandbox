@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, Tuple, Type
 
-from agent_service.GPT.constants import GPT4_O, GPT4_TURBO
+from agent_service.GPT.constants import GPT4_O, GPT4_TURBO, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.planner.constants import Action
 from agent_service.planner.planner import Planner
@@ -12,6 +12,9 @@ from agent_service.planner.prompts import (
     ERROR_ACTION_DECIDER_MAIN_PROMPT,
     ERROR_ACTION_DECIDER_SYS_PROMPT,
     ERROR_REPLAN_GUIDELINES,
+    NOTIFICATION_CREATE_MAIN_PROMPT,
+    NOTIFICATION_EXAMPLE,
+    NOTIFICATION_UPDATE_MAIN_PROMPT,
 )
 from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext, Message
@@ -52,6 +55,25 @@ class InputActionDecider:
         if len(reads_chat_list) == 0 and action == Action.RERUN:  # GPT shouldn't do this
             action = Action.REPLAN
         return action
+
+    async def create_custom_notifications(self, chat_context: ChatContext) -> str:
+        main_prompt = NOTIFICATION_CREATE_MAIN_PROMPT.format(
+            chat_context=chat_context.get_gpt_input(), example=NOTIFICATION_EXAMPLE
+        )
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, NO_PROMPT)
+        return result
+
+    async def update_custom_notifications(
+        self, chat_context: ChatContext, current_notifications: str
+    ) -> str:
+        main_prompt = NOTIFICATION_UPDATE_MAIN_PROMPT.format(
+            chat_context=chat_context.get_gpt_input(),
+            current_notifications=current_notifications,
+            example=NOTIFICATION_EXAMPLE,
+        )
+
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, NO_PROMPT)
+        return result
 
 
 class ErrorActionDecider:
