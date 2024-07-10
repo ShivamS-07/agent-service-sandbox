@@ -51,6 +51,7 @@ from agent_service.endpoints.models import (
     UpdateAgentRequest,
     UpdateAgentResponse,
 )
+from agent_service.external.grpc_utils import create_jwt
 from agent_service.GPT.requests import _get_gpt_service_stub
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
@@ -568,6 +569,21 @@ async def get_agent_debug_info(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
     return await application.state.agent_service_impl.get_agent_debug_info(agent_id=agent_id)
+
+
+# Account Management Enpoints
+
+
+@router.get("/account-management/generate-jwt/{user_id}", status_code=status.HTTP_200_OK)
+async def generate_jwt(user_id: str, user: User = Depends(parse_header)) -> str:
+    if (
+        "manual-account-override-basic" not in user.groups
+        and "manual-account-override-full" not in user.groups
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
+        )
+    return create_jwt(user_id=user_id, expiry_hours=1, include_aud=True)
 
 
 initialize_unauthed_endpoints(application)

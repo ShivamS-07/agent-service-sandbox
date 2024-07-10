@@ -1,7 +1,7 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import jwt
 from fastapi import HTTPException, Security, status
@@ -35,6 +35,7 @@ class User:
     # Flag to indicate if the current user is a super admin
     is_super_admin: bool = False
     is_admin: bool = False
+    groups: List[str] = field(default_factory=list)
 
     def __str__(self) -> str:
         admin_str = " (is super admin)" if self.is_super_admin else ""
@@ -98,6 +99,7 @@ def extract_user_from_jwt(auth_token: str) -> Optional[User]:
             user_id=user_id,
             is_super_admin=is_super_admin,
             is_admin=is_admin,
+            groups=groups,
         )
     except Exception as e:
         logger.exception(f"Failed to parse auth_token with exception: {e}")

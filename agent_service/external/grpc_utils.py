@@ -1,7 +1,8 @@
 import datetime
 import functools
 import json
-from typing import Callable, List, Optional, Tuple, TypeVar
+import time
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
 import backoff
 from gbi_common_py_utils.utils.environment import (
@@ -15,6 +16,8 @@ from grpclib import GRPCError
 from jwt import PyJWT
 from jwt.algorithms import RSAAlgorithm
 
+AUD = "o601d0dtctfaidudcanl2f3tt"
+
 
 def get_default_grpc_metadata(
     user_id: str = "", cognito_groups: Optional[List[str]] = None
@@ -23,7 +26,12 @@ def get_default_grpc_metadata(
     return build_auth_metadata(jwt_auth_token)
 
 
-def create_jwt(user_id: str, cognito_groups: Optional[List[str]] = None) -> str:
+def create_jwt(
+    user_id: str,
+    cognito_groups: Optional[List[str]] = None,
+    expiry_hours: Optional[int] = None,
+    include_aud: Optional[bool] = False,
+) -> str:
     tag = get_environment_tag()
     param_name = "/dev/token/webserver/jwk"
     if tag == PROD_TAG:
@@ -34,12 +42,20 @@ def create_jwt(user_id: str, cognito_groups: Optional[List[str]] = None) -> str:
     rsa_algo = RSAAlgorithm.from_jwk(jwk_dict["keys"][0])
     py_jwt = PyJWT()
 
+    payload_dict: Dict[str, Any] = {
+        "sub": user_id,
+        "cognito:groups": [] if cognito_groups is None else cognito_groups,
+        "iss": "https://boosted.ai",
+    }
+
+    if include_aud:
+        payload_dict["aud"] = AUD
+
+    if expiry_hours:
+        payload_dict["exp"] = int(time.time()) * 3600 * expiry_hours
+
     return py_jwt.encode(
-        payload={
-            "sub": user_id,
-            "cognito:groups": [] if cognito_groups is None else cognito_groups,
-            "iss": "https://boosted.ai",
-        },
+        payload=payload_dict,
         headers={"kid": jwk_dict["keys"][0]["kid"], "alg": "RS256"},
         key=rsa_algo,
     )
