@@ -154,6 +154,12 @@ by country and presented in the chart. You should MAKE SURE the table ONLY has
 the necessary data before calling this, so we don't graph the wrong thing!
 (Ideally a single index and a single column!)
 Note that the input must be a Table!
+If you are creating a pie graph involving a broad statistic (e.g. sales) and some more
+specific statistic that makes up a part of that statistic (e.g car sales), then, to make a valid
+pie chart, make sure you do a table transform to replace "revenue" with "other revenue"
+by removing the part of the sales that is car sales, before you call this function, this
+function will NOT do that transformation for you, it just directly graphs the number that
+are provided to it in the input table.
 """
 )
 async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> PieGraph:

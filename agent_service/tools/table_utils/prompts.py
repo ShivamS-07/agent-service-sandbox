@@ -16,11 +16,20 @@ immediately what the table has inside it. Please make sure that the column order
 makes sense for a viewer as if it were being viewed in a table. For example, a
 date column or a stock ID column (if they are present) should be on the left
 side, specifically in the order (date, stock ID, other data...). Please also
-make sure that only RELEVANT columns are in the output. Irrelevant columns or
-columns that are aggregated should be dropped. For example, if the user asks for
-a list of stocks ranked or filtered by a specific column, include that exact
-column in the output, even if the column is not in the input, but don't include
-any other extraneous columns. If the user asks for a ranking of a delta or
+make sure that only RELEVANT columns are in the output. Columns that are entirely
+irrelevant or only useful for intermediate calculations should typically be dropped.
+For example, if the user asks for a list of stocks ranked or filtered by a specific
+column, include that exact column in the output, even if the column is not in the
+input, but don't include any other extraneous columns.
+
+There is one important exception to the drop-irrelevant-columns rule:
+If the user explicitly mentions that they only want to replace one of the columns
+(The transform explicity mentions the word "replace") the you must keep all the
+other columns as is and only remove the column that is being replaced
+For these replace queries, the number of columns in the inputs and output
+will be the same (unless some other transformation is also needed).
+
+If the user asks for a ranking of a delta or
 percent change, include the percent change column NOT the raw data column
 (e.g. price). Imagine that the user is looking at the table, and think hard
 about what columns they would most want to see.
@@ -154,7 +163,8 @@ of dates before or after your calculation, you only need to align the stocks/
 dates and do the calculation. However, you must make sure that you drop all the
 columns that formed the inputs to the calculations (e.g. price and earnings
 columns in the above example), unless you have received explicit instrutions
-not to.
+not to, specifically if the request says that you should replace one of the
+existing columns.
 
 3. The third and most complex kind of calculation involves some calculation
 across dates. First, you must check to see if there is a `Date` or `Period`
