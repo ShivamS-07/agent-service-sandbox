@@ -25,6 +25,7 @@ from agent_service.endpoints.models import (
     ChatWithAgentResponse,
     CreateAgentResponse,
     DeleteAgentResponse,
+    GetAgentDebugInfoResponse,
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
     GetAllAgentsResponse,
@@ -96,4 +97,9 @@ class TestAgentServiceImplBase(unittest.TestCase):
     def get_agent_output(self, agent_id: str) -> GetAgentOutputResponse:
         return self.loop.run_until_complete(
             self.agent_service_impl.get_agent_output(agent_id=agent_id)
+        )
+
+    def get_agent_debug_info(self, agent_id: str) -> GetAgentDebugInfoResponse:
+        return self.loop.run_until_complete(
+            self.agent_service_impl.get_agent_debug_info(agent_id=agent_id)
         )

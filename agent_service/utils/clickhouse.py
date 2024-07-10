@@ -365,7 +365,10 @@ class Clickhouse(ClickhouseBase):
             """
         res: List[Dict[str, Any]] = []
         rows = self.generic_read(sql, {"agent_id": agent_id})
+        tz = datetime.timezone.utc
         for row in rows:
+            row["start_time_utc"] = row["start_time_utc"].replace(tzinfo=tz).isoformat()
+            row["end_time_utc"] = row["end_time_utc"].replace(tzinfo=tz).isoformat()
             row["plans"] = json.loads(row["plans"])
             for i, plan in enumerate(row["plans"]):
                 plans_dict = json.loads(plan)
@@ -385,8 +388,11 @@ class Clickhouse(ClickhouseBase):
         ORDER BY end_time_utc DESC
         """
         rows = self.generic_read(sql, {"agent_id": agent_id})
+        tz = datetime.timezone.utc
         for row in rows:
             steps_dict: Dict[str, Any] = OrderedDict()
+            row["start_time_utc"] = row["start_time_utc"].replace(tzinfo=tz).isoformat()
+            row["end_time_utc"] = row["end_time_utc"].replace(tzinfo=tz).isoformat()
             if row["execution_plan"]:
                 execution_plan_dict = json.loads(row["execution_plan"])
                 for step in execution_plan_dict:
@@ -404,13 +410,19 @@ class Clickhouse(ClickhouseBase):
         """
         rows = self.generic_read(sql, {"agent_id": agent_id})
         res: Dict[str, Any] = OrderedDict()
+        tz = datetime.timezone.utc
         for row in rows:
+            plan_run_id = row["plan_run_id"]
+            if plan_run_id not in res:
+                res[plan_run_id] = OrderedDict()
             tool_name = row["tool_name"]
+            row["start_time_utc"] = row["start_time_utc"].replace(tzinfo=tz).isoformat()
+            row["end_time_utc"] = row["end_time_utc"].replace(tzinfo=tz).isoformat()
             if row["args"]:
                 row["args"] = json.loads(row["args"])
             if row["result"]:
                 row["result"] = json.loads(row["result"])
-            res[f"{tool_name}_{row['plan_run_id']}_{row['task_id']}"] = row
+            res[plan_run_id][f"{tool_name}_{row['task_id']}"] = row
         return res
 
     def get_agent_debug_worker_sqs_log(self, agent_id: str) -> Dict[str, Any]:
@@ -422,10 +434,14 @@ class Clickhouse(ClickhouseBase):
         ORDER BY end_time_utc DESC
         """
         res: Dict[str, Any] = dict()
+        rows = self.generic_read(sql, {"agent_id": agent_id})
         res["run_execution_plan"] = OrderedDict()
         res["create_execution_plan"] = OrderedDict()
-        rows = self.generic_read(sql, {"agent_id": agent_id})
+        tz = datetime.timezone.utc
         for row in rows:
+            row["start_time_utc"] = row["start_time_utc"].replace(tzinfo=tz).isoformat()
+            row["end_time_utc"] = row["end_time_utc"].replace(tzinfo=tz).isoformat()
+            row["send_time_utc"] = row["send_time_utc"].replace(tzinfo=tz).isoformat()
             row["message"] = json.loads(row["message"])
             row["arguments"] = json.loads(row["arguments"])
             res[row["method"]][row["send_time_utc"]] = row

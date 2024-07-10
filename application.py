@@ -562,7 +562,7 @@ async def get_secure_ld_user(user: User = Depends(parse_header)) -> GetSecureUse
 )
 async def get_agent_debug_info(
     agent_id: str, user: User = Depends(parse_header)
-) -> GetSecureUserResponse:
+) -> GetAgentDebugInfoResponse:
     if not user.is_super_admin and not is_user_agent_admin(user.user_id):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
