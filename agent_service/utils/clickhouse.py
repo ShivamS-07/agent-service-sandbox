@@ -87,6 +87,18 @@ class Clickhouse(ClickhouseBase):
         res = self.generic_read(sql, params=params)
         return res
 
+    def get_company_data_kpis_for_multiple_cids(self, cids: List[str]) -> List[Dict[str, Any]]:
+        sql = """
+            SELECT DISTINCT
+                VACompanyId,
+                ParameterId,
+                ParameterName
+            FROM visible_s3_queue.NormalizedCompanyMeta
+            WHERE VACompanyId IN %(cids)s AND ParameterName IS NOT NULL AND TRIM(ParameterName) != ''
+        """
+        res = self.generic_read(sql, params={"cids": cids})
+        return res
+
     def get_kpi_actual_values_for_company_data(
         self, cid: str, pids: List[str], periods: List[str], use_fiscal_year: bool
     ) -> List[Dict[str, Any]]:
@@ -307,6 +319,133 @@ class Clickhouse(ClickhouseBase):
                 )
         else:
             raise ValueError("Unsupported dataset")
+
+    def get_kpi_estimate_values_for_company_data_for_multiple_cids(
+        self, cid_pids_dict: Dict[str, List[int]], periods: List[str], use_fiscal_year: bool
+    ) -> List[Dict[str, Any]]:
+        # periods can be generated using visible_alpha.generate_periods(...)
+        calendar_type = "Period" if use_fiscal_year else "CalendarPeriod"
+        cid_pid_pairwise_list = [
+            (company_id, parameter_id)
+            for company_id, parameters in cid_pids_dict.items()
+            for parameter_id in parameters
+        ]
+        cids = list(cid_pids_dict.keys())
+        calendar_type = "Period" if use_fiscal_year else "CalendarPeriod"
+        sql = f"""
+            WITH
+            consensus_data AS (
+                SELECT DISTINCT ON (VACompanyId, ParameterId, {calendar_type})
+                    VACompanyId,
+                    ParameterId,
+                    {calendar_type} AS Period,
+                    Value,
+                    RevisionDate
+                FROM visible_s3_queue.NormalizedConsensusData
+                WHERE
+                    (VACompanyId, ParameterId) IN %(cid_pid_pairwise_list)s
+                    AND {calendar_type} IN %(periods)s
+                    AND Value IS NOT NULL
+                    AND TRIM(Value) != ''
+                ORDER BY VACompanyId, ParameterId, {calendar_type}, RevisionDate DESC
+            ),
+            company_meta AS (
+                SELECT DISTINCT ON (VACompanyId, ParameterId)
+                    VACompanyId,
+                    ParameterId,
+                    ParameterName,
+                    UnitId,
+                    Currency
+                FROM visible_s3_queue.NormalizedCompanyMeta
+                WHERE VACompanyId IN %(cids)s
+                ORDER BY VACompanyId, ParameterId, ViewId
+            )
+            SELECT
+                cd.VACompanyId,
+                cd.ParameterId,
+                cm.ParameterName,
+                cd.Period,
+                cd.Value,
+                cm.UnitId,
+                cm.Currency
+            FROM consensus_data cd
+            INNER JOIN company_meta cm ON cd.VACompanyId = cm.VACompanyId AND cd.ParameterId = cm.ParameterId
+        """
+        res = self.generic_read(
+            sql, {"cids": cids, "cid_pid_pairwise_list": cid_pid_pairwise_list, "periods": periods}
+        )
+        return res
+
+    def get_kpi_actual_values_for_company_data_for_multiple_cids(
+        self, cid_pids_dict: Dict[str, List[int]], periods: List[str], use_fiscal_year: bool
+    ) -> List[Dict[str, Any]]:
+        # periods can be generated using visible_alpha.generate_periods(...)
+        calendar_type = "Period" if use_fiscal_year else "CalendarPeriod"
+        cid_pid_pairwise_list = [
+            (company_id, parameter_id)
+            for company_id, parameters in cid_pids_dict.items()
+            for parameter_id in parameters
+        ]
+        cids = list(cid_pids_dict.keys())
+        sql = f"""
+            WITH actual_data AS (
+            SELECT DISTINCT ON (VACompanyId, ParameterId, {calendar_type})
+                VACompanyId,
+                ParameterId,
+                {calendar_type} AS Period,
+                Value
+            FROM visible_s3_queue.NormalizedVAActualsData
+            WHERE
+                (VACompanyId, ParameterId) IN %(cid_pid_pairwise_list)s
+                AND {calendar_type} IN %(periods)s
+            ),
+            company_meta AS (
+                SELECT DISTINCT ON (VACompanyId, ParameterId)
+                    VACompanyId,
+                    ParameterId,
+                    ParameterName,
+                    UnitId,
+                    Currency
+                FROM visible_s3_queue.NormalizedCompanyMeta
+                WHERE VACompanyId IN %(cids)s
+                ORDER BY VACompanyId, ParameterId, ViewId
+            )
+            SELECT
+                ad.VACompanyId,
+                ad.ParameterId,
+                cm.ParameterName,
+                ad.Period,
+                ad.Value,
+                cm.UnitId,
+                cm.Currency
+            FROM actual_data ad
+            INNER JOIN company_meta cm
+                ON ad.ParameterId = cm.ParameterId
+                AND ad.VACompanyId = cm.VACompanyId
+        """
+        res = self.generic_read(
+            sql, {"cids": cids, "cid_pid_pairwise_list": cid_pid_pairwise_list, "periods": periods}
+        )
+        return res
+
+    def get_company_kpi_values_for_cids(
+        self,
+        cid_pids_dict: Dict[str, List[int]],
+        periods: List[str],
+        use_fiscal_year: bool,
+        estimate: bool,
+    ) -> List[Dict[str, Any]]:
+        """
+        This is only meant for handling company specific line items
+        """
+        if estimate:
+            return self.get_kpi_estimate_values_for_company_data_for_multiple_cids(
+                cid_pids_dict, periods, use_fiscal_year
+            )
+        else:
+            return self.get_kpi_actual_values_for_company_data_for_multiple_cids(
+                cid_pids_dict, periods, use_fiscal_year
+            )
 
     ################################################################################################
     # Embeddings

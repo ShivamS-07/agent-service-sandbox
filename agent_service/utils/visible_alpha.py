@@ -104,13 +104,12 @@ class VisAlphaClickHouseClient:
             name=name,
         )
 
-    def get_cid_from_gbi_id(self, gbi_id: int) -> Optional[str]:
+    def get_cid_from_gbi_id(self, gbi_ids: List[int]) -> Dict[int, str]:
         # TODO: Neet to handle gbis when running on prod, currently assumes gbis are from dev
-        gbi_cid_lookup = self.va_ch.get_cid_for_gbi_ids([gbi_id])
+        gbi_cid_lookup = self.va_ch.get_cid_for_gbi_ids(gbi_ids)
         if not gbi_cid_lookup:
-            return None
-        cid = gbi_cid_lookup[gbi_id]
-        return cid
+            return {}
+        return gbi_cid_lookup
 
     def get_company_kpis_for_gbi(
         self,
@@ -119,7 +118,7 @@ class VisAlphaClickHouseClient:
         pids_filter: Optional[List[int]] = None,
     ) -> List[KPIMetadata]:
         # TODO: make this work for multiple gbi_ids
-        cid = self.get_cid_from_gbi_id(gbi_id)
+        cid = self.get_cid_from_gbi_id([gbi_id]).get(gbi_id)
         if cid is None:
             return []
 
@@ -141,11 +140,34 @@ class VisAlphaClickHouseClient:
             for line_item in line_items
         ]
 
+    def get_company_kpis_for_gbis(
+        self,
+        gbi_ids: List[int],
+    ) -> Dict[int, List[KPIMetadata]]:
+        # TODO: make this work for multiple gbi_ids
+        gbi_cid_lookup = self.get_cid_from_gbi_id(gbi_ids)
+        cid_gbi_lookup = {cid: gbi for gbi, cid in gbi_cid_lookup.items()}
+        cids = list(gbi_cid_lookup.values())
+
+        unsorted_pids_list = self.va_ch.get_company_data_kpis_for_multiple_cids(cids)
+
+        gbi_kpi_lookup: Dict[int, List[KPIMetadata]] = {gbi: [] for gbi in gbi_ids}
+        for pid_data in unsorted_pids_list:
+            gbi_id = cid_gbi_lookup[pid_data["VACompanyId"]]
+            gbi_kpi_lookup[gbi_id].append(
+                KPIMetadata(
+                    pid_data["ParameterName"],
+                    int(pid_data["ParameterId"]),
+                    VisAlphaDataset.COMPANY_DATASET,
+                )
+            )
+        return gbi_kpi_lookup
+
     def fetch_data_for_kpis(
         self,
         gbi_id: int,
         kpis: List[KPIMetadata],
-        num_prev_quarters: int = 7,
+        num_prev_quarters: int = 0,
         num_future_quarters: int = 0,
         starting_date: Optional[datetime.date] = None,
         quarter: Optional[int] = None,
@@ -213,3 +235,46 @@ class VisAlphaClickHouseClient:
                 kpi_instances, key=lambda data: (data.year, data.quarter)
             )
         return kpi_datapoints
+
+    def fetch_data_for_company_kpis_bulk(
+        self,
+        gbi_pids_dict: Dict[int, List[KPIMetadata]],
+        starting_date: datetime.date,
+        num_prev_quarters: int = 0,
+        num_future_quarters: int = 0,
+        estimate: bool = False,
+    ) -> Dict[int, List[KPIDatapoint]]:
+        """
+        Fetch KPI's for a set of stocks. Note that all kpi's specified MUST be
+        in the visible alpha standard dataset so that they are common to all
+        stocks.
+        Returns a map from GBI ID to a list of datapoints sorted in
+        chronological order.
+        """
+        gbi_ids = list(gbi_pids_dict.keys())
+        year, quarter = get_year_quarter_for_date(starting_date)
+        gbi_to_cid_map = self.va_ch.get_cid_for_gbi_ids(gbi_ids)
+        cid_to_gbi_map = {cid: gbi for gbi, cid in gbi_to_cid_map.items()}
+        cid_pids_dict = {
+            gbi_to_cid_map[gbi]: [pid.pid for pid in pids] for gbi, pids in gbi_pids_dict.items()
+        }
+        periods = _generate_periods(
+            quarter, year, num_prev_quarters, num_future_quarters, use_fiscal_periods=False
+        )
+        data = self.va_ch.get_company_kpi_values_for_cids(
+            cid_pids_dict=cid_pids_dict, periods=periods, estimate=estimate, use_fiscal_year=False
+        )
+        kpi_datapoints: Dict[int, List[KPIDatapoint]] = defaultdict(list)
+        for kpi_json in data:
+            if kpi_json.get("Value") is not None:
+                gbi = cid_to_gbi_map[kpi_json["VACompanyId"]]
+                datapoint = self._kpi_json_to_dataclass(kpi_json, estimate)
+                kpi_datapoints[gbi].append(datapoint)
+        for gbi_id, datapoints in kpi_datapoints.items():
+            kpi_datapoints[gbi_id] = sorted(datapoints, key=lambda data: (data.year, data.quarter))
+        return kpi_datapoints
+
+
+if __name__ == "__main__":
+    va = VisAlphaClickHouseClient()
+    data = va.get_company_kpis_for_gbis(gbi_ids=[714, 7555])

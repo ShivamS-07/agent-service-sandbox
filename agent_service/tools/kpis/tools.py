@@ -50,6 +50,7 @@ from agent_service.utils.prefect import get_prefect_logger
 
 kpi_retriever = KPIRetriever()
 db = get_psql()
+logger = get_prefect_logger(__name__)
 
 
 @dataclass
@@ -309,21 +310,23 @@ async def get_company_data_and_kpis(
     if short_description is None:
         short_description = ""
 
-    kpis, kpi_data = kpi_retriever.get_all_company_kpis_current_year_quarter_via_clickhouse(
-        gbi_id=gbi_id,
-    )
+    kpi_data = kpi_retriever.get_all_company_kpis_current_year_quarter_via_clickhouse(
+        gbi_ids=[gbi_id],
+    ).get(gbi_id)
 
-    if len(kpis) == 0:
+    if kpi_data is None:
         await tool_log(
             f"No KPI data available for stock {stock_id.company_name} ({stock_id.symbol})",
             context=context,
         )
         return None
 
+    kpis = kpi_data.kpi_metadatas
+    kpi_datapoints = kpi_data.kpi_datapoint_lookup
     kpi_str_list = []
     index_to_pid_mapping = {}
     for i, kpi in enumerate(kpis):
-        kpi_insts = kpi_data.get(kpi.pid, [])
+        kpi_insts = kpi_datapoints.get(kpi.pid, [])
         if len(kpi_insts):
             kpi_inst = kpi_insts[0]
             if kpi_inst.long_unit == LONG_UNIT_FOR_CURRENCY:
@@ -402,6 +405,65 @@ async def get_kpis_for_stock_given_topics(
     return []
 
 
+async def get_company_data_and_kpis_for_stocks(
+    stock_ids: List[StockID], context: PlanRunContext
+) -> Dict[int, CompanyInformation]:
+    company_data_dict: Dict[int, CompanyInformation] = {}
+
+    gbi_ids = [stock_id.gbi_id for stock_id in stock_ids]
+    company_sec_dict = db.get_sec_metadata_from_gbi(gbi_ids)
+    company_desc_dict = db.get_short_company_descriptions_for_gbi_ids(gbi_ids)
+    kpi_data_dict = kpi_retriever.get_all_company_kpis_current_year_quarter_via_clickhouse(gbi_ids)
+
+    for stock_id in stock_ids:
+        gbi_id = stock_id.gbi_id
+        company_sec = company_sec_dict[gbi_id]
+        company_desc = company_desc_dict.get(gbi_id, None)
+        kpi_data = kpi_data_dict[gbi_id]
+
+        company_name = company_sec.company_name
+        short_description = None
+        if company_desc is not None:
+            short_description = company_desc[0]
+        # If we're unable to get the short description then pass in an empty string
+        if short_description is None:
+            short_description = ""
+
+        if len(kpi_data.kpi_metadatas) > 0:
+            kpis = kpi_data.kpi_metadatas
+            kpi_datapoints = kpi_data.kpi_datapoint_lookup
+
+            kpi_str_list = []
+            index_to_pid_mapping = {}
+            for i, kpi in enumerate(kpis):
+                kpi_insts = kpi_datapoints.get(kpi.pid, [])
+                if len(kpi_insts):
+                    kpi_inst = kpi_insts[0]
+                    if kpi_inst.long_unit == LONG_UNIT_FOR_CURRENCY:
+                        kpi_str_list.append(f"({i+1}) {kpi.name}: ${kpi_inst.value:.2f}")
+                    elif kpi_inst.long_unit == LONG_UNIT_FOR_NUM:
+                        kpi_str_list.append(f"({i+1}) {kpi.name}: {kpi_inst.value:3f}")
+                    else:
+                        kpi_str_list.append(
+                            f"({i+1}) {kpi.name}: {kpi_inst.value:.2f} {kpi_inst.unit}"
+                        )
+                    index_to_pid_mapping[i + 1] = kpi.pid
+
+            kpi_lookup = {kpi.pid: kpi for kpi in kpis}
+            kpi_str = "\n".join(kpi_str_list)
+            company_data_dict[gbi_id] = CompanyInformation(
+                gbi_id, company_name, short_description, kpi_lookup, index_to_pid_mapping, kpi_str
+            )
+        else:
+            await tool_log(
+                f"No KPI data available for stock {company_name} ({stock_id.symbol})",
+                context=context,
+            )
+            print(f"No KPI data available for stock {stock_id.company_name} ({stock_id.symbol})")
+
+    return company_data_dict
+
+
 def get_earliest_date_for_year_quarter(year: int, quarter: int) -> datetime.date:
     quarter_start_month = {
         1: 1,  # Q1 start
@@ -457,8 +519,12 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
 
     tasks = []
     gbi_id_stock_id_map = {}
+    company_info_lookup = await get_company_data_and_kpis_for_stocks(
+        args.stock_ids, context=context
+    )
     for stock_id in args.stock_ids:
-        company_info = await get_company_data_and_kpis(stock_id, context=context)
+        company_info = company_info_lookup.get(stock_id.gbi_id)
+        # Check that company_info exists and has KPI data
         if company_info:
             company_info_list.append(company_info)
             tasks.append(
@@ -525,13 +591,20 @@ async def get_general_kpis_for_specific_stock(
 
     for line in result.split("\n"):
         index_num = int(line.split(",")[0])
-        pid = company_info.kpi_index_to_pid_mapping[index_num]
-        # Check to make sure we have an actual pid that can map to data
-        pid_metadata = company_info.kpi_lookup.get(pid, None)
-        if pid_metadata:
-            general_kpi_list.append(
-                KPIText(val=pid_metadata.name, pid=pid_metadata.pid, stock_id=args.stock_id)
+        try:
+            pid = company_info.kpi_index_to_pid_mapping[index_num]
+            # Check to make sure we have an actual pid that can map to data
+            pid_metadata = company_info.kpi_lookup.get(pid, None)
+            if pid_metadata:
+                general_kpi_list.append(
+                    KPIText(val=pid_metadata.name, pid=pid_metadata.pid, stock_id=args.stock_id)
+                )
+        except KeyError:
+            logger.warning(
+                f"Failed to get pid due to faulty GPT response for gpt response: '{result}', "
+                f"had {len((company_info.kpi_index_to_pid_mapping.keys()))+1}"
             )
+
     return general_kpi_list
 
 
@@ -568,9 +641,11 @@ async def get_specific_kpi_data_for_stock_id(
     llm: GPT,
     context: PlanRunContext,
 ) -> Optional[KPIText]:
+    print(stock_id)
     instructions = SPECIFIC_KPI_INSTRUCTION.format(
         company_name=company_info.company_name, query_topic=topic
     )
+
     result = await llm.do_chat_w_sys_prompt(
         SPECIFIC_KPI_MAIN_PROMPT_OBJ.format(
             instructions=instructions,
@@ -591,7 +666,16 @@ async def get_specific_kpi_data_for_stock_id(
     data = result.split(",")
     index_num = int(data[0])
     explanation = data[2].strip()
-    pid = company_info.kpi_index_to_pid_mapping[index_num]
+
+    try:
+        pid = company_info.kpi_index_to_pid_mapping[index_num]
+    except KeyError:
+        logger.warning(
+            f"Failed to get pid due to faulty GPT response for gpt response: '{result}', "
+            f"had {len((company_info.kpi_index_to_pid_mapping.keys()))+1}"
+        )
+        return None
+
     pid_metadata = company_info.kpi_lookup.get(pid, None)
 
     if pid_metadata:
@@ -687,19 +771,23 @@ class KPIsRequest(ToolArgs):
 async def get_overlapping_kpis_table_for_stocks(
     args: KPIsRequest, context: PlanRunContext
 ) -> Table:
-    logger = get_prefect_logger(__name__)
     num_future_quarters, num_prev_quarters, anchor_date = interpret_date_quarter_inputs(
         None, None, None, args.date_range
     )
 
     kpis: List[KPIText] = args.equivalent_kpis.val  # type: ignore
-
+    kpi_row_mapping: Dict[int, str] = {}
+    gbi_to_stock_id: Dict[int, StockID] = {}
     company_kpi_data_lookup: Dict[StockID, List[KPIInstance]] = {}
+    gbi_kpis_dict: Dict[int, List[KPIMetadata]] = {}
+
     kpi_explanation_lookup: Dict[str, str] = {}
     for i, kpi in enumerate(kpis):
         # The way these KPI Texts are initialized they should always
         # have a StockID
         stock_id: StockID = kpi.stock_id  # type: ignore
+        gbi_to_stock_id[stock_id.gbi_id] = stock_id
+        kpi_row_mapping[i] = kpi.val
         kpi_metadata = kpi_retriever.convert_kpi_text_to_metadata(
             gbi_id=stock_id.gbi_id, kpi_texts=[kpi]
         ).get(
@@ -707,20 +795,24 @@ async def get_overlapping_kpis_table_for_stocks(
         )
 
         if kpi_metadata is not None:
-            data = kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
-                gbi_id=stock_id.gbi_id,
-                kpis=[kpi_metadata],
-                starting_date=anchor_date,
-                num_prev_quarters=num_prev_quarters,
-                num_future_quarters=num_future_quarters,
-            )
-            kpi_data = data.get(kpi_metadata.name, None)
-            if kpi_data:
-                if kpi_data[0].long_unit == LONG_UNIT_FOR_CURRENCY:
-                    modified_kpi_data = convert_kpi_currency_to_usd(kpi_data)
-                    company_kpi_data_lookup[stock_id] = modified_kpi_data
-                else:
-                    company_kpi_data_lookup[stock_id] = kpi_data
+            gbi_kpis_dict[stock_id.gbi_id] = [kpi_metadata]
+
+    gbi_data_lookup = kpi_retriever.get_bulk_kpis_by_date_via_clickhouse(
+        gbi_kpi_dict=gbi_kpis_dict,
+        starting_date=anchor_date,
+        num_prev_quarters=num_prev_quarters,
+        num_future_quarters=num_future_quarters,
+    )
+    for gbi, data in gbi_data_lookup.items():
+        kpi_name = gbi_kpis_dict[gbi][0].name
+        stock_id = gbi_to_stock_id[gbi]
+        kpi_data = data.get(kpi_name, None)
+        if kpi_data:
+            if kpi_data[0].long_unit == LONG_UNIT_FOR_CURRENCY:
+                modified_kpi_data = convert_kpi_currency_to_usd(kpi_data)
+                company_kpi_data_lookup[stock_id] = modified_kpi_data
+            else:
+                company_kpi_data_lookup[stock_id] = kpi_data
 
                 # Only add to the lookup if a string explanation exists
                 if isinstance(kpi.explanation, str):

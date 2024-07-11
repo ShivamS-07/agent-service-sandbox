@@ -1,7 +1,8 @@
 import datetime
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from agent_service.io_types.text import KPIText
 from agent_service.utils.clickhouse import VisAlphaDataset
@@ -26,7 +27,12 @@ class KPIInstance:
     unit: Optional[str] = None
     long_unit: Optional[str] = None
     currency: Optional[str] = None
-    is_important_segment: bool = False  # Specifically reserved for important segment level kpis
+
+
+@dataclass
+class KPIData:
+    kpi_metadatas: List[KPIMetadata]
+    kpi_datapoint_lookup: Dict[int, List[KPIDatapoint]]
 
 
 def _compute_surprise(actual: float, estimate: float) -> float:
@@ -135,14 +141,28 @@ class KPIRetriever:
     def get_all_company_kpis(self, gbi_id: int) -> List[KPIMetadata]:
         return self.va_ch_client.get_company_kpis_for_gbi(gbi_id=gbi_id)
 
+    def get_all_company_kpis_for_multiple_gbi_ids(
+        self, gbi_ids: List[int]
+    ) -> Dict[int, List[KPIMetadata]]:
+        return self.va_ch_client.get_company_kpis_for_gbis(gbi_ids=gbi_ids)
+
     def get_all_company_kpis_current_year_quarter_via_clickhouse(
-        self, gbi_id: int
-    ) -> Tuple[List[KPIMetadata], Dict[int, List[KPIDatapoint]]]:
-        kpis = self.get_all_company_kpis(gbi_id=gbi_id)
-        kpi_data = self.va_ch_client.fetch_data_for_kpis(
-            gbi_id=gbi_id, kpis=kpis, starting_date=get_now_utc(), estimate=True
+        self, gbi_ids: List[int]
+    ) -> Dict[int, KPIData]:
+        gbi_kpi_metadata_dict = self.get_all_company_kpis_for_multiple_gbi_ids(gbi_ids=gbi_ids)
+        kpi_data_dict = self.va_ch_client.fetch_data_for_company_kpis_bulk(
+            gbi_pids_dict=gbi_kpi_metadata_dict, starting_date=get_now_utc(), estimate=True
         )
-        return kpis, kpi_data
+        gbi_kpi_data_lookup = {}
+        for gbi in gbi_ids:
+            kpi_datapoint_lookup = defaultdict(list)
+            for kpi in kpi_data_dict[gbi]:
+                kpi_datapoint_lookup[int(kpi.pid)].append(kpi)
+            gbi_kpi_data_lookup[gbi] = KPIData(
+                kpi_metadatas=gbi_kpi_metadata_dict[gbi],
+                kpi_datapoint_lookup=kpi_datapoint_lookup,
+            )
+        return gbi_kpi_data_lookup
 
     def get_kpis_by_year_quarter_via_clickhouse(
         self,
@@ -203,3 +223,102 @@ class KPIRetriever:
                 key=lambda d: (d.year, d.quarter),
             )
         return all_historical_kpis_dict
+
+    def _bulk_merge_actuals_and_estimates_data(
+        self,
+        gbi_ids: List[int],
+        actual_data: Dict[int, List[KPIDatapoint]],
+        estimate_data: Dict[int, List[KPIDatapoint]],
+    ) -> Dict[int, Dict[str, List[KPIInstance]]]:
+        output: Dict[int, Dict[str, List[KPIInstance]]] = {}
+        for gbi_id in gbi_ids:
+            output[gbi_id] = defaultdict(list)
+            actual_datapoints = actual_data.get(gbi_id, [])
+            estimate_datapoints = estimate_data.get(gbi_id, [])
+            actual_kpi_year_qtr_map = {}
+            estimate_kpi_year_qtr_map = {}
+
+            for datapoint in actual_datapoints:
+                actual_kpi_year_qtr_map[(datapoint.pid, datapoint.year, datapoint.quarter)] = (
+                    datapoint
+                )
+
+            for datapoint in estimate_datapoints:
+                estimate_kpi_year_qtr_map[(datapoint.pid, datapoint.year, datapoint.quarter)] = (
+                    datapoint
+                )
+
+            # TODO: Disabling for now due to lack of live data
+            # all_pid_year_quarter = set(actual_kpi_year_qtr_map.keys())
+            # all_pid_year_quarter.update(estimate_kpi_year_qtr_map.keys())
+
+            all_pid_year_quarter = set(estimate_kpi_year_qtr_map.keys())
+            for pid, year, quarter in all_pid_year_quarter:
+                actual_val: Optional[KPIDatapoint] = actual_kpi_year_qtr_map.get(
+                    (pid, year, quarter)
+                )
+                estimate_val: Optional[KPIDatapoint] = estimate_kpi_year_qtr_map.get(
+                    (pid, year, quarter)
+                )
+                if not estimate_val:
+                    continue
+
+                # TODO: Need to also check actual when live data is added abd allow actual_val to be None
+                if actual_val is None:
+                    actual_val = estimate_val
+
+                name = estimate_val.name if estimate_val.name is not None else ""
+                kpi_instance = KPIInstance(
+                    name=name,
+                    quarter=quarter,
+                    year=year,
+                    # TODO: Current workaround, need to remove when we get live
+                    actual=actual_val.value if actual_val else None,
+                    estimate=estimate_val.value,
+                    surprise=_compute_surprise(actual_val.value, estimate_val.value),
+                    unit=actual_val.unit if actual_val else estimate_val.unit,  # type: ignore
+                    long_unit=actual_val.long_unit if actual_val else estimate_val.long_unit,  # type: ignore
+                    currency=actual_val.currency if actual_val else estimate_val.currency,  # type: ignore
+                )
+                output[gbi_id][name].append(kpi_instance)
+
+        # Make sure the results are sorted desc by (year, quarter)
+        for gbi_id in gbi_ids:
+            for name in output[gbi_id].keys():
+                output[gbi_id][name] = sorted(
+                    output[gbi_id][name], key=lambda d: (d.year, d.quarter), reverse=True
+                )
+        return output
+
+    def get_bulk_kpis_by_date_via_clickhouse(
+        self,
+        starting_date: datetime.datetime,
+        gbi_kpi_dict: Dict[int, List[KPIMetadata]],
+        num_prev_quarters: int = 0,
+        num_future_quarters: int = 0,
+    ) -> Dict[int, Dict[str, List[KPIInstance]]]:
+        """
+        Given a set of stocks and a date, return data for
+        `num_past_earnings_to_retrieve` quarters for each stock.
+        """
+        gbi_ids = list(gbi_kpi_dict.keys())
+        actual_data = self.va_ch_client.fetch_data_for_company_kpis_bulk(
+            gbi_pids_dict=gbi_kpi_dict,
+            num_prev_quarters=num_prev_quarters,
+            num_future_quarters=num_future_quarters,
+            starting_date=starting_date,
+            estimate=False,
+        )
+
+        estimate_data = self.va_ch_client.fetch_data_for_company_kpis_bulk(
+            gbi_pids_dict=gbi_kpi_dict,
+            num_prev_quarters=num_prev_quarters,
+            num_future_quarters=num_future_quarters,
+            starting_date=starting_date,
+            estimate=True,
+        )
+
+        res = self._bulk_merge_actuals_and_estimates_data(
+            gbi_ids=gbi_ids, actual_data=actual_data, estimate_data=estimate_data
+        )
+        return res
