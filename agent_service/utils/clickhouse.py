@@ -3,11 +3,12 @@ import json
 import logging
 from collections import OrderedDict
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from gbi_common_py_utils.utils.clickhouse_base import ClickhouseBase
 from gbi_common_py_utils.utils.environment import PROD_TAG
 
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 
 logger = logging.getLogger(__name__)
@@ -589,3 +590,41 @@ class Clickhouse(ClickhouseBase):
             row["message"] = json.loads(row["message"])
             res[row["method"]][row["send_time_utc"]] = row
         return res
+
+    ################################################################################################
+    # Tool Diff Info
+    ################################################################################################
+
+    def get_io_for_tool_run(self, plan_run_id: str, task_id: str) -> Optional[Tuple[str, str]]:
+        sql = """
+        SELECT args, result
+        FROM agent.tool_calls
+        WHERE plan_run_id = %(plan_run_id)s AND task_id = %(task_id)s
+        """
+        rows = self.generic_read(sql, {"plan_run_id": plan_run_id, "task_id": task_id})
+        if not rows:
+            return None
+        row = rows[0]
+        return row["args"], row["result"]
+
+    ################################################################################################
+    # Manual Event Logging
+    ################################################################################################
+    def log_event_manually(
+        self,
+        event_name: str,
+        event_data: Optional[Dict[str, Any]] = None,
+        event_namespace: Optional[str] = None,
+    ) -> None:
+        if event_data is None:
+            event_data = {}
+
+        event = {
+            "event_data": json.dumps(event_data),
+            "event_name": event_name,
+            "timestamp": get_now_utc(),
+        }
+        if event_namespace:
+            event["event_namespace"] = event_namespace
+
+        self.multi_row_insert(table_name="events", rows=[event])
