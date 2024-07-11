@@ -34,6 +34,8 @@ GET_PEER_GROUP_FOR_STOCK_MAIN_PROMPT = Prompt(
 GET_PEER_GROUP_FOR_STOCK_SYS_PROMPT = Prompt(
     name="GET_PEER_GROUP_FOR_STOCK_SYS_PROMPT",
     template="""
+    Here is the chat context:
+    {chat_context}
     Your task is to identify a list of stocks that belong to peer groups for a given stock.
     A peer group refers to stocks that operate in a similar market, industry, or sector, including competitors.
     Do not limit the amount of peers in the peer group, provide as many as possible.
@@ -208,6 +210,7 @@ async def get_peer_group_for_stock(
         ),
         sys_prompt=GET_PEER_GROUP_FOR_STOCK_SYS_PROMPT.format(
             separator=SEPARATOR,
+            chat_context=context.chat,
         ),
     )
 
