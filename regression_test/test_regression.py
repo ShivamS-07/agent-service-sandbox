@@ -30,7 +30,7 @@ from agent_service.utils.output_utils.output_construction import PreparedOutput
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
 
 CH = ClickhouseBase(environment=DEV_TAG)
-SERVICE_VERSION = "374053208103.dkr.ecr.us-west-2.amazonaws.com/agent-service:1440a60145f2255c3fc341b9f8655f6a14a6fdb3"
+SERVICE_VERSION = "374053208103.dkr.ecr.us-west-2.amazonaws.com/agent-service:0.0.403"
 
 
 class PlanGenerationError(Exception):
