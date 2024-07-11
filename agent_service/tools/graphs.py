@@ -23,6 +23,73 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.prefect import get_prefect_logger
 
 
+def consolidate_table_columns(table: Table) -> Table:
+    """
+    Takes in a table and consolidates Security and Metric columns into 2 Label and Amount columns
+    This is used for creating graphs from tables that have multiple Metric columns.
+    This results in a table with 3 columns: Date, Label, Amount
+    if there are Date and Security columns in the original input table.
+    """
+
+    cols = table.columns
+
+    date_col = None
+    security_col = None
+    quarter_col = []
+    lable_col = []
+    amount_col = []
+    for col in cols:
+        if not date_col and col.metadata.col_type.is_date_type():
+            date_col = col
+            continue
+        if not security_col and col.metadata.col_type == TableColumnType.STOCK:
+            security_col = col
+            continue
+        if col.metadata.col_type in (
+            TableColumnType.CURRENCY,
+            TableColumnType.FLOAT,
+            TableColumnType.INTEGER,
+            TableColumnType.DELTA,
+            TableColumnType.PCT_DELTA,
+            TableColumnType.PERCENT,
+        ):
+            for i, c in enumerate(col.data):
+                if date_col is not None:
+                    quarter_col.append(date_col.data[i])
+                if security_col is not None:
+                    security = security_col.data[i]
+                    label: Any = deepcopy(security)
+                    label.symbol = (
+                        f"{label.symbol + ' - ' if label.symbol else ''}{col.metadata.label}"
+                    )
+                    lable_col.append(label)
+                else:
+                    lable_col.append(col.metadata.label)
+                amount_col.append(c)
+
+    if security_col is not None and date_col is not None:
+        cols = [
+            TableColumn(
+                metadata=TableColumnMetadata(
+                    label=date_col.metadata.col_type.capitalize(),
+                    col_type=date_col.metadata.col_type,
+                ),
+                data=quarter_col,
+            ),
+            TableColumn(
+                metadata=TableColumnMetadata(label="Label", col_type=TableColumnType.STOCK),
+                data=lable_col,
+            ),
+            TableColumn(
+                metadata=TableColumnMetadata(label="Amount", col_type=TableColumnType.FLOAT),
+                data=amount_col,
+            ),
+        ]
+
+    print(cols)
+    return Table(columns=cols)
+
+
 class MakeLineGraphArgs(ToolArgs):
     input_table: Table
 
@@ -54,11 +121,12 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
         # has only 1 datapoint
         raise RuntimeError("Need at least two points to make a line graph!")
 
+    input_table = consolidate_table_columns(args.input_table)
     x_axis_col = None
     dataset_col = None
     data_col = None
     # TODO can probably clean this up to not use the df at all
-    df = args.input_table.to_df()
+    df = input_table.to_df()
     for col, df_col in zip(cols, df.columns):
         if not x_axis_col and col.metadata.col_type.is_date_type():
             x_axis_col = (col, df_col)
@@ -117,6 +185,9 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
             # this will create a dataset for each stock.
             dataset_data = df.loc[df[dataset_df_col] == dataset_val]
             try:
+                # if all values are NaN, skip this dataset
+                if dataset_data[y_df_col].isnull().all():
+                    continue
                 dataset = GraphDataset(
                     dataset_id=dataset_val,
                     dataset_id_type=ds_col.metadata.col_type,
@@ -328,7 +399,7 @@ async def make_bar_graph(args: MakeBarGraphArgs, context: PlanRunContext) -> Bar
     dataset_col = None
     data_col = None
     # TODO can probably clean this up to not use the df at all
-    df = args.input_table.to_df()
+    df = consolidate_table_columns(args.input_table).to_df()
     for col, df_col in zip(cols, df.columns):
         # allow flexible types for bar axes
         if not x_axis_col and col.metadata.col_type in (
