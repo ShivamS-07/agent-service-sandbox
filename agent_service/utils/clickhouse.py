@@ -432,7 +432,7 @@ class Clickhouse(ClickhouseBase):
 
     def get_agent_debug_worker_sqs_log(self, agent_id: str) -> Dict[str, Any]:
         sql = """
-        SELECT plan_id, plan_run_id, method, arguments, message, send_time_utc,
+        SELECT plan_id, plan_run_id, method, message, send_time_utc,
         wait_time_seconds,  error_msg,start_time_utc, end_time_utc, duration_seconds
         FROM agent.worker_sqs_log
         WHERE agent_id = %(agent_id)s
@@ -448,6 +448,5 @@ class Clickhouse(ClickhouseBase):
             row["end_time_utc"] = row["end_time_utc"].replace(tzinfo=tz).isoformat()
             row["send_time_utc"] = row["send_time_utc"].replace(tzinfo=tz).isoformat()
             row["message"] = json.loads(row["message"])
-            row["arguments"] = json.loads(row["arguments"])
             res[row["method"]][row["send_time_utc"]] = row
         return res

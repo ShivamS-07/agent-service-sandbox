@@ -365,13 +365,26 @@ class AgentServiceImpl:
             top_level_key = f"plan_id={value['plan_id']}"
             plan_run_id = value["plan_run_id"]
             inner_key = f"plan_run_id={plan_run_id}"
-
+            if top_level_key not in run_execution_plans:
+                run_execution_plans[top_level_key] = {}
             if inner_key not in run_execution_plans[top_level_key]:
                 run_execution_plans[top_level_key][inner_key] = {}
             run_execution_plans[top_level_key][inner_key]["sqs_info"] = value
-            for tool_plan_run_id, tool_value in tool_calls.items():
-                if tool_plan_run_id == plan_run_id:
-                    run_execution_plans[top_level_key][inner_key]["tool_calls"] = tool_value
+            del value["plan_id"]
+            del value["plan_run_id"]
+        for tool_plan_run_id, tool_value in tool_calls.items():
+            plan_id = ""
+            for tool_name, tool_call_dict in tool_value.items():
+                plan_id = tool_call_dict["plan_id"]
+                del tool_call_dict["plan_id"]
+                del tool_call_dict["plan_run_id"]
+            top_level_key = f"plan_id={plan_id}"
+            plan_run_id = tool_plan_run_id
+            inner_key = f"plan_run_id={plan_run_id}"
+            if inner_key not in run_execution_plans[top_level_key]:
+                run_execution_plans[top_level_key][inner_key] = {}
+            if tool_plan_run_id == plan_run_id:
+                run_execution_plans[top_level_key][inner_key]["tool_calls"] = tool_value
         create_execution_plans: Dict[Any, Any] = defaultdict(dict)
         for _, value in worker_sqs_log["create_execution_plan"].items():
             plan_id = value["plan_id"]
@@ -380,12 +393,27 @@ class AgentServiceImpl:
             create_execution_plans[top_level_key]["sqs_info"] = value
             create_execution_plans[top_level_key]["all_generated_plans"] = []
             create_execution_plans[top_level_key]["plan_selections"] = []
-            for plan in all_generated_plans:
-                if plan["plan_id"] == plan_id:
-                    create_execution_plans[top_level_key]["all_generated_plans"].append(plan)
-            for plan_selection in plan_selections:
-                if plan_selection["plan_id"] == plan_id:
-                    create_execution_plans[top_level_key]["plan_selections"].append(plan_selection)
+            del value["plan_id"]
+            del value["plan_run_id"]
+        for plan in all_generated_plans:
+            plan_id = plan["plan_id"]
+            top_level_key = f"plan_id={plan_id}"
+            if top_level_key not in create_execution_plans:
+                create_execution_plans[top_level_key] = {}
+            if "all_generated_plans" not in create_execution_plans[top_level_key]:
+                create_execution_plans[top_level_key]["all_generated_plans"] = []
+            create_execution_plans[top_level_key]["all_generated_plans"].append(plan)
+            del plan["plan_id"]
+        for plan_selection in plan_selections:
+            plan_id = plan_selection["plan_id"]
+            top_level_key = f"plan_id={plan_id}"
+            if top_level_key not in create_execution_plans:
+                create_execution_plans[top_level_key] = {}
+            if "plan_selections" not in create_execution_plans[top_level_key]:
+                create_execution_plans[top_level_key]["plan_selections"] = []
+            if plan_selection["plan_id"] == plan_id:
+                create_execution_plans[top_level_key]["plan_selections"].append(plan_selection)
+            del plan_selection["plan_id"]
         debug = Debug(
             run_execution_plans=run_execution_plans,
             create_execution_plans=create_execution_plans,
