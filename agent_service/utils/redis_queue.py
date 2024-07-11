@@ -1,11 +1,14 @@
 import logging
 import os
+import traceback
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional
 
 import redis.asyncio as redis
 from gbi_common_py_utils.utils.environment import get_environment_tag
 from redis.asyncio.client import PubSub
+
+from agent_service.utils.event_logging import log_event
 
 # TODO eventually move async redis into gbi common
 
@@ -89,7 +92,26 @@ async def publish_agent_event(agent_id: str, serialized_event: str) -> None:
 
     env = get_environment_tag().lower()
     channel = CHANNEL_TEMPLATE.format(env=env, agent_id=agent_id)
-    await redis.publish(channel, serialized_event)
+    try:
+        subscriber_num = await redis.publish(channel, serialized_event)
+        log_event(
+            event_name="agent-event-published",
+            event_data={
+                "agent_id": agent_id,
+                "data": serialized_event,
+                "subscribers": subscriber_num,
+            },
+        )
+    except Exception as e:
+        log_event(
+            event_name="agent-event-published",
+            event_data={
+                "agent_id": agent_id,
+                "data": serialized_event,
+                "error_msg": traceback.format_exc(),
+            },
+        )
+        raise e
 
 
 async def publish_notification_event(user_id: str, serialized_event: str) -> None:
