@@ -5,10 +5,7 @@ from regression_test.test_regression import (
     get_output,
     validate_plan,
 )
-from regression_test.util import (
-    validate_and_compare_text,
-    validate_table_and_get_columns,
-)
+from regression_test.util import validate_table_and_get_columns, validate_text
 
 
 class TestKPI(TestExecutionPlanner):
@@ -29,7 +26,7 @@ class TestKPI(TestExecutionPlanner):
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output)
             self.loop.run_until_complete(
-                validate_and_compare_text(llm=self.llm, output_text=output_text, prompt=prompt)
+                validate_text(llm=self.llm, output_text=output_text, prompt=prompt)
             )
 
         self.prompt_test(

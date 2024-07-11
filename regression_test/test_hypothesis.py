@@ -5,7 +5,7 @@ from regression_test.test_regression import (
     get_output,
     validate_plan,
 )
-from regression_test.util import validate_and_compare_text
+from regression_test.util import validate_text
 
 
 class TestHypothesis(TestExecutionPlanner):
@@ -15,7 +15,7 @@ class TestHypothesis(TestExecutionPlanner):
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output=output)
             self.loop.run_until_complete(
-                validate_and_compare_text(llm=self.llm, output_text=output_text, prompt=prompt)
+                validate_text(llm=self.llm, output_text=output_text, prompt=prompt)
             )
 
         self.prompt_test(
@@ -28,7 +28,7 @@ class TestHypothesis(TestExecutionPlanner):
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output=output[1])
             self.loop.run_until_complete(
-                validate_and_compare_text(llm=self.llm, output_text=output_text, prompt=prompt)
+                validate_text(llm=self.llm, output_text=output_text, prompt=prompt)
             )
 
         self.prompt_test(

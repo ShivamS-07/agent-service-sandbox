@@ -6,9 +6,10 @@ from regression_test.test_regression import (
     validate_plan,
 )
 from regression_test.util import (
-    validate_and_compare_text,
+    compare_with_expected_text,
     validate_line_graph,
     validate_table_and_get_columns,
+    validate_text,
 )
 
 
@@ -125,7 +126,7 @@ class TestData(TestExecutionPlanner):
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output)
             self.loop.run_until_complete(
-                validate_and_compare_text(llm=self.llm, output_text=output_text, prompt=prompt)
+                validate_text(llm=self.llm, output_text=output_text, prompt=prompt)
             )
 
         self.prompt_test(
@@ -133,14 +134,46 @@ class TestData(TestExecutionPlanner):
         )
 
     def test_notify_big_big_developments(self):
-        prompt = "Scan all corporate filings for LIPO and notify me of any big developments or changes to cash flow"
+        prompt = (
+            "Scan all corporate filings for LIPO until June 2024 and notify me of any big developments or "
+            "changes to cash flow"
+        )
 
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output)
+            expected_text = (
+                "Lipella Pharmaceuticals Inc. (LIPO) has experienced several significant developments and "
+                "changes to its cash flow up until June 2024. The company has been actively progressing "
+                "its lead product candidates, LP-10 for hemorrhagic cystitis (HC) and LP-310 for oral "
+                "lichen planus (OLP), through various stages of clinical trials. Notably, LP-10 completed "
+                "a phase 2a clinical trial, and LP-310 received FDA IND approval and orphan drug "
+                "designation in late 2023. Financially, Lipella has been primarily funded through grants "
+                "and equity financing. The company received a significant NIH grant in 2022, "
+                "which was extended in 2023, providing a total of $1,353,000. This grant has been a key "
+                "source of revenue, with $225,000 recognized in the first half of 2023. Additionally, "
+                "Lipella completed an initial public offering (IPO) in December 2022, "
+                "raising approximately $5 million. Operating expenses have increased substantially, "
+                "primarily due to research and development (R&D) activities and costs associated with "
+                "becoming a public company. R&D expenses rose due to clinical trial activities and stock "
+                "option expenses, while general and administrative expenses increased due to higher costs "
+                "for insurance, legal, and accounting services. The company has also engaged in financing "
+                "activities, including a private placement in October 2023, raising approximately $2 "
+                "million. Despite these efforts, Lipella continues to face challenges related to cash "
+                "flow, with ongoing operating losses and a need for additional funding to support its "
+                "clinical development programs and operational costs."
+            )
             self.loop.run_until_complete(
-                validate_and_compare_text(llm=self.llm, output_text=output_text, prompt=prompt)
+                compare_with_expected_text(
+                    llm=self.llm,
+                    output_text=output_text,
+                    prompt=prompt,
+                    expected_text=expected_text,
+                )
             )
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_plan=validate_plan,
+            validate_output=validate_output,
+            raise_plan_validation_error=True,
         )

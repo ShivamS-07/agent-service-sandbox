@@ -30,10 +30,18 @@ from agent_service.utils.output_utils.output_construction import PreparedOutput
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
 
 CH = ClickhouseBase(environment=DEV_TAG)
-SERVICE_VERSION = "374053208103.dkr.ecr.us-west-2.amazonaws.com/agent-service:9174a9ec8ae0de7c46b51775ed12d74806f2fd45"
+SERVICE_VERSION = "374053208103.dkr.ecr.us-west-2.amazonaws.com/agent-service:1440a60145f2255c3fc341b9f8655f6a14a6fdb3"
 
 
 class PlanGenerationError(Exception):
+    pass
+
+
+class PlanValidationError(Exception):
+    pass
+
+
+class OutputTextError(Exception):
     pass
 
 
@@ -62,27 +70,25 @@ def plan_to_simple_json(plan: ExecutionPlan) -> str:
 
 
 def compare_plan(actual: ExecutionPlan, expected: ExecutionPlan):
-    warn_msg = f"""
+    err_msg_base = f"""
     actual plan is {plan_to_simple_json(actual)} and
     expected plan is {plan_to_simple_json(expected)}
     """
     if len(actual.nodes) == len(expected.nodes):
         for i, node in enumerate(actual.nodes):
             if node.tool_name != expected.nodes[i].tool_name:
-                warnings.warn(
-                    f"""
+                error_msg = f"""
                     The tool name {node.tool_name} at step {i} does not match with {expected.nodes[i].tool_name}
-                    {warn_msg}
+                    {err_msg_base}
                     """
-                )
+                raise PlanValidationError(error_msg)
     else:
-        warnings.warn(
-            f"""
+        error_msg = f"""
             The length of plans is not same.
             Actual has length {len(actual.nodes)} and expected length is {len(expected.nodes)}.
-            {warn_msg}
+            {err_msg_base}
             """
-        )
+        raise PlanValidationError(error_msg)
 
 
 def get_output(output: IOType) -> IOType:
@@ -93,13 +99,22 @@ def get_output(output: IOType) -> IOType:
     return output
 
 
-def validate_plan(prompt: str, plan: Optional[ExecutionPlan]) -> None:
-    expected_plan_json = get_expected_output(prompt=prompt)
-    if expected_plan_json:
-        expected_plan = ExecutionPlan(**({"nodes": json.loads(expected_plan_json)}))
-        compare_plan(plan, expected_plan)
-    else:
-        warnings.warn("Could not find expected plan")
+def validate_plan(
+    prompt: str, plan: Optional[ExecutionPlan], raise_error: Optional[bool] = False
+) -> None:
+    try:
+        expected_plan_json = get_expected_output(prompt=prompt)
+        if expected_plan_json:
+            expected_plan = ExecutionPlan(**({"nodes": json.loads(expected_plan_json)}))
+            compare_plan(plan, expected_plan)
+        else:
+            error_msg = "Could not find expected plan"
+            raise PlanValidationError(error_msg)
+    except PlanValidationError as e:
+        if raise_error:
+            raise e
+        else:
+            warnings.warn(str(e))
 
 
 class TestExecutionPlanner(unittest.TestCase):
@@ -115,6 +130,7 @@ class TestExecutionPlanner(unittest.TestCase):
         prompt: str,
         validate_plan: Callable,
         validate_output: Callable,
+        raise_plan_validation_error: Optional[bool] = False,
         user_id: Optional[str] = None,
     ):
         user_id = user_id or "6c14fe54-de50-4d05-9533-57541715064f"
@@ -123,13 +139,7 @@ class TestExecutionPlanner(unittest.TestCase):
             "test_suite_id": self.test_suite_id,
             "prompt": prompt,
         }
-        plan_generated_log = EventLog(
-            event_name="agent-regression-plan-generated",
-            event_data={
-                **shared_log_data,
-            },
-        )
-        output_generated_log = EventLog(
+        regression_test_log = EventLog(
             event_name="agent-regression-output-generated",
             event_data={
                 **shared_log_data,
@@ -138,30 +148,26 @@ class TestExecutionPlanner(unittest.TestCase):
         try:
             plan, output = self.run_regression(
                 prompt=prompt,
-                plan_generated_log=plan_generated_log,
-                output_generated_log=output_generated_log,
+                regression_test_log=regression_test_log,
                 user_id=user_id,
             )
 
-            validate_plan(prompt=prompt, plan=plan)
+            validate_plan(prompt=prompt, plan=plan, raise_error=raise_plan_validation_error)
             validate_output(prompt=prompt, output=output)
-            log_event(**asdict(plan_generated_log))
-            log_event(**asdict(output_generated_log))
-        except PlanGenerationError as e:
-            plan_generated_log.event_data["error_msg"] = traceback.format_exc()
-            log_event(**asdict(plan_generated_log))
+            log_event(**asdict(regression_test_log))
+        except (PlanGenerationError, PlanValidationError) as e:
+            regression_test_log.event_data["error_msg"] = traceback.format_exc()
+            log_event(**asdict(regression_test_log))
             raise e
         except Exception as e:
-            output_generated_log.event_data["error_msg"] = traceback.format_exc()
-            log_event(**asdict(plan_generated_log))
-            log_event(**asdict(output_generated_log))
+            regression_test_log.event_data["error_msg"] = traceback.format_exc()
+            log_event(**asdict(regression_test_log))
             raise e
 
     def run_regression(
         self,
         prompt: str,
-        plan_generated_log: EventLog,
-        output_generated_log: EventLog,
+        regression_test_log: EventLog,
         user_id: str,
         do_chat: bool = False,
     ):
@@ -201,12 +207,13 @@ class TestExecutionPlanner(unittest.TestCase):
                 )
             )
             execution_plan_finished_at = datetime.datetime.utcnow().isoformat()
-            plan_generated_log.event_data.update(
+            regression_test_log.event_data.update(
                 {
-                    "started_at_utc": execution_plan_start,
-                    "finished_at_utc": execution_plan_finished_at,
+                    "execution_plan_started_at_utc": execution_plan_start,
+                    "execution_plan_finished_at_utc": execution_plan_finished_at,
                     "execution_plan": plan_to_json(plan=plan),
                     "plan_id": plan_id,
+                    "execution_plan_simple": plan_to_simple_json(plan=plan),
                 }
             )
         except Exception as e:
@@ -231,16 +238,11 @@ class TestExecutionPlanner(unittest.TestCase):
                 replan_execution_error=False,
             )
         )
-        output_generated_log.event_data.update(
+        regression_test_log.event_data.update(
             {
-                "execution_plan_started_at_utc": execution_plan_start,
-                "execution_plan_finished_at_utc": execution_plan_finished_at,
                 "execution_start_at_utc": execution_started_at,
                 "execution_finished_at_utc": datetime.datetime.utcnow().isoformat(),
-                "execution_plan": plan_to_json(plan=plan),
-                "execution_plan_simple": plan_to_simple_json(plan=plan),
                 "output": dump_io_type(output),
-                "plan_id": plan_id,
             }
         )
         return plan, output
