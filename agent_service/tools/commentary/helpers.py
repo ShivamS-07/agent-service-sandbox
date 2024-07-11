@@ -2,8 +2,10 @@ import json
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
+import pandas as pd
 from data_access_layer.core.dao.securities import SecuritiesMetadataDAO
 
+from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
 from agent_service.io_types.text import Text, ThemeText
 from agent_service.tools.commentary.constants import (
     MAX_ARTICLES_PER_DEVELOPMENT,
@@ -77,7 +79,7 @@ async def organize_commentary_texts(texts: List[Text]) -> Tuple[List[Text], List
     return themes, developments, articles
 
 
-async def get_portfolio_geography_prompt(regions_to_weight: List[Tuple[str, float]]) -> str:
+async def get_portfolio_geography_str(regions_to_weight: List[Tuple[str, float]]) -> str:
     # convert weights to int percentages
     portfolio_geography = "\n".join(
         [f"{tup[0]}: {int(tup[1] * 100)}%" for tup in regions_to_weight]
@@ -86,12 +88,19 @@ async def get_portfolio_geography_prompt(regions_to_weight: List[Tuple[str, floa
 
 
 async def get_region_weights_from_portfolio_holdings(
-    weighted_holdings: Dict[int, float]
+    portfolio_holdings_df: pd.DataFrame,
 ) -> List[Tuple[str, float]]:
     """
     Given a mapping from GBI ID to a weight, return a list of ranked (region,
     weight) tuples sorted in descending order by weight.
     """
+    # convert DF to dict[int, float]
+    weighted_holdings = {}
+    for i in range(len(portfolio_holdings_df[STOCK_ID_COL_NAME_DEFAULT])):
+        gbi_id = portfolio_holdings_df[STOCK_ID_COL_NAME_DEFAULT][i].gbi_id
+        weight = portfolio_holdings_df["Weight"][i]
+        weighted_holdings[gbi_id] = weight
+
     dao = await get_sec_metadata_dao()
     sec_meta_map = dao.get_security_metadata(list(weighted_holdings.keys())).get()
     region_weight_map: Dict[str, float] = defaultdict(float)

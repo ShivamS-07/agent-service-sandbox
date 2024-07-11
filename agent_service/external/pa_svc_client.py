@@ -11,6 +11,10 @@ from gbi_common_py_utils.utils.environment import (
     get_environment_tag,
 )
 from grpclib.client import Channel
+from pa_portfolio_service_proto_v1.marketplace_messages_pb2 import (
+    GetFullStrategiesInfoRequest,
+    GetFullStrategiesInfoResponse,
+)
 from pa_portfolio_service_proto_v1.pa_service_grpc import PAServiceStub
 from pa_portfolio_service_proto_v1.watchlist_pb2 import (
     GetAllStocksInAllWatchlistsRequest,
@@ -142,3 +146,20 @@ async def get_all_workspaces(user_id: str) -> List[WorkspaceMetadata]:
             )
 
     return [workspace for workspace in response.workspaces]
+
+
+@grpc_retry
+@async_perf_logger
+async def get_full_strategy_info(
+    user_id: str, workspace_id: str
+) -> GetFullStrategiesInfoResponse.FullStrategyInfo:
+    with _get_service_stub() as stub:
+        response: GetFullStrategiesInfoResponse = await stub.GetFullStrategiesInfo(
+            GetFullStrategiesInfoRequest(strategy_ids=[UUID(id=workspace_id)]),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        if not list(response.strategies):
+            raise ValueError(f"No strategies found with the given workspace id: {workspace_id}")
+
+    res = list(response.strategies)[0]
+    return res

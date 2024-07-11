@@ -1,5 +1,4 @@
 import datetime
-import unittest
 from unittest import IsolatedAsyncioTestCase
 from uuid import uuid4
 
@@ -13,6 +12,11 @@ from agent_service.tools.commentary.tools import (
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 
+user_id = "3b997275-dcfe-4c19-8bb2-3e1366c4d5f3"
+agent_id = "7cb9fb8f-690e-4535-8b48-f6e63494c366"
+plan_id = "b3330500-9870-480d-bcb1-cf6fe6b487e3"
+portfolio_id = "1e55e0ac-e8f6-40ba-818a-8efef5b16b4a"
+
 
 class TestCommentary(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -23,9 +27,9 @@ class TestCommentary(IsolatedAsyncioTestCase):
         chat_context = ChatContext(messages=[user_message])
 
         self.context = PlanRunContext(
-            agent_id="7cb9fb8f-690e-4535-8b48-f6e63494c366",
-            plan_id="b3330500-9870-480d-bcb1-cf6fe6b487e3",
-            user_id=str(uuid4()),
+            agent_id=agent_id,
+            plan_id=plan_id,
+            user_id=user_id,
             plan_run_id=str(uuid4()),
             chat=chat_context,
             skip_db_commit=True,
@@ -33,20 +37,22 @@ class TestCommentary(IsolatedAsyncioTestCase):
             run_tasks_without_prefect=True,
         )
 
-    @unittest.skip("Skipping for now until we can mock GPT output easily")
     async def test_write_commentary(self):
-
         texts = await get_commentary_inputs(
             GetCommentaryInputsInput(
                 topics=["cloud computing", "military industrial complex"],
-                start_date=datetime.date(2024, 4, 1),
+                # set start date to the last week
+                start_date=(datetime.datetime.now() - datetime.timedelta(days=7)).date(),
+                portfolio_id=portfolio_id,
             ),
             self.context,
         )
         print("Length of texts: ", len(texts))  # type: ignore
 
         self.args = WriteCommentaryInput(
-            texts=texts,  # type: ignore
+            inputs=texts,  # type: ignore
+            portfolio_id=portfolio_id,
+            use_watchlist_stocks=True,
         )
         result = await write_commentary(self.args, self.context)
         self.assertIsInstance(result, Text)

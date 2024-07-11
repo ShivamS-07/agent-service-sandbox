@@ -7,7 +7,7 @@ from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.dates import DateRange
-from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
+from agent_service.io_types.table import StockTable
 from agent_service.io_types.text import Text, TextGroup, ThemeText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.commentary.constants import (
@@ -16,7 +16,7 @@ from agent_service.tools.commentary.constants import (
     MAX_TOTAL_ARTICLES_PER_COMMENTARY,
 )
 from agent_service.tools.commentary.helpers import (
-    get_portfolio_geography_prompt,
+    get_portfolio_geography_str,
     get_previous_commentary_results,
     get_region_weights_from_portfolio_holdings,
     get_theme_related_texts,
@@ -31,6 +31,7 @@ from agent_service.tools.commentary.prompts import (
     GEOGRAPHY_PROMPT,
     GET_COMMENTARY_INPUTS_DESCRIPTION,
     LONG_WRITING_STYLE,
+    PORTFOLIO_PROMPT,
     PREVIOUS_COMMENTARY_PROMPT,
     SIMPLE_CLIENTELE,
     UPDATE_COMMENTARY_INSTRUCTIONS,
@@ -44,9 +45,11 @@ from agent_service.tools.news import (
     get_news_articles_for_topics,
 )
 from agent_service.tools.portfolio import (
+    GetPortfolioPerformanceInput,
     GetPortfolioWorkspaceHoldingsInput,
     PortfolioID,
     get_portfolio_holdings,
+    get_portfolio_performance,
 )
 from agent_service.tools.themes import (
     GetMacroeconomicThemeInput,
@@ -64,9 +67,25 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 
+# Functionality so far:
+# Write a commentary on
+# general market of some specific topics,
+# based on my watchlist stocks,
+# based on my portfolio X,
+# based on texts for this given period of time,
+# with Simple/technical tone,
+# with writing format of long/short/bullet points.
+# In behind the scene, it will
+# collect all related themes to the topics or top themes for general commentary,
+# or all news for a given topic with no themes
+# Considers the region weight of portfolio
+# Considers the portfolio performance
+# Considers the portfolio holdings
+# Watchlist stocks
+# It will remember the previous commentary for editing purposes.
+
+
 # TODO:
-
-
 # 1. comeplte sectors_prompt
 # 2. complete top_stocks_prompt
 # 4. complete goal_prompt
@@ -89,12 +108,6 @@ class WriteCommentaryInput(ToolArgs):
     update_instructions=UPDATE_COMMENTARY_INSTRUCTIONS,
 )
 async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) -> Text:
-    # Create GPT context and llm model
-    gpt_context = create_gpt_context(
-        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
-    )
-    llm = GPT(context=gpt_context, model=GPT4_O)
-
     # get previous commentary if exists
     previous_commentaries = await get_previous_commentary_results(context)
     previous_commentary = previous_commentaries[0] if previous_commentaries else None
@@ -102,25 +115,39 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         await tool_log(
             log="Retrieved previous commentary.",
             context=context,
+            associated_data=previous_commentary,
         )
 
     # Prepare the portfolio geography prompt
     geography_prompt = NO_PROMPT
     if args.portfolio_id:
-        portfolio_holdings_table = (
-            await get_portfolio_holdings(
-                GetPortfolioWorkspaceHoldingsInput(portfolio_id=args.portfolio_id), context
-            )
-        ).to_df()  # type: ignore
-        # convert DF to dict[int, float]
-        weighted_holdings = portfolio_holdings_table.set_index(STOCK_ID_COL_NAME_DEFAULT)[
-            "Weight"
-        ].to_dict()
+        portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
+            GetPortfolioWorkspaceHoldingsInput(portfolio_id=args.portfolio_id), context
+        )
+        await tool_log(
+            log=f"Retrieved portfolio holdings for portfolio (id: {args.portfolio_id}).",
+            context=context,
+            associated_data=portfolio_holdings_table,
+        )
+        portfolio_holdings_df = portfolio_holdings_table.to_df()
 
         # Get the region weights from the portfolio holdings
-        regions_to_weight = get_region_weights_from_portfolio_holdings(weighted_holdings)
-        geography_prompt = GEOGRAPHY_PROMPT.format(
-            portfolio_geography=await get_portfolio_geography_prompt(regions_to_weight)  # type: ignore
+        regions_to_weight = await get_region_weights_from_portfolio_holdings(portfolio_holdings_df)
+        portfolio_geography = await get_portfolio_geography_str(regions_to_weight)
+        geography_prompt = GEOGRAPHY_PROMPT.format(portfolio_geography=portfolio_geography)
+
+        # Prepare the portfolio prompt
+        portfolio_performance_table = await get_portfolio_performance(
+            GetPortfolioPerformanceInput(portfolio_id=args.portfolio_id), context
+        )
+        await tool_log(
+            log=f"Retrieved portfolio performance for portfolio (id: {args.portfolio_id}).",
+            context=context,
+            associated_data=portfolio_performance_table,
+        )
+        portfolio_prompt = PORTFOLIO_PROMPT.format(
+            portfolio_holdings=str(portfolio_holdings_df),
+            portfolio_performance=str(portfolio_holdings_df),
         )
     else:
         await tool_log(
@@ -162,12 +189,14 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     # Prepare watchlist prompt
     watchlist_prompt = NO_PROMPT
     if args.use_watchlist_stocks:
+
+        watchlist_stocks = await get_stocks_for_user_all_watchlists(
+            GetStocksForUserAllWatchlistsInput(), context
+        )
         await tool_log(
             log="Watchlist stocks are used. Retrieving watchlist stocks for commentary.",
             context=context,
-        )
-        watchlist_stocks = await get_stocks_for_user_all_watchlists(
-            GetStocksForUserAllWatchlistsInput(), context
+            associated_data=watchlist_stocks,
         )
         watchlist_prompt = WATCHLIST_PROMPT.format(
             watchlist_stocks=", ".join([await stock.to_gpt_input() for stock in watchlist_stocks])  # type: ignore
@@ -197,6 +226,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     main_prompt = COMMENTARY_PROMPT_MAIN.format(
         previous_commentary_prompt=previous_commentary_prompt.filled_prompt,
         geography_prompt=geography_prompt.filled_prompt,
+        portfolio_prompt=portfolio_prompt.filled_prompt,
         watchlist_prompt=watchlist_prompt.filled_prompt,
         client_type_prompt=client_type_prompt.filled_prompt,
         writing_style_prompt=writing_style_prompt.filled_prompt,
@@ -212,6 +242,12 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         log=f"Writing commentary for '{client_type}' client in '{writing_format}' format.",
         context=context,
     )
+    # Create GPT context and llm model
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=GPT4_O)
+
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=main_prompt,
         sys_prompt=COMMENTARY_SYS_PROMPT.format(),

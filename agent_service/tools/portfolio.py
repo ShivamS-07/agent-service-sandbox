@@ -4,11 +4,13 @@ from pa_portfolio_service_proto_v1.workspace_pb2 import WorkspaceAuth
 from agent_service.external.pa_svc_client import (
     get_all_holdings_in_workspace,
     get_all_workspaces,
+    get_full_strategy_info,
 )
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
     StockTable,
+    Table,
     TableColumnMetadata,
     TableColumnType,
 )
@@ -16,9 +18,12 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.constants import get_B3_prefix
+from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 
 PortfolioID = str
+# Get the postgres connection
+db = get_psql()
 
 
 class GetPortfolioWorkspaceHoldingsInput(ToolArgs):
@@ -137,3 +142,55 @@ async def convert_portfolio_mention_to_portfolio_id(
     )
     await tool_log(log=f"Portfolio found: {portfolio_name_with_link_markdown}", context=context)
     return portfolio.workspace_id.id
+
+
+class GetPortfolioPerformanceInput(ToolArgs):
+    portfolio_id: PortfolioID
+    # TODO: use enum for performance level
+    # TODO: Add suppoert for different performance levels (overall, stock, sector)
+
+
+@tool(
+    description=(
+        "This function returns the performance (monthly/YTD returns, and return versus benchmark)"
+        "of a portfolio given a portfolio id."
+        "Table scheme: "
+        "month: string, return: float, return-vs-benchmark: float"
+    ),
+    category=ToolCategory.PORTFOLIO,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def get_portfolio_performance(
+    args: GetPortfolioPerformanceInput, context: PlanRunContext
+) -> Table:
+    # get the linked_portfolio_id
+    linked_portfolio_id = str(db.get_workspace_linked_id(args.portfolio_id))
+
+    # get the full strategy info for the linked_portfolio_id
+    portfolio_details = await get_full_strategy_info(context.user_id, linked_portfolio_id)
+    performance_details = portfolio_details.backtest_results.performance_info
+
+    # Create a DataFrame for the monthly returns
+    data_length = len(performance_details.monthly_gains.headers)
+    df = pd.DataFrame(
+        {
+            "month": list(performance_details.monthly_gains.headers),
+            "return": [v.float_val for v in performance_details.monthly_gains.row_values[0].values],
+            "return-vs-benchmark": [
+                v.float_val
+                for v in performance_details.monthly_gains_v_benchmark.row_values[0].values
+            ],
+        },
+        index=range(data_length),
+    )
+    # create a Table
+    table = Table.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label="month", col_type=TableColumnType.STRING),
+            TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
+            TableColumnMetadata(label="return-vs-benchmark", col_type=TableColumnType.FLOAT),
+        ],
+    )
+    return table

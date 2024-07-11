@@ -556,6 +556,15 @@ class Postgres(PostgresBase):
             res[row["agent_id"]].messages.append(Message(**row))
         return res
 
+    def get_workspace_linked_id(self, workspace_id: str) -> Optional[str]:
+        sql = """
+        SELECT linked_portfolio_id
+        FROM workspace.workspace
+        WHERE workspace_id = %(workspace_id)s
+        """
+        rows = self.generic_read(sql, params={"workspace_id": workspace_id})
+        return rows[0]["linked_portfolio_id"] if rows else None
+
 
 def get_psql(skip_commit: bool = False) -> Postgres:
     """

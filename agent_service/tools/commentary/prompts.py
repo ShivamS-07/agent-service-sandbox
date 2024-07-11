@@ -47,9 +47,12 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "writing client communications in order to build trust between you and your "
         "clients. Please be concise in your writing, and do not include any fluff. NEVER "
         "include ANY information about your portfolio that is not explicitly provided to "
-        "you. NEVER PUT SOURCES INLINE. Use the following information to generate this text. \n"
+        "you. NEVER PUT SOURCES INLINE. "
+        "Do not cite your sources in the body of the summary, only in this list at the end. "
+        "Use the following information to generate this text. \n"
         "{previous_commentary_prompt}"
         "{geography_prompt}"
+        "{portfolio_prompt}"
         "{watchlist_prompt}"
         "{client_type_prompt}"
         "{writing_style_prompt}"
@@ -63,13 +66,18 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "\n-----\n"
         "Now please craft a macroeconomic commentary and provide a list of text numbers "
         "which MUST ONLY include top sources (less than 50 sources). "
+        "After writing the commentary, double check the list of sources and make sure "
+        "it is less than 50. If it is more than 50, you MUST remove the least important "
+        "sources to make it less than 50. If you can't decide which sources to remove, "
+        "randomly remove sources until the list is less than 50. "
+        "Now, please write the commentary. "
     ),
 )
 
 PREVIOUS_COMMENTARY_PROMPT = Prompt(
     name="PREVIOUS_COMMENTARY_PROMPT",
     template=(
-        "Here is the most recent commentary you wrote for the client, delimited by ******. "
+        "\nHere is the most recent commentary you wrote for the client, delimited by ******. "
         "The more recent ones are at the top.\n"
         "\n******\n"
         "{previous_commentary}"
@@ -91,46 +99,60 @@ PREVIOUS_COMMENTARY_PROMPT = Prompt(
 GEOGRAPHY_PROMPT = Prompt(
     name="GEOGRAPHY_PROMPT",
     template=(
-        "The followings are geographic that are the most represented in client's "
+        "\nThe followings are geographic that are the most represented in client's "
         "portfolio with their weights. Use these to decide what to talk about, and filter "
         "out factoids that likely would not impact the portfolio's markets. You may "
         "include the weights themselves unless the client is non-technical. "
         "Note that negative numbers indicate a short position, meaning that the sector "
-        "going down in value is good for the portfolio. "
-        "### Geographic areas "
-        "{portfolio_geography} "
+        "going down in value is good for the portfolio."
+        "\n### Geographic areas\n"
+        "{portfolio_geography}"
+    ),
+)
+
+PORTFOLIO_PROMPT = Prompt(
+    name="PORTFOLIO_PROMPT",
+    template=(
+        "\nThe following are some info related to client's portfolio. "
+        "You can use these to decide what to talk about, and filter out factoids "
+        "that likely would not impact the portfolio's markets. You may include the weights "
+        "themselves unless the client is non-technical. "
+        "\n### Portfolio Holdings and Weights \n"
+        "{portfolio_holdings}"
+        "\n### Portfolio Performance\n"
+        "{portfolio_performance}"
     ),
 )
 
 WATCHLIST_PROMPT = Prompt(
     name="WATCHLIST_PROMPT",
     template=(
-        "The following are a set of stocks that are on client's watchlist, as well as some "
+        "\nThe following are a set of stocks that are on client's watchlist, as well as some "
         "metadata. You can use these if you need to discuss how a topic might impact a "
         "stock that is not in the portfolio. Please reference these stocks ONLY when they "
         "are explicitly mentioned in a topic. DO NOT MENTION THESE SPECIFIC COMPANIES "
-        "UNLESS MENTIONED IN YOUR INPUT. "
-        "### Watchlist Stocks "
-        "{watchlist_stocks} "
+        "UNLESS MENTIONED IN YOUR INPUT. \n"
+        "\n### Watchlist Stocks\n"
+        "{watchlist_stocks}"
     ),
 )
 
 CLIENTELE_TYPE_PROMPT = Prompt(
     name="CLIENTELE_TYPE_PROMPT",
     template=(
-        "Below is a short description of who your clients are. Please don't mention this "
+        "\nBelow is a short description of who your clients are. Please don't mention this "
         "specifically, just use it to guide your language and tone, and to decide how "
         "topics relate to your portfolio. Also take very special note of any requests to "
         "change the output's formatting in this section. Do your best to obey "
         "formatting requests. "
-        "### Client Type "
+        "\n### Client Type\n"
         "{client_type} "
     ),
 )
 # GOALS
 
 TECHNICAL_CLIENTELE = (
-    "You are especially skilled in communicating to the masses through reputable financial"
+    "\nYou are especially skilled in communicating to the masses through reputable financial"
     " publications and great at summarizing top level points and explaining technical and"
     " difficult financial topics. You are to write at a professional grade level, use"
     " finance specific jargon when needed but do not over do it. Expect your audience to"
@@ -145,7 +167,7 @@ TECHNICAL_CLIENTELE = (
 
 
 SIMPLE_CLIENTELE = (
-    "You are especially skilled in communicating to the masses through large newspaper"
+    "\nYou are especially skilled in communicating to the masses through large newspaper"
     " publications and great at summarizing top level points and explaining concepts in"
     " laypeople terms. You are to write at a 9th grade level, and cannot use any finance"
     " specific jargon that is incomprehensible to the average person. Expect your audience"
@@ -168,9 +190,9 @@ CLIENTELE_TEXT_DICT = {
 WRITING_STYLE_PROMPT = Prompt(
     name="WRITING_STYLE_PROMPT",
     template=(
-        "Below is a short description of how the commentary should be formatted. Do not "
+        "\nBelow is a short description of how the commentary should be formatted. Do not "
         "mention this specifically, just use it to guide in how the commentary is formatted. "
-        "### Writing Style "
+        "\n### Writing Style\n"
         "{writing_format} "
     ),
 )
