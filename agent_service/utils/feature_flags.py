@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 import ldclient
 from gbi_common_py_utils import get_config
@@ -31,7 +31,7 @@ def get_user_context(user_id: str) -> LDUser:
     return create_user_from_userid(user_id=user_id, db=psql)
 
 
-def get_ld_flag(flag_name: str, default: Any, user_context: LDUser) -> Any:
+def get_ld_flag(flag_name: str, default: Any, user_context: Optional[LDUser]) -> Any:
     """
     Evaluate a flag for a user, defaulting to some value if the flag is not available.
     """
@@ -79,3 +79,7 @@ def is_user_agent_admin(user_id: str, default: bool = False) -> bool:
     return get_ld_flag(
         flag_name="warren-agent-admin", user_context=get_user_context(user_id), default=default
     )
+
+
+def use_boosted_dag_for_run_execution_plan() -> bool:
+    return get_ld_flag(flag_name="boosted-dag-run-execution-plan", user_context=None, default=False)

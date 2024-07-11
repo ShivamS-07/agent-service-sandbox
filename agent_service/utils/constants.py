@@ -104,6 +104,7 @@ UNITS_LOOKUP = {
 
 
 AGENT_WORKER_QUEUE = os.getenv("AGENT_WORKER_QUEUE", "insights-backend-dev-agent-service-worker")
+BOOSTED_DAG_QUEUE = os.getenv("BOOSTED_DAG_QUEUE", "insights-backend-dev-boosted-dag")
 AGENT_AUTOMATION_WORKER_QUEUE = os.getenv(
     "AGENT_AUTOMATION_WORKER_QUEUE", "insights-backend-dev-agent-automation-worker"
 )

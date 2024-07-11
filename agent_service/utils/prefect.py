@@ -28,7 +28,8 @@ from agent_service.endpoints.models import Status
 from agent_service.planner.constants import Action
 from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan
 from agent_service.types import PlanRunContext
-from agent_service.utils.constants import AGENT_WORKER_QUEUE
+from agent_service.utils.constants import AGENT_WORKER_QUEUE, BOOSTED_DAG_QUEUE
+from agent_service.utils.feature_flags import use_boosted_dag_for_run_execution_plan
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import Postgres
 
@@ -81,7 +82,10 @@ async def prefect_run_execution_plan(
         "arguments": arguments,
         "send_time_utc": datetime.datetime.utcnow().isoformat(),
     }
-    queue = sqs.get_queue_by_name(QueueName=AGENT_WORKER_QUEUE)
+    queue_name = (
+        BOOSTED_DAG_QUEUE if use_boosted_dag_for_run_execution_plan() else AGENT_WORKER_QUEUE
+    )
+    queue = sqs.get_queue_by_name(QueueName=queue_name)
     queue.send_message(MessageBody=json.dumps(message, default=json_serial))
 
 
