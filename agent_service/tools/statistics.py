@@ -55,6 +55,7 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
     statistic_reference: str
     stock_ids: List[StockID]
     date_range: Optional[DateRange] = None
+    is_time_series: bool = False
 
 
 @tool(
@@ -104,11 +105,18 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
         " If you need the same statistic for the same time period for more than one company, you must call this"
         " function with multiple stock_ids, DO NOT call this function multiple times"
         " with a single stock per time in those circumstances!"
-        " If no date_range is provided then this tool will read the context decide whether or not a timeseries"
-        " is the output: if it is, the range will default to a year ending today, and if instead a single date is "
+        " The is_time_series argument should be selected based on whether a time series is the desired output, or"
+        " only a single number is needed for each stock. If the data is going to be used in a line graph,"
+        " you must pass is_time_series=True to this function."
+        " If you are passing a date range that is not a single day, you must also use is_time_series=True"
+        " Time series is not required when doing filtering/ranking using a single value for each stock."
+        " If no date_range is provided then this tool select the range based on whether the output is"
+        " a time series or not."
+        " If it is, the range will default to a year ending today, and if instead a single date is"
         " required it will assume the request is for the most recent date for which data exists."
         " You must not get a date range if the client has not specified one in their request, just use the"
         " default!"
+        " This tool does NOT handle sentiment scores, use the get_stock_recommendations tool for that."
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
@@ -151,7 +159,7 @@ async def get_statistic_data_for_companies(
         )
     calculation = output_json["calculation"]
     added_timespan = output_json["extra_timespan"]
-    is_timeseries = output_json["output_timeseries"]
+    is_timeseries = args.is_time_series
     await tool_log(
         log=f"Analyzed {stat_ref}, component variables: {stat_list}, calculation: {calculation}, {is_timeseries=}",
         context=context,
@@ -217,8 +225,8 @@ async def get_statistic_data_for_companies(
     else:
         comp_table = comp_tables[0]
 
-    if not calculation:
-        logger.warning("No calculation explanation, returning component table")
+    if not calculation and not added_timespan:
+        logger.info("No calculation explanation, returning component table")
         return comp_table
 
     await tool_log("Component statistic data fetched, doing calculation", context=context)

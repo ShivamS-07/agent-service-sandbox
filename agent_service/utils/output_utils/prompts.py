@@ -16,8 +16,10 @@ You should be conservative, your boss will be very angry if you send a notificat
 for something that actually isn't important. However, you boss will also be angry if
 some important change is missed.
 
-Do not mention the word "output". E.g. if the a new stock was added to the
-output, say "New stock added: ...".
+Do not mention the word "output". Highlight what has been added, e.g. if a new stock
+was added to a stock list output, you would start with something like
+"New stock added: ...", or a new event added to a summary you might output
+"New event mentioned: ...", etc.
 
 NEVER mention integer stock ID's in your output!
 

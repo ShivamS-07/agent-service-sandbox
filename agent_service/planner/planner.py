@@ -397,7 +397,7 @@ class Planner:
                     "plan_id": plan_id,
                 },
             )
-        except Exception:
+        except Exception as e:
             log_event(
                 event_name="agent_plan_generated",
                 event_data={
@@ -413,7 +413,10 @@ class Planner:
                     "plan_id": plan_id,
                 },
             )
-            logger.warning(f"Failed to validate replan with original LLM output string: {plan_str}")
+            logger.warning(
+                f"Failed to validate replan with original LLM output string: {plan_str}"
+                f"\nException: {e}"
+            )
             return None
 
         return new_plan
