@@ -56,3 +56,21 @@ class TestCommentary(IsolatedAsyncioTestCase):
         )
         result = await write_commentary(self.args, self.context)
         self.assertIsInstance(result, Text)
+
+        # general commentary
+        texts = await get_commentary_inputs(
+            GetCommentaryInputsInput(
+                topics=["cloud computing", "military industrial complex"],
+                # set start date to the last week
+                start_date=(datetime.datetime.now() - datetime.timedelta(days=7)).date(),
+                general_commentary=True,
+            ),
+            self.context,
+        )
+        print("Length of texts: ", len(texts))  # type: ignore
+        self.args = WriteCommentaryInput(
+            inputs=texts,  # type: ignore
+            use_watchlist_stocks=False,
+        )
+        result = await write_commentary(self.args, self.context)
+        self.assertIsInstance(result, Text)

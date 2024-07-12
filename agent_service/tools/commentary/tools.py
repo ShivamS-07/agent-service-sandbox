@@ -120,6 +120,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
     # Prepare the portfolio geography prompt
     geography_prompt = NO_PROMPT
+    portfolio_prompt = NO_PROMPT
     if args.portfolio_id:
         portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
             GetPortfolioWorkspaceHoldingsInput(portfolio_id=args.portfolio_id), context
