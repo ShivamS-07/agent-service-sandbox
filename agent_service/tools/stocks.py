@@ -1270,6 +1270,7 @@ STOCK_MARKET_SEGMENT_FILTER_MAIN_PROMPT = Prompt(
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
     is_visible=True,
+    enabled=False,
 )
 async def market_segment_filter(
     args: StockMarketSegmentFilterInput, context: PlanRunContext
