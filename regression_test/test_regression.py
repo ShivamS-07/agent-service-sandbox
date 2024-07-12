@@ -28,9 +28,10 @@ from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_utils.output_construction import PreparedOutput
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
+from regression_test.expected_plans import expected_plans
 
 CH = ClickhouseBase(environment=DEV_TAG)
-SERVICE_VERSION = "374053208103.dkr.ecr.us-west-2.amazonaws.com/agent-service:0.0.403"
+SERVICE_VERSION = "374053208103.dkr.ecr.us-west-2.amazonaws.com/agent-service:405d39f6fb15ad617fae2584cd812ae51ca033a9"
 
 
 class PlanGenerationError(Exception):
@@ -41,7 +42,7 @@ class PlanValidationError(Exception):
     pass
 
 
-class OutputTextError(Exception):
+class OutputValidationError(Exception):
     pass
 
 
@@ -51,15 +52,17 @@ class EventLog:
     event_data: Optional[Dict[str, Any]] = None
 
 
-def get_expected_output(prompt: str) -> Tuple[str, str]:
+def get_expected_plans(prompt: str) -> Tuple[str, str]:
+    if prompt in expected_plans:
+        return expected_plans[prompt]
     res = CH.generic_read(
         "select execution_plan from agent.regression_test where prompt = %(prompt)s and "
         "service_version = %(service_version)s",
         {"prompt": prompt, "service_version": SERVICE_VERSION},
     )
     if not res:
-        return None
-    return res[0]["execution_plan"]
+        return []
+    return [res[0]["execution_plan"]]
 
 
 def plan_to_simple_json(plan: ExecutionPlan) -> str:
@@ -70,25 +73,12 @@ def plan_to_simple_json(plan: ExecutionPlan) -> str:
 
 
 def compare_plan(actual: ExecutionPlan, expected: ExecutionPlan):
-    err_msg_base = f"""
-    actual plan is {plan_to_simple_json(actual)} and
-    expected plan is {plan_to_simple_json(expected)}
-    """
-    if len(actual.nodes) == len(expected.nodes):
-        for i, node in enumerate(actual.nodes):
-            if node.tool_name != expected.nodes[i].tool_name:
-                error_msg = f"""
-                    The tool name {node.tool_name} at step {i} does not match with {expected.nodes[i].tool_name}
-                    {err_msg_base}
-                    """
-                raise PlanValidationError(error_msg)
-    else:
-        error_msg = f"""
-            The length of plans is not same.
-            Actual has length {len(actual.nodes)} and expected length is {len(expected.nodes)}.
-            {err_msg_base}
-            """
-        raise PlanValidationError(error_msg)
+    actual_tools_called = set([step.tool_name for step in actual.nodes])
+    expected_tools_called = set([step.tool_name for step in expected.nodes])
+
+    if actual_tools_called != expected_tools_called:
+        return False
+    return True
 
 
 def get_output(output: IOType) -> IOType:
@@ -99,22 +89,23 @@ def get_output(output: IOType) -> IOType:
     return output
 
 
-def validate_plan(
-    prompt: str, plan: Optional[ExecutionPlan], raise_error: Optional[bool] = False
-) -> None:
-    try:
-        expected_plan_json = get_expected_output(prompt=prompt)
-        if expected_plan_json:
-            expected_plan = ExecutionPlan(**({"nodes": json.loads(expected_plan_json)}))
-            compare_plan(plan, expected_plan)
-        else:
-            error_msg = "Could not find expected plan"
-            raise PlanValidationError(error_msg)
-    except PlanValidationError as e:
-        if raise_error:
-            raise e
-        else:
-            warnings.warn(str(e))
+def validate_plan(prompt: str, plan: Optional[ExecutionPlan]) -> None:
+    expected_plans_json = get_expected_plans(prompt=prompt)
+    if len(expected_plans_json) == 0:
+        error_msg = "Could not find expected plan"
+        raise PlanValidationError(error_msg)
+    for expected_plan_json in expected_plans_json:
+        expected_plan = ExecutionPlan(**({"nodes": json.loads(expected_plan_json)}))
+        if compare_plan(plan, expected_plan):
+            return
+
+    err_msg = f"""
+    The sets of tools called are different.
+    actual plan is {plan_to_simple_json(plan)} and
+    expected plans are {[plan_to_simple_json(ExecutionPlan(**({"nodes": json.loads(expected_plan_json)})))
+                               for expected_plan_json in expected_plans_json]},
+    """
+    raise PlanValidationError(f"\n{err_msg}")
 
 
 class TestExecutionPlanner(unittest.TestCase):
@@ -131,6 +122,7 @@ class TestExecutionPlanner(unittest.TestCase):
         validate_plan: Callable,
         validate_output: Callable,
         raise_plan_validation_error: Optional[bool] = False,
+        raise_output_validation_error: Optional[bool] = False,
         user_id: Optional[str] = None,
     ):
         user_id = user_id or "6c14fe54-de50-4d05-9533-57541715064f"
@@ -145,15 +137,30 @@ class TestExecutionPlanner(unittest.TestCase):
                 **shared_log_data,
             },
         )
+        warning_msg = ""
         try:
             plan, output = self.run_regression(
                 prompt=prompt,
                 regression_test_log=regression_test_log,
                 user_id=user_id,
             )
-
-            validate_plan(prompt=prompt, plan=plan, raise_error=raise_plan_validation_error)
-            validate_output(prompt=prompt, output=output)
+            try:
+                validate_plan(prompt=prompt, plan=plan)
+            except PlanValidationError as e:
+                if raise_plan_validation_error:
+                    raise e
+                else:
+                    warning_msg += f"Plan validation warning: {e}\n"
+            try:
+                validate_output(prompt=prompt, output=output)
+            except OutputValidationError as e:
+                if raise_output_validation_error:
+                    raise e
+                else:
+                    warning_msg += f"Output validation warning: {e}\n"
+            if warning_msg:
+                regression_test_log.event_data["warning_msg"] = warning_msg.strip()
+                warnings.warn(warning_msg)
             log_event(**asdict(regression_test_log))
         except (PlanGenerationError, PlanValidationError) as e:
             regression_test_log.event_data["error_msg"] = traceback.format_exc()

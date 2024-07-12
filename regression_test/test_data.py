@@ -1,5 +1,6 @@
 # type: ignore
 from agent_service.io_type_utils import IOType, TableColumnType
+from agent_service.io_types.text import Text
 from regression_test.test_regression import (
     TestExecutionPlanner,
     get_output,
@@ -133,7 +134,7 @@ class TestData(TestExecutionPlanner):
             prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
         )
 
-    def test_notify_big_big_developments(self):
+    def test_notify_big_big_developments_June_2024(self):
         prompt = (
             "Scan all corporate filings for LIPO until June 2024 and notify me of any big developments or "
             "changes to cash flow"
@@ -170,6 +171,23 @@ class TestData(TestExecutionPlanner):
                     expected_text=expected_text,
                 )
             )
+
+        self.prompt_test(
+            prompt=prompt,
+            validate_plan=validate_plan,
+            validate_output=validate_output,
+        )
+
+    def test_notify_big_big_developments(self):
+        prompt = (
+            "Scan all corporate filings for LIPO and notify me of any big developments or "
+            "changes to cash flow"
+        )
+
+        def validate_output(prompt: str, output: IOType):
+            output_text = get_output(output)
+            self.assertTrue(isinstance(output_text, Text)), "Output is not of type Text"
+            self.assertTrue(output_text.val), "Expected non empty string"
 
         self.prompt_test(
             prompt=prompt,

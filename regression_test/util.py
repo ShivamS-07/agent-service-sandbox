@@ -1,6 +1,5 @@
 # type: ignore
 import logging
-import warnings
 from typing import List, Optional
 
 from agent_service.GPT.requests import GPT
@@ -9,7 +8,7 @@ from agent_service.io_types.graph import LineGraph
 from agent_service.io_types.table import Table, TableColumn
 from agent_service.io_types.text import Text
 from agent_service.utils.prompt_utils import Prompt
-from regression_test.test_regression import OutputTextError
+from regression_test.test_regression import OutputValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +37,10 @@ async def validate_text(llm: GPT, output_text: Text, prompt: str) -> None:
         max_tokens=50,
     )
     if res.lower() != "true":
-        warnings.warn(
+        error_msg = (
             "Issue with the text output. ChatGPT doesn't think that the output answers the prompt"
         )
+        raise OutputValidationError(error_msg)
 
 
 async def compare_with_expected_text(
@@ -64,7 +64,7 @@ async def compare_with_expected_text(
     )
     if res.lower() != "true":
         error_msg = "Issue with the text output. ChatGPT doesn't think that the actual and expected outputs are similar"
-        raise OutputTextError(error_msg)
+        raise OutputValidationError(error_msg)
 
 
 def validate_table_and_get_columns(

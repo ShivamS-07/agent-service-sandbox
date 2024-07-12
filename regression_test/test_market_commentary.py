@@ -1,5 +1,6 @@
 # type: ignore
 from agent_service.io_type_utils import IOType
+from agent_service.io_types.text import Text
 from regression_test.test_regression import (
     TestExecutionPlanner,
     get_output,
@@ -10,7 +11,7 @@ from regression_test.util import compare_with_expected_text
 
 class TestMarketCommentary(TestExecutionPlanner):
 
-    def test_market_commentary_past_month(self):
+    def test_market_commentary_jan_2024(self):
         prompt = "Write a commentary on market performance for the month of Jan 2024"
 
         def validate_output(prompt: str, output: IOType):
@@ -80,6 +81,20 @@ class TestMarketCommentary(TestExecutionPlanner):
                     expected_text=expected_text,
                 )
             )
+
+        self.prompt_test(
+            prompt=prompt,
+            validate_plan=validate_plan,
+            validate_output=validate_output,
+        )
+
+    def test_market_commentary_past_month(self):
+        prompt = "Write a commentary on market performance over the last month"
+
+        def validate_output(prompt: str, output: IOType):
+            output_text = get_output(output=output)
+            self.assertTrue(isinstance(output_text, Text)), "Output is not of type Text"
+            self.assertTrue(output_text.val), "Expected non empty string"
 
         self.prompt_test(
             prompt=prompt,
