@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional
 
 import redis.asyncio as redis
+from fastapi import Request
 from gbi_common_py_utils.utils.environment import get_environment_tag
 from redis.asyncio.client import PubSub
 
@@ -75,8 +76,15 @@ async def get_notification_event_channel(user_id: str) -> AsyncGenerator[PubSub,
         yield pubsub
 
 
-async def wait_for_messages(channel: PubSub) -> AsyncGenerator[str, None]:
+async def wait_for_messages(channel: PubSub, request: Request) -> AsyncGenerator[str, None]:
     while True:
+        # if we lost connection of the original request, stop polling
+        if await request.is_disconnected():
+            logger.info(
+                f"Lost connection from original request, unsubscribing channel {channel.channels}"
+            )
+            break
+
         message = await channel.get_message(ignore_subscribe_messages=True)
         if message is None:
             continue

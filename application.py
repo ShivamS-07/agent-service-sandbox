@@ -393,7 +393,7 @@ async def get_agent_plan_output(
     status_code=status.HTTP_200_OK,
 )
 async def steam_agent_events(
-    agent_id: str, user: User = Depends(parse_header)
+    request: Request, agent_id: str, user: User = Depends(parse_header)
 ) -> EventSourceResponse:
     """Set up a data stream that returns messages based on backend events.
 
@@ -406,7 +406,7 @@ async def steam_agent_events(
     async def _wrap_serializer() -> AsyncContentStream:
         try:
             async for event in application.state.agent_service_impl.stream_agent_events(
-                agent_id=agent_id
+                request=request, agent_id=agent_id
             ):
                 to_send = event.model_dump_json()
                 yield ServerSentEvent(data=to_send, event="agent-event")
@@ -433,7 +433,9 @@ async def steam_agent_events(
     "/notifications/stream",
     status_code=status.HTTP_200_OK,
 )
-async def stream_notification_events(user: User = Depends(parse_header)) -> EventSourceResponse:
+async def stream_notification_events(
+    request: Request, user: User = Depends(parse_header)
+) -> EventSourceResponse:
     """
     Set up a data stream that returns messages based on notification events.
     """
@@ -441,7 +443,7 @@ async def stream_notification_events(user: User = Depends(parse_header)) -> Even
     async def _wrap_serializer() -> AsyncContentStream:
         try:
             async for event in application.state.agent_service_impl.stream_notification_events(
-                user_id=user.user_id
+                request=request, user_id=user.user_id
             ):
                 yield ServerSentEvent(data=event.model_dump_json(), event="notification-event")
         except asyncio.CancelledError as e:

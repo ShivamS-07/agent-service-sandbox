@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import Any, AsyncGenerator, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
 from agent_service.chatbot.chatbot import Chatbot
@@ -271,10 +271,12 @@ class AgentServiceImpl:
 
         return GetAgentOutputResponse(outputs=outputs)
 
-    async def stream_agent_events(self, agent_id: str) -> AsyncGenerator[AgentEvent, None]:
+    async def stream_agent_events(
+        self, request: Request, agent_id: str
+    ) -> AsyncGenerator[AgentEvent, None]:
         LOGGER.info(f"Listening to events on channel for {agent_id=}")
         async with get_agent_event_channel(agent_id=agent_id) as channel:
-            async for message in wait_for_messages(channel):
+            async for message in wait_for_messages(channel, request):
                 resp = AgentEvent.model_validate_json(message)
                 LOGGER.info(
                     f"Got event on channel for {agent_id=} of type '{resp.event.event_type.value}'"
@@ -282,11 +284,11 @@ class AgentServiceImpl:
                 yield resp
 
     async def stream_notification_events(
-        self, user_id: str
+        self, request: Request, user_id: str
     ) -> AsyncGenerator[NotificationEvent, None]:
         LOGGER.info(f"Listening to notification events on channel for {user_id=}")
         async with get_notification_event_channel(user_id=user_id) as channel:
-            async for message in wait_for_messages(channel):
+            async for message in wait_for_messages(channel, request):
                 resp = NotificationEvent.model_validate_json(message)
                 LOGGER.info(
                     f"Got event on notification channel for {user_id=} of type '{resp.event.event_type.value}'"
