@@ -122,6 +122,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
         raise RuntimeError("Need at least two points to make a line graph!")
 
     input_table = consolidate_table_columns(args.input_table)
+    cols = input_table.columns
     x_axis_col = None
     dataset_col = None
     data_col = None
@@ -395,11 +396,13 @@ async def make_bar_graph(args: MakeBarGraphArgs, context: PlanRunContext) -> Bar
     if len(cols) < 2:
         raise RuntimeError("Table must have at least two columns to make a bar graph!")
 
+    input_table = consolidate_table_columns(args.input_table)
+    cols = input_table.columns
     x_axis_col = None
     dataset_col = None
     data_col = None
     # TODO can probably clean this up to not use the df at all
-    df = consolidate_table_columns(args.input_table).to_df()
+    df = input_table.to_df()
     for col, df_col in zip(cols, df.columns):
         # allow flexible types for bar axes
         if not x_axis_col and col.metadata.col_type in (

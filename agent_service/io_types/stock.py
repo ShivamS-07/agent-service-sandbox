@@ -21,7 +21,11 @@ class StockID(ComplexIOBase):
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, StockID):
-            return self.gbi_id == other.gbi_id
+            return (
+                self.gbi_id == other.gbi_id and self.symbol == other.symbol
+                if self.symbol is not None and other.symbol is not None
+                else True
+            )
         return False
 
     def __lt__(self, other: Any) -> bool:
