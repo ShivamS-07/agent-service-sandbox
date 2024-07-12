@@ -751,8 +751,16 @@ async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunCon
         num_future_quarters=num_future_quarters,
     )
 
+    currency_adjusted_data = {}
+    for kpi_name, kpi_instances in data.items():
+        if kpi_instances[0].long_unit == LONG_UNIT_FOR_CURRENCY:
+            modified_kpi_data = convert_kpi_currency_to_usd(kpi_instances)
+            currency_adjusted_data[kpi_name] = modified_kpi_data
+        else:
+            currency_adjusted_data[kpi_name] = kpi_instances
+
     topic_kpi_table = convert_single_stock_data_to_table(
-        stock_id=args.stock_id, data=data, simple_output=args.simple_output
+        stock_id=args.stock_id, data=currency_adjusted_data, simple_output=args.simple_output
     )
     return topic_kpi_table
 
@@ -899,14 +907,13 @@ async def main() -> None:
     for column in gen_kpis_table.columns:
         print(column.metadata.label)
 
-    # Testing Important KPI Retrieval Using Agent Tool
+    # Testing Important KPI Retrieval Using Agent Tool and verifying figures are USD (default is JPY)
+    sony = StockID(gbi_id=391887, symbol="Sony", isin="")
     gen_kpi_list: List[KPIText] = await get_general_kpis_for_specific_stock(  # type: ignore
-        args=GetGeneralKPIsForStock(stock_id=appl_stock_id), context=plan_context
+        args=GetGeneralKPIsForStock(stock_id=sony), context=plan_context
     )
     gen_kpis_table: Table = await get_kpis_table_for_stock(  # type: ignore
-        CompanyKPIsRequest(
-            stock_id=appl_stock_id, table_name="General KPI Table", kpis=gen_kpi_list
-        ),
+        CompanyKPIsRequest(stock_id=sony, table_name="General KPI Table", kpis=gen_kpi_list),
         context=plan_context,
     )
     df = gen_kpis_table.to_df()
