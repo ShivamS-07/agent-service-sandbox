@@ -904,6 +904,12 @@ class GetRiskExposureForStocksInput(ToolArgs):
 async def get_risk_exposure_for_stocks(
     args: GetRiskExposureForStocksInput, context: PlanRunContext
 ) -> Table:
+    def format_column_name(col_name: str) -> str:
+        if "_" in col_name:
+            return col_name.replace("_", " ").title()
+        else:
+            return col_name.title()
+
     env = get_environment_tag()
     # TODO when risk model ism integration is complete
     # accept a risk model id as input and default to NA model
@@ -939,6 +945,7 @@ async def get_risk_exposure_for_stocks(
     cols.insert(0, cols.pop(cols.index(STOCK_ID_COL_NAME_DEFAULT)))
     df = df.loc[:, cols]
     df[STOCK_ID_COL_NAME_DEFAULT] = df[STOCK_ID_COL_NAME_DEFAULT].map(gbi_id_map)
+    df.columns = pd.Index([format_column_name(col) for col in df.columns])
 
     table = Table.from_df_and_cols(
         data=df,

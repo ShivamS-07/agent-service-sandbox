@@ -341,10 +341,13 @@ class TestRiskExposure(IsolatedAsyncioTestCase):
         init_test_logging()
 
     async def test_get_risk_exposure_for_stocks(self):
+        # get all the stocks in a universe
         self.args = GetRiskExposureForStocksInput(stock_list=[AAPL])
         result: Table = await get_risk_exposure_for_stocks(self.args, self.context)
         # make sure we got the table for the  right STOCK
         self.assertEqual(result.to_df().values[0][0], AAPL)
+        # Assert that the data is not empty
+        self.assertTrue(len(result.to_df().values[0][1:]) > 0)
         # Ensure the data in the table is the right type
         for value in result.to_df().values[0][1:]:  # skip the first entry because it's the stock
             self.assertTrue(isinstance(value, float))
