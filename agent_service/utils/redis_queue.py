@@ -107,6 +107,7 @@ async def publish_agent_event(agent_id: str, serialized_event: str) -> None:
             event_data={
                 "agent_id": agent_id,
                 "data": serialized_event,
+                "channel": channel,
                 "subscribers": subscriber_num,
             },
         )
@@ -116,6 +117,7 @@ async def publish_agent_event(agent_id: str, serialized_event: str) -> None:
             event_data={
                 "agent_id": agent_id,
                 "data": serialized_event,
+                "channel": channel,
                 "error_msg": traceback.format_exc(),
             },
         )

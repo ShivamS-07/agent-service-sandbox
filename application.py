@@ -410,7 +410,7 @@ async def get_agent_plan_output(
     "/agent/stream/{agent_id}",
     status_code=status.HTTP_200_OK,
 )
-async def steam_agent_events(
+async def stream_agent_events(
     request: Request, agent_id: str, user: User = Depends(parse_header)
 ) -> EventSourceResponse:
     """Set up a data stream that returns messages based on backend events.
@@ -426,7 +426,20 @@ async def steam_agent_events(
             async for event in application.state.agent_service_impl.stream_agent_events(
                 request=request, agent_id=agent_id
             ):
-                to_send = event.model_dump_json()
+                try:
+                    to_send = event.model_dump_json()
+                except Exception:
+                    logger.exception(f"Error while sending agent event {agent_id=}")
+                    log_event(
+                        event_name="agent-event-sent",
+                        event_data={
+                            "agent_id": agent_id,
+                            "user_id": user.user_id,
+                            "error_msg": traceback.format_exc(),
+                        },
+                    )
+                    continue
+
                 yield ServerSentEvent(data=to_send, event="agent-event")
                 log_event(
                     event_name="agent-event-sent",
@@ -463,7 +476,11 @@ async def stream_notification_events(
             async for event in application.state.agent_service_impl.stream_notification_events(
                 request=request, user_id=user.user_id
             ):
-                yield ServerSentEvent(data=event.model_dump_json(), event="notification-event")
+                try:
+                    yield ServerSentEvent(data=event.model_dump_json(), event="notification-event")
+                except Exception:
+                    logger.exception(f"Error while sending notification event {user.user_id=}")
+
         except asyncio.CancelledError as e:
             logger.info(f"Event stream client disconnected for {user.user_id=}")
             raise e
