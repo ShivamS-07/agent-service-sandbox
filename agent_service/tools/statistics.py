@@ -100,6 +100,8 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
         " You should use this function for general performance indicators (like revenue) which apply to all"
         " stocks, you should use kpi functions only when there are performance indicators involved which are specific"
         " to certain companies and sectors (e.g. iPhone sales, cloud revenue, China revenue)"
+        " Use kpi functions for anything related to production, units sold, etc. this tool cannot provide any"
+        " information that involves counts of products."
         " This function only works with actuals. If the client asks for estimates or projected results"
         " must use kpi tools, not this tool, even if the statistic is not specific to companies "
         " If you need the same statistic for the same time period for more than one company, you must call this"
@@ -165,8 +167,14 @@ async def get_statistic_data_for_companies(
         context=context,
     )
 
+    latest_date = get_latest_date()
+
     if args.date_range:
         start_date, end_date = args.date_range.start_date, args.date_range.end_date
+        if end_date > latest_date:
+            # no end date past the latest date, preserve start/end diff
+            end_date = latest_date
+            start_date = end_date - (args.date_range.end_date - args.date_range.start_date)
         if start_date == end_date and is_timeseries:
             # we are doing a time series, so we'd better have a range
             start_date = end_date - DEFAULT_TIME_DELTA
@@ -177,7 +185,6 @@ async def get_statistic_data_for_companies(
                 end_date = latest_date
             start_date = end_date
     else:
-        latest_date = get_latest_date()
         if is_timeseries:
             end_date = latest_date
             start_date = latest_date - DEFAULT_TIME_DELTA

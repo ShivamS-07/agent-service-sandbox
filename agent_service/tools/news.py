@@ -180,7 +180,9 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
 @tool(
     description=(
         "This function takes a list of topics and returns a "
-        "list of news articles related to the given topics. "
+        "list of news articles related to at least one of the given topics. (OR logic)"
+        "If you need something which is about multiple topics at the same time (AND logic) "
+        "Include it as a single topic joined by `and`"
         "If someone wants general information about a topic and there is no existing themes "
         "This is the best tool to call. "
         "If you do not set max_num_articles_per_topic, all are returned. "

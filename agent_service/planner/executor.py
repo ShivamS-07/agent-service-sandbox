@@ -280,7 +280,7 @@ async def run_execution_plan(
             await send_chat_message(
                 message=Message(
                     agent_id=context.agent_id,
-                    message="Agent updated, no important differences found.",
+                    message="Report updated, but no important differences found.",
                     is_user_message=False,
                     visible_to_llm=False,
                 ),

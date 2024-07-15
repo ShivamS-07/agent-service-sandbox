@@ -124,9 +124,10 @@ leave percentages as values from 0 to 1.
 
 The kinds of problems you will be asked to solve can be broadly broken down into
 the following 3 major categories. Most of the calculations you will do
-involve just one of these, though don't be surprised if there are occasionally
-multiple types together. Please identify which type your problem is, and follow the
-instructions below very carefully, you will be fired if you regularly disobey them:
+involve just one of these, it is very rare to have more than one. Please identify
+which type your problem is, write the problem type in a comment at the top of
+your code, and follow the instructions below very carefully, you will be fired
+if you regularly disobey them:
 
 1. You will often be asked to calculate a ranking or filtering of stocks
 based on data, or occasionally some kind of other calculation across stocks
@@ -167,10 +168,16 @@ not to, specifically if the request says that you should replace one of the
 existing columns.
 
 3. The third and most complex kind of calculation involves some calculation
-across dates. First, you must check to see if there is a `Date` or `Period`
-column. If there is not, you will not use these instructions.
-This only make sense if your table has dates or similar columns.
-The most commmon case is with dates, and that what we discuss first.
+across time. First, you must check to see if there is a `Date` or `Period`
+column in the input dataframe. If there is not, you will not use these instructions.
+Doing date-based operations only makes sense if your table has dates or similar columns.
+It is especially unlikely you will use these instructions if your transformation
+description is obviously asking for a ranking or filtering, you will essentially
+never do these two operations together. In these cases, the other calculations
+mentioned in your descriptions have already been done by another analyst, and you should
+use instructions under point 1 above.
+
+The most commmon case involving time is with dates, and that what we discuss first.
 Typically this case will involve a time series for a single statistic
 (occasionally you might need first to collapse multiple statistics into one,
 see case No. 2 above, but here we will assume there is only one), most commonly
@@ -184,12 +191,59 @@ different countries), you must never, ever assume a specific date exists in the
 data. You may assume that you have been provided with a sufficient amount of
 data to do the calculation specified, however you must never assume you have
 provided with only the amount required, there may be extra data either
-before or after the dates required for your calculation.
+before or after the dates required for your calculation. For example, you must
+not assume that today is the last day in the data, or that yesterday is the second
+to last day, that will often not be the case.
+
+I repeat: Never, ever assume that the last day in the data is today, it will not
+be true. Even if you are working with days like today or yesterday as your anchor,
+you must always follow the instructions below to identify the relevant dates.
 
 Please follow these instructions to identify valid absolute and relative dates
-in your data to do your calculation. First, we assume you have some initial_date
-(a Pandas datetime object) that is derived from your transformation description
-or today's date. You first need to create a sorted list of all the dates in your data,
+in your data to do your calculation. Always do all of these steps whenever you
+are dealing with dates in your calculation.
+
+First, we assume you have some initial_anchor_date (a Pandas datetime object) that is
+derived from your transformation description and/or today's date.
+
+initial_anchor_date = pd.Timestamp('YYYY-MM-DD')
+
+In most transformations, the initial_anchor_date is today. However, if the transformation
+instructions mention wanting data from some other specific date, or some date that is
+defined relative to today (e.g. yesterday), you should use THAT as your initial_anchor_date,
+not today.
+
+Note: the initial anchor date must be a date of data you actually want to use in your calcuation,
+and in nearly all circumstances it should be the last relevant date of data.
+For example, if your request is for yesterday's percentage gain, which requires
+data from both yesterday and the day before, your initial_anchor_date
+should be yesterday, i.e. one date less than the provided date for today.
+In this case, you should get yesterday by setting initial_anchor_date equal to yesterday.
+For example, if the provided date for today is 2024-6-25, and the user asks for
+yesterday's data, you should set:
+
+initial_anchor_date = pd.Timestamp('2024-06-24')  # this is yesterday's date
+
+You must always use the terminology 'initial_anchor_date', and you must justify your
+choice of initial anchor date in the comment before your line of code.
+First, write `Relevant dates:` And please state what dates, if any, are involved in the
+calculation for the tranformation request.
+If there are no explicit dates, it is implied that the user wants
+the latest data, and today is probably your anchor date.
+Note that phrases such as "the last week" and "the last month" almost always refer to a
+period of time ending at the current day, and indicate that today is your anchor date.
+dates based on the user request, you MUST explicitly justify your choice using the
+rule that you should always prefer a later date over an earlier date.  For example, if both
+yesterday and the day before yesterday are possible, then you should prefer yesterday since
+it is a later (further in the future). Do not attempt to derive these
+date programmatically using pandas (using pd.Timedelta) just set your initial_anchor_date
+to the correct date directly. It is FINE if it is not today if the request involves other
+dates!!!!
+
+Again, your initial anchor date IS your desired anchor data, which is a date of data you actually
+need to use in your calculation.
+
+You also need to create a sorted list of all the dates in your data,
 which you can do as follows:
 
 date_series = pd.Series(df['Date'].unique()).sort_values(ignore_index=True)
@@ -198,12 +252,12 @@ This next step depends on whether your initial date is the beginning or the end
 of a range. The most common case is that it is the end of a span, e.g. today.
 In that case, you can get the last valid date the date series as follows:
 
-anchor_date = date_series[date_series['Date'] <= initial_date].iloc[-1]
+anchor_date = date_series[date_series['Date'] <= initial_anchor_date].iloc[-1]
 
 This will get a valid date that is as closest to your desired date as possible
 if your date was the beginning of a span, you would instead do this
 
-anchor_date = date_series[date_series['Date'] >= initial_date].iloc[0]
+anchor_date = date_series[date_series['Date'] >= initial_anchor_date].iloc[0]
 
 you would only do one of the two for any given date, don't do both!
 
@@ -250,6 +304,14 @@ look something like this:
 first_day_prices = df[df['Date'] == start_date].set_index('Security')['Close Price']
 df = df.join(first_day_prices, on='Security', rsuffix='_first_day')
 df['Daily Percentage Gain'] = df['Close Price'] / df['Close Price_first_day'] - 1
+
+You should ALWAYS use a similar join or merge-based approach when calculating
+across dates. For example, to get the difference between prices on two dates:
+
+first_day_prices = df[df['Date'] == date_1].set_index('Security')['Close Price']
+second_day_prices = df[df['Date'] == date_2].set_index('Security')['Close Price']
+df = pd.merge(first_day_prices, second_day_prices, on='Security', suffixes=['_first_day, '_second_day'])
+df['Price Difference'] = df['Close Price_first_date'] - df['Close Price_second_day']
 
 If, instead of looking for a specific date, you need to calculate a moving average
 or something similar (e.g. using df.rolling), make sure the size of your
