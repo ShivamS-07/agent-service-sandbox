@@ -52,7 +52,6 @@ class TestCommentary(IsolatedAsyncioTestCase):
         self.args = WriteCommentaryInput(
             inputs=texts,  # type: ignore
             portfolio_id=portfolio_id,
-            use_watchlist_stocks=True,
         )
         result = await write_commentary(self.args, self.context)
         self.assertIsInstance(result, Text)
@@ -70,7 +69,6 @@ class TestCommentary(IsolatedAsyncioTestCase):
         print("Length of texts: ", len(texts))  # type: ignore
         self.args = WriteCommentaryInput(
             inputs=texts,  # type: ignore
-            use_watchlist_stocks=False,
         )
         result = await write_commentary(self.args, self.context)
         self.assertIsInstance(result, Text)

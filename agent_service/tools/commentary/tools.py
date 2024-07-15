@@ -1,5 +1,4 @@
 import asyncio
-import random
 from typing import List, Optional
 from uuid import uuid4
 
@@ -7,15 +6,19 @@ from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.dates import DateRange
-from agent_service.io_types.table import StockTable
+from agent_service.io_types.stock import StockID
+from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT, StockTable
 from agent_service.io_types.text import Text, TextGroup, ThemeText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.commentary.constants import (
+    MAX_DEVELOPMENTS_PER_COMMENTARY,
     MAX_MATCHED_ARTICLES_PER_TOPIC,
     MAX_THEMES_PER_COMMENTARY,
     MAX_TOTAL_ARTICLES_PER_COMMENTARY,
+    TOP_STOCKS_IN_PORTFOLIO_NUM,
 )
 from agent_service.tools.commentary.helpers import (
+    filter_most_important_citations,
     get_portfolio_geography_str,
     get_previous_commentary_results,
     get_region_weights_from_portfolio_holdings,
@@ -43,6 +46,10 @@ from agent_service.tools.commentary.prompts import (
 from agent_service.tools.news import (
     GetNewsArticlesForTopicsInput,
     get_news_articles_for_topics,
+)
+from agent_service.tools.other_text import (
+    GetAllTextDataForStocksInput,
+    get_all_text_data_for_stocks,
 )
 from agent_service.tools.portfolio import (
     GetPortfolioPerformanceInput,
@@ -86,11 +93,12 @@ from agent_service.utils.prefect import get_prefect_logger
 
 
 # TODO:
-# 1. comeplte sectors_prompt
-# 2. complete top_stocks_prompt
-# 4. complete goal_prompt
-# 6. complete theme_prompt and theme_outlook_prompt
-# 8. use a portfolio by defualt for geography_prompt
+# - comeplte sectors_prompt
+# - complete top_stocks_prompt
+# - complete goal_prompt
+# - complete theme_prompt and theme_outlook_prompt
+# - use a portfolio by defualt for geography_prompt
+# - use gpt to filter most important texts
 
 
 class WriteCommentaryInput(ToolArgs):
@@ -98,7 +106,6 @@ class WriteCommentaryInput(ToolArgs):
     client_type: Optional[str] = "Simple"
     writing_format: Optional[str] = "Long"
     portfolio_id: Optional[PortfolioID] = None
-    use_watchlist_stocks: Optional[bool] = False
 
 
 @tool(
@@ -164,19 +171,28 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
             if text.id not in text_ids:
                 text_ids.add(text.id)
                 deduplicated_texts.append(text)
-    themes, developments, articles = await organize_commentary_texts(deduplicated_texts)
-
-    # if number of articles is more than MAX_TOTAL_ARTICLES_PER_COMMENTARY,
-    # randomly select specified number of themes, developments and articles
-    if len(articles) > MAX_TOTAL_ARTICLES_PER_COMMENTARY:
-        articles = random.sample(articles, MAX_TOTAL_ARTICLES_PER_COMMENTARY)
-
-    all_texts = themes + developments + articles
-    all_text_group = TextGroup(val=all_texts)
-
+    text_mapping = await organize_commentary_texts(deduplicated_texts)
+    # check the max number of texts in each type
+    if len(text_mapping["Theme Description"]) > MAX_THEMES_PER_COMMENTARY:
+        text_mapping["Theme Description"] = text_mapping["Theme Description"][
+            :MAX_THEMES_PER_COMMENTARY
+        ]
+    if len(text_mapping["News Development Summary"]) > MAX_DEVELOPMENTS_PER_COMMENTARY:
+        text_mapping["News Development Summary"] = text_mapping["News Development Summary"][
+            :MAX_DEVELOPMENTS_PER_COMMENTARY
+        ]
+    if len(text_mapping["News Article Summary"]) > MAX_TOTAL_ARTICLES_PER_COMMENTARY:
+        text_mapping["News Article Summary"] = text_mapping["News Article Summary"][
+            :MAX_TOTAL_ARTICLES_PER_COMMENTARY
+        ]
+    # show number of texts of each type
     await tool_log(
-        log=f"Retrieved {len(themes)} themes, {len(developments)} developments, and {len(articles)} articles.",
+        log=f"Retrieved texts of each type: {', '.join([f'{k}: {len(v)}' for k, v in text_mapping.items()])}",
         context=context,
+    )
+    # convert text_mapping to list of texts
+    all_text_group = TextGroup(
+        val=[text for text_list in text_mapping.values() for text in text_list]
     )
 
     # Prepare previous commentary prompt
@@ -189,24 +205,17 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     )
     # Prepare watchlist prompt
     watchlist_prompt = NO_PROMPT
-    if args.use_watchlist_stocks:
-
-        watchlist_stocks = await get_stocks_for_user_all_watchlists(
-            GetStocksForUserAllWatchlistsInput(), context
-        )
-        await tool_log(
-            log="Watchlist stocks are used. Retrieving watchlist stocks for commentary.",
-            context=context,
-            associated_data=watchlist_stocks,
-        )
-        watchlist_prompt = WATCHLIST_PROMPT.format(
-            watchlist_stocks=", ".join([await stock.to_gpt_input() for stock in watchlist_stocks])  # type: ignore
-        )
-    else:
-        await tool_log(
-            log="Watchlist stocks are not used. Skipping watchlist based commentary.",
-            context=context,
-        )
+    watchlist_stocks = await get_stocks_for_user_all_watchlists(
+        GetStocksForUserAllWatchlistsInput(), context
+    )
+    await tool_log(
+        log="Retrieving watchlist stocks for commentary.",
+        context=context,
+        associated_data=watchlist_stocks,
+    )
+    watchlist_prompt = WATCHLIST_PROMPT.format(
+        watchlist_stocks=", ".join([await stock.to_gpt_input() for stock in watchlist_stocks])  # type: ignore
+    )
 
     # Prepare client type prompt
     client_type = args.client_type if args.client_type else "Simple"
@@ -253,8 +262,16 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         main_prompt=main_prompt,
         sys_prompt=COMMENTARY_SYS_PROMPT.format(),
     )
-    text, citation_ids = await split_text_and_citation_ids(result)
-    commentary = Text(val=text)
+    commentary_text, citation_ids = await split_text_and_citation_ids(result)
+    print("initial citation size: ", len(citation_ids))
+    if len(citation_ids) > 50:
+        # filter most important citations
+        citation_ids = await filter_most_important_citations(
+            texts, commentary_text, citation_ids  # type: ignore
+        )
+        print("filtered citation size: ", len(citation_ids))
+    # create commentary object
+    commentary = Text(val=commentary_text)
     commentary = commentary.inject_history_entry(
         HistoryEntry(title="Commentary", citations=all_text_group.get_citations(citation_ids))
     )
@@ -263,7 +280,8 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
 
 class GetCommentaryInputsInput(ToolArgs):
-    topics: List[str] = None  # type: ignore
+    topics: Optional[List[str]] = None
+    stock_ids: Optional[List[StockID]] = None
     date_range: Optional[DateRange] = None
     portfolio_id: Optional[str] = None
     general_commentary: Optional[bool] = False
@@ -317,6 +335,41 @@ async def get_commentary_inputs(
         )
         texts.extend(topic_texts)
 
+    # If stock_ids are provided, get the texts for the stock_ids
+    if args.stock_ids:
+        stock_texts: List[Text] = await get_all_text_data_for_stocks(  # type: ignore
+            GetAllTextDataForStocksInput(stock_ids=args.stock_ids, date_range=args.date_range),
+            context,
+        )
+        await tool_log(
+            log=f"Retrieved {len(stock_texts)} texts for given stock ids.",
+            context=context,
+        )
+        texts.extend(stock_texts)
+
+    # collect texts related to top stocks in the portfolio
+    if args.portfolio_id:
+        portfolio_holdings_df = (
+            await get_portfolio_holdings(
+                GetPortfolioWorkspaceHoldingsInput(portfolio_id=args.portfolio_id), context
+            )
+        ).to_df()  # type: ignore
+        # sort by weight and get top 5 stocks
+        top_stocks = portfolio_holdings_df.sort_values("Weight", ascending=False).head(
+            TOP_STOCKS_IN_PORTFOLIO_NUM
+        )
+        top_stock_ids = top_stocks[STOCK_ID_COL_NAME_DEFAULT].tolist()
+        # get texts for top stocks
+        top_stock_texts: List[Text] = await get_all_text_data_for_stocks(  # type: ignore
+            GetAllTextDataForStocksInput(stock_ids=top_stock_ids, date_range=args.date_range),
+            context,
+        )
+        await tool_log(
+            log=f"Retrieved {len(top_stock_texts)} texts for top {TOP_STOCKS_IN_PORTFOLIO_NUM} stocks in portfolio.",
+            context=context,
+            associated_data=top_stocks,
+        )
+        texts.extend(top_stock_texts)
     return texts
 
 
@@ -330,7 +383,8 @@ async def get_texts_for_topics(
     logger = get_prefect_logger(__name__)
 
     texts: List = []
-    for topic in args.topics:
+    topics = args.topics if args.topics else []
+    for topic in topics:
         try:
             themes = await get_macroeconomic_themes(
                 GetMacroeconomicThemeInput(theme_refs=[topic]), context
@@ -370,7 +424,7 @@ async def get_texts_for_topics(
 
 # Test
 async def main() -> None:
-    input_text = "Write a general commentary with focus on impact of cloud computing on military industrial complex."
+    input_text = "Write a general commentary with focus on cloud computing and my portfolio."
     user_message = Message(message=input_text, is_user_message=True, message_time=get_now_utc())
     chat_context = ChatContext(messages=[user_message])
 

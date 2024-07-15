@@ -1,16 +1,21 @@
 import json
+import random
+import re
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
 import pandas as pd
 from data_access_layer.core.dao.securities import SecuritiesMetadataDAO
 
+from agent_service.GPT.constants import GPT4_O, NO_PROMPT
+from agent_service.GPT.requests import GPT
 from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
 from agent_service.io_types.text import Text, ThemeText
 from agent_service.tools.commentary.constants import (
     MAX_ARTICLES_PER_DEVELOPMENT,
     MAX_DEVELOPMENTS_PER_TOPIC,
 )
+from agent_service.tools.commentary.prompts import FILTER_CITATIONS_PROMPT
 from agent_service.tools.themes import (
     GetThemeDevelopmentNewsArticlesInput,
     GetThemeDevelopmentNewsInput,
@@ -62,21 +67,18 @@ async def get_theme_related_texts(
     return res
 
 
-async def organize_commentary_texts(texts: List[Text]) -> Tuple[List[Text], List[Text], List[Text]]:
+async def organize_commentary_texts(texts: List[Text]) -> Dict[str, List[Text]]:
     """
-    This function organizes the commentary texts by themes, developments and articles.
+    This function organizes the commentary texts into a dictionary with the text descriptions
+    as the key.
     """
-    themes: List[Text] = []
-    developments: List[Text] = []
-    articles: List[Text] = []
+    res = defaultdict(list)
     for text in texts:
-        if text.text_type == "Theme Description":
-            themes.append(text)
-        elif text.text_type == "News Development Summary":
-            developments.append(text)
-        else:
-            articles.append(text)
-    return themes, developments, articles
+        res[text.text_type].append(text)
+    # shuffle the texts order in each key so when removing the texts, the order is random
+    for key in res:
+        random.shuffle(res[key])
+    return res
 
 
 async def get_portfolio_geography_str(regions_to_weight: List[Tuple[str, float]]) -> str:
@@ -139,3 +141,22 @@ async def get_previous_commentary_results(context: PlanRunContext) -> List[Text]
         if isinstance(res, Text):
             previous_commentary_results.append(res)
     return previous_commentary_results
+
+
+async def filter_most_important_citations(
+    citations: List[int], texts: str, commentary_result: str
+) -> List[int]:
+    """this function filters the most important citations from the given list of citations, texts and
+    commentary result.
+    """
+    llm = GPT(model=GPT4_O)
+
+    result = await llm.do_chat_w_sys_prompt(
+        main_prompt=FILTER_CITATIONS_PROMPT.format(
+            texts=texts, citations=citations, commentary_result=commentary_result
+        ),
+        sys_prompt=NO_PROMPT,
+    )
+    cleaned_result = re.sub(r"[^\d,]", "", result)
+    filtered_citations = list(map(int, cleaned_result.strip("[]").split(",")))
+    return filtered_citations
