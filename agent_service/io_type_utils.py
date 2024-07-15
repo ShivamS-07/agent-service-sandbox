@@ -51,6 +51,10 @@ class TableColumnType(str, enum.Enum):
     FLOAT = "float"
     BOOLEAN = "boolean"
 
+    # Values with units
+    INTEGER_WITH_UNIT = "integer_with_unit"
+    FLOAT_WITH_UNIT = "float_with_unit"
+
     # A currency valued number
     CURRENCY = "currency"
     DATE = "date"  # YYYY-MM-DD

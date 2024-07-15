@@ -1,6 +1,7 @@
 import asyncio
 import json
-from typing import List, Text
+import re
+from typing import Any, Dict, List, Text
 
 import pandas as pd
 
@@ -40,7 +41,7 @@ GET_PRODUCT_COMPARE_MAIN_PROMPT_STR = (
     "one entry for the product name whose key is `product_name`, "
     "one entry for the product release date whose key is `release_date` and "
     "the remaining entries for each of the specifications, the key being the "
-    "specification and the entry being a description. "
+    "specification and the entry being a description, missing/unavailable/undisclosed values should be n/a. "
     "For any specifications, make sure similar units are being compared "
     "against each other. Be sure to keep specifications which are "
     "relevant to {product}. Use double quotes"
@@ -70,7 +71,7 @@ GET_PRODUCT_COMPARE_SYS_PROMPT_STR = (
     "are to return the latest products with specifications from the selected "
     "companies for comparison purposes. Your result should make it easy for all "
     "users to compare the different products by making the keys consistent. It is VERY important that the products "
-    "are the latest so your clients get accurate and up to date info"
+    "are the latest so your clients get accurate and up to date info."
 )
 
 GET_PRODUCT_COMPARE_SYS_PROMPT = Prompt(
@@ -80,6 +81,62 @@ GET_PRODUCT_COMPARE_SYS_PROMPT = Prompt(
 GET_PRODUCT_COMPARE_MAIN_PROMPT = Prompt(
     name="GET_PRODUCT_COMPARE_MAIN_PROMPT", template=GET_PRODUCT_COMPARE_MAIN_PROMPT_STR
 )
+
+
+def column_treatment(title: str, data_list: List[Dict[str, Any]]) -> TableColumnMetadata:
+    """
+    This function assumes the following to function:
+    - the data values START with an integer/float
+    - The data values do not start with . or ,
+    - numbers are not directly followed by . or , and instead followed by a space of a letter
+
+    This function will MUTATE the data_list by removing units off of the strings if it stores the unit in the column
+    """
+    values = [data[title] for data in data_list]
+    values_set = set(values)
+
+    # remove the numbers from the front of each value to get the suffix
+    value_suffixes_set = set(
+        [re.sub(r"^[\d.,]+", "", value).strip() for value in values if value != "n/a"]
+    )
+
+    # if the suffix is shared amongst all values, and it is a value which is new (a prefix number was removed)
+    if len(value_suffixes_set) == 1 and len(values_set | value_suffixes_set) > len(values_set):
+        suffix = list(value_suffixes_set)[0]
+        value_prefixes = [
+            match.group().strip().replace(",", "") if match else "n/a"
+            for value in values
+            for match in [re.match(r"^[\d.,]+", value)]
+        ]
+
+        is_float = False
+        for value_prefix in value_prefixes:
+            is_float = is_float or "." in value_prefix
+
+        if is_float:
+            for i, data in enumerate(data_list):
+                if re.match(r"^\d", value_prefixes[i]):
+                    data[title] = float(value_prefixes[i])
+
+            if suffix == "":
+                return TableColumnMetadata(label=title, col_type=TableColumnType.FLOAT)
+            else:
+                return TableColumnMetadata(
+                    label=title, unit=suffix, col_type=TableColumnType.FLOAT_WITH_UNIT
+                )
+
+        for i, data in enumerate(data_list):
+            if re.match(r"^\d", value_prefixes[i]):
+                data[title] = int(value_prefixes[i])
+
+        if suffix == "":
+            return TableColumnMetadata(label=title, col_type=TableColumnType.INTEGER)
+        else:
+            return TableColumnMetadata(
+                label=title, unit=suffix, col_type=TableColumnType.INTEGER_WITH_UNIT
+            )
+    else:
+        return TableColumnMetadata(label=title, col_type=TableColumnType.STRING)
 
 
 @tool(
@@ -99,7 +156,7 @@ async def get_product_comparison_table(args: ProductCompareInput, context: PlanR
     if len(data_list) > 0:
         column_titles = data_list[0].keys()
         for title in column_titles:
-            columns.append(TableColumnMetadata(label=title, col_type=TableColumnType.STRING))
+            columns.append(column_treatment(title, data_list))
 
     df = pd.DataFrame(data_list)
     return Table.from_df_and_cols(data=df, columns=columns)
@@ -188,7 +245,7 @@ async def main() -> None:
     ]
 
     table_result: Table = await get_product_comparison_table(  # type: ignore
-        ProductCompareInput(stock_ids=stock_ids, category="AI Chips", main_stock="NVDA"),
+        ProductCompareInput(stock_ids=stock_ids, category="AI chip", main_stock="NVDA"),
         plan_context,
     )
 
@@ -198,10 +255,9 @@ async def main() -> None:
     )
 
     df = table_result.to_df()
-    print(df.head())
-    for column in table_result.columns:
-        print(column.metadata.label)
 
+    print(df.head())
+    print(df.iloc[0])
     print(summary_result)
 
 
