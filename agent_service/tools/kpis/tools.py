@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -65,7 +66,7 @@ class CompanyInformation:
 
 def generate_columns_for_kpi(
     kpi_data: Union[KPIInstance, List[KPIInstance]],
-    kpi_explanation_lookup: Dict[str, str],
+    kpi_explanations: List[Optional[str]],
     actual_col_name: str,
     estimate_col_name: Optional[str] = None,
     surprise_col_name: Optional[str] = None,
@@ -76,9 +77,7 @@ def generate_columns_for_kpi(
         row_descs: Dict[int, List[RowDescription]] = {}
         for i, kpi in enumerate(kpi_data):
             # Keeping as a string to open up the option to pass multiple KPIs in the future
-            row_descs[i] = [
-                RowDescription(name=kpi.name, explanation=kpi_explanation_lookup.get(kpi.name, ""))
-            ]
+            row_descs[i] = [RowDescription(name=kpi.name, explanation=kpi_explanations[i])]
     elif isinstance(kpi_data, KPIInstance):
         long_unit = kpi_data.long_unit
         unit = kpi_data.unit
@@ -167,7 +166,7 @@ def convert_single_stock_data_to_table(
         # citations to this function we'll need to update this
         new_columns = generate_columns_for_kpi(
             kpi_history[0],
-            {},
+            [],
             actual_col,
             estimate_col,
             surprise_col,
@@ -208,7 +207,7 @@ def convert_single_stock_data_to_table(
 async def convert_multi_stock_data_to_table(
     kpi_name: str,
     data: Dict[StockID, List[KPIInstance]],
-    kpi_explanation_lookups: Dict[str, str],
+    kpi_explanation_lookups: Dict[StockID, Dict[str, Optional[str]]],
     simple_table: bool,
 ) -> Table:
     columns: List[TableColumnMetadata] = []
@@ -234,10 +233,11 @@ async def convert_multi_stock_data_to_table(
 
     df_data = []
     kpi_data_in_col = []
-
+    explanations: List[Optional[str]] = []
     for stock_id, kpi_history in data.items():
         for kpi_inst in kpi_history:
             kpi_data_in_col.append(kpi_inst)
+            explanations.append(kpi_explanation_lookups[stock_id].get(kpi_inst.name))
             quarter = f"{kpi_inst.year} Q{kpi_inst.quarter}"
             # Need to convert percentages into decimals to satisfy current handling of the Percentage figures
             actual = (
@@ -290,7 +290,7 @@ async def convert_multi_stock_data_to_table(
 
     kpi_column = generate_columns_for_kpi(
         kpi_data=kpi_data_in_col,
-        kpi_explanation_lookup=kpi_explanation_lookups,
+        kpi_explanations=explanations,
         actual_col_name=actual_col_name,
         estimate_col_name=estimate_col_name,
         surprise_col_name=surprise_col_name,
@@ -459,7 +459,6 @@ async def get_company_data_and_kpis_for_stocks(
                 f"No KPI data available for stock {company_name} ({stock_id.symbol})",
                 context=context,
             )
-            print(f"No KPI data available for stock {stock_id.company_name} ({stock_id.symbol})")
 
     return company_data_dict
 
@@ -641,7 +640,6 @@ async def get_specific_kpi_data_for_stock_id(
     llm: GPT,
     context: PlanRunContext,
 ) -> Optional[KPIText]:
-    print(stock_id)
     instructions = SPECIFIC_KPI_INSTRUCTION.format(
         company_name=company_info.company_name, query_topic=topic
     )
@@ -727,7 +725,7 @@ class CompanyKPIsRequest(ToolArgs):
     kpis: List[KPIText]
     table_name: str
     date_range: Optional[DateRange] = None
-    simple_output: bool = False
+    simple_output: bool = True
 
 
 @tool(
@@ -769,7 +767,7 @@ class KPIsRequest(ToolArgs):
     equivalent_kpis: EquivalentKPITexts
     table_name: str
     date_range: Optional[DateRange] = None
-    simple_output: bool = False
+    simple_output: bool = True
 
 
 @tool(
@@ -789,7 +787,23 @@ async def get_overlapping_kpis_table_for_stocks(
     company_kpi_data_lookup: Dict[StockID, List[KPIInstance]] = {}
     gbi_kpis_dict: Dict[int, List[KPIMetadata]] = {}
 
-    kpi_explanation_lookup: Dict[str, str] = {}
+    kpi_explanation_lookup: Dict[StockID, Dict[str, Optional[str]]] = defaultdict(dict)
+    for kpi in kpis:
+        # Only add to the lookup if a string explanation exists
+        if kpi.explanation is None:
+            if kpi.stock_id:
+                logger.warning(
+                    f"No explanation was provided for the KPI {kpi.val} "
+                    f"under {kpi.stock_id.company_name} ({kpi.stock_id.gbi_id})"
+                )
+            else:
+                logger.warning(f"No explanation was provided for the KPI {kpi.val}")
+        else:
+            if kpi.stock_id:
+                kpi_explanation_lookup[kpi.stock_id][kpi.val] = kpi.explanation
+            else:
+                logger.warning(f"KPI {kpi.val} ({kpi.pid}) had no associated StockID")
+
     for i, kpi in enumerate(kpis):
         # The way these KPI Texts are initialized they should always
         # have a StockID
@@ -821,15 +835,6 @@ async def get_overlapping_kpis_table_for_stocks(
                 company_kpi_data_lookup[stock_id] = modified_kpi_data
             else:
                 company_kpi_data_lookup[stock_id] = kpi_data
-
-                # Only add to the lookup if a string explanation exists
-                if isinstance(kpi.explanation, str):
-                    kpi_explanation_lookup[kpi.val] = kpi.explanation
-                else:
-                    logger.warning(
-                        f"No explanation was provided for the KPI {kpi.val} "
-                        f"under {stock_id.company_name} ({stock_id.symbol})"
-                    )
 
     topic_kpi_table = await convert_multi_stock_data_to_table(
         kpi_name=args.equivalent_kpis.general_kpi_name,

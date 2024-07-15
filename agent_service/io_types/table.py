@@ -33,7 +33,7 @@ MAX_DATAPOINTS_FOR_GPT = 50
 @dataclass
 class RowDescription:
     name: str
-    explanation: str
+    explanation: Optional[str]
 
 
 @io_type

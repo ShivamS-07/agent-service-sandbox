@@ -296,8 +296,6 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
     if not data_col or not data_df_col:
         raise RuntimeError("Must have valid data column to make a pie chart!")
 
-    # Get the "most recent" if there are multiple groups
-    grouped_df = df.groupby(label_df_col).last()
     if data_col.metadata.col_type in (
         TableColumnType.PERCENT,
         TableColumnType.FLOAT,
@@ -307,6 +305,8 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
         # We have numerical data. Categories are simply the index, no
         # counting required.
         if data_col.metadata.row_descs:
+            # Since we have row descriptions we assume each row should be preserved
+            # along with their ordering, do not groupby or drop rows
             kpi_history = HistoryEntry(
                 citations=[
                     TextCitation(
@@ -322,7 +322,7 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
                 for citation in kpi_history.citations
             }
             pie_graph_data = []
-            for i, (idx, val) in enumerate(grouped_df[data_df_col].items()):
+            for i, (idx, val) in enumerate(df.itertuples(index=False)):
                 pie_graph_data.append(
                     PieSection(
                         label=idx,  # type: ignore
@@ -341,6 +341,8 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
                 data=pie_graph_data,
             )
         else:
+            # Get the "most recent" if there are multiple groups
+            grouped_df = df.groupby(label_df_col).last()
             return PieGraph(
                 label_type=label_col.metadata.col_type,
                 data_type=data_col.metadata.col_type,
@@ -356,6 +358,8 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
         TableColumnType.BOOLEAN,
         TableColumnType.QUARTER,
     ):
+        # Get the "most recent" if there are multiple groups
+        grouped_df = df.groupby(label_df_col).last()
         # We have categorical data, counting is required
         return PieGraph(
             label_type=data_col.metadata.col_type,
