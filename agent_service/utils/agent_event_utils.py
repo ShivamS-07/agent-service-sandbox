@@ -140,9 +140,7 @@ async def publish_agent_output(
             ]
         ),
     )
-    await publish_agent_event(
-        agent_id=context.agent_id, serialized_event=event.model_dump_json(serialize_as_any=True)
-    )
+    await publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json())
 
 
 async def publish_agent_execution_plan(

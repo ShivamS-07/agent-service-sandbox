@@ -338,6 +338,36 @@ async def join_tables(args: JoinTableArgs, context: PlanRunContext) -> Table:
     return joined_table
 
 
+class JoinStockListTableArgs(ToolArgs):
+    input_table: StockTable
+    stock_list: List[StockID]
+
+
+@tool(
+    description="""Given an input stock table and a list of stocks, join the
+list of stocks to the table. All the metadata that is tracked in the stock ID's
+will be merged together. You should call this function when you have a list of
+stocks and a StockTable of data for the SAME set of stocks, and you want to
+display everything combined in a single table. Ideally, the table should be
+derived in some way from the stock list. For example, you could get a list of
+recommended stocks, get their close prices in a table, and then merge the
+recommended stock list with the table to display both the recommendation reason
+and the statistical data.
+""",
+    category=ToolCategory.TABLE,
+)
+async def join_stock_list_to_table(
+    args: JoinStockListTableArgs, context: PlanRunContext
+) -> StockTable:
+    new_stock_table = StockTable(columns=[StockTableColumn(data=args.stock_list)])
+    joined_table = _join_two_tables(first=args.input_table, second=new_stock_table)
+    return StockTable(
+        columns=joined_table.columns,
+        history=joined_table.history,
+        prefer_graph_type=joined_table.prefer_graph_type,
+    )
+
+
 class GetStockListFromTableArgs(ToolArgs):
     input_table: Table
 
