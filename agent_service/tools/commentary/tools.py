@@ -296,6 +296,7 @@ async def get_commentary_inputs(
     args: GetCommentaryInputsInput, context: PlanRunContext
 ) -> List[Text]:
 
+    logger = get_prefect_logger(__name__)
     texts: List[Text] = []
 
     # If general_commentary is True, get the top themes and related texts
@@ -310,66 +311,78 @@ async def get_commentary_inputs(
                 log=f"No portfolio is provided. Retrieving top {args.theme_num} market themes...",
                 context=context,
             )
-        # get top themes
-        theme_num: int = args.theme_num if args.theme_num else 3
-        themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
-            GetTopNThemesInput(
-                date_range=args.date_range, theme_num=theme_num, portfolio_id=args.portfolio_id
-            ),
-            context,
-        )
-        themes_texts = themes_texts[:MAX_THEMES_PER_COMMENTARY]
-        theme_related_texts = await get_theme_related_texts(themes_texts, context)
-        texts.extend(themes_texts + theme_related_texts)
-        await tool_log(
-            log=f"Retrieved {len(texts)} theme related texts for top market trends.",
-            context=context,
-        )
+        try:
+            # get top themes
+            theme_num: int = args.theme_num if args.theme_num else 3
+            themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
+                GetTopNThemesInput(
+                    date_range=args.date_range, theme_num=theme_num, portfolio_id=args.portfolio_id
+                ),
+                context,
+            )
+            themes_texts = themes_texts[:MAX_THEMES_PER_COMMENTARY]
+            theme_related_texts = await get_theme_related_texts(themes_texts, context)
+            texts.extend(themes_texts + theme_related_texts)
+            await tool_log(
+                log=f"Retrieved {len(texts)} theme related texts for top market trends.",
+                context=context,
+            )
+        except Exception as e:
+            logger.exception(f"Failed to get top themes and related texts: {e}")
 
     # If topics are provided, get the texts for the topics
     if args.topics:
-        topic_texts = await get_texts_for_topics(args, context)
-        await tool_log(
-            log=f"Retrieved {len(topic_texts)} texts for topics {args.topics}.",
-            context=context,
-        )
-        texts.extend(topic_texts)
+        try:
+            topic_texts = await get_texts_for_topics(args, context)
+            await tool_log(
+                log=f"Retrieved {len(topic_texts)} texts for topics {args.topics}.",
+                context=context,
+            )
+            texts.extend(topic_texts)
+        except Exception as e:
+            logger.exception(f"Failed to get texts for topics: {e}")
 
     # If stock_ids are provided, get the texts for the stock_ids
     if args.stock_ids:
-        stock_texts: List[Text] = await get_all_text_data_for_stocks(  # type: ignore
-            GetAllTextDataForStocksInput(stock_ids=args.stock_ids, date_range=args.date_range),
-            context,
-        )
-        await tool_log(
-            log=f"Retrieved {len(stock_texts)} texts for given stock ids.",
-            context=context,
-        )
-        texts.extend(stock_texts)
+        try:
+            stock_texts: List[Text] = await get_all_text_data_for_stocks(  # type: ignore
+                GetAllTextDataForStocksInput(stock_ids=args.stock_ids, date_range=args.date_range),
+                context,
+            )
+            await tool_log(
+                log=f"Retrieved {len(stock_texts)} texts for given stock ids.",
+                context=context,
+            )
+            texts.extend(stock_texts)
+        except Exception as e:
+            logger.exception(f"Failed to get texts for stock ids: {e}")
 
     # collect texts related to top stocks in the portfolio
     if args.portfolio_id:
-        portfolio_holdings_df = (
-            await get_portfolio_holdings(
-                GetPortfolioWorkspaceHoldingsInput(portfolio_id=args.portfolio_id), context
+        try:
+            portfolio_holdings_df = (
+                await get_portfolio_holdings(
+                    GetPortfolioWorkspaceHoldingsInput(portfolio_id=args.portfolio_id), context
+                )
+            ).to_df()  # type: ignore
+            # sort by weight and get top 5 stocks
+            top_stocks = portfolio_holdings_df.sort_values("Weight", ascending=False).head(
+                TOP_STOCKS_IN_PORTFOLIO_NUM
             )
-        ).to_df()  # type: ignore
-        # sort by weight and get top 5 stocks
-        top_stocks = portfolio_holdings_df.sort_values("Weight", ascending=False).head(
-            TOP_STOCKS_IN_PORTFOLIO_NUM
-        )
-        top_stock_ids = top_stocks[STOCK_ID_COL_NAME_DEFAULT].tolist()
-        # get texts for top stocks
-        top_stock_texts: List[Text] = await get_all_text_data_for_stocks(  # type: ignore
-            GetAllTextDataForStocksInput(stock_ids=top_stock_ids, date_range=args.date_range),
-            context,
-        )
-        await tool_log(
-            log=f"Retrieved {len(top_stock_texts)} texts for top {TOP_STOCKS_IN_PORTFOLIO_NUM} stocks in portfolio.",
-            context=context,
-            associated_data=top_stocks,
-        )
-        texts.extend(top_stock_texts)
+            top_stock_ids = top_stocks[STOCK_ID_COL_NAME_DEFAULT].tolist()
+            # get texts for top stocks
+            top_stock_texts: List[Text] = await get_all_text_data_for_stocks(  # type: ignore
+                GetAllTextDataForStocksInput(stock_ids=top_stock_ids, date_range=args.date_range),
+                context,
+            )
+            await tool_log(
+                log=f"Got {len(top_stock_texts)} texts for top {TOP_STOCKS_IN_PORTFOLIO_NUM} stocks in portfolio.",
+                context=context,
+                associated_data=top_stock_ids,
+            )
+            texts.extend(top_stock_texts)
+        except Exception as e:
+            logger.exception(f"Failed to get texts for top stocks in portfolio: {e}")
     return texts
 
 
