@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import Any, AsyncGenerator, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, UploadFile, status
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
 from agent_service.chatbot.chatbot import Chatbot
@@ -36,9 +36,11 @@ from agent_service.endpoints.models import (
     UnsharePlanRunResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
+    UploadFileResponse,
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.types import ChatContext, Message
+from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.agent_name import generate_name_for_agent
 from agent_service.utils.async_db import AsyncDB
@@ -101,6 +103,30 @@ class AgentServiceImpl:
         agent_id = req.agent_id
         user_msg = Message(agent_id=agent_id, message=req.prompt, is_user_message=True)
         name = None
+
+        # TODO should clean this up to prevent duplication
+        if req.skip_agent_response:
+            LOGGER.info(f"Inserting user's new message to DB for {agent_id=} WITHOUT A RESPONSE")
+            await self.pg.insert_chat_messages(messages=[user_msg])
+
+            if req.is_first_prompt:
+                try:
+                    LOGGER.info("Generating name for agent")
+                    existing_agents = await self.pg.get_existing_agents_names(user.user_id)
+                    name = await generate_name_for_agent(
+                        agent_id=agent_id,
+                        chat_context=ChatContext(messages=[user_msg]),
+                        existing_names=existing_agents,
+                        gpt_service_stub=self.gpt_service_stub,
+                    )
+                    await self.pg.update_agent_name(agent_id=agent_id, agent_name=name)
+                except Exception as e:
+                    LOGGER.exception(
+                        f"Failed to generate name for agent from GPT with exception: {e}"
+                    )
+
+            return ChatWithAgentResponse(success=True, allow_retry=False, name=name)
+
         if not req.is_first_prompt:
             try:
                 LOGGER.info(f"Inserting user's new message to DB for {agent_id=}")
@@ -108,7 +134,6 @@ class AgentServiceImpl:
             except Exception as e:
                 LOGGER.exception(f"Failed to insert user message into DB with exception: {e}")
                 return ChatWithAgentResponse(success=False, allow_retry=True)
-
             try:
                 LOGGER.info(f"Updating execution plan after user's new message for {req.agent_id=}")
                 await self.task_executor.update_execution_after_input(
@@ -199,9 +224,13 @@ class AgentServiceImpl:
         )
 
         # TODO: For now just get the latest plan. Later we can switch to LIVE plan
-        plan_id, execution_plan, _, status, upcoming_plan_run_id = (
-            await self.pg.get_latest_execution_plan(agent_id)
-        )
+        (
+            plan_id,
+            execution_plan,
+            _,
+            status,
+            upcoming_plan_run_id,
+        ) = await self.pg.get_latest_execution_plan(agent_id)
         if plan_id is None or execution_plan is None:
             execution_plan_template = None
         else:
@@ -422,3 +451,16 @@ class AgentServiceImpl:
             agent_owner_id=agent_owner_id,
         )
         return GetAgentDebugInfoResponse(tooltips=tool_tips, debug=debug)
+
+    async def upload_file(
+        self, upload: UploadFile, user: User, agent_id: Optional[str] = None
+    ) -> UploadFileResponse:
+        upload_handler = UploadHandler(
+            user_id=user.user_id,
+            upload=upload,
+            db=self.pg,
+            agent_id=agent_id,
+            send_chat_updates=True,
+        )
+        await upload_handler.handle_upload()
+        return UploadFileResponse()

@@ -101,6 +101,8 @@ class ChatWithAgentRequest(BaseModel):
     agent_id: str
     prompt: str
     is_first_prompt: bool = False
+    # If true, DO NOT ask GPT for a response for this message, ONLY insert into the DB
+    skip_agent_response: bool = False
 
 
 class ChatWithAgentResponse(BaseModel):
@@ -349,6 +351,13 @@ class NotificationEvent(BaseModel):
 class GetSecureUserResponse(BaseModel):
     hash: str
     context: Dict[str, Any]
+
+
+####################################################################################################
+# File uploads
+####################################################################################################
+class UploadFileResponse(BaseModel):
+    success: bool = True
 
 
 ####################################################################################################

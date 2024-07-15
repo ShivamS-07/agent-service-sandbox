@@ -10,7 +10,7 @@ import uuid
 from typing import Any, Callable, Dict, Optional
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRouter
@@ -50,6 +50,7 @@ from agent_service.endpoints.models import (
     UnsharePlanRunResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
+    UploadFileResponse,
 )
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.GPT.requests import _get_gpt_service_stub
@@ -223,7 +224,8 @@ async def get_all_agents(user: User = Depends(parse_header)) -> GetAllAgentsResp
     "/agent/chat-with-agent", response_model=ChatWithAgentResponse, status_code=status.HTTP_200_OK
 )
 async def chat_with_agent(
-    req: ChatWithAgentRequest, user: User = Depends(parse_header)
+    req: ChatWithAgentRequest,
+    user: User = Depends(parse_header),
 ) -> ChatWithAgentResponse:
     """Chat with agent - Client should send a prompt from user
     1. Validate user has access to agent
@@ -236,6 +238,22 @@ async def chat_with_agent(
     logger.info(f"Validating if user {user.user_id} has access to agent {req.agent_id}.")
     validate_user_agent_access(user.user_id, req.agent_id)
     return await application.state.agent_service_impl.chat_with_agent(req=req, user=user)
+
+
+@router.post(
+    "/agent/upload-file/{agent_id}",
+    response_model=UploadFileResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def upload_file(
+    agent_id: str,
+    upload: UploadFile,
+    user: User = Depends(parse_header),
+) -> ChatWithAgentResponse:
+    validate_user_agent_access(user.user_id, agent_id)
+    return await application.state.agent_service_impl.upload_file(
+        upload=upload, user=user, agent_id=agent_id
+    )
 
 
 @router.get(
