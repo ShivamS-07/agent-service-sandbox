@@ -75,7 +75,16 @@ class LineGraph(Graph):
         for dataset in self.data:
             if isinstance(dataset.dataset_id, StockID):
                 dataset.dataset_id = dataset.dataset_id.symbol or dataset.dataset_id.isin
-        return GraphOutput(graph=self, title=title)
+        return GraphOutput(
+            graph=LineGraph(
+                x_axis_type=self.x_axis_type,
+                x_unit=self.x_unit,
+                y_axis_type=self.y_axis_type,
+                y_unit=self.y_unit,
+                data=self.data,
+            ),
+            title=title,
+        )
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         if use_abbreviated_output or len(self.data) > 10:
@@ -119,7 +128,13 @@ class PieGraph(Graph):
             if isinstance(section.label, StockID):
                 section.label = section.label.symbol or section.label.isin
         citations = await Citation.resolve_all_citations(self.get_all_citations(), db=pg)
-        return GraphOutput(graph=self, title=title, citations=citations)
+        return GraphOutput(
+            graph=PieGraph(
+                label_type=self.label_type, data_type=self.data_type, unit=self.unit, data=self.data
+            ),
+            title=title,
+            citations=citations,
+        )
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         section_strs = await gather_with_concurrency(
@@ -159,7 +174,10 @@ class BarGraph(Graph):
             for bar_point in bar.values:
                 if isinstance(bar_point.label, StockID):
                     bar_point.label = bar_point.label.symbol or bar_point.label.isin
-        return GraphOutput(graph=self, title=title)
+        return GraphOutput(
+            graph=BarGraph(data_type=self.data_type, data_unit=self.data_unit, data=self.data),
+            title=title,
+        )
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         return f"Bar Chart: {self.data}"
