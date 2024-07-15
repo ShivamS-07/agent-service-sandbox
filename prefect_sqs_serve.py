@@ -60,14 +60,17 @@ async def poll_sqs_forever() -> None:
             message_dict = json.loads(sqs_message)
 
             start_time_utc = datetime.datetime.utcnow().isoformat()
+            converted_message = {}
             try:
-                await message_handler.handle_message(message_dict)
+                converted_message = message_handler.convert_message(message=message_dict)
+                await message_handler.handle_message(converted_message)
                 log_event(
                     event_name="agent_worker_message_processed",
                     event_data={
                         "start_time_utc": start_time_utc,
                         "end_time_utc": datetime.datetime.utcnow().isoformat(),
-                        "message": sqs_message,
+                        "raw_message": sqs_message,
+                        "message": json.dumps(converted_message),
                     },
                 )
             except Exception:
@@ -76,7 +79,8 @@ async def poll_sqs_forever() -> None:
                     event_data={
                         "start_time_utc": start_time_utc,
                         "end_time_utc": datetime.datetime.utcnow().isoformat(),
-                        "message": sqs_message,
+                        "raw_message": sqs_message,
+                        "message": json.dumps(converted_message),
                         "error_msg": traceback.format_exc(),
                     },
                 )

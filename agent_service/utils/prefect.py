@@ -84,7 +84,8 @@ async def prefect_run_execution_plan(
         "send_time_utc": datetime.datetime.utcnow().isoformat(),
     }
     message = {
-        "s3_path": upload_string_to_s3(data=json.dumps(message_contents, default=json_serial))
+        "s3_path": upload_string_to_s3(data=json.dumps(message_contents, default=json_serial)),
+        "method": "run_execution_plan",
     }
     queue_name = (
         BOOSTED_DAG_QUEUE if use_boosted_dag_for_run_execution_plan() else AGENT_WORKER_QUEUE

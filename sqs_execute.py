@@ -33,6 +33,7 @@ async def main() -> None:
     message_string = ""
     start_time_utc = datetime.datetime.utcnow().isoformat()
     start_time = time.time()
+    converted_message = {}
     try:
         parser = argparse.ArgumentParser()
 
@@ -52,13 +53,17 @@ async def main() -> None:
         message_string = (
             args.message if args.message else download_json_from_s3(s3_path=args.s3_path)
         )
-        await process_message_string(message_string=message_string)
+        message_dict = json.loads(message_string)
+        message_handler = MessageHandler()
+        converted_message = message_handler.convert_message(message=message_dict)
+        await message_handler.handle_message(message=message_dict)
         log_event(
             event_name="agent_worker_message_processed",
             event_data={
                 "start_time_utc": start_time_utc,
                 "end_time_utc": datetime.datetime.utcnow().isoformat(),
-                "message": message_string,
+                "raw_message": message_string,
+                "message": json.dumps(converted_message),
             },
         )
         wait_if_needed(start_time=start_time)
@@ -84,7 +89,8 @@ async def main() -> None:
             event_data={
                 "start_time_utc": start_time_utc,
                 "end_time_utc": datetime.datetime.utcnow().isoformat(),
-                "message": message_string,
+                "raw_message": message_string,
+                "message": json.dumps(converted_message),
                 "error_msg": traceback.format_exc(),
             },
         )
