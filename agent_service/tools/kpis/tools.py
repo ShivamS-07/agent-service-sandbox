@@ -67,6 +67,7 @@ class CompanyInformation:
 def generate_columns_for_kpi(
     kpi_data: Union[KPIInstance, List[KPIInstance]],
     kpi_explanations: List[Optional[str]],
+    kpi_company_names: List[str],
     actual_col_name: str,
     estimate_col_name: Optional[str] = None,
     surprise_col_name: Optional[str] = None,
@@ -77,7 +78,11 @@ def generate_columns_for_kpi(
         row_descs: Dict[int, List[RowDescription]] = {}
         for i, kpi in enumerate(kpi_data):
             # Keeping as a string to open up the option to pass multiple KPIs in the future
-            row_descs[i] = [RowDescription(name=kpi.name, explanation=kpi_explanations[i])]
+            row_descs[i] = [
+                RowDescription(
+                    name=f"({kpi_company_names[i]}) {kpi.name}", explanation=kpi_explanations[i]
+                )
+            ]
     elif isinstance(kpi_data, KPIInstance):
         long_unit = kpi_data.long_unit
         unit = kpi_data.unit
@@ -167,6 +172,7 @@ def convert_single_stock_data_to_table(
         new_columns = generate_columns_for_kpi(
             kpi_history[0],
             [],
+            [],
             actual_col,
             estimate_col,
             surprise_col,
@@ -234,10 +240,19 @@ async def convert_multi_stock_data_to_table(
     df_data = []
     kpi_data_in_col = []
     explanations: List[Optional[str]] = []
+    company_names: List[str] = []
     for stock_id, kpi_history in data.items():
         for kpi_inst in kpi_history:
             kpi_data_in_col.append(kpi_inst)
             explanations.append(kpi_explanation_lookups[stock_id].get(kpi_inst.name))
+
+            if stock_id.symbol:
+                company_names.append(stock_id.symbol)
+            elif stock_id.company_name:
+                company_names.append(stock_id.company_name)
+            else:
+                company_names.append("")
+
             quarter = f"{kpi_inst.year} Q{kpi_inst.quarter}"
             # Need to convert percentages into decimals to satisfy current handling of the Percentage figures
             actual = (
@@ -291,6 +306,7 @@ async def convert_multi_stock_data_to_table(
     kpi_column = generate_columns_for_kpi(
         kpi_data=kpi_data_in_col,
         kpi_explanations=explanations,
+        kpi_company_names=company_names,
         actual_col_name=actual_col_name,
         estimate_col_name=estimate_col_name,
         surprise_col_name=surprise_col_name,
