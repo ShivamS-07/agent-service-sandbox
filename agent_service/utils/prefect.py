@@ -32,6 +32,7 @@ from agent_service.utils.constants import AGENT_WORKER_QUEUE, BOOSTED_DAG_QUEUE
 from agent_service.utils.feature_flags import use_boosted_dag_for_run_execution_plan
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import Postgres
+from agent_service.utils.s3_upload import upload_string_to_s3
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +78,13 @@ async def prefect_run_execution_plan(
         "context": context.model_dump(),
         "do_chat": do_chat,
     }
-    message = {
+    message_contents = {
         "method": "run_execution_plan",
         "arguments": arguments,
         "send_time_utc": datetime.datetime.utcnow().isoformat(),
+    }
+    message = {
+        "s3_path": upload_string_to_s3(data=json.dumps(message_contents, default=json_serial))
     }
     queue_name = (
         BOOSTED_DAG_QUEUE if use_boosted_dag_for_run_execution_plan() else AGENT_WORKER_QUEUE

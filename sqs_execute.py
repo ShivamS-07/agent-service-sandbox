@@ -7,37 +7,15 @@ import resource
 import time
 import traceback
 
-import boto3
-
 from agent_service.sqs_serve.message_handler import MessageHandler
 from agent_service.utils.event_logging import log_event
+from agent_service.utils.s3_upload import download_json_from_s3
 
 
 async def process_message_string(message_string: str) -> None:
     message_dict = json.loads(message_string)
     message_handler = MessageHandler()
     await message_handler.handle_message(message=message_dict)
-
-
-def download_json_from_s3(s3_path: str) -> str:
-    if not s3_path.startswith("s3://"):
-        raise ValueError("Invalid S3 path. Must start with 's3://'")
-
-    bucket_key = s3_path[5:].split("/", 1)
-    if len(bucket_key) < 2:
-        raise ValueError("Invalid S3 path. Path must include bucket and key")
-
-    bucket, key = bucket_key[0], bucket_key[1]
-
-    s3 = boto3.client("s3")
-
-    try:
-        response = s3.get_object(Bucket=bucket, Key=key)
-    except Exception as e:
-        raise Exception(f"Failed to download from S3: {str(e)}")
-
-    json_content = response["Body"].read().decode("utf-8")
-    return json_content
 
 
 # TODO (Tommy): When we run messages as pods on Argo, the pod will be deleted as soon as the task
