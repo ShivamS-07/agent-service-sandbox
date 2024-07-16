@@ -50,15 +50,13 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "you. NEVER PUT SOURCES INLINE. "
         "Do not cite your sources in the body of the summary, only in this list at the end. "
         "Use the following information to generate this text. \n"
-        "{previous_commentary_prompt}\n"
-        "{geography_prompt}\n"
-        "{portfolio_prompt}\n"
-        "{watchlist_prompt}\n"
-        "{client_type_prompt}\n"
-        "{writing_style_prompt}\n"
-        "Here are, all texts for your analysis, delimited by #####, you should decide "
-        "which texts are relevant to the portfolio, given topics, "
-        "watchlist stocks, given stocks, and client request for writing the commentary: \n"
+        "{previous_commentary_prompt}"
+        "{portfolio_prompt}"
+        "{stock_performance_prompt}"
+        "{watchlist_prompt}"
+        "{client_type_prompt}"
+        "{writing_style_prompt}"
+        "Here are, all texts for your analysis, delimited by #####:\n"
         "\n#####\n"
         "{texts}"
         "\n#####\n"
@@ -117,17 +115,33 @@ PORTFOLIO_PROMPT = Prompt(
     template=(
         "\nThe following are some info related to client's portfolio. "
         "You can use these to decide what to talk about, and filter out factoids "
-        "that likely would not impact the portfolio's markets. You may include the weights "
-        "themselves unless the client is non-technical. "
+        "that likely would not impact the portfolio's markets. You may include the weights, "
+        "and performance values themselves unless the client is non-technical. "
         "\n### Portfolio Holdings and Weights \n"
         "{portfolio_holdings}"
-        "\nMore information about the top stocks such as in the portfolio can be found in the "
-        "texts section for you to focus on. These texts include:\n"
-        "Company descriptions, News developments, Earnings Call Summaries, and SEC Filings."
+        "\n### Portfolio Geography Info\n"
+        "{portfolio_geography_prompt}"
         "\n### Portfolio Performance\n"
-        "{portfolio_performance}"
+        "\nPortfolio performance overall:\n"
+        "{portfolio_performance_overall}"
+        "\nPortfolio performance by sector:\n"
+        "{portfolio_performance_by_sector}"
+        "\nPortfolio performance by stock:\n"
+        "{portfolio_performance_by_stock}"
     ),
 )
+
+STOCK_PERFORMANCE_PROMPT = Prompt(
+    name="STOCK_PERFORMANCE_PROMPT",
+    template=(
+        "\nBelow is a list of the stocks that client mentioned in the request, along with "
+        "their performance in the given time period. You can mention these performances in your "
+        "commentary if they are relevant to the topics you are discussing. "
+        "\n### Stock Performance\n"
+        "{stock_performance}"
+    ),
+)
+
 
 WATCHLIST_PROMPT = Prompt(
     name="WATCHLIST_PROMPT",
@@ -272,15 +286,17 @@ GET_COMMENTARY_INPUTS_DESCRIPTION = (
     "This function MUST only be used for write commentary tool and NO WHERE ELSE. "
     "\nAdjust 'start_date' to get the text from that date based on client request. "
     "If no 'start_date' is provided, the function will only get text in last month. "
-    "\n'general_commentary' should be set to True if client wants to know about general market updates, "
-    "trends or news."
-    "\n'topics' is a list of topics user mentioned in the request. "
-    "\n'stock_ids' is a list of stock ids that user mentioned in the request to be focused on. "
+    "\n- 'general_commentary' ONLY MUST be set to True when a client wants to know about "
+    "general market updates, trends or news. "
+    "When client doesn't mention any thing related to general market updates, "
+    "'general_commentary' MUST be set to False. "
+    "\n- 'topics' is a list of topics user mentioned in the request. "
+    "\n- 'stock_ids' is a list of stock ids that client want to focused on. "
     "If user wants a commentary on market trends, with focus on specific topics or stocks, "
     "'topics' or 'stock_ids' should be provided, and general_commentary should be set to True."
-    "\n'theme_num' is the number of top themes to be retrieved for the commentary."
-    "\n'theme_num' can be changed based on client request."
-    "\n'portfolio_id' can be provided if user wants a commentary based on a specific portfolio."
+    "\n- 'theme_num' is the number of top themes to be retrieved for the commentary."
+    "\n- 'theme_num' can be changed based on client request."
+    "\n- 'portfolio_id' can be provided if user wants a commentary based on a specific portfolio."
 )
 
 WRITE_COMMENTARY_DESCRIPTION = (
@@ -293,13 +309,20 @@ WRITE_COMMENTARY_DESCRIPTION = (
     "incorporating any specific instructions or preferences mentioned by the client during their interaction. "
     "The input to this function MUST be prepared by the get_commentary_input tool."
     "This function MUST NOT be used if get_commentary_input tool is not used. "
-    "Additionally, this tools MUST be used when user use phrases like 'tell me about', "
+    "Additionally, only this tool MUST be used when user use phrases like 'tell me about', "
     "'write a commentary on', 'Share your thoughts', 'Give me the details on', "
     "'Provide some insight into', 'Describe', 'Give me an overview of', 'what do you think about', "
     "or any other similar phrases."
-    "portfolio_id can be provided if user wants a commentary based on a specific portfolio. "
-    "client_type MUST be either 'Technical' or 'Simple'. Choose based on client's request. "
-    "writing_format MUST be either 'Long', 'Short' or 'Bullets'. Choose based on client's request."
+    "\n- 'inputs' is the output of get_commentary_input function and MUST be provided. "
+    "It contains all the texts and information needed to write the commentary. "
+    "\n- 'client_type' MUST be either 'Technical' or 'Simple'. Choose based on client's request. "
+    "\n- 'writing_format' MUST be either 'Long', 'Short' or 'Bullets'. Choose based on client's request."
+    "\n- 'stock_ids' is a list of stock ids that client want to focused on. If stock_ids is provided "
+    "for get_commentary_inputs tool then it MUST be provided here as well."
+    "This can be used from output of other tools to provide a commentary on specific stocks."
+    "\n- 'portfolio_id' can be provided if user wants a commentary based on a specific portfolio."
+    "\n- 'date_range' is the date range for the commentary. if date_range is provided for "
+    "get_commentary_inputs tool then it MUST be provided here as well."
 )
 
 UPDATE_COMMENTARY_INSTRUCTIONS = (
