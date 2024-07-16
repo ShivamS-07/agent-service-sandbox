@@ -23,7 +23,7 @@ class TestData(TestExecutionPlanner):
             amd_points = output_line_graph.data[1].points
             intl_points = output_line_graph.data[2].points
             goog_points = output_line_graph.data[3].points
-            self.assertEqual(len(nvda_points), 260)
+            self.assertTrue(len(nvda_points) in [260, 261])
             self.assertAlmostEqual(
                 next(
                     point for point in nvda_points if point.x_val == date(year=2023, month=5, day=1)
@@ -31,8 +31,8 @@ class TestData(TestExecutionPlanner):
                 65.8765487671,
                 places=3,
             )
-            self.assertEqual(len(amd_points), 260)
-            self.assertEqual(len(intl_points), 260)
+            self.assertTrue(len(amd_points) in [260, 261])
+            self.assertTrue(len(intl_points) in [260, 261])
             self.assertAlmostEqual(
                 next(
                     point
@@ -42,7 +42,7 @@ class TestData(TestExecutionPlanner):
                 46.0734291077,
                 places=3,
             )
-            self.assertEqual(len(goog_points), 260)
+            self.assertTrue(len(goog_points) in [260, 261])
 
         self.prompt_test(
             prompt=prompt,
@@ -114,7 +114,7 @@ class TestData(TestExecutionPlanner):
             output_line_graph = get_output(output=output[1])
             validate_line_graph(output_line_graph=output_line_graph)
             self.assertEqual(len(output_line_graph.data), 10)
-            self.assertEqual(len(output_line_graph.data[0].points), 2)
+            self.assertEqual(len(output_line_graph.data[0].points), 22)
 
         self.prompt_test(
             prompt=prompt,

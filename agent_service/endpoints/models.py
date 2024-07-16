@@ -377,3 +377,10 @@ class Debug(BaseModel):
 class GetAgentDebugInfoResponse(BaseModel):
     debug: Debug
     tooltips: Tooltips
+
+
+####################################################################################################
+# Regression Test Run Info
+####################################################################################################
+class GetTestRunInfoResponse(BaseModel):
+    test_run_info: Dict[str, Any]

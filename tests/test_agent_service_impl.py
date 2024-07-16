@@ -132,3 +132,11 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         self.assertIsNotNone(debug_info)
         self.assertIsNotNone(debug_info.debug.run_execution_plans)
         self.assertIsNotNone(debug_info.debug.create_execution_plans)
+
+    def test_get_test_run_info(self):
+
+        test_run_id = "8e1b5600-b6a5-44df-927f-ec3c90c32424"
+        test_run_info = self.agent_service_impl.get_test_run_info(
+            test_run_id=test_run_id
+        ).test_run_info
+        self.assertTrue(test_run_info)

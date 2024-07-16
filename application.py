@@ -14,6 +14,11 @@ from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRouter
+from gbi_common_py_utils.utils.environment import (
+    PROD_TAG,
+    STAGING_TAG,
+    get_environment_tag,
+)
 from gbi_common_py_utils.utils.event_logging import log_event
 from sse_starlette.sse import AsyncContentStream, EventSourceResponse, ServerSentEvent
 from starlette.requests import Request
@@ -42,6 +47,7 @@ from agent_service.endpoints.models import (
     GetAllAgentsResponse,
     GetChatHistoryResponse,
     GetSecureUserResponse,
+    GetTestRunInfoResponse,
     MarkNotificationsAsReadRequest,
     MarkNotificationsAsReadResponse,
     SharePlanRunRequest,
@@ -606,6 +612,23 @@ async def get_agent_debug_info(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
     return await application.state.agent_service_impl.get_agent_debug_info(agent_id=agent_id)
+
+
+@router.get(
+    "/regression-test/{test_run_id}",
+    response_model=GetTestRunInfoResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_regression_test_info(
+    test_run_id: str, user: User = Depends(parse_header)
+) -> GetTestRunInfoResponse:
+    if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
+    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
+        )
+    return application.state.agent_service_impl.get_test_run_info(test_run_id=test_run_id)
 
 
 # Account Management Enpoints

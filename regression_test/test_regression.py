@@ -95,11 +95,11 @@ def validate_tools_used(
 
 
 class TestExecutionPlanner(unittest.TestCase):
+    test_suite_id = str(uuid.uuid4())
 
     @classmethod
     def setUpClass(cls) -> None:
         cls.loop = asyncio.get_event_loop()  # type: ignore[assignment]
-        cls.test_suite_id = str(uuid.uuid4())
         cls.llm = GPT(model=DEFAULT_CHEAP_MODEL)
 
     def prompt_test(
