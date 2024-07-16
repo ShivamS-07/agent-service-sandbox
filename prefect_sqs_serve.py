@@ -11,6 +11,7 @@ import boto3
 from agent_service.sqs_serve.message_handler import MessageHandler
 from agent_service.utils.constants import AGENT_WORKER_QUEUE
 from agent_service.utils.event_logging import log_event
+from agent_service.utils.gpt_input_output_logger import json_serial
 
 LOGGER = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ async def poll_sqs_forever() -> None:
                         "start_time_utc": start_time_utc,
                         "end_time_utc": datetime.datetime.utcnow().isoformat(),
                         "raw_message": sqs_message,
-                        "message": json.dumps(converted_message),
+                        "message": json.dumps(converted_message, default=json_serial),
                     },
                 )
             except Exception:
@@ -80,7 +81,7 @@ async def poll_sqs_forever() -> None:
                         "start_time_utc": start_time_utc,
                         "end_time_utc": datetime.datetime.utcnow().isoformat(),
                         "raw_message": sqs_message,
-                        "message": json.dumps(converted_message),
+                        "message": json.dumps(converted_message, default=json_serial),
                         "error_msg": traceback.format_exc(),
                     },
                 )
