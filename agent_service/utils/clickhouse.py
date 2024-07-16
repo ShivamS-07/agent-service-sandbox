@@ -501,7 +501,7 @@ class Clickhouse(ClickhouseBase):
             end_time_utc, duration_seconds
             FROM agent.plan_selections
             WHERE agent_id = %(agent_id)s
-            ORDER BY end_time_utc DESC
+            ORDER BY end_time_utc ASC
             """
         res: List[Dict[str, Any]] = []
         rows = self.generic_read(sql, {"agent_id": agent_id})
@@ -525,7 +525,7 @@ class Clickhouse(ClickhouseBase):
         start_time_utc, end_time_utc, duration_seconds, sample_plans
         FROM agent.plans
         WHERE agent_id = %(agent_id)s
-        ORDER BY end_time_utc DESC
+        ORDER BY end_time_utc ASC
         """
         rows = self.generic_read(sql, {"agent_id": agent_id})
         tz = datetime.timezone.utc
@@ -546,7 +546,7 @@ class Clickhouse(ClickhouseBase):
         end_time_utc, service_version, duration_seconds, error_msg, replay_id, debug_info
         FROM agent.tool_calls
         WHERE agent_id = %(agent_id)s
-        ORDER BY end_time_utc DESC
+        ORDER BY end_time_utc ASC
         """
         rows = self.generic_read(sql, {"agent_id": agent_id})
         res: Dict[str, Any] = OrderedDict()
@@ -578,7 +578,7 @@ class Clickhouse(ClickhouseBase):
         wait_time_seconds,  error_msg,start_time_utc, end_time_utc, duration_seconds
         FROM agent.worker_sqs_log
         WHERE agent_id = %(agent_id)s
-        ORDER BY end_time_utc DESC
+        ORDER BY end_time_utc ASC
         """
         res: Dict[str, Any] = dict()
         rows = self.generic_read(sql, {"agent_id": agent_id})
