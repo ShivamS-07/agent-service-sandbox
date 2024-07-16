@@ -256,7 +256,9 @@ class VisAlphaClickHouseClient:
         gbi_to_cid_map = self.va_ch.get_cid_for_gbi_ids(gbi_ids)
         cid_to_gbi_map = {cid: gbi for gbi, cid in gbi_to_cid_map.items()}
         cid_pids_dict = {
-            gbi_to_cid_map[gbi]: [pid.pid for pid in pids] for gbi, pids in gbi_pids_dict.items()
+            gbi_to_cid_map[gbi]: [pid.pid for pid in pids]
+            for gbi, pids in gbi_pids_dict.items()
+            if gbi in gbi_to_cid_map
         }
         periods = _generate_periods(
             quarter, year, num_prev_quarters, num_future_quarters, use_fiscal_periods=False

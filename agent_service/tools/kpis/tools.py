@@ -499,16 +499,19 @@ def convert_kpi_currency_to_usd(kpi_data: List[KPIInstance]) -> List[KPIInstance
     for kpi_inst in kpi_data:
         approx_kpi_posted_date = get_earliest_date_for_year_quarter(kpi_inst.year, kpi_inst.quarter)
         iso = kpi_inst.currency
+        found_applicable_ex_rate = False
         if isinstance(iso, str):
             exchange_rate = db.get_currency_exchange_to_usd(iso, approx_kpi_posted_date)
-            converted_kpi_inst = deepcopy(kpi_inst)
-            if converted_kpi_inst.actual:
-                converted_kpi_inst.actual = converted_kpi_inst.actual * exchange_rate
-            if converted_kpi_inst.estimate:
-                converted_kpi_inst.estimate = converted_kpi_inst.estimate * exchange_rate
-            converted_kpi_inst.currency = "USD"
-            converted_kpi_data.append(converted_kpi_inst)
-        else:
+            if exchange_rate:
+                found_applicable_ex_rate = True
+                converted_kpi_inst = deepcopy(kpi_inst)
+                if converted_kpi_inst.actual:
+                    converted_kpi_inst.actual = converted_kpi_inst.actual * exchange_rate
+                if converted_kpi_inst.estimate:
+                    converted_kpi_inst.estimate = converted_kpi_inst.estimate * exchange_rate
+                converted_kpi_inst.currency = "USD"
+                converted_kpi_data.append(converted_kpi_inst)
+        if found_applicable_ex_rate is False:
             # There are cases where "Amount" is not a monetary value
             converted_kpi_inst = deepcopy(kpi_inst)
             converted_kpi_data.append(converted_kpi_inst)
@@ -677,15 +680,22 @@ async def get_specific_kpi_data_for_stock_id(
             context=context,
         )
         return None
-    data = result.split(",")
-    index_num = int(data[0])
-    explanation = data[2].strip()
 
     try:
+        result.strip()
+        data = result.split(",")
+        index_num = int(data[0])
+        explanation = data[2].strip()
+        if not company_info.kpi_index_to_pid_mapping:
+            logger.warning(
+                f"No KPI data available for stock {stock_id.company_name} {stock_id.company_name})"
+            )
+            return None
         pid = company_info.kpi_index_to_pid_mapping[index_num]
-    except KeyError:
+    except Exception:
         logger.warning(
-            f"Failed to get pid due to faulty GPT response for gpt response: '{result}', "
+            f"Failed to get pid for stock {stock_id.company_name} {stock_id.gbi_id} "
+            f"due to faulty GPT response for gpt response: '{result}', "
             f"had {len((company_info.kpi_index_to_pid_mapping.keys()))+1}"
         )
         return None

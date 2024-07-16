@@ -86,7 +86,6 @@ def consolidate_table_columns(table: Table) -> Table:
             ),
         ]
 
-    print(cols)
     return Table(columns=cols)
 
 
@@ -220,6 +219,7 @@ class MakePieGraphArgs(ToolArgs):
 Pie chart graphs should be created when the user specifically asks for them. If
 the user is not specific, pie graphs are best created from simple one
 dimensional data, or data that has categories representing parts of a whole.
+In specific, pie graphs should be used for only one quarter of data, not for multiple.
 For example, a table containing
 the country of origin for a group of stocks, where the stocks could be grouped
 by country and presented in the chart. You should MAKE SURE the table ONLY has

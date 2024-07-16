@@ -391,14 +391,14 @@ class Postgres(PostgresBase):
         records = self.generic_read(sql, params=[gbi_ids])
         return {r["gbi_id"]: (r["company_description"], r["last_updated"]) for r in records}
 
-    def get_currency_exchange_to_usd(self, iso: str, date: datetime.date) -> float:
+    def get_currency_exchange_to_usd(self, iso: str, date: datetime.date) -> Optional[float]:
         sql = """
         SELECT exchange_rate FROM data.currency_exchange
         WHERE iso = %(iso)s AND price_date = %(price_date)s
         """
         records = self.generic_read(sql, params={"iso": iso, "price_date": date})
         # We take the inverse to get the exchange rate from the iso -> usd
-        return 1 / float(records[0].get("exchange_rate"))
+        return 1 / float(records[0].get("exchange_rate")) if records else None
 
     def get_short_company_description(
         self, gbi_id: int
