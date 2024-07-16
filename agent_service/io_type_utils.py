@@ -273,6 +273,8 @@ class HistoryEntry(SerializeableBase):
     citations: List[Citation] = []
     # Some steps in the plan may insert scores to be aggregated at the end
     score: Optional[Score] = None
+    # task id is useful for doing some diff stuff
+    task_id: Optional[str] = None
 
     def __hash__(self) -> int:
         return hash((self.explanation, self.title, self.entry_type, self.unit))

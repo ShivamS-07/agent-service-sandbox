@@ -70,6 +70,10 @@ class PlanRunContext(BaseModel):
     # Only populated before each task run
     task_id: Optional[str] = None
 
+    # keeps track of per tool diff info when doing automatic updates
+    # map from task_id to any information needed for final diff
+    diff_info: Optional[Dict[str, Any]] = None
+
     # Useful for testing, etc.
     skip_db_commit: bool = False
     skip_task_cache: bool = False

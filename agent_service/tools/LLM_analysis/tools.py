@@ -21,6 +21,7 @@ from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_s
 from agent_service.tools.LLM_analysis.constants import (
     DEFAULT_LLM,
     LLM_FILTER_MAX_PERCENT,
+    NO_CITATIONS_DIFF,
     RUBRIC_DELIMITER,
     SCORE_MAPPING,
     SCORE_OUTPUT_DELIMITER,
@@ -37,7 +38,11 @@ from agent_service.tools.LLM_analysis.prompts import (
     EXTRA_DATA_PHRASE,
     FILTER_BY_PROFILE_DESCRIPTION,
     FILTER_BY_TOPIC_DESCRIPTION,
+    PROFILE_ADD_DIFF_MAIN_PROMPT,
+    PROFILE_ADD_DIFF_SYS_PROMPT,
     PROFILE_FILTER_MAIN_PROMPT,
+    PROFILE_REMOVE_DIFF_MAIN_PROMPT,
+    PROFILE_REMOVE_DIFF_SYS_PROMPT,
     PROFILE_RUBRIC_GENERATION_MAIN_OBJ,
     PROFILE_RUBRIC_GENERATION_SYS_OBJ,
     RUBRIC_EVALUATION_MAIN_OBJ,
@@ -64,7 +69,14 @@ from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.string_utils import clean_to_json_if_needed
+from agent_service.utils.tool_diff import (
+    add_old_history,
+    get_prev_run_info,
+    get_stock_text_lookup,
+    get_text_diff,
+)
 
 
 def split_text_and_citation_ids(GPT_ouput: str) -> Tuple[str, List[int]]:
@@ -77,6 +89,9 @@ def split_text_and_citation_ids(GPT_ouput: str) -> Tuple[str, List[int]]:
 class SummarizeTextInput(ToolArgs):
     texts: List[Text]
     topic: Optional[str] = None
+
+
+logger = get_prefect_logger(__name__)
 
 
 @tool(
@@ -429,9 +444,11 @@ async def filtered_stocks_score_assignment(
     rubric_dict: Dict[int, str],
     stock_reason_map: Dict[StockID, Tuple[str, List[Citation]]],
     profile: str,
-    agent_id: str,
+    context: PlanRunContext,
 ) -> List[StockID]:
-    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
     llm = GPT(context=gpt_context, model=SONNET)
     tasks = []
 
@@ -463,10 +480,89 @@ async def filtered_stocks_score_assignment(
                     title=f"Connection to '{profile}'",
                     score=Score(val=SCORE_MAPPING[level_score]),
                     citations=stock_reason_map[stock][1],
+                    task_id=context.task_id,
                 )
             )
         )
     return non_zero_scoring_stocks
+
+
+async def profile_filter_added_diff_info(
+    added_stocks: List[StockID],
+    profile_str: str,
+    stock_text_diff: Dict[StockID, List[StockText]],
+    agent_id: str,
+) -> Dict[StockID, str]:
+    # For each stock that has been added in this run of the profile filter, try to generate a useful explanation
+    # for why based on text differences
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
+    llm = GPT(context=gpt_context, model=SONNET)
+
+    # might later do citations for this but not bothering now
+    str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
+        {stock: stock_text_diff[stock] for stock in added_stocks},
+        include_header=True,
+        text_group_numbering=False,
+    )
+
+    tasks = []
+    for stock in added_stocks:
+        tasks.append(
+            llm.do_chat_w_sys_prompt(
+                PROFILE_ADD_DIFF_MAIN_PROMPT.format(
+                    company_name=stock.company_name,
+                    profiles=profile_str,
+                    new_documents=str_lookup[stock],
+                ),
+                PROFILE_ADD_DIFF_SYS_PROMPT.format(),
+            )
+        )
+
+    results = await gather_with_concurrency(tasks)
+    return {
+        stock: explanation
+        for stock, explanation in zip(added_stocks, results)
+        if not explanation.startswith("No clear evidence")
+    }
+
+
+async def profile_filter_removed_diff_info(
+    removed_stocks: List[StockID],
+    profile_str: str,
+    stock_text_diff: Dict[StockID, List[StockText]],
+    agent_id: str,
+) -> Dict[StockID, str]:
+    # For each stock that has been removed in this run of the profile filter, try to generate a useful explanation
+    # for why based on text differences
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
+    llm = GPT(context=gpt_context, model=SONNET)
+
+    # might later do citations for this but not bothering now
+    str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
+        {stock: stock_text_diff[stock] for stock in removed_stocks},
+        include_header=True,
+        text_group_numbering=False,
+    )
+
+    tasks = []
+    for stock in removed_stocks:
+        tasks.append(
+            llm.do_chat_w_sys_prompt(
+                PROFILE_REMOVE_DIFF_MAIN_PROMPT.format(
+                    company_name=stock.company_name,
+                    profiles=profile_str,
+                    new_documents=str_lookup[stock],
+                ),
+                PROFILE_REMOVE_DIFF_SYS_PROMPT.format(),
+            )
+        )
+
+    results = await gather_with_concurrency(tasks)
+    return {
+        stock: explanation
+        for stock, explanation in zip(removed_stocks, results)
+        if not explanation.startswith("No clear evidence")
+    }
 
 
 class FilterStocksByProfileMatch(ToolArgs):
@@ -482,6 +578,40 @@ class FilterStocksByProfileMatch(ToolArgs):
 async def filter_stocks_by_profile_match(
     args: FilterStocksByProfileMatch, context: PlanRunContext
 ) -> List[StockID]:
+
+    if context.task_id is None:
+        return []  # for mypy
+
+    prev_run_info = None
+    try:  # since everything associated with diffing is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context)
+        if prev_run_info is not None:
+            prev_args: FilterStocksByProfileMatch = prev_run_info[0]  # type: ignore
+            prev_output: List[StockID] = prev_run_info[1]  # type:ignore
+
+            # start by finding the differences in the input texts for the two runs
+            prev_stock_text_lookup = get_stock_text_lookup(prev_args.texts)
+            current_stock_text_lookup = get_stock_text_lookup(args.texts)
+            diff_text_stocks = []
+            same_text_stocks = []
+            stock_text_diff = {}
+            for stock in args.stocks:
+                text_diff = get_text_diff(
+                    current_stock_text_lookup.get(stock, []), prev_stock_text_lookup.get(stock, [])
+                )
+                if text_diff:
+                    diff_text_stocks.append(stock)
+                    stock_text_diff[stock] = text_diff
+                else:
+                    same_text_stocks.append(stock)
+
+            # we are only going to do main pass for stocks that have some text difference
+            # relative to previous run
+            args.stocks = diff_text_stocks
+
+    except Exception as e:
+        logger.warning(f"Error doing text diff from previous run: {e}")
+
     aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(args.stocks, args.texts)
     str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
         aligned_text_groups.val, include_header=True, text_group_numbering=True
@@ -533,8 +663,91 @@ async def filter_stocks_by_profile_match(
     rubric_dict = await get_profile_rubric(profile_data_for_rubric, context.agent_id)
     # Assigns scores inplace
     filtered_stocks_with_scores = await filtered_stocks_score_assignment(
-        filtered_stocks, rubric_dict, stock_reason_map, profile_data_for_rubric, context.agent_id
+        filtered_stocks, rubric_dict, stock_reason_map, profile_data_for_rubric, context
     )
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        if prev_run_info is not None:
+            if context.diff_info is not None:  # collect info for automatic diff
+                prev_input_set = set(prev_args.stocks)
+                prev_output_set = set(prev_output)
+                added_stocks = []
+                for stock in filtered_stocks_with_scores:
+                    if stock in prev_input_set and stock not in prev_output_set:
+                        # stock included this time, but not previous time
+                        added_stocks.append(stock)
+
+                added_diff_info = await profile_filter_added_diff_info(
+                    added_stocks, profile_str, stock_text_diff, context.agent_id
+                )
+
+                # get rid of output where we didn't get a good diff
+                filtered_stocks_with_scores = [
+                    stock for stock in filtered_stocks_with_scores if stock in added_diff_info
+                ]
+
+                current_input_set = set(args.stocks)
+                current_output_set = set(filtered_stocks_with_scores)
+
+                removed_stocks = []
+
+                # identify stocks that didn't make it through this pass of the tool but did last time
+
+                for stock in prev_output:
+                    if stock in current_input_set and stock not in current_output_set:
+                        removed_stocks.append(stock)
+
+                removed_diff_info = await profile_filter_removed_diff_info(
+                    removed_stocks, profile_str, stock_text_diff, context.agent_id
+                )
+
+                # don't remove stocks where we couldn't get a good diff explanation
+                # as long as we also didn't lose citations
+
+                for old_stock in removed_stocks:
+                    if old_stock not in removed_diff_info:
+                        for new_stock in current_input_set:
+                            if new_stock == stock:
+                                break
+                        stock_with_old_history = add_old_history(
+                            new_stock,
+                            old_stock,
+                            context.task_id,
+                            current_stock_text_lookup[new_stock],
+                        )
+                        if stock_with_old_history:  # successful added old history
+                            filtered_stocks_with_scores.append(stock_with_old_history)
+                        else:  # lost citations
+                            removed_diff_info[stock] = NO_CITATIONS_DIFF
+
+                context.diff_info[context.task_id] = {
+                    "added": added_diff_info,
+                    "removed": removed_diff_info,
+                }
+
+    except Exception as e:
+        logger.warning(f"Error doing text diff from previous run: {e}")
+
+    try:  # we do this part separately because we don't want to accidently lose the same_text_stocks
+        if prev_run_info is not None:
+            if same_text_stocks:  # add in results where no change in text
+                for new_stock in same_text_stocks:
+                    found_stock = False
+                    for old_stock in prev_output:
+                        if old_stock == new_stock:
+                            found_stock = True
+                            break
+                    if found_stock:
+
+                        stock_with_old_history = add_old_history(
+                            new_stock, old_stock, context.task_id
+                        )
+                        if stock_with_old_history:
+                            filtered_stocks_with_scores.append(stock_with_old_history)
+
+    except Exception as e:
+        logger.warning(f"Error duplicating output for stocks with no text changes: {e}")
+
     await tool_log(
         f"Filtered {len(filtered_stocks_with_scores)} stocks for profile: {profile_str}",
         context=context,

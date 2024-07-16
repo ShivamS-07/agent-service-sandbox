@@ -96,6 +96,9 @@ async def run_execution_plan(
         logger=logger,
     )
 
+    if scheduled_by_automation:
+        context.diff_info = {}  # this will be populated during the run
+
     final_outputs = []
     tool_output = None
 

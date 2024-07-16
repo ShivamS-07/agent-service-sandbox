@@ -56,6 +56,14 @@ TOPIC_PHRASE = "The client has asked for the summary to be focused specifically 
 
 EXTRA_DATA_PHRASE = "Here is the label for the additional data provided: {label}. And here is the data:\n---\n{extra_data}\n---\n"
 
+PROFILE_ADD_DIFF_SYS_PROMPT_STR = "You are a finanical analyst checking the work of another analyst, who has decided that a company now fits a profile or one of a set of profile(s) based on some new documents which have been provided. Your job is to review this new evidence and, if there is indeed evidence in the new documents that the relevant company fits one of the profiles, say so, and write a brief explanation (no more than two sentences) about why, using information from the documents. You should refer broadly to the general category of document (included in the header) that provided the information, but you must never say anything about the relative order of documents or explicitly refer to a `profile`, just state the relevant facts; some examples of good beginnings to your output is `Recent news indicates ...` or `In the latest earnings call it was discussed...`. If you can't find any significant relevant evidence, output simply 'No clear evidence` and nothing else."
+
+PROFILE_ADD_DIFF_MAIN_PROMPT_STR = "Assuming they do, briefly explain how the following new documents provide key evidence that the relevant company fits one of the provided profiles. The company is: {company_name}. Here are the profiles (often only one):\n{profiles}\nAnd here are the new documents you are searching for evidence, delimited by `---`:\n---\n{new_documents}\n----\nNow write your explanation of how the new documents provide direct evidence for the stock fitting one of the profiles, or output `No clear evidence` if not."
+
+PROFILE_REMOVE_DIFF_SYS_PROMPT_STR = "You are a finanical analyst checking the work of another analyst, who has decided that a company no longer fits a profile or one of a set of profile(s) based on some new documents which have been provided. Your job is to review this new evidence and, if there is indeed evidence in the new documents that the relevant company no longer fits any of the profiles, say so, and write a brief explanation (no more than two sentences) about why, using information from the documents.  You should refer broadly to the general category of document (included in the header) that provided the information, but you must never say anything about the relative order of documents or explicitly refer to a `profile`, just state the relevant facts; some examples of good beginnings to your output is `Recent news indicates ...` or `In the latest earnings call it was discussed...`. If you can't find any significant relevant evidence, output simply 'No clear evidence` and nothing else."
+
+PROFILE_REMOVE_DIFF_MAIN_PROMPT_STR = "Assuming they do, briefly explain how the following new documents provide key evidence that the relevant company does not fit any of the provided profiles. The company is: {company_name}. Here are the profiles (often only one):\n{profiles}\nAnd here are the new documents you are searching for evidence, delimited by `---`:\n---\n{new_documents}\n----\nNow write your explanation of how the new documents provide direct evidence for the stock not fitting any of the profiles, or output `No clear evidence` if not."
+
 # Tool Descriptions
 
 SUMMARIZE_DESCRIPTION = "This function takes a list of Texts of any kind and uses an LLM to summarize all of the input texts into a single text based on the instructions provided by the user in their input. You may also provide a topic if you want the summary to have a very specific focus. If you do this, you should NOT apply filter_texts_by_topic before you run this function, it is redundant."
@@ -145,4 +153,21 @@ RUBRIC_EVALUATION_MAIN_OBJ = Prompt(
 
 RUBRIC_EVALUATION_SYS_OBJ = Prompt(
     name="RUBRIC_EVALUATION_MAIN", template=RUBRIC_EVALUATION_SYS_PROMPT
+)
+
+PROFILE_ADD_DIFF_SYS_PROMPT = Prompt(
+    name="PROFILE_ADD_DIFF_SYS_PRMOPT", template=PROFILE_ADD_DIFF_SYS_PROMPT_STR
+)
+
+PROFILE_ADD_DIFF_MAIN_PROMPT = Prompt(
+    name="PROFILE_ADD_DIFF_MAIN_PRMOPT", template=PROFILE_ADD_DIFF_MAIN_PROMPT_STR
+)
+
+
+PROFILE_REMOVE_DIFF_SYS_PROMPT = Prompt(
+    name="PROFILE_REMOVE_DIFF_SYS_PRMOPT", template=PROFILE_REMOVE_DIFF_SYS_PROMPT_STR
+)
+
+PROFILE_REMOVE_DIFF_MAIN_PROMPT = Prompt(
+    name="PROFILE_REMOVE_DIFF_MAIN_PRMOPT", template=PROFILE_REMOVE_DIFF_MAIN_PROMPT_STR
 )
