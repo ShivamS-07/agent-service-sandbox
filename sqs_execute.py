@@ -9,7 +9,6 @@ import traceback
 
 from agent_service.sqs_serve.message_handler import MessageHandler
 from agent_service.utils.event_logging import log_event
-from agent_service.utils.gpt_input_output_logger import json_serial
 from agent_service.utils.s3_upload import download_json_from_s3
 
 
@@ -34,7 +33,7 @@ async def main() -> None:
     message_string = ""
     start_time_utc = datetime.datetime.utcnow().isoformat()
     start_time = time.time()
-    converted_message = {}
+    converted_message_str = ""
     try:
         parser = argparse.ArgumentParser()
 
@@ -56,7 +55,10 @@ async def main() -> None:
         )
         message_dict = json.loads(message_string)
         message_handler = MessageHandler()
-        converted_message = message_handler.convert_message(message=message_dict)
+        converted_message_str = message_string
+        if "s3_path" in message_dict:
+            converted_message_str = download_json_from_s3(message_dict["s3_path"])
+            message_dict = json.loads(converted_message_str)
         await message_handler.handle_message(message=message_dict)
         log_event(
             event_name="agent_worker_message_processed",
@@ -64,7 +66,7 @@ async def main() -> None:
                 "start_time_utc": start_time_utc,
                 "end_time_utc": datetime.datetime.utcnow().isoformat(),
                 "raw_message": message_string,
-                "message": json.dumps(converted_message, default=json_serial),
+                "message": converted_message_str,
             },
         )
         wait_if_needed(start_time=start_time)
@@ -91,7 +93,7 @@ async def main() -> None:
                 "start_time_utc": start_time_utc,
                 "end_time_utc": datetime.datetime.utcnow().isoformat(),
                 "raw_message": message_string,
-                "message": json.dumps(converted_message, default=json_serial),
+                "message": converted_message_str,
                 "error_msg": traceback.format_exc(),
             },
         )

@@ -11,7 +11,7 @@ import boto3
 from agent_service.sqs_serve.message_handler import MessageHandler
 from agent_service.utils.constants import AGENT_WORKER_QUEUE
 from agent_service.utils.event_logging import log_event
-from agent_service.utils.gpt_input_output_logger import json_serial
+from agent_service.utils.s3_upload import download_json_from_s3
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,17 +61,20 @@ async def poll_sqs_forever() -> None:
             message_dict = json.loads(sqs_message)
 
             start_time_utc = datetime.datetime.utcnow().isoformat()
-            converted_message = {}
+            converted_message_str = sqs_message
+            if "s3_path" in message_dict:
+                converted_message_str = download_json_from_s3(message_dict["s3_path"])
+                message_dict = json.loads(converted_message_str)
             try:
-                converted_message = message_handler.convert_message(message=message_dict)
-                await message_handler.handle_message(converted_message)
+
+                await message_handler.handle_message(message_dict)
                 log_event(
                     event_name="agent_worker_message_processed",
                     event_data={
                         "start_time_utc": start_time_utc,
                         "end_time_utc": datetime.datetime.utcnow().isoformat(),
                         "raw_message": sqs_message,
-                        "message": json.dumps(converted_message, default=json_serial),
+                        "message": converted_message_str,
                     },
                 )
             except Exception:
@@ -81,7 +84,7 @@ async def poll_sqs_forever() -> None:
                         "start_time_utc": start_time_utc,
                         "end_time_utc": datetime.datetime.utcnow().isoformat(),
                         "raw_message": sqs_message,
-                        "message": json.dumps(converted_message, default=json_serial),
+                        "message": converted_message_str,
                         "error_msg": traceback.format_exc(),
                     },
                 )
