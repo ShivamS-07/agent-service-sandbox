@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import List
+from typing import List, Optional
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
@@ -17,7 +17,8 @@ from agent_service.utils.string_utils import repair_json_if_needed
 
 GET_CATEGORIES_FOR_STOCK_SYS_PROMPT = Prompt(
     name="GET_CATEGORIES_FOR_STOCK_SYS_PROMPT",
-    template="Here is the chat context:\n"
+    template="Here is the chat context which may include information to "
+    "make the output more specific or accurate:\n"
     "{chat_context}\n"
     "You are financial analyst. Your client would like to do "
     "some comparative analysis on stocks and the current market. "
@@ -25,7 +26,7 @@ GET_CATEGORIES_FOR_STOCK_SYS_PROMPT = Prompt(
     "to evaluate. Your job is to identify specific key success criteria "
     "that the client should use to evaluate the given prompt or to determine "
     "the validity of the prompt.\n"
-    "IMPORTANT: Identify only the 5 most impactful key success criteria.\n",
+    "IMPORTANT: Identify only the {limit} most impactful key success criteria.\n",
 )
 GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT = Prompt(
     name="GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT",
@@ -46,6 +47,8 @@ GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT = Prompt(
     {prompt_str}
     """,
 )
+
+DEFAULT_CATEGORY_LIMIT = 3
 
 
 @io_type
@@ -73,20 +76,21 @@ class Category(ComplexIOBase):
 
 class CategoriesForStockInput(ToolArgs):
     prompt: str
+    limit: Optional[int] = None
 
 
 @tool(
-    description="""
-    This function returns a list of Categories (a list of success criteria)
+    description=f"""
+    This function returns a list of success criteria
     which should be used to perform comparative analysis on the given stock.
-    Optionally, the enhance the accuracy of the output of this tool,
-    a list of peer StockIDs, a sector or industry the stock operates in, and
-    the prompt the user would like to evaluate can all be passed in to help
-    the tool identify better and more specific Categories.
+    By default, the function returns up to {DEFAULT_CATEGORY_LIMIT}
+    criteria however, a optional limit parameter can be passed in to
+    increase or decrease the number of criteria outputted.
+    IMPORTANT: This tool should only be used to identify success criteria
+    for a prompt. Do not use this tool in conjunction with other tools.
     """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
-    enabled=False,
 )
 async def get_categories(args: CategoriesForStockInput, context: PlanRunContext) -> List[Category]:
     llm = GPT(context=None, model=GPT4_O)
@@ -94,6 +98,7 @@ async def get_categories(args: CategoriesForStockInput, context: PlanRunContext)
         llm=llm,
         context=context,
         prompt=args.prompt,
+        limit=args.limit,
     )
 
     await tool_log(
@@ -104,9 +109,12 @@ async def get_categories(args: CategoriesForStockInput, context: PlanRunContext)
 
 
 async def get_categories_for_stock_impl(
-    llm: GPT, context: PlanRunContext, prompt: str
+    llm: GPT, context: PlanRunContext, prompt: str, limit: Optional[int]
 ) -> List[Category]:
     logger = get_prefect_logger(__name__)
+
+    if not limit:
+        limit = DEFAULT_CATEGORY_LIMIT
 
     if prompt is None or prompt == "":
         logger.info("Could not generate categories because missing prompt")
@@ -121,6 +129,7 @@ async def get_categories_for_stock_impl(
         ),
         sys_prompt=GET_CATEGORIES_FOR_STOCK_SYS_PROMPT.format(
             chat_context=context.chat,
+            limit=limit,
         ),
     )
     categories = json.loads(repair_json_if_needed(initial_categories_gpt_resp))
