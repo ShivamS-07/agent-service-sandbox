@@ -543,7 +543,7 @@ class Clickhouse(ClickhouseBase):
     def get_agent_debug_tool_calls(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         SELECT  plan_id, plan_run_id, task_id, tool_name, args, result, start_time_utc,
-        end_time_utc, service_version, duration_seconds, error_msg, replay_id
+        end_time_utc, service_version, duration_seconds, error_msg, replay_id, debug_info
         FROM agent.tool_calls
         WHERE agent_id = %(agent_id)s
         ORDER BY end_time_utc DESC
@@ -567,6 +567,8 @@ class Clickhouse(ClickhouseBase):
                 row["args"] = json.loads(row["args"])
             if row["result"]:
                 row["result"] = json.loads(row["result"])
+            if row["debug_info"]:
+                row["debug_info"] = json.loads(row["debug_info"])
             res[plan_run_id][f"{tool_name}_{row['task_id']}"] = row
         return res
 
