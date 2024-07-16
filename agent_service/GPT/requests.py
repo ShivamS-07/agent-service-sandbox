@@ -23,6 +23,7 @@ from gpt_service_proto_v1.service_pb2 import (
 )
 from grpclib.client import Channel
 
+from agent_service.external.grpc_utils import grpc_retry
 from agent_service.GPT.constants import (
     CLIENT_NAME,
     CLIENT_NAMESPACE,
@@ -151,6 +152,7 @@ async def query_gpt_worker(
             )
 
 
+@grpc_retry
 async def _query_gpt_worker(
     model: str,
     main_prompt: str,
@@ -264,6 +266,7 @@ async def get_embedding(
             )
 
 
+@grpc_retry
 async def _get_embedding(
     model: str,
     text: str,
