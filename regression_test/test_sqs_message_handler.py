@@ -49,84 +49,111 @@ class TestSQSMessageHandler(unittest.TestCase):
 
     def test_run_execution_plan(self):
         raw_message = """
+{
+  "plan": {
+    "nodes": [
+      {
+        "tool_name": "get_stock_universe",
+        "tool_task_id": "e9519b1c-9a40-4b08-a426-862a72cde647",
+        "args": {
+          "universe_name": "Russell 1000"
+        },
+        "description": "Get the list of stocks in the Russell 1000",
+        "output_variable_name": "stock_ids",
+        "is_output_node": false,
+        "store_output": true
+      },
+      {
+        "tool_name": "get_statistic_data_for_companies",
+        "tool_task_id": "d3c7dba7-62fe-47ba-9f7c-eab69450a657",
+        "args": {
+          "statistic_reference": "P/E ratio",
+          "stock_ids": {
+            "var_name": "stock_ids"
+          }
+        },
+        "description": "Get P/E ratios for the Russell 1000 stocks",
+        "output_variable_name": "pe_ratios",
+        "is_output_node": false,
+        "store_output": true
+      },
+      {
+        "tool_name": "transform_table",
+        "tool_task_id": "2e318d62-a4e5-4512-b622-8fe714f8be55",
+        "args": {
+          "input_table": {
+            "var_name": "pe_ratios"
+          },
+          "transformation_description": "Filter to P/E ratios less than 25.5"
+        },
+        "description": "Filter to stocks with P/E ratios less than 25.5",
+        "output_variable_name": "filtered_pe_ratios",
+        "is_output_node": false,
+        "store_output": true
+      },
+      {
+        "tool_name": "get_stock_identifier_list_from_table",
+        "tool_task_id": "bd993483-5f9d-4697-813b-68959385d10b",
+        "args": {
+          "input_table": {
+            "var_name": "filtered_pe_ratios"
+          }
+        },
+        "description": "Extract the list of stock IDs from the filtered table",
+        "output_variable_name": "filtered_stock_ids",
+        "is_output_node": false,
+        "store_output": true
+      },
+      {
+        "tool_name": "prepare_output",
+        "tool_task_id": "ab910b2c-355e-4ab2-a690-f6c502d6ea9e",
+        "args": {
+          "object_to_output": {
+            "var_name": "filtered_stock_ids"
+          },
+          "title": "Companies in the Russell 1000 with P/E ratios less than 25.5"
+        },
+        "description": "Output the list of companies",
+        "output_variable_name": "output",
+        "is_output_node": true,
+        "store_output": false
+      }
+    ]
+  },
+  "context": {
+    "agent_id": "1a4e844d-b8d3-4251-a5ab-407880c61008",
+    "plan_id": "0872bc45-3b17-4b75-9a8e-b7b2b335bf57",
+    "user_id": "ac7c96d7-3e57-40e7-a1a5-8e2ce5e23639",
+    "plan_run_id": "78379d44-9871-4729-b90b-e4cf9a789185",
+    "chat": {
+      "messages": [
         {
-           "plan":{
-              "nodes":[
-                 {
-                    "tool_name":"get_stock_universe",
-                    "tool_task_id":"dc1fd5a5-835c-4353-b94f-ea0a1a74e4be",
-                    "args":{
-                       "universe_name":"S&P 500"
-                    },
-                    "description":"Get the list of S&P 500 stocks",
-                    "output_variable_name":"stock_ids",
-                    "is_output_node":false,
-                    "store_output":true
-                 },
-                 {
-                    "tool_name":"get_stock_recommendations",
-                    "tool_task_id":"2ecc404f-fb7c-46f5-9ac9-b3078179ccb5",
-                    "args":{
-                       "stock_ids":{
-                          "var_name":"stock_ids"
-                       },
-                       "filter":true,
-                       "buy":true,
-                       "num_stocks_to_return":1
-                    },
-                    "description":"Get the top recommended stock from the S&P 500",
-                    "output_variable_name":"recommended_stock",
-                    "is_output_node":false,
-                    "store_output":true
-                 },
-                 {
-                    "tool_name":"prepare_output",
-                    "tool_task_id":"a542593a-062a-4de6-9ef1-09461a30ef8a",
-                    "args":{
-                       "object_to_output":{
-                          "var_name":"recommended_stock"
-                       },
-                       "title":"Top Recommended S&P 500 Stock"
-                    },
-                    "description":"Output the top recommended stock",
-                    "output_variable_name":"output",
-                    "is_output_node":true,
-                    "store_output":false
-                 }
-              ]
-           },
-           "context":{
-              "agent_id":"1298b4ea-ca8b-4d62-af03-2df2b0c13cc5",
-              "plan_id":"3c9c0714-0842-4a61-9101-5df5effd794c",
-              "user_id":"6c14fe54-de50-4d05-9533-57541715064f",
-              "plan_run_id":"919ac09c-7cee-4efd-9764-98dbd4455c1b",
-              "chat":{
-                 "messages":[
-                    {
-                       "agent_id":"1298b4ea-ca8b-4d62-af03-2df2b0c13cc5",
-                       "message_id":"97b14200-1276-4c2d-a1d8-eac71d716c44",
-                       "message":"What is the best S&P 500 stock?",
-                       "is_user_message":true,
-                       "message_time":"2024-06-19T18:01:03.574113+00:00",
-                       "unread":false
-                    },
-                    {
-                       "agent_id":"1298b4ea-ca8b-4d62-af03-2df2b0c13cc5",
-                       "message_id":"abaddb83-98b5-4b29-94c8-bd020b7175ff",
-                       "message":"Understood, you're looking for insights on the top-performing S&P 500 stock. I'll start considering how to approach this for you.",
-                       "is_user_message":false,
-                       "message_time":"2024-06-19T18:01:05.959762+00:00",
-                       "unread":false
-                    }
-                 ]
-              },
-              "task_id":null,
-              "skip_db_commit":false,
-              "skip_task_cache":false,
-              "run_tasks_without_prefect":false
-           },
-           "do_chat":true
+          "agent_id": "1a4e844d-b8d3-4251-a5ab-407880c61008",
+          "message_id": "3d95e1a4-688d-470b-b8f8-ca8ff222ba01",
+          "message": "What companies in the R1K have P/E ratios less than 25.5?",
+          "is_user_message": true,
+          "message_time": "2024-07-05T14:45:20.967093+00:00",
+          "unread": false,
+          "visible_to_llm": true
+        },
+        {
+          "agent_id": "1a4e844d-b8d3-4251-a5ab-407880c61008",
+          "message_id": "aa1c0339-e688-4174-8b93-97e4b3b5f20a",
+          "message": "Understood, you're looking for Russell 1000 companies with P/E ratios under 25.5. I'll start figuring out how to gather this information for you.",
+          "is_user_message": false,
+          "message_time": "2024-07-05T14:45:22.312060+00:00",
+          "unread": true,
+          "visible_to_llm": true
         }
+      ]
+    },
+    "task_id": null,
+    "skip_db_commit": false,
+    "skip_task_cache": false,
+    "run_tasks_without_prefect": false
+  },
+  "do_chat": true
+}
         """
         arguments = json.loads(raw_message)
         arguments["context"]["plan_run_id"] = str(uuid.uuid4())

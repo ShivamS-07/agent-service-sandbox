@@ -9,6 +9,7 @@ import traceback
 
 from agent_service.sqs_serve.message_handler import MessageHandler
 from agent_service.utils.event_logging import log_event
+from agent_service.utils.gpt_input_output_logger import json_serial
 from agent_service.utils.s3_upload import download_json_from_s3
 
 
@@ -63,7 +64,7 @@ async def main() -> None:
                 "start_time_utc": start_time_utc,
                 "end_time_utc": datetime.datetime.utcnow().isoformat(),
                 "raw_message": message_string,
-                "message": json.dumps(converted_message),
+                "message": json.dumps(converted_message, default=json_serial),
             },
         )
         wait_if_needed(start_time=start_time)
@@ -90,7 +91,7 @@ async def main() -> None:
                 "start_time_utc": start_time_utc,
                 "end_time_utc": datetime.datetime.utcnow().isoformat(),
                 "raw_message": message_string,
-                "message": json.dumps(converted_message),
+                "message": json.dumps(converted_message, default=json_serial),
                 "error_msg": traceback.format_exc(),
             },
         )

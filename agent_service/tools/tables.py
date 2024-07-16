@@ -7,7 +7,7 @@ import sys
 import tempfile
 from itertools import chain
 from json.decoder import JSONDecodeError
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 from pydantic import ValidationError
@@ -22,7 +22,7 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
     TableColumnType,
 )
-from agent_service.tool import ToolArgs, ToolCategory, tool
+from agent_service.tool import TOOL_DEBUG_INFO, ToolArgs, ToolCategory, tool
 from agent_service.tools.table_utils.prompts import (
     DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT,
     DATAFRAME_SCHEMA_GENERATOR_SYS_PROMPT,
@@ -177,6 +177,8 @@ stock to those with market cap greater than 10 billion.
 )
 async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> Table:
     logger = get_prefect_logger(__name__)
+    debug_info: Dict[str, Any] = {}
+    TOOL_DEBUG_INFO.set(debug_info)
     input_col_metadata = [col.metadata for col in args.input_table.columns]
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
@@ -202,6 +204,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
         ),
         sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
     )
+    debug_info["code_first_attempt"] = code
     logger.info(f"Running transform code:\n{code}")
     output_df, error = _run_transform_code(df=data_df, code=code)
     if output_df is None:
@@ -223,6 +226,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
             ),
             sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
         )
+        debug_info["code_second_attempt"] = code
         logger.info(f"Running transform code:\n{code}")
         output_df, error = _run_transform_code(df=data_df, code=code)
         if output_df is None:

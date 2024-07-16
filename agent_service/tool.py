@@ -12,10 +12,12 @@ def my_tool(args: MyToolInput, context: PlanRunContext) -> int:
     ...
 """
 
+import contextvars
 import datetime
 import enum
 import functools
 import inspect
+import json
 import logging
 import traceback
 from abc import ABC
@@ -58,6 +60,8 @@ from agent_service.utils.prefect import get_task_run_name, is_inside_prefect_tas
 CacheKeyType = str
 
 logger = logging.getLogger(__name__)
+
+TOOL_DEBUG_INFO: contextvars.ContextVar = contextvars.ContextVar("debug_info", default={})
 
 
 class ToolArgs(BaseModel, ABC):
@@ -417,16 +421,31 @@ def tool(
                     backoff.constant, exception=Exception, max_tries=retries + 1, logger=logger
                 )
                 async def call_func() -> IOType:
+                    previous_debug_info = TOOL_DEBUG_INFO.get()
                     try:
                         result = await func(args, context)
                         event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
                         event_data["result"] = dump_io_type(result)
+                        debug_info = TOOL_DEBUG_INFO.get()
+                        if debug_info:
+                            event_data["debug_info"] = json.dumps(debug_info)
+                        if not previous_debug_info:
+                            TOOL_DEBUG_INFO.set({})
+                        else:
+                            TOOL_DEBUG_INFO.set(previous_debug_info)
                         log_event(event_name="agent-service-tool-call", event_data=event_data)
 
                         return result
                     except Exception as e:
                         event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
                         event_data["error_msg"] = traceback.format_exc()
+                        debug_info = TOOL_DEBUG_INFO.get()
+                        if debug_info:
+                            event_data["debug_info"] = json.dumps(debug_info)
+                        if not previous_debug_info:
+                            TOOL_DEBUG_INFO.set({})
+                        else:
+                            TOOL_DEBUG_INFO.set(previous_debug_info)
                         log_event(event_name="agent-service-tool-call", event_data=event_data)
                         raise e
 
