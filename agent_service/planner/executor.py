@@ -6,7 +6,7 @@ from prefect import flow
 
 from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.models import Status, TaskStatus
-from agent_service.io_type_utils import IOType
+from agent_service.io_type_utils import IOType, split_io_type_into_components
 from agent_service.planner.action_decide import (
     Action,
     ErrorActionDecider,
@@ -212,10 +212,13 @@ async def run_execution_plan(
 
         if not step.is_output_node:
             if step.store_output:
-                db.write_tool_output(output=tool_output, context=context)
+                for obj in await split_io_type_into_components(tool_output):
+                    db.write_tool_output(output=obj, context=context)
         else:
             # We have an output node
-            await publish_agent_output(outputs=[tool_output], context=context, db=db)
+            await publish_agent_output(
+                outputs=await split_io_type_into_components(tool_output), context=context, db=db
+            )
         if log_all_outputs:
             logger.info(f"Output of step '{step.tool_name}': {tool_output}")
 

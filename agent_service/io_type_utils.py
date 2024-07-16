@@ -320,6 +320,13 @@ class ComplexIOBase(SerializeableBase, ABC):
         """
         raise NotImplementedError("This type does not have a rich output")
 
+    async def split_into_components(self) -> List["IOType"]:
+        """
+        Some types might want to split themselves to be displayed or stored
+        separately. By default, just return a list with one item.
+        """
+        return [self]
+
     # Note on deepcopy below: mostly from paranoia about mutable data and
     # references being shared across many objects. Deepcopying ensures that
     # modifying the history of one object never updates the history of another
@@ -452,6 +459,16 @@ def load_io_type_dict(val: Any) -> IOTypeBase:
     if isinstance(val, dict):
         return {k: load_io_type_dict(v) for k, v in val.items()}
     return IOTypeAdapter.validate_python(val)
+
+
+async def split_io_type_into_components(val: IOType) -> List[IOType]:
+    """
+    Some IOType's are composed of other IOTypes that need to be split out
+    sometimes. This function handles all IOTypes.
+    """
+    if isinstance(val, ComplexIOBase):
+        return await val.split_into_components()
+    return [val]
 
 
 def dump_io_type(val: IOType) -> str:
