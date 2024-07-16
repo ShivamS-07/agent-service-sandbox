@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Dict, Optional, Union
 
 import ldclient
 from gbi_common_py_utils import get_config
@@ -47,6 +47,18 @@ def get_ld_flag(flag_name: str, default: Any, user_context: Optional[LDUser]) ->
     return result
 
 
+# modified dictionary/object for frontend to use
+def get_custom_user_dict(user_context: LDUser) -> Dict[str, Optional[Union[str, bool]]]:
+    return {
+        "kind": "user",
+        "key": user_context.key,
+        "name": user_context.name,
+        "email": user_context.email,
+        "anonymous": user_context.anonymous,
+        "company_id": user_context.company_id,
+    }
+
+
 def get_secure_mode_hash(user_context: LDUser) -> str:
     """
     Creates a hash string that is used by the frontend.
@@ -60,7 +72,7 @@ def get_secure_mode_hash(user_context: LDUser) -> str:
     if user_context is None:
         user_context = create_anonymous_user()
 
-    return client.secure_mode_hash(user_context.to_dict())
+    return client.secure_mode_hash(get_custom_user_dict(user_context=user_context))
 
 
 def is_user_agent_admin(user_id: str, default: bool = False) -> bool:

@@ -46,7 +46,11 @@ from agent_service.utils.agent_name import generate_name_for_agent
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.feature_flags import get_secure_mode_hash, get_user_context
+from agent_service.utils.feature_flags import (
+    get_custom_user_dict,
+    get_secure_mode_hash,
+    get_user_context,
+)
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
 from agent_service.utils.redis_queue import (
@@ -352,7 +356,8 @@ class AgentServiceImpl:
     def get_secure_ld_user(self, user_id: str) -> GetSecureUserResponse:
         ld_user = get_user_context(user_id=user_id)
         return GetSecureUserResponse(
-            hash=get_secure_mode_hash(ld_user), context={"kind": "user", **ld_user.to_dict()}
+            hash=get_secure_mode_hash(ld_user),
+            context=get_custom_user_dict(ld_user),
         )
 
     # Requires no authorization
