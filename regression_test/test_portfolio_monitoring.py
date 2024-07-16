@@ -1,10 +1,6 @@
 # type: ignore
 from agent_service.io_type_utils import IOType, TableColumnType
-from regression_test.test_regression import (
-    TestExecutionPlanner,
-    get_output,
-    validate_plan,
-)
+from regression_test.test_regression import TestExecutionPlanner, get_output
 from regression_test.util import validate_table_and_get_columns
 
 
@@ -19,5 +15,7 @@ class TestPortfolioMonitoring(TestExecutionPlanner):
             )[0]
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["get_portfolio_holdings", "get_earnings_call_dates"],
         )

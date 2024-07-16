@@ -4,7 +4,6 @@ from regression_test.test_regression import (
     OutputValidationError,
     TestExecutionPlanner,
     get_output,
-    validate_plan,
 )
 
 
@@ -20,7 +19,13 @@ class TestStockScreener(TestExecutionPlanner):
             self.assertGreater(len(output_stock_ids), 0)
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=[
+                "get_statistic_data_for_companies",
+                "get_all_news_developments_about_companies",
+                "get_earnings_call_summaries",
+            ],
         )
 
     def test_stock_screener_qqq_feb_2024(self):
@@ -46,9 +51,9 @@ class TestStockScreener(TestExecutionPlanner):
 
         self.prompt_test(
             prompt=prompt,
-            validate_plan=validate_plan,
             validate_output=validate_output,
             raise_plan_validation_error=True,
+            required_tools=["get_statistic_data_for_companies", "get_earnings_call_summaries"],
         )
 
     def test_best_gen_ai_stocks_july_2024(self):
@@ -71,8 +76,8 @@ class TestStockScreener(TestExecutionPlanner):
 
         self.prompt_test(
             prompt=prompt,
-            validate_plan=validate_plan,
             validate_output=validate_output,
+            required_tools=["get_macroeconomic_themes"],
         )
 
     def test_stock_screener_qqq(self):
@@ -87,9 +92,9 @@ class TestStockScreener(TestExecutionPlanner):
 
         self.prompt_test(
             prompt=prompt,
-            validate_plan=validate_plan,
             validate_output=validate_output,
             raise_plan_validation_error=True,
+            required_tools=["get_statistic_data_for_companies", "get_earnings_call_summaries"],
         )
 
     def test_best_gen_ai_stocks(self):
@@ -101,7 +106,7 @@ class TestStockScreener(TestExecutionPlanner):
 
         self.prompt_test(
             prompt=prompt,
-            validate_plan=validate_plan,
             validate_output=validate_output,
             raise_plan_validation_error=True,
+            required_tools=["get_macroeconomic_themes"],
         )

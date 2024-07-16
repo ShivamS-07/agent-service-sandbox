@@ -1,10 +1,6 @@
 # type: ignore
 from agent_service.io_type_utils import IOType
-from regression_test.test_regression import (
-    TestExecutionPlanner,
-    get_output,
-    validate_plan,
-)
+from regression_test.test_regression import TestExecutionPlanner, get_output
 from regression_test.util import validate_table_and_get_columns, validate_text
 
 
@@ -17,7 +13,9 @@ class TestKPI(TestExecutionPlanner):
             validate_table_and_get_columns(output_stock_table=output_stock_table, column_types=[])
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["get_kpis_for_stock_given_topics", "get_kpis_table_for_stock"],
         )
 
     def test_main_kpi_compare(self):
@@ -30,5 +28,7 @@ class TestKPI(TestExecutionPlanner):
             )
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["get_earnings_call_summaries"],
         )

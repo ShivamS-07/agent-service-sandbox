@@ -1,11 +1,9 @@
 # type: ignore
+from datetime import date
+
 from agent_service.io_type_utils import IOType, TableColumnType
 from agent_service.io_types.text import Text
-from regression_test.test_regression import (
-    TestExecutionPlanner,
-    get_output,
-    validate_plan,
-)
+from regression_test.test_regression import TestExecutionPlanner, get_output
 from regression_test.util import (
     compare_with_expected_text,
     validate_line_graph,
@@ -15,66 +13,198 @@ from regression_test.util import (
 
 
 class TestData(TestExecutionPlanner):
-    def test_relative_strength(self):
+    def test_relative_strength_2023(self):
         prompt = "Show me Relative Strength Index for NVDA, AMD, INTL and GOOG over the year 2023"
 
         def validate_output(prompt: str, output: IOType):
             output_line_graph = get_output(output=output)
             validate_line_graph(output_line_graph=output_line_graph)
-            self.assertGreaterEqual(len(output_line_graph.data[0].points), 150)
-            self.assertLessEqual(len(output_line_graph.data[0].points), 400)
-            self.assertEqual(len(output_line_graph.data), 4)
+            nvda_points = output_line_graph.data[0].points
+            amd_points = output_line_graph.data[1].points
+            intl_points = output_line_graph.data[2].points
+            goog_points = output_line_graph.data[3].points
+            self.assertEqual(len(nvda_points), 260)
+            self.assertAlmostEqual(
+                next(
+                    point for point in nvda_points if point.x_val == date(year=2023, month=5, day=1)
+                ).y_val,
+                65.8765487671,
+                places=3,
+            )
+            self.assertEqual(len(amd_points), 260)
+            self.assertEqual(len(intl_points), 260)
+            self.assertAlmostEqual(
+                next(
+                    point
+                    for point in nvda_points
+                    if point.x_val == date(year=2023, month=9, day=11)
+                ).y_val,
+                46.0734291077,
+                places=3,
+            )
+            self.assertEqual(len(goog_points), 260)
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["get_statistic_data_for_companies"],
         )
 
-    def test_plot_tsla_price(self):
+    def test_plot_tsla_price_jan_to_march(self):
         prompt = "plot tsla price from Jan 2024 to March 2024"
 
         def validate_output(prompt: str, output: IOType):
             output_line_graph = get_output(output)
             validate_line_graph(output_line_graph=output_line_graph)
+            actual_points = output_line_graph.data[0].points
+            self.assertTrue(len(actual_points), 65)
+            expected_max_price = 248.47999572753906
+            expected_max_price_date = date(year=2024, month=1, day=1)
+
+            expected_min_price = 162.5
+            expected_min_price_date = date(year=2024, month=3, day=14)
+
+            actual_min_price_point = min(actual_points, key=lambda x: x.y_val)
+            actual_max_price_point = max(actual_points, key=lambda x: x.y_val)
+            self.assertEqual(expected_min_price_date, actual_min_price_point.x_val)
+            self.assertEqual(expected_max_price_date, actual_max_price_point.x_val)
+            self.assertAlmostEqual(expected_min_price, actual_min_price_point.y_val, places=3)
+            self.assertAlmostEqual(expected_max_price, actual_max_price_point.y_val, places=3)
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["get_statistic_data_for_companies"],
         )
 
-    def test_intersection_of_qqq_xlv(self):
+    def test_intersection_of_qqq_xlv_jan_2024(self):
         prompt = "Find the intersection of QQQ and XLV on Jan 1, 2024"
 
         def validate_output(prompt: str, output: IOType):
             output_stock_ids = get_output(output=output)
-            self.assertGreater(len(output_stock_ids), 0)
+            self.assertEqual(len(output_stock_ids), 11)
+            actual_stock_ids = sorted(
+                [output_stock_id.gbi_id for output_stock_id in output_stock_ids]
+            )
+            expected_stock_ids = [
+                722,
+                4605,
+                5176,
+                5177,
+                5756,
+                8700,
+                12279,
+                12993,
+                15958,
+                58434,
+                610881,
+            ]
+            self.assertEqual(actual_stock_ids, expected_stock_ids)
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["get_stock_universe", "intersect_lists"],
         )
 
-    def test_top_mcap(self):
+    def test_top_mcap_april_2024(self):
         prompt = "top 10 by market cap today, and then graph their market caps over the month of April 2024"
 
         def validate_output(prompt: str, output: IOType):
             output_line_graph = get_output(output=output[1])
             validate_line_graph(output_line_graph=output_line_graph)
             self.assertEqual(len(output_line_graph.data), 10)
-            self.assertGreaterEqual(len(output_line_graph.data[0].points), 10)
+            self.assertEqual(len(output_line_graph.data[0].points), 2)
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["get_stock_universe", "get_statistic_data_for_companies"],
         )
 
-    def test_sector_stocks(self):
-        prompt = "Find stocks in the technology sector"
+    def test_tech_sector_stocks(self):
+        prompt = "Find stocks in the technology sector on Jan 10, 2024"
 
         def validate_output(prompt: str, output: IOType):
-            self.assertGreater(len(output), 0)
+            output_stock_ids = get_output(output=output)
+
+            self.assertEqual(len(output_stock_ids), 65)
+            expected_ids = [
+                124,
+                155,
+                691,
+                713,
+                714,
+                716,
+                719,
+                723,
+                1144,
+                1694,
+                2271,
+                2849,
+                3428,
+                4043,
+                4083,
+                4569,
+                5112,
+                5136,
+                5721,
+                5757,
+                5766,
+                6344,
+                6384,
+                6387,
+                6960,
+                6961,
+                6963,
+                7504,
+                7528,
+                7551,
+                7555,
+                8154,
+                8707,
+                9292,
+                10817,
+                10865,
+                10931,
+                11554,
+                11595,
+                11635,
+                12293,
+                12299,
+                12985,
+                13831,
+                14424,
+                14426,
+                15014,
+                15315,
+                18851,
+                18854,
+                19729,
+                21466,
+                22901,
+                26805,
+                27375,
+                28309,
+                28385,
+                29336,
+                29372,
+                30055,
+                30940,
+                31120,
+                31767,
+                35692,
+                514112,
+            ]
+            self.assertEqual(
+                sorted([stock_id.gbi_id for stock_id in output_stock_ids]), expected_ids
+            )
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt, validate_output=validate_output, required_tools=["sector_filter"]
         )
 
-    def test_pe_nvda(self):
+    def test_pe_nvda_feb_2024(self):
         prompt = "Show me the PE of NVDA over month of Feb 2024?"
 
         def validate_output(prompt: str, output: IOType):
@@ -83,27 +213,32 @@ class TestData(TestExecutionPlanner):
                 output_stock_table=output_stock_table,
                 column_types=[TableColumnType.DATE, TableColumnType.FLOAT],
             )
-            self.assertGreater(len(date_column.data), 0)
-            self.assertGreater(len(pe_column.data), 0)
+            self.assertEqual(len(date_column.data), 21)
+            self.assertEqual(len(pe_column.data), 21)
+            self.assertAlmostEqual(pe_column.data[3], 89.21580505371094, places=3)
+            self.assertAlmostEqual(pe_column.data[7], 94.47933197021484, places=3)
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["get_statistic_data_for_companies"],
         )
 
-    def test_graph_pe(self):
+    def test_graph_pe_2023(self):
         prompt = "Graph the PE of health care stocks in QQQ over the year 2023"
 
         def validate_output(prompt: str, output: IOType):
             output_line_graph = get_output(output)
             validate_line_graph(output_line_graph=output_line_graph)
-            self.assertGreaterEqual(len(output_line_graph.data[0].points), 150)
-            self.assertLessEqual(len(output_line_graph.data[0].points), 400)
+            self.assertGreaterEqual(len(output_line_graph.data[0].points), 260)
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["get_statistic_data_for_companies"],
         )
 
-    def test_open_close_spread(self):
+    def test_open_close_spread_jan_2024(self):
         prompt = "Calculate the spread between open and close for AAPL over the month of Jan 2024"
 
         def validate_output(prompt: str, output: IOType):
@@ -111,11 +246,12 @@ class TestData(TestExecutionPlanner):
             date_column = validate_table_and_get_columns(
                 output_stock_table=output_stock_table, column_types=[TableColumnType.DATE]
             )[0]
-            self.assertGreaterEqual(len(date_column.data), 10)
-            self.assertLessEqual(len(date_column.data), 50)
+            self.assertEqual(len(date_column.data), 23)
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["get_statistic_data_for_companies"],
         )
 
     def test_machine_learning_news_summary(self):
@@ -131,7 +267,9 @@ class TestData(TestExecutionPlanner):
             )
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["get_all_news_developments_about_companies"],
         )
 
     def test_notify_big_big_developments_June_2024(self):
@@ -174,8 +312,8 @@ class TestData(TestExecutionPlanner):
 
         self.prompt_test(
             prompt=prompt,
-            validate_plan=validate_plan,
             validate_output=validate_output,
+            required_tools=["get_10k_10q_sec_filings"],
         )
 
     def test_notify_big_big_developments(self):
@@ -191,7 +329,7 @@ class TestData(TestExecutionPlanner):
 
         self.prompt_test(
             prompt=prompt,
-            validate_plan=validate_plan,
             validate_output=validate_output,
             raise_plan_validation_error=True,
+            required_tools=["get_10k_10q_sec_filings"],
         )

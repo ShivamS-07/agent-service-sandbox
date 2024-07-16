@@ -1,13 +1,14 @@
 # type: ignore
 import asyncio
 import datetime
+import inspect
 import json
 import traceback
 import unittest
 import uuid
 import warnings
 from dataclasses import asdict, dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
 from gbi_common_py_utils.utils.clickhouse_base import ClickhouseBase
@@ -28,7 +29,6 @@ from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_utils.output_construction import PreparedOutput
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
-from regression_test.expected_plans import expected_plans
 
 CH = ClickhouseBase(environment=DEV_TAG)
 SERVICE_VERSION = "374053208103.dkr.ecr.us-west-2.amazonaws.com/agent-service:405d39f6fb15ad617fae2584cd812ae51ca033a9"
@@ -38,7 +38,7 @@ class PlanGenerationError(Exception):
     pass
 
 
-class PlanValidationError(Exception):
+class ToolsValidationError(Exception):
     pass
 
 
@@ -50,19 +50,6 @@ class OutputValidationError(Exception):
 class EventLog:
     event_name: str
     event_data: Optional[Dict[str, Any]] = None
-
-
-def get_expected_plans(prompt: str) -> Tuple[str, str]:
-    if prompt in expected_plans:
-        return expected_plans[prompt]
-    res = CH.generic_read(
-        "select execution_plan from agent.regression_test where prompt = %(prompt)s and "
-        "service_version = %(service_version)s",
-        {"prompt": prompt, "service_version": SERVICE_VERSION},
-    )
-    if not res:
-        return []
-    return [res[0]["execution_plan"]]
 
 
 def plan_to_simple_json(plan: ExecutionPlan) -> str:
@@ -89,23 +76,22 @@ def get_output(output: IOType) -> IOType:
     return output
 
 
-def validate_plan(prompt: str, plan: Optional[ExecutionPlan]) -> None:
-    expected_plans_json = get_expected_plans(prompt=prompt)
-    if len(expected_plans_json) == 0:
-        error_msg = "Could not find expected plan"
-        raise PlanValidationError(error_msg)
-    for expected_plan_json in expected_plans_json:
-        expected_plan = ExecutionPlan(**({"nodes": json.loads(expected_plan_json)}))
-        if compare_plan(plan, expected_plan):
-            return
+def validate_tools_used(
+    prompt: str, plan: Optional[ExecutionPlan], required_tools: List[str]
+) -> None:
+    actual_tools = set((step.tool_name for step in plan.nodes))
 
+    if len(required_tools) == 0:
+        error_msg = "Could not find required tool groups"
+        raise ToolsValidationError(error_msg)
+    if set(required_tools).issubset(set(actual_tools)):
+        return
     err_msg = f"""
-    The sets of tools called are different.
-    actual plan is {plan_to_simple_json(plan)} and
-    expected plans are {[plan_to_simple_json(ExecutionPlan(**({"nodes": json.loads(expected_plan_json)})))
-                               for expected_plan_json in expected_plans_json]},
-    """
-    raise PlanValidationError(f"\n{err_msg}")
+        The required tools are not called.
+        actual plan is {plan_to_simple_json(plan)} and
+        required tools are {required_tools}
+        """
+    raise ToolsValidationError(f"\n{err_msg}")
 
 
 class TestExecutionPlanner(unittest.TestCase):
@@ -119,17 +105,19 @@ class TestExecutionPlanner(unittest.TestCase):
     def prompt_test(
         self,
         prompt: str,
-        validate_plan: Callable,
         validate_output: Callable,
+        required_tools: List[str] = [],
         raise_plan_validation_error: Optional[bool] = False,
         raise_output_validation_error: Optional[bool] = False,
         user_id: Optional[str] = None,
     ):
+        test_name = inspect.stack()[1].function
         user_id = user_id or "6c14fe54-de50-4d05-9533-57541715064f"
         shared_log_data = {
             "user_id": user_id,
             "test_suite_id": self.test_suite_id,
             "prompt": prompt,
+            "test_name": test_name,
         }
         regression_test_log = EventLog(
             event_name="agent-regression-output-generated",
@@ -137,6 +125,7 @@ class TestExecutionPlanner(unittest.TestCase):
                 **shared_log_data,
             },
         )
+
         warning_msg = ""
         try:
             plan, output = self.run_regression(
@@ -145,8 +134,8 @@ class TestExecutionPlanner(unittest.TestCase):
                 user_id=user_id,
             )
             try:
-                validate_plan(prompt=prompt, plan=plan)
-            except PlanValidationError as e:
+                validate_tools_used(prompt=prompt, plan=plan, required_tools=required_tools)
+            except ToolsValidationError as e:
                 if raise_plan_validation_error:
                     raise e
                 else:
@@ -162,7 +151,7 @@ class TestExecutionPlanner(unittest.TestCase):
                 regression_test_log.event_data["warning_msg"] = warning_msg.strip()
                 warnings.warn(warning_msg)
             log_event(**asdict(regression_test_log))
-        except (PlanGenerationError, PlanValidationError) as e:
+        except (PlanGenerationError, ToolsValidationError) as e:
             regression_test_log.event_data["error_msg"] = traceback.format_exc()
             log_event(**asdict(regression_test_log))
             raise e

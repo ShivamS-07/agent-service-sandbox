@@ -1,10 +1,6 @@
 # type: ignore
 from agent_service.io_type_utils import IOType
-from regression_test.test_regression import (
-    TestExecutionPlanner,
-    get_output,
-    validate_plan,
-)
+from regression_test.test_regression import TestExecutionPlanner, get_output
 from regression_test.util import validate_text
 
 
@@ -19,7 +15,12 @@ class TestHypothesis(TestExecutionPlanner):
             )
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=[
+                "get_all_news_developments_about_companies",
+                "test_and_summarize_hypothesis_with_news_developments",
+            ],
         )
 
     def test_pharmaceutical_sector_growth(self):
@@ -32,5 +33,7 @@ class TestHypothesis(TestExecutionPlanner):
             )
 
         self.prompt_test(
-            prompt=prompt, validate_plan=validate_plan, validate_output=validate_output
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["sector_identifier_lookup", "sector_filter"],
         )

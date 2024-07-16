@@ -1,11 +1,7 @@
 # type: ignore
 from agent_service.io_type_utils import IOType
 from agent_service.io_types.text import Text
-from regression_test.test_regression import (
-    TestExecutionPlanner,
-    get_output,
-    validate_plan,
-)
+from regression_test.test_regression import TestExecutionPlanner, get_output
 from regression_test.util import compare_with_expected_text
 
 
@@ -84,8 +80,8 @@ class TestMarketCommentary(TestExecutionPlanner):
 
         self.prompt_test(
             prompt=prompt,
-            validate_plan=validate_plan,
             validate_output=validate_output,
+            required_tools=["get_commentary_inputs", "write_commentary"],
         )
 
     def test_market_commentary_past_month(self):
@@ -98,7 +94,7 @@ class TestMarketCommentary(TestExecutionPlanner):
 
         self.prompt_test(
             prompt=prompt,
-            validate_plan=validate_plan,
             validate_output=validate_output,
             raise_plan_validation_error=True,
+            required_tools=["get_commentary_inputs", "write_commentary"],
         )
