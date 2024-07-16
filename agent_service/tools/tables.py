@@ -98,7 +98,7 @@ def _get_command(data_file: str, code_file: str) -> str:
     exec_code_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "table_utils/pandas_exec.py"
     )
-    command = f"pipenv run python {exec_code_path} -d {data_file} -c {code_file}"
+    command = f"{sys.executable} {exec_code_path} -d {data_file} -c {code_file}"
 
     if sys.platform == "darwin":
         # This is mostly for testing purposes
