@@ -36,9 +36,9 @@ TRADING_TO_CALENDAR_RATIO = 8 / 5
 
 DEFAULT_TIME_DELTA = datetime.timedelta(days=365)
 
-DECOMPOSITION_SYS_PROMPT_STR = "You are a financial analyst who is trying to prepare data to satisfy a client's particular information need. You will be given a reference to a statistic that the user needs, the larger conversational context in which this statistic was mentioned, and a large collection of basic statistics which your database has time series data for. Your goal is to translate this client statistic reference into one or more of the provided basic statistics and, if necessary, an explanation of any mathematical operations required to translate the selected statistic(s) into the statistic that will satisfy the client. Specifically, you will output a json with four keys. The first key should be called `output_timeseries`. This should be a boolean that is true if the final output will consist of timeseries data, and false otherwise. For many simple, single day requests (e.g. `what is the market cap of Apple?`) and most stock ranking and filtering tasks a timeseries output is NOT what the client wants, and so output_timeseries must be False, even sometimes when there is a delta that mentions time (e.g. for the request `pick the top 10 stocks by price delta over the last month` we are ranking the stocks based on a single number per stock, the price delta over the last month, and so output_timeseries should be False). However, if the goal is graphing some statistic over time (e.g. `show me Apple's P/E over the last year`), we do need a time series of data, so output_timeseries should be true. Again, think very carefully about the final use case of the data as indicated in the chat context before outputting this key (again, graphs need timeseries, ranking/filtering of stocks just needs the latest datapoint for each stock), and make sure your calculation below is consistent with your choice. The second key should be called `components` and should be a json list of strings corresponding directly to statistics in the provided list that are either are, or are useful for calculating the required client-desired statistic. It is preferable to have one statistic if that is all you need to fully satisfy the client need, do not make your derivation needlessly complicated. It is also preferable to pick basic statistics that exactly match statistics mentioned in the input, when possible (e.g. if the client asks for ratio like price to earnings, you would choose price to earnings directly from the list rather than stock price and earnings separately). You should never, ever need multiple statistics like X High, X Low, and X Median unless they are explicitly asked for (they are NOT useful for delta calculations, which should involve calculation over a time series of a single statistic); just pick one! If there appears to be absolutely no way to get the desired statistic from the provided basic statistics, components should be an empty list. The third key, `calculation` will be a description of any mathematical operations that must be applied to the component statistics to get the desired statistic (either an individual value for each stock, or a time series, depending on is_timeseries). This description should be clear and specific and directly refer to any statistics mentioned in the first line. If the client need is clearly a time series, the calculation must transform the input time series into an output time series. If a time series is desired (output_timeseries is true), you must NOT do a calculation which makes sense only for the last date of the time series, turning the time series into a single point! For example, if you are calculating a price change graph, you must calculate a price change for every day of the time series! To remind you of this, use a term such as daily with your statistic in your calculation explanation (e.g. daily price delta) when the output is a timeseries. Again, for some needs, including ranking, filtering tasks, a timeseries is NOT required. In these cases you should NOT use the terms daily, weekly, or monthly, and you should only output a single datapoint per stock!!! As much as possible, you should pass the client's original wording to the calculation function; if the input uses `week` or `month`, you MUST output `week` or `month` in your calculation instructions. It is critical, in particular, that your reference to output variable in the calculation uses exactly the same wording as the client did (e.g., if the client said `performance`, your calculation description must indicate that you are calculating `performance`, and not only refer to your interpretation of perfromance). If you listed only one statistic in the `components` key and you are confident that that statistic is in fact exactly what the client wants, you must be output an empty string for the `calculation` key, however you should be very confident that the client will be satisfied with this result, it should be a near or exact match. For the fourth key, `extra_timespan`, you should consider whether you need to retrieve additional historical time series data for the statistic(s) listed under components to calculate the relevant client-desired statistic. For example, to calculate a 1M moving average, you need 1M of additional data (the first datapoint in the time series requires 1M of data before it), and to calculate a delta for one year (e.g performance gain over the last year) you will need an extra year of data. The timespan needed will often (though not always) be mentioned directly in the statistic. If the statistic requires some kind of window but the client has not said so explcitly, you can select one that seems reasonable, and include it both your calcuation and extra_timespan. Express the timespan of additional data you need as a string in standard financial format (e.g. 1D, 3M, 1Y), output an empty string if no such additional data is needed (which is very common, for instance you would need no such extra data for standard ratio like Price to Earnings). A few additional guidelines:\n- You should interpret stock price to mean close price\n- Any reference to stock price change (gain/loss/delta) must be calculated relative to the first day of the period which is being calculated over, you must be explicit in your calculation description what that first day is\n-- Generally (unless the client says otherwise), you must interpret the `performance` of stocks as referring to the percentage change of stock price, note that a daily percentage change means the percentage change for each day from the begining of the period!\n- keep percentages in decimal form, do not multiply by 100\n-When there is ambiguity, you should always interpret weeks, months, and years as spans of time relative to the present rather than a specific date/year/month. If the user says `for the last month`, that means over the last thirty (calendar) days and NOT since the first day of the month. You must never jump to the conclusion that the client is talking about the first/last day of a week/month/year unless that is exactly the wording used!\n- If multiple basic statistics seem like they could be used for a specific part of the calculation, you should be biased towards chosing simpler statistics (i.e. those without modifiers)\n- Make sure you are only calculating the provided statistic referenced, you should not include any other calculations mentioned in the chat context\n- Do not output a wrapper around your json (no ```json!)\n- Do not mention the specific stocks from the chat, your output should work for any stock\n- Be concise, unless the calculation is very complex, a single sentence of no more than 40 words is strongly preferred, you do not need a formula."  # noqa: E501
+DECOMPOSITION_SYS_PROMPT_STR = "You are a financial analyst who is trying to prepare data to satisfy a client's particular information need. You will be given a reference to a statistic that the user needs, the larger conversational context in which this statistic was mentioned, and a large collection of basic statistics which your database has time series data for. Your goal is to translate this client statistic reference into one or more of the provided basic statistics and, if necessary, an explanation of any mathematical operations required to translate the selected statistic(s) into the statistic that will satisfy the client. Specifically, you will output a json with three keys. The first key should be called `components` and should be a json list of strings corresponding directly to statistics in the provided list that are either are, or are useful for calculating the required client-desired statistic. It is preferable to have one statistic if that is all you need to fully satisfy the client need, do not make your derivation needlessly complicated. It is also preferable to pick basic statistics that exactly match statistics mentioned in the input, when possible (e.g. if the client asks for ratio like price to earnings, you would choose price to earnings directly from the list rather than stock price and earnings separately). You should never, ever need multiple statistics like X High, X Low, and X Median unless they are explicitly asked for (they are NOT useful for delta calculations, which should involve calculation over a time series of a single statistic); just pick one! If there appears to be absolutely no way to get the desired statistic from the provided basic statistics, components should be an empty list. The second key, `calculation` will be a description of any mathematical operations that must be applied to the component statistics to get the desired statistic (either an individual value for each stock, or a time series, depending on is_timeseries). This description should be clear and specific and directly refer to any statistics mentioned in the first line. If the client need is a time series, the calculation must transform the input time series into an output time series, you must NOT do a calculation which makes sense only for the last date of the time series, turning the time series into a single point! For example, if you are calculating a price change graph, you must calculate a price change for every day of the time series! To remind you of this, use a term such as daily with your statistic in your calculation explanation (e.g. daily price delta) when the output is a timeseries, and explicitly say in your calculations that you are generating a time series between the two provided dates. Again, for some needs, including ranking, filtering tasks, a timeseries is NOT required. In these cases you should NOT use the terms daily, weekly, or monthly, and you should only output a single datapoint per stock! Mention in your calcluation description that you are outputing a single datapoint for the provided date. As much as possible, you should pass the client's original wording to the calculation function; if the input uses `over the last week` or `month`, you MUST output `over the last week` or `month` in your calculation instructions. It is critical, in particular, that your reference to the output variable in the calculation uses exactly the same wording as the client did (e.g., if the client said `performance`, your calculation description must indicate that you are calculating `performance`, and not only refer to your interpretation of performance). If you listed only one statistic in the `components` key and you are confident that that statistic is in fact exactly what the client wants, you must be output an empty string for the `calculation` key, however you should be very confident that the client will be satisfied with this result, it should be a near or exact match. For the fourth key, `extra_timespan`, you should consider whether you need to retrieve additional historical time series data for the statistic(s) listed under components to calculate the relevant client-desired statistic. For example, to calculate a 1M moving average, you need 1M of additional data (the first datapoint in the time series requires 1M of data before it), and to calculate a delta for one year (e.g performance gain over the last year) you will need an extra year of data. The timespan needed will often (though not always) be mentioned directly in the statistic. If the statistic requires some kind of window but the client has not said so explcitly, you can select one that seems reasonable, and include it both your calcuation and extra_timespan. Express the timespan of additional data you need as a string in standard financial format (e.g. 1D, 3M, 1Y), output an empty string if no such additional data is needed (which is very common, for instance you would need no such extra data for standard ratio like Price to Earnings). A few additional guidelines:\n- You should interpret stock price to mean close price\n- Any reference to stock price change (gain/loss/delta) must be calculated relative to the first day of the period which is being calculated over, you must be explicit in your calculation description what that first day is\n-- Generally (unless the client says otherwise), you must interpret the `performance` of stocks as referring to the percentage change of stock price, note that a daily percentage change means the percentage change for each day from the begining of the period!\n- keep percentages in decimal form, do not multiply by 100\n-When there is ambiguity, you should always interpret weeks, months, and years as spans of time relative to the present rather than a specific date/year/month. If the user says `for/over the last month/week`, that means a time ranging consisting of the thirty/seven (calendar) days prior to today and NOT since the first day of the last month/week. 'Over the last week` means the last seven days, not  You must never jump to the conclusion that the client is talking about the first/last day of a week/month/year unless that is exactly the wording used!\n- If multiple basic statistics seem like they could be used for a specific part of the calculation, you should be biased towards chosing simpler statistics (i.e. those without modifiers)\n- Make sure you are only calculating the provided statistic referenced, you should not include any other calculations mentioned in the chat context, in particular do not mention anything related to any filtering or ranking in your calculation description, another analyst will handle that; your task is limited to deriving the statistic mentioned by the client\n- Do not output a wrapper around your json (no ```json!)\n- Do not mention the specific stocks from the chat, your output should work for any stock\n- Be concise, unless the calculation is very complex, a single sentence of no more than 40 words is strongly preferred, you do not need a formula."  # noqa: E501
 
-DECOMPOSITION_MAIN_PROMPT_STR = "Identify which of the following list of statistics is, or can be used to derive the statistic referenced by the user, as understood in the larger chat context, and provide a mathematical description of how such a derivation would occur, as needed. Here is the client mention of the statistic: {statistic_description}\nHere is the larger chat context, delimited by `---`:\n---\n{chat_context}\n---\nAnd here is the long list of statistics you have data for, also delimited by `---`:\n---\n{statistic_list}\n---\nNow output your json consisting of a list of relevant statistics, and an explanation of how to derive the client's statistic from those statistics, and, if applicable, the amount additional time series data that must be requested beyond the timespan asked for by the client:\n"  # noqa: E501
+DECOMPOSITION_MAIN_PROMPT_STR = "Identify which of the following list of statistics is, or can be used to derive the statistic referenced by the user, as understood in the larger chat context, and provide a mathematical description of how such a derivation would occur, as needed. {time_series}\n Here is the client mention of the statistic: {statistic_description}\nHere is the larger chat context, delimited by `---`:\n---\n{chat_context}\n---\nAnd here is the long list of statistics you have data for, also delimited by `---`:\n---\n{statistic_list}\n---\nNow output your json consisting of a list of relevant statistics, and an explanation of how to derive the client's statistic from those statistics, and, if applicable, the amount additional time series data that must be requested beyond the timespan asked for by the client:\n"  # noqa: E501
 
 DECOMPOSITION_SYS_PROMPT = Prompt(
     name="DECOMPOSITION_SYS_PROMPT",
@@ -48,6 +48,14 @@ DECOMPOSITION_SYS_PROMPT = Prompt(
 DECOMPOSITION_MAIN_PROMPT = Prompt(
     name="DECOMPOSITION_MAIN_PROMPT",
     template=DECOMPOSITION_MAIN_PROMPT_STR,
+)
+
+TIME_SERIES_TEMPLATE = (
+    "Note that you are generating a time series between {start_date} and {end_date} for each stock."
+)
+
+SINGLE_DATE_TEMPLATE = (
+    "Note that you are generating a single point of data for {date} for each stock."
 )
 
 
@@ -67,7 +75,8 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
         " As such, it accepts both simple and complex expressions for financial statistics, including"
         " vague and otherwise underspecified financial variables such as stock `performance`. You MUST let this"
         " function interpret the meaning of statistics, the statistic_reference passed to this function must be"
-        " copied verbatim from the client input, do not paraphrase!"
+        " copied verbatim from the client input, do not paraphrase or copy from a sample plan! If the statistic"
+        " reference contains a time span, that must also be preserved, do not change the wording!"
         " Component statistics may include macroeconomic statistics (such as interest rates), however the final "
         " statistic must be calculated on a per-stock basis."
         " If the client wants pure macroeconomic data, use the `get_macro_statistic_data` function."
@@ -109,12 +118,13 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
         " with a single stock per time in those circumstances!"
         " The is_time_series argument should be selected based on whether a time series is the desired output, or"
         " only a single number is needed for each stock. If the data is going to be used in a line graph,"
-        " you must pass is_time_series=True to this function."
-        " If you are passing a date range that is not a single day, you must also use is_time_series=True"
+        " you must pass is_time_series=True to this function. Even if a line graph is not explicitly asked"
+        " for, any mention of wanting to see some statistic `over` some period of time longer than a day"
+        "is a very strong indication that a time_series is required, and is_time_series should be True"
         " Time series is not required when doing filtering/ranking using a single value for each stock."
-        " If no date_range is provided then this tool select the range based on whether the output is"
+        " If no date_range is provided then this tool will select the range based on whether the output is"
         " a time series or not."
-        " If it is, the range will default to a year ending today, and if instead a single date is"
+        " If it is a time series, the range will default to a year ending today, and if instead a single date is"
         " required it will assume the request is for the most recent date for which data exists."
         " You must not get a date range if the client has not specified one in their request, just use the"
         " default!"
@@ -136,38 +146,9 @@ async def get_statistic_data_for_companies(
     stat_ref = args.statistic_reference
     stocks = args.stock_ids
 
-    resp = await get_all_features_metadata(context.user_id, filtered=True)
-    all_statistic_lookup = {
-        feature_metadata.name: feature_metadata
-        for feature_metadata in resp.features
-        if feature_metadata.importance <= 2
-    }
-    all_statistics = "\n".join(all_statistic_lookup)
-    gpt_context = create_gpt_context(
-        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
-    )
-    llm = GPT(context=gpt_context, model=GPT4_O)
-    main_prompt = DECOMPOSITION_MAIN_PROMPT.format(
-        statistic_description=stat_ref,
-        chat_context=context.chat.get_gpt_input(),
-        statistic_list=all_statistics,
-    )
-    result = await llm.do_chat_w_sys_prompt(main_prompt, DECOMPOSITION_SYS_PROMPT.format())
-    output_json = json.loads(clean_to_json_if_needed(result))
-    stat_list = output_json["components"]
-    if len(stat_list) == 0:
-        raise Exception(
-            "No decomposition found for client statistic using supported component statistics"
-        )
-    calculation = output_json["calculation"]
-    added_timespan = output_json["extra_timespan"]
-    is_timeseries = args.is_time_series
-    await tool_log(
-        log=f"Analyzed {stat_ref}, component variables: {stat_list}, calculation: {calculation}, {is_timeseries=}",
-        context=context,
-    )
-
     latest_date = get_latest_date()
+
+    is_timeseries = args.is_time_series
 
     if args.date_range:
         start_date, end_date = args.date_range.start_date, args.date_range.end_date
@@ -191,6 +172,44 @@ async def get_statistic_data_for_companies(
         else:
             end_date = latest_date
             start_date = latest_date
+
+    resp = await get_all_features_metadata(context.user_id, filtered=True)
+    all_statistic_lookup = {
+        feature_metadata.name: feature_metadata
+        for feature_metadata in resp.features
+        if feature_metadata.importance <= 2
+    }
+    all_statistics = "\n".join(all_statistic_lookup)
+    if is_timeseries:
+        time_series_str = TIME_SERIES_TEMPLATE.format(start_date=start_date, end_date=end_date)
+    else:
+        time_series_str = SINGLE_DATE_TEMPLATE.format(date=start_date)
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=GPT4_O)
+    main_prompt = DECOMPOSITION_MAIN_PROMPT.format(
+        statistic_description=stat_ref,
+        chat_context=context.chat.get_gpt_input(),
+        statistic_list=all_statistics,
+        time_series=time_series_str,
+    )
+    result = await llm.do_chat_w_sys_prompt(main_prompt, DECOMPOSITION_SYS_PROMPT.format())
+    output_json = json.loads(clean_to_json_if_needed(result))
+    stat_list = output_json["components"]
+    if len(stat_list) == 0:
+        raise Exception(
+            "No decomposition found for client statistic using supported component statistics"
+        )
+    calculation = output_json["calculation"]
+    added_timespan = output_json["extra_timespan"]
+    await tool_log(
+        log=(
+            f"Analyzed reference to '{stat_ref}'; Component variable(s): {', '.join(stat_list)}"
+            f"{'; Calculation: ' + calculation if calculation else ''}"
+        ),
+        context=context,
+    )
 
     if added_timespan:
         extra_days = convert_horizon_to_days(added_timespan)

@@ -627,17 +627,21 @@ class Clickhouse(ClickhouseBase):
     # Tool Diff Info
     ################################################################################################
 
-    def get_io_for_tool_run(self, plan_run_id: str, task_id: str) -> Optional[Tuple[str, str]]:
+    def get_io_for_tool_run(
+        self, plan_run_id: str, task_id: str, tool_name: str
+    ) -> Optional[Tuple[str, str, str]]:
         sql = """
-        SELECT args, result
+        SELECT args, result, debug_info
         FROM agent.tool_calls
-        WHERE plan_run_id = %(plan_run_id)s AND task_id = %(task_id)s
+        WHERE plan_run_id = %(plan_run_id)s AND task_id = %(task_id)s AND tool_name = %(tool_name)s
         """
-        rows = self.generic_read(sql, {"plan_run_id": plan_run_id, "task_id": task_id})
+        rows = self.generic_read(
+            sql, {"plan_run_id": plan_run_id, "task_id": task_id, "tool_name": tool_name}
+        )
         if not rows:
             return None
         row = rows[0]
-        return row["args"], row["result"]
+        return row["args"], row["result"], row["debug_info"]
 
     ################################################################################################
     # Manual Event Logging

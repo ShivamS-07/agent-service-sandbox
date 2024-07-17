@@ -34,6 +34,12 @@ percent change, include the percent change column NOT the raw data column
 (e.g. price). Imagine that the user is looking at the table, and think hard
 about what columns they would most want to see.
 
+Dropping the DATE column from your output schema when it is in the input schema is
+very common. If the transformation explicitly mentions outputing only a single datapoint
+for a single date (for each stock), or no dates at all, you must not include a DATE
+column in your output. Please be very careful about this, if you have the wrong schema
+everything else will fail.
+
 If you are being asked to calculate a ranking or filtering of a table of stocks, it
 is typical that your input is a single statistic per stock (any complex
 statistic or ratio should be already calculated for you), and correspondingly
@@ -44,13 +50,15 @@ typically the input value.
 You must NEVER include a column which indicates the stock's rank in the output table, you will
 sort the rows directly, and, if required, take the top/bottom n.
 
-However, if the user asks for a "daily" or "weekly"
+If the transformation description explicitly talks about creating a time series, you
+must include a DATE column in your output. If the user asks for a "daily" or "weekly"
 or "monthly" operation, then you should compute a value for every day/week/month
-and include a date column.
+and include a DATE column.
 
 If the transformation description does not relate AT ALL to pandas or any sort
 of dataframe transformation, please just return the dataframe unchanged. You
 should still not output anything other than json.
+
 
 Below is the json schema of the json you should produce. You should produce a
 list of these objects, one for each column. Note that if the column type is
@@ -131,10 +139,14 @@ if you regularly disobey them:
 
 1. You will often be asked to calculate a ranking or filtering of stocks
 based on data, or occasionally some kind of other calculation across stocks
-For example, `get the top 5 stocks ranked by market cap`.
+For example, `get the top 5 stocks ranked by percentage gain over the last week`.
 In such situations, your input will typically be a table with a single column
 and one row for each stock, and your ouput will be of the same format, except
-potentially with less rows (maybe only 1). No dates will be involved.
+potentially with less rows (maybe only 1). There will be no dates in your input
+schema. If the transformation description starts with the word `filter` or
+`rank`, it is 100% certain that this is the kind of problem it is, even
+if there is mention of a time calculation (it has likely already been done!)
+
 Your first step must always be to drop any NaN/None/NA rows, you must not do any
 sorting/filering operations with Nones in the table. Do not forget this!
 In most cases, after removing the Nones you will just sort the values of
@@ -360,6 +372,8 @@ The input dataframe's overall info: {info}
 The transformation description:
     {transform}
 
+{old_code}
+
 {error}
 Write your code below. Make sure you reassign the output to the same variable `df`.
 Your code:
@@ -379,3 +393,14 @@ so they need to understand what it's doing. One of your main strengths is that y
 carefully to instructions and follow them to the letter.
 """,
 ).format()  # format immediately since no arguments
+
+
+DATAFRAME_TRANSFORMER_OLD_CODE_TEMPLATE = """
+
+You have previously generated code for this transformation. The code is provided below. Confirm
+that it still solves the problem, and, assuming so, please copy the code verbatim except
+where you need to change it due to the fact that the dates are now different.
+
+{old_code}
+
+"""
