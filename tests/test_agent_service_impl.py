@@ -136,7 +136,20 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
     def test_get_test_run_info(self):
 
         test_run_id = "8e1b5600-b6a5-44df-927f-ec3c90c32424"
-        test_run_info = self.agent_service_impl.get_test_run_info(
+        test_run_info = self.agent_service_impl.get_info_for_test_suite_run(
             test_run_id=test_run_id
-        ).test_run_info
+        ).test_suite_run_info
         self.assertTrue(test_run_info)
+
+    def test_get_test_suite_runs(self):
+
+        test_suite_run_ids = self.agent_service_impl.get_test_suite_runs().test_suite_run_ids
+        self.assertTrue(test_suite_run_ids)
+
+    def test_get_test_case_info(self):
+
+        test_name = "test_pe_nvda_feb_2024"
+        test_case_info = self.agent_service_impl.get_info_for_test_case(
+            test_name=test_name
+        ).test_case_info
+        self.assertTrue(test_case_info)

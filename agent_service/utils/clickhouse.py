@@ -597,9 +597,9 @@ class Clickhouse(ClickhouseBase):
     # Regression Test Run Info
     ################################################################################################
 
-    def get_test_run_info(self, test_run_id: str) -> Dict[str, Any]:
+    def get_info_for_test_suite_run(self, test_run_id: str) -> Dict[str, Any]:
         sql = """
-        SELECT test_name, prompt, output, execution_plan, service_version, error_msg, warning_msg,
+        SELECT test_name, prompt, agent_id, output, execution_plan, service_version, error_msg, warning_msg,
         execution_finished_at_utc, execution_start_at_utc, execution_plan_started_at_utc, execution_plan_finished_at_utc
         FROM agent.regression_test
         WHERE test_suite_id = %(test_run_id)s
@@ -622,6 +622,43 @@ class Clickhouse(ClickhouseBase):
                     row[key] = row[key].replace(tzinfo=tz).isoformat()
             res[f"test_name={test_name}"] = row
         return res
+
+    def get_test_suite_run_ids(self) -> List[Dict[str, Any]]:
+        sql = """
+        SELECT DISTINCT ON (test_suite_id) test_suite_id as test_suite_run_id, timestamp, service_version
+        FROM agent.regression_test
+        ORDER BY timestamp DESC
+        """
+        rows = self.generic_read(sql)
+        tz = datetime.timezone.utc
+        for row in rows:
+            row["timestamp"] = row["timestamp"].replace(tzinfo=tz).isoformat()
+        return rows
+
+    def get_info_for_test_case(self, test_name: str) -> List[Dict[str, Any]]:
+        sql = """
+            SELECT test_name, prompt, agent_id, output, execution_plan, service_version, error_msg, warning_msg,
+            execution_finished_at_utc, execution_start_at_utc, execution_plan_started_at_utc,
+            execution_plan_finished_at_utc
+            FROM agent.regression_test
+            WHERE test_name = %(test_name)s
+            ORDER BY timestamp DESC
+            """
+        rows = self.generic_read(sql, {"test_name": test_name})
+        tz = datetime.timezone.utc
+        for row in rows:
+            for key in ["output", "execution_plan"]:
+                if row[key]:
+                    row[key] = json.loads(row[key])
+            for key in [
+                "execution_plan_started_at_utc",
+                "execution_plan_finished_at_utc",
+                "execution_start_at_utc",
+                "execution_finished_at_utc",
+            ]:
+                if row[key]:
+                    row[key] = row[key].replace(tzinfo=tz).isoformat()
+        return rows
 
     ################################################################################################
     # Tool Diff Info

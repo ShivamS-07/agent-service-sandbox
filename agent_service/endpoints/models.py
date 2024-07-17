@@ -390,5 +390,13 @@ class GetAgentDebugInfoResponse(BaseModel):
 ####################################################################################################
 # Regression Test Run Info
 ####################################################################################################
-class GetTestRunInfoResponse(BaseModel):
-    test_run_info: Dict[str, Any]
+class GetTestSuiteRunInfoResponse(BaseModel):
+    test_suite_run_info: Dict[str, Any]
+
+
+class GetTestSuiteRunsIdsResponse(BaseModel):
+    test_suite_run_ids: List[Dict[str, Any]]
+
+
+class GetTestCaseInfoResponse(BaseModel):
+    test_case_info: List[Dict[str, Any]]

@@ -113,11 +113,13 @@ class TestExecutionPlanner(unittest.TestCase):
     ):
         test_name = inspect.stack()[1].function
         user_id = user_id or "6c14fe54-de50-4d05-9533-57541715064f"
+        agent_id = str(uuid.uuid4())
         shared_log_data = {
             "user_id": user_id,
             "test_suite_id": self.test_suite_id,
             "prompt": prompt,
             "test_name": test_name,
+            "agent_id": agent_id,
         }
         regression_test_log = EventLog(
             event_name="agent-regression-output-generated",
@@ -132,6 +134,7 @@ class TestExecutionPlanner(unittest.TestCase):
                 prompt=prompt,
                 regression_test_log=regression_test_log,
                 user_id=user_id,
+                agent_id=agent_id,
             )
             try:
                 validate_tools_used(prompt=prompt, plan=plan, required_tools=required_tools)
@@ -165,9 +168,9 @@ class TestExecutionPlanner(unittest.TestCase):
         prompt: str,
         regression_test_log: EventLog,
         user_id: str,
+        agent_id: str,
         do_chat: bool = False,
     ):
-        agent_id = str(uuid.uuid4())
         agent = AgentMetadata(
             agent_id=agent_id,
             user_id=user_id,
@@ -186,7 +189,9 @@ class TestExecutionPlanner(unittest.TestCase):
         db.insert_agent(agent)
         db.insert_chat_messages([user_msg])
         plan_id = str(uuid4())
-        chat = ChatContext(messages=[Message(message=prompt, is_user_message=True)])
+        chat = ChatContext(
+            messages=[Message(message=prompt, is_user_message=True, agent_id=agent_id)]
+        )
         execution_plan_start = datetime.datetime.utcnow().isoformat()
         try:
             plan = self.loop.run_until_complete(

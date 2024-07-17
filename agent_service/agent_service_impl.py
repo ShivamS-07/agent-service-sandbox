@@ -28,7 +28,9 @@ from agent_service.endpoints.models import (
     GetChatHistoryResponse,
     GetPlanRunOutputResponse,
     GetSecureUserResponse,
-    GetTestRunInfoResponse,
+    GetTestCaseInfoResponse,
+    GetTestSuiteRunInfoResponse,
+    GetTestSuiteRunsIdsResponse,
     MarkNotificationsAsReadResponse,
     NotificationEvent,
     PlanTemplateTask,
@@ -458,9 +460,17 @@ class AgentServiceImpl:
         )
         return GetAgentDebugInfoResponse(tooltips=tool_tips, debug=debug)
 
-    def get_test_run_info(self, test_run_id: str) -> GetTestRunInfoResponse:
-        return GetTestRunInfoResponse(
-            test_run_info=self.ch.get_test_run_info(test_run_id=test_run_id)
+    def get_info_for_test_suite_run(self, test_run_id: str) -> GetTestSuiteRunInfoResponse:
+        return GetTestSuiteRunInfoResponse(
+            test_suite_run_info=self.ch.get_info_for_test_suite_run(test_run_id=test_run_id)
+        )
+
+    def get_test_suite_runs(self) -> GetTestSuiteRunsIdsResponse:
+        return GetTestSuiteRunsIdsResponse(test_suite_run_ids=self.ch.get_test_suite_run_ids())
+
+    def get_info_for_test_case(self, test_name: str) -> GetTestCaseInfoResponse:
+        return GetTestCaseInfoResponse(
+            test_case_info=self.ch.get_info_for_test_case(test_name=test_name)
         )
 
     async def upload_file(

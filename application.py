@@ -47,7 +47,9 @@ from agent_service.endpoints.models import (
     GetAllAgentsResponse,
     GetChatHistoryResponse,
     GetSecureUserResponse,
-    GetTestRunInfoResponse,
+    GetTestCaseInfoResponse,
+    GetTestSuiteRunInfoResponse,
+    GetTestSuiteRunsIdsResponse,
     MarkNotificationsAsReadRequest,
     MarkNotificationsAsReadResponse,
     SharePlanRunRequest,
@@ -616,19 +618,51 @@ async def get_agent_debug_info(
 
 @router.get(
     "/regression-test/{test_run_id}",
-    response_model=GetTestRunInfoResponse,
+    response_model=GetTestSuiteRunInfoResponse,
     status_code=status.HTTP_200_OK,
 )
-def get_regression_test_info(
+def get_info_for_test_run_id(
     test_run_id: str, user: User = Depends(parse_header)
-) -> GetTestRunInfoResponse:
+) -> GetTestSuiteRunInfoResponse:
     if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
     if not user.is_super_admin and not is_user_agent_admin(user.user_id):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
-    return application.state.agent_service_impl.get_test_run_info(test_run_id=test_run_id)
+    return application.state.agent_service_impl.get_info_for_test_suite_run(test_run_id=test_run_id)
+
+
+@router.get(
+    "/regression-test-suite-run-ids",
+    response_model=GetTestSuiteRunsIdsResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_test_suite_runs(user: User = Depends(parse_header)) -> GetTestSuiteRunsIdsResponse:
+    if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
+    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
+        )
+    return application.state.agent_service_impl.get_test_suite_runs()
+
+
+@router.get(
+    "/regression-test-case/{test_name}",
+    response_model=GetTestCaseInfoResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_info_for_test_case(
+    test_name: str, user: User = Depends(parse_header)
+) -> GetTestCaseInfoResponse:
+    if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
+    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
+        )
+    return application.state.agent_service_impl.get_info_for_test_case(test_name=test_name)
 
 
 # Account Management Enpoints
