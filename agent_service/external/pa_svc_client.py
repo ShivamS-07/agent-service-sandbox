@@ -36,7 +36,10 @@ from pa_portfolio_service_proto_v1.workspace_pb2 import (
     GetAllWorkspacesResponse,
     GetTSWorkspacesHoldingsRequest,
     GetTSWorkspacesHoldingsResponse,
+    ModifyWorkspaceHistoricalHoldingsRequest,
+    ModifyWorkspaceHistoricalHoldingsResponse,
     WorkspaceMetadata,
+    WorkspaceTrade,
 )
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
@@ -187,6 +190,34 @@ async def create_ts_workspace(
                 f" {response.status.message}"
             )
         return (response.workspace_id.id, response.strategy_id.id)
+
+
+@grpc_retry
+@async_perf_logger
+async def modify_workspace_historical_holdings(
+    user_id: str, workspace_id: str, holdings: List[StockHolding]
+) -> None:
+    with _get_service_stub() as stub:
+        response: ModifyWorkspaceHistoricalHoldingsResponse = (
+            await stub.ModifyWorkspaceHistoricalHoldings(
+                ModifyWorkspaceHistoricalHoldingsRequest(
+                    workspace_id=UUID(id=workspace_id),
+                    workspace_trades=[
+                        WorkspaceTrade(
+                            gbi_id=holding.gbi_id,
+                            final_weight=holding.weight,
+                            trade_date=holding.date,
+                        )
+                        for holding in holdings
+                    ],
+                ),
+                metadata=get_default_grpc_metadata(user_id=user_id),
+            )
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to modify workspace historical holdings: {response.status.code} {response.status.message}"
+            )
 
 
 @grpc_retry

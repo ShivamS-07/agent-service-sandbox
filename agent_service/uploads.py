@@ -12,7 +12,11 @@ from agent_service.external.dal_svc_client import (
     get_dal_client,
 )
 from agent_service.external.grpc_utils import datetime_to_timestamp
-from agent_service.external.pa_svc_client import create_ts_workspace, recalc_strategies
+from agent_service.external.pa_svc_client import (
+    create_ts_workspace,
+    modify_workspace_historical_holdings,
+    recalc_strategies,
+)
 from agent_service.types import Message
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.async_db import AsyncDB
@@ -49,24 +53,32 @@ async def create_workspace_from_bytes(
         logger.info(f"No securities were found while parsing '{name}' for {user_id=}")
         return None, None, 0
 
-    holdings = [
-        StockHolding(
+    # get latest holding date
+    latest_date = max(security.date for security in parsed_response.securities if security.date)
+
+    # populate proto holdings (and latest holdings)
+    holdings = []
+    latest_holdings = []
+
+    for security in parsed_response.securities:
+        proto_holding = StockHolding(
             gbi_id=security.gbi_id,
             date=(datetime_to_timestamp(security.date) if security.date else None),
             weight=security.weight,
         )
-        for security in parsed_response.securities
-    ]
+        holdings.append(proto_holding)
+        if security.date == latest_date:
+            latest_holdings.append(proto_holding)
 
-    # get latest holding count
-    latest_date = max(security.date for security in parsed_response.securities if security.date)
-    latest_holding_count = len(
-        [security for security in parsed_response.securities if security.date == latest_date]
+    # create the workspace with the latest holdings
+    workspace_id, strategy_id = await create_ts_workspace(
+        user_id=user_id, holdings=latest_holdings, workspace_name=name
     )
 
-    # create the workspace with the holdings
-    workspace_id, strategy_id = await create_ts_workspace(
-        user_id=user_id, holdings=holdings, workspace_name=name
+    # insert history
+    # TODO: chunk these if it exceeds GRPC limit
+    await modify_workspace_historical_holdings(
+        user_id=user_id, workspace_id=workspace_id, holdings=holdings
     )
 
     logger.info(f"Created workspace for {user_id=}, {workspace_id=} {strategy_id=}")
@@ -74,7 +86,7 @@ async def create_workspace_from_bytes(
     # kick off a recalc
     await recalc_strategies(user_id=user_id, strategy_ids=[strategy_id])
 
-    return workspace_id, strategy_id, latest_holding_count
+    return workspace_id, strategy_id, len(latest_holdings)
 
 
 class UploadHandler:
