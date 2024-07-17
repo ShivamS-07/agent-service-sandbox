@@ -29,9 +29,9 @@ from agent_service.tools.graphs import (
 )
 from agent_service.types import PlanRunContext
 
-STOCK1 = StockID(gbi_id=1, symbol=None, isin="", company_name="")
-STOCK2 = StockID(gbi_id=2, symbol=None, isin="", company_name="")
-STOCK3 = StockID(gbi_id=3, symbol=None, isin="", company_name="")
+STOCK1 = StockID(gbi_id=1, symbol="", isin="", company_name="")
+STOCK2 = StockID(gbi_id=2, symbol="", isin="", company_name="")
+STOCK3 = StockID(gbi_id=3, symbol="", isin="", company_name="")
 
 TIMESERIES_TABLE = Table.from_df_and_cols(
     columns=[

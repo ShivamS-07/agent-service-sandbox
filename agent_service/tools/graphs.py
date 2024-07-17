@@ -33,8 +33,12 @@ def consolidate_table_columns(table: Table) -> Table:
 
     cols = table.columns
 
+    if len(cols) <= 3:
+        return table
+
     date_col = None
     security_col = None
+    metric_col = None
     quarter_col = []
     lable_col = []
     amount_col = []
@@ -53,6 +57,7 @@ def consolidate_table_columns(table: Table) -> Table:
             TableColumnType.PCT_DELTA,
             TableColumnType.PERCENT,
         ):
+            metric_col = col
             for i, c in enumerate(col.data):
                 if date_col is not None:
                     quarter_col.append(date_col.data[i])
@@ -67,7 +72,7 @@ def consolidate_table_columns(table: Table) -> Table:
                     lable_col.append(col.metadata.label)
                 amount_col.append(c)
 
-    if security_col is not None and date_col is not None:
+    if security_col is not None and date_col is not None and metric_col is not None:
         cols = [
             TableColumn(
                 metadata=TableColumnMetadata(
@@ -77,11 +82,13 @@ def consolidate_table_columns(table: Table) -> Table:
                 data=quarter_col,
             ),
             TableColumn(
-                metadata=TableColumnMetadata(label="Label", col_type=TableColumnType.STOCK),
+                metadata=TableColumnMetadata(
+                    label="Label", col_type=security_col.metadata.col_type
+                ),
                 data=lable_col,
             ),
             TableColumn(
-                metadata=TableColumnMetadata(label="Amount", col_type=TableColumnType.FLOAT),
+                metadata=TableColumnMetadata(label="Amount", col_type=metric_col.metadata.col_type),
                 data=amount_col,
             ),
         ]
