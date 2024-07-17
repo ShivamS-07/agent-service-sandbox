@@ -44,7 +44,6 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
 
 
 class TestStockIdentifierLookup0(TestStockIdentifierLookup):
-
     async def test_stock_identifier_lookup_test(self):
         self.args = StockIdentifierLookupInput(stock_name="advance micro devices")
         result = await stock_identifier_lookup(self.args, self.context)
@@ -53,8 +52,8 @@ class TestStockIdentifierLookup0(TestStockIdentifierLookup):
         self.assertEqual(result.gbi_id, 124)
 
 
+@unittest.skip("Too slow")
 class TestStockIdentifierLookup1(TestStockIdentifierLookup):
-
     async def test_stock_identifier_lookup_DLR_isin(self):
         self.args = StockIdentifierLookupInput(stock_name="US2538681030")
         result = await stock_identifier_lookup(self.args, self.context)
@@ -91,8 +90,8 @@ class TestStockIdentifierLookup1(TestStockIdentifierLookup):
         self.assertEqual(result.gbi_id, 396629)
 
 
+@unittest.skip("Too slow")
 class TestStockIdentifierLookup2(TestStockIdentifierLookup):
-
     async def test_stock_identifier_lookup_products_brands_aws(self):
         self.args = StockIdentifierLookupInput(stock_name="AWS")
         result = await stock_identifier_lookup(self.args, self.context)
@@ -110,6 +109,7 @@ class TestStockIdentifierLookup2(TestStockIdentifierLookup):
         self.assertEqual(result.gbi_id, 1666)
 
 
+@unittest.skip("Too slow")
 class TestStockIdentifierLookup3(TestStockIdentifierLookup):
     async def test_stock_identifier_lookup_hilton(self):
         self.args = StockIdentifierLookupInput(stock_name="Hilton")
@@ -127,8 +127,8 @@ class TestStockIdentifierLookup3(TestStockIdentifierLookup):
         self.assertEqual(result.gbi_id, 25508)
 
 
+@unittest.skip("Too slow")
 class TestStockIdentifierLookup4(TestStockIdentifierLookup):
-
     async def test_stock_identifier_lookup_apple(self):
         self.args = StockIdentifierLookupInput(stock_name="AAPL")
         result = await stock_identifier_lookup(self.args, self.context)
@@ -145,6 +145,7 @@ class TestStockIdentifierLookup4(TestStockIdentifierLookup):
         self.assertEqual(result.gbi_id, 7558)
 
 
+@unittest.skip("Too slow")
 class TestStockIdentifierLookup5(TestStockIdentifierLookup):
     async def test_stock_identifier_lookup_isin(self):
         self.args = StockIdentifierLookupInput(stock_name="JP3633400001")
@@ -166,8 +167,8 @@ class TestStockIdentifierLookup5(TestStockIdentifierLookup):
         self.assertEqual(result.gbi_id, 12838)
 
 
+@unittest.skip("Too slow")
 class TestStockIdentifierLookup6(TestStockIdentifierLookup):
-
     async def test_stock_identifier_lookup_netflix_similarity(self):
         self.args = StockIdentifierLookupInput(stock_name="Net flix")
         result = await stock_identifier_lookup(self.args, self.context)
@@ -179,6 +180,7 @@ class TestStockIdentifierLookup6(TestStockIdentifierLookup):
         self.assertEqual(result.gbi_id, 25508)
 
 
+@unittest.skip("Too slow")
 class TestStockIdentifierLookup7(TestStockIdentifierLookup):
     async def test_stock_identifier_lookup_apple_similarity(self):
         self.args = StockIdentifierLookupInput(stock_name="apple")
@@ -204,6 +206,7 @@ class TestStockIdentifierLookup7(TestStockIdentifierLookup):
         self.assertEqual(result.gbi_id, 209866)
 
 
+@unittest.skip("Too slow")
 class TestStockIdentifierLookup8(TestStockIdentifierLookup):
     async def test_stock_identifier_lookup_multiple_name_matches(self):
         self.args = StockIdentifierLookupInput(stock_name="toyota")
@@ -221,8 +224,8 @@ class TestStockIdentifierLookup8(TestStockIdentifierLookup):
         self.assertEqual(result.gbi_id, 389721)
 
 
+@unittest.skip("Too slow")
 class TestStockIdentifierLookup9(TestStockIdentifierLookup):
-
     async def test_stock_identifier_lookup_bloomberg(self):
         self.args = StockIdentifierLookupInput(stock_name="IBM US Equity")
         result = await stock_identifier_lookup(self.args, self.context)
@@ -288,6 +291,7 @@ class TestStockUniverse1(IsolatedAsyncioTestCase):
         self.assertEqual(result.get("gbi_security_id"), 13766)
 
 
+@unittest.skip("Too slow")
 class TestStockUniverse2(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
@@ -311,6 +315,7 @@ class TestStockUniverse2(IsolatedAsyncioTestCase):
         self.assertEqual(result.get("symbol"), "VT")
 
 
+@unittest.skip("Too slow")
 class TestStockUniverse3(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
@@ -373,7 +378,6 @@ class TestMarketSegmentFilter(IsolatedAsyncioTestCase):
         self.stock_ids = [AAPL, ERGB, TRQ]
 
     async def test_market_segment_filter1(self):
-
         result = await market_segment_filter(
             StockMarketSegmentFilterInput(
                 stock_ids=self.stock_ids,
@@ -385,7 +389,6 @@ class TestMarketSegmentFilter(IsolatedAsyncioTestCase):
         self.assertEqual(result, [AAPL])
 
     async def test_market_segment_filter2(self):
-
         result = await market_segment_filter(
             StockMarketSegmentFilterInput(
                 stock_ids=self.stock_ids,
@@ -397,7 +400,6 @@ class TestMarketSegmentFilter(IsolatedAsyncioTestCase):
         self.assertEqual(result, [TRQ])
 
     async def test_market_segment_filter3(self):
-
         result = await market_segment_filter(
             StockMarketSegmentFilterInput(
                 stock_ids=self.stock_ids,

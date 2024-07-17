@@ -1,5 +1,6 @@
 import logging
 from typing import List, Optional, Union, cast
+from uuid import uuid4
 
 from agent_service.endpoints.models import (
     AgentEvent,
@@ -119,9 +120,10 @@ async def publish_agent_output(
         db = get_psql()
     rich_outputs = []
     for output in outputs:
-        db.write_agent_output(output=output, context=context)
+        output_id = str(uuid4())
+        db.write_agent_output(output=output, output_id=output_id, context=context)
         rich_output = await get_output_from_io_type(output, pg=SyncBoostedPG())
-        rich_outputs.append(rich_output)
+        rich_outputs.append((rich_output, output_id))
     now = get_now_utc()
     event = AgentEvent(
         agent_id=context.agent_id,
@@ -129,6 +131,7 @@ async def publish_agent_output(
             output=[
                 AgentOutput(
                     agent_id=context.agent_id,
+                    output_id=output_id,
                     plan_id=context.plan_id,
                     plan_run_id=context.plan_run_id,
                     output=rich_output,  # type: ignore
@@ -136,7 +139,7 @@ async def publish_agent_output(
                     created_at=now,
                     shared=False,
                 )
-                for rich_output in rich_outputs
+                for (rich_output, output_id) in rich_outputs
             ]
         ),
     )

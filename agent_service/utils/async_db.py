@@ -93,7 +93,8 @@ class AsyncDB:
             params["plan_run_id"] = plan_run_id
 
         sql = f"""
-                SELECT ao.plan_id::VARCHAR, ao.plan_run_id::VARCHAR, ao.output_id::VARCHAR, ao.is_intermediate,
+                SELECT ao.plan_id::VARCHAR, ao.output_id::VARCHAR, ao.plan_run_id::VARCHAR,
+                    ao.output_id::VARCHAR, ao.is_intermediate,
                     ao.output, ao.created_at, pr.shared
                 FROM agent.agent_outputs ao
                 LEFT JOIN agent.plan_runs pr

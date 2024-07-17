@@ -208,6 +208,7 @@ class GetAgentTaskOutputResponse(BaseModel):
 ####################################################################################################
 class AgentOutput(BaseModel):
     agent_id: str
+    output_id: str
     plan_id: str  # which execution plan is this associated with
     plan_run_id: str  # which run is the output generated from
     is_intermediate: bool  # whether this is an intermediate output or the final output
@@ -219,6 +220,9 @@ class AgentOutput(BaseModel):
 class GetAgentOutputResponse(BaseModel):
     # it'll be only intermediate outputs OR the final outputs, sorted by time ASC
     outputs: List[AgentOutput]
+    run_summary_long: Optional[str] = None
+    run_summary_short: Optional[str] = None
+    newly_updated_outputs: List[str] = Field(default_factory=list)
 
 
 class GetPlanRunOutputResponse(BaseModel):
@@ -278,6 +282,10 @@ class ExecutionStatusEvent(BaseModel):
     status: Status
     plan_run_id: str
     plan_id: str
+    # Only populated if the plan is finished
+    run_summary_long: Optional[str] = None
+    run_summary_short: Optional[str] = None
+    newly_updated_outputs: List[str] = Field(default_factory=list)
 
 
 class AgentEvent(BaseModel):
