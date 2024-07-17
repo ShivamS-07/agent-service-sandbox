@@ -1,6 +1,7 @@
 import datetime
 import functools
 import json
+import socket
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
@@ -111,7 +112,10 @@ def grpc_retry(func: Callable[..., T]) -> Callable[..., T]:
     async def run(*args, **kwargs) -> T:  # type: ignore
         return await backoff.on_exception(  # type: ignore
             backoff.constant,
-            exception=(GRPCError,),
+            exception=(
+                GRPCError,
+                socket.gaierror,
+            ),
             interval=1,
             max_tries=3,
             jitter=backoff.random_jitter,
