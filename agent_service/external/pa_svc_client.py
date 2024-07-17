@@ -16,6 +16,10 @@ from pa_portfolio_service_proto_v1.marketplace_messages_pb2 import (
     GetFullStrategiesInfoResponse,
 )
 from pa_portfolio_service_proto_v1.pa_service_grpc import PAServiceStub
+from pa_portfolio_service_proto_v1.portfolio_crud_actions_pb2 import (
+    RecalcStrategiesRequest,
+    RecalcStrategiesResponse,
+)
 from pa_portfolio_service_proto_v1.watchlist_pb2 import (
     GetAllStocksInAllWatchlistsRequest,
     GetAllStocksInAllWatchlistsResponse,
@@ -24,8 +28,10 @@ from pa_portfolio_service_proto_v1.watchlist_pb2 import (
     GetWatchlistStocksAndWeightsRequest,
     GetWatchlistStocksAndWeightsResponse,
 )
-from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID
+from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID, StockHolding
 from pa_portfolio_service_proto_v1.workspace_pb2 import (
+    CreateTSWorkspaceRequest,
+    CreateTSWorkspaceResponse,
     GetAllWorkspacesRequest,
     GetAllWorkspacesResponse,
     GetTSWorkspacesHoldingsRequest,
@@ -163,3 +169,37 @@ async def get_full_strategy_info(
 
     res = list(response.strategies)[0]
     return res
+
+
+@grpc_retry
+@async_perf_logger
+async def create_ts_workspace(
+    user_id: str, holdings: List[StockHolding], workspace_name: str
+) -> Tuple[str, str]:
+    with _get_service_stub() as stub:
+        response: CreateTSWorkspaceResponse = await stub.CreateTSWorkspace(
+            CreateTSWorkspaceRequest(name=workspace_name, holdings=holdings),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to create TS workspace: {response.status.code}"
+                f" {response.status.message}"
+            )
+        return (response.workspace_id.id, response.strategy_id.id)
+
+
+@grpc_retry
+@async_perf_logger
+async def recalc_strategies(user_id: str, strategy_ids: List[str]) -> None:
+    with _get_service_stub() as stub:
+        response: RecalcStrategiesResponse = await stub.RecalcStrategies(
+            RecalcStrategiesRequest(
+                strategy_ids=[UUID(id=strategy_id) for strategy_id in strategy_ids]
+            ),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to recalc strategies: {response.status.code}" f" {response.status.message}"
+            )
