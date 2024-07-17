@@ -286,7 +286,7 @@ class KPIRetriever:
         for gbi_id in gbi_ids:
             for name in output[gbi_id].keys():
                 output[gbi_id][name] = sorted(
-                    output[gbi_id][name], key=lambda d: (d.year, d.quarter), reverse=True
+                    output[gbi_id][name], key=lambda d: (d.year, d.quarter), reverse=False
                 )
         return output
 
