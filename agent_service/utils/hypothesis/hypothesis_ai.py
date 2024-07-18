@@ -307,6 +307,6 @@ class HypothesisAI:
         )
 
         json_str = await self.gpt_smart.do_chat_w_sys_prompt(
-            main_prompt, HYPOTHESIS_SUMMARY_SYS_PROMPT.format(), max_tokens=150
+            main_prompt, HYPOTHESIS_SUMMARY_SYS_PROMPT.format(), max_tokens=300
         )
         return json.loads(clean_to_json_if_needed(json_str))

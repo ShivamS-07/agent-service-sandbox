@@ -54,6 +54,9 @@ class CompanyTopicInfo:
     def get_latest_topic_description(self, default: Optional[str] = None) -> Optional[str]:
         return self.topic_descriptions[-1][0] if self.topic_descriptions else default
 
+    def to_gpt_input(self) -> str:
+        return f"{self.topic_label}: {self.get_latest_topic_description()}"
+
 
 @dataclass
 class CompanyNewsTopicInfo(CompanyTopicInfo):

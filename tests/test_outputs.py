@@ -66,7 +66,7 @@ class TestOutputs(unittest.IsolatedAsyncioTestCase):
                         ),
                     )
                 ],
-                val="Rising Tech Competition:\nApple Inc. is facing rising tech competition as it loses a patent dispute to Masimo, leading to the removal of certain Apple Watch models from its stores, and as a key design executive leaves for a new AI project. Additionally, MicroStrategy's stock performance has surpassed Apple's due to strategic investments in Bitcoin.",  # noqa
+                val="Rising Tech Competition: Apple Inc. is facing rising tech competition as it loses a patent dispute to Masimo, leading to the removal of certain Apple Watch models from its stores, and as a key design executive leaves for a new AI project. Additionally, MicroStrategy's stock performance has surpassed Apple's due to strategic investments in Bitcoin.",  # noqa
                 score=None,
             ),
         )

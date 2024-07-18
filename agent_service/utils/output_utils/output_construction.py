@@ -1,7 +1,12 @@
 from collections import defaultdict
 from typing import Dict, List
 
-from agent_service.io_type_utils import ComplexIOBase, IOType, io_type
+from agent_service.io_type_utils import (
+    ComplexIOBase,
+    IOType,
+    io_type,
+    split_io_type_into_components,
+)
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTableColumn, Table, TableColumn
@@ -82,6 +87,13 @@ class PreparedOutput(ComplexIOBase):
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         return await io_type_to_gpt_input(self.val, use_abbreviated_output=use_abbreviated_output)
+
+    async def split_into_components(self) -> List["IOType"]:
+        split_vals = await split_io_type_into_components(self.val)
+        if len(split_vals) == 1:
+            return [PreparedOutput(val=split_vals[0], title=self.title)]
+
+        return [PreparedOutput(val=new_val, title=new_val.title) for new_val in split_vals]  # type: ignore
 
 
 # TODO remove me, for backwards compat

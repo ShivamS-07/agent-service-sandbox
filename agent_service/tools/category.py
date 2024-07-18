@@ -2,6 +2,8 @@ import asyncio
 import json
 from typing import List, Optional
 
+from typing_extensions import Self
+
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, io_type
@@ -11,6 +13,7 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import repair_json_if_needed
@@ -72,6 +75,32 @@ class Category(ComplexIOBase):
 
         text = Text(val=self.to_markdown_string())
         return await text.to_rich_output(pg=pg)
+
+    async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        return (
+            f"- Criteria Name: {self.name}. Explanation: {self.explanation}. "
+            f"Justification: {self.justification}."
+        )
+
+    @classmethod
+    def multi_to_gpt_input(cls, categories: List[Self]) -> str:
+        output_list = []
+        for idx, category in enumerate(categories):
+            output_list.append(
+                f"- {idx}: {category.name}\n"
+                f"Explanation: {category.explanation}\n"
+                f"Justification: {category.justification}\n"
+                f"Weight: {category.weight}"
+            )
+
+        return "\n".join(output_list)
+
+
+class Categories(ComplexIOBase):
+    val: List[Category]
+
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        return await get_output_from_io_type(val=self.val, pg=pg, title=title)
 
 
 class CategoriesForStockInput(ToolArgs):

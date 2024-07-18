@@ -250,7 +250,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
 
         db = get_psql()
         rows = db.generic_read(sql, {"topic_ids": [topic.id for topic in news_topics]})
-        return {row["topic_id"]: f"{row['topic_label']}:\n{row['description']}" for row in rows}
+        return {row["topic_id"]: f"{row['topic_label']}: {row['description']}" for row in rows}
 
     @classmethod
     async def get_citations_for_output(
@@ -701,6 +701,40 @@ class StockEarningsSummaryPointText(StockText):
                     citation.summary = f"{text.summary_type}: {point_str}"
             output.append(citation)
         return output
+
+    @classmethod
+    async def init_from_earnings_texts(
+        cls, earnings_summaries: List[StockEarningsSummaryText]
+    ) -> List[Self]:
+        from agent_service.utils.postgres import get_psql
+
+        sql = """
+            SELECT summary_id::TEXT, summary
+            FROM nlp_service.earnings_call_summaries
+            WHERE summary_id = ANY(%(summary_ids)s)
+        """
+        db = get_psql()
+        summary_id_to_summary = {s.id: s for s in earnings_summaries}
+        rows = db.generic_read(sql, {"summary_ids": list(summary_id_to_summary.keys())})
+
+        points = []
+        for row in rows:
+            summary_obj = summary_id_to_summary[row["summary_id"]]
+            summary = row["summary"]
+            for section in ["Remarks", "Questions"]:
+                if section in summary and summary[section]:
+                    for idx, point in enumerate(summary[section]):
+                        points.append(
+                            cls(
+                                id=hash((row["summary_id"], section, idx)),
+                                summary_id=row["summary_id"],
+                                summary_type=section,
+                                summary_idx=idx,
+                                stock_id=summary_obj.stock_id,
+                            )
+                        )
+
+        return points
 
 
 @io_type
