@@ -604,8 +604,7 @@ async def prepare_categorical_hypothesis_outputs(
         output.val.append(
             Text(
                 val=rankings_list_str,
-                history=[HistoryEntry(score=Score.scale_input(score, lb=0, ub=10))],
-                citations=citations,  # type: ignore
+                history=[HistoryEntry(score=Score.scale_input(score, lb=0, ub=10), citations=citations)],  # type: ignore # noqa
                 title=f"Analysis - {categories[category_idx].name}",  # FIXME: use GPT to generate a title
             )
         )
