@@ -539,6 +539,24 @@ class AsyncDB:
 
         await self.pg.generic_write(sql, params=params)
 
+    async def mark_notifications_as_unread(self, agent_id: str, message_id: str) -> None:
+        sql = """
+        SELECT created_at FROM agent.notifications
+        WHERE agent_id = %(agent_id)s AND message_id = %(message_id)s
+        LIMIT 1
+        """
+        rows = await self.pg.generic_read(sql, {"agent_id": agent_id, "message_id": message_id})
+        if not rows:
+            return None
+
+        message_timestamp = rows[0]["created_at"]
+        sql = """
+        UPDATE agent.notifications
+        SET unread = TRUE
+        WHERE agent_id = %(agent_id)s AND created_at >= %(timestamp)s
+        """
+        await self.pg.generic_write(sql, {"agent_id": agent_id, "timestamp": message_timestamp})
+
     async def set_agent_automation_enabled(self, agent_id: str, enabled: bool) -> None:
         await self.pg.generic_update(
             table_name="agent.agents",

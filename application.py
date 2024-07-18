@@ -52,6 +52,8 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunsIdsResponse,
     MarkNotificationsAsReadRequest,
     MarkNotificationsAsReadResponse,
+    MarkNotificationsAsUnreadRequest,
+    MarkNotificationsAsUnreadResponse,
     SharePlanRunRequest,
     SharePlanRunResponse,
     UnsharePlanRunRequest,
@@ -549,6 +551,26 @@ async def mark_notifications_as_read(
     validate_user_agent_access(user.user_id, req.agent_id)
     return await application.state.agent_service_impl.mark_notifications_as_read(
         req.agent_id, req.timestamp
+    )
+
+
+@router.post(
+    "/agent/mark-notifications-as-unread",
+    response_model=MarkNotificationsAsUnreadResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def mark_notifications_as_unread(
+    req: MarkNotificationsAsUnreadRequest, user: User = Depends(parse_header)
+) -> MarkNotificationsAsReadResponse:
+    """Mark agent notifications as unread after a given timestamp
+
+    Args:
+        agent_id (str): agent ID
+        message_id: message ID - set all messages with created_at >= message timestamp as unread
+    """
+    validate_user_agent_access(user.user_id, req.agent_id)
+    return await application.state.agent_service_impl.mark_notifications_as_unread(
+        req.agent_id, req.message_id
     )
 
 

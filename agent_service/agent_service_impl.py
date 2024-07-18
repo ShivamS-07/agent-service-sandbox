@@ -32,6 +32,7 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsIdsResponse,
     MarkNotificationsAsReadResponse,
+    MarkNotificationsAsUnreadResponse,
     NotificationEvent,
     PlanTemplateTask,
     SharePlanRunResponse,
@@ -344,6 +345,12 @@ class AgentServiceImpl:
     ) -> MarkNotificationsAsReadResponse:
         await self.pg.mark_notifications_as_read(agent_id=agent_id, timestamp=timestamp)
         return MarkNotificationsAsReadResponse(success=True)
+
+    async def mark_notifications_as_unread(
+        self, agent_id: str, message_id: str
+    ) -> MarkNotificationsAsUnreadResponse:
+        await self.pg.mark_notifications_as_unread(agent_id=agent_id, message_id=message_id)
+        return MarkNotificationsAsUnreadResponse(success=True)
 
     async def enable_agent_automation(self, agent_id: str) -> EnableAgentAutomationResponse:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=True)

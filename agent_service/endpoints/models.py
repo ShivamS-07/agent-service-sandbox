@@ -330,7 +330,16 @@ class MarkNotificationsAsReadRequest(BaseModel):
     timestamp: Optional[datetime.datetime] = None
 
 
+class MarkNotificationsAsUnreadRequest(BaseModel):
+    agent_id: str
+    message_id: str
+
+
 class MarkNotificationsAsReadResponse(BaseModel):
+    success: bool
+
+
+class MarkNotificationsAsUnreadResponse(BaseModel):
     success: bool
 
 
