@@ -1,10 +1,11 @@
 # type: ignore
 from agent_service.io_type_utils import IOType, TableColumnType
-from regression_test.test_regression import TestExecutionPlanner, get_output
+from regression_test.test_regression import TestExecutionPlanner, get_output, skip_in_ci
 from regression_test.util import validate_table_and_get_columns
 
 
 class TestPortfolioMonitoring(TestExecutionPlanner):
+    @skip_in_ci
     def test_portfolio_monitoring(self):
         prompt = "Notify me any time a stock in my portfolio announces earnings"
 

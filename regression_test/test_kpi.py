@@ -1,10 +1,11 @@
 # type: ignore
 from agent_service.io_type_utils import IOType
-from regression_test.test_regression import TestExecutionPlanner, get_output
+from regression_test.test_regression import TestExecutionPlanner, get_output, skip_in_ci
 from regression_test.util import validate_table_and_get_columns, validate_text
 
 
 class TestKPI(TestExecutionPlanner):
+    @skip_in_ci
     def test_exploration_expense(self):
         prompt = "Show Exploration Expense for XOM"
 
@@ -18,6 +19,7 @@ class TestKPI(TestExecutionPlanner):
             required_tools=["get_kpis_for_stock_given_topics", "get_kpis_table_for_stock"],
         )
 
+    @skip_in_ci
     def test_main_kpi_compare(self):
         prompt = "Compare how the main KPI for Microsoft have been discussed in the first 2 earning's calls of 2024"
 

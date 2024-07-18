@@ -3,6 +3,8 @@
 import json
 import os
 
+from regression_test.test_regression import skip_in_ci
+
 os.environ["PREFECT_API_URL"] = "http://prefect-dev.boosted.ai:4200/api"
 import asyncio
 import unittest
@@ -12,6 +14,7 @@ from typing import Dict
 from agent_service.sqs_serve.message_handler import MessageHandler
 
 
+@skip_in_ci
 class TestSQSMessageHandler(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

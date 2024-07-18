@@ -1,12 +1,13 @@
 # type: ignore
 from agent_service.io_type_utils import IOType
 from agent_service.io_types.text import Text
-from regression_test.test_regression import TestExecutionPlanner, get_output
+from regression_test.test_regression import TestExecutionPlanner, get_output, skip_in_ci
 from regression_test.util import compare_with_expected_text
 
 
 class TestMarketCommentary(TestExecutionPlanner):
 
+    @skip_in_ci
     def test_market_commentary_jan_2024(self):
         prompt = "Write a commentary on market performance for the month of Jan 2024"
 
@@ -95,6 +96,11 @@ class TestMarketCommentary(TestExecutionPlanner):
         self.prompt_test(
             prompt=prompt,
             validate_output=validate_output,
-            raise_plan_validation_error=True,
             required_tools=["get_commentary_inputs", "write_commentary"],
+            raise_plan_validation_error=True,
+            required_sample_plans=[
+                "4303c722-8db4-4670-baea-d2ea6bccc0e5",
+                "5b6340c7-63fd-480c-9b78-036bee113d38",
+                "f1dca623-8195-4e63-9bfa-e5a59ace258e",
+            ],
         )

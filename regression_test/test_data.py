@@ -3,7 +3,7 @@ from datetime import date
 
 from agent_service.io_type_utils import IOType, TableColumnType
 from agent_service.io_types.text import Text
-from regression_test.test_regression import TestExecutionPlanner, get_output
+from regression_test.test_regression import TestExecutionPlanner, get_output, skip_in_ci
 from regression_test.util import (
     compare_with_expected_text,
     validate_line_graph,
@@ -13,6 +13,7 @@ from regression_test.util import (
 
 
 class TestData(TestExecutionPlanner):
+    @skip_in_ci
     def test_relative_strength_2023(self):
         prompt = "Show me Relative Strength Index for NVDA, AMD, INTL and GOOG over the year 2023"
 
@@ -50,6 +51,7 @@ class TestData(TestExecutionPlanner):
             required_tools=["get_statistic_data_for_companies"],
         )
 
+    @skip_in_ci
     def test_plot_tsla_price_jan_to_march(self):
         prompt = "plot tsla price from Jan 2024 to March 2024"
 
@@ -77,6 +79,7 @@ class TestData(TestExecutionPlanner):
             required_tools=["get_statistic_data_for_companies"],
         )
 
+    @skip_in_ci
     def test_intersection_of_qqq_xlv_jan_2024(self):
         prompt = "Find the intersection of QQQ and XLV on Jan 1, 2024"
 
@@ -107,6 +110,7 @@ class TestData(TestExecutionPlanner):
             required_tools=["get_stock_universe", "intersect_lists"],
         )
 
+    @skip_in_ci
     def test_top_mcap_april_2024(self):
         prompt = "top 10 by market cap today, and then graph their market caps over the month of April 2024"
 
@@ -122,6 +126,7 @@ class TestData(TestExecutionPlanner):
             required_tools=["get_stock_universe", "get_statistic_data_for_companies"],
         )
 
+    @skip_in_ci
     def test_tech_sector_stocks(self):
         prompt = "Find stocks in the technology sector on Jan 10, 2024"
 
@@ -204,6 +209,7 @@ class TestData(TestExecutionPlanner):
             prompt=prompt, validate_output=validate_output, required_tools=["sector_filter"]
         )
 
+    @skip_in_ci
     def test_pe_nvda_feb_2024(self):
         prompt = "Show me the PE of NVDA over month of Feb 2024?"
 
@@ -224,6 +230,7 @@ class TestData(TestExecutionPlanner):
             required_tools=["get_statistic_data_for_companies"],
         )
 
+    @skip_in_ci
     def test_graph_pe_2023(self):
         prompt = "Graph the PE of health care stocks in QQQ over the year 2023"
 
@@ -238,6 +245,7 @@ class TestData(TestExecutionPlanner):
             required_tools=["get_statistic_data_for_companies"],
         )
 
+    @skip_in_ci
     def test_open_close_spread_jan_2024(self):
         prompt = "Calculate the spread between open and close for AAPL over the month of Jan 2024"
 
@@ -254,6 +262,7 @@ class TestData(TestExecutionPlanner):
             required_tools=["get_statistic_data_for_companies"],
         )
 
+    @skip_in_ci
     def test_machine_learning_news_summary(self):
         prompt = (
             "Can you give me a single summary of news published in the last week of June 2024 about machine "
@@ -272,6 +281,7 @@ class TestData(TestExecutionPlanner):
             required_tools=["get_all_news_developments_about_companies"],
         )
 
+    @skip_in_ci
     def test_notify_big_big_developments_June_2024(self):
         prompt = (
             "Scan all corporate filings for LIPO until June 2024 and notify me of any big developments or "
@@ -330,6 +340,6 @@ class TestData(TestExecutionPlanner):
         self.prompt_test(
             prompt=prompt,
             validate_output=validate_output,
-            raise_plan_validation_error=True,
             required_tools=["get_10k_10q_sec_filings"],
+            raise_plan_validation_error=True,
         )

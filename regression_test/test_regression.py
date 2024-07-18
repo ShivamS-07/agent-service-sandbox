@@ -3,6 +3,7 @@ import asyncio
 import datetime
 import inspect
 import json
+import os
 import traceback
 import unittest
 import uuid
@@ -24,7 +25,8 @@ from agent_service.planner.executor import (
     run_execution_plan_local,
 )
 from agent_service.planner.planner import plan_to_json
-from agent_service.planner.planner_types import ExecutionPlan
+from agent_service.planner.planner_types import ExecutionPlan, SamplePlan
+from agent_service.planner.utils import get_similar_sample_plans
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_utils.output_construction import PreparedOutput
@@ -38,12 +40,13 @@ class PlanGenerationError(Exception):
     pass
 
 
-class ToolsValidationError(Exception):
-    pass
+def skip_in_ci(test_func):
+    def wrapper(*args, **kwargs):
+        if os.getenv("RUN_IN_CI") == "true":
+            raise unittest.SkipTest("Skipping test, don't run in CI")
+        return test_func(*args, **kwargs)
 
-
-class OutputValidationError(Exception):
-    pass
+    return wrapper
 
 
 @dataclass
@@ -56,7 +59,7 @@ def plan_to_simple_json(plan: ExecutionPlan) -> str:
     json_list = []
     for node in plan.nodes:
         json_list.append({"tool_name": node.tool_name})
-    return json.dumps(json_list)
+    return json.dumps(json_list, indent=4)
 
 
 def compare_plan(actual: ExecutionPlan, expected: ExecutionPlan):
@@ -80,18 +83,21 @@ def validate_tools_used(
     prompt: str, plan: Optional[ExecutionPlan], required_tools: List[str]
 ) -> None:
     actual_tools = set((step.tool_name for step in plan.nodes))
-
-    if len(required_tools) == 0:
-        error_msg = "Could not find required tool groups"
-        raise ToolsValidationError(error_msg)
-    if set(required_tools).issubset(set(actual_tools)):
-        return
+    assert len(required_tools) > 0, "Could not find required tool groups"
     err_msg = f"""
         The required tools are not called.
         actual plan is {plan_to_simple_json(plan)} and
         required tools are {required_tools}
         """
-    raise ToolsValidationError(f"\n{err_msg}")
+    assert set(required_tools).issubset(set(actual_tools)), err_msg
+
+
+def validate_required_sample_plans(
+    sample_plans: List[SamplePlan], required_sample_plans: List[SamplePlan]
+) -> None:
+    assert set(required_sample_plans).issubset(
+        set([sample_plan.id for sample_plan in sample_plans])
+    )
 
 
 class TestExecutionPlanner(unittest.TestCase):
@@ -110,6 +116,8 @@ class TestExecutionPlanner(unittest.TestCase):
         raise_plan_validation_error: Optional[bool] = False,
         raise_output_validation_error: Optional[bool] = False,
         user_id: Optional[str] = None,
+        required_sample_plans: List[str] = [],
+        only_validate_plan: bool = os.getenv("RUN_IN_CI", False),
     ):
         test_name = inspect.stack()[1].function
         user_id = user_id or "6c14fe54-de50-4d05-9533-57541715064f"
@@ -130,22 +138,28 @@ class TestExecutionPlanner(unittest.TestCase):
 
         warning_msg = ""
         try:
-            plan, output = self.run_regression(
+            sample_plans, plan, output = self.run_regression(
                 prompt=prompt,
                 regression_test_log=regression_test_log,
                 user_id=user_id,
                 agent_id=agent_id,
+                skip_output=only_validate_plan,
             )
             try:
+                if required_sample_plans and not only_validate_plan:
+                    validate_required_sample_plans(
+                        sample_plans=sample_plans, required_sample_plans=required_sample_plans
+                    )
                 validate_tools_used(prompt=prompt, plan=plan, required_tools=required_tools)
-            except ToolsValidationError as e:
-                if raise_plan_validation_error:
+            except AssertionError as e:
+                if raise_plan_validation_error or only_validate_plan:
                     raise e
                 else:
                     warning_msg += f"Plan validation warning: {e}\n"
             try:
-                validate_output(prompt=prompt, output=output)
-            except OutputValidationError as e:
+                if not only_validate_plan:
+                    validate_output(prompt=prompt, output=output)
+            except AssertionError as e:
                 if raise_output_validation_error:
                     raise e
                 else:
@@ -154,10 +168,6 @@ class TestExecutionPlanner(unittest.TestCase):
                 regression_test_log.event_data["warning_msg"] = warning_msg.strip()
                 warnings.warn(warning_msg)
             log_event(**asdict(regression_test_log))
-        except (PlanGenerationError, ToolsValidationError) as e:
-            regression_test_log.event_data["error_msg"] = traceback.format_exc()
-            log_event(**asdict(regression_test_log))
-            raise e
         except Exception as e:
             regression_test_log.event_data["error_msg"] = traceback.format_exc()
             log_event(**asdict(regression_test_log))
@@ -169,6 +179,7 @@ class TestExecutionPlanner(unittest.TestCase):
         regression_test_log: EventLog,
         user_id: str,
         agent_id: str,
+        skip_output: bool,
         do_chat: bool = False,
     ):
         agent = AgentMetadata(
@@ -192,8 +203,11 @@ class TestExecutionPlanner(unittest.TestCase):
         chat = ChatContext(
             messages=[Message(message=prompt, is_user_message=True, agent_id=agent_id)]
         )
-        execution_plan_start = datetime.datetime.utcnow().isoformat()
         try:
+            sample_plans = self.loop.run_until_complete(
+                get_similar_sample_plans(input=chat.get_gpt_input(client_only=True))
+            )
+            execution_plan_start = datetime.datetime.utcnow().isoformat()
             plan = self.loop.run_until_complete(
                 create_execution_plan_local(
                     agent_id=agent_id,
@@ -215,10 +229,15 @@ class TestExecutionPlanner(unittest.TestCase):
                     "execution_plan": plan_to_json(plan=plan),
                     "plan_id": plan_id,
                     "execution_plan_simple": plan_to_simple_json(plan=plan),
+                    "sample_plans": json.dumps(
+                        [sample_plan.model_dump() for sample_plan in sample_plans]
+                    ),
                 }
             )
         except Exception as e:
             raise PlanGenerationError(e)
+        if skip_output:
+            return sample_plans, plan, None
         context = PlanRunContext(
             agent_id=agent_id,
             plan_id=plan_id,
@@ -246,4 +265,4 @@ class TestExecutionPlanner(unittest.TestCase):
                 "output": dump_io_type(output),
             }
         )
-        return plan, output
+        return sample_plans, plan, output

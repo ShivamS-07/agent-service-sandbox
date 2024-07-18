@@ -8,7 +8,6 @@ from agent_service.io_types.graph import LineGraph
 from agent_service.io_types.table import Table, TableColumn
 from agent_service.io_types.text import Text
 from agent_service.utils.prompt_utils import Prompt
-from regression_test.test_regression import OutputValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +35,9 @@ async def validate_text(llm: GPT, output_text: Text, prompt: str) -> None:
         main_prompt.format(output_text=output_text, prompt=prompt),
         max_tokens=50,
     )
-    if res.lower() != "true":
-        error_msg = (
-            "Issue with the text output. ChatGPT doesn't think that the output answers the prompt"
-        )
-        raise OutputValidationError(error_msg)
+    assert (
+        res.lower() == "true"
+    ), "Issue with the text output. ChatGPT doesn't think that the output answers the prompt"
 
 
 async def compare_with_expected_text(
@@ -62,9 +59,10 @@ async def compare_with_expected_text(
         main_prompt.format(output_text=output_text, prompt=prompt),
         max_tokens=50,
     )
-    if res.lower() != "true":
-        error_msg = "Issue with the text output. ChatGPT doesn't think that the actual and expected outputs are similar"
-        raise OutputValidationError(error_msg)
+    assert res.lower() == "true", (
+        "Issue with the text output. "
+        "ChatGPT doesn't think that the actual and expected outputs are similar"
+    )
 
 
 def validate_table_and_get_columns(
