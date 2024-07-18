@@ -96,6 +96,7 @@ class Category(ComplexIOBase):
         return "\n".join(output_list)
 
 
+@io_type
 class Categories(ComplexIOBase):
     val: List[Category]
 

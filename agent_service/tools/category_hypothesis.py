@@ -4,7 +4,13 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT, SONNET
 from agent_service.GPT.requests import GPT, _get_gpt_service_stub
-from agent_service.io_type_utils import ComplexIOBase, HistoryEntry, IOType, Score
+from agent_service.io_type_utils import (
+    ComplexIOBase,
+    HistoryEntry,
+    IOType,
+    Score,
+    io_type,
+)
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
     StockDescriptionText,
@@ -31,6 +37,7 @@ from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
 
 
+@io_type
 class CategoricalHypothesisTexts(ComplexIOBase):
     val: List[Text]
     categories: Categories
