@@ -342,6 +342,22 @@ class StockTable(Table):
         # TODO expand stock histories into new columns, aggregate scores, etc.
         return await super().to_rich_output(pg, title)
 
+    def get_stocks(self) -> List[StockID]:
+        for column in self.columns:
+            if column.metadata.col_type == TableColumnType.STOCK:
+                stocks: List[StockID] = column.data  # type: ignore
+                return stocks
+        return []
+
+    def get_values_for_stocks(self) -> Dict[str, Any]:
+        for column in self.columns:
+            if column.metadata.col_type == TableColumnType.STOCK:
+                stock_label = column.metadata.label
+        df = self.to_df()
+        df.set_index(keys=stock_label, inplace=True)
+        df_dict: Dict[str, Any] = df.to_dict("index")  # type: ignore
+        return df_dict
+
 
 class TableOutputColumn(BaseModel):
     """

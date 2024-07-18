@@ -45,7 +45,7 @@ def main() -> None:
     with open(args.data_file, mode="r") as d:
         serialized_df = d.read()
     df = pd.read_json(serialized_df)
-    if "import" in code:
+    if "\nimport " in code or code.startswith("import ") or " import " in code:
         raise RuntimeError("'import' keyword detected in output code, DO NOT USE 'import'")
     new_df = exec_code(df, code)
     write_output(new_df)

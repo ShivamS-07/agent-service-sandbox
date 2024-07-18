@@ -404,3 +404,44 @@ where you need to change it due to the fact that the dates are now different.
 {old_code}
 
 """
+
+
+TABLE_ADD_DIFF_MAIN_PROMPT = Prompt(
+    name="TABLE_ADD_DIFF_MAIN_PROMPT",
+    template="""
+You are a financial analyst that carries out periodic analysis of stocks and provide lists of stocks
+to your client. Your current goal is to explain why you've added a particular stock to a filtered list.
+You will be provided with a company name, current statistics about the company, older statistics about
+the company, and a description of your filtering goal. In a single sentence, briely explain why you have
+included the stock in this filtering pass while you excluded it in the previous one. Usually this can
+be explained directly by simply stating the change, make sure that you mention the old value. For example,
+`Nvida passed the 1T market cap filter because its market cap went up from 800m to 1.2M T since the previous
+analysis.` Sometimes the filtering will involved a ranked cutoff (top/bottom n) instead of an absolute threshold,
+generally you can explain those cases by stating the mentioned change brought the company into the list,
+but if the result is non-intuitive (a stock dropped in Market Cap despite joining the top 5 Market Cap)
+list, you should explain this by vague reference to even more extreme changes from other stocks (although
+Nvida went down, other stocks dropped even more.) Keep it brief and professional. Here is the company
+name: {company_name}. Here is the current statistics for the company:{curr_stats}. Here are the stats
+from your previous analysis: {prev_stats}. And here is the description of the filter: {transformation}.
+Now write your explanation of the change:""",
+)
+
+TABLE_REMOVE_DIFF_MAIN_PROMPT = Prompt(
+    name="TABLE_REMOVE_DIFF_MAIN_PROMPT",
+    template="""
+You are a financial analyst that carries out periodic analysis of stocks and provide lists of stocks
+to your client. Your current goal is to explain why you've removed a particular stock to a filtered list.
+You will be provided with a company name, current statistics about the company, older statistics about
+the company, and a description of your filtering goal. In a single sentence, briely explain why you have
+removed the stock in this filtering pass after you included it in the previous one. Usually this can
+be explained directly by simply stating the change, make sure that you mention the old value. For example,
+`Nvida was excluded by the 1T market cap filter because its market cap went up from 800m to 1.2M T since
+the previous analysis.` Sometimes the filtering will involved a ranked cutoff (top/bottom n) instead of an
+absolute threshold, generally you can explain those cases by stating the mentioned change pushed the
+company out of top/bottom n, but if the result is non-intuitive (a stock increased in Market Cap and yet
+fell out of the top 5 Market Cap) list, you should explain this by vague reference to even more extreme
+changes from other stocks (although Nvida went up, other stocks went up even more.) Keep it brief and
+professional. Here is the company name: {company_name}. Here is the current statistics for the company:
+{curr_stats}. Here are the stats from your previous analysis: {prev_stats}. And here is the description
+of the filter: {transformation}. Now write your explanation of the change:""",
+)

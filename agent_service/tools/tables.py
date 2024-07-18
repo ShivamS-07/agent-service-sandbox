@@ -7,11 +7,12 @@ import sys
 import tempfile
 from itertools import chain
 from json.decoder import JSONDecodeError
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 from pydantic import ValidationError
 
+from agent_service.GPT.constants import NO_PROMPT, SONNET
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import HistoryEntry, dump_io_type, load_io_type
 from agent_service.io_types.stock import StockID
@@ -30,9 +31,12 @@ from agent_service.tools.table_utils.prompts import (
     DATAFRAME_TRANSFORMER_MAIN_PROMPT,
     DATAFRAME_TRANSFORMER_OLD_CODE_TEMPLATE,
     DATAFRAME_TRANSFORMER_SYS_PROMPT,
+    TABLE_ADD_DIFF_MAIN_PROMPT,
+    TABLE_REMOVE_DIFF_MAIN_PROMPT,
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.tool_diff import get_prev_run_info
@@ -151,6 +155,62 @@ def _get_df_info(df: pd.DataFrame) -> str:
     """
 
 
+async def table_filter_added_diff_info(
+    added_stocks: Set[StockID],
+    transformation: str,
+    curr_stock_values: Dict[StockID, Dict[str, float]],
+    prev_stock_values: Dict[StockID, Dict[str, float]],
+    agent_id: str,
+) -> Dict[StockID, str]:
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
+    llm = GPT(context=gpt_context, model=SONNET)
+
+    tasks = []
+    for stock in added_stocks:
+        tasks.append(
+            llm.do_chat_w_sys_prompt(
+                TABLE_ADD_DIFF_MAIN_PROMPT.format(
+                    company_name=stock.company_name,
+                    transformation=transformation,
+                    curr_stats=curr_stock_values[stock],
+                    prev_stats=prev_stock_values[stock],
+                ),
+                NO_PROMPT,
+            )
+        )
+
+    results = await gather_with_concurrency(tasks)
+    return {stock: explanation for stock, explanation in zip(added_stocks, results)}
+
+
+async def table_filter_removed_diff_info(
+    removed_stocks: Set[StockID],
+    transformation: str,
+    curr_stock_values: Dict[StockID, Dict[str, float]],
+    prev_stock_values: Dict[StockID, Dict[str, float]],
+    agent_id: str,
+) -> Dict[StockID, str]:
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
+    llm = GPT(context=gpt_context, model=SONNET)
+
+    tasks = []
+    for stock in removed_stocks:
+        tasks.append(
+            llm.do_chat_w_sys_prompt(
+                TABLE_REMOVE_DIFF_MAIN_PROMPT.format(
+                    company_name=stock.company_name,
+                    transformation=transformation,
+                    curr_stats=curr_stock_values[stock],
+                    prev_stats=prev_stock_values[stock],
+                ),
+                NO_PROMPT,
+            )
+        )
+
+    results = await gather_with_concurrency(tasks)
+    return {stock: explanation for stock, explanation in zip(removed_stocks, results)}
+
+
 @tool(
     description="""This is a function that allows you to do aribtrary transformations on Table objects.
 Tables are simply wrappers around pandas dataframes. There are a few primary use cases for this function:
@@ -175,6 +235,7 @@ include an exact numerical cutoff appropriate to the particular statistic mentio
 For example, a high market cap might be considered 10 billion, so if a user asked for high
 market cap companies, the transformation_description should explicitly ask for a filtering of
 stock to those with market cap greater than 10 billion.
+If you are filtering stocks, the transformation description must begin with the word `Filter`
 """,
     category=ToolCategory.TABLE,
 )
@@ -183,11 +244,13 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
 
     old_schema: Optional[List[TableColumnMetadata]] = None
     old_code = None
+    prev_args = None
+    prev_output_table = None
     try:  # since everything here is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "transform_table")
         if prev_run_info is not None:
-            # prev_args: TransformTableArgs = prev_run_info[0]  # type: ignore
-            # prev_output: Table = prev_run_info[1]  # type:ignore
+            prev_args: TransformTableArgs = prev_run_info[0]  # type: ignore
+            prev_output_table: Table = prev_run_info[1]  # type:ignore
             prev_other: Dict[str, str] = prev_run_info[2]  # type:ignore
             if prev_other:
                 old_code = (
@@ -196,6 +259,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
                     else prev_other["code_first_attempt"]
                 )
                 old_schema = load_io_type(prev_other["table_schema"])  # type:ignore
+
     except Exception as e:
         logger.warning(f"Error doing getting info from previous run: {e}")
 
@@ -280,7 +344,51 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
         raise NonRetriableError(message="Table transformation resulted in an empty table")
 
     if output_table.get_stock_column():
-        return StockTable(columns=output_table.columns)
+        output_table = StockTable(columns=output_table.columns)
+
+    try:  # since everything here is optional, put in try/except
+        if (
+            context.diff_info is not None
+            and prev_args
+            and isinstance(args.input_table, StockTable)
+            and args.transformation_description.lower().startswith("filter")
+        ):
+            curr_input_table: StockTable = args.input_table  # type: ignore
+            prev_input_table: StockTable = prev_args.input_table  # type: ignore
+            curr_output_table: StockTable = output_table  # type: ignore
+            prev_output_table: StockTable = prev_output_table  # type: ignore
+            curr_stock_values = curr_input_table.get_values_for_stocks()
+            prev_stock_values = prev_input_table.get_values_for_stocks()
+            shared_input_stocks = set(args.input_table.get_stocks()) & set(
+                args.input_table.get_stocks()
+            )
+            curr_output_stocks = set(curr_output_table.get_stocks())
+            prev_output_stocks = set(prev_output_table.get_stocks())
+            added_stocks = (curr_output_stocks - prev_output_stocks) & shared_input_stocks
+            removed_stocks = (prev_output_stocks - curr_output_stocks) & shared_input_stocks
+            added_diff_info = await table_filter_added_diff_info(
+                added_stocks,
+                args.transformation_description,
+                curr_stock_values,
+                prev_stock_values,
+                context.agent_id,
+            )
+
+            removed_diff_info = await table_filter_removed_diff_info(
+                removed_stocks,
+                args.transformation_description,
+                curr_stock_values,
+                prev_stock_values,
+                context.agent_id,
+            )
+
+            context.diff_info[context.task_id] = {
+                "added": added_diff_info,
+                "removed": removed_diff_info,
+            }
+
+    except Exception as e:
+        logger.warning(f"Error doing diff from previous run: {e}")
 
     return output_table
 
