@@ -8,50 +8,90 @@ from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.output import Output
+from agent_service.io_types.stock import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
+from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import repair_json_if_needed
 
 GET_CATEGORIES_FOR_STOCK_SYS_PROMPT = Prompt(
     name="GET_CATEGORIES_FOR_STOCK_SYS_PROMPT",
-    template="Here is the chat context which may include information to "
-    "make the output more specific or accurate:\n"
-    "{chat_context}\n"
-    "You are financial analyst. Your client would like to do "
-    "some comparative analysis on stocks and the current market. "
-    "You will be provided with a prompt that the client would like "
-    "to evaluate. Your job is to identify specific key success criteria "
-    "that the client should use to evaluate the given prompt or to determine "
-    "the validity of the prompt.\n"
-    "IMPORTANT: Identify only the {limit} most impactful key success criteria.\n",
+    template="""
+    Here is the chat context which may include information to make \
+    the output more specific or accurate:
+    {chat_context}
+    You'll be provided the sentence of a hypothesis evaluating something \
+    in a financial setting, return the 3-{limit} most important criteria to evaluate it.
+
+    Think about the criteria in a financial setting where the user is trying to \
+    evaluate future looking trends. When looking at a hypothesis about a company \
+    your objective is to find criteria that make comparing that company to peers \
+    and competitors easy.
+
+    For example if the hypothesis is "Is NVDA a leader in AI chip development" \
+    the criteria could be:
+    Innovation in Architecture
+    Scalability
+    Energy Efficiency of Current and Next Generation Chips
+    LLM Efficiency of Current and Next Generation Chips
+    Software Ecosystem
+    Partnerships and Collaborations
+    Manufacturing Capabilities
+
+    If the hypothesis is "Evaluate if AVGO is a leader in the smartphone market" \
+    the criteria could be:
+    Power Efficiency
+    Connectivity Solutions
+    Graphic Processing Proficiency
+    Support for AI and Machine Learning
+    Supply Chain Reliability
+    Collaborations with Smartphone Manufacturers
+
+    If the hypothesis is "Tell me if Moderna is a leader in oncology" \
+    the criteria could be:
+    R&D Capabilities
+    Robust Pipeline
+    Strategic Partnerships
+    Regulatory Success
+    Commercialization Strategy
+    Reputation and Credibility"
+
+    If the hypothesis is "How is Ford positioned in the automotive \
+    semi-truck market?"
+    Appeal of Brand in the Semi-truck Space
+    Cost of current and future models
+    Warranty
+    Towing Capacity of future and current models
+    Fuel efficiency of current and future models
+
+    Output the list in the format [CRITERIA_1, CRITERIA_2, CRITERIA_3] where \
+    each CRITERIA is a pythonic dictionary containing:
+    name: containing the criteria heading
+    explanation: explanation describing what this criteria is
+    justification: reason for why this criteria is important to evaluate the hypothesis, \
+    be sure to include any specific key metrics to focus on during evaluation
+    weight: a float number out of 10.0 of how important this criteria is, 1.0 meaning the \
+    criteria is not important at all and 10 meaning the most important criteria, it is not \
+    a ranking but should be based on the importance of the criteria and be comparable
+    IMPORTANT: Do not supply any additional explanation or justification other than what \
+    is provided in the CRITERIA dictionary list
+    """,
 )
 GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT = Prompt(
     name="GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT",
     template="""
-    Output the list in the format [CRITERIA_1, CRITERIA_2, CRITERIA_3] where
-    each CRITERIA is a pythonic dictionary containing:
-        name: containing the criteria heading
-        explanation: explanation of what this criteria means in the analysis
-        justification: reason for why this criteria is important for the
-            analysis and any specific metrics to focus on
-        weight: a float number out of 10.0 of how important this criteria is
-            for the analysis
-    IMPORTANT: Please correlate and group criteria that could fall into a similar group together.
-        For example, key financial metrics could be grouped together under the criteria "Financial Metrics".
-        Make sure to list the important metrics in the justification field.
-    IMPORTANT: Do not supply any additional explanation or justification other than what is
-        provided in the CRITERIA dictionary list
-    {prompt_str}
+    {company_description_str}
+    Here is the hypothesis: \"{prompt}\"
     """,
 )
 
-DEFAULT_CATEGORY_LIMIT = 3
+DEFAULT_CATEGORY_LIMIT = 7
 
 
 @io_type
@@ -106,16 +146,19 @@ class Categories(ComplexIOBase):
 
 class CategoriesForStockInput(ToolArgs):
     prompt: str
+    stock: Optional[StockID] = None
     limit: Optional[int] = None
 
 
 @tool(
     description=f"""
     This function returns a list of success criteria
-    which should be used to perform comparative analysis on the given stock.
+    that would be useful in evaluating a prompt or query.
     By default, the function returns up to {DEFAULT_CATEGORY_LIMIT}
     criteria however, a optional limit parameter can be passed in to
     increase or decrease the number of criteria outputted.
+    In order to enhance the accuracy of the tool's output, you may
+    also provide the StockID of the stock associated with the prompt.
     IMPORTANT: This tool should only be used to identify success criteria
     for a prompt. Do not use this tool in conjunction with other tools.
     """,
@@ -128,6 +171,7 @@ async def get_categories(args: CategoriesForStockInput, context: PlanRunContext)
         llm=llm,
         context=context,
         prompt=args.prompt,
+        stock=args.stock,
         limit=args.limit,
     )
 
@@ -139,23 +183,33 @@ async def get_categories(args: CategoriesForStockInput, context: PlanRunContext)
 
 
 async def get_categories_for_stock_impl(
-    llm: GPT, context: PlanRunContext, prompt: str, limit: Optional[int]
+    llm: GPT, context: PlanRunContext, prompt: str, stock: Optional[StockID], limit: Optional[int]
 ) -> List[Category]:
     logger = get_prefect_logger(__name__)
-
-    if not limit:
-        limit = DEFAULT_CATEGORY_LIMIT
 
     if prompt is None or prompt == "":
         logger.info("Could not generate categories because missing prompt")
         return []
 
-    prompt_str = f"The prompt the client wants to evaluate is: {prompt}"
+    if not limit:
+        limit = DEFAULT_CATEGORY_LIMIT
+
+    company_description_str = ""
+    if stock:
+        db = get_psql()
+        company_description, _ = db.get_short_company_description(stock.gbi_id)
+        company_description_str += f"""
+        Here is the company description of {stock.company_name} for reference:
+        {company_description}
+        Please be specific in the criteria with respect to the actual business of \
+        {stock.company_name} as described in the company description as well as any market trends.
+        """
 
     # initial prompt for categories
     initial_categories_gpt_resp = await llm.do_chat_w_sys_prompt(
         main_prompt=GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT.format(
-            prompt_str=prompt_str,
+            prompt=prompt,
+            company_description_str=company_description_str,
         ),
         sys_prompt=GET_CATEGORIES_FOR_STOCK_SYS_PROMPT.format(
             chat_context=context.chat,
@@ -181,10 +235,15 @@ async def main() -> None:
         skip_db_commit=True,
     )
     categories_input = CategoriesForStockInput(
-        prompt="Is Nintendo the leader in the Video Gaming space?",
+        prompt="Does EQIX have younger (or older) data centers than their competitors",
+        stock=StockID(
+            gbi_id=5766, symbol="INTC", isin="US4581401001", company_name="Intel Corporation"
+        ),
+        limit=7,
     )
-    output = await get_categories(args=categories_input, context=plan_context)
-    print(output)
+    categories: List[Category] = await get_categories(args=categories_input, context=plan_context)  # type: ignore
+    for category in categories:
+        print(category.to_markdown_string())
 
 
 if __name__ == "__main__":
