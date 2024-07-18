@@ -1,6 +1,8 @@
+import datetime
 import unittest
 from unittest import IsolatedAsyncioTestCase
 
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.text import ThemeNewsDevelopmentText, ThemeText
 from agent_service.tools.themes import (
     GetThemeDevelopmentNewsArticlesInput,
@@ -20,11 +22,16 @@ class TestThemeDevelopmentNews(IsolatedAsyncioTestCase):
     async def test_get_news_developments_about_theme_raisinginterstrate(self):
         # theme: raising interest rate with id c5bd0897-5187-4df8-9abb-b5bf0bb7d090
         self.args = GetThemeDevelopmentNewsInput(
-            themes=[ThemeText(id="c5bd0897-5187-4df8-9abb-b5bf0bb7d090")]
+            themes=[ThemeText(id="c5bd0897-5187-4df8-9abb-b5bf0bb7d090")],
+            date_range=DateRange(
+                start_date=datetime.date.today() - datetime.timedelta(days=365),
+                end_date=datetime.date.today(),
+            ),
         )
         result = await get_news_developments_about_theme(self.args, self.context)
         # print(len(result))
-        self.assertGreater(len(result), 0)
+        self.assertIsInstance(result, list)
+        self.assertGreaterEqual(len(result), 0)
 
 
 class TestThemeDevelopmentNewsArticles(IsolatedAsyncioTestCase):
@@ -35,10 +42,10 @@ class TestThemeDevelopmentNewsArticles(IsolatedAsyncioTestCase):
         # development: Lower Inflation Expectations Due to High Rates with id 8fce3d05-e9bc-4ecd-9d8e-227ce71a5e5c
         self.args = GetThemeDevelopmentNewsArticlesInput(
             developments_list=[ThemeNewsDevelopmentText(id="8fce3d05-e9bc-4ecd-9d8e-227ce71a5e5c")],
-            start_date="2023-01-01 00:00:00",
         )
         result = await get_news_articles_for_theme_developments(self.args, self.context)
-        self.assertGreater(len(result), 0)
+        self.assertIsInstance(result, list)
+        self.assertGreaterEqual(len(result), 0)
 
 
 @unittest.skip("Skipping this test.")

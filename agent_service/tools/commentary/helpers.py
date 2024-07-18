@@ -1,10 +1,9 @@
-import datetime
 import json
 import random
 import re
 from collections import defaultdict
 from datetime import date
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import pandas as pd
 from data_access_layer.core.dao.securities import SecuritiesMetadataDAO
@@ -74,7 +73,7 @@ async def get_sec_metadata_dao() -> SecuritiesMetadataDAO:
 
 
 async def get_theme_related_texts(
-    themes_texts: List[ThemeText], context: PlanRunContext
+    themes_texts: List[ThemeText], date_range: DateRange, context: PlanRunContext
 ) -> List[Text]:
     """
     This function gets the theme related texts for the given themes.
@@ -91,6 +90,7 @@ async def get_theme_related_texts(
     article_texts = await get_news_articles_for_theme_developments(  # type: ignore
         GetThemeDevelopmentNewsArticlesInput(
             developments_list=development_texts,  # type: ignore
+            date_range=date_range,
             max_articles_per_development=MAX_ARTICLES_PER_DEVELOPMENT,
         ),
         context,  # type: ignore
@@ -216,7 +216,7 @@ async def filter_most_important_citations(
 
 
 async def get_texts_for_topics(
-    topics: List[str], date_range: Optional[DateRange], context: PlanRunContext
+    topics: List[str], date_range: DateRange, context: PlanRunContext
 ) -> List[Text]:
     """
     This function gets the texts for the given topics. If the themes are found, it gets the related texts.
@@ -235,7 +235,7 @@ async def get_texts_for_topics(
                 log=f"Retrieving theme texts for topic: {topic}",
                 context=context,
             )
-            res = await get_theme_related_texts(themes, context)  # type: ignore
+            res = await get_theme_related_texts(themes, date_range, context)  # type: ignore
             texts.extend(res + themes)  # type: ignore
 
         except Exception as e:
@@ -265,7 +265,7 @@ async def get_texts_for_topics(
 
 
 async def prepare_portfolio_prompt(
-    portfolio_id: PortfolioID, date_range: Optional[DateRange], context: PlanRunContext
+    portfolio_id: PortfolioID, date_range: DateRange, context: PlanRunContext
 ) -> FilledPrompt:
     """
     This function prepares the portfolio prompt for the commentary.
@@ -347,20 +347,13 @@ async def prepare_portfolio_prompt(
 
 
 async def prepare_stock_performance_prompt(
-    stock_ids: List[StockID], date_range: Optional[DateRange], context: PlanRunContext
+    stock_ids: List[StockID], date_range: DateRange, context: PlanRunContext
 ) -> FilledPrompt:
     """
     This function prepares the stock performance prompt for the commentary.
     """
     # get the stock performance for the date range
     gbi_ids = [stock.gbi_id for stock in stock_ids]
-    if date_range is None:
-        date_range = DateRange(
-            start_date=date.today() - datetime.timedelta(days=30),
-            end_date=date.today(),
-        )
-    else:
-        date_range = date_range
     stock_performance = await get_stock_performance_for_date_range(
         gbi_ids=gbi_ids,
         start_date=date_range.start_date,

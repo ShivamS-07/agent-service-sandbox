@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date, timedelta
 from typing import List, Optional
 from uuid import uuid4
 
@@ -100,7 +101,9 @@ class WriteCommentaryInput(ToolArgs):
     writing_format: Optional[str] = "Long"
     portfolio_id: Optional[PortfolioID] = None
     stock_ids: Optional[List[StockID]] = None
-    date_range: Optional[DateRange] = None
+    date_range: DateRange = DateRange(
+        start_date=date.today() - timedelta(days=30), end_date=date.today()
+    )
 
 
 @tool(
@@ -284,7 +287,9 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 class GetCommentaryInputsInput(ToolArgs):
     topics: Optional[List[str]] = None
     stock_ids: Optional[List[StockID]] = None
-    date_range: Optional[DateRange] = None
+    date_range: DateRange = DateRange(
+        start_date=date.today() - timedelta(days=30), end_date=date.today()
+    )
     portfolio_id: Optional[str] = None
     general_commentary: Optional[bool] = False
     theme_num: Optional[int] = 3
@@ -323,7 +328,9 @@ async def get_commentary_inputs(
                 context,
             )
             themes_texts = themes_texts[:MAX_THEMES_PER_COMMENTARY]
-            theme_related_texts = await get_theme_related_texts(themes_texts, context)
+            theme_related_texts = await get_theme_related_texts(
+                themes_texts, args.date_range, context
+            )
             texts.extend(themes_texts + theme_related_texts)
             await tool_log(
                 log=f"Retrieved {len(texts)} theme related texts for top market trends.",
@@ -416,7 +423,6 @@ async def main() -> None:
     texts = await get_commentary_inputs(
         GetCommentaryInputsInput(
             topics=["cloud computing", "military industrial complex"],
-            date_range=None,
             general_commentary=True,
             theme_num=4,
         ),

@@ -87,14 +87,15 @@ class ThemePostgres:
             for record in records
         }
 
-    def get_news_dev_about_theme(self, theme_id: str) -> List[str]:
+    def get_news_dev_about_theme(self, theme_id: str, start_date: datetime.date) -> List[str]:
         sql = """
             SELECT development_id::TEXT, is_major_development, article_count
             FROM nlp_service.theme_developments
             WHERE theme_id = %s
+            AND created_at >= %s
             ORDER BY is_major_development DESC, article_count DESC
         """
-        records = self.db.generic_read(sql, [theme_id])
+        records = self.db.generic_read(sql, [theme_id, start_date])
         return [record["development_id"] for record in records]
 
     def get_news_articles_for_dev(self, development_id: str) -> List[str]:
@@ -328,6 +329,10 @@ async def get_macroeconomic_theme_outlook(
 class GetThemeDevelopmentNewsInput(ToolArgs):
     # the themes to get the news for
     themes: List[ThemeText]
+    date_range: DateRange = DateRange(
+        start_date=datetime.date.today() - datetime.timedelta(days=30),
+        end_date=datetime.date.today(),
+    )
     max_devs_per_theme: Optional[int] = None
 
 
@@ -337,6 +342,8 @@ class GetThemeDevelopmentNewsInput(ToolArgs):
         "and returns the list of corresponding developments news for all themes."
         "max_devs_per_theme is an optional parameter to limit the number of developments per theme, "
         "and None means no limit on the number of developments per theme. "
+        "dare_range is the date range to search for news developments. "
+        "Default is last 30 days. "
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
@@ -356,7 +363,7 @@ async def get_news_developments_about_theme(
     """
     res = []
     for theme in args.themes:
-        ids = db.get_news_dev_about_theme(theme.id)
+        ids = db.get_news_dev_about_theme(theme.id, args.date_range.start_date)
         if args.max_devs_per_theme:
             ids = ids[: args.max_devs_per_theme]
         res.extend([ThemeNewsDevelopmentText(id=id) for id in ids])
