@@ -13,10 +13,14 @@ from agent_service.external.pa_backtest_svc_client import (
 from agent_service.external.stock_search_dao import async_sort_stocks_by_volume
 from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT35_TURBO, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
-from agent_service.io_types.table import Table, TableColumnMetadata
+from agent_service.io_types.table import (
+    StockTable,
+    Table,
+    TableColumnMetadata,
+    TableColumnType,
+)
 from agent_service.io_types.text import Text
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.stock_metadata import (
@@ -730,9 +734,10 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
 
     etf_stock = await get_stock_info_for_universe(args, context)
     universe_spiq_company_id = etf_stock["spiq_company_id"]
-    stock_universe_list = await get_stock_universe_list_from_universe_company_id(
+    stock_universe_table = await get_stock_universe_table_from_universe_company_id(
         universe_spiq_company_id, context
     )
+    stock_universe_list = stock_universe_table.to_df()[STOCK_ID_COL_NAME_DEFAULT].tolist()
 
     logger.info(
         f"found {len(stock_universe_list)} holdings in ETF: {etf_stock} from '{args.universe_name}'"
@@ -787,9 +792,9 @@ async def get_stock_info_for_universe(args: GetStockUniverseInput, context: Plan
     return stock
 
 
-async def get_stock_universe_list_from_universe_company_id(
+async def get_stock_universe_table_from_universe_company_id(
     universe_spiq_company_id: int, context: PlanRunContext
-) -> List[StockID]:
+) -> StockTable:
     """Returns the list of stock identifiers given a stock universe's company id.
 
     Args:
@@ -797,27 +802,36 @@ async def get_stock_universe_list_from_universe_company_id(
         context (PlanRunContext): The context of the plan run.
 
     Returns:
-        list[StockID]: The list of stock identifiers in the universe.
+        StockTable: The table of stock identifiers and weights in the universe.
     """
     db = get_psql()
 
     # Find the stocks in the universe
     sql = """
     SELECT DISTINCT ON (gbi_id)
-    gbi_id, symbol, ms.isin, name
+    gbi_id, symbol, ms.isin, name, weight
     FROM "data".etf_universe_holdings euh
     JOIN master_security ms ON ms.gbi_security_id = euh.gbi_id
     WHERE spiq_company_id = %s AND ms.is_public
     AND euh.to_z > NOW()
     """
     rows = db.generic_read(sql, [universe_spiq_company_id])
+    gbi_ids = [row["gbi_id"] for row in rows]
+    stock_ids = await StockID.from_gbi_id_list(gbi_ids)
+    data = {
+        STOCK_ID_COL_NAME_DEFAULT: stock_ids,
+        "Weight": [row["weight"] for row in rows],
+    }
+    df = pd.DataFrame(data)
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
+        ],
+    )
 
-    return [
-        StockID(
-            gbi_id=row["gbi_id"], symbol=row["symbol"], isin=row["isin"], company_name=row["name"]
-        )
-        for row in rows
-    ]
+    return table
 
 
 async def get_stock_ids_from_company_ids(

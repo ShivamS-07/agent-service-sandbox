@@ -141,7 +141,7 @@ async def get_universe_sector_performance_for_date_range(
 
 @grpc_retry
 @async_perf_logger
-async def get_portfolio_sector_performance_for_date_range(
+async def get_stocks_sector_performance_for_date_range(
     user_id: str, stocks_and_weights: List[StockWithWeight], time_delta: TimeDelta  # type: ignore
 ) -> List[GetHoldingsSectorPerformanceResponse.SectorPerformance]:
     with _get_service_stub() as stub:

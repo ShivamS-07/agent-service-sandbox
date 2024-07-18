@@ -122,10 +122,10 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         pd.testing.assert_frame_equal(result.to_df(), expected_df)
 
     @patch("agent_service.tools.portfolio.get_portfolio_holdings")
-    @patch("agent_service.tools.portfolio.get_portfolio_sector_performance_for_date_range")
+    @patch("agent_service.tools.portfolio.get_stocks_sector_performance_for_date_range")
     async def test_get_portfolio_performance_sector(
         self,
-        mock_get_portfolio_sector_performance_for_date_range: MagicMock,
+        mock_get_stocks_sector_performance_for_date_range: MagicMock,
         mock_get_portfolio_holdings: MagicMock,
     ):
         # Mock portfolio holdings
@@ -155,7 +155,7 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
                 weighted_sector_performance=0.008,
             ),
         ]
-        mock_get_portfolio_sector_performance_for_date_range.return_value = (
+        mock_get_stocks_sector_performance_for_date_range.return_value = (
             mock_sector_performance_data
         )
 

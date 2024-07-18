@@ -8,8 +8,8 @@ from pa_portfolio_service_proto_v1.workspace_pb2 import WorkspaceAuth
 from pydantic import field_validator
 
 from agent_service.external.pa_backtest_svc_client import (
-    get_portfolio_sector_performance_for_date_range,
     get_stock_performance_for_date_range,
+    get_stocks_sector_performance_for_date_range,
 )
 from agent_service.external.pa_svc_client import (
     get_all_holdings_in_workspace,
@@ -330,7 +330,7 @@ async def get_portfolio_performance(
             time_delta = TIME_DELTA_MAP[args.sector_performance_horizon]
 
         # get the stock performance for the date range
-        sector_performance = await get_portfolio_sector_performance_for_date_range(
+        sector_performance = await get_stocks_sector_performance_for_date_range(
             user_id=context.user_id,
             stocks_and_weights=stocks_and_weights,
             time_delta=time_delta,
