@@ -74,6 +74,7 @@ async def _get_earnings_summary_helper(
         SELECT summary_id::TEXT, gbi_id, sources
         FROM nlp_service.earnings_call_summaries
         WHERE gbi_id = ANY(%(gbi_ids)s)
+        AND (status_msg = 'COMPLETE' OR status_msg IS NULL)
         """
 
     rows = db.generic_read(sql, {"gbi_ids": [stock.gbi_id for stock in stock_ids]})
@@ -81,20 +82,26 @@ async def _get_earnings_summary_helper(
     for row in rows:
         by_stock_lookup[row["gbi_id"]].append(row)
 
-    if not start_date:
-        start_date = (get_now_utc() - datetime.timedelta(days=90)).date()
-    if not end_date:
-        # Add an extra day to be sure we don't miss anything with timezone weirdness
-        end_date = get_now_utc().date() + datetime.timedelta(days=1)
-
     output: Dict[StockID, List[StockEarningsSummaryText]] = {}
     for stock_id in stock_ids:
-        stock_output = []
-        for row in by_stock_lookup.get(stock_id.gbi_id, []):
+        stock_output: List[StockEarningsSummaryText] = []
+        rows = by_stock_lookup.get(stock_id.gbi_id, [])
+        # Sort most to least recent
+        sorted_rows = sorted(
+            rows,
+            key=lambda row: datetime.datetime.fromisoformat(
+                row["sources"][0]["publishing_time"]
+            ).date(),
+            reverse=True,
+        )
+        for row in sorted_rows:
             publish_date = datetime.datetime.fromisoformat(
                 row["sources"][0]["publishing_time"]
             ).date()
-            if publish_date < start_date or publish_date > end_date:
+            if (start_date and publish_date < start_date) or (end_date and publish_date > end_date):
+                continue
+            if not start_date and not end_date and len(stock_output) > 0:
+                # If no start or end date were set, just return the most recent for each stock
                 continue
             stock_output.append(StockEarningsSummaryText(id=row["summary_id"], stock_id=stock_id))
         output[stock_id] = stock_output
