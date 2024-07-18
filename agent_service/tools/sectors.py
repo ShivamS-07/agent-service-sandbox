@@ -11,6 +11,7 @@ from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import Text
+from agent_service.planner.errors import NonRetriableError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -211,4 +212,7 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
         log=f"Filtered {len(stock_ids)} stocks by sector down to {len(rows)}", context=context
     )
     included_gbi_ids = {row["gbi_security_id"] for row in rows}
-    return [stock for stock in stock_ids if stock.gbi_id in included_gbi_ids]
+    stock_list = [stock for stock in stock_ids if stock.gbi_id in included_gbi_ids]
+    if not stock_list:
+        raise NonRetriableError(message="Stock filter resulted in an empty list of stocks")
+    return stock_list

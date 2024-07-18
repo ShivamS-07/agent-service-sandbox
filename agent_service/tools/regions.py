@@ -1,6 +1,7 @@
 from typing import List
 
 from agent_service.io_types.stock import StockID
+from agent_service.planner.errors import NonRetriableError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -189,4 +190,8 @@ async def filter_stocks_by_region(
         await tool_log(
             log=f"Filtered {num_filtered_stocks} stocks for {args.region_name}", context=context
         )
-    return [stock for stock in args.stock_ids if stock.gbi_id in stocks_to_include]
+    stock_list = [stock for stock in args.stock_ids if stock.gbi_id in stocks_to_include]
+    if not stock_list:
+        raise NonRetriableError(message="Stock filter resulted in an empty list of stocks")
+
+    return stock_list

@@ -2,6 +2,7 @@ import unittest
 
 from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_types.stock import StockID
+from agent_service.planner.errors import NonRetriableError
 from agent_service.tools.sectors import (
     SectorFilterInput,
     SectorID,
@@ -126,8 +127,8 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
             stock_ids=[StockID(gbi_id=1092, symbol="", isin="", company_name="")],
         )  # 'Communication Services'  # BAC
 
-        stocks = await sector_filter(args=args, context=self.context)
-        self.assertEqual(0, len(stocks))
+        with self.assertRaises(NonRetriableError):
+            stocks = await sector_filter(args=args, context=self.context)
 
         args = SectorFilterInput(
             sector_id=SectorID(sec_id=40, sec_name="Financials"),  # financials

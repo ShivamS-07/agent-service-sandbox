@@ -16,6 +16,7 @@ from agent_service.io_types.text import (
     TextGroup,
     TopicProfiles,
 )
+from agent_service.planner.errors import NonRetriableError
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.LLM_analysis.constants import (
@@ -389,7 +390,6 @@ async def profile_filter_helper(
 
     output_tuples: List[Tuple[bool, str, List[Citation]]] = []
     for result, text_group in zip(results, aligned_text_groups.val.values()):
-
         try:
             rationale, answer = result.strip().replace("\n\n", "\n").split("\n")
             is_match = answer.lower().startswith("yes")
@@ -578,7 +578,6 @@ class FilterStocksByProfileMatch(ToolArgs):
 async def filter_stocks_by_profile_match(
     args: FilterStocksByProfileMatch, context: PlanRunContext
 ) -> List[StockID]:
-
     if context.task_id is None:
         return []  # for mypy
 
@@ -738,7 +737,6 @@ async def filter_stocks_by_profile_match(
                             found_stock = True
                             break
                     if found_stock:
-
                         stock_with_old_history = add_old_history(
                             new_stock, old_stock, context.task_id
                         )
@@ -752,6 +750,9 @@ async def filter_stocks_by_profile_match(
         f"Filtered {len(filtered_stocks_with_scores)} stocks for profile: {profile_str}",
         context=context,
     )
+
+    if not filtered_stocks_with_scores:
+        raise NonRetriableError(message="Stock profile filter resulted in an empty list of stocks")
     return filtered_stocks_with_scores
 
 

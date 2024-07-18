@@ -17,6 +17,7 @@ from agent_service.planner.constants import (
     EXECUTION_TRIES,
     RUN_EXECUTION_PLAN_FLOW_NAME,
 )
+from agent_service.planner.errors import NonRetriableError
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import (
     ErrorInfo,
@@ -113,6 +114,7 @@ async def run_execution_plan(
         )
         for step in plan.nodes
     ]
+    chatbot = Chatbot(agent_id=context.agent_id)
 
     for i, step in enumerate(plan.nodes):
         # Check both the plan_id and plan_run_id to prevent race conditions
@@ -170,6 +172,17 @@ async def run_execution_plan(
             try:
                 step_args = tool.input_type(**resolved_args)
                 tool_output = await tool.func(args=step_args, context=context)
+            except NonRetriableError as nre:
+                response = await chatbot.generate_non_retriable_error_response(
+                    chat_context=db.get_chats_history_for_agent(agent_id=context.agent_id),
+                    plan=plan,
+                    step=step,
+                    error=nre.message,
+                )
+                msg = Message(agent_id=context.agent_id, message=response, is_user_message=False)
+                await send_chat_message(message=msg, db=db)
+                raise
+
             except Exception as e:
                 logger.exception(f"Step '{step.tool_name}' failed due to {e}")
 
@@ -261,7 +274,6 @@ async def run_execution_plan(
     logger.info(f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=}")
     if not scheduled_by_automation and do_chat:
         logger.info("Generating chat message...")
-        chatbot = Chatbot(agent_id=context.agent_id)
         message = await chatbot.generate_execution_complete_response(
             chat_context=db.get_chats_history_for_agent(agent_id=context.agent_id),
             execution_plan=plan,

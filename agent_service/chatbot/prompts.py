@@ -83,6 +83,10 @@ NOTIFICATION_UPDATE_SYS_PROMPT_STR = "{agent_description} Your client sent you a
 
 NOTIFICATION_UPDATE_MAIN_PROMPT_STR = "Given the following interaction with the client, let the user know you have modified the notification criteria as requested, assuming they have such a request (but please rephrase this idea in your own words). Here is transcript of your interaction with the client so far, delimited by ---, which should include the notification-related request at the end:\n---\n{chat_context}\n---\n. Now write your response to the client: "
 
+# Non-retriable error message
+NON_RETRIABLE_ERROR_MAIN_PROMPT_STR = "{agent_description} Your client sent you a request for information and you created a plan (in the form of a python script) for satisfying that request, however, during execution of the plan, something went wrong and you're not able to continue. You'll be provided with your interaction the client so far, the plan that failed, the specific step of the plan that failed, and the error thrown by the software. You need to explain to the client what has happened, mentioning at the very least where in the plan the failure occurred, and talk about the error if the error is straightforward enough that your client will understand. This is very important: your client is not technical (they do not understand code), and so you must not mention any low level technical details, you must keep it at a level that can be understood by a layperson. Do not, for example, mention exceptions or the specific names of function included in your Python script, this is not something the client should know about. Only include details you're sure your client will understand. You should ask for clarification from the client if necessary, so that you'll be able to try again successfully. You should be brief, no more than 80 words, in a single short paragraph, omit details that are already understood in the chat context. Never start your message with 'Dear ...'."
+
+NON_RETRIABLE_ERROR_SYS_PROMPT_STR = "Given the following interaction with your client, let your client know about an error that has caused your plan to fail and if necessary ask for clarifications required to retry. Here is the interaction with the client thus far:\n----\n{chat_context}\n---\nHere is the plan that failed:\n---\n{old_plan}\n---\nHere is the step of the plan that failed:\n{step}\nHere is the error:\n{error}\nNow write your message to your client: \n"
 
 ### Dataclasses
 
@@ -167,4 +171,12 @@ NOTIFICATION_UPDATE_SYS_PROMPT = Prompt(
 
 NOTIFICATION_UPDATE_MAIN_PROMPT = Prompt(
     NOTIFICATION_UPDATE_MAIN_PROMPT_STR, "NOTIFICATION_UPDATE_MAIN_PROMPT"
+)
+
+NON_RETRIABLE_ERROR_MAIN_PROMPT = Prompt(
+    NON_RETRIABLE_ERROR_MAIN_PROMPT_STR, "NON_RETRIABLE_ERROR_MAIN_PROMPT"
+)
+
+NON_RETRIABLE_ERROR_SYS_PROMPT = Prompt(
+    NON_RETRIABLE_ERROR_SYS_PROMPT_STR, "NON_RETRIABLE_ERROR_SYS_PROMPT"
 )
