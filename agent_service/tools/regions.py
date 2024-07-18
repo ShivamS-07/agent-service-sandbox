@@ -184,9 +184,7 @@ async def filter_stocks_by_region(
     )
     stocks_to_include = {row["gbi_security_id"] for row in rows}
     num_filtered_stocks = len(stocks_to_include)
-    if num_filtered_stocks == 0:
-        await tool_log(log=f"No stocks filtered for {args.region_name}", context=context)
-    else:
+    if num_filtered_stocks != 0:
         await tool_log(
             log=f"Filtered {num_filtered_stocks} stocks for {args.region_name}", context=context
         )

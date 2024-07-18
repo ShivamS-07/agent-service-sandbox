@@ -173,6 +173,15 @@ async def run_execution_plan(
                 step_args = tool.input_type(**resolved_args)
                 tool_output = await tool.func(args=step_args, context=context)
             except NonRetriableError as nre:
+                logger.exception(f"Step '{step.tool_name}' failed due to {nre}")
+
+                tasks[i].status = Status.ERROR
+                await publish_agent_task_status(
+                    agent_id=context.agent_id,
+                    plan_run_id=context.plan_run_id,
+                    tasks=tasks,
+                    logger=logger,
+                )
                 response = await chatbot.generate_non_retriable_error_response(
                     chat_context=db.get_chats_history_for_agent(agent_id=context.agent_id),
                     plan=plan,
