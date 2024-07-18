@@ -1,7 +1,9 @@
 import base64
+import csv
 import enum
 import logging
-from typing import Optional, Tuple
+from io import StringIO
+from typing import Optional, Set, Tuple
 
 from fastapi import UploadFile
 from pa_portfolio_service_proto_v1.well_known_types_pb2 import StockHolding
@@ -20,6 +22,7 @@ from agent_service.external.pa_svc_client import (
 from agent_service.types import Message
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.constants import SUPPORTED_FILE_TYPES
 from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
@@ -110,11 +113,30 @@ class UploadHandler:
         return raw_bytes
 
     @async_perf_logger
-    async def identify_upload_type(self) -> Tuple[UploadType, Optional[str]]:
-        return (
-            UploadType.PORTFOLIO,
-            "This looks to be a portfolio holdings file, let me import that...",
-        )
+    async def identify_upload_type(self) -> Tuple[Optional[UploadType], Optional[str]]:
+
+        # TODO: use a better way to identify file types
+        # just support basic portfolio / watchlist by parsing header column
+        try:
+            data_string = (await self._read_upload_bytes()).decode()
+            reader = csv.reader(StringIO(data_string), delimiter=",")
+            header_row = next(reader)
+            columns: Set[str] = {column_name.lower() for column_name in header_row}
+
+            # simple validation to check for one of these fields, it would be either portfolio or watchlist
+            if columns.intersection({"isin", "symbol"}):
+                if "weight" in columns:
+                    return (
+                        UploadType.PORTFOLIO,
+                        "This looks to be a portfolio holdings file, let me import that...",
+                    )
+                # TODO WC-731: return watchlist type here
+        except Exception:
+            logger.exception(
+                f"Error while parsing upload '{self.upload.filename}' for {self.user_id=}"
+            )
+
+        return None, None
 
     @async_perf_logger
     async def process_upload(self, upload_type: UploadType) -> UploadResult:
@@ -183,6 +205,24 @@ class UploadHandler:
             )
 
         upload_type, identify_message = await self.identify_upload_type()
+
+        # if we could not identify the type, skip processing
+        if not upload_type:
+            if self.agent_id and self.send_chat_updates:
+                await send_chat_message(
+                    Message(
+                        agent_id=self.agent_id,
+                        is_user_message=False,
+                        message=f"Sorry, I couldn't understand this file."
+                        f" Currently I support file uploads like: {' '.join(SUPPORTED_FILE_TYPES)}",
+                        visible_to_llm=False,
+                    ),
+                    self.db,
+                    insert_message_into_db=True,
+                    send_notification=False,
+                )
+            return UploadResult()
+
         if self.agent_id and self.send_chat_updates and identify_message:
             await send_chat_message(
                 Message(

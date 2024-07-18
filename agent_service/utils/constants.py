@@ -125,3 +125,6 @@ def get_B3_prefix() -> str:
         return "https://insights-dev.boosted.ai"
     else:
         raise ValueError(f"Unknown environment: {env}")
+
+
+SUPPORTED_FILE_TYPES = ["Current and Historical Portfolio Holdings"]
