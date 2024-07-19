@@ -123,3 +123,15 @@ class SamplePlan(BaseModel):
 
     def get_formatted_plan(self) -> str:
         return f"Input: {self.input}\nPlan:\n{self.plan}"
+
+
+class RunMetadata(BaseModel):
+    run_summary_long: Optional[str] = None
+    run_summary_short: Optional[str] = None
+    updated_output_ids: Optional[List[str]] = None
+
+
+@dataclass(frozen=True)
+class OutputWithID:
+    output: IOType
+    output_id: str

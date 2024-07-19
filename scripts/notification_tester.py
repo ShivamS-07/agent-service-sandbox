@@ -3,7 +3,7 @@ import asyncio
 from typing import List
 
 from agent_service.io_type_utils import load_io_type
-from agent_service.planner.planner_types import ExecutionPlan
+from agent_service.planner.planner_types import ExecutionPlan, OutputWithID
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
@@ -90,7 +90,9 @@ async def main() -> List[OutputDiff]:
         ),
     )
     diffs = await od.diff_outputs(
-        latest_outputs=latest_outputs,
+        latest_outputs_with_ids=[
+            OutputWithID(output=output, output_id="") for output in latest_outputs
+        ],
         db=db.pg,
         prev_outputs=prev_outputs,
         prev_date=prev_output_date,

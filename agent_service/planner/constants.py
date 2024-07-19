@@ -22,3 +22,7 @@ class Action(str, Enum):
     CREATE = "CREATE"
     LAYOUT = "LAYOUT"
     NOTIFICATION = "NOTIFICATION"
+
+
+NO_CHANGE_MESSAGE = "Report updated, but no important differences found."
+CHAT_DIFF_TEMPLATE = "I have an important update related to our most recent analysis:\n{diff}"

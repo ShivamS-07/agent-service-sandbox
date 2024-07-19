@@ -13,8 +13,10 @@ from agent_service.planner.action_decide import (
     InputActionDecider,
 )
 from agent_service.planner.constants import (
+    CHAT_DIFF_TEMPLATE,
     CREATE_EXECUTION_PLAN_FLOW_NAME,
     EXECUTION_TRIES,
+    NO_CHANGE_MESSAGE,
     RUN_EXECUTION_PLAN_FLOW_NAME,
 )
 from agent_service.planner.errors import NonRetriableError
@@ -22,7 +24,9 @@ from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import (
     ErrorInfo,
     ExecutionPlan,
+    OutputWithID,
     PlanStatus,
+    RunMetadata,
     ToolExecutionNode,
     Variable,
 )
@@ -81,10 +85,15 @@ async def run_execution_plan(
     override_task_output_lookup: Optional[Dict[str, IOType]] = None,
     scheduled_by_automation: bool = False,
 ) -> List[IOType]:
+    ###########################################
+    # PLAN RUN SETUP
+    ###########################################
+
     logger = get_prefect_logger(__name__)
     # Maps variables to their resolved values
     variable_lookup: Dict[str, IOType] = {}
     db = get_psql(skip_commit=context.skip_db_commit)
+    async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
     db.insert_plan_run(
         agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
     )
@@ -101,6 +110,7 @@ async def run_execution_plan(
         context.diff_info = {}  # this will be populated during the run
 
     final_outputs = []
+    final_outputs_with_ids: List[OutputWithID] = []
     tool_output = None
 
     # initialize our task list for SSE purposes
@@ -116,6 +126,9 @@ async def run_execution_plan(
     ]
     chatbot = Chatbot(agent_id=context.agent_id)
 
+    ###########################################
+    # PLAN RUN BEGINS
+    ###########################################
     for i, step in enumerate(plan.nodes):
         # Check both the plan_id and plan_run_id to prevent race conditions
         if await check_cancelled(db=db, plan_id=context.plan_id, plan_run_id=context.plan_run_id):
@@ -232,14 +245,21 @@ async def run_execution_plan(
 
                 raise RuntimeError("All retry attempts failed")
 
+        split_outputs = await split_io_type_into_components(tool_output)
+        # This will only be used if the step is an output node
+        output_ids = [str(uuid4()) for _ in split_outputs]
+
         if not step.is_output_node:
             if step.store_output:
-                for obj in await split_io_type_into_components(tool_output):
+                for obj in split_outputs:
                     db.write_tool_output(output=obj, context=context)
         else:
             # We have an output node
             await publish_agent_output(
-                outputs=await split_io_type_into_components(tool_output), context=context, db=db
+                outputs=split_outputs,
+                output_ids=output_ids,
+                context=context,
+                db=db,
             )
         if log_all_outputs:
             logger.info(f"Output of step '{step.tool_name}': {tool_output}")
@@ -252,7 +272,11 @@ async def run_execution_plan(
         if not context.skip_db_commit:
             context.chat = db.get_chats_history_for_agent(agent_id=context.agent_id)
         if step.is_output_node:
-            final_outputs.append(tool_output)
+            final_outputs.extend(split_outputs)
+            final_outputs_with_ids.extend(
+                OutputWithID(output=output, output_id=output_id)
+                for output, output_id in zip(split_outputs, output_ids)
+            )
 
         current_task_logs = await get_agent_task_logs(
             agent_id=context.agent_id, task_id=context.task_id, db=db
@@ -270,6 +294,9 @@ async def run_execution_plan(
         )
         logger.info(f"Finished step '{step.tool_name}'")
 
+    ###########################################
+    # PLAN RUN ENDS, RUN POSTPROCESSING BEGINS
+    ###########################################
     if await check_cancelled(db=db, plan_id=context.plan_id, plan_run_id=context.plan_run_id):
         await publish_agent_execution_status(
             agent_id=context.agent_id,
@@ -281,6 +308,10 @@ async def run_execution_plan(
         raise Exception("Execution plan has been cancelled")
 
     logger.info(f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=}")
+
+    updated_output_ids = []
+    full_diff_summary = None
+    short_diff_summary = None
     if not scheduled_by_automation and do_chat:
         logger.info("Generating chat message...")
         message = await chatbot.generate_execution_complete_response(
@@ -298,16 +329,27 @@ async def run_execution_plan(
         output_differ = OutputDiffer(
             plan=plan, context=context, custom_notifications=custom_notifications
         )
+
         output_diffs = await output_differ.diff_outputs(
-            latest_outputs=final_outputs, db=SyncBoostedPG(skip_commit=context.skip_db_commit)
+            latest_outputs_with_ids=final_outputs_with_ids,
+            db=SyncBoostedPG(skip_commit=context.skip_db_commit),
         )
         logger.info(f"Got output diffs: {output_diffs}")
-        important_diffs = [diff for diff in output_diffs if diff.should_notify]
-        if not important_diffs:
+        should_notify = any([diff.should_notify for diff in output_diffs])
+        updated_output_ids = [
+            diff.output_id for diff in output_diffs if diff.should_notify and diff.output_id
+        ]
+
+        full_diff_summary = "\n".join(
+            f"- {diff.title}: {diff}" if diff.title else f"- {diff}" for diff in output_diffs
+        )
+        if not should_notify:
+            logger.info("No notification necessary")
+            short_diff_summary = NO_CHANGE_MESSAGE
             await send_chat_message(
                 message=Message(
                     agent_id=context.agent_id,
-                    message="Report updated, but no important differences found.",
+                    message=NO_CHANGE_MESSAGE,
                     is_user_message=False,
                     visible_to_llm=False,
                 ),
@@ -315,16 +357,28 @@ async def run_execution_plan(
                 send_notification=False,
             )
         else:
-            for diff in important_diffs:
-                await send_chat_message(
-                    message=Message(
-                        agent_id=context.agent_id,
-                        message=diff.diff_summary_message,
-                        is_user_message=False,
-                        visible_to_llm=False,
-                    ),
-                    db=db,
-                )
+            logger.info("Generating and sending notification")
+            short_diff_summary = await output_differ.generate_short_diff_summary(
+                full_diff_summary, custom_notifications
+            )
+            await send_chat_message(
+                message=Message(
+                    agent_id=context.agent_id,
+                    message=CHAT_DIFF_TEMPLATE.format(diff=short_diff_summary),
+                    is_user_message=False,
+                    visible_to_llm=False,
+                ),
+                db=db,
+            )
+
+        await async_db.set_plan_run_metadata(
+            context=context,
+            metadata=RunMetadata(
+                run_summary_long=full_diff_summary,
+                run_summary_short=short_diff_summary,
+                updated_output_ids=updated_output_ids,
+            ),
+        )
 
     # publish finish plan run task execution
     await publish_agent_execution_status(
@@ -333,6 +387,9 @@ async def run_execution_plan(
         plan_id=context.plan_id,
         status=Status.COMPLETE,
         logger=logger,
+        updated_output_ids=updated_output_ids,
+        run_summary_long=full_diff_summary,
+        run_summary_short=short_diff_summary,
     )
     logger.info("Finished run!")
     return final_outputs

@@ -6,8 +6,8 @@ from agent_service.io_type_utils import IOType, load_io_type
 
 # Make sure all io_types are registered
 from agent_service.io_types import *  # noqa
-from agent_service.planner.planner_types import ExecutionPlan, PlanStatus
-from agent_service.types import ChatContext, Message, Notification
+from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
+from agent_service.types import ChatContext, Message, Notification, PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
@@ -582,6 +582,21 @@ class AsyncDB:
         if not rows:
             return None
         return rows[0]["notification_prompt"]
+
+    async def set_plan_run_metadata(self, context: PlanRunContext, metadata: RunMetadata) -> None:
+        sql = """
+        UPDATE agent.plan_runs
+        SET run_metadata = %(metadata)s
+        WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s
+        """
+        await self.pg.generic_write(
+            sql=sql,
+            params={
+                "metadata": metadata.model_dump_json(),
+                "agent_id": context.agent_id,
+                "plan_run_id": context.plan_run_id,
+            },
+        )
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:

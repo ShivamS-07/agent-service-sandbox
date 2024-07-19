@@ -1,6 +1,5 @@
 import logging
 from typing import List, Optional, Union, cast
-from uuid import uuid4
 
 from agent_service.endpoints.models import (
     AgentEvent,
@@ -113,14 +112,14 @@ async def send_chat_message(
 async def publish_agent_output(
     outputs: List[IOType],
     context: PlanRunContext,
+    output_ids: List[str],
     is_intermediate: bool = False,
     db: Optional[Postgres] = None,
 ) -> None:
     if not db:
         db = get_psql()
     rich_outputs = []
-    for output in outputs:
-        output_id = str(uuid4())
+    for output, output_id in zip(outputs, output_ids):
         db.write_agent_output(output=output, output_id=output_id, context=context)
         rich_output = await get_output_from_io_type(output, pg=SyncBoostedPG())
         rich_outputs.append((rich_output, output_id))
@@ -209,13 +208,24 @@ async def publish_agent_execution_status(
     plan_id: str,
     status: Status,
     logger: Optional[Union[logging.Logger, logging.LoggerAdapter]] = None,
+    # Only populated if the plan is finished
+    updated_output_ids: Optional[List[str]] = None,
+    run_summary_long: Optional[str] = None,
+    run_summary_short: Optional[str] = None,
 ) -> None:
     try:
         await publish_agent_event(
             agent_id=agent_id,
             serialized_event=AgentEvent(
                 agent_id=agent_id,
-                event=ExecutionStatusEvent(status=status, plan_run_id=plan_run_id, plan_id=plan_id),
+                event=ExecutionStatusEvent(
+                    status=status,
+                    plan_run_id=plan_run_id,
+                    plan_id=plan_id,
+                    newly_updated_outputs=updated_output_ids or [],
+                    run_summary_long=run_summary_long,
+                    run_summary_short=run_summary_short,
+                ),
             ).model_dump_json(),
         )
     except Exception as e:

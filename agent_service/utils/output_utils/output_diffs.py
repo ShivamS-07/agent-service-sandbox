@@ -4,11 +4,11 @@ from typing import List, Optional
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 from pydantic.main import BaseModel
 
-from agent_service.GPT.constants import GPT4_O
+from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import Citation, IOType
 from agent_service.io_types.text import Text
-from agent_service.planner.planner_types import ExecutionPlan
+from agent_service.planner.planner_types import ExecutionPlan, OutputWithID
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import gather_with_concurrency
@@ -21,6 +21,8 @@ from agent_service.utils.output_utils.prompts import (
     CUSTOM_NOTIFICATION_TEMPLATE,
     GENERATE_DIFF_MAIN_PROMPT,
     GENERATE_DIFF_SYS_PROMPT,
+    SHORT_DIFF_SUMMARY_MAIN_PROMPT,
+    SUMMARY_CUSTOM_NOTIFICATION_TEMPLATE,
     TEXT_OUTPUT_TEMPLATE,
 )
 from agent_service.utils.output_utils.utils import io_type_to_gpt_input
@@ -29,7 +31,9 @@ from agent_service.utils.string_utils import strip_code_backticks
 
 class OutputDiff(BaseModel):
     diff_summary_message: str
+    output_id: Optional[str] = None
     should_notify: bool = True
+    title: Optional[str] = None
 
 
 class OutputDiffer:
@@ -119,7 +123,7 @@ class OutputDiffer:
 
     async def diff_outputs(
         self,
-        latest_outputs: List[IOType],
+        latest_outputs_with_ids: List[OutputWithID],
         db: BoostedPG,
         prev_outputs: Optional[List[IOType]] = None,
         prev_date: Optional[datetime.datetime] = None,
@@ -130,6 +134,7 @@ class OutputDiffer:
         agent.
         """
 
+        latest_outputs = [val.output for val in latest_outputs_with_ids]
         async_db = AsyncDB(pg=db)
         if not prev_outputs or not prev_date:
             prev_outputs_and_date = await async_db.get_prev_outputs_for_agent_plan(
@@ -159,19 +164,43 @@ class OutputDiffer:
                 )
             ]
 
-        prev_outputs = [
+        prev_output_values = [
             output.val if isinstance(output, PreparedOutput) else output for output in prev_outputs
         ]
-        latest_outputs = [
+        latest_output_values = [
             output.val if isinstance(output, PreparedOutput) else output
             for output in latest_outputs
         ]
 
-        return await gather_with_concurrency(
+        diffs: List[OutputDiff] = await gather_with_concurrency(
             [
                 self._compute_diff_for_io_types(
                     latest_output=latest, prev_output=prev, db=async_db, prev_date=prev_date
                 )
-                for latest, prev in zip(latest_outputs, prev_outputs)
+                for latest, prev in zip(latest_output_values, prev_output_values)
             ]
+        )
+
+        return [
+            OutputDiff(
+                diff_summary_message=diff.diff_summary_message,
+                should_notify=diff.should_notify,
+                title=output.output.title if isinstance(output.output, PreparedOutput) else None,
+                output_id=output.output_id,
+            )
+            for output, diff in zip(latest_outputs_with_ids, diffs)
+        ]
+
+    async def generate_short_diff_summary(
+        self, full_text_diffs: str, notification_criteria: Optional[str]
+    ) -> str:
+        return await self.llm.do_chat_w_sys_prompt(
+            SHORT_DIFF_SUMMARY_MAIN_PROMPT.format(
+                diffs=full_text_diffs,
+                custom_notifications=SUMMARY_CUSTOM_NOTIFICATION_TEMPLATE.format(
+                    notification_criteria=notification_criteria
+                ),
+            ),
+            NO_PROMPT,
+            max_tokens=100,
         )

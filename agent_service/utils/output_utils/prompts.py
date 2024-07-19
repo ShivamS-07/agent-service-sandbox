@@ -81,3 +81,26 @@ message and decide whether the differences are important enought to require a
 notification to your boss. NEVER mention integer stock ID's in your output!
 """,
 )
+
+SHORT_DIFF_SUMMARY_MAIN_PROMPT = Prompt(
+    name="SHORT_DIFF_SUMMARY",
+    template="""
+You are an analyst who is doing daily updates of a report (which may include one or more sections)
+You have already written a full list of the changes since your last report that includes all the
+differences for all the sections (in bullet format), now you are going send a brief message to your
+boss which summaries the most important findings. This should be no more than a sentence or two, your
+boss is very busy and will be angry if you get wordy. You must not attempt to cover every section
+if there are multiple sections, just pull out the most important information.
+{custom_notifications}
+Here is the full list of changes:
+{diffs}
+Now output your brief summary of the most important changes:
+""",
+)
+
+SUMMARY_CUSTOM_NOTIFICATION_TEMPLATE = """
+Your boss has left the following instructions about when he should be notified, you should focus
+on these aspects whenever they apply:
+{notification_criteria}
+
+"""
