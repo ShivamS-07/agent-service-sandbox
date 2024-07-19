@@ -11,6 +11,7 @@ from pydantic.fields import Field
 class CitationType(str, enum.Enum):
     LINK = "link"
     TEXT = "text"
+    CUSTOM_DOC = "custom_doc"
 
 
 CitationID = str
@@ -25,6 +26,8 @@ class CitationOutput(BaseModel):
     # Used to track when the underlying text (article, summary, etc.) was created
     published_at: Optional[datetime.datetime] = None
     article_id: Optional[str] = None
+    # Only used for custom documents
+    custom_doc_id: Optional[str] = None
 
 
 class OutputType(str, enum.Enum):

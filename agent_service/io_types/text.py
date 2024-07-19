@@ -417,7 +417,7 @@ class CustomDocumentSummaryText(StockText):
             article_info = await get_custom_doc_articles_info(
                 user, [article.id for article in articles]
             )
-            for id, chunk_info in dict(article_info.file_chunk_info).items():
+            for chunk_id, chunk_info in dict(article_info.file_chunk_info).items():
                 file_paths = list(chunk_info.file_paths)
                 if len(file_paths) == 0:
                     citation_name = chunk_info.file_id
@@ -427,10 +427,11 @@ class CustomDocumentSummaryText(StockText):
 
                 citations.append(
                     CitationOutput(
-                        id=id,
-                        citation_type=CitationType.TEXT,
+                        id=chunk_id,
+                        citation_type=CitationType.CUSTOM_DOC,
                         name=f"User Document: {citation_name}",
                         published_at=chunk_info.upload_time.ToDatetime(),
+                        custom_doc_id=chunk_info.file_id,
                     )
                 )
         return citations
