@@ -1,3 +1,4 @@
+import datetime
 import json
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
@@ -14,7 +15,7 @@ from agent_service.utils.postgres import SyncBoostedPG
 
 async def get_prev_run_info(
     context: PlanRunContext, tool_name: str
-) -> Optional[Tuple[ToolArgs, IOType, Dict[str, str]]]:
+) -> Optional[Tuple[ToolArgs, IOType, Dict[str, str], datetime.datetime]]:
     pg_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
     previous_run = await pg_db.get_previous_plan_run(
         agent_id=context.agent_id, plan_id=context.plan_id, latest_plan_run_id=context.plan_run_id
@@ -28,11 +29,11 @@ async def get_prev_run_info(
     io = ch_db.get_io_for_tool_run(previous_run, context.task_id, tool_name)
     if io is None:
         return None
-    inputs_str, output_str, debug_str = io
+    inputs_str, output_str, debug_str, timestamp = io
     inputs = ToolArgs.model_validate_json(inputs_str)
     output = load_io_type(output_str)
     debug = json.loads(debug_str) if debug_str else {}
-    return inputs, output, debug
+    return inputs, output, debug, timestamp
 
 
 def get_stock_text_lookup(texts: List[StockText]) -> Dict[StockID, List[StockText]]:

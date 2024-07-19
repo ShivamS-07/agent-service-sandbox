@@ -666,9 +666,9 @@ class Clickhouse(ClickhouseBase):
 
     def get_io_for_tool_run(
         self, plan_run_id: str, task_id: str, tool_name: str
-    ) -> Optional[Tuple[str, str, str]]:
+    ) -> Optional[Tuple[str, str, str, datetime.datetime]]:
         sql = """
-        SELECT args, result, debug_info
+        SELECT args, result, debug_info, timestamp
         FROM agent.tool_calls
         WHERE plan_run_id = %(plan_run_id)s AND task_id = %(task_id)s AND tool_name = %(tool_name)s
         """
@@ -678,7 +678,7 @@ class Clickhouse(ClickhouseBase):
         if not rows:
             return None
         row = rows[0]
-        return row["args"], row["result"], row["debug_info"]
+        return row["args"], row["result"], row["debug_info"], row["timestamp"]
 
     ################################################################################################
     # Manual Event Logging

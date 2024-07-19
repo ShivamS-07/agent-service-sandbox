@@ -430,7 +430,7 @@ TABLE_REMOVE_DIFF_MAIN_PROMPT = Prompt(
     name="TABLE_REMOVE_DIFF_MAIN_PROMPT",
     template="""
 You are a financial analyst that carries out periodic analysis of stocks and provide lists of stocks
-to your client. Your current goal is to explain why you've removed a particular stock to a filtered list.
+to your client. Your current goal is to explain why you've removed a particular stock from a filtered list.
 You will be provided with a company name, current statistics about the company, older statistics about
 the company, and a description of your filtering goal. In a single sentence, briely explain why you have
 removed the stock in this filtering pass after you included it in the previous one. Usually this can

@@ -22,15 +22,22 @@ from agent_service.GPT.constants import (
     FILTER_CONCURRENCY,
     GPT4_O,
     NO_PROMPT,
+    SONNET,
 )
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
-from agent_service.io_type_utils import HistoryEntry, Score
+from agent_service.io_type_utils import HistoryEntry, Score, dump_io_type, load_io_type
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
 from agent_service.io_types.text import StockText, Text
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import (
+    TOOL_DEBUG_INFO,
+    ToolArgs,
+    ToolCategory,
+    ToolRegistry,
+    tool,
+)
 from agent_service.tools.news import (
     GetNewsDevelopmentsAboutCompaniesInput,
     get_all_news_developments_about_companies,
@@ -51,6 +58,7 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
+from agent_service.utils.tool_diff import get_prev_run_info
 
 
 @dataclass
@@ -171,6 +179,84 @@ POLICY_MAIN_PROMPT_STR = (
 )
 
 POLICY_MAIN_PROMPT = Prompt(POLICY_MAIN_PROMPT_STR, "POLICY_MAIN_PROMPT")
+
+
+REC_ADD_DIFF_MAIN_PROMPT = Prompt(
+    name="REC_ADD_DIFF_MAIN_PROMPT",
+    template="""
+You are a financial analyst that carries out periodic analysis of stocks and provide lists of stocks
+to your client. Your current goal is to explain why you've added a particular stock to a list of
+buy or sell recommendation.
+You will be provided with a company name, a kind of recommendation (buy or sell), current scores about
+the company, and older scores about the company from you previous analysis. There are two scores in each set,
+one is news score which is a reflection of recent news sentiment about the company, and the other is a quant
+score which uses a quantitive machine learning model with features corresponding to typical quantiative analyst
+metrics to predict future stock performance.
+Both scores have a range of 0-5, 5 indicating a strong positive sentiment and 0 indicating a strong
+negative sentiment, the two are weighted equally in the final score which determines the ranking of stocks
+for recommendation. Generally we would expect higher scores for buy recommendations, and lower scores for
+sell recommendations.
+In a single sentence, briely explain why we have added the stock in this pass after
+we excluded it in the previous one. Usually this can be explained directly by simply stating any major
+changes in the scores, make sure you mention both the new and old value for the releven score. For example,
+`Nvida was added in our buys due to a major increase in its news sentiment score, from 2.5 to 4.5,
+since the last analysis.`
+If only one score changed significantly, focus only on that score.
+If neither score changed hardly at all (less than 0.1), or if the result is non-intuitive (a stock decreases
+in scores and yet gets added to a buy recommendation list, you must NOT state score change as the reason this
+occurred, instead you should explain this by vague reference to even more extreme changes from other stocks
+(although Nvida went up, other stocks went up even more.) Keep it brief and professional.
+Here is the company name:  {company_name}.
+Here is the current scores for the company: {curr_scores}.
+Here are the stats from your previous analysis: {prev_scores}.
+Here is the kind of stock recommendation you are explaining: {buy_or_sell}
+{news}
+Now write your explanation of the change:""",
+)
+
+REC_REMOVE_DIFF_MAIN_PROMPT = Prompt(
+    name="REC_REMOVE_DIFF_MAIN_PROMPT",
+    template="""
+You are a financial analyst that carries out periodic analysis of stocks and provide lists of stocks
+to your client. Your current goal is to explain why you've removed a particular stock from a list of
+buys or sells.
+You will be provided with a company name, a class of recommendation you are making (buy or sell), current scores about
+the company, and older scores about the company from you previous analysis. There are two scores in each set,
+one is news score which is a reflection of recent news sentiment about the company, and the other is a quant
+score which uses a quantitive machine learning model with features corresponding to typical quantiative analyst
+metrics to predict future stock performance.
+Both scores have a range of 0-5, 5 indicating a strong positive sentiment and 0 indicating a strong
+negative sentiment, the two are weighted equally in the final score which determines the ranking of stocks
+for recommendation. Generally we would expect higher scores for buy recommendations, and lower scores for
+sell recommendations.
+In a single sentence, briely explain why we have removed the stock in this pass after
+we included it in the previous one. Usually this can be explained directly by simply stating any major
+changes in the scores, make sure you mention both the new and old value for the releven score. For example,
+`Nvida was removed from our buys due to a major drop in its news sentiment score, from 4.5 to 2.5,
+since the last analysis.`
+If only one score changed significantly, focus only on that score.
+If neither score changed hardly at all (less than 0.1), or the result is non-intuitive (a stock increases in
+scores and yet fell out of a buy recommendation list), you must NOT state the score change as the reason this
+occurred, but instead explain the change by vague reference to even more extreme changes from other stocks
+(although Nvida went down, other stocks went down even more.) Keep it brief and professional.
+Here is the company name: {company_name}.
+Here is the current scores for the company: {curr_scores}.
+Here are the stats from your previous analysis: {prev_scores}.
+Here is the kind of stock recommendation you are explaining: {buy_or_sell}
+{news_str}
+Now write your explanation of the change:""",
+)
+
+
+NEWS_TEMPLATE = (
+    "Finally, here is some news that this company that has occurred since the last analysis. If you are focusing "
+    "on the news score as a cause of the change in recommendation and any of this news can be used to sensibly "
+    "explain the change in the news score, please add a sentence which speculates on the cause, however you "
+    "should avoid any firm conclusions. Make sure you only highlight news that that is very likely to cause a major "
+    "change in the recommendations for a stock and is compatible with the change in news score; if it is not possible "
+    "to make reasonable case with this news, it is much better to not mention the news at all. "
+    "Refer to the news as `the latest news`. Here is the news:\n---\n{news}\n---\n"
+)
 
 
 async def pick_investment_style(
@@ -308,6 +394,108 @@ async def add_scores_and_rationales_to_stocks(
     return stocks_with_rec
 
 
+async def recommendation_filter_added_diff_info(
+    added_stocks: List[StockID],
+    news_texts: List[StockText],
+    curr_score_dict: Dict[StockID, RecommendationScores],
+    prev_score_dict: Dict[StockID, RecommendationScores],
+    buy_or_sell: str,
+    agent_id: str,
+) -> Dict[StockID, str]:
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
+    llm = GPT(context=gpt_context, model=SONNET)
+
+    aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(added_stocks, news_texts)
+    str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
+        aligned_text_groups.val, include_header=False, text_group_numbering=False
+    )
+
+    tasks = []
+    for stock in added_stocks:
+        if stock in str_lookup and str_lookup[stock]:
+            news_str = NEWS_TEMPLATE.format(news=str_lookup[stock])
+        else:
+            news_str = ""
+
+        curr_news = curr_score_dict[stock].news_score
+        curr_quant = curr_score_dict[stock].rating_score
+        prev_news = prev_score_dict[stock].news_score
+        prev_quant = prev_score_dict[stock].rating_score
+
+        tasks.append(
+            llm.do_chat_w_sys_prompt(
+                REC_ADD_DIFF_MAIN_PROMPT.format(
+                    company_name=stock.company_name,
+                    news=news_str,
+                    buy_or_sell=buy_or_sell,
+                    curr_scores={
+                        "news": (curr_news.val * 5 if curr_news is not None else None),
+                        "quant": (curr_quant.val * 5 if curr_quant is not None else None),
+                    },
+                    prev_scores={
+                        "news": (prev_news.val * 5 if prev_news is not None else None),
+                        "quant": (prev_quant.val * 5 if prev_quant is not None else None),
+                    },
+                ),
+                NO_PROMPT,
+            )
+        )
+
+    results = await gather_with_concurrency(tasks)
+    return {stock: explanation for stock, explanation in zip(added_stocks, results)}
+
+
+async def recommendation_filter_removed_diff_info(
+    removed_stocks: List[StockID],
+    news_texts: List[StockText],
+    curr_score_dict: Dict[StockID, RecommendationScores],
+    prev_score_dict: Dict[StockID, RecommendationScores],
+    buy_or_sell: str,
+    agent_id: str,
+) -> Dict[StockID, str]:
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
+    llm = GPT(context=gpt_context, model=SONNET)
+
+    aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(removed_stocks, news_texts)
+    str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
+        aligned_text_groups.val, include_header=False, text_group_numbering=False
+    )
+
+    tasks = []
+    for stock in removed_stocks:
+        if stock in str_lookup and str_lookup[stock]:
+            news_str = NEWS_TEMPLATE.format(news=str_lookup[stock])
+        else:
+            news_str = ""
+
+        curr_news = curr_score_dict[stock].news_score
+        curr_quant = curr_score_dict[stock].rating_score
+        prev_news = prev_score_dict[stock].news_score
+        prev_quant = prev_score_dict[stock].rating_score
+
+        tasks.append(
+            llm.do_chat_w_sys_prompt(
+                REC_REMOVE_DIFF_MAIN_PROMPT.format(
+                    company_name=stock.company_name,
+                    news=news_str,
+                    buy_or_sell=buy_or_sell,
+                    curr_scores={
+                        "news": (curr_news.val * 5 if curr_news is not None else None),
+                        "quant": (curr_quant.val * 5 if curr_quant is not None else None),
+                    },
+                    prev_scores={
+                        "news": (prev_news.val * 5 if prev_news is not None else None),
+                        "quant": (prev_quant.val * 5 if prev_quant is not None else None),
+                    },
+                ),
+                NO_PROMPT,
+            )
+        )
+
+    results = await gather_with_concurrency(tasks)
+    return {stock: explanation for stock, explanation in zip(removed_stocks, results)}
+
+
 class GetStockRecommendationsInput(ToolArgs):
     """Note: This is to find the recommended stocks from the provided stock list. It takes into
     many factors like news, ISM, ratings, etc.
@@ -433,6 +621,28 @@ async def get_stock_recommendations(
 
     logger = get_prefect_logger(__name__)
 
+    debug_info: Dict[str, Any] = {}
+    TOOL_DEBUG_INFO.set(debug_info)
+
+    prev_args = None
+    prev_output = None
+    prev_scores = None
+    prev_time = None
+
+    try:  # since everything here is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context, "get_stock_recommendations")
+        if prev_run_info is not None:
+            prev_args: GetStockRecommendationsInput = prev_run_info[0]  # type: ignore
+            prev_output: List[StockID] = prev_run_info[1]  # type:ignore
+            prev_other: Dict[str, str] = prev_run_info[2]  # type:ignore
+            prev_time: datetime = prev_run_info[3]  # type:ignore
+            if prev_other:
+                prev_scores = {  # type: ignore
+                    stock: scores for stock, scores in load_io_type(prev_other["score_dict"])  # type: ignore
+                }
+    except Exception as e:
+        logger.warning(f"Error doing getting info from previous run: {e}")
+
     if args.stock_ids:
         if args.filter and args.num_stocks_to_return:
             if len(args.stock_ids) < args.num_stocks_to_return:
@@ -511,6 +721,8 @@ async def get_stock_recommendations(
             rec_scores.rating_score = get_rating_score(row)
         score_dict[stock_id] = rec_scores
 
+    debug_info["score_dict"] = dump_io_type(list(pair) for pair in score_dict.items())
+
     ranked_stocks = sorted(
         score_dict,
         key=lambda x: score_dict[x].get_overall().val,
@@ -553,6 +765,43 @@ async def get_stock_recommendations(
     final_stocks = await add_scores_and_rationales_to_stocks(
         ranked_stocks, score_dict, args.buy, context, news_horizon=news_horizon
     )
+
+    try:  # since everything here is optional, put in try/except
+        if context.diff_info is not None and prev_args and args.filter:
+            shared_stocks = set(score_dict) & set(prev_scores)  # use score dict stocks
+            curr_stocks = set(final_stocks)
+            prev_stocks = set(prev_output)
+            added_stocks = (curr_stocks - prev_stocks) & shared_stocks
+            removed_stocks = (prev_stocks - curr_stocks) & shared_stocks
+
+            changed_stocks = list(added_stocks | removed_stocks)
+            news_texts = await get_all_news_developments_about_companies(  # type: ignore
+                GetNewsDevelopmentsAboutCompaniesInput(
+                    stock_ids=changed_stocks,
+                    date_range=DateRange(
+                        start_date=prev_time.date(), end_date=datetime.date.today()
+                    ),
+                ),
+                context,
+            )
+
+            buy_or_sell = "buy" if args.buy else "sell"
+
+            added_diff_info = await recommendation_filter_added_diff_info(
+                added_stocks, news_texts, score_dict, prev_scores, buy_or_sell, context.agent_id
+            )
+
+            removed_diff_info = await recommendation_filter_removed_diff_info(
+                removed_stocks, news_texts, score_dict, prev_scores, buy_or_sell, context.agent_id
+            )
+
+            context.diff_info[context.task_id] = {
+                "added": added_diff_info,
+                "removed": removed_diff_info,
+            }
+
+    except Exception as e:
+        logger.warning(f"Error doing diff from previous run: {e}")
 
     await tool_log(log=f"Finished recommendation for {len(ranked_stocks)} stocks", context=context)
 
