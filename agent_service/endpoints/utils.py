@@ -8,7 +8,7 @@ from prefect.client.schemas import TaskRun
 
 from agent_service.endpoints.models import PlanRun, PlanRunTask, PlanRunTaskLog, Status
 from agent_service.io_type_utils import load_io_type
-from agent_service.planner.planner_types import ToolExecutionNode
+from agent_service.planner.planner_types import RunMetadata, ToolExecutionNode
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.prefect import (
@@ -51,6 +51,7 @@ async def get_agent_hierarchical_worklogs(
     plan_id_to_plan_run_ids: Dict[str, Set[str]] = defaultdict(set)
     plan_run_id_to_task_ids: Dict[str, Set[str]] = defaultdict(set)
     plan_run_id_to_share_status: Dict[str, bool] = {}
+    plan_run_id_to_run_metadata: Dict[str, Optional[RunMetadata]] = {}
     plan_run_id_task_id_to_logs: Dict[Tuple[str, str], List[PlanRunTaskLog]] = defaultdict(list)
     plan_run_id_task_id_to_task_output: Dict[Tuple[str, str], Dict[str, Any]] = defaultdict(dict)
 
@@ -62,6 +63,9 @@ async def get_agent_hierarchical_worklogs(
         plan_id_to_plan_run_ids[row["plan_id"]].add(row["plan_run_id"])
         plan_run_id_to_task_ids[row["plan_run_id"]].add(row["task_id"])
         plan_run_id_to_share_status[row["plan_run_id"]] = row["shared"] or False
+        plan_run_id_to_run_metadata[row["plan_run_id"]] = (
+            RunMetadata.model_validate(row["run_metadata"]) if row["run_metadata"] else None
+        )
 
         if row["is_task_output"]:  # there should only be 1 task output per task
             plan_run_id_task_id_to_task_output[(row["plan_run_id"], row["task_id"])] = row
@@ -111,6 +115,8 @@ async def get_agent_hierarchical_worklogs(
 
             plan_run_status = reset_plan_run_status_if_needed(plan_run_status, full_tasks)
             plan_run_share_status = plan_run_id_to_share_status.get(plan_run_id, False)
+            run_metadata = plan_run_id_to_run_metadata.get(plan_run_id, None)
+            run_desc = run_metadata.run_summary_short if run_metadata else None
 
             run_history.append(
                 PlanRun(
@@ -121,6 +127,7 @@ async def get_agent_hierarchical_worklogs(
                     end_time=plan_run_end or full_tasks[-1].end_time,
                     tasks=full_tasks,
                     shared=plan_run_share_status,
+                    run_description=run_desc,
                 )
             )
 

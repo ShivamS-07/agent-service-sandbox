@@ -173,6 +173,7 @@ class PlanRun(BaseModel):
     end_time: Optional[datetime.datetime]
     tasks: List[PlanRunTask]  # sorted by start_time ASC
     shared: bool = False
+    run_description: Optional[str] = None
 
 
 class PlanTemplateTask(BaseModel):

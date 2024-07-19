@@ -294,18 +294,19 @@ class AsyncDB:
         params: Dict[str, Any] = {"agent_id": agent_id}
         filters = ""
         if start_date:
-            filters += " AND created_at >= %(start_date)s"
+            filters += " AND wl.created_at >= %(start_date)s"
             params["start_date"] = start_date
         if end_date:
-            filters += " AND created_at < %(end_date)s"
+            filters += " AND wl.created_at < %(end_date)s"
             params["end_date"] = end_date
         if plan_run_ids:
-            filters += " AND plan_run_id = ANY(%(plan_run_ids)s)"
+            filters += " AND wl.plan_run_id = ANY(%(plan_run_ids)s)"
             params["plan_run_ids"] = plan_run_ids
 
         sql1 = f"""
             SELECT wl.plan_id::VARCHAR, wl.plan_run_id::VARCHAR, wl.task_id::VARCHAR, wl.is_task_output,
-                wl.log_id::VARCHAR, wl.log_message, wl.created_at, pr.shared, (log_data NOTNULL) AS has_output
+                wl.log_id::VARCHAR, wl.log_message, wl.created_at, pr.shared, (log_data NOTNULL) AS has_output,
+                pr.run_metadata
             FROM agent.work_logs wl
             LEFT JOIN agent.plan_runs pr
             ON wl.plan_run_id = pr.plan_run_id
