@@ -3,21 +3,19 @@ from datetime import date, timedelta
 from typing import List, Optional
 from uuid import uuid4
 
-from agent_service.GPT.constants import GPT4_O, NO_PROMPT
+from agent_service.GPT.constants import NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
 from agent_service.io_types.text import Text, TextGroup, ThemeText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.commentary.constants import (
+    COMMENTARY_LLM,
     MAX_DEVELOPMENTS_PER_COMMENTARY,
     MAX_STOCKS_PER_COMMENTARY,
     MAX_THEMES_PER_COMMENTARY,
     MAX_TOTAL_ARTICLES_PER_COMMENTARY,
-    TOP_STOCKS_IN_PORTFOLIO_NUM,
 )
 from agent_service.tools.commentary.helpers import (
     filter_most_important_citations,
@@ -25,14 +23,14 @@ from agent_service.tools.commentary.helpers import (
     get_texts_for_topics,
     get_theme_related_texts,
     organize_commentary_texts,
+    prepare_main_prompt,
     prepare_portfolio_prompt,
-    prepare_stock_performance_prompt,
+    prepare_stocks_stats_prompt,
     split_text_and_citation_ids,
 )
 from agent_service.tools.commentary.prompts import (
     CLIENTELE_TEXT_DICT,
     CLIENTELE_TYPE_PROMPT,
-    COMMENTARY_PROMPT_MAIN,
     COMMENTARY_SYS_PROMPT,
     GET_COMMENTARY_INPUTS_DESCRIPTION,
     LONG_WRITING_STYLE,
@@ -48,11 +46,7 @@ from agent_service.tools.other_text import (
     GetAllTextDataForStocksInput,
     get_all_text_data_for_stocks,
 )
-from agent_service.tools.portfolio import (
-    GetPortfolioWorkspaceHoldingsInput,
-    PortfolioID,
-    get_portfolio_holdings,
-)
+from agent_service.tools.portfolio import PortfolioID
 from agent_service.tools.themes import (
     GetTopNThemesInput,
     get_top_N_macroeconomic_themes,
@@ -67,43 +61,19 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 
-# Functionality so far:
-# Write a commentary on
-# general market of some specific topics,
-# based on my watchlist stocks,
-# based on my portfolio X,
-# based on texts for this given period of time,
-# with Simple/technical tone,
-# with writing format of long/short/bullet points.
-# In behind the scene, it will
-# collect all related themes to the topics or top themes for general commentary,
-# or all news for a given topic with no themes
-# Considers the region weight of portfolio
-# Considers the portfolio performance (overll, by sector, by stock)
-# Considers the portfolio holdings and top stocks news in the portfolio
-# Watchlist stocks
-# It will remember the previous commentary for editing purposes.
-
-
-# TODO:
-# - comeplte sectors_prompt
-# - complete top_stocks_prompt
-# - complete goal_prompt
-# - complete theme_prompt and theme_outlook_prompt
-# - use a portfolio by defualt for geography_prompt
-# - use gpt to filter most important texts and increase/remove TOP_STOCKS_IN_PORTFOLIO_NUM
 logger = get_prefect_logger(__name__)
 
 
 class WriteCommentaryInput(ToolArgs):
+    date_range: DateRange = DateRange(
+        start_date=date.today() - timedelta(days=30),
+        end_date=date.today(),
+    )
     inputs: List[Text]
+    stock_ids: Optional[List[StockID]] = None
     client_type: Optional[str] = "Simple"
     writing_format: Optional[str] = "Long"
     portfolio_id: Optional[PortfolioID] = None
-    stock_ids: Optional[List[StockID]] = None
-    date_range: DateRange = DateRange(
-        start_date=date.today() - timedelta(days=30), end_date=date.today()
-    )
 
 
 @tool(
@@ -137,9 +107,9 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         )
 
     # Prepare the stock performance prompt
-    stock_performance_prompt = NO_PROMPT
+    stocks_stats_prompt = NO_PROMPT
     if args.stock_ids:
-        stock_performance_prompt = await prepare_stock_performance_prompt(
+        stocks_stats_prompt = await prepare_stocks_stats_prompt(
             args.stock_ids, args.date_range, context
         )
 
@@ -193,6 +163,17 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         context=context,
         associated_data=watchlist_stocks,
     )
+    # check the number of watchlist stocks
+    if len(watchlist_stocks) > MAX_STOCKS_PER_COMMENTARY:  # type: ignore
+        watchlist_stocks = watchlist_stocks[:MAX_STOCKS_PER_COMMENTARY]  # type: ignore
+        await tool_log(
+            log=(
+                f"Number of watchlist stocks is more than {MAX_STOCKS_PER_COMMENTARY}. "
+                f"Only first {MAX_STOCKS_PER_COMMENTARY} stocks will be considered."
+            ),
+            context=context,
+        )
+
     watchlist_prompt = WATCHLIST_PROMPT.format(
         watchlist_stocks=", ".join([await stock.to_gpt_input() for stock in watchlist_stocks])  # type: ignore
     )
@@ -208,41 +189,24 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     writing_style_prompt = WRITING_STYLE_PROMPT.format(
         writing_format=WRITING_FORMAT_TEXT_DICT.get(writing_format, LONG_WRITING_STYLE)
     )
-    # Prepare texts prompt
-    texts = await Text.get_all_strs(all_text_group, include_header=True, text_group_numbering=True)
-    chat_context = context.chat.get_gpt_input() if context.chat is not None else ""
 
-    # truncate texts if needed TODO: replace this with a function that filters best texts
-    logger.info(f"Length of tokens oin input texts: {GPTTokenizer(GPT4_O).get_token_length(texts)}")  # type: ignore
-    trunctated_texts = GPTTokenizer(GPT4_O).do_truncation_if_needed(
-        texts,  # type: ignore
-        [
-            previous_commentary_prompt.filled_prompt,
-            portfolio_prompt.filled_prompt,
-            stock_performance_prompt.filled_prompt,
-            watchlist_prompt.filled_prompt,
-            client_type_prompt.filled_prompt,
-            writing_style_prompt.filled_prompt,
-            chat_context,
-        ],
-    )
+    # Prepare texts for commentary
+    texts = await Text.get_all_strs(all_text_group, include_header=True, text_group_numbering=True)
 
     # Prepare the main prompt using the above prompts
-    main_prompt = COMMENTARY_PROMPT_MAIN.format(
-        previous_commentary_prompt=previous_commentary_prompt.filled_prompt,
-        portfolio_prompt=portfolio_prompt.filled_prompt,
-        stock_performance_prompt=stock_performance_prompt.filled_prompt,
-        watchlist_prompt=watchlist_prompt.filled_prompt,
-        client_type_prompt=client_type_prompt.filled_prompt,
-        writing_style_prompt=writing_style_prompt.filled_prompt,
-        texts=trunctated_texts,
-        chat_context=chat_context,
-    )
-    logger.info(
-        f"Length of tokens in main prompt: {GPTTokenizer(GPT4_O).get_token_length(main_prompt.filled_prompt)}"
+    main_prompt = await prepare_main_prompt(
+        portfolio_prompt,
+        stocks_stats_prompt,
+        previous_commentary_prompt,
+        watchlist_prompt,
+        client_type_prompt,
+        writing_style_prompt,
+        texts,  # type: ignore
+        text_mapping,
+        context,
     )
 
-    # # save main prompt as text file for debugging
+    # save main prompt as text file for debugging
     # with open("main_prompt.txt", "w") as f:
     #     f.write(main_prompt.filled_prompt)
 
@@ -255,7 +219,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    llm = GPT(context=gpt_context, model=GPT4_O)
+    llm = GPT(context=gpt_context, model=COMMENTARY_LLM)
 
     # get commentary text and citations
     for _ in range(3):
@@ -288,7 +252,8 @@ class GetCommentaryInputsInput(ToolArgs):
     topics: Optional[List[str]] = None
     stock_ids: Optional[List[StockID]] = None
     date_range: DateRange = DateRange(
-        start_date=date.today() - timedelta(days=30), end_date=date.today()
+        start_date=date.today() - timedelta(days=30),
+        end_date=date.today(),
     )
     portfolio_id: Optional[str] = None
     general_commentary: Optional[bool] = False
@@ -327,6 +292,11 @@ async def get_commentary_inputs(
                 ),
                 context,
             )
+            await tool_log(
+                log=f"Retrieved {len(themes_texts)} top themes for commentary.",
+                context=context,
+                associated_data=themes_texts,
+            )
             themes_texts = themes_texts[:MAX_THEMES_PER_COMMENTARY]
             theme_related_texts = await get_theme_related_texts(
                 themes_texts, args.date_range, context
@@ -335,6 +305,7 @@ async def get_commentary_inputs(
             await tool_log(
                 log=f"Retrieved {len(texts)} theme related texts for top market trends.",
                 context=context,
+                associated_data=theme_related_texts,
             )
         except Exception as e:
             logger.exception(f"Failed to get top themes and related texts: {e}")
@@ -356,7 +327,7 @@ async def get_commentary_inputs(
         if len(args.stock_ids) > MAX_STOCKS_PER_COMMENTARY:
             await tool_log(
                 log=(
-                    f"Number of stock ids provided is more than {MAX_STOCKS_PER_COMMENTARY}."
+                    f"Number of stock ids provided is more than {MAX_STOCKS_PER_COMMENTARY}. "
                     f"Only first {MAX_STOCKS_PER_COMMENTARY} stocks will be considered."
                 ),
                 context=context,
@@ -370,37 +341,12 @@ async def get_commentary_inputs(
             await tool_log(
                 log=f"Retrieved {len(stock_texts)} texts for given stock ids.",
                 context=context,
+                associated_data=stock_texts,
             )
             texts.extend(stock_texts)
         except Exception as e:
             logger.exception(f"Failed to get texts for stock ids: {e}")
 
-    # collect texts related to top stocks in the portfolio
-    if args.portfolio_id:
-        try:
-            portfolio_holdings_df = (
-                await get_portfolio_holdings(
-                    GetPortfolioWorkspaceHoldingsInput(portfolio_id=args.portfolio_id), context
-                )
-            ).to_df()  # type: ignore
-            # sort by weight and get top 5 stocks
-            top_stocks = portfolio_holdings_df.sort_values("Weight", ascending=False).head(
-                TOP_STOCKS_IN_PORTFOLIO_NUM
-            )
-            top_stock_ids = top_stocks[STOCK_ID_COL_NAME_DEFAULT].tolist()
-            # get texts for top stocks
-            top_stock_texts: List[Text] = await get_all_text_data_for_stocks(  # type: ignore
-                GetAllTextDataForStocksInput(stock_ids=top_stock_ids, date_range=args.date_range),
-                context,
-            )
-            await tool_log(
-                log=f"Got {len(top_stock_texts)} texts for top {TOP_STOCKS_IN_PORTFOLIO_NUM} stocks in portfolio.",
-                context=context,
-                associated_data=top_stock_ids,
-            )
-            texts.extend(top_stock_texts)
-        except Exception as e:
-            logger.exception(f"Failed to get texts for top stocks in portfolio: {e}")
     return texts
 
 

@@ -162,6 +162,7 @@ async def get_universe_performance(
         }
 
         df = pd.DataFrame(data)
+        df = df.sort_values(by="weighted-return", ascending=False)
         # create a Table
         table = StockTable.from_df_and_cols(
             data=df,

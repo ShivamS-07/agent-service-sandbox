@@ -243,6 +243,7 @@ async def get_news_articles_for_topics(
         await tool_log(
             log=f"Found {len(relevant_news)} news articles for topic: {topic}.",
             context=context,
+            associated_date=relevant_news,
         )
         if args.max_num_articles_per_topic:
             relevant_news = relevant_news[: args.max_num_articles_per_topic]

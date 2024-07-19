@@ -3,7 +3,7 @@ import random
 import re
 from collections import defaultdict
 from datetime import date
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 from data_access_layer.core.dao.securities import SecuritiesMetadataDAO
@@ -11,27 +11,31 @@ from data_access_layer.core.dao.securities import SecuritiesMetadataDAO
 from agent_service.external.pa_backtest_svc_client import (
     get_stock_performance_for_date_range,
 )
-from agent_service.GPT.constants import GPT4_O, NO_PROMPT
+from agent_service.GPT.constants import (
+    FILTER_CONCURRENCY,
+    GPT4_O,
+    MAX_TOKENS,
+    NO_PROMPT,
+)
 from agent_service.GPT.requests import GPT
+from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import (
-    STOCK_ID_COL_NAME_DEFAULT,
-    StockTable,
-    TableColumnMetadata,
-    TableColumnType,
-)
-from agent_service.io_types.text import Text, ThemeText
+from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT, StockTable, Table
+from agent_service.io_types.text import Text, TextGroup, ThemeText
 from agent_service.tools.commentary.constants import (
+    COMMENTARY_LLM,
     MAX_ARTICLES_PER_DEVELOPMENT,
     MAX_DEVELOPMENTS_PER_TOPIC,
     MAX_MATCHED_ARTICLES_PER_TOPIC,
 )
 from agent_service.tools.commentary.prompts import (
+    COMMENTARY_PROMPT_MAIN,
     FILTER_CITATIONS_PROMPT,
     GEOGRAPHY_PROMPT,
     PORTFOLIO_PROMPT,
-    STOCK_PERFORMANCE_PROMPT,
+    STOCKS_STATS_PROMPT,
+    SUMMARIZE_TEXT_PROMPT,
 )
 from agent_service.tools.news import (
     GetNewsArticlesForTopicsInput,
@@ -44,6 +48,7 @@ from agent_service.tools.portfolio import (
     get_portfolio_holdings,
     get_portfolio_performance,
 )
+from agent_service.tools.tables import TableColumnMetadata, TableColumnType
 from agent_service.tools.themes import (
     GetMacroeconomicThemeInput,
     GetThemeDevelopmentNewsArticlesInput,
@@ -54,10 +59,13 @@ from agent_service.tools.themes import (
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import FilledPrompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
+
+logger = get_prefect_logger(__name__)
 
 
 # Helper functions
@@ -79,25 +87,26 @@ async def get_theme_related_texts(
     This function gets the theme related texts for the given themes.
     """
     # print("themes texts size", len(themes_texts))
-    res: List = []
-    development_texts = await get_news_developments_about_theme(
+    res: List[Any] = []
+    development_texts: List[Any] = await get_news_developments_about_theme(  # type: ignore
         GetThemeDevelopmentNewsInput(
-            themes=themes_texts, max_devs_per_theme=MAX_DEVELOPMENTS_PER_TOPIC
+            themes=themes_texts,
+            max_devs_per_theme=MAX_DEVELOPMENTS_PER_TOPIC,
+            date_range=date_range,
         ),
         context,
     )
     # print("development texts size", len(development_texts))
-    article_texts = await get_news_articles_for_theme_developments(  # type: ignore
+    article_texts: List[Any] = await get_news_articles_for_theme_developments(  # type: ignore
         GetThemeDevelopmentNewsArticlesInput(
-            developments_list=development_texts,  # type: ignore
-            date_range=date_range,
+            developments_list=development_texts,
             max_articles_per_development=MAX_ARTICLES_PER_DEVELOPMENT,
         ),
-        context,  # type: ignore
+        context,
     )
     # print("article texts size", len(article_texts))
-    res.extend(development_texts)  # type: ignore
-    res.extend(article_texts)  # type: ignore
+    res.extend(development_texts)
+    res.extend(article_texts)
     return res
 
 
@@ -222,7 +231,6 @@ async def get_texts_for_topics(
     This function gets the texts for the given topics. If the themes are found, it gets the related texts.
     If the themes are not found, it gets the articles related to the topic.
     """
-    logger = get_prefect_logger(__name__)
 
     texts: List = []
     topics = topics if topics else []
@@ -232,10 +240,16 @@ async def get_texts_for_topics(
                 GetMacroeconomicThemeInput(theme_refs=[topic]), context
             )
             await tool_log(
-                log=f"Retrieving theme texts for topic: {topic}",
+                log=f"Found {len(themes)} themes for topic: {topic}.",  # type: ignore
                 context=context,
+                associated_date=themes,
             )
-            res = await get_theme_related_texts(themes, date_range, context)  # type: ignore
+            res = await get_theme_related_texts(themes, context)  # type: ignore
+            await tool_log(
+                log=f"Found {len(res)} theme-related texts for topic: {topic}.",
+                context=context,
+                associated_date=res,
+            )
             texts.extend(res + themes)  # type: ignore
 
         except Exception as e:
@@ -287,7 +301,7 @@ async def prepare_portfolio_prompt(
     portfolio_geography_prompt = GEOGRAPHY_PROMPT.format(portfolio_geography=portfolio_geography)
 
     # get the overall portfolio performance
-    overall_performance_table = await get_portfolio_performance(
+    overall_performance_table: Table = await get_portfolio_performance(  # type: ignore
         GetPortfolioPerformanceInput(
             portfolio_id=portfolio_id,
             performance_level="overall",
@@ -303,7 +317,7 @@ async def prepare_portfolio_prompt(
     sector_performance_horizon = (
         await match_daterange_to_timedelta(date_range) if date_range else "1M"
     )
-    sector_performance_table = await get_portfolio_performance(
+    sector_performance_table: Table = await get_portfolio_performance(  # type: ignore
         GetPortfolioPerformanceInput(
             portfolio_id=portfolio_id,
             performance_level="sector",
@@ -319,9 +333,8 @@ async def prepare_portfolio_prompt(
         context=context,
         associated_data=sector_performance_table,
     )
-
     # get stock level portfolio performance
-    stock_performance_table = await get_portfolio_performance(
+    stock_performance_table: Table = await get_portfolio_performance(  # type: ignore
         GetPortfolioPerformanceInput(
             portfolio_id=portfolio_id,
             performance_level="stock",
@@ -339,20 +352,21 @@ async def prepare_portfolio_prompt(
     portfolio_prompt = PORTFOLIO_PROMPT.format(
         portfolio_holdings=str(portfolio_holdings_df),
         portfolio_geography_prompt=portfolio_geography_prompt.filled_prompt,
-        portfolio_performance_overall=str(overall_performance_table.to_df()),  # type: ignore
-        portfolio_performance_by_sector=str(sector_performance_table.to_df()),  # type: ignore
-        portfolio_performance_by_stock=str(stock_performance_table.to_df()),  # type: ignore
+        portfolio_performance_overall=str(overall_performance_table.to_df()),
+        portfolio_performance_by_sector=str(sector_performance_table.to_df()),
+        portfolio_performance_by_stock=str(stock_performance_table.to_df()),
     )
     return portfolio_prompt
 
 
-async def prepare_stock_performance_prompt(
+async def prepare_stocks_stats_prompt(
     stock_ids: List[StockID], date_range: DateRange, context: PlanRunContext
 ) -> FilledPrompt:
     """
-    This function prepares the stock performance prompt for the commentary.
+    This function prepares the stock stats prompt for the commentary.
+
     """
-    # get the stock performance for the date range
+
     gbi_ids = [stock.gbi_id for stock in stock_ids]
     stock_performance = await get_stock_performance_for_date_range(
         gbi_ids=gbi_ids,
@@ -375,11 +389,128 @@ async def prepare_stock_performance_prompt(
         ],
     )
     await tool_log(
-        log=f"Retrieved stock performance for the given stock ids for date: {date_range}.",
+        log=f"Retrieved performances for the stock ids for {date_range.start_date} to {date_range.end_date}.",
         context=context,
         associated_data=stock_performance_table,
     )
-    stock_performance_prompt = STOCK_PERFORMANCE_PROMPT.format(
-        stock_performance=str(stock_performance_df)
+
+    stocks_stats_prompt = STOCKS_STATS_PROMPT.format(
+        stock_stats=str(stock_performance_df),
     )
-    return stock_performance_prompt
+    return stocks_stats_prompt
+
+
+async def summarize_text_mapping(text_mapping: Dict[str, List[Text]]) -> Dict[str, List[Text]]:
+    """
+    This function summarizes some texts in the text mapping.
+    """
+    llm = GPT(model=GPT4_O)
+    for text_type in text_mapping:
+        if text_type in ("SEC filing", "Company Description"):
+            tasks = []
+            texts_str_list = await Text.get_all_strs(text_mapping[text_type], include_header=True)
+            for text in texts_str_list:
+                tasks.append(
+                    llm.do_chat_w_sys_prompt(
+                        SUMMARIZE_TEXT_PROMPT.format(text=text),
+                        sys_prompt=NO_PROMPT,
+                    )
+                )
+            results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
+            for i, result in enumerate(results):
+                text_mapping[text_type][i] = Text(
+                    val=result,
+                )
+
+    return text_mapping
+
+
+async def prepare_main_prompt(
+    previous_commentary_prompt: FilledPrompt,
+    portfolio_prompt: FilledPrompt,
+    stocks_stats_prompt: FilledPrompt,
+    watchlist_prompt: FilledPrompt,
+    client_type_prompt: FilledPrompt,
+    writing_style_prompt: FilledPrompt,
+    texts: str,
+    text_mapping: Dict[str, List[Text]],
+    context: PlanRunContext,
+) -> FilledPrompt:
+    """
+    This function prepares the main prompt for the commentary.
+    """
+    chat_context = context.chat.get_gpt_input() if context.chat is not None else ""
+
+    # show the length of tokens in text_mapping
+    for text_type, text_list in text_mapping.items():
+        text_list_str = str(await Text.get_all_strs(TextGroup(val=text_list), include_header=True))
+        logger.info(
+            f"Length of tokens in {text_type}: {GPTTokenizer(COMMENTARY_LLM).get_token_length(text_list_str)}"
+        )
+
+    main_prompt = COMMENTARY_PROMPT_MAIN.format(
+        previous_commentary_prompt=previous_commentary_prompt.filled_prompt,
+        portfolio_prompt=portfolio_prompt.filled_prompt,
+        stocks_stats_prompt=stocks_stats_prompt.filled_prompt,
+        watchlist_prompt=watchlist_prompt.filled_prompt,
+        client_type_prompt=client_type_prompt.filled_prompt,
+        writing_style_prompt=writing_style_prompt.filled_prompt,
+        texts=texts,
+        chat_context=chat_context,
+    )
+
+    main_prompt_token_length = GPTTokenizer(COMMENTARY_LLM).get_token_length(
+        main_prompt.filled_prompt
+    )
+    logger.info(f"Length of tokens in main prompt: {main_prompt_token_length}")
+    texts_token_length = GPTTokenizer(COMMENTARY_LLM).get_token_length(texts)
+    logger.info(f"Length of tokens in texts: {texts_token_length}")
+    # if main prompt is too long, summerize some texts
+    if main_prompt_token_length > MAX_TOKENS[COMMENTARY_LLM]:
+
+        text_mapping_summarized = await summarize_text_mapping(text_mapping)
+        # Prepare texts for commentary
+        all_text_group = TextGroup(
+            val=[text for text_list in text_mapping_summarized.values() for text in text_list]
+        )
+        summarized_texts = await Text.get_all_strs(
+            all_text_group, include_header=True, text_group_numbering=True
+        )
+        # truncate texts if needed
+        summarized_texts_token_length = GPTTokenizer(COMMENTARY_LLM).get_token_length(
+            str(summarized_texts)
+        )
+        logger.info(f"Length of tokens in summerzied texts: {summarized_texts_token_length}")
+        trunctated_texts = GPTTokenizer(COMMENTARY_LLM).do_truncation_if_needed(
+            str(summarized_texts),
+            [
+                previous_commentary_prompt.filled_prompt,
+                portfolio_prompt.filled_prompt,
+                stocks_stats_prompt.filled_prompt,
+                watchlist_prompt.filled_prompt,
+                client_type_prompt.filled_prompt,
+                writing_style_prompt.filled_prompt,
+                chat_context,
+            ],
+        )
+        main_prompt = COMMENTARY_PROMPT_MAIN.format(
+            previous_commentary_prompt=previous_commentary_prompt.filled_prompt,
+            portfolio_prompt=portfolio_prompt.filled_prompt,
+            stocks_stats_prompt=stocks_stats_prompt.filled_prompt,
+            watchlist_prompt=watchlist_prompt.filled_prompt,
+            client_type_prompt=client_type_prompt.filled_prompt,
+            writing_style_prompt=writing_style_prompt.filled_prompt,
+            texts=trunctated_texts,
+            chat_context=chat_context,
+        )
+        main_prompt_token_length = GPTTokenizer(COMMENTARY_LLM).get_token_length(
+            main_prompt.filled_prompt
+        )
+        logger.info(f"Length of tokens in main prompt (after): {main_prompt_token_length}")
+        # show the length of tokens in text_mapping
+        for text_type, text_list in text_mapping.items():
+            text_list_str: str = await Text.get_all_strs(TextGroup(val=text_list), include_header=True)  # type: ignore
+            logger.info(
+                f"Length of tokens in {text_type}: {GPTTokenizer(COMMENTARY_LLM).get_token_length(text_list_str)}"
+            )
+    return main_prompt

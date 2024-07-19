@@ -295,8 +295,12 @@ async def get_portfolio_performance(
         data = {
             STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(gbi_ids),
             "return": [stock.performance for stock in stock_performance.stock_performance_list],
+            "portfolio-weight": portfolio_holdings_df["Weight"].values,
         }
         df = pd.DataFrame(data)
+        df["weighted-return"] = (df["return"] * df["portfolio-weight"]).values
+        # sort the DataFrame by weighted-return
+        df = df.sort_values(by="weighted-return", ascending=False)
         # create a Table
         table = StockTable.from_df_and_cols(
             data=df,
@@ -305,6 +309,8 @@ async def get_portfolio_performance(
                     label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
                 ),
                 TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="portfolio-weight", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="weighted-return", col_type=TableColumnType.FLOAT),
             ],
         )
     elif args.performance_level == "sector":
@@ -347,6 +353,8 @@ async def get_portfolio_performance(
         }
 
         df = pd.DataFrame(data)
+        # sort the DataFrame by weighted-return
+        df = df.sort_values(by="weighted-return", ascending=False)
         # create a Table
         table = StockTable.from_df_and_cols(
             data=df,

@@ -37,6 +37,8 @@ COMMENTARY_SYS_PROMPT = Prompt(
         "\nWrite this in the style that is understandable by an eighth grader. "
         "\nPlease be concise in your writing, and do not include any fluff. "
         "\nPlease double check your grammar when writing. "
+        "\nYou can use markdown to format your text and highlight important points. "
+        "\nHighlight numbers and statistics in your writing in bold for emphasis. "
     ),
 )
 
@@ -52,7 +54,7 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "Use the following information to generate this text. \n"
         "{previous_commentary_prompt}"
         "{portfolio_prompt}"
-        "{stock_performance_prompt}"
+        "{stocks_stats_prompt}"
         "{watchlist_prompt}"
         "{client_type_prompt}"
         "{writing_style_prompt}"
@@ -131,14 +133,14 @@ PORTFOLIO_PROMPT = Prompt(
     ),
 )
 
-STOCK_PERFORMANCE_PROMPT = Prompt(
-    name="STOCK_PERFORMANCE_PROMPT",
+STOCKS_STATS_PROMPT = Prompt(
+    name="STOCKS_STATS_PROMPT",
     template=(
         "\nBelow is a list of the stocks that client mentioned in the request, along with "
-        "their performance in the given time period. You can mention these performances in your "
+        "their statistics in the given time period. You can mention these performances in your "
         "commentary if they are relevant to the topics you are discussing. "
-        "\n### Stock Performance\n"
-        "{stock_performance}"
+        "\n### Stock Statistics\n"
+        "{stock_stats}"
     ),
 )
 
@@ -307,22 +309,23 @@ WRITE_COMMENTARY_DESCRIPTION = (
     "The function creates a concise summary based on a comprehensive analysis of the provided texts. "
     "The commentary will be written in a professional tone, "
     "incorporating any specific instructions or preferences mentioned by the client during their interaction. "
-    "The input to this function MUST be prepared by the get_commentary_input tool."
-    "This function MUST NOT be used if get_commentary_input tool is not used. "
+    "The input to this function MUST be prepared by the get_commentary_inputs tool."
+    "This function MUST NOT be used if get_commentary_inputs tool is not used. "
     "Additionally, only this tool MUST be used when user use phrases like 'tell me about', "
     "'write a commentary on', 'Share your thoughts', 'Give me the details on', "
     "'Provide some insight into', 'Describe', 'Give me an overview of', 'what do you think about', "
     "or any other similar phrases."
-    "\n- 'inputs' is the output of get_commentary_input function and MUST be provided. "
-    "It contains all the texts and information needed to write the commentary. "
+    "\n- 'date_range' is the date range for the commentary. if date_range is provided for "
+    "get_commentary_inputs tool then it MUST be provided here as well. "
+    "The default date range is the last month."
+    "\n- 'inputs' is the output of get_commentary_inputs function and MUST be provided. "
+    "It contains all the texts needed to write the commentary. "
+    "\n- 'stock_ids' is a list of stock ids that client want to focused on. If stock_ids is provided "
+    "for get_commentary_inputs tool then it MUST be provided here as well. "
+    "This can be used from output of other tools to provide a commentary on specific stocks."
     "\n- 'client_type' MUST be either 'Technical' or 'Simple'. Choose based on client's request. "
     "\n- 'writing_format' MUST be either 'Long', 'Short' or 'Bullets'. Choose based on client's request."
-    "\n- 'stock_ids' is a list of stock ids that client want to focused on. If stock_ids is provided "
-    "for get_commentary_inputs tool then it MUST be provided here as well."
-    "This can be used from output of other tools to provide a commentary on specific stocks."
     "\n- 'portfolio_id' can be provided if user wants a commentary based on a specific portfolio."
-    "\n- 'date_range' is the date range for the commentary. if date_range is provided for "
-    "get_commentary_inputs tool then it MUST be provided here as well."
 )
 
 UPDATE_COMMENTARY_INSTRUCTIONS = (
@@ -337,4 +340,22 @@ UPDATE_COMMENTARY_INSTRUCTIONS = (
     "You must never, ever use the Append action for plans involving modifications of commentaries, "
     " even if the user is talking about `adding` to the commentary`. "
     "I repeat: Do not use the Append action for requests involving any kind of modification of commentaries."
+)
+
+
+SUMMARIZE_TEXT_PROMPT = Prompt(
+    name="SUMMARIZE_TEXT_PROMPT",
+    template=(
+        "As a professional summarizer, create a concise and comprehensive summary of the provided text "
+        "while adhering to these guidelines: "
+        "\nCraft a summary that is detailed, thorough, in-depth, while maintaining clarity and conciseness. "
+        "\nIncorporate main ideas and essential information, eliminating extraneous language and "
+        "focusing on critical aspects. "
+        "\nRely strictly on the provided text, without including external information. "
+        "\nFormat the summary in paragraph form for easy understanding. "
+        "\nEnsure that the summary is well-structured, coherent, and logically organized. "
+        "\nThe length of the summary MUST be less than 1000 words. "
+        "\nSummary must start with a title showing type and main topic of the text. "
+        "\nNow, please create a summary of the provided text."
+    ),
 )

@@ -228,12 +228,21 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
 
         # create the expected Table
         expected = StockTable.from_df_and_cols(
-            data=pd.DataFrame({STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB], "return": [0.05, 0.02]}),
+            data=pd.DataFrame(
+                {
+                    STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB],
+                    "return": [0.05, 0.02],
+                    "portfolio-weight": [0.6, 0.4],
+                    "weighted-return": [0.03, 0.008],
+                }
+            ),
             columns=[
                 TableColumnMetadata(
                     label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
                 ),
                 TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="portfolio-weight", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="weighted-return", col_type=TableColumnType.FLOAT),
             ],
         )
 
