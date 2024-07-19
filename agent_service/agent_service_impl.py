@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import logging
 from collections import defaultdict
@@ -25,14 +26,17 @@ from agent_service.endpoints.models import (
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
+    GetAutocompleteItemsResponse,
     GetChatHistoryResponse,
     GetPlanRunOutputResponse,
     GetSecureUserResponse,
     GetTestCaseInfoResponse,
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsIdsResponse,
+    ListMemoryItemsResponse,
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadResponse,
+    MemoryItem,
     NotificationEvent,
     PlanTemplateTask,
     SharePlanRunResponse,
@@ -43,6 +47,7 @@ from agent_service.endpoints.models import (
     UploadFileResponse,
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
+from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
 from agent_service.types import ChatContext, Message
 from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import send_chat_message
@@ -369,6 +374,75 @@ class AgentServiceImpl:
             hash=get_secure_mode_hash(ld_user),
             context=get_custom_user_dict(ld_user),
         )
+
+    async def list_memory_items(self, user_id: str) -> ListMemoryItemsResponse:
+        # Use PA Service to get all portfolios + watchlists for the user
+        workspaces, resp = await asyncio.gather(
+            get_all_workspaces(user_id=user_id), get_all_watchlists(user_id=user_id)
+        )
+        watchlists = resp.watchlists
+
+        memory_items = []
+
+        # Process workspaces
+        for workspace in workspaces:
+            memory_item = MemoryItem(
+                id=workspace.workspace_id.id,
+                name=workspace.name,
+                type="portfolio",
+                time_created=workspace.created_at.ToDatetime(),
+                time_updated=workspace.last_updated.ToDatetime(),
+            )
+            memory_items.append(memory_item)
+
+        # Process watchlists
+        for watchlist in watchlists:
+            memory_item = MemoryItem(
+                id=watchlist.watchlist_id.id,
+                name=watchlist.name,
+                type="watchlist",
+                time_created=watchlist.created_at.ToDatetime(),
+                time_updated=watchlist.last_updated.ToDatetime(),
+            )
+            memory_items.append(memory_item)
+
+        return ListMemoryItemsResponse(success=True, items=memory_items)
+
+    async def get_autocomplete_items(self, user_id: str, text: str) -> GetAutocompleteItemsResponse:
+        # Use PA Service to get all portfolios + watchlists for the user in parallel
+        workspaces, resp = await asyncio.gather(
+            get_all_workspaces(user_id=user_id), get_all_watchlists(user_id=user_id)
+        )
+        watchlists = resp.watchlists
+
+        text_lower = text.lower()
+        memory_items = []
+
+        # Process workspaces
+        for workspace in workspaces:
+            if text_lower in workspace.name.lower():
+                memory_item = MemoryItem(
+                    id=workspace.workspace_id.id,
+                    name=workspace.name,
+                    type="portfolio",
+                    time_created=workspace.created_at.ToDatetime(),
+                    time_updated=workspace.last_updated.ToDatetime(),
+                )
+                memory_items.append(memory_item)
+
+        # Process watchlists
+        for watchlist in watchlists:
+            if text_lower in watchlist.name.lower():
+                memory_item = MemoryItem(
+                    id=watchlist.watchlist_id.id,
+                    name=watchlist.name,
+                    type="watchlist",
+                    time_created=watchlist.created_at.ToDatetime(),
+                    time_updated=watchlist.last_updated.ToDatetime(),
+                )
+                memory_items.append(memory_item)
+
+        return GetAutocompleteItemsResponse(success=True, items=memory_items)
 
     # Requires no authorization
     async def get_plan_run_output(self, plan_run_id: str) -> GetPlanRunOutputResponse:

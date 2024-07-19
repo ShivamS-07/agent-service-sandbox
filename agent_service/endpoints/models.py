@@ -397,6 +397,34 @@ class GetAgentDebugInfoResponse(BaseModel):
 
 
 ####################################################################################################
+# Memory Item
+####################################################################################################
+
+
+class MemoryItem(BaseModel):
+    id: str
+    name: str
+    type: str
+    time_created: datetime.datetime
+    time_updated: datetime.datetime
+    # TODO: add field - need to grab from db
+    # ownerId: str
+
+
+class ListMemoryItemsResponse(BaseModel):
+    success: bool
+    items: List[MemoryItem]
+
+
+class GetAutocompleteItemsRequest(BaseModel):
+    text: str
+
+
+class GetAutocompleteItemsResponse(BaseModel):
+    success: bool
+    items: List[MemoryItem]
+
+
 # Regression Test Run Info
 ####################################################################################################
 class GetTestSuiteRunInfoResponse(BaseModel):

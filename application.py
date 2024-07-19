@@ -45,11 +45,14 @@ from agent_service.endpoints.models import (
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
+    GetAutocompleteItemsRequest,
+    GetAutocompleteItemsResponse,
     GetChatHistoryResponse,
     GetSecureUserResponse,
     GetTestCaseInfoResponse,
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsIdsResponse,
+    ListMemoryItemsResponse,
     MarkNotificationsAsReadRequest,
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadRequest,
@@ -636,6 +639,35 @@ async def get_agent_debug_info(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
     return await application.state.agent_service_impl.get_agent_debug_info(agent_id=agent_id)
+
+
+@router.get(
+    "/list-memory-items",
+    response_model=ListMemoryItemsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def list_memory_items(user: User = Depends(parse_header)) -> ListMemoryItemsResponse:
+    """
+    List memory items
+    """
+    return await application.state.agent_service_impl.list_memory_items(user_id=user.user_id)
+
+
+@router.post(
+    "/get-autocomplete-items",
+    response_model=GetAutocompleteItemsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_autocomplete_items(
+    req: GetAutocompleteItemsRequest,
+    user: User = Depends(parse_header),
+) -> GetAutocompleteItemsResponse:
+    """
+    Gets autocomplete items
+    """
+    return await application.state.agent_service_impl.get_autocomplete_items(
+        user_id=user.user_id, text=req.text
+    )
 
 
 @router.get(
