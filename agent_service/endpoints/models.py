@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from agent_service.io_types.graph import GraphOutput
 from agent_service.io_types.table import TableOutput
 from agent_service.io_types.text import TextOutput
-from agent_service.planner.planner_types import PlanStatus
+from agent_service.planner.planner_types import PlanStatus, RunMetadata
 from agent_service.types import Message
 from agent_service.utils.date_utils import get_now_utc
 
@@ -215,6 +215,8 @@ class AgentOutput(BaseModel):
     output: Union[TextOutput, GraphOutput, TableOutput] = Field(discriminator="output_type")
     created_at: datetime.datetime
     shared: bool = False
+    # metadata from the run, currently only populated by certain db functions
+    run_metadata: Optional[RunMetadata] = None
 
 
 class GetAgentOutputResponse(BaseModel):

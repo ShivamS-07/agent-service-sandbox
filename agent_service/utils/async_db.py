@@ -95,7 +95,7 @@ class AsyncDB:
         sql = f"""
                 SELECT ao.plan_id::VARCHAR, ao.output_id::VARCHAR, ao.plan_run_id::VARCHAR,
                     ao.output_id::VARCHAR, ao.is_intermediate,
-                    ao.output, ao.created_at, pr.shared
+                    ao.output, ao.created_at, pr.shared, pr.run_metadata
                 FROM agent.agent_outputs ao
                 LEFT JOIN agent.plan_runs pr
                 ON ao.plan_run_id = pr.plan_run_id
@@ -113,6 +113,9 @@ class AsyncDB:
             output_value = await get_output_from_io_type(output_value, pg=self.pg)
             row["output"] = output_value
             row["shared"] = row["shared"] or False
+            row["run_metadata"] = (
+                RunMetadata.model_validate(row["run_metadata"]) if row["run_metadata"] else None
+            )
             outputs.append(AgentOutput(agent_id=agent_id, **row))
 
         return outputs

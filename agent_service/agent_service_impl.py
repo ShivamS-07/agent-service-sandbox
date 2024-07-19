@@ -291,10 +291,15 @@ class AgentServiceImpl:
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"No output found for {agent_id=}"
             )
 
-        final_outputs = [output for output in outputs if not output.is_intermediate]
-        if final_outputs:
-            return GetAgentOutputResponse(outputs=final_outputs)
-
+        if outputs:
+            # Will be the same for all of these outputs
+            metadata = outputs[0].run_metadata
+            return GetAgentOutputResponse(
+                outputs=outputs,
+                run_summary_long=metadata.run_summary_long if metadata else None,
+                run_summary_short=metadata.run_summary_short if metadata else None,
+                newly_updated_outputs=(metadata.updated_output_ids or []) if metadata else [],
+            )
         return GetAgentOutputResponse(outputs=outputs)
 
     async def get_agent_plan_output(
