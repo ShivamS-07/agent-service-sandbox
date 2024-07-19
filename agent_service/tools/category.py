@@ -81,6 +81,8 @@ GET_CATEGORIES_FOR_STOCK_SYS_PROMPT = Prompt(
     a ranking but should be based on the importance of the criteria and be comparable
     IMPORTANT: Do not supply any additional explanation or justification other than what \
     is provided in the CRITERIA dictionary list
+    IMPORTANT: Ensure that the name of the company and company \
+    specific products are not mentioned in the criteria explanation or justification
     """,
 )
 GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT = Prompt(
