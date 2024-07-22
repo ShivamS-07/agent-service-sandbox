@@ -158,8 +158,8 @@ def _get_df_info(df: pd.DataFrame) -> str:
 async def table_filter_added_diff_info(
     added_stocks: Set[StockID],
     transformation: str,
-    curr_stock_values: Dict[StockID, Dict[str, float]],
-    prev_stock_values: Dict[StockID, Dict[str, float]],
+    curr_stock_values: Dict[StockID, Any],
+    prev_stock_values: Dict[StockID, Any],
     agent_id: str,
 ) -> Dict[StockID, str]:
     gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
@@ -186,8 +186,8 @@ async def table_filter_added_diff_info(
 async def table_filter_removed_diff_info(
     removed_stocks: Set[StockID],
     transformation: str,
-    curr_stock_values: Dict[StockID, Dict[str, float]],
-    prev_stock_values: Dict[StockID, Dict[str, float]],
+    curr_stock_values: Dict[StockID, Any],
+    prev_stock_values: Dict[StockID, Any],
     agent_id: str,
 ) -> Dict[StockID, str]:
     gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
@@ -245,13 +245,13 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
     old_schema: Optional[List[TableColumnMetadata]] = None
     old_code = None
     prev_args = None
-    prev_output_table = None
+    prev_output = None
     try:  # since everything here is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "transform_table")
         if prev_run_info is not None:
-            prev_args: TransformTableArgs = prev_run_info[0]  # type: ignore
-            prev_output_table: Table = prev_run_info[1]  # type:ignore
-            prev_other: Dict[str, str] = prev_run_info[2]  # type:ignore
+            prev_args = TransformTableArgs.model_validate_json(prev_run_info.inputs_str)
+            prev_output = prev_run_info.output  # type:ignore
+            prev_other: Dict[str, str] = prev_run_info.debug  # type:ignore
             if prev_other:
                 old_code = (
                     prev_other["code_second_attempt"]
@@ -261,7 +261,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
                 old_schema = load_io_type(prev_other["table_schema"])  # type:ignore
 
     except Exception as e:
-        logger.warning(f"Error doing getting info from previous run: {e}")
+        logger.warning(f"Error getting info from previous run: {e}")
 
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)
@@ -345,50 +345,53 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
 
     if output_table.get_stock_column():
         output_table = StockTable(columns=output_table.columns)
+        if context.task_id:
+            try:  # since everything here is optional, put in try/except
+                output_table.add_task_id_to_history(context.task_id)
+                if (
+                    context.diff_info is not None
+                    and prev_args
+                    and prev_output
+                    and isinstance(args.input_table, StockTable)
+                    and isinstance(prev_output, StockTable)
+                    and args.transformation_description.lower().startswith("filter")
+                ):
+                    curr_input_table: StockTable = args.input_table  # type: ignore
+                    prev_input_table: StockTable = prev_args.input_table  # type: ignore
+                    curr_output_table: StockTable = output_table  # type: ignore
+                    prev_output_table: StockTable = prev_output  # type: ignore
+                    curr_stock_values = curr_input_table.get_values_for_stocks()
+                    prev_stock_values = prev_input_table.get_values_for_stocks()
+                    shared_input_stocks = set(curr_input_table.get_stocks()) & set(
+                        prev_input_table.get_stocks()
+                    )
+                    curr_output_stocks = set(curr_output_table.get_stocks())
+                    prev_output_stocks = set(prev_output_table.get_stocks())
+                    added_stocks = (curr_output_stocks - prev_output_stocks) & shared_input_stocks
+                    removed_stocks = (prev_output_stocks - curr_output_stocks) & shared_input_stocks
+                    added_diff_info = await table_filter_added_diff_info(
+                        added_stocks,
+                        args.transformation_description,
+                        curr_stock_values,
+                        prev_stock_values,
+                        context.agent_id,
+                    )
 
-    try:  # since everything here is optional, put in try/except
-        if (
-            context.diff_info is not None
-            and prev_args
-            and isinstance(args.input_table, StockTable)
-            and args.transformation_description.lower().startswith("filter")
-        ):
-            curr_input_table: StockTable = args.input_table  # type: ignore
-            prev_input_table: StockTable = prev_args.input_table  # type: ignore
-            curr_output_table: StockTable = output_table  # type: ignore
-            prev_output_table: StockTable = prev_output_table  # type: ignore
-            curr_stock_values = curr_input_table.get_values_for_stocks()
-            prev_stock_values = prev_input_table.get_values_for_stocks()
-            shared_input_stocks = set(args.input_table.get_stocks()) & set(
-                args.input_table.get_stocks()
-            )
-            curr_output_stocks = set(curr_output_table.get_stocks())
-            prev_output_stocks = set(prev_output_table.get_stocks())
-            added_stocks = (curr_output_stocks - prev_output_stocks) & shared_input_stocks
-            removed_stocks = (prev_output_stocks - curr_output_stocks) & shared_input_stocks
-            added_diff_info = await table_filter_added_diff_info(
-                added_stocks,
-                args.transformation_description,
-                curr_stock_values,
-                prev_stock_values,
-                context.agent_id,
-            )
+                    removed_diff_info = await table_filter_removed_diff_info(
+                        removed_stocks,
+                        args.transformation_description,
+                        curr_stock_values,
+                        prev_stock_values,
+                        context.agent_id,
+                    )
 
-            removed_diff_info = await table_filter_removed_diff_info(
-                removed_stocks,
-                args.transformation_description,
-                curr_stock_values,
-                prev_stock_values,
-                context.agent_id,
-            )
+                    context.diff_info[context.task_id] = {
+                        "added": added_diff_info,
+                        "removed": removed_diff_info,
+                    }
 
-            context.diff_info[context.task_id] = {
-                "added": added_diff_info,
-                "removed": removed_diff_info,
-            }
-
-    except Exception as e:
-        logger.warning(f"Error doing diff from previous run: {e}")
+            except Exception as e:
+                logger.warning(f"Error doing diff from previous run: {e}")
 
     return output_table
 

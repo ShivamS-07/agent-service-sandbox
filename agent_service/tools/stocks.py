@@ -39,10 +39,19 @@ from agent_service.utils.string_utils import (
     clean_to_json_if_needed,
     repair_json_if_needed,
 )
+from agent_service.utils.tool_diff import (
+    add_task_id_to_stocks_history,
+    get_prev_run_info,
+)
+
+logger = get_prefect_logger(__name__)
 
 STOCK_ID_COL_NAME_DEFAULT = "Security"
 GROWTH_LABEL = "Growth"
 VALUE_LABEL = "Value"
+
+UNIVERSE_ADD_STOCK_DIFF = "{company} was added to the {universe} stock universe"
+UNIVERSE_REMOVE_STOCK_DIFF = "{company} was removed from the {universe} stock universe"
 
 # constants used to massage the match scores for stocks to be in a good order
 
@@ -192,8 +201,19 @@ async def stock_identifier_lookup(
         int: The integer identifier of the stock.
     """
     logger = get_prefect_logger(__name__)
-    logger.info(f"Attempting to map '{args.stock_name}' to a stock")
 
+    try:  # since everything associated with diffing/rerun cache is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context, "stock_identifier_lookup")
+        if prev_run_info is not None:
+            prev_args = StockIdentifierLookupInput.model_validate_json(prev_run_info.inputs_str)
+            if args.stock_name == prev_args.stock_name:
+                prev_output: StockID = prev_run_info.output  # type:ignore
+                return prev_output
+
+    except Exception as e:
+        logger.warning(f"Error using previous run cache: {e}")
+
+    logger.info(f"Attempting to map '{args.stock_name}' to a stock")
     # first we check if the search string is in a format that leads to an unambiguous match
     exact_rows = await stock_lookup_exact(args, context)
     if exact_rows:
@@ -688,6 +708,19 @@ async def multi_stock_identifier_lookup(
     # Just runs stock identifier look up below for each stock in the list
     # Probably can be done more efficiently
 
+    try:  # since everything associated with diffing/rerun cache is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context, "multi_stock_identifier_lookup")
+        if prev_run_info is not None:
+            prev_args = MultiStockIdentifierLookupInput.model_validate_json(
+                prev_run_info.inputs_str
+            )
+            if args.stock_names == prev_args.stock_names:
+                prev_output: List[StockID] = prev_run_info.output  # type:ignore
+                return prev_output
+
+    except Exception as e:
+        logger.warning(f"Error using previous run cache: {e}")
+
     output: List[StockID] = []
     for stock_name in args.stock_names:
         output.append(
@@ -749,6 +782,38 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
         log=f"Found {len(stock_universe_list)} holdings in {etf_stock['symbol']}: {etf_stock['name']}",
         context=context,
     )
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        if context.task_id:
+            # we need to add the task id to all runs, including the first one, so we can track changes
+            stock_universe_list = add_task_id_to_stocks_history(
+                stock_universe_list, context.task_id
+            )
+            if context.diff_info is not None:
+                prev_run_info = await get_prev_run_info(context, "get_stock_universe")
+                if prev_run_info is not None:
+                    prev_output: List[StockID] = prev_run_info.output  # type:ignore
+                    curr_stock_set = set(stock_universe_list)
+                    prev_stock_set = set(prev_output)
+                    added_stocks = curr_stock_set - prev_stock_set
+                    removed_stocks = prev_stock_set - curr_stock_set
+                    context.diff_info[context.task_id] = {
+                        "added": {
+                            added_stock: UNIVERSE_ADD_STOCK_DIFF.format(
+                                company=added_stock.company_name, universe=args.universe_name
+                            )
+                            for added_stock in added_stocks
+                        },
+                        "removed": {
+                            removed_stock: UNIVERSE_REMOVE_STOCK_DIFF.format(
+                                company=removed_stock.company_name, universe=args.universe_name
+                            )
+                            for removed_stock in removed_stocks
+                        },
+                    }
+
+    except Exception as e:
+        logger.warning(f"Error creating diff info from previous run: {e}")
 
     return stock_universe_list
 

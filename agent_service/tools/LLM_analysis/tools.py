@@ -585,8 +585,8 @@ async def filter_stocks_by_profile_match(
     try:  # since everything associated with diffing is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "filter_stocks_by_profile_match")
         if prev_run_info is not None:
-            prev_args: FilterStocksByProfileMatch = prev_run_info[0]  # type: ignore
-            prev_output: List[StockID] = prev_run_info[1]  # type:ignore
+            prev_args = FilterStocksByProfileMatch.model_validate_json(prev_run_info.inputs_str)
+            prev_output: List[StockID] = prev_run_info.output  # type:ignore
 
             # start by finding the differences in the input texts for the two runs
             prev_stock_text_lookup = get_stock_text_lookup(prev_args.texts)

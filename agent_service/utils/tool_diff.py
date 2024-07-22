@@ -1,21 +1,27 @@
 import datetime
 import json
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 
-from agent_service.io_type_utils import IOType, load_io_type
+from agent_service.io_type_utils import HistoryEntry, IOType, load_io_type
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockText, TextCitation
-from agent_service.tool import ToolArgs
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.postgres import SyncBoostedPG
 
 
-async def get_prev_run_info(
-    context: PlanRunContext, tool_name: str
-) -> Optional[Tuple[ToolArgs, IOType, Dict[str, str], datetime.datetime]]:
+@dataclass
+class PrevRunInfo:
+    inputs_str: str
+    output: IOType
+    debug: Dict[str, str]
+    timestamp: datetime.datetime
+
+
+async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional[PrevRunInfo]:
     pg_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
     previous_run = await pg_db.get_previous_plan_run(
         agent_id=context.agent_id, plan_id=context.plan_id, latest_plan_run_id=context.plan_run_id
@@ -30,10 +36,9 @@ async def get_prev_run_info(
     if io is None:
         return None
     inputs_str, output_str, debug_str, timestamp = io
-    inputs = ToolArgs.model_validate_json(inputs_str)
     output = load_io_type(output_str)
     debug = json.loads(debug_str) if debug_str else {}
-    return inputs, output, debug, timestamp
+    return PrevRunInfo(inputs_str=inputs_str, output=output, debug=debug, timestamp=timestamp)
 
 
 def get_stock_text_lookup(texts: List[StockText]) -> Dict[StockID, List[StockText]]:
@@ -66,3 +71,7 @@ def add_old_history(
                 if citation.source_text not in new_text_set:
                     return None
     return new_stock.inject_history_entry(history_entry)
+
+
+def add_task_id_to_stocks_history(stocks: List[StockID], task_id: str) -> List[StockID]:
+    return [stock.inject_history_entry(HistoryEntry(task_id=task_id)) for stock in stocks]

@@ -11,6 +11,7 @@ from typing_extensions import Self
 from agent_service.io_type_utils import (
     Citation,
     ComplexIOBase,
+    HistoryEntry,
     IOType,
     PrimitiveType,
     ScoreOutput,
@@ -349,14 +350,22 @@ class StockTable(Table):
                 return stocks
         return []
 
-    def get_values_for_stocks(self) -> Dict[str, Any]:
+    def get_values_for_stocks(self) -> Dict[StockID, Any]:
         for column in self.columns:
             if column.metadata.col_type == TableColumnType.STOCK:
                 stock_label = column.metadata.label
         df = self.to_df()
         df.set_index(keys=stock_label, inplace=True)
-        df_dict: Dict[str, Any] = df.to_dict("index")  # type: ignore
+        df_dict: Dict[StockID, Any] = df.to_dict("index")  # type: ignore
         return df_dict
+
+    def add_task_id_to_history(self, task_id: str) -> None:
+        for column in self.columns:
+            if column.metadata.col_type == TableColumnType.STOCK:
+                stocks: List[StockID] = column.data  # type: ignore
+                column.data = [
+                    stock.inject_history_entry(HistoryEntry(task_id=task_id)) for stock in stocks
+                ]
 
 
 class TableOutputColumn(BaseModel):

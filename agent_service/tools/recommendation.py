@@ -243,7 +243,7 @@ Here is the company name: {company_name}.
 Here is the current scores for the company: {curr_scores}.
 Here are the stats from your previous analysis: {prev_scores}.
 Here is the kind of stock recommendation you are explaining: {buy_or_sell}
-{news_str}
+{news}
 Now write your explanation of the change:""",
 )
 
@@ -296,6 +296,7 @@ async def add_scores_and_rationales_to_stocks(
     is_buy: Optional[bool],
     context: PlanRunContext,
     news_horizon: Optional[str] = None,
+    task_id: Optional[str] = None,
 ) -> List[StockID]:
 
     if news_horizon:
@@ -384,6 +385,7 @@ async def add_scores_and_rationales_to_stocks(
                 explanation=rationale,
                 title="Recommendation Reasoning",
                 citations=citations,
+                task_id=task_id,
             )
         )
 
@@ -632,16 +634,17 @@ async def get_stock_recommendations(
     try:  # since everything here is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "get_stock_recommendations")
         if prev_run_info is not None:
-            prev_args: GetStockRecommendationsInput = prev_run_info[0]  # type: ignore
-            prev_output: List[StockID] = prev_run_info[1]  # type:ignore
-            prev_other: Dict[str, str] = prev_run_info[2]  # type:ignore
-            prev_time: datetime = prev_run_info[3]  # type:ignore
+            prev_args = GetStockRecommendationsInput.model_validate_json(prev_run_info.inputs_str)
+            prev_output: List[StockID] = prev_run_info.output  # type:ignore
+            prev_other: Dict[str, str] = prev_run_info.debug  # type:ignore
+            prev_time: datetime = prev_run_info.timestamp  # type:ignore
             if prev_other:
                 prev_scores = {  # type: ignore
-                    stock: scores for stock, scores in load_io_type(prev_other["score_dict"])  # type: ignore
+                    stock: RecommendationScores(news_score=news_score, rating_score=rating_score)
+                    for stock, news_score, rating_score in load_io_type(prev_other["score_dict"])  # type: ignore
                 }
     except Exception as e:
-        logger.warning(f"Error doing getting info from previous run: {e}")
+        logger.warning(f"Error getting info from previous run: {e}")
 
     if args.stock_ids:
         if args.filter and args.num_stocks_to_return:
@@ -721,7 +724,10 @@ async def get_stock_recommendations(
             rec_scores.rating_score = get_rating_score(row)
         score_dict[stock_id] = rec_scores
 
-    debug_info["score_dict"] = dump_io_type(list(pair) for pair in score_dict.items())
+    debug_info["score_dict"] = dump_io_type(
+        [stock_id, recommendation.news_score, recommendation.rating_score]
+        for stock_id, recommendation in score_dict.items()
+    )
 
     ranked_stocks = sorted(
         score_dict,
@@ -763,11 +769,22 @@ async def get_stock_recommendations(
     await tool_log(log="Writing reasoning", context=context)
 
     final_stocks = await add_scores_and_rationales_to_stocks(
-        ranked_stocks, score_dict, args.buy, context, news_horizon=news_horizon
+        ranked_stocks,
+        score_dict,
+        args.buy,
+        context,
+        news_horizon=news_horizon,
+        task_id=context.task_id,
     )
 
     try:  # since everything here is optional, put in try/except
-        if context.diff_info is not None and prev_args and args.filter:
+        if (
+            context.diff_info is not None
+            and prev_output is not None
+            and prev_args
+            and prev_scores
+            and args.filter
+        ):
             shared_stocks = set(score_dict) & set(prev_scores)  # use score dict stocks
             curr_stocks = set(final_stocks)
             prev_stocks = set(prev_output)
@@ -775,15 +792,19 @@ async def get_stock_recommendations(
             removed_stocks = (prev_stocks - curr_stocks) & shared_stocks
 
             changed_stocks = list(added_stocks | removed_stocks)
-            news_texts = await get_all_news_developments_about_companies(  # type: ignore
-                GetNewsDevelopmentsAboutCompaniesInput(
-                    stock_ids=changed_stocks,
-                    date_range=DateRange(
-                        start_date=prev_time.date(), end_date=datetime.date.today()
+            try:
+                news_texts: StockText = await get_all_news_developments_about_companies(  # type: ignore
+                    GetNewsDevelopmentsAboutCompaniesInput(
+                        stock_ids=changed_stocks,
+                        date_range=DateRange(
+                            start_date=prev_time.date(), end_date=datetime.date.today()
+                        ),
                     ),
-                ),
-                context,
-            )
+                    context,
+                )
+            except Exception as e:
+                logger.warning(f"No news data available for changed stocks: {e}")
+                news_texts = []
 
             buy_or_sell = "buy" if args.buy else "sell"
 

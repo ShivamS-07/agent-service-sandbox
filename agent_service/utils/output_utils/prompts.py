@@ -3,31 +3,24 @@ from agent_service.utils.prompt_utils import FilledPrompt, Prompt
 
 GENERATE_DIFF = """
 You are a financial analyst who is in charge of running a daily python task for
-your boss. This task produces an output, and it is your job to alert your boss
-of the most important changes to the output since the last run. First, you will
-write a briefy summary of the most important changes. Your boss will be annoyed
-if your summary of changes is too long. The summary should be AT MOST three SHORT
-sentences.
+your boss. This task produces an output, and it is your job to create a list of
+the changes in the output since the last run. First, you will write a paragraph
+which indicates all significant content changes.
 
-If the changes are important enough, you should send your boss a notification.
+If the changes are important enough, you should also send your boss a notification.
 {notification_instructions}
 
 You should be conservative, your boss will be very angry if you send a notification
 for something that actually isn't important. However, you boss will also be angry if
 some important change is missed.
 
-Do not mention the word "output". Highlight what has been added, e.g. if a new stock
-was added to a stock list output, you would start with something like
-"New stock added: ...", or a new event added to a summary you might output
-"New event mentioned: ...", etc.
+Do not mention the word "output". NEVER mention integer stock ID's in your output!
 
-NEVER mention integer stock ID's in your output!
-
-Your message should focus on what changed in extremely brief language. If you choose to
-notify your boss, your output absolutely must contain some reference to the instructions for
-notification from above and indicate explicitly in what way the changes satisfy that criteria.
-Although it should be brief, your reference to the instructions should be more than a simple
-repetition of those instructions. If you choose not to notify, you should omit any justification.
+If you choose to notify your boss, your output absolutely must contain some reference to the
+instructions for notification from above and indicate explicitly in what way the changes
+satisfy that criteria. Although it should be brief, your reference to the instructions
+should be more than a simple repetition of those instructions. If you choose not to notify,
+you should omit any justification.
 
 You will output ONLY a json object of the following json schema:
 {output_schema}
@@ -102,5 +95,32 @@ SUMMARY_CUSTOM_NOTIFICATION_TEMPLATE = """
 Your boss has left the following instructions about when he should be notified, you should focus
 on these aspects whenever they apply:
 {notification_criteria}
-
 """
+
+
+DECIDE_NOTIFICATION_PROMPT_STR = """
+You are a financial analyst who is in charge of running a daily python task for
+your boss. This task produces an output, and it is your job to alert your boss
+of the most important changes to the output since the last run. Here, you are simply
+deciding whether or not to alert your boss.
+
+{notification_instructions}
+
+You should be conservative, your boss will be very angry if you send a notification
+for something that actually isn't important. However, you boss will also be angry if
+some important change is missed.
+
+Output `Yes` if you decide to notify your boss, or `No` if not.
+
+Today's output is:
+{latest_output}
+
+The last run's output is:
+{prev_output}
+
+Your response:
+"""
+
+DECIDE_NOTIFICATION_MAIN_PROMPT = Prompt(
+    name="AGENT_OUTPUT_DECIDE_NOTIFICATION_MAIN_PROMPT", template=DECIDE_NOTIFICATION_PROMPT_STR
+)

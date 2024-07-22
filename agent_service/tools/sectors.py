@@ -20,8 +20,15 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.tool_diff import (
+    add_task_id_to_stocks_history,
+    get_prev_run_info,
+)
 
 ONE_HOUR = 60 * 60
+
+SECTOR_ADD_STOCK_DIFF = "{company} was added to the {sector} sector"
+SECTOR_REMOVE_STOCK_DIFF = "{company} was removed from the {sector} sector"
 
 
 @io_type
@@ -178,6 +185,8 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
     Returns a sector-filtered list of gbi_ids
     """
 
+    logger = get_prefect_logger(__name__)
+
     stock_ids = args.stock_ids
     if stock_ids == []:
         # degenerate case should i log or throw?
@@ -215,4 +224,43 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
     await tool_log(
         log=f"Filtered {len(stock_ids)} stocks by sector down to {len(stock_list)}", context=context
     )
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        # we need to add the task id to all runs, including the first one, so we can track changes
+        if context.task_id:
+            stock_list = add_task_id_to_stocks_history(stock_list, context.task_id)
+            if context.diff_info is not None:
+                prev_run_info = await get_prev_run_info(context, "sector_filter")
+                if prev_run_info is not None:
+                    prev_input = SectorFilterInput.model_validate_json(prev_run_info.inputs_str)
+                    prev_output: List[StockID] = prev_run_info.output  # type:ignore
+                    # corner case here where S&P 500 change causes output to change, but not going to
+                    # bother with it on first pass
+                    if args.stock_ids and prev_input.stock_ids:
+                        # we only care about stocks that were inputs for both
+                        shared_inputs = set(prev_input.stock_ids) & set(args.stock_ids)
+                    else:
+                        shared_inputs = set(await get_default_stock_list(user_id=context.user_id))
+                    curr_stock_set = set(stock_list)
+                    prev_stock_set = set(prev_output)
+                    added_stocks = (curr_stock_set - prev_stock_set) & shared_inputs
+                    removed_stocks = (prev_stock_set - curr_stock_set) & shared_inputs
+                    context.diff_info[context.task_id] = {
+                        "added": {
+                            added_stock: SECTOR_ADD_STOCK_DIFF.format(
+                                company=added_stock.company_name, sector=args.sector_id.sec_name
+                            )
+                            for added_stock in added_stocks
+                        },
+                        "removed": {
+                            removed_stock: SECTOR_REMOVE_STOCK_DIFF.format(
+                                company=removed_stock.company_name, sector=args.sector_id.sec_name
+                            )
+                            for removed_stock in removed_stocks
+                        },
+                    }
+
+    except Exception as e:
+        logger.warning(f"Error creating diff info from previous run: {e}")
+
     return stock_list
