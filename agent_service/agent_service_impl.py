@@ -104,6 +104,14 @@ class AgentServiceImpl:
         agents = await self.pg.get_user_all_agents(user.user_id)
         return GetAllAgentsResponse(agents=agents)
 
+    async def get_agent(self, user: User, agent_id: str) -> AgentMetadata:
+        agents = await self.pg.get_user_all_agents(user_id=user.user_id, agent_ids=[agent_id])
+        if not agents:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"No agent found for {agent_id=}"
+            )
+        return agents[0]
+
     async def delete_agent(self, agent_id: str) -> DeleteAgentResponse:
         await self.pg.delete_agent_by_id(agent_id)
         return DeleteAgentResponse(success=True)

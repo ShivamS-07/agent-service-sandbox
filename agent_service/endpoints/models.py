@@ -64,7 +64,7 @@ class DisableAgentAutomationResponse(BaseModel):
 
 
 ####################################################################################################
-# GetAllAgents
+# GetAllAgents, GetAgent
 ####################################################################################################
 class AgentMetadata(BaseModel):
     agent_id: str

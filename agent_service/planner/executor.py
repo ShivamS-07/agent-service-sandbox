@@ -341,7 +341,12 @@ async def run_execution_plan(
         ]
 
         full_diff_summary = "\n".join(
-            f"- {diff.title}: {diff}" if diff.title else f"- {diff}" for diff in output_diffs
+            (
+                f"- {diff.title}: {diff.diff_summary_message}"
+                if diff.title
+                else f"- {diff.diff_summary_message}"
+            )
+            for diff in output_diffs
         )
         if not should_notify:
             logger.info("No notification necessary")

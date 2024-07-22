@@ -424,22 +424,32 @@ class AsyncDB:
         await self.pg.delete_from_table_where(table_name="agent.agents", agent_id=agent_id)
 
     @async_perf_logger
-    async def get_user_all_agents(self, user_id: str) -> List[AgentMetadata]:
+    async def get_user_all_agents(
+        self, user_id: str, agent_ids: Optional[List[str]] = None
+    ) -> List[AgentMetadata]:
         """
-        This function retrieves all agents for a given user.
+        This function retrieves all agents for a given user, optionally filtered
+        by a list of agent ids.
 
         Args:
             user_id: The user id to retrieve agents for.
+            agent_ids: The list of agent id's to filter by
 
-        Returns: A list of all agents for the user.
+        Returns: A list of all agents for the user, optionally filtered.
         """
-        sql = """
+        params: Dict[str, Any] = {"user_id": user_id}
+        agent_where_clause = ""
+        if agent_ids:
+            agent_where_clause = "AND a.agent_id = ANY(%(agent_ids)s)"
+            params["agent_ids"] = agent_ids
+        sql = f"""
         WITH a_id AS
           (
             SELECT a.agent_id, a.user_id, agent_name, a.created_at,
               a.last_updated, a.automation_enabled
              FROM agent.agents a
              WHERE a.user_id = %(user_id)s
+             {agent_where_clause}
           ),
           lr AS
           (
@@ -468,7 +478,7 @@ class AsyncDB:
           LEFT JOIN msg ON msg.agent_id = a_id.agent_id
           LEFT JOIN nu ON nu.agent_id = a_id.agent_id
         """
-        rows = await self.pg.generic_read(sql, params={"user_id": user_id})
+        rows = await self.pg.generic_read(sql, params=params)
         tomorrow = get_now_utc() + datetime.timedelta(days=1)
         return [
             AgentMetadata(
