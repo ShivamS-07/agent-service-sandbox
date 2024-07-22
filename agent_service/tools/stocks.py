@@ -1012,7 +1012,7 @@ class GetRiskExposureForStocksInput(ToolArgs):
         "momentum, trading activity, size, and market. The values in the table are "
         "normalized, you can filter this table with the `transform_table' tool as follows: "
         "use > 1 to get 'high' scores, > 2 to get 'very high' scores "
-        " < -1 to get 'low' scores, and -2 to get 'very low' scores. "
+        " < -1 to get 'low' scores, and < -2 to get 'very low' scores. "
         "Use this tool if the user asks to filter/rank by one of these factors specifically, "
         "but you must never use it unless what the client says corresponds exactly or almost "
         "exactly to one of the relevant factors, you must use one or more of the provided "
@@ -1021,7 +1021,9 @@ class GetRiskExposureForStocksInput(ToolArgs):
         "You must not use this tool if the user asks for something related to the particular value "
         "of particular statistic, even if it is closely related to one of these factors, use the "
         "get_statistic tool instead. For example you would never use this tool for queries "
-        "asking for filtering based on market cap, which is a specific statistic"
+        "asking for filtering based on market cap, which is a specific statistic."
+        "Do not use this tool to try to filter by Growth at a Reasonable Price (GARP) "
+        "instead use a combination of growth_filter and value_filter. "
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -1135,6 +1137,10 @@ class GrowthFilterInput(ToolArgs):
         " the larger the value then the filterd stocks will be even more growthy"
         " you must only use this function if the client specifically asks to filter by"
         " growth, do not use it for specific statistics, even if they are growth-related"
+        " set min_value 1 to get 'high growth', 2 to get 'very high growth'"
+        " 3 to get 'extremely high growth'."
+        " This tool is useful for finding growth stocks."
+        " It can be combined with 'value_filter' tool to find GARP/Growth at a Reasonable Price."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -1183,6 +1189,10 @@ class ValueFilterInput(ToolArgs):
         " the larger the value then the filtered stocks will be even more valuey"
         " you must only use this function if the client specifically asks to filter by"
         " value, do not use it for specific statistics, even if they are value-related"
+        " set min_value 1 to get 'high value', 2 to get 'very high value'"
+        " 3 to get 'extremely high value'."
+        " This tool is useful for finding value stocks."
+        " It can be combined with 'growth_filter' tool to find GARP/Growth at a Reasonable Price."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

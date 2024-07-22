@@ -80,7 +80,10 @@ def get_output(output: IOType) -> IOType:
 
 
 def validate_tools_used(
-    prompt: str, plan: Optional[ExecutionPlan], required_tools: List[str]
+    prompt: str,
+    plan: Optional[ExecutionPlan],
+    required_tools: List[str],
+    disallowed_tools: List[str],
 ) -> None:
     actual_tools = set((step.tool_name for step in plan.nodes))
     assert len(required_tools) > 0, "No required tools provided"
@@ -89,6 +92,16 @@ def validate_tools_used(
         f"required tools are {required_tools}"
     )
     assert set(required_tools).issubset(set(actual_tools)), err_msg
+
+    disallowed_tools_used = set(disallowed_tools).intersection(set(actual_tools))
+
+    err_msg = f"""
+    Some of the disallowed tools are called.
+    actual plan is {plan_to_simple_json(plan)} and
+    disallowed tools that were used are {disallowed_tools_used}
+    """
+
+    assert len(disallowed_tools_used) == 0, err_msg
 
 
 def validate_required_sample_plans(
@@ -112,6 +125,7 @@ class TestExecutionPlanner(unittest.TestCase):
         prompt: str,
         validate_output: Callable,
         required_tools: List[str] = [],
+        disallowed_tools: List[str] = [],
         raise_plan_validation_error: Optional[bool] = False,
         raise_output_validation_error: Optional[bool] = False,
         user_id: Optional[str] = None,
@@ -149,7 +163,12 @@ class TestExecutionPlanner(unittest.TestCase):
                     validate_required_sample_plans(
                         sample_plans=sample_plans, required_sample_plans=required_sample_plans
                     )
-                validate_tools_used(prompt=prompt, plan=plan, required_tools=required_tools)
+                validate_tools_used(
+                    prompt=prompt,
+                    plan=plan,
+                    required_tools=required_tools,
+                    disallowed_tools=disallowed_tools,
+                )
             except AssertionError as e:
                 if raise_plan_validation_error or only_validate_plan:
                     raise e

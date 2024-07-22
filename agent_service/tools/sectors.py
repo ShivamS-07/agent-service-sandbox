@@ -220,7 +220,7 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
     included_gbi_ids = {row["gbi_security_id"] for row in rows}
     stock_list = [stock for stock in stock_ids if stock.gbi_id in included_gbi_ids]
     if not stock_list:
-        raise NonRetriableError(message="Stock filter resulted in an empty list of stocks")
+        raise NonRetriableError(message="Stock Sector filter resulted in an empty list of stocks")
     await tool_log(
         log=f"Filtered {len(stock_ids)} stocks by sector down to {len(stock_list)}", context=context
     )

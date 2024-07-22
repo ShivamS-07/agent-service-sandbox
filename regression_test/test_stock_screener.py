@@ -103,3 +103,43 @@ class TestStockScreener(TestExecutionPlanner):
             required_tools=["get_macroeconomic_themes"],
             raise_plan_validation_error=True,
         )
+
+    def test_growth_garp1(self):
+        prompt = """Small and medium cap biotechnology companies that
+        have made a major technology breakthrough in the past year
+        that match growth at a reasonable price. You’ll need to look in the r2k
+        """
+
+        def validate_output(prompt: str, output: IOType):
+            # how do I ONLY do the tool check?
+            # an not even execute the plan
+            return
+
+        self.prompt_test(
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["growth_filter", "value_filter"],
+            disallowed_tools=["get_risk_exposure_for_stocks"],
+            raise_plan_validation_error=True,
+            only_validate_plan=True,
+        )
+
+    def test_growth_garp2(self):
+        prompt = """I want growth at a reasonable price.
+        Strong balance sheet. High volume. Market cap above 500M.
+        Strong management teams. Technology companies.
+        The company should ideally have made a major technology breakthrough over the past year.
+        """
+
+        def validate_output(prompt: str, output: IOType):
+            # how do I ONLY do the tool check?
+            return
+
+        self.prompt_test(
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["growth_filter", "value_filter"],
+            disallowed_tools=[],
+            raise_plan_validation_error=True,
+            only_validate_plan=True,
+        )
