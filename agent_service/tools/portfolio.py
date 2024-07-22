@@ -46,6 +46,10 @@ class GetPortfolioWorkspaceHoldingsInput(ToolArgs):
     description=(
         "This function returns a list of stocks and the weight at which they are held in a specific portfolio. "
         "Use this function if you want return all the stocks in a portfolio given a portfolio Id. "
+        "A PortfolioID is not a portfolio name. "
+        "A PortfolioID is not a stock identifier. "
+        "This tool should only be used to get portfolio holdings, "
+        "for ETF holdings you should use get_stock_universe tool instead. "
         "Do not use this function to find portfolio names or if no portfolio Id is present. "
         "If you only need a list of stocks without weights, MAKE SURE you use the "
         "`get_stock_identifier_list_from_table` function on the table output by this function!"

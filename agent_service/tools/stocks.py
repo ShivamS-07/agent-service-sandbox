@@ -711,7 +711,10 @@ class GetStockUniverseInput(ToolArgs):
         " Stock universes are generally major market indexes like the S&P 500 or the"
         " Stoxx 600 or the similar names of ETFs or the 3-6 letter ticker symbols for ETFs"
         " If the client wants to filter over stocks but does not specify an initial set"
-        " of stocks, you should call this tool with 'S&P 500'"
+        " of stocks, you should call this tool with 'S&P 500'."
+        " You can also use this tool to get the holdings of an ETF or stock."
+        " But not the holdings of a user's portfolio, "
+        " if you do need portfolio holdings then use get_portfolio_holdings tool instead."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
