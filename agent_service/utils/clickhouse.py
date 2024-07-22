@@ -598,12 +598,10 @@ class Clickhouse(ClickhouseBase):
     ################################################################################################
 
     def get_info_for_test_suite_run(self, test_run_id: str) -> Dict[str, Any]:
-        sql = """
-        SELECT test_name, prompt, agent_id, output, execution_plan, service_version, error_msg, warning_msg,
-        execution_finished_at_utc, execution_start_at_utc, execution_plan_started_at_utc, execution_plan_finished_at_utc
-        FROM agent.regression_test
-        WHERE test_suite_id = %(test_run_id)s
-        """
+        sql = """SELECT test_name, prompt, agent_id, output, execution_plan, service_version, error_msg, warning_msg,
+        execution_finished_at_utc, execution_start_at_utc, execution_plan_started_at_utc,
+        execution_plan_finished_at_utc, execution_duration_seconds, execution_plan_duration_seconds FROM
+        agent.regression_test WHERE test_suite_id = %(test_run_id)s"""
         res: Dict[str, Any] = {}
         rows = self.generic_read(sql, {"test_run_id": test_run_id})
         tz = datetime.timezone.utc
@@ -639,7 +637,7 @@ class Clickhouse(ClickhouseBase):
         sql = """
             SELECT test_name, prompt, agent_id, output, execution_plan, service_version, error_msg, warning_msg,
             execution_finished_at_utc, execution_start_at_utc, execution_plan_started_at_utc,
-            execution_plan_finished_at_utc
+            execution_plan_finished_at_utc, execution_duration_seconds, execution_plan_duration_seconds
             FROM agent.regression_test
             WHERE test_name = %(test_name)s
             ORDER BY timestamp DESC

@@ -20,30 +20,53 @@ class TestData(TestExecutionPlanner):
         def validate_output(prompt: str, output: IOType):
             output_line_graph = get_output(output=output)
             validate_line_graph(output_line_graph=output_line_graph)
-            nvda_points = output_line_graph.data[0].points
-            amd_points = output_line_graph.data[1].points
-            intl_points = output_line_graph.data[2].points
-            goog_points = output_line_graph.data[3].points
-            self.assertTrue(len(nvda_points) in [260, 261])
-            self.assertAlmostEqual(
-                next(
-                    point for point in nvda_points if point.x_val == date(year=2023, month=5, day=1)
-                ).y_val,
-                65.8765487671,
-                places=3,
+            nvda_data_points = output_line_graph.data[0].points
+            amd_data_points = output_line_graph.data[1].points
+            intl_data_points = output_line_graph.data[2].points
+            goog_data_points = output_line_graph.data[3].points
+            expected_number_of_data_points = [260, 261]
+            number_of_data_points_mismatch_err_msg = "Number of data points for {stock} don't match"
+            data_point_mismatch_err_msg = "Data point for NVDA on {date} does not match"
+            self.assertIn(
+                len(nvda_data_points),
+                expected_number_of_data_points,
+                msg=number_of_data_points_mismatch_err_msg.format(stock="NVDA"),
             )
-            self.assertTrue(len(amd_points) in [260, 261])
-            self.assertTrue(len(intl_points) in [260, 261])
+
             self.assertAlmostEqual(
                 next(
                     point
-                    for point in nvda_points
+                    for point in nvda_data_points
+                    if point.x_val == date(year=2023, month=5, day=1)
+                ).y_val,
+                65.8765487671,
+                places=3,
+                msg=data_point_mismatch_err_msg.format(date=date(year=2023, month=5, day=1)),
+            )
+            self.assertIn(
+                len(amd_data_points),
+                expected_number_of_data_points,
+                msg=number_of_data_points_mismatch_err_msg.format(stock="AMD"),
+            )
+            self.assertTrue(
+                len(intl_data_points) in [260, 261],
+                msg=number_of_data_points_mismatch_err_msg.format(stock="INTL"),
+            )
+            self.assertAlmostEqual(
+                next(
+                    point
+                    for point in nvda_data_points
                     if point.x_val == date(year=2023, month=9, day=11)
                 ).y_val,
                 46.0734291077,
                 places=3,
+                msg=data_point_mismatch_err_msg.format(date=date(year=2023, month=9, day=11)),
             )
-            self.assertTrue(len(goog_points) in [260, 261])
+            self.assertIn(
+                len(goog_data_points),
+                expected_number_of_data_points,
+                msg=number_of_data_points_mismatch_err_msg.format(stock="GOOG"),
+            )
 
         self.prompt_test(
             prompt=prompt,
@@ -59,7 +82,7 @@ class TestData(TestExecutionPlanner):
             output_line_graph = get_output(output)
             validate_line_graph(output_line_graph=output_line_graph)
             actual_points = output_line_graph.data[0].points
-            self.assertTrue(len(actual_points), 65)
+            self.assertEqual(len(actual_points), 65, msg="Number of data points do not match")
             expected_max_price = 248.47999572753906
             expected_max_price_date = date(year=2024, month=1, day=1)
 
@@ -68,10 +91,28 @@ class TestData(TestExecutionPlanner):
 
             actual_min_price_point = min(actual_points, key=lambda x: x.y_val)
             actual_max_price_point = max(actual_points, key=lambda x: x.y_val)
-            self.assertEqual(expected_min_price_date, actual_min_price_point.x_val)
-            self.assertEqual(expected_max_price_date, actual_max_price_point.x_val)
-            self.assertAlmostEqual(expected_min_price, actual_min_price_point.y_val, places=3)
-            self.assertAlmostEqual(expected_max_price, actual_max_price_point.y_val, places=3)
+            self.assertEqual(
+                expected_min_price_date,
+                actual_min_price_point.x_val,
+                msg="Date with minimum price doesn't match",
+            )
+            self.assertEqual(
+                expected_max_price_date,
+                actual_max_price_point.x_val,
+                msg="Date with maximum price doesn't match",
+            )
+            self.assertAlmostEqual(
+                expected_min_price,
+                actual_min_price_point.y_val,
+                places=3,
+                msg="Minimum price doesn't match",
+            )
+            self.assertAlmostEqual(
+                expected_max_price,
+                actual_max_price_point.y_val,
+                places=3,
+                msg="Maximum price doesn't match",
+            )
 
         self.prompt_test(
             prompt=prompt,
@@ -85,7 +126,6 @@ class TestData(TestExecutionPlanner):
 
         def validate_output(prompt: str, output: IOType):
             output_stock_ids = get_output(output=output)
-            self.assertEqual(len(output_stock_ids), 11)
             actual_stock_ids = sorted(
                 [output_stock_id.gbi_id for output_stock_id in output_stock_ids]
             )
@@ -102,7 +142,7 @@ class TestData(TestExecutionPlanner):
                 58434,
                 610881,
             ]
-            self.assertEqual(actual_stock_ids, expected_stock_ids)
+            self.assertEqual(actual_stock_ids, expected_stock_ids, "Output stocks don't match")
 
         self.prompt_test(
             prompt=prompt,
@@ -117,8 +157,14 @@ class TestData(TestExecutionPlanner):
         def validate_output(prompt: str, output: IOType):
             output_line_graph = get_output(output=output[1])
             validate_line_graph(output_line_graph=output_line_graph)
-            self.assertEqual(len(output_line_graph.data), 10)
-            self.assertEqual(len(output_line_graph.data[0].points), 22)
+            self.assertEqual(
+                len(output_line_graph.data), 10, msg="Number of stocks in graph don't match"
+            )
+            self.assertEqual(
+                len(output_line_graph.data[0].points),
+                22,
+                msg="Number of data points for a stock don't match",
+            )
 
         self.prompt_test(
             prompt=prompt,
@@ -133,7 +179,6 @@ class TestData(TestExecutionPlanner):
         def validate_output(prompt: str, output: IOType):
             output_stock_ids = get_output(output=output)
 
-            self.assertEqual(len(output_stock_ids), 65)
             expected_ids = [
                 124,
                 155,
@@ -202,7 +247,9 @@ class TestData(TestExecutionPlanner):
                 514112,
             ]
             self.assertEqual(
-                sorted([stock_id.gbi_id for stock_id in output_stock_ids]), expected_ids
+                sorted([stock_id.gbi_id for stock_id in output_stock_ids]),
+                expected_ids,
+                msg="Output stocks don't match",
             )
 
         self.prompt_test(
@@ -219,10 +266,20 @@ class TestData(TestExecutionPlanner):
                 output_stock_table=output_stock_table,
                 column_types=[TableColumnType.DATE, TableColumnType.FLOAT],
             )
-            self.assertEqual(len(date_column.data), 21)
-            self.assertEqual(len(pe_column.data), 21)
-            self.assertAlmostEqual(pe_column.data[3], 89.21580505371094, places=3)
-            self.assertAlmostEqual(pe_column.data[7], 94.47933197021484, places=3)
+            self.assertEqual(len(date_column.data), 21, "Number of dates don't match")
+            self.assertEqual(len(pe_column.data), 21, "Number of data points don't match ")
+            self.assertAlmostEqual(
+                pe_column.data[3],
+                89.21580505371094,
+                places=3,
+                msg=f"Data point doesn't match on {date_column.data[3]}",
+            )
+            self.assertAlmostEqual(
+                pe_column.data[7],
+                94.47933197021484,
+                places=3,
+                msg=f"Data point doesn't match on {date_column.data[7]}",
+            )
 
         self.prompt_test(
             prompt=prompt,
@@ -254,7 +311,7 @@ class TestData(TestExecutionPlanner):
             date_column = validate_table_and_get_columns(
                 output_stock_table=output_stock_table, column_types=[TableColumnType.DATE]
             )[0]
-            self.assertEqual(len(date_column.data), 23)
+            self.assertEqual(len(date_column.data), 23, msg="Number of data points don't match")
 
         self.prompt_test(
             prompt=prompt,
@@ -334,7 +391,9 @@ class TestData(TestExecutionPlanner):
 
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output)
-            self.assertTrue(isinstance(output_text, Text)), "Output is not of type Text"
+            self.assertTrue(
+                isinstance(output_text, Text)
+            ), f"Expected type: Text, Actual type: {type(output_text)}."
             self.assertTrue(output_text.val), "Expected non empty string"
 
         self.prompt_test(

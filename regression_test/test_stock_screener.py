@@ -13,7 +13,7 @@ class TestStockScreener(TestExecutionPlanner):
 
         def validate_output(prompt: str, output: IOType):
             output_stock_ids = get_output(output=output)
-            self.assertGreater(len(output_stock_ids), 0)
+            self.assertGreater(len(output_stock_ids), 0, msg="No stocks returned")
 
         self.prompt_test(
             prompt=prompt,
@@ -34,19 +34,13 @@ class TestStockScreener(TestExecutionPlanner):
 
         def validate_output(prompt: str, output: IOType):
             output_stock_ids = get_output(output=output)
-            self.assertGreater(len(output_stock_ids), 0)
-            self.assertEqual(
-                len(output_stock_ids),
-                1,
-                f"Number of output stock id's are {len(output_stock_ids)} rather than 1",
-            )
             actual_gbi_ids = [output_stock_id.gbi_id for output_stock_id in output_stock_ids]
             actual_gbi_ids.sort()
             expected_gbi_ids = [713]
             self.assertEqual(
                 actual_gbi_ids,
                 expected_gbi_ids,
-                f"Output expected id's are {actual_gbi_ids} rather than {expected_gbi_ids}",
+                "Output stocks don't match",
             )
 
         self.prompt_test(
@@ -63,19 +57,14 @@ class TestStockScreener(TestExecutionPlanner):
 
         def validate_output(prompt: str, output: IOType):
             output_stock_ids = get_output(output=output)
-            self.assertGreater(len(output_stock_ids), 0)
-            self.assertEqual(
-                len(output_stock_ids),
-                5,
-                f"Number of output stock id's are {len(output_stock_ids)} rather than 5",
-            )
             actual_gbi_ids = [output_stock_id.gbi_id for output_stock_id in output_stock_ids]
             actual_gbi_ids.sort()
             expected_gbi_ids = [149, 155, 714, 1694, 10096]
+
             self.assertEqual(
                 actual_gbi_ids,
                 expected_gbi_ids,
-                f"Output expected id's are {actual_gbi_ids} rather than {expected_gbi_ids}",
+                "Output stocks don't match",
             )
 
         self.prompt_test(
@@ -92,7 +81,7 @@ class TestStockScreener(TestExecutionPlanner):
 
         def validate_output(prompt: str, output: IOType):
             output_stock_ids = get_output(output=output)
-            self.assertGreater(len(output_stock_ids), 0)
+            self.assertGreater(len(output_stock_ids), 0, msg="No stocks returned")
 
         self.prompt_test(
             prompt=prompt,
@@ -106,7 +95,7 @@ class TestStockScreener(TestExecutionPlanner):
 
         def validate_output(prompt: str, output: IOType):
             output_stock_ids = get_output(output=output)
-            self.assertTrue(output_stock_ids)
+            self.assertGreater(len(output_stock_ids), 0, msg="No stocks returned")
 
         self.prompt_test(
             prompt=prompt,

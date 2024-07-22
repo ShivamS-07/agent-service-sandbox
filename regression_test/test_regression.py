@@ -83,12 +83,11 @@ def validate_tools_used(
     prompt: str, plan: Optional[ExecutionPlan], required_tools: List[str]
 ) -> None:
     actual_tools = set((step.tool_name for step in plan.nodes))
-    assert len(required_tools) > 0, "Could not find required tool groups"
-    err_msg = f"""
-        The required tools are not called.
-        actual plan is {plan_to_simple_json(plan)} and
-        required tools are {required_tools}
-        """
+    assert len(required_tools) > 0, "No required tools provided"
+    err_msg = (
+        f"The required tools are not called.\nActual plan is {plan_to_simple_json(plan)}\n"
+        f"required tools are {required_tools}"
+    )
     assert set(required_tools).issubset(set(actual_tools)), err_msg
 
 
@@ -155,7 +154,7 @@ class TestExecutionPlanner(unittest.TestCase):
                 if raise_plan_validation_error or only_validate_plan:
                     raise e
                 else:
-                    warning_msg += f"Plan validation warning: {e}\n"
+                    warning_msg += f"Plan validation warning -\n{e}\n"
             try:
                 if not only_validate_plan:
                     validate_output(prompt=prompt, output=output)
@@ -163,7 +162,7 @@ class TestExecutionPlanner(unittest.TestCase):
                 if raise_output_validation_error:
                     raise e
                 else:
-                    warning_msg += f"Output validation warning: {e}\n"
+                    warning_msg += f"Output validation warning -\n{e}\n"
             if warning_msg:
                 regression_test_log.event_data["warning_msg"] = warning_msg.strip()
                 warnings.warn(warning_msg)

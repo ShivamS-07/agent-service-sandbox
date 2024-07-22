@@ -90,7 +90,9 @@ class TestMarketCommentary(TestExecutionPlanner):
 
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output=output)
-            self.assertTrue(isinstance(output_text, Text)), "Output is not of type Text"
+            self.assertTrue(
+                isinstance(output_text, Text)
+            ), f"Expected type: Text, Actual type: {type(output_text)}"
             self.assertTrue(output_text.val), "Expected non empty string"
 
         self.prompt_test(
