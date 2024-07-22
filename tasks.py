@@ -24,12 +24,18 @@ def verify(c):
 def testslow(c):
 
     print("running tests slowly serially")
-    c.run("RUN_IN_CI=true python -W ignore -m unittest discover -v -s tests regression_test")
+    c.run("RUN_IN_CI=true python -W ignore -m unittest discover -v -s tests")
 
 
 @task
 def test(c):
     testslow(c)
+    testregression(c)
+
+
+@task
+def testregression(c):
+    c.run("RUN_IN_CI=true python -W ignore -m unittest discover -v -s regression_test")
 
 
 @task
@@ -40,7 +46,7 @@ def testfast(c):
     # runs each test class in its own process 8 at a time
     c.run(
         "RUN_IN_CI=true nice -n19 unittest-parallel -v --level class --disable-process-pooling --jobs 8  -t . -s "
-        "tests regression_test"
+        "tests"
     )
 
 
