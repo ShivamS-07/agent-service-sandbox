@@ -33,6 +33,7 @@ from agent_service.utils.sec.constants import (
     US,
 )
 from agent_service.utils.sec.supported_types import SUPPORTED_TYPE_MAPPING
+from agent_service.utils.string_utils import get_sections
 
 logger = logging.getLogger(__name__)
 
@@ -563,3 +564,20 @@ class SecFiling:
             ch.multi_row_insert(table_name="sec.sec_filings", rows=records_to_upload_to_db)
 
         return output
+
+    ################################################################################################
+    # Convert 10k/q content into smaller sections
+    ################################################################################################
+    @classmethod
+    def split_10k_10q_into_smaller_sections(cls, filing_text: str) -> Dict[str, str]:
+        two_sections = filing_text.split("\n\nRisk Factors Section:\n\n")
+
+        management_section = two_sections[0]
+        management_section = management_section[len("Management Section:\n\n") :]
+
+        risk_factors_section = two_sections[1]
+        # FIXME: the value will be overwritten when there are same headers
+        smaller_sections = get_sections(management_section)
+        smaller_sections.update(get_sections(risk_factors_section))
+
+        return smaller_sections

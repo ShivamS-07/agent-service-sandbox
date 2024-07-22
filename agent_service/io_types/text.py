@@ -213,6 +213,9 @@ class Text(ComplexIOBase):
         else:
             return Text(val=self.val)
 
+    def reset_value(self) -> None:
+        self.val = ""  # reset the value to avoid spamming DB
+
 
 @io_type
 class ProfileText(Text):
@@ -868,6 +871,86 @@ class StockSecFilingText(StockText):
         return [
             CitationOutput(citation_type=CitationType.TEXT, name=text.text_type) for text in texts
         ]
+
+
+@io_type
+class StockSecFilingSectionText(StockText):
+    """
+    This class is actually a "section" of `StockSecFilingText`. Basically we will split the 2 sections
+    (management, risk_factors) into even smaller sections and store them in this class.
+    """
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+
+    text_type: ClassVar[str] = "SEC filing Section"
+
+    filing_id: str
+    header: str
+    db_id: Optional[str] = None
+
+    @classmethod
+    async def init_from_filings(
+        cls, filings: List[StockSecFilingText]
+    ) -> List[StockSecFilingSectionText]:
+        filing_texts = await StockSecFilingText._get_strs_lookup(filings)
+
+        sections = []
+        for filing in filings:
+            if filing.id not in filing_texts:
+                continue
+
+            split_sections = SecFiling.split_10k_10q_into_smaller_sections(filing_texts[filing.id])
+            for header, content in split_sections.items():
+                sections.append(
+                    cls(
+                        val=content,
+                        filing_id=filing.id,
+                        header=header,
+                        stock_id=filing.stock_id,
+                        db_id=filing.db_id,
+                    )
+                )
+
+        return sections
+
+    @classmethod
+    async def _get_strs_lookup(
+        cls, sections: List[StockSecFilingSectionText]  # type: ignore
+    ) -> Dict[TextIDType, str]:
+        # In the DB we only store `header`, not `content` to save space
+        filing_text_objs = {}
+        for section in sections:
+            if section.filing_id not in filing_text_objs:
+                filing_text_objs[section.filing_id] = StockSecFilingText(
+                    id=section.filing_id, stock_id=section.stock_id, db_id=section.db_id
+                )
+
+        filing_texts = await StockSecFilingText._get_strs_lookup(list(filing_text_objs.values()))
+
+        header_to_section = {section.header: section for section in sections}
+
+        outputs = {}
+        for filing_text in filing_texts.values():
+            split_sections = SecFiling.split_10k_10q_into_smaller_sections(filing_text)
+            for header, content in split_sections.items():
+                if header in header_to_section:
+                    outputs[header_to_section[header].id] = f"{header}: {content}"
+
+        return outputs  # type: ignore
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[Self], db: BoostedPG
+    ) -> List[CitationOutput]:
+        # FIXME: fix later
+        count = len({t.filing_id for t in texts})
+        return [
+            CitationOutput(citation_type=CitationType.TEXT, name="SEC filing Section")
+            for _ in range(count)
+        ]
+
+    async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        return f"{self.header}: {self.val}"
 
 
 @io_type

@@ -1,6 +1,6 @@
 import json
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
@@ -19,6 +19,8 @@ from agent_service.io_types.text import (
     StockEarningsSummaryPointText,
     StockEarningsSummaryText,
     StockNewsDevelopmentText,
+    StockSecFilingSectionText,
+    StockSecFilingText,
     StockText,
     Text,
     TextCitation,
@@ -29,12 +31,6 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
-from agent_service.utils.hypothesis.hypothesis_pipeline import HypothesisPipeline
-from agent_service.utils.hypothesis.types import (
-    CompanyEarningsTopicInfo,
-    CompanyNewsTopicInfo,
-)
-from agent_service.utils.hypothesis.utils import get_earnings_topics, get_news_topics
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -79,20 +75,19 @@ async def analyze_hypothesis_with_categories(
 ) -> CategoricalHypothesisTexts:
     logger = get_prefect_logger(__name__)
 
-    # Step: Group texts by sources
-    logger.info("Grouping texts by sources")
-    company_descriptions = [t for t in args.all_text_data if isinstance(t, StockDescriptionText)]
-    news_developments = [t for t in args.all_text_data if isinstance(t, StockNewsDevelopmentText)]
-    earnings_summaries = [t for t in args.all_text_data if isinstance(t, StockEarningsSummaryText)]
-
-    earnings_summary_points = await StockEarningsSummaryPointText.init_from_earnings_texts(
-        earnings_summaries
-    )
+    # Step: Download content for text data
+    logger.info("Downloading content for text data")
+    (
+        gbi_id_to_short_description,
+        news_devs_with_text,
+        earnings_points_with_text,
+        sec_filings_sections_with_text,
+    ) = await download_content_for_text_data(args.all_text_data)
 
     stocks = list(
-        {t.stock_id for t in company_descriptions if t.stock_id}
-        | {t.stock_id for t in news_developments if t.stock_id}
-        | {t.stock_id for t in earnings_summaries if t.stock_id}
+        {t.stock_id for t in news_devs_with_text if t.stock_id}
+        | {t.stock_id for t in earnings_points_with_text if t.stock_id}
+        | {t.stock_id for t in sec_filings_sections_with_text if t.stock_id}
     )
 
     gpt_service_stub = _get_gpt_service_stub()[0]
@@ -102,44 +97,19 @@ async def analyze_hypothesis_with_categories(
     revised_hypothesis = await revise_hypothesis(args.hypothesis, context, gpt_service_stub)
     logger.info(f"Revised hypothesis: {revised_hypothesis}")  # Not visible to users
 
-    # Step: Filter texts by relevant topics
-    logger.info("Filtering relevant topics by revised hypothesis")
-    news_topics, earnings_topics = await find_relevant_topics_by_hypothesis(
-        revised_hypothesis, news_developments, earnings_summary_points, gpt_service_stub
-    )
-    await tool_log(
-        log=(
-            f"Found {len(news_topics)} relevant news topics and {len(earnings_topics)} "
-            f"relevant earnings topics"
-        ),
-        context=context,
-    )
-
-    # Step: Classify news/earnings topics into categories
-    logger.info("Classifying news and earnings topics into categories")
-
-    gbi_ids = [t.stock_id.gbi_id for t in company_descriptions if t.stock_id]
-    descriptions = get_psql().get_short_company_descriptions_for_gbi_ids(gbi_ids)
-    gbi_id_to_short_description = {
-        gbi_id: desc for gbi_id, (desc, _) in descriptions.items() if desc
-    }
-
+    # Step: Classify topics into categories
+    logger.info("Classifying news, earnings, SEC topics into categories")
     categories = sorted(args.categories, key=lambda x: x.weight, reverse=True)
-    category_to_topics = await classify_news_and_earnings_topics_into_category(
+    category_to_mixed_topics = await filter_and_classify_topics_into_category(
         revised_hypothesis,
         categories,
-        news_topics,
-        earnings_topics,
         gbi_id_to_short_description,
+        news_devs_with_text,
+        earnings_points_with_text,
+        sec_filings_sections_with_text,
         context,
         gpt_service_stub,
     )
-
-    category_topic_log = ""
-    for category_idx, topics in category_to_topics.items():
-        category = args.categories[category_idx]
-        category_topic_log += f"Category {category.name}: {len(topics)} topics; "
-    await tool_log(log=category_topic_log, context=context)
 
     # Step: Rank and summarize for each category
     logger.info("Ranking and summarizing for each category")
@@ -149,14 +119,10 @@ async def analyze_hypothesis_with_categories(
         stocks,
         revised_hypothesis,
         categories,
-        category_to_topics,
+        category_to_mixed_topics,
         gbi_id_to_short_description,
         context,
         gpt_service_stub,
-    )
-    await tool_log(
-        log="Ranked all the relevant stocks for each category and created summaries",
-        context=context,
     )
 
     # Step: Calculate weighted average scores and determine the real target stock
@@ -184,10 +150,8 @@ async def analyze_hypothesis_with_categories(
         final_summary,
         total_scores[actual_target_stock.symbol],  # type: ignore
         categories,
-        category_to_topics,
+        category_to_mixed_topics,
         category_to_result,
-        news_developments,
-        earnings_summary_points,
     )
 
     return output
@@ -196,6 +160,71 @@ async def analyze_hypothesis_with_categories(
 ####################################################################################################
 # Utils
 ####################################################################################################
+async def download_content_for_text_data(all_text_data: List[StockText]) -> Tuple[
+    Dict[int, str],
+    List[StockNewsDevelopmentText],
+    List[StockEarningsSummaryPointText],
+    List[StockSecFilingSectionText],
+]:
+    """
+    1. Download the actual text content for these text objects
+    2. Assign the text content to the corresponding text objects's `val` field
+    """
+
+    logger = get_prefect_logger(__name__)
+
+    logger.info("Separate text data by sources")
+    company_descriptions = [t for t in all_text_data if isinstance(t, StockDescriptionText)]
+
+    news_developments = [t for t in all_text_data if isinstance(t, StockNewsDevelopmentText)]
+
+    earnings_summaries = [t for t in all_text_data if isinstance(t, StockEarningsSummaryText)]
+    earnings_summary_points = await StockEarningsSummaryPointText.init_from_earnings_texts(
+        earnings_summaries
+    )
+
+    # it does the downloading of the content inside `init_from_filings`
+    logger.info("Downloading content for 10K/10Q and split into sections")
+    sec_filings = [t for t in all_text_data if isinstance(t, StockSecFilingText)]
+    sec_filing_sections_with_text = await StockSecFilingSectionText.init_from_filings(sec_filings)
+    logger.info(
+        f"Got {len(sec_filing_sections_with_text)} sections from {len(sec_filings)} filings"
+    )
+
+    logger.info("Downloading content for company descriptions")
+    gbi_ids = [t.stock_id.gbi_id for t in company_descriptions if t.stock_id]
+    descriptions = get_psql().get_short_company_descriptions_for_gbi_ids(gbi_ids)
+    gbi_id_to_short_description = {
+        gbi_id: desc for gbi_id, (desc, _) in descriptions.items() if desc
+    }
+
+    # NOTE: meaningless to parallelize as they are using the same PSQL object
+    logger.info("Downloading content for news developments")
+    topic_id_to_news_dev = await StockNewsDevelopmentText._get_strs_lookup(news_developments)
+    news_devs_with_text = []
+    for news_dev in news_developments:
+        if news_dev.id in topic_id_to_news_dev:
+            news_dev.val = topic_id_to_news_dev[news_dev.id]
+            news_devs_with_text.append(news_dev)
+
+    logger.info("Downloading content for earnings summary points")
+    hash_id_to_earnings_point = await StockEarningsSummaryPointText._get_strs_lookup(
+        earnings_summary_points
+    )
+    earnings_points_with_text = []
+    for earnings_point in earnings_summary_points:
+        if earnings_point.id in hash_id_to_earnings_point:
+            earnings_point.val = hash_id_to_earnings_point[earnings_point.id]
+            earnings_points_with_text.append(earnings_point)
+
+    return (
+        gbi_id_to_short_description,
+        news_devs_with_text,
+        earnings_points_with_text,
+        sec_filing_sections_with_text,
+    )
+
+
 async def revise_hypothesis(
     hypothesis: str, context: PlanRunContext, gpt_service_stub: Optional[GPTServiceStub] = None
 ) -> str:
@@ -219,138 +248,161 @@ async def revise_hypothesis(
     )
 
 
-async def find_relevant_topics_by_hypothesis(
-    hypothesis: str,
-    news_developments: List[StockNewsDevelopmentText],
-    earnings_summary_points: List[StockEarningsSummaryPointText],
-    gpt_service_stub: Optional[GPTServiceStub] = None,
-) -> Tuple[List[CompanyNewsTopicInfo], List[CompanyEarningsTopicInfo]]:
-    logger = get_prefect_logger(__name__)
+@io_type
+class MixedTopics(ComplexIOBase):
+    # all these objects must have content filled in
+    news_topics: List[StockNewsDevelopmentText] = []
+    earnings_topics: List[StockEarningsSummaryPointText] = []
+    sec_filing_sections: List[StockSecFilingSectionText] = []
 
-    # FIXME: Parallelize
+    async def to_gpt_input(self, use_abberivated_output: bool = True) -> str:
+        self._cut_input_topics(target_num=200)
 
-    # segerate news/earnings topics by stocks
-    stock_to_developments: Dict[StockID, List[StockNewsDevelopmentText]] = defaultdict(list)
-    for development in news_developments:
-        if development.stock_id is None:
-            continue
+        texts = []
+        idx = 0
+        for topic in self.sec_filing_sections:
+            text = await topic.to_gpt_input()
+            texts.append(f"- {idx}: ({topic.stock_id.symbol}) {text}")  # type: ignore
+            idx += 1
 
-        stock_to_developments[development.stock_id].append(development)
+        for topic in self.earnings_topics:
+            texts.append(f"- {idx}: ({topic.stock_id.symbol}) {topic.val}")  # type: ignore
+            idx += 1
 
-    stock_to_earnings_points: Dict[StockID, List[StockEarningsSummaryPointText]] = defaultdict(list)
-    for point in earnings_summary_points:
-        if point.stock_id is None:
-            continue
+        for topic in self.news_topics:
+            texts.append(f"- {idx}: ({topic.stock_id.symbol}) {topic.val}")  # type: ignore
+            idx += 1
 
-        stock_to_earnings_points[point.stock_id].append(point)
+        return "\n".join(texts)
 
-    # create hypothesis pipeline objects
-    stock_id_to_pipeline: Dict[StockID, HypothesisPipeline] = {}
-    embedding: List[float] = None  # type: ignore
-    hypothesis_breakdown: Dict[str, Any] = None  # type: ignore
-    for stock_id in stock_to_developments.keys():
-        pipeline = HypothesisPipeline(
-            stock_id.gbi_id, hypothesis, gpt_service_stub=gpt_service_stub
-        )
-        if embedding is None or hypothesis_breakdown is None:
-            await pipeline.initial_hypothesis_processing()  # only need to do it once
-            embedding = pipeline.hypothesis.embedding
-            hypothesis_breakdown = pipeline.hypothesis.hypothesis_breakdown
+    def _cut_input_topics(self, target_num: int = 200) -> None:
+        # if there are too many topics passed to GPT, it may cause the output being chopped off
+        # so we need to reduce the number of topics
+        if target_num >= self.total:
+            return
+
+        # if there are too many news topics, we only reduce the number of news topics
+        if len(self.news_topics) > self.total * 0.6:
+            num_news_to_del = self.total - target_num
+            news_ratio = 1 - num_news_to_del / len(self.news_topics)
+            stock_to_news_topics: Dict[StockID, List[StockNewsDevelopmentText]] = defaultdict(list)
+            for topic in self.news_topics:
+                if topic.stock_id:
+                    stock_to_news_topics[topic.stock_id].append(topic)
+
+            self.news_topics = []
+            for topics in stock_to_news_topics.values():
+                # FIXME: should sort these news topics by date and then cut once we have that info
+                self.news_topics.extend(topics[: int(len(topics) * news_ratio)])
+            return
+
+        # otherwise we reduce the number of topics for each type and each company proportionally
+        stock_to_topics: Dict[StockID, MixedTopics] = defaultdict(MixedTopics)
+        for topic in self.news_topics + self.earnings_topics + self.sec_filing_sections:  # type: ignore
+            if topic.stock_id:
+                stock_to_topics[topic.stock_id].insert_topic(topic)
+
+        # reset the lists
+        ratio = target_num / self.total
+        self.news_topics = []
+        self.earnings_topics = []
+        self.sec_filing_sections = []
+        for mixed_topics in stock_to_topics.values():
+            if len(mixed_topics.news_topics) > mixed_topics.total * 0.6:
+                # if this company has too many news topics, we also only reduce news topics
+                mixed_topics._cut_input_topics(target_num=int(mixed_topics.total * ratio))
+                num_news_to_keep = len(mixed_topics.news_topics)
+                num_earnings_to_keep = len(mixed_topics.earnings_topics)
+                num_filings_to_keep = len(mixed_topics.sec_filing_sections)
+            else:
+                # otherwise, proportionally keep at least 1 topic for each type
+                num_news_to_keep = max(1, int(len(mixed_topics.news_topics) * ratio))
+                num_earnings_to_keep = max(1, int(len(mixed_topics.earnings_topics) * ratio))
+                num_filings_to_keep = max(1, int(len(mixed_topics.sec_filing_sections) * ratio))
+
+            self.news_topics.extend(mixed_topics.news_topics[:num_news_to_keep])
+            self.earnings_topics.extend(mixed_topics.earnings_topics[:num_earnings_to_keep])
+            self.sec_filing_sections.extend(mixed_topics.sec_filing_sections[:num_filings_to_keep])
+
+    @property
+    def total(self) -> int:
+        return len(self.news_topics) + len(self.earnings_topics) + len(self.sec_filing_sections)
+
+    def insert_topic(
+        self,
+        topic: Union[
+            StockNewsDevelopmentText, StockEarningsSummaryPointText, StockSecFilingSectionText
+        ],
+    ) -> None:
+        if isinstance(topic, StockNewsDevelopmentText):
+            self.news_topics.append(topic)
+        elif isinstance(topic, StockEarningsSummaryPointText):
+            self.earnings_topics.append(topic)
         else:
-            pipeline.hypothesis.embedding = embedding
-            pipeline.hypothesis.hypothesis_breakdown = hypothesis_breakdown
+            self.sec_filing_sections.append(topic)
 
-        stock_id_to_pipeline[stock_id] = pipeline
-
-    # prepare LLM inputs
-    topic_ids = [development.id for development in news_developments]
-    news_topics = get_news_topics(topic_ids)
-    topic_id_to_news_topic = {topic.topic_id: topic for topic in news_topics}
-
-    summary_ids = list({point.summary_id for point in earnings_summary_points})
-    earnings_topics = get_earnings_topics(summary_ids)
-    id_to_earnings_topic = {
-        (t.topic_id, t.summary_type.value, t.summary_index): t for t in earnings_topics
-    }
-
-    relevant_news_topics: List[CompanyNewsTopicInfo] = []
-    relevant_earnings_topics: List[CompanyEarningsTopicInfo] = []
-    for stock_id, pipeline in stock_id_to_pipeline.items():
-        each_news_topics = []
-        for dev in stock_to_developments[stock_id]:
-            topic = topic_id_to_news_topic[dev.id]
-            topic.gbi_id = stock_id.gbi_id  # Reset gbi_id for topics to avoid `-1` confusion
-            each_news_topics.append(topic)
-
-        logger.info(
-            f"Reviewing {len(each_news_topics)} NEWS topics "
-            f"for stock {stock_id.symbol} for relevance"
-        )
-        for start in range(0, len(each_news_topics), 100):
-            news_topics_batch = each_news_topics[start : start + 100]
-            news_topics_mask = await pipeline.llm.check_hypothesis_relevant_topics(
-                news_topics_batch
-            )
-            relevant_news_topics.extend(
-                [
-                    topic
-                    for topic, is_related in zip(news_topics_batch, news_topics_mask)
-                    if is_related
-                ]
-            )
-
-        earnings_point_list = stock_to_earnings_points[stock_id]
-        each_earnings_topics = [
-            id_to_earnings_topic[(point.summary_id, point.summary_type, point.summary_idx)]
-            for point in earnings_point_list
-        ]
-
-        logger.info(
-            f"Reviewing {len(each_earnings_topics)} EARNINGS topics "
-            f"for stock {stock_id.symbol} for relevance"
-        )
-        for start in range(0, len(each_earnings_topics), 100):
-            earnings_topics_batch = each_earnings_topics[start : start + 100]
-            earnings_topics_mask = await pipeline.llm.check_hypothesis_relevant_topics(
-                earnings_topics_batch
-            )
-            relevant_earnings_topics.extend(
-                [
-                    topic
-                    for topic, is_related in zip(earnings_topics_batch, earnings_topics_mask)
-                    if is_related
-                ]
-            )
-
-    return relevant_news_topics, relevant_earnings_topics
+    def get_topic(
+        self, idx: int
+    ) -> Union[StockNewsDevelopmentText, StockEarningsSummaryPointText, StockSecFilingSectionText]:
+        if idx < len(self.sec_filing_sections):
+            return self.sec_filing_sections[idx]
+        idx -= len(self.sec_filing_sections)
+        if idx < len(self.earnings_topics):
+            return self.earnings_topics[idx]
+        idx -= len(self.earnings_topics)
+        return self.news_topics[idx]
 
 
-async def classify_news_and_earnings_topics_into_category(
+async def filter_and_classify_topics_into_category(
     hypothesis: str,
     categories: List[Category],
-    news_topics: List[CompanyNewsTopicInfo],
-    earnings_topics: List[CompanyEarningsTopicInfo],
     gbi_id_to_description: Dict[int, str],
+    news_devs_with_text: List[StockNewsDevelopmentText],
+    earnings_points_with_text: List[StockEarningsSummaryPointText],
+    sec_filings_sections_with_text: List[StockSecFilingSectionText],
     context: PlanRunContext,
     gpt_service_stub: Optional[GPTServiceStub] = None,
-) -> Dict[int, List[Union[CompanyNewsTopicInfo, CompanyEarningsTopicInfo]]]:
+) -> Dict[int, MixedTopics]:
+    logger = get_prefect_logger(__name__)
+
     # Prompt
     main_prompt_str = """
-    You are a financial analyst who is evaluating whether a news topic is directly relevant to any
-    of the provided category that can be used to evaluate a hypothesis.
-    The output should be in a key-value JSON format with 2 keys.
-    The first key should be 'indices' and the value is a list of integers for the indices of
-    the most relevant categories, e.g. '[0,1]'. The indices should be 0-based. If you find that this
-    topic can't fall into any of the category, you should return an empty list.
-    The second key should be 'reason' and the value is a short sentence of explanation for why you chose
-    those categories.
-    Your choice should be as conservative as possible and return no more than 2 relevant categories.
-    When there are multiple categories that are equally relevant, you should take categories' importances
-    into account and choose the more important ones.
-    Here is the company description: {company_description}.
-    Here is the hypothesis: {hypothesis}.
-    Here are the categories and their explanations: {categories}.
-    Here is the news topic: {topic}.
+You are a financial analyst who is evaluating whether a text about a stock is directly relevant to any \
+of the provided categories that can be used to answer a question. \
+For example, if the question is 'Who is the leader in the industry?' and you have one category \
+`Market Share` and the text says 'Company A's CEO's wealth increased due to the increase in \
+company's market cap', then the point of the text is the CEO's wealth, and it is not relevant to \
+the category 'Market Share'. However, a text which says 'Company A's sales up compared to competitors' \
+is relevant to `Market Share`.
+All changes related to a particular category are equally relevant. For example, in the example above \
+you must say relevant to both texts which implying 'High Market Share' as well as 'Low Market Share' \
+You absolutely must not think a text is relevant just because the text and the category are both good (or bad) \
+for the company, there must be a clear topical connection between the text and the category \
+that goes well beyond a general positive or negative effect on the company. Unless there is a specific \
+category associated with stock preformance, a text which refers to the just to the company's stock performance \
+in general is not relevant.
+You should be fairly conservative, you must say irrelevant if there's no clear reason that there might \
+be a measurable connection between the text and the categories.
+Do not be too conservative. As long as there is a strong topical link to the category \
+it should be included as relevant even when the category is not explicitly mention. \
+For example, if there is a category about a specific product, texts that indicate a change in supply, \
+demand, or cost of that product would all be considered directly relevant.
+The output should be in a key-value JSON format with 2 keys.
+The first key should be 'relevant_categories' and the value is a list of integers for the indices of \
+the most relevant categories, e.g. '[0,3]'. The indices should be 0-based. If this text is not relevant \
+to any of the categories, this should be any empty list.
+The second key should be 'reason' and the value is a short sentence of explanation for why you chose \
+those categories. Absolutely no more than 50 words.
+Most texts will be relevant to no categories, or only one. You should be very conservative about including more \
+than one.
+Here is the company description:
+{company_description}.
+Here is the question:
+{hypothesis}.
+Here are the categories and their explanations:
+{categories}
+Here is the text:
+{topic}
     """
     main_prompt = Prompt(template=main_prompt_str, name="CLASSIFY_NEWS_TOPIC_SYS_PROMPT")
 
@@ -363,58 +415,81 @@ async def classify_news_and_earnings_topics_into_category(
     category_str = Category.multi_to_gpt_input(categories)
 
     news_tasks = []
-    for news_topic in news_topics:
-        company_description = gbi_id_to_description.get(news_topic.gbi_id, "No company description")
+    for news_dev in news_devs_with_text:
+        company_description = gbi_id_to_description.get(
+            news_dev.stock_id.gbi_id, "No company description"  # type: ignore
+        )
         news_tasks.append(
             gpt.do_chat_w_sys_prompt(
                 main_prompt=main_prompt.format(
                     company_description=company_description,
                     hypothesis=hypothesis,
                     categories=category_str,
-                    topic=news_topic.to_gpt_input(),
+                    topic=news_dev.val,
                 ),
                 sys_prompt=NO_PROMPT,
             )
         )
 
     earnings_tasks = []
-    for earnings_topic in earnings_topics:
-        company_description = gbi_id_to_description[earnings_topic.gbi_id]
+    for earnings_point in earnings_points_with_text:
+        company_description = gbi_id_to_description[earnings_point.stock_id.gbi_id]  # type: ignore
         earnings_tasks.append(
             gpt.do_chat_w_sys_prompt(
                 main_prompt=main_prompt.format(
                     company_description=company_description,
                     hypothesis=hypothesis,
                     categories=category_str,
-                    topic=earnings_topic.to_gpt_input(),
+                    topic=earnings_point.val,
                 ),
                 sys_prompt=NO_PROMPT,
             )
         )
 
-    results: List[str] = await gather_with_concurrency(
-        tasks=news_tasks + earnings_tasks, n=min(50, len(news_tasks) + len(earnings_tasks))
-    )
+    filings_tasks = []
+    for filings_section in sec_filings_sections_with_text:
+        company_description = gbi_id_to_description[filings_section.stock_id.gbi_id]  # type: ignore
+        text = await filings_section.to_gpt_input()
+        filings_tasks.append(
+            gpt.do_chat_w_sys_prompt(
+                main_prompt=main_prompt.format(
+                    company_description=company_description,
+                    hypothesis=hypothesis,
+                    categories=category_str,
+                    topic=text,
+                ),
+                sys_prompt=NO_PROMPT,
+            )
+        )
+
+    all_tasks = news_tasks + earnings_tasks + filings_tasks
+    all_objects = news_devs_with_text + earnings_points_with_text + sec_filings_sections_with_text
+    results: List[str] = await gather_with_concurrency(tasks=all_tasks, n=min(50, len(all_tasks)))
 
     # Divide results
-    category_to_topics: Dict[int, List[Union[CompanyNewsTopicInfo, CompanyEarningsTopicInfo]]] = (
-        defaultdict(list)
-    )
-    for idx, result in enumerate(results):
-        cleaned_result: Dict = json.loads(clean_to_json_if_needed(result))
-        relevant_category_idxs: List[int] = cleaned_result.get("indices", [])
+    category_to_mixed_topics: Dict[int, MixedTopics] = defaultdict(MixedTopics)
+    for text_obj, result in zip(all_objects, results):
+        try:
+            cleaned_result: Dict = json.loads(clean_to_json_if_needed(result))
+        except Exception as e:
+            # we should not fail the whole process if one of the results is not parseable
+            logger.warning(f"Failed to parse result {result} for text object {text_obj}: {e}")
+            continue
+
+        relevant_category_idxs: List[int] = cleaned_result.get("relevant_categories", [])
         if not relevant_category_idxs:
             continue
 
-        if idx < len(news_tasks):
-            obj = news_topics[idx]
-        else:
-            obj = earnings_topics[idx - len(news_tasks)]  # type: ignore
-
         for category_idx in relevant_category_idxs:
-            category_to_topics[category_idx].append(obj)
+            category_to_mixed_topics[category_idx].insert_topic(text_obj)
 
-    return category_to_topics
+    category_topic_log = ""
+    for category_idx, topics in category_to_mixed_topics.items():
+        category = categories[category_idx]
+        category_topic_log += f"Category <{category.name}>: {topics.total} topics; "
+    await tool_log(log=category_topic_log, context=context)
+
+    return category_to_mixed_topics
 
 
 async def rank_and_summarize_for_each_category(
@@ -422,7 +497,7 @@ async def rank_and_summarize_for_each_category(
     stocks: List[StockID],
     hypothesis: str,
     categories: List[Category],
-    category_idx_to_topics: Dict[int, List[Union[CompanyNewsTopicInfo, CompanyEarningsTopicInfo]]],
+    category_idx_to_mixed_topics: Dict[int, MixedTopics],
     gbi_id_to_description: Dict[int, str],
     context: PlanRunContext,
     gpt_service_stub: Optional[GPTServiceStub] = None,
@@ -450,7 +525,7 @@ async def rank_and_summarize_for_each_category(
         compared to each other.
         The output should be in the format of a deserializeable JSON (key-value pairs).
         The first key should be 'ranking' and the value should be a list of objects, where each object has \
-        the following keys:
+        the following 3 keys and DO NOT include extra keys that are not mentioned:
             - 'symbol': a string of the stock symbol
             - 'score': an integer in the range of 0 to 10 which represents how well the company performs \
                 in the criteria. 0 means the company performs the worst, 10 means the company performs the best.
@@ -470,9 +545,12 @@ async def rank_and_summarize_for_each_category(
         of -1 to distinguish and an explanation that there is not enough information to rank the company.
         {summary_str}
         The third key should be 'citations' and the value should be a list of integers that represents the \
-        indices of the topics that you used to rank the companies. The indices should be 0-based. You should \
-        give at least 1 citation for low ranked companies and at least 2 citations for top ranked companies. \
-        But no more than 3 citations for any company.
+        indices of the topics that you used to rank the companies. The indices should be 0-based. \
+        You should review all the provided topics carefully and cite the MOST RELEVANT ones. \
+        The order of the citations should be from the most relevant to the least relevant. \
+        You should include at least 1 citation for low ranked companies and at least 2 citations for top \
+        ranked companies. NO MORE than 3 citations for any company, so the total number of citations \
+        should be NO MORE THAN {total_citations}.
         Here is the hypothesis: {hypothesis}\n
         Here is the main criteria you should use to evaluate the hypothesis:{category}\n
         Here are the other criteria which are only used to provide context and should not be considered
@@ -498,25 +576,23 @@ async def rank_and_summarize_for_each_category(
             "It should also try to mention other companies and concisely compare them with the target stock."
         )
 
+    total_citations = 3 * len(stocks)
+
+    company_description_list = []
+    for stock in stocks:
+        description = gbi_id_to_description[stock.gbi_id]  # type: ignore
+        company_description_list.append(f"Symbol: {stock.symbol}. Description: {description}")
+    company_description_str = "\n".join(company_description_list)
+
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     gpt = GPT(context=gpt_context, model=GPT4_O, gpt_service_stub=gpt_service_stub)
-    gbi_id_to_stock = {stock.gbi_id: stock for stock in stocks}
     category_idx_to_result: Dict[int, Dict] = {}
-    for category_idx, topics in category_idx_to_topics.items():
-        logger.info(f"Ranking and summarizing for category {categories[category_idx].name}")
+    for category_idx, mixed_topics in category_idx_to_mixed_topics.items():
+        logger.info(f"Ranking and summarizing for category <{categories[category_idx].name}>")
 
-        gbi_ids = {t.gbi_id for t in topics}
-        company_description_list = []
-        for gbi_id in gbi_ids:
-            stock = gbi_id_to_stock[gbi_id]
-            description = gbi_id_to_description[gbi_id]
-            company_description_list.append(f"Symbol: {stock.symbol}. Description: {description}")
-        company_description_str = "\n".join(company_description_list)
-
-        topics_str = "\n".join((f"- {idx}: {text}" for idx, text in enumerate(topics)))
-
+        topics_str = await mixed_topics.to_gpt_input()
         category_str = await categories[category_idx].to_gpt_input()
 
         other_categories = [categories[i] for i in range(len(categories)) if i != category_idx]
@@ -530,12 +606,18 @@ async def rank_and_summarize_for_each_category(
                 company_descriptions=company_description_str,
                 topics=topics_str,
                 summary_str=summary_str,
+                total_citations=total_citations,
             ),
             sys_prompt=rank_by_category_sys_prompt.format(),
         )
 
         result = json.loads(clean_to_json_if_needed(resp))
         category_idx_to_result[category_idx] = result
+
+    await tool_log(
+        log="Ranked all the relevant stocks for each category and created summaries",
+        context=context,
+    )
 
     return category_idx_to_result
 
@@ -638,10 +720,8 @@ async def prepare_categorical_hypothesis_outputs(
     final_summary: str,
     final_score: float,
     categories: List[Category],
-    category_idx_to_topics: Dict[int, List[Union[CompanyNewsTopicInfo, CompanyEarningsTopicInfo]]],
+    category_idx_to_topics: Dict[int, MixedTopics],
     category_idx_to_result: Dict[int, Dict],
-    news_developments: List[StockNewsDevelopmentText],
-    earnings_summary_points: List[StockEarningsSummaryPointText],
 ) -> CategoricalHypothesisTexts:
     output = CategoricalHypothesisTexts(
         val=[], categories=Categories(val=categories, title="Categories")
@@ -657,10 +737,6 @@ async def prepare_categorical_hypothesis_outputs(
     )
 
     # each category ranking widget
-    id_to_news_dev = {dev.id: dev for dev in news_developments}
-    key_to_earnings_points = {
-        (obj.summary_id, obj.summary_type, obj.summary_idx): obj for obj in earnings_summary_points
-    }
     for category_idx, result in sorted(
         category_idx_to_result.items(), key=lambda x: -categories[x[0]].weight
     ):
@@ -685,17 +761,12 @@ async def prepare_categorical_hypothesis_outputs(
 
         # citations
         citation_idxs = result["citations"]
-        topics = category_idx_to_topics[category_idx]
+        mixed_topics = category_idx_to_topics[category_idx]
         citations = []
         for idx in citation_idxs:
-            topic = topics[idx]
-            if isinstance(topic, CompanyNewsTopicInfo):
-                dev = id_to_news_dev[topic.topic_id]
-                citations.append(TextCitation(source_text=dev))
-            elif isinstance(topic, CompanyEarningsTopicInfo):
-                key = (topic.topic_id, topic.summary_type.value, topic.summary_index)
-                point = key_to_earnings_points[key]
-                citations.append(TextCitation(source_text=point))
+            topic = mixed_topics.get_topic(idx)
+            topic.reset_value()  # remove the content to save DB space
+            citations.append(TextCitation(source_text=topic))
 
         output.val.append(
             Text(
