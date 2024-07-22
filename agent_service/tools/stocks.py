@@ -429,11 +429,23 @@ async def augment_stock_rows_with_volume(rows: List[Dict[str, Any]]) -> List[Dic
         List[Dict[str, Any]]: DB rows representing the potentially matching stocks.
     """
     logger = get_prefect_logger(__name__)
-    gbiid2stocks = {r["gbi_security_id"]: r for r in rows}
+
+    # dedupe by gbi_id and keep the first item (already presorted by match strength)
+    gbiid2stocks = {}
+    for r in rows:
+        if r["gbi_security_id"] not in gbiid2stocks:
+            gbiid2stocks[r["gbi_security_id"]] = r
+
     gbi_ids = list(gbiid2stocks.keys())
     stocks_sorted_by_volume = await async_sort_stocks_by_volume(gbi_ids)
 
     if stocks_sorted_by_volume:
+        if len(stocks_sorted_by_volume) != len(gbiid2stocks):
+            logger.warning(
+                f"Some stock volumes not found, expected: {len(gbiid2stocks)}"
+                f" but got: {len(stocks_sorted_by_volume)}"
+            )
+
         logger.info(f"Top stock volumes: {stocks_sorted_by_volume[:10]}")
         for gbi_id, volume in stocks_sorted_by_volume:
             stock = gbiid2stocks.get(gbi_id)
@@ -442,7 +454,11 @@ async def augment_stock_rows_with_volume(rows: List[Dict[str, Any]]) -> List[Dic
             else:
                 logger.warning("Logic error!")
                 # should not be possible
-    return rows
+    else:
+        logger.warning(f"No stock volumes found for {gbi_ids=}")
+
+    new_rows = list(gbiid2stocks.values())
+    return new_rows
 
 
 @async_perf_logger
@@ -494,11 +510,12 @@ async def stock_lookup_by_text_similarity(
 
     -- ticker symbol (exact match only)
     SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
+    ms.asset_type,
     ms.name, 'ticker symbol' as match_col, ms.symbol as match_text,
     {PERFECT_TEXT_MATCH} AS text_sim_score
     FROM master_security ms
     WHERE
-    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
     AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
@@ -508,6 +525,7 @@ async def stock_lookup_by_text_similarity(
 
     -- company name
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
+    ms.asset_type,
     name, 'name' as match_col, ms.name as match_text,
     (strict_word_similarity(ms.name, %(search_term)s) +
     strict_word_similarity(%(search_term)s, ms.name)) / 2
@@ -528,6 +546,7 @@ async def stock_lookup_by_text_similarity(
 
     -- custom boosted db entries -  company alt name * 1.0
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
+    ms.asset_type,
     name, 'comp alt name' as match_col, alt_name as match_text,
 
     -- lower the score for spiq matches
@@ -555,6 +574,7 @@ async def stock_lookup_by_text_similarity(
 
     -- gbi alt name
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
+    ms.asset_type,
     name, 'gbi alt name' as match_col, alt_name as match_text,
     (strict_word_similarity(alt_name, %(search_term)s) +
     strict_word_similarity(%(search_term)s, alt_name)) / 2
@@ -580,6 +600,15 @@ async def stock_lookup_by_text_similarity(
     LIMIT 100
     """
     rows = db.generic_read(sql, {"search_term": args.stock_name, "prefix": prefix})
+
+    # this shouldn't matter but at least once on dev the volume lookup silently failed
+    # this will break ties in favor of Common stock and against Depositary Receipts
+    for r in rows:
+        if "Common Stock" != r["asset_type"]:
+            r["final_match_score"] *= 0.9
+
+    rows.sort(key=lambda x: x["final_match_score"], reverse=True)
+
     if rows:
         # the weaker the match the more results to be
         # considered for trading volume tie breaker

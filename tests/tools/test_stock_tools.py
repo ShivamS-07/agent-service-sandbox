@@ -53,6 +53,13 @@ class TestStockIdentifierLookup0(TestStockIdentifierLookup):
         self.assertEqual(result.gbi_id, 124)
 
 
+class TestStockIdentifierLookupNVDA(TestStockIdentifierLookup):
+    async def test_stock_identifier_lookup_test(self):
+        self.args = StockIdentifierLookupInput(stock_name="NVDA")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.gbi_id, 7555)
+
+
 @unittest.skip("Too slow")
 class TestStockIdentifierLookup1(TestStockIdentifierLookup):
     async def test_stock_identifier_lookup_DLR_isin(self):
