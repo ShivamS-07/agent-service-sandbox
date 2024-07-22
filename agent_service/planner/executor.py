@@ -47,6 +47,7 @@ from agent_service.utils.async_db import (
     get_latest_execution_plan_from_db,
 )
 from agent_service.utils.output_utils.output_diffs import OutputDiffer
+from agent_service.utils.output_utils.utils import output_for_log
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
 from agent_service.utils.prefect import (
     FlowRunType,
@@ -262,7 +263,7 @@ async def run_execution_plan(
                 db=db,
             )
         if log_all_outputs:
-            logger.info(f"Output of step '{step.tool_name}': {tool_output}")
+            logger.info(f"Output of step '{step.tool_name}': {output_for_log(tool_output)}")
 
         # Store the output in the associated variable
         if step.output_variable_name:
@@ -485,7 +486,13 @@ async def create_execution_plan(
     await publish_agent_execution_plan(plan, ctx, db)
 
     logger.info(f"Finished creating execution plan for {agent_id=}")
-    logger.info(f"Execution Plan:\n{plan.get_formatted_plan()}")
+    logger.info(
+        "\n"
+        "\n===============================================\n"
+        f"Execution Plan:\n{plan.get_formatted_plan(numbered=True)}"
+        "\n===============================================\n"
+        "\n"
+    )
 
     if do_chat:
         logger.info("Generating initial postplan response...")

@@ -103,7 +103,7 @@ class ExecutionPlan(BaseModel):
             if numbered:
                 prefix = f"{i}. "
             str_list.append(f"{prefix}{node.get_plan_step_str()}")
-        return "\n".join(str_list)
+        return "\n\n".join(str_list)
 
 
 class ExecutionPlanParsingError(RuntimeError):

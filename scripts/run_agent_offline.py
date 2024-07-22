@@ -13,6 +13,7 @@ from agent_service.planner.executor import (
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import init_stdout_logging
+from agent_service.utils.output_utils.utils import output_for_log
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
 
 
@@ -97,7 +98,7 @@ async def gen_and_run_plan(
         scheduled_by_automation=mock_automation,
     )
     print("Output from main run:")
-    pprint(output)
+    print(output_for_log(output))
 
     if multiple_inputs:
         while True:
