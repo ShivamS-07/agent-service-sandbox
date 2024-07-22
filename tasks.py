@@ -35,18 +35,18 @@ def test(c):
 
 @task
 def testregression(c):
-    c.run("RUN_IN_CI=true python -W ignore -m unittest discover -v -s regression_test")
+    c.run(
+        "RUN_IN_CI=true unittest-parallel -v --level class --disable-process-pooling --jobs 8  "
+        "-t . -s regression_test"
+    )
 
 
 @task
 def testfast(c):
-    print("running tests fast in parallel")
-    c.run("pip install unittest-parallel")  # move to pipfile?
-
     # runs each test class in its own process 8 at a time
     c.run(
-        "RUN_IN_CI=true nice -n19 unittest-parallel -v --level class --disable-process-pooling --jobs 8  -t . -s "
-        "tests"
+        "RUN_IN_CI=true unittest-parallel -v --level class --disable-process-pooling --jobs 8  "
+        "-t . -s tests"
     )
 
 

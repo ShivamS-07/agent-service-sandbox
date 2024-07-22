@@ -75,7 +75,7 @@ class AsyncPostgresBase(BoostedPG):
                 open=False,
                 min_size=self.min_pool_size,
                 max_size=self.max_pool_size,
-                check=psycopg_pool.AsyncConnectionPool.check_connection,
+                check=psycopg_pool.AsyncConnectionPool.check_connection,  # type:ignore
                 kwargs={
                     "dbname": db_config.database,
                     "user": db_config.username,

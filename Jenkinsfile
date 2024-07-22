@@ -50,7 +50,7 @@ pipeline {
                     if (env.BRANCH_NAME != env.MASTER_BRANCH){
                         sh "aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 374053208103.dkr.ecr.us-west-2.amazonaws.com"
                         sh "docker build -f test.dockerfile -t \$(git rev-parse HEAD) ."
-                        sh "docker run --network host \$(git rev-parse HEAD)"
+                        sh "docker run --network host --memory=3G --cpus=2 \$(git rev-parse HEAD)"
                     }
                 }
             }
