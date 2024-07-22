@@ -230,6 +230,11 @@ async def stock_identifier_lookup(
             company_name=stock["name"],
         )
 
+    # if this is an ISIN, we should not allow partial matches on non-ISIN company text
+    if is_isin(args.stock_name):
+        logger.info(f"No acceptable stock found with isin match: {args.stock_name}")
+        raise ValueError(f"Could not find any stocks related to: '{args.stock_name}'")
+
     # next we check for best matches by text similarity
     rows = await stock_lookup_by_text_similarity(args, context)
     logger.info(f"found {len(rows)} best potential matching stocks")
@@ -359,6 +364,13 @@ async def stock_lookup_by_exact_gbi_alt_name(
     return []
 
 
+def is_isin(search: str) -> bool:
+    if 12 == len(search) and search[0:2].isalpha() and search[2:].isalnum():
+        return True
+
+    return False
+
+
 async def stock_lookup_by_isin(
     args: StockIdentifierLookupInput, context: PlanRunContext
 ) -> List[Dict[str, Any]]:
@@ -375,11 +387,7 @@ async def stock_lookup_by_isin(
     db = get_psql()
 
     # ISINs are 12 chars long, 2 chars, 10 digits
-    if (
-        12 == len(args.stock_name)
-        and args.stock_name[0:2].isalpha()
-        and args.stock_name[2:].isalnum()
-    ):
+    if is_isin(args.stock_name):
         # Exact ISIN match
         sql = """
         SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency, name,
@@ -634,10 +642,14 @@ async def stock_lookup_exact(
         logger.info("found bloomberg parsekey")
         return bloomberg_rows
 
-    isin_rows = await stock_lookup_by_isin(args, context)
-    if isin_rows:
-        logger.info("found isin match")
-        return isin_rows
+    if is_isin(args.stock_name):
+        isin_rows = await stock_lookup_by_isin(args, context)
+        if isin_rows:
+            logger.info("found isin match")
+            return isin_rows
+        else:
+            logger.info(f"No acceptable stock found with isin match: {args.stock_name}")
+            return []
 
     gbi_alt_name_rows = await stock_lookup_by_exact_gbi_alt_name(args, context)
     if gbi_alt_name_rows:
@@ -674,13 +686,14 @@ async def raw_stock_identifier_lookup(
     if exact_rows:
         logger.info(f"found  {len(exact_rows)} exact matches: {args=}")
         return exact_rows
-
-    similar_rows = await stock_lookup_by_text_similarity(args, context)
-    if similar_rows:
-        logger.info(
-            f"found {len(similar_rows)} text similarity matches: {args=}," f" {similar_rows[:4]}"
-        )
-        return similar_rows
+    elif not is_isin(args.stock_name):
+        similar_rows = await stock_lookup_by_text_similarity(args, context)
+        if similar_rows:
+            logger.info(
+                f"found {len(similar_rows)} text similarity matches: {args=},"
+                f" {similar_rows[:4]}"
+            )
+            return similar_rows
 
     raise ValueError(f"Could not find any stocks related to: '{args.stock_name}'")
 
