@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+import traceback
 from datetime import timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -75,7 +76,7 @@ class AsyncPostgresBase(BoostedPG):
                 open=False,
                 min_size=self.min_pool_size,
                 max_size=self.max_pool_size,
-                check=psycopg_pool.AsyncConnectionPool.check_connection,  # type:ignore
+                check=psycopg_pool.AsyncConnectionPool.check_connection,
                 kwargs={
                     "dbname": db_config.database,
                     "user": db_config.username,
@@ -89,7 +90,7 @@ class AsyncPostgresBase(BoostedPG):
             await pool.wait()
             self._pool = pool
         except Exception:
-            raise ValueError("Unable to connect to Postgres DB")
+            raise ValueError(f"Unable to connect to Postgres DB: {traceback.format_exc()}")
 
     async def close(self) -> None:
         if self._pool:

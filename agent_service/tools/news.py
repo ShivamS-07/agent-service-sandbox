@@ -271,7 +271,7 @@ def _get_similar_news_to_embedding(
         rows = cursor.fetchmany(batch_size)
         while rows:
             yield {
-                row["news_id"]: f"Headline:{row['headline']}\nSummary:{row['summary']}"
+                row["news_id"]: f"Headline:{row['headline']}\nSummary:{row['summary']}"  # type: ignore
                 for row in rows
             }
             rows = cursor.fetchmany(batch_size)

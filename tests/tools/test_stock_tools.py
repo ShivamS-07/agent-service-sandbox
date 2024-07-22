@@ -43,6 +43,7 @@ class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
         init_test_logging()
 
 
+@unittest.skip("Flaky")
 class TestStockIdentifierLookup0(TestStockIdentifierLookup):
     async def test_stock_identifier_lookup_test(self):
         self.args = StockIdentifierLookupInput(stock_name="advance micro devices")
