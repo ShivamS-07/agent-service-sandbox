@@ -71,7 +71,13 @@ logger = get_prefect_logger(__name__)
 # Helper functions
 async def split_text_and_citation_ids(GPT_ouput: str) -> Tuple[str, List[int]]:
     lines = GPT_ouput.replace("\n\n", "\n").split("\n")
-    citation_ids = json.loads(clean_to_json_if_needed(lines[-1]))
+    try:
+        citation_ids = json.loads(clean_to_json_if_needed(lines[-1]))
+    except json.JSONDecodeError as e:
+        logger.warning(
+            f"Got error `{e}` when loading `{lines[-1]}` for citations, no citations included"
+        )
+        citation_ids = []
     main_text = "\n".join(lines[:-1])
     return main_text, citation_ids
 

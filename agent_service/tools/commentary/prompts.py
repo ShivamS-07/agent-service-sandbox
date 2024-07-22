@@ -302,11 +302,11 @@ GET_COMMENTARY_INPUTS_DESCRIPTION = (
 )
 
 WRITE_COMMENTARY_DESCRIPTION = (
-    "This function can be used when a client wants to write a commentary, article or summary of "
-    "market trends or specific topics."
-    "This function generates a commentary either for general market trends or "
-    "based on specific topics mentioned by a client. "
+    "This function can be used when a client wants to write a commentary, article or report on "
+    "market trends or specific market topics."
     "The function creates a concise summary based on a comprehensive analysis of the provided texts. "
+    "It should not be used for writing other kinds of documents, if you are unsure, you should use "
+    "the summary tool, not this tool."
     "The commentary will be written in a professional tone, "
     "incorporating any specific instructions or preferences mentioned by the client during their interaction. "
     "The input to this function MUST be prepared by the get_commentary_inputs tool."

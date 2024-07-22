@@ -907,12 +907,14 @@ class GetRiskExposureForStocksInput(ToolArgs):
         "use > 1 to get 'high' scores, > 2 to get 'very high' scores "
         " < -1 to get 'low' scores, and -2 to get 'very low' scores. "
         "Use this tool if the user asks to filter/rank by one of these factors specifically, "
-        "but you must never use it unless the client says corresponds exactly or almost "
+        "but you must never use it unless what the client says corresponds exactly or almost "
         "exactly to one of the relevant factors, you must use one or more of the provided "
-        "factor names exactly in your instructions to the transform_table table, if you cannot do that "
-        "you should probably filter by profile instead."
-        "Do not use this tool if the user asks for a particular statistic, even if it is"
-        "closely related to one of these factors, use the get_statistic tool instead."
+        "factor names exactly in your instructions to the transform_table tool, if you cannot do that "
+        "you should probably filter by profile instead. "
+        "You must not use this tool if the user asks for something related to the particular value "
+        "of particular statistic, even if it is closely related to one of these factors, use the "
+        "get_statistic tool instead. For example you would never use this tool for queries "
+        "asking for filtering based on market cap, which is a specific statistic"
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
