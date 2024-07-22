@@ -440,3 +440,7 @@ class GetTestSuiteRunsIdsResponse(BaseModel):
 
 class GetTestCaseInfoResponse(BaseModel):
     test_case_info: List[Dict[str, Any]]
+
+
+class GetTestCasesResponse(BaseModel):
+    test_cases: List[Dict[str, Any]]

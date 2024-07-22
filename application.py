@@ -51,6 +51,7 @@ from agent_service.endpoints.models import (
     GetChatHistoryResponse,
     GetSecureUserResponse,
     GetTestCaseInfoResponse,
+    GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsIdsResponse,
     ListMemoryItemsResponse,
@@ -710,6 +711,21 @@ def get_test_suite_runs(user: User = Depends(parse_header)) -> GetTestSuiteRunsI
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
     return application.state.agent_service_impl.get_test_suite_runs()
+
+
+@router.get(
+    "/regression-test-cases",
+    response_model=GetTestCasesResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_test_cases(user: User = Depends(parse_header)) -> GetTestCasesResponse:
+    if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
+    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
+        )
+    return application.state.agent_service_impl.get_test_cases()
 
 
 @router.get(

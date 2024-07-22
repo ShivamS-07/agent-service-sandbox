@@ -31,6 +31,7 @@ from agent_service.endpoints.models import (
     GetPlanRunOutputResponse,
     GetSecureUserResponse,
     GetTestCaseInfoResponse,
+    GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsIdsResponse,
     ListMemoryItemsResponse,
@@ -561,6 +562,9 @@ class AgentServiceImpl:
 
     def get_test_suite_runs(self) -> GetTestSuiteRunsIdsResponse:
         return GetTestSuiteRunsIdsResponse(test_suite_run_ids=self.ch.get_test_suite_run_ids())
+
+    def get_test_cases(self) -> GetTestCasesResponse:
+        return GetTestCasesResponse(test_cases=self.ch.get_test_cases())
 
     def get_info_for_test_case(self, test_name: str) -> GetTestCaseInfoResponse:
         return GetTestCaseInfoResponse(

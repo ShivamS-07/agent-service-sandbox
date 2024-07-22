@@ -153,3 +153,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
             test_name=test_name
         ).test_case_info
         self.assertTrue(test_case_info)
+
+    def test_get_test_cases(self):
+        test_cases = self.agent_service_impl.get_test_cases().test_cases
+        self.assertTrue(test_cases)

@@ -601,11 +601,11 @@ class Clickhouse(ClickhouseBase):
         sql = """SELECT test_name, prompt, agent_id, output, execution_plan, service_version, error_msg, warning_msg,
         execution_finished_at_utc, execution_start_at_utc, execution_plan_started_at_utc,
         execution_plan_finished_at_utc, execution_duration_seconds, execution_plan_duration_seconds FROM
-        agent.regression_test WHERE test_suite_id = %(test_run_id)s"""
+        agent.regression_test WHERE test_suite_id = %(test_run_id)s ORDER BY test_name"""
         res: Dict[str, Any] = {}
         rows = self.generic_read(sql, {"test_run_id": test_run_id})
         tz = datetime.timezone.utc
-        for row in rows:
+        for i, row in enumerate(rows):
             test_name = row.pop("test_name")
             for key in ["output", "execution_plan"]:
                 if row[key]:
@@ -618,14 +618,29 @@ class Clickhouse(ClickhouseBase):
             ]:
                 if row[key]:
                     row[key] = row[key].replace(tzinfo=tz).isoformat()
-            res[f"test_name={test_name}"] = row
+            res[f"{i} test_name={test_name}"] = row
         return res
 
     def get_test_suite_run_ids(self) -> List[Dict[str, Any]]:
         sql = """
-        SELECT DISTINCT ON (test_suite_id) test_suite_id as test_suite_run_id, timestamp, service_version
+        SELECT test_suite_id as test_suite_run_id, MAX(timestamp) as timestamp, MAX(service_version) as service_version,
+        SUM(error_msg != '') AS error_count,
+        SUM(warning_msg != '') AS warning_count,
+        SUM(error_msg == '' AND warning_msg == '') AS success_count
         FROM agent.regression_test
+        GROUP BY test_suite_id
         ORDER BY timestamp DESC
+        """
+        rows = self.generic_read(sql)
+        tz = datetime.timezone.utc
+        for row in rows:
+            row["timestamp"] = row["timestamp"].replace(tzinfo=tz).isoformat()
+        return rows
+
+    def get_test_cases(self) -> List[Dict[str, Any]]:
+        sql = """
+        SELECT test_name as test_case, MAX(timestamp) as timestamp from agent.regression_test
+        GROUP BY test_name ORDER BY timestamp DESC
         """
         rows = self.generic_read(sql)
         tz = datetime.timezone.utc
