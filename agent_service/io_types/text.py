@@ -250,6 +250,13 @@ class StockText(Text):
 
 
 @io_type
+class EarningsPeersText(StockText):
+    affecting_stock_id: Optional[StockID] = None
+    year: int
+    quarter: int
+
+
+@io_type
 class StockNewsDevelopmentText(NewsText, StockText):
     id: str
     text_type: ClassVar[str] = "News Development Summary"

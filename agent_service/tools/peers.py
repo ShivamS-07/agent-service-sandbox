@@ -2,14 +2,21 @@ import asyncio
 from collections import defaultdict
 from typing import Dict, List, Optional
 
+import pandas as pd
+
 from agent_service.external.nlp_svc_client import (
     get_earnings_peers_impacted_by_stocks,
     get_earnings_peers_impacting_stocks,
 )
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
+from agent_service.io_type_utils import HistoryEntry, TableColumnType
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
+from agent_service.io_types.table import Table, TableColumnMetadata
+from agent_service.io_types.text import EarningsPeersText, Text, TextCitation
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.LLM_analysis.tools import SummarizeTextInput, summarize_texts
 from agent_service.tools.stocks import (
     StockIdentifierLookupInput,
     stock_identifier_lookup,
@@ -17,7 +24,7 @@ from agent_service.tools.stocks import (
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.postgres import get_psql
+from agent_service.utils.postgres import SyncBoostedPG, get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 
@@ -85,9 +92,197 @@ VALIDATION_SYS_PROMPT = Prompt(
     "{extra_company_info}",
 )
 
+AFFECTED_LABEL = "Security"
+AFFECTING_LABEL = "Potentially Influencial Security"
+CONNECTION_LABEL = "Potential Influence"
+
 
 class PeersForStockInput(ToolArgs):
     stock_ids: List[StockID]
+    date_range: Optional[DateRange] = None
+
+
+@tool(
+    description="""
+    This tool specificially identifies Earnings Peers for a given stock.
+    This function takes in a list of StockIDs and a date_range and returns lists
+    of PeerConnections that are impacted by the input stocks.
+    The resulting PeerConnections contain the impacted stock (peers),
+    the impacting stock (which will be from the input),
+    and the summarized connection between the two.
+    The connection is a list of PeerRelation objects, which contain the relation and connection
+    between the two stocks and comes from Earnings Reports.
+    This tool already has summarized the connection between the two stocks.
+    Thus get_earnings_call_summaries does not need to be called in order to get the summarized connection.
+    """,
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+)
+async def get_affected_peers(
+    args: PeersForStockInput, context: PlanRunContext
+) -> List[EarningsPeersText]:
+    if not args.stock_ids:
+        await tool_log(
+            log="No peers found due to no input stocks",
+            context=context,
+        )
+        return []
+
+    impacting_peers = await get_earnings_peers_impacted_by_stocks(
+        user_id=context.user_id, gbi_ids=[x.gbi_id for x in args.stock_ids]
+    )
+
+    peer_stocks: List[EarningsPeersText] = []
+
+    for p in impacting_peers.peer_connections:
+        gbi_id = (await StockID.from_gbi_id_list([p.gbi_id]))[0]
+        peer_id = (await StockID.from_gbi_id_list([p.affected_gbi_id]))[0]
+
+        report_date = p.earnings_date.ToDatetime().date()
+        if args.date_range is not None:
+            if args.date_range.start_date <= report_date <= args.date_range.end_date:
+                peer_stocks.extend(
+                    EarningsPeersText(
+                        stock_id=peer_id,
+                        affecting_stock_id=gbi_id,
+                        val=c.connection,
+                        history=[
+                            HistoryEntry(citations=[TextCitation(source_text=Text(val=c.remark))])
+                        ],
+                        year=p.year,
+                        quarter=p.quarter,
+                    )
+                    for c in p.connections
+                )
+        else:
+            peer_stocks.extend(
+                EarningsPeersText(
+                    stock_id=peer_id,
+                    affecting_stock_id=gbi_id,
+                    val=c.connection,
+                    history=[
+                        HistoryEntry(citations=[TextCitation(source_text=Text(val=c.remark))])
+                    ],
+                    year=p.year,
+                    quarter=p.quarter,
+                )
+                for c in p.connections
+            )
+
+    await tool_log(
+        log=f"Found {len(peer_stocks)} peers for {len(args.stock_ids)} input stocks",
+        context=context,
+    )
+    return peer_stocks
+
+
+@tool(
+    description="""
+    This tool specificially identifies Earnings Peers for a given stock.
+    This function takes in a list of StockIDs and a date_range and returns lists
+    of PeerConnections that are impacted by the input stocks.
+    The resulting PeerConnections contain the impacted stock (which will be from the input),
+    the impacting stock (peers), and the connection between the two.
+    The connection is a list of PeerRelation objects, which contain the relation and
+    connection between the two stocks and comes from Earnings Reports.
+    This tool already has summarized the connection between the two stocks.
+    Thus get_earnings_call_summaries does not need to be called in order to get the summarized connection.
+    """,
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+)
+async def get_affecting_peers(
+    args: PeersForStockInput, context: PlanRunContext
+) -> List[EarningsPeersText]:
+    if not args.stock_ids:
+        await tool_log(
+            log="No peers found due to no input stocks",
+            context=context,
+        )
+
+        return []
+
+    impacting_peers = await get_earnings_peers_impacting_stocks(
+        user_id=context.user_id, gbi_ids=[x.gbi_id for x in args.stock_ids]
+    )
+
+    peer_stocks: List[EarningsPeersText] = []
+
+    for p in impacting_peers.peer_connections:
+        gbi_id = (await StockID.from_gbi_id_list([p.affected_gbi_id]))[0]
+        peer_id = (await StockID.from_gbi_id_list([p.gbi_id]))[0]
+
+        report_date = p.earnings_date.ToDatetime().date()
+        if args.date_range is not None:
+            if args.date_range.start_date <= report_date <= args.date_range.end_date:
+                peer_stocks.extend(
+                    EarningsPeersText(
+                        stock_id=gbi_id,
+                        affecting_stock_id=peer_id,
+                        val=c.connection,
+                        history=[
+                            HistoryEntry(citations=[TextCitation(source_text=Text(val=c.remark))])
+                        ],
+                        year=p.year,
+                        quarter=p.quarter,
+                    )
+                    for c in p.connections
+                )
+
+        else:
+            peer_stocks.extend(
+                [
+                    EarningsPeersText(
+                        stock_id=gbi_id,
+                        affecting_stock_id=peer_id,
+                        val=c.connection,
+                        history=[
+                            HistoryEntry(citations=[TextCitation(source_text=Text(val=c.remark))])
+                        ],
+                        year=p.year,
+                        quarter=p.quarter,
+                    )
+                    for c in p.connections
+                ]
+            )
+
+    await tool_log(
+        log=f"Found {len(peer_stocks)} peers for {len(args.stock_ids)} input stocks",
+        context=context,
+    )
+    return peer_stocks
+
+
+class PeersConnections(ToolArgs):
+    connections: List[EarningsPeersText]
+
+
+@tool(
+    description="""
+    This tool takes in a List of EarningsPeersText objects and returns the information
+    in Table format. This table includes the affected stock, the affecting stock,
+    and the connection between the two.
+    """,
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+)
+async def get_earnings_peers_table(args: PeersConnections, context: PlanRunContext) -> Table:
+    columns: List[TableColumnMetadata] = []
+    columns.append(TableColumnMetadata(label=AFFECTED_LABEL, col_type=TableColumnType.STOCK))
+    columns.append(TableColumnMetadata(label=AFFECTING_LABEL, col_type=TableColumnType.STOCK))
+    columns.append(TableColumnMetadata(label=CONNECTION_LABEL, col_type=TableColumnType.STRING))
+
+    data = []
+    for connection in args.connections:
+        data.append(
+            {
+                AFFECTED_LABEL: connection.stock_id,
+                AFFECTING_LABEL: connection.affecting_stock_id,
+                CONNECTION_LABEL: connection.val,
+            }
+        )
+    df = pd.DataFrame(data)
+    return Table.from_df_and_cols(data=df, columns=columns)
 
 
 # disabling this tool for now as it falls back to earnings peers
@@ -346,6 +541,25 @@ async def main() -> None:
     )
     for stock in output:
         print(stock.company_name)
+
+    peers = await get_affected_peers(
+        PeersForStockInput(
+            stock_ids=[
+                StockID(gbi_id=714, symbol="AAPL", isin="AAPLISIN", company_name="Apple Inc.")
+            ]
+        ),
+        context=plan_context,
+    )
+
+    for peer in peers:  # type: ignore
+        citation = await peer.to_rich_output(pg=SyncBoostedPG())  # type: ignore
+        print(citation)
+
+    output2 = await get_earnings_peers_table(PeersConnections(connections=peers), plan_context)  # type: ignore
+    print(output2)
+
+    output3 = await summarize_texts(SummarizeTextInput(texts=peers), plan_context)  # type: ignore
+    print(output3)
 
 
 if __name__ == "__main__":
