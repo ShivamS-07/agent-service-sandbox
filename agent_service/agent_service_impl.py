@@ -20,6 +20,7 @@ from agent_service.endpoints.models import (
     CustomNotification,
     Debug,
     DeleteAgentResponse,
+    DeleteMemoryResponse,
     DisableAgentAutomationResponse,
     EnableAgentAutomationResponse,
     ExecutionPlanTemplate,
@@ -30,6 +31,7 @@ from agent_service.endpoints.models import (
     GetAllAgentsResponse,
     GetAutocompleteItemsResponse,
     GetChatHistoryResponse,
+    GetMemoryContentResponse,
     GetPlanRunOutputResponse,
     GetSecureUserResponse,
     GetTestCaseInfoResponse,
@@ -42,6 +44,7 @@ from agent_service.endpoints.models import (
     MemoryItem,
     NotificationEvent,
     PlanTemplateTask,
+    RenameMemoryResponse,
     SharePlanRunResponse,
     Tooltips,
     UnsharePlanRunResponse,
@@ -51,6 +54,12 @@ from agent_service.endpoints.models import (
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
+from agent_service.io_type_utils import TableColumnType
+from agent_service.io_types.table import (
+    STOCK_ID_COL_NAME_DEFAULT,
+    TableOutput,
+    TableOutputColumn,
+)
 from agent_service.types import ChatContext, Message
 from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import send_chat_message
@@ -476,6 +485,25 @@ class AgentServiceImpl:
                 memory_items.append(memory_item)
 
         return GetAutocompleteItemsResponse(success=True, items=memory_items)
+
+    async def get_memory_content(
+        self, user_id: str, type: str, id: str
+    ) -> GetMemoryContentResponse:
+        cols = [TableOutputColumn(name=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)]
+        if type == "portfolio":
+            cols.append(TableOutputColumn(name="Weight", col_type=TableColumnType.FLOAT))
+
+        table = TableOutput(title="Memory Content", columns=cols, rows=[])
+
+        return GetMemoryContentResponse(output=table)
+
+    async def delete_memory(self, user_id: str, type: str, id: str) -> DeleteMemoryResponse:
+        return DeleteMemoryResponse(success=True)
+
+    async def rename_memory(
+        self, user_id: str, type: str, id: str, new_name: str
+    ) -> RenameMemoryResponse:
+        return RenameMemoryResponse(success=True)
 
     # Requires no authorization
     async def get_plan_run_output(self, plan_run_id: str) -> GetPlanRunOutputResponse:

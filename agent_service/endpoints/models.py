@@ -450,6 +450,24 @@ class GetAutocompleteItemsResponse(BaseModel):
     items: List[MemoryItem]
 
 
+class GetMemoryContentResponse(BaseModel):
+    output: Optional[Union[TextOutput, TableOutput]] = Field(discriminator="output_type")
+
+
+class DeleteMemoryResponse(BaseModel):
+    success: bool
+
+
+class RenameMemoryRequest(BaseModel):
+    id: str
+    type: str
+    new_name: str
+
+
+class RenameMemoryResponse(BaseModel):
+    success: bool
+
+
 # Regression Test Run Info
 ####################################################################################################
 class GetTestSuiteRunInfoResponse(BaseModel):

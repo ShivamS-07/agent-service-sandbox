@@ -52,6 +52,7 @@ from agent_service.endpoints.models import (
     GetAutocompleteItemsRequest,
     GetAutocompleteItemsResponse,
     GetChatHistoryResponse,
+    GetMemoryContentResponse,
     GetSecureUserResponse,
     GetTestCaseInfoResponse,
     GetTestCasesResponse,
@@ -62,6 +63,8 @@ from agent_service.endpoints.models import (
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadRequest,
     MarkNotificationsAsUnreadResponse,
+    RenameMemoryRequest,
+    RenameMemoryResponse,
     SharePlanRunRequest,
     SharePlanRunResponse,
     UnsharePlanRunRequest,
@@ -703,7 +706,7 @@ async def get_agent_debug_info(
 
 
 @router.get(
-    "/list-memory-items",
+    "/memory/list-memory-items",
     response_model=ListMemoryItemsResponse,
     status_code=status.HTTP_200_OK,
 )
@@ -715,7 +718,7 @@ async def list_memory_items(user: User = Depends(parse_header)) -> ListMemoryIte
 
 
 @router.post(
-    "/get-autocomplete-items",
+    "/memory/get-autocomplete-items",
     response_model=GetAutocompleteItemsResponse,
     status_code=status.HTTP_200_OK,
 )
@@ -728,6 +731,62 @@ async def get_autocomplete_items(
     """
     return await application.state.agent_service_impl.get_autocomplete_items(
         user_id=user.user_id, text=req.text
+    )
+
+
+@router.get(
+    "/memory/get-memory-content/{type}/{id}",
+    response_model=GetMemoryContentResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_memory_content(
+    type: str,
+    id: str,
+    user: User = Depends(parse_header),
+) -> GetMemoryContentResponse:
+    """
+    Gets preview of memory content (output in text or table form)
+    Args:
+        type (str): memory type (portfolio / watchlist)
+        id (str): the ID of the memory type
+    """
+    return await application.state.agent_service_impl.get_memory_content(
+        user_id=user.user_id, type=type, id=id
+    )
+
+
+@router.delete(
+    "/memory/delete-memory/{type}/{id}",
+    response_model=DeleteAgentResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def delete_memory(
+    type: str,
+    id: str,
+    user: User = Depends(parse_header),
+) -> DeleteAgentResponse:
+    """
+    Delete memory item
+    """
+    return await application.state.agent_service_impl.delete_memory(
+        user_id=user.user_id, type=type, id=id
+    )
+
+
+@router.post(
+    "/memory/rename-memory",
+    response_model=RenameMemoryResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def rename_memory(
+    req: RenameMemoryRequest,
+    user: User = Depends(parse_header),
+) -> RenameMemoryResponse:
+    """
+    Rename memory item
+    """
+    return await application.state.agent_service_impl.rename_memory(
+        user_id=user.user_id, type=req.type, id=req.id, new_name=req.new_name
     )
 
 
