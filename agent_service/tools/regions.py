@@ -1,5 +1,8 @@
 from typing import List
 
+import country_converter as coco
+from gbi_common_py_utils.utils.util import memoize_one
+
 from agent_service.io_types.stock import StockID
 from agent_service.planner.errors import NonRetriableError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
@@ -11,6 +14,27 @@ from agent_service.utils.postgres import get_psql
 class FilterStockRegionInput(ToolArgs):
     stock_ids: List[StockID]
     region_name: str
+
+
+@memoize_one
+def country_converter() -> coco.CountryConverter:
+    converter = coco.CountryConverter()
+    return converter
+
+
+def get_country_iso3s(search: str) -> List[str]:
+
+    region_or_country = search.upper()
+
+    if region_or_country in REGION_COUNTRY_MAP:
+        countries = REGION_COUNTRY_MAP[region_or_country]
+        return countries
+
+    countries = country_converter().convert(names=search, to="ISO3", not_found="UNKNOWN_REGION")
+    if isinstance(countries, list):
+        return countries
+    else:
+        return [countries]
 
 
 # This REGION -> COUNTRY map contains all the countries in the
@@ -165,12 +189,15 @@ async def filter_stocks_by_region(
 
     Returns: List[StockId]
     """
-    region_or_country = args.region_name.upper()
 
-    if region_or_country in REGION_COUNTRY_MAP:
-        countries = REGION_COUNTRY_MAP[region_or_country]
-    else:
-        countries = [region_or_country]
+    # GPT is passing in some non-iso3 strings sometimes like FRANCE
+    # this lib is really good at converting arbitrary country mentions to ISO codes
+    countries = get_country_iso3s(args.region_name)
+
+    if countries and countries[0].upper() != args.region_name.upper():
+        await tool_log(
+            log=f"Interpreting '{args.region_name.upper()}' as {countries}", context=context
+        )
 
     sql = """
     SELECT gbi_security_id
@@ -186,7 +213,11 @@ async def filter_stocks_by_region(
     num_filtered_stocks = len(stocks_to_include)
     if num_filtered_stocks != 0:
         await tool_log(
-            log=f"Filtered {num_filtered_stocks} stocks for {args.region_name}", context=context
+            log=(
+                f"Filtered {len(args.stock_ids)} stocks by region down to "
+                f"{num_filtered_stocks} stocks for {args.region_name}"
+            ),
+            context=context,
         )
     stock_list = [stock for stock in args.stock_ids if stock.gbi_id in stocks_to_include]
     if not stock_list:

@@ -26,12 +26,20 @@ class CombineListsInput(ToolArgs):
     is_visible=False,
 )
 async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
+    result: List[IOType] = []
     try:
         # Do this if the lists have complex io types in them
-        return list(ComplexIOBase.union_sets(set(args.list1), set(args.list2)))  # type: ignore
+        result = list(ComplexIOBase.union_sets(set(args.list1), set(args.list2)))  # type: ignore
     except Exception:
-        # otherwise just do a normal intersection
-        return list(set(args.list1 + args.list2))
+        # otherwise just do a normal union
+        result = list(set(args.list1 + args.list2))
+
+    await tool_log(
+        log=f"Merged list is of size = {len(result)}",
+        context=context,
+    )
+
+    return result
 
 
 @tool(
