@@ -7,7 +7,7 @@ import logging
 import time
 import traceback
 import uuid
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
@@ -36,6 +36,9 @@ from agent_service.endpoints.models import (
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     CreateAgentResponse,
+    CreateCustomNotificationRequest,
+    CustomNotification,
+    CustomNotificationStatusResponse,
     DeleteAgentResponse,
     DisableAgentAutomationRequest,
     DisableAgentAutomationResponse,
@@ -242,6 +245,53 @@ async def get_agent(agent_id: str, user: User = Depends(parse_header)) -> GetAll
     logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
     validate_user_agent_access(user.user_id, agent_id)
     return await application.state.agent_service_impl.get_agent(user=user, agent_id=agent_id)
+
+
+@router.get(
+    "/agent/notification-criteria/{agent_id}",
+    response_model=List[CustomNotification],
+    status_code=status.HTTP_200_OK,
+)
+async def get_all_agent_notification_criteria(
+    agent_id: str, user: User = Depends(parse_header)
+) -> List[CustomNotification]:
+    logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
+    validate_user_agent_access(user.user_id, agent_id)
+    return await application.state.agent_service_impl.get_all_agent_notification_criteria(
+        agent_id=agent_id
+    )
+
+
+@router.post(
+    "/agent/notification-criteria/create",
+    response_model=CustomNotificationStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def create_agent_notification_criteria(
+    req: CreateCustomNotificationRequest, user: User = Depends(parse_header)
+) -> CustomNotificationStatusResponse:
+    logger.info(f"Validating if {user.user_id=} has access to {req.agent_id=}.")
+    validate_user_agent_access(user.user_id, req.agent_id)
+    cn_id = await application.state.agent_service_impl.create_agent_notification_criteria(req=req)
+    return CustomNotificationStatusResponse(custom_notification_id=cn_id, success=True)
+
+
+@router.delete(
+    "/agent/notification-criteria/delete/{agent_id}/{notification_criteria_id}",
+    response_model=CustomNotificationStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def delete_agent_notification_criteria(
+    agent_id: str, notification_criteria_id: str, user: User = Depends(parse_header)
+) -> CustomNotificationStatusResponse:
+    logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
+    validate_user_agent_access(user.user_id, agent_id)
+    await application.state.agent_service_impl.delete_agent_notification_criteria(
+        agent_id=agent_id, custom_notification_id=notification_criteria_id
+    )
+    return CustomNotificationStatusResponse(
+        custom_notification_id=notification_criteria_id, success=True
+    )
 
 
 @router.post(

@@ -340,15 +340,6 @@ async def run_execution_plan(
         updated_output_ids = [
             diff.output_id for diff in output_diffs if diff.should_notify and diff.output_id
         ]
-
-        full_diff_summary = "\n".join(
-            (
-                f"- {diff.title}: {diff.diff_summary_message}"
-                if diff.title
-                else f"- {diff.diff_summary_message}"
-            )
-            for diff in output_diffs
-        )
         if not should_notify:
             logger.info("No notification necessary")
             short_diff_summary = NO_CHANGE_MESSAGE
@@ -363,6 +354,15 @@ async def run_execution_plan(
                 send_notification=False,
             )
         else:
+            full_diff_summary = "\n".join(
+                (
+                    f"- {diff.title}: {diff.diff_summary_message}"
+                    if diff.title
+                    else f"- {diff.diff_summary_message}"
+                )
+                for diff in output_diffs
+                if diff.should_notify
+            )
             logger.info("Generating and sending notification")
             short_diff_summary = await output_differ.generate_short_diff_summary(
                 full_diff_summary, custom_notifications

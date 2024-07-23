@@ -493,14 +493,22 @@ class Postgres(PostgresBase):
 
         return rows[0]
 
-    def insert_agent_custom_notification_prompt(self, agent_id: str, prompt: str) -> None:
+    def insert_agent_custom_notification_prompt(
+        self, agent_id: str, prompt: str, auto_generated: bool = True
+    ) -> None:
         sql = """
-        INSERT INTO agent.custom_notifications (agent_id, notification_prompt, created_at)
-        VALUES (%(agent_id)s, %(prompt)s, %(created_at)s)
+        INSERT INTO agent.custom_notifications (agent_id, notification_prompt, created_at, auto_generated)
+        VALUES (%(agent_id)s, %(prompt)s, %(created_at)s, %(auto_generated)s)
         """
         # need to manually insert created_at for offline tool
         self.generic_write(
-            sql, {"agent_id": agent_id, "prompt": prompt, "created_at": get_now_utc()}
+            sql,
+            {
+                "agent_id": agent_id,
+                "prompt": prompt,
+                "created_at": get_now_utc(),
+                "auto_generated": auto_generated,
+            },
         )
 
     def get_latest_agent_custom_notification_prompt(self, agent_id: str) -> Optional[str]:

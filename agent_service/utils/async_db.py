@@ -1,7 +1,11 @@
 import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from agent_service.endpoints.models import AgentMetadata, AgentOutput
+from agent_service.endpoints.models import (
+    AgentMetadata,
+    AgentOutput,
+    CustomNotification,
+)
 from agent_service.io_type_utils import IOType, load_io_type
 
 # Make sure all io_types are registered
@@ -578,12 +582,40 @@ class AsyncDB:
             values_to_update={"automation_enabled": enabled},
         )
 
-    async def insert_agent_custom_notification_prompt(self, agent_id: str, prompt: str) -> None:
-        sql = """
-        INSERT INTO agent.custom_notifications (agent_id, notification_prompt)
-        VALUES (%(agent_id)s, %(prompt)s)
+    async def insert_agent_custom_notification(self, cn: CustomNotification) -> None:
         """
-        await self.pg.generic_write(sql, {"agent_id": agent_id, "prompt": prompt})
+        Inserts a custom notification prompt for an agent, and returns the
+        custom_notification_id.
+        """
+        sql = """
+        INSERT INTO agent.custom_notifications
+          (custom_notification_id, agent_id, notification_prompt, created_at, auto_generated)
+        VALUES (%(custom_notification_id)s, %(agent_id)s,
+               %(prompt)s, %(created_at)s, %(auto_generated)s)
+        """
+        # need to manually insert created_at for offline tool
+        await self.pg.generic_write(
+            sql,
+            {
+                "custom_notification_id": cn.custom_notification_id,
+                "agent_id": cn.agent_id,
+                "prompt": cn.notification_prompt,
+                "created_at": cn.created_at,
+                "auto_generated": cn.auto_generated,
+            },
+        )
+
+    async def delete_agent_custom_notification_prompt(
+        self, agent_id: str, custom_notification_id: str
+    ) -> None:
+        sql = """
+        DELETE FROM agent.custom_notifications
+        WHERE agent_id=%(agent_id)s
+          AND custom_notification_id = %(custom_notification_id)s
+        """
+        await self.pg.generic_write(
+            sql, params={"agent_id": agent_id, "custom_notification_id": custom_notification_id}
+        )
 
     async def get_latest_agent_custom_notification_prompt(self, agent_id: str) -> Optional[str]:
         sql = """
@@ -596,6 +628,17 @@ class AsyncDB:
         if not rows:
             return None
         return rows[0]["notification_prompt"]
+
+    async def get_all_agent_custom_notifications(self, agent_id: str) -> List[CustomNotification]:
+        sql = """
+        SELECT custom_notification_id::TEXT, agent_id::TEXT,
+          notification_prompt, created_at, auto_generated
+        FROM agent.custom_notifications
+        WHERE agent_id=%(agent_id)s
+        ORDER BY created_at DESC
+        """
+        rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
+        return [CustomNotification(**row) for row in rows]
 
     async def set_plan_run_metadata(self, context: PlanRunContext, metadata: RunMetadata) -> None:
         sql = """

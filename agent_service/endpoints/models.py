@@ -2,6 +2,7 @@ import datetime
 import enum
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
+from uuid import uuid4
 
 from prefect.client.schemas.objects import StateType
 from pydantic import BaseModel, Field
@@ -92,6 +93,27 @@ class AgentMetadata(BaseModel):
 
 class GetAllAgentsResponse(BaseModel):
     agents: List[AgentMetadata]
+
+
+####################################################################################################
+# Agent Custom Notification Criteria
+####################################################################################################
+class CustomNotification(BaseModel):
+    custom_notification_id: str = Field(default_factory=lambda: str(uuid4()))
+    agent_id: str
+    notification_prompt: str
+    created_at: datetime.datetime = Field(default_factory=get_now_utc)
+    auto_generated: bool = False
+
+
+class CreateCustomNotificationRequest(BaseModel):
+    agent_id: str
+    notification_prompt: str
+
+
+class CustomNotificationStatusResponse(BaseModel):
+    custom_notification_id: str
+    success: bool
 
 
 ####################################################################################################

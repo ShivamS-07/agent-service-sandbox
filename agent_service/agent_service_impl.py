@@ -16,6 +16,8 @@ from agent_service.endpoints.models import (
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     CreateAgentResponse,
+    CreateCustomNotificationRequest,
+    CustomNotification,
     Debug,
     DeleteAgentResponse,
     DisableAgentAutomationResponse,
@@ -120,6 +122,23 @@ class AgentServiceImpl:
     async def update_agent(self, agent_id: str, req: UpdateAgentRequest) -> UpdateAgentResponse:
         await self.pg.update_agent_name(agent_id, req.agent_name)
         return UpdateAgentResponse(success=True)
+
+    async def get_all_agent_notification_criteria(self, agent_id: str) -> List[CustomNotification]:
+        return await self.pg.get_all_agent_custom_notifications(agent_id=agent_id)
+
+    async def create_agent_notification_criteria(self, req: CreateCustomNotificationRequest) -> str:
+        cn = CustomNotification(
+            agent_id=req.agent_id, notification_prompt=req.notification_prompt, auto_generated=False
+        )
+        await self.pg.insert_agent_custom_notification(cn=cn)
+        return cn.custom_notification_id
+
+    async def delete_agent_notification_criteria(
+        self, agent_id: str, custom_notification_id: str
+    ) -> None:
+        await self.pg.delete_agent_custom_notification_prompt(
+            agent_id=agent_id, custom_notification_id=custom_notification_id
+        )
 
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
         agent_id = req.agent_id
