@@ -266,7 +266,7 @@ class SecFiling:
             end_date = datetime.date.today() + datetime.timedelta(days=1)
         if start_date is None:
             # default to a quarter of data (one filing)
-            start_date = end_date - datetime.timedelta(days=90)
+            start_date = end_date - datetime.timedelta(days=100)
 
         filing_to_db_id = cls._get_db_ids_for_filings(
             gbi_ids, form_types=form_types, start_date=start_date, end_date=end_date
@@ -331,7 +331,7 @@ class SecFiling:
             form_types (List[str]): List of form types to search for
             start_date (datetime.date): Start date for the query
             end_date (datetime.date): End date for the query. If neither start_date nor
-        end_date is provided, the default is to search for the last 90 days
+        end_date is provided, the default is to search for the last 100 days
 
         Returns:
             List[Dict]: A list of query dictionaries. To download the filing via the query, call
