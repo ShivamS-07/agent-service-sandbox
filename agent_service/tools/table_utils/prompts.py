@@ -273,9 +273,18 @@ anchor_date = date_series[date_series['Date'] >= initial_anchor_date].iloc[0]
 
 you would only do one of the two for any given date, don't do both!
 
-This would give us an absolute anchor date we could use for relevant calculations.
-As alluded to above, our dates are trading days, not calendar days.
-Now, if we want to find another date relative to this anchor date, we need to use
+Once you have found an reliable anchor date using this method, you can access the data for the
+specific date. Never use an initial_anchor_date directly except to convert to an
+anchor date using this method.
+
+If your calculation is defined by reference to multiple exact dates, then you must go through
+this process of finding an anchor date for each one, in this case you have multiple
+initial_anchor_date variables (initial_anchor_date_1, etc.) and multiple anchor_date variables
+(anchor_date_1, etc.). Every explicit date must be translated into a date in the data, again you
+may NEVER assume the data for a particular date is in the data.
+
+As alluded to above, our dates are trading days, not calendar days. If we have an anchor date
+and we want to find another date relative to this anchor date, we need to use
 the following mapping of time ranges into a specific number of "days" in our data:
 
 One week (1W) = 5 days
