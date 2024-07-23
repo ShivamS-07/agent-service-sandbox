@@ -95,7 +95,7 @@ async def main() -> List[OutputDiff]:
         ],
         db=db.pg,
         prev_outputs=prev_outputs,
-        prev_date=prev_output_date,
+        prev_run_time=prev_output_date,
     )
     return diffs
 

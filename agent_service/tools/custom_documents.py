@@ -4,6 +4,7 @@ from agent_service.external.custom_data_svc_client import (
     get_custom_docs_by_security,
     get_custom_docs_by_topic,
 )
+from agent_service.external.grpc_utils import timestamp_to_datetime
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import CustomDocumentSummaryText
@@ -71,6 +72,7 @@ async def get_user_custom_documents(
             requesting_user=context.user_id,
             stock_id=cid_to_stock.get(document.spiq_company_id),
             id=document.article_id,
+            timestamp=timestamp_to_datetime(document.publication_time),
         )
         for document in custom_doc_summaries.documents
     ]
@@ -139,6 +141,7 @@ async def get_user_custom_documents_by_topic(
             requesting_user=context.user_id,
             stock_id=cid_to_stock.get(document.summary.spiq_company_id),
             id=document.summary.article_id,
+            timestamp=timestamp_to_datetime(document.summary.publication_time),
         )
         for document in custom_doc_summaries.documents
     ]

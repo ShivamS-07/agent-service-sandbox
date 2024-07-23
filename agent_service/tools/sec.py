@@ -1,4 +1,5 @@
 import datetime
+import json
 from collections import defaultdict
 from typing import Dict, List, Optional
 
@@ -7,6 +8,7 @@ from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockOtherSecFilingText, StockSecFilingText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
+from agent_service.utils.date_utils import timezoneify
 from agent_service.utils.sec.constants import FILE_10K, FILE_10Q
 from agent_service.utils.sec.sec_api import SecFiling
 
@@ -28,9 +30,11 @@ async def get_sec_filings_helper(
     for filing_str, gbi_id in filing_gbi_pairs:
         stock_id = gbi_id_to_stock_id[gbi_id]
         db_id = filing_to_db_id.get(filing_str, None)
+        timestamp = timezoneify(datetime.datetime.fromisoformat(json.loads(filing_str)["filedAt"]))
         stock_filing_map[stock_id].append(
-            StockSecFilingText(id=filing_str, stock_id=stock_id, db_id=db_id)
+            StockSecFilingText(id=filing_str, stock_id=stock_id, db_id=db_id, timestamp=timestamp)
         )
+        print(stock_filing_map[stock_id][-1])
 
     return stock_filing_map
 
@@ -93,8 +97,11 @@ async def get_other_sec_filings_helper(
     for filing_str, gbi_id in filing_gbi_pairs:
         stock_id = gbi_id_to_stock_id[gbi_id]
         db_id = filing_to_db_id.get(filing_str, None)
+        timestamp = timezoneify(datetime.datetime.fromisoformat(json.loads(filing_str)["filedAt"]))
         stock_filing_map[stock_id].append(
-            StockOtherSecFilingText(id=filing_str, stock_id=stock_id, db_id=db_id)
+            StockOtherSecFilingText(
+                id=filing_str, stock_id=stock_id, db_id=db_id, timestamp=timestamp
+            )
         )
 
     if not stock_filing_map:

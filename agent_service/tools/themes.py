@@ -87,27 +87,29 @@ class ThemePostgres:
             for record in records
         }
 
-    def get_news_dev_about_theme(self, theme_id: str, start_date: datetime.date) -> List[str]:
+    def get_news_dev_about_theme(
+        self, theme_id: str, start_date: datetime.date
+    ) -> List[Tuple[str, datetime.datetime]]:
         sql = """
-            SELECT development_id::TEXT, is_major_development, article_count
+            SELECT development_id::TEXT, is_major_development, article_count, development_time
             FROM nlp_service.theme_developments
             WHERE theme_id = %s
             AND created_at >= %s
             ORDER BY is_major_development DESC, article_count DESC
         """
         records = self.db.generic_read(sql, [theme_id, start_date])
-        return [record["development_id"] for record in records]
+        return [(record["development_id"], record["development_time"]) for record in records]
 
-    def get_news_articles_for_dev(self, development_id: str) -> List[str]:
+    def get_news_articles_for_dev(self, development_id: str) -> List[Tuple[str, datetime.datetime]]:
         sql = """
-            SELECT news_id::TEXT
+            SELECT news_id::TEXT, published_at
             FROM nlp_service.theme_news
             WHERE development_id = %s
             AND published_at >= NOW() - INTERVAL '2 years'
             ORDER BY published_at DESC
         """
         records = self.db.generic_read(sql, [development_id])
-        return [record["news_id"] for record in records]
+        return [(record["news_id"], record["published_at"]) for record in records]
 
 
 # Initialize the db
@@ -363,10 +365,12 @@ async def get_news_developments_about_theme(
     """
     res = []
     for theme in args.themes:
-        ids = db.get_news_dev_about_theme(theme.id, args.date_range.start_date)
+        id_pairs = db.get_news_dev_about_theme(theme.id, args.date_range.start_date)
         if args.max_devs_per_theme:
-            ids = ids[: args.max_devs_per_theme]
-        res.extend([ThemeNewsDevelopmentText(id=id) for id in ids])
+            id_pairs = id_pairs[: args.max_devs_per_theme]
+        res.extend(
+            [ThemeNewsDevelopmentText(id=id, timestamp=timestamp) for id, timestamp in id_pairs]
+        )
     return res
 
 
@@ -404,10 +408,15 @@ async def get_news_articles_for_theme_developments(
     """
     res = []
     for development in args.developments_list:
-        news_ids = db.get_news_articles_for_dev(development.id)
+        news_id_pairs = db.get_news_articles_for_dev(development.id)
         if args.max_articles_per_development:
-            news_ids = news_ids[: args.max_articles_per_development]
-        res.extend([ThemeNewsDevelopmentArticlesText(id=id) for id in news_ids])
+            news_id_pairs = news_id_pairs[: args.max_articles_per_development]
+        res.extend(
+            [
+                ThemeNewsDevelopmentArticlesText(id=id, timestamp=timestamp)
+                for id, timestamp in news_id_pairs
+            ]
+        )
 
     if len(res) == 0:
         raise Exception("No articles relevant to theme found")

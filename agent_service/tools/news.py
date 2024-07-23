@@ -1,8 +1,8 @@
 import datetime
 from collections import defaultdict
-from typing import Dict, Generator, List, Optional
+from typing import Dict, Generator, List, Optional, Tuple
 
-from agent_service.external.grpc_utils import timestamp_to_date
+from agent_service.external.grpc_utils import timestamp_to_date, timestamp_to_datetime
 from agent_service.external.nlp_svc_client import get_multi_companies_news_topics
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, DEFAULT_EMBEDDING_MODEL
 from agent_service.GPT.requests import GPT
@@ -58,7 +58,13 @@ async def _get_news_developments_helper(
                 # Filter topics not in the time window
                 continue
             # Only return ID's
-            topic_list.append(StockNewsDevelopmentText(id=topic.topic_id.id, stock_id=stock))
+            topic_list.append(
+                StockNewsDevelopmentText(
+                    id=topic.topic_id.id,
+                    stock_id=stock,
+                    timestamp=timestamp_to_datetime(topic.last_article_date),
+                )
+            )
         output_dict[stock] = topic_list
 
     return output_dict
@@ -128,7 +134,7 @@ async def get_news_articles_for_stock_developments(
     args: GetNewsArticlesForStockDevelopmentsInput, context: PlanRunContext
 ) -> List[StockNewsDevelopmentArticlesText]:
     sql = """
-        SELECT news_id::VARCHAR, gbi_id
+        SELECT news_id::VARCHAR, gbi_id, published_at
         FROM nlp_service.stock_news
         WHERE topic_id = ANY(%(topic_ids)s)
     """
@@ -142,7 +148,9 @@ async def get_news_articles_for_stock_developments(
         raise Exception("No articles for these news developments over the specified time period")
     return [
         StockNewsDevelopmentArticlesText(
-            id=row["news_id"], stock_id=gbi_id_stock_map.get(row["gbi_id"])
+            id=row["news_id"],
+            stock_id=gbi_id_stock_map.get(row["gbi_id"]),
+            timestamp=row["published_at"],
         )
         for row in rows
     ]
@@ -209,16 +217,16 @@ async def get_news_articles_for_topics(
 
     # get news articles
     db = get_psql()
-    news: List[NewsPoolArticleText] = []
+    news_articles: List[NewsPoolArticleText] = []
     for topic, embedding in zip(args.topics, embeddings):
         relevant_news: List[NewsPoolArticleText] = []
-        for news_ids in _get_similar_news_to_embedding(
+        for news_batch in _get_similar_news_to_embedding(
             db, start_date, embedding, batch_size=EMBEDDING_POOL_BATCH_SIZE
         ):
             # check most relevant news with gpt
             gpt = GPT(model=DEFAULT_CHEAP_MODEL)
             tasks = []
-            for news_text in news_ids.values():
+            for _, news_text, _ in news_batch:
                 tasks.append(
                     gpt.do_chat_w_sys_prompt(
                         main_prompt=THEME_RELEVANT_MAIN_PROMPT.format(topic=topic, news=news_text),
@@ -228,14 +236,16 @@ async def get_news_articles_for_topics(
             results = await gather_with_concurrency(tasks, n=EMBEDDING_POOL_BATCH_SIZE)
 
             successful = []
-            for news_id, result in zip(news_ids.keys(), results):
+            for news, result in zip(news_batch, results):
                 if result.lower().startswith("yes"):
-                    successful.append(news_id)
+                    successful.append(news)
             # if less than 10% of the batch is successful, stop
             if len(successful) / len(results) <= MIN_POOL_PERCENT_PER_BATCH:
                 break
 
-            relevant_news.extend([NewsPoolArticleText(id=id) for id in successful])
+            relevant_news.extend(
+                [NewsPoolArticleText(id=id, timestamp=timestamp) for id, _, timestamp in successful]
+            )
             # if we have enough news, stop
             if len(relevant_news) >= MAX_NUM_RELEVANT_NEWS_PER_TOPIC:
                 break
@@ -243,23 +253,23 @@ async def get_news_articles_for_topics(
         await tool_log(
             log=f"Found {len(relevant_news)} news articles for topic: {topic}.",
             context=context,
-            associated_date=relevant_news,
+            associated_data=relevant_news,
         )
         if args.max_num_articles_per_topic:
             relevant_news = relevant_news[: args.max_num_articles_per_topic]
-        news.extend(relevant_news)
+        news_articles.extend(relevant_news)
 
     if len(news) == 0:
         raise Exception("Found no news articles for provided topic(s)")
-    return news
+    return news_articles
 
 
 def _get_similar_news_to_embedding(
     db: Postgres, start_date: datetime.date, embedding: List[float], batch_size: int = 100
-) -> Generator[Dict[str, str], None, None]:
+) -> Generator[List[Tuple[str, str, datetime.datetime]], None, None]:
     sql = """
             SELECT
-            news_id::TEXT, headline::TEXT, summary::TEXT,
+            news_id::TEXT, headline::TEXT, summary::TEXT, published_at,
             1 - (%s::VECTOR <=> embedding) AS similarity
             FROM nlp_service.news_pool
             WHERE published_at >= %s
@@ -270,8 +280,12 @@ def _get_similar_news_to_embedding(
         cursor.execute(sql, [str(embedding), start_date])
         rows = cursor.fetchmany(batch_size)
         while rows:
-            yield {
-                row["news_id"]: f"Headline:{row['headline']}\nSummary:{row['summary']}"  # type: ignore
+            yield [
+                (
+                    row["news_id"],  # type: ignore
+                    f"Headline:{row['headline']}\nSummary:{row['summary']}",  # type: ignore
+                    row["published_at"],  # type: ignore
+                )
                 for row in rows
-            }
+            ]
             rows = cursor.fetchmany(batch_size)

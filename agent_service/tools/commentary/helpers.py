@@ -248,13 +248,13 @@ async def get_texts_for_topics(
             await tool_log(
                 log=f"Found {len(themes)} themes for topic: {topic}.",  # type: ignore
                 context=context,
-                associated_date=themes,
+                associated_data=themes,
             )
             res = await get_theme_related_texts(themes, context)  # type: ignore
             await tool_log(
                 log=f"Found {len(res)} theme-related texts for topic: {topic}.",
                 context=context,
-                associated_date=res,
+                associated_data=res,
             )
             texts.extend(res + themes)  # type: ignore
 

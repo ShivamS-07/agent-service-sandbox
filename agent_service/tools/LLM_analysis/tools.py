@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import json
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple, Union
@@ -124,7 +125,10 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     )
     result = await llm.do_chat_w_sys_prompt(
         SUMMARIZE_MAIN_PROMPT.format(
-            texts=texts_str, chat_context=chat_str, topic_phrase=topic_str
+            texts=texts_str,
+            chat_context=chat_str,
+            topic_phrase=topic_str,
+            today=datetime.date.today(),
         ),
         SUMMARIZE_SYS_PROMPT.format(),
     )
@@ -206,6 +210,7 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
             group2_label=args.group2_label,
             extra_data=extra_data_str,
             chat_context=chat_str,
+            today=datetime.date.today(),
         ),
         COMPARISON_SYS_PROMPT.format(),
     )
@@ -250,8 +255,7 @@ async def answer_question_with_text_data(
 
     result = await llm.do_chat_w_sys_prompt(
         ANSWER_QUESTION_MAIN_PROMPT.format(
-            texts=texts_str,
-            question=args.question,
+            texts=texts_str, question=args.question, today=datetime.date.today()
         ),
         ANSWER_QUESTION_SYS_PROMPT.format(),
     )
@@ -371,7 +375,10 @@ async def profile_filter_helper(
             tasks.append(
                 llm.do_chat_w_sys_prompt(
                     PROFILE_FILTER_MAIN_PROMPT.format(
-                        company_name=stock.company_name, texts=text_str, profile=profile
+                        company_name=stock.company_name,
+                        texts=text_str,
+                        profile=profile,
+                        today=datetime.date.today(),
                     ),
                     COMPLEX_PROFILE_FILTER_SYS_PROMPT.format(topic_name=topic),
                 )
@@ -380,7 +387,10 @@ async def profile_filter_helper(
             tasks.append(
                 llm.do_chat_w_sys_prompt(
                     PROFILE_FILTER_MAIN_PROMPT.format(
-                        company_name=stock.company_name, texts=text_str, profile=profile
+                        company_name=stock.company_name,
+                        texts=text_str,
+                        profile=profile,
+                        today=datetime.date.today(),
                     ),
                     SIMPLE_PROFILE_FILTER_SYS_PROMPT.format(),
                 )

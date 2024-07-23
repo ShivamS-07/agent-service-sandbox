@@ -6,10 +6,10 @@ from pydantic.main import BaseModel
 
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import Citation, IOType
+from agent_service.io_type_utils import IOType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTable
-from agent_service.io_types.text import Text
+from agent_service.io_types.text import Text, TextCitation, TextGroup
 from agent_service.planner.planner_types import ExecutionPlan, OutputWithID
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
@@ -24,9 +24,9 @@ from agent_service.utils.output_utils.prompts import (
     DECIDE_NOTIFICATION_MAIN_PROMPT,
     GENERATE_DIFF_MAIN_PROMPT,
     GENERATE_DIFF_SYS_PROMPT,
+    NEW_TEXT_TEMPLATE,
     SHORT_DIFF_SUMMARY_MAIN_PROMPT,
     SUMMARY_CUSTOM_NOTIFICATION_TEMPLATE,
-    TEXT_OUTPUT_TEMPLATE,
 )
 from agent_service.utils.output_utils.utils import io_type_to_gpt_input
 from agent_service.utils.string_utils import strip_code_backticks
@@ -59,19 +59,25 @@ class OutputDiffer:
         self.llm = GPT(gpt_context, model, gpt_service_stub=gpt_service_stub)
 
     async def _compute_diff_for_texts(
-        self, latest_output: Text, prev_output: Text, db: AsyncDB, prev_date: datetime.datetime
+        self, latest_output: Text, prev_output: Text, prev_run_time: datetime.datetime
     ) -> OutputDiff:
-        latest_citations = await Citation.resolve_all_citations(
-            citations=latest_output.get_all_citations(), db=db.pg
-        )
-        new_citations = [
-            f"*{citation.name}*\n{citation.summary}"
-            for citation in latest_citations
-            # Ideally both of these should have timezones, but if not just assume they're UTC
-            if citation.published_at and timezoneify(citation.published_at) > timezoneify(prev_date)
+
+        # FIXME: we should not do this using time which could be unreliable, but instead input texts to task
+        new_cited_texts = [
+            citation.source_text
+            for citation in latest_output.get_all_citations()
+            if isinstance(citation, TextCitation)
+            and citation.source_text.timestamp
+            and timezoneify(citation.source_text.timestamp) > timezoneify(prev_run_time)
         ]
-        if not new_citations:
+
+        if not new_cited_texts:
             return OutputDiff(diff_summary_message="No new updates.", should_notify=False)
+
+        text_group = TextGroup(val=new_cited_texts)
+        new_texts_str: str = await Text.get_all_strs(
+            text_group, include_header=True, text_group_numbering=False
+        )  # type: ignore
 
         if self.custom_notifications:
             notification_instructions_str = CUSTOM_NOTIFICATION_TEMPLATE.format(
@@ -82,11 +88,9 @@ class OutputDiffer:
 
         main_prompt = GENERATE_DIFF_MAIN_PROMPT.format(
             output_schema=OutputDiff.model_json_schema(),
-            latest_output=TEXT_OUTPUT_TEMPLATE.format(
-                text=(await latest_output.get()).val,
-                citations="\n".join(new_citations),
-            ).filled_prompt,
-            prev_output=f"'{(await prev_output.get()).val}'",
+            latest_output=(await latest_output.get()).val,
+            special_instructions=NEW_TEXT_TEMPLATE.format(new_texts=new_texts_str),
+            prev_output=(await prev_output.get()).val,
             notification_instructions=notification_instructions_str,
         )
         result = await self.llm.do_chat_w_sys_prompt(
@@ -97,11 +101,11 @@ class OutputDiffer:
         return OutputDiff.model_validate_json(strip_code_backticks(result))
 
     async def _compute_diff_for_io_types(
-        self, latest_output: IOType, prev_output: IOType, db: AsyncDB, prev_date: datetime.datetime
+        self, latest_output: IOType, prev_output: IOType, prev_run_time: datetime.datetime
     ) -> OutputDiff:
         if isinstance(latest_output, Text) and isinstance(prev_output, Text):
             return await self._compute_diff_for_texts(
-                latest_output=latest_output, prev_output=prev_output, db=db, prev_date=prev_date
+                latest_output=latest_output, prev_output=prev_output, prev_run_time=prev_run_time
             )
         elif (
             isinstance(latest_output, List)
@@ -137,6 +141,7 @@ class OutputDiffer:
             main_prompt=GENERATE_DIFF_MAIN_PROMPT.format(
                 output_schema=OutputDiff.model_json_schema(),
                 latest_output=latest_output_str,
+                special_instructions="",
                 prev_output=prev_output_str,
                 notification_instructions=notification_instructions_str,
             ),
@@ -237,7 +242,7 @@ class OutputDiffer:
         latest_outputs_with_ids: List[OutputWithID],
         db: BoostedPG,
         prev_outputs: Optional[List[IOType]] = None,
-        prev_date: Optional[datetime.datetime] = None,
+        prev_run_time: Optional[datetime.datetime] = None,
     ) -> List[OutputDiff]:
         """
         Given a list of the latest outputs for an agent, return a list of output
@@ -247,15 +252,15 @@ class OutputDiffer:
 
         latest_outputs = [val.output for val in latest_outputs_with_ids]
         async_db = AsyncDB(pg=db)
-        if not prev_outputs or not prev_date:
-            prev_outputs_and_date = await async_db.get_prev_outputs_for_agent_plan(
+        if not prev_outputs or not prev_run_time:
+            prev_outputs_and_time = await async_db.get_prev_outputs_for_agent_plan(
                 agent_id=self.context.agent_id,
                 plan_id=self.context.plan_id,
                 latest_plan_run_id=self.context.plan_run_id,
             )
             # If this is the first run of the plan, or the previous output is
             # misisng for some reason, notify just to be safe.
-            if prev_outputs_and_date is None:
+            if prev_outputs_and_time is None:
                 return [
                     OutputDiff(
                         diff_summary_message="Agent completed with new outputs!",
@@ -266,7 +271,7 @@ class OutputDiffer:
             # Assuming the plan is the same, the number of outputs should ideally be
             # the same also. If not, we can't easily compare, so notify just to be
             # safe.
-            prev_outputs, prev_date = prev_outputs_and_date
+            prev_outputs, prev_run_time = prev_outputs_and_time
         if len(prev_outputs) != len(latest_outputs):
             return [
                 OutputDiff(
@@ -286,7 +291,7 @@ class OutputDiffer:
         diffs: List[OutputDiff] = await gather_with_concurrency(
             [
                 self._compute_diff_for_io_types(
-                    latest_output=latest, prev_output=prev, db=async_db, prev_date=prev_date
+                    latest_output=latest, prev_output=prev, prev_run_time=prev_run_time
                 )
                 for latest, prev in zip(latest_output_values, prev_output_values)
             ]

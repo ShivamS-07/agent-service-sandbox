@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import json
 from collections import defaultdict
 from itertools import chain
@@ -40,6 +41,7 @@ class Text(ComplexIOBase):
     val: str = ""
     text_type: ClassVar[str] = "Misc"
     stock_id: Optional[StockID] = None
+    timestamp: Optional[datetime.datetime] = None
 
     def __hash__(self) -> int:
         return self.id.__hash__()
@@ -146,11 +148,18 @@ class Text(ComplexIOBase):
         categories: Dict[Type[Text], List[Text]] = defaultdict(list)
         # identical structure to input texts, but as IDs
         texts_as_ids = convert_to_ids_and_categorize(text, categories)
+        if include_header:
+            timestamp_lookup = {}
+            for cat_texts in categories.values():
+                for text in cat_texts:
+                    timestamp_lookup[text.id] = text.timestamp
+        else:
+            timestamp_lookup = None
         strs_lookup: Dict[TextIDType, str] = {}
         # For every subclass of Text, fetch data
         lookups: List[Dict[TextIDType, str]] = await gather_with_concurrency(
             [
-                textclass.get_strs_lookup(texts, include_header=include_header)
+                textclass.get_strs_lookup(texts, timestamp_lookup=timestamp_lookup)
                 for textclass, texts in categories.items()
             ]
         )
@@ -179,12 +188,18 @@ class Text(ComplexIOBase):
 
     @classmethod
     async def get_strs_lookup(
-        cls, texts: List[Self], include_header: bool = False
+        cls,
+        texts: List[Self],
+        timestamp_lookup: Optional[Dict[TextIDType, Optional[datetime.datetime]]] = None,
     ) -> Dict[TextIDType, str]:
         strs_lookup = await cls._get_strs_lookup(texts)
-        if include_header:
+        if timestamp_lookup is not None:
             for id, val in strs_lookup.items():
-                strs_lookup[id] = f"Text type: {cls.text_type}\nText:\n{val}"
+                if id in timestamp_lookup and timestamp_lookup[id] is not None:
+                    date_str = f"Date: {timestamp_lookup[id].date()}\n"  # type: ignore
+                else:
+                    date_str = ""
+                strs_lookup[id] = f"Text type: {cls.text_type}\n{date_str}Text:\n{val}"
         return strs_lookup
 
     @classmethod

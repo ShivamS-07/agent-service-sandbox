@@ -95,15 +95,18 @@ async def _get_earnings_summary_helper(
             reverse=True,
         )
         for row in sorted_rows:
-            publish_date = datetime.datetime.fromisoformat(
-                row["sources"][0]["publishing_time"]
-            ).date()
+            publish_time = datetime.datetime.fromisoformat(row["sources"][0]["publishing_time"])
+            publish_date = publish_time.date()
             if (start_date and publish_date < start_date) or (end_date and publish_date > end_date):
                 continue
             if not start_date and not end_date and len(stock_output) > 0:
                 # If no start or end date were set, just return the most recent for each stock
                 continue
-            stock_output.append(StockEarningsSummaryText(id=row["summary_id"], stock_id=stock_id))
+            stock_output.append(
+                StockEarningsSummaryText(
+                    id=row["summary_id"], stock_id=stock_id, timestamp=publish_time
+                )
+            )
         output[stock_id] = stock_output
     return output
 

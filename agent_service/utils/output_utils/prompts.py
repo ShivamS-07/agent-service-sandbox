@@ -5,7 +5,9 @@ GENERATE_DIFF = """
 You are a financial analyst who is in charge of running a daily python task for
 your boss. This task produces an output, and it is your job to create a list of
 the changes in the output since the last run. First, you will write a paragraph
-which indicates all significant content changes.
+which indicates all significant content changes. Modest rewording should never be
+considered a significant content change, if there is nothing of any significance
+you must simply output `No significant changes`.
 
 If the changes are important enough, you should also send your boss a notification.
 {notification_instructions}
@@ -26,10 +28,15 @@ You will output ONLY a json object of the following json schema:
 {output_schema}
 
 Today's output is:
+---
 {latest_output}
+---
 
 The last run's output is:
+---
 {prev_output}
+---
+{special_instructions}
 
 Your json response:
 """
@@ -49,17 +56,19 @@ or fall in a graph, a prominent stock jumping onto the top spot of a list after
 not even being on it, etc.).
 """
 
-TEXT_OUTPUT_TEMPLATE = Prompt(
-    name="AGENT_OUTPUT_DIFF_TEXT_OUTPUT_TEMPLATE",
-    template="""
-OUTPUT TEXT:
-'{text}'
-
-NEW TEXT CITATIONS SINCE LAST RUN, please refer ONLY to these topics when
-writing the diff since the last run, but do not quote them directly:
-{citations}
-""",
-)
+NEW_TEXT_TEMPLATE = """
+Below are the full list of texts used to create this document that were published between this run and
+the last one. Your list of changes must only include information that are both different between the
+two outputs AND which seem directly related to topics discussed in these new documents. Your boss is
+only interested in the latest changes, not additions that actually are focused on old news.
+---
+{new_texts}
+---
+If the two outputs both have scores, and there is a noticeable change in the score (at least 0.1), you must
+mention it and make sure your discussion is fully compatible with the change in score. For example, if the
+change in score reflects an improvement in the market position of a stock, you MUST highlight any changes that
+reflect that improvement.
+"""
 
 GENERATE_DIFF_MAIN_PROMPT = Prompt(
     name="AGENT_OUTPUT_GENERATE_DIFF_MAIN_PROMPT", template=GENERATE_DIFF
