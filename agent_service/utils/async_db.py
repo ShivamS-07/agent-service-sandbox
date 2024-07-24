@@ -551,7 +551,7 @@ class AsyncDB:
         )
 
     async def mark_notifications_as_read(
-        self, agent_id: str, timestamp: Optional[datetime.datetime]
+        self, agent_id: str, timestamp: Optional[datetime.datetime] = None
     ) -> None:
         where_clause = "agent_id = %(agent_id)s"
         if timestamp is not None:

@@ -43,8 +43,6 @@ class AsyncPostgresBase(BoostedPG):
         max_pool_size: int = 3,
     ):
         """
-        skip_commit: bool
-            disables autocommit
         min/max_pool_size: int
             The minimum and maximum number of connections in the connection
             pool. It is recommended to have a max size > 1 so that the async
@@ -72,19 +70,21 @@ class AsyncPostgresBase(BoostedPG):
             return
         try:
             db_config = get_config().app_db
+            connection_args = {
+                "dbname": db_config.database,
+                "user": db_config.username,
+                "password": db_config.password,
+                "host": db_config.host,
+                "port": db_config.port,
+                "row_factory": dict_row,
+            }
+
             pool = psycopg_pool.AsyncConnectionPool(
                 open=False,
                 min_size=self.min_pool_size,
                 max_size=self.max_pool_size,
                 check=psycopg_pool.AsyncConnectionPool.check_connection,
-                kwargs={
-                    "dbname": db_config.database,
-                    "user": db_config.username,
-                    "password": db_config.password,
-                    "host": db_config.host,
-                    "port": db_config.port,
-                    "row_factory": dict_row,
-                },
+                kwargs=connection_args,
             )
             await pool.open()
             await pool.wait()
