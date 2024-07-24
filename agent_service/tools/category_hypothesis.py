@@ -101,7 +101,7 @@ async def analyze_hypothesis_with_categories(
     # Step: Classify topics into categories
     logger.info("Classifying news, earnings, SEC topics into categories")
     categories = sorted(args.categories, key=lambda x: x.weight, reverse=True)
-    category_to_mixed_topics = await filter_and_classify_topics_into_category(
+    category_idx_to_mixed_topics = await filter_and_classify_topics_into_category(
         revised_hypothesis,
         categories,
         gbi_id_to_short_description,
@@ -120,7 +120,7 @@ async def analyze_hypothesis_with_categories(
         stocks,
         revised_hypothesis,
         categories,
-        category_to_mixed_topics,
+        category_idx_to_mixed_topics,
         gbi_id_to_short_description,
         context,
         gpt_service_stub,
@@ -151,7 +151,7 @@ async def analyze_hypothesis_with_categories(
         final_summary,
         total_scores[actual_target_stock.symbol],  # type: ignore
         categories,
-        category_to_mixed_topics,
+        category_idx_to_mixed_topics,
         category_to_result,
     )
 
@@ -399,11 +399,13 @@ be a measurable connection between the text and the categories.
 For example, if there is a category about a specific product, texts that indicate a change in supply, \
 demand, or cost of that product would all be considered directly relevant.
 The output should be in a key-value JSON format with 2 keys.
-The first key should be 'relevant_categories' and the value is a list of integers for the indices of \
-the MOST relevant categories, e.g. '[0,3]'. Do not choose more than 2 categories. The indices should \
-be 0-based. If this text is not relevant to any of the categories, this should be any empty list.
-The second key should be 'reason' and the value is a short sentence of explanation for why you chose \
-those categories. Absolutely no more than 50 words.
+The first key should be 'reason' and the value is a short sentence of explanation for what categories \
+you chose and why. Absolutely no more than 50 words. You must explitly say whether the text is primarily \
+related to stock performance or not. \
+The second key should be 'relevant_categories' and the value is a list of integers for the indices of \
+the MOST relevant categories, e.g. '[0,3]'. You must NOT include this topic if you think it's primarily \
+related to stock performance. Do not choose more than 2 categories. The indices should be 0-based. \
+If this text is not relevant to any of the categories, this should be any empty list.
 Most texts will be relevant to no categories, or only one. You should be very conservative about including more \
 than one.
 Here is the company description:
@@ -488,6 +490,9 @@ Here is the text:
             logger.warning(f"Failed to parse result {result} for text object {text_obj}: {e}")
             continue
 
+        if not isinstance(cleaned_result, dict):
+            continue
+
         relevant_category_idxs: List[int] = cleaned_result.get("relevant_categories", [])
         if not relevant_category_idxs:
             continue
@@ -520,13 +525,21 @@ async def rank_and_summarize_for_each_category(
 
     # Rank + Summarize for each category
     rank_by_category_sys_prompt_str = """
-        You are a financial analyst who is creating a ranking list for a few companies for a hypothesis
-        on a specific financial success criteria. You will be provided with the hypothesis, the criteria,
-        the descriptions of these companies, a list of companies' news topics and earnings topics relevant
-        to the criteria.
+        You are a financial analyst who is creating a ranking list for the provided companies for a hypothesis
+        on a specific financial success criteria. You must stay very strictly in the context of the main criteria
+        to test the hypothesis and rank the companies. You should not consider any other criteria and must not
+        mention other criteria.
+        You will be provided with the hypothesis, the criteria, the descriptions of these companies,
+        a list of companies' news topics and earnings topics relevant to the criteria.
+        You will be also provided with a list of other criteria, only for the purpose of context. You should
+        never use them to rank the companies. And you must not mention them in the explanation.
+        I'll say it again, focus on the main criteria!
         For example, if the criteria is 'Revenue', then you should look through the topics related to
         revenue, such as 'revenue growth', 'revenue diversification', 'revenue forecast', and analyze
         how well these companies perform comprehensively in the criteria.
+        Your arguments should be supported by the evidence from the topics and try to concisely mention
+        numbers, specs, or comparisons in your summary or explanation. For example, '27% faster', '100X more' are
+        good proof to support your arguments.
     """
     rank_by_category_sys_prompt = Prompt(
         template=rank_by_category_sys_prompt_str, name="RANK_BY_CATEGORY_SYS_PROMPT"
@@ -537,14 +550,37 @@ async def rank_and_summarize_for_each_category(
         compared to each other.
         The output should be in the format of a deserializeable JSON (key-value pairs).
         The first key should be 'ranking' and the value should be a list of objects, where each object has \
-        the following 3 keys and DO NOT include extra keys that are not mentioned:
+        the following 4 keys and DO NOT include extra keys that are not mentioned:
             - 'symbol': a string of the stock symbol
             - 'score': an integer in the range of 0 to 10 which represents how well the company performs \
-                in the criteria. 0 means the company performs the worst, 10 means the company performs the best.
-            - 'explanation': a string of of 3 to 4 sentences that explains why the company is ranked here. \
-                You should conclude based on the provided descriptions and topics. You should \
-                not only look at the company itself's information, but also compare it with other companies. \
-                Your explanation should match the score you give to the company but not explicitly mention the score.
+                in the criteria. 0 means the company performs the worst, 10 means the company performs the best. \
+                The score should be comparable to other companies in the ranking. You should take all companies \
+                into account.
+            - 'explanation': a string of medium sized paragraph that consists of 6 to 8 sentences that explains \
+                why the company is ranked here within the context of the main criteria, followed by the detailed \
+                evidence that supports your arguments. \
+                For example, a good explanation should be like 'Apple dominates the phone chip in terms of Innovation \
+                because the latest A15 chip is 20% faster than the previous A14 chip, and 2X faster than all \
+                the other competitors' phone chips', which makes a good point of Apple leads the phone chip in the \
+                criteria of innovation' and supported by the facts that it's making better chip than its own previous \
+                version but even way better than the competitors. If you see topics like this, you should try to \
+                include it in your explanation. \
+                You must consider all the provided information. You should not only focus on this company's topics, \
+                but also look at other companies' topics and analyze them together. For example, if a topic like \
+                'Samsung's latest chip is 10% faster than the predecessor, chasing Apple's A15 chip'. This topic \
+                should be considered when ranking both Apple and Samsung, and of course beneficial to Samsung's score \
+                but not to Apple.
+                I'll say it again, your conclusion should be derived from the topics with very concrete examples and \
+                focus solely on the main criteria. Topics that contain general information should be ignored. \
+                Topics that mention comparisons with predecessors, or with other competitors's similar products \
+                or services are preferred to include in the explanation. If there are exact numbers, or specs \
+                that can demonstrate the improvement or decline in the criteria, you MUST mention them \
+                in the explanation. Try to mention 4 to 5 topics that are most relevant to the ranking. \
+                Your explanation should match the score you give to the company but not explicitly mention the score. \
+                The top ranked companies MUST specify why and where they are better than the others, and the bottom \
+                ranked companies MUST specify why and where they fall behind than the higher ranked ones. \
+            - 'citations': a list of integers that represents the indices of the topics that you used to \
+                rank the company. Return them from the most relevant to the least relevant. No more than 5. \
         The 'ranking' list should contain all companies in the order of the ranking. If there are 3 or more \
         companies in the ranking, the score of the bottom ranked company should be no higher than 3. \
         You should also be conservative about the top company's score. If it is the undoubtedly best, you should score \
@@ -566,7 +602,7 @@ async def rank_and_summarize_for_each_category(
         Here is the hypothesis: {hypothesis}\n
         Here is the main criteria you should use to evaluate the hypothesis:{category}\n
         Here are the other criteria which are only used to provide context and should not be considered
-        to rank the companies, nor mentioned in the explanation:{other_categories}\n
+        to rank the companies. You must not mention them in the explanation:{other_categories}\n
         Here are the companies' descriptions:\n{company_descriptions}\n
         Here are the topics you should use to rank the companies:\n{topics}\n
         Now, generate the ranking list:
