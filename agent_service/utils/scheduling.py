@@ -33,6 +33,9 @@ Please return a cron string with exactly 5 components:
 
 Commas, hyphens, and slashes are also supported.
 
+However, your maximum frequency allowed is once per hour. So the minute field
+CANNOT be a star. It must be a number.
+
 Input schedule description:
 {schedule_desc}
 
@@ -97,16 +100,18 @@ async def _get_cron_from_gpt(agent_id: str, user_desc: str) -> str:
 
 async def get_schedule_from_user_description(
     agent_id: str, user_desc: str
-) -> Tuple[AgentSchedule, bool]:
+) -> Tuple[AgentSchedule, bool, Optional[str]]:
     """
     Given a description of a schedule, attempt to create an AgentSchedule object
     based on the description. If not possible, return the default
-    schedule. Second return value is a boolean indicating success.
+    schedule. Second return value is a boolean indicating success and an optional error message.
     """
     try:
         cron_schedule = await _get_cron_from_gpt(agent_id=agent_id, user_desc=user_desc)
         logger.info(f"Got cron schedule from GPT: {cron_schedule}")
-        assert len(cron_schedule.split()) == 5
+        cron_pieces = cron_schedule.split()
+        assert len(cron_pieces) == 5, "Unable to generate a schedule from the input."
+        assert cron_pieces[0] != "*", "Schedules may run at most hourly."
         cron_description = get_description(cron_schedule)
         return (
             AgentSchedule(
@@ -115,7 +120,13 @@ async def get_schedule_from_user_description(
                 generated_schedule_description=cron_description,
             ),
             True,
+            None,
         )
+    except AssertionError as ae:
+        err = str(ae)
+        logger.exception(f"Failed to handle user schedule request: '{user_desc=}', {err=}")
+        return (AgentSchedule.default(), False, err)
     except Exception:
-        logger.exception(f"Failed to handle user schedule request: {user_desc=}")
-        return (AgentSchedule.default(), False)
+        err = f"Failed to handle user schedule request: '{user_desc=}'"
+        logger.exception(err)
+        return (AgentSchedule.default(), False, err)

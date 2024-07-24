@@ -419,14 +419,10 @@ class AgentServiceImpl:
         return DisableAgentAutomationResponse(success=True)
 
     async def set_agent_schedule(self, req: SetAgentScheduleRequest) -> SetAgentScheduleResponse:
-        schedule, success = await get_schedule_from_user_description(
+        schedule, success, error_msg = await get_schedule_from_user_description(
             agent_id=req.agent_id, user_desc=req.user_schedule_description
         )
-        error_msg = None
-        if not success:
-            # TODO for now just hardode an error
-            error_msg = "Unable to fulfill scheduling request, reverting to default."
-        else:
+        if success:
             await self.pg.update_agent_schedule(agent_id=req.agent_id, schedule=schedule)
         return SetAgentScheduleResponse(
             agent_id=req.agent_id,

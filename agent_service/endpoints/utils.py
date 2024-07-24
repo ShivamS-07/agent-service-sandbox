@@ -179,6 +179,10 @@ def get_plan_run_task_list(
                 )
             )
             continue
+        elif task_status == Status.NOT_STARTED:
+            # Not sure why, but this happens sometimes with prefect. If some
+            # task is missing but has outputs and logs, mark it complete.
+            task_status = Status.COMPLETE
 
         if task_key in plan_run_id_task_id_to_logs:  # this is a task that has logs
             logs = plan_run_id_task_id_to_logs[task_key]

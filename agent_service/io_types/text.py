@@ -611,6 +611,7 @@ class StockEarningsText(StockText):
     id: str
 
 
+@io_type
 class StockEarningsSummaryText(StockEarningsText):
     text_type: ClassVar[str] = "Earnings Call Summary"
 
@@ -641,6 +642,7 @@ class StockEarningsSummaryText(StockEarningsText):
         return str_lookup
 
 
+@io_type
 class StockEarningsTranscriptText(StockEarningsText):
     text_type: ClassVar[str] = "Earnings Call Transcript"
 
