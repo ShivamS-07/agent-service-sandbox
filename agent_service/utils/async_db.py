@@ -485,23 +485,28 @@ class AsyncDB:
           LEFT JOIN nu ON nu.agent_id = a_id.agent_id
         """
         rows = await self.pg.generic_read(sql, params=params)
-        tomorrow = get_now_utc() + datetime.timedelta(days=1)
-        return [
-            AgentMetadata(
-                agent_id=row["agent_id"],
-                user_id=row["user_id"],
-                agent_name=row["agent_name"],
-                created_at=row["created_at"],
-                last_updated=row["last_updated"],
-                last_run=row["last_run"],
-                next_run=tomorrow,  # TEMPORARY
-                latest_notification_string=row["latest_agent_message"],
-                automation_enabled=row["automation_enabled"],
-                unread_notification_count=row["unread_notification_count"] or 0,
-                schedule=AgentSchedule.model_validate(row["schedule"]) if row["schedule"] else None,
+        output = []
+        for row in rows:
+            schedule = AgentSchedule.model_validate(row["schedule"]) if row["schedule"] else None
+            # Handle this for backwards compatibility
+            if row["automation_enabled"] and schedule is None:
+                schedule = AgentSchedule.default()
+            output.append(
+                AgentMetadata(
+                    agent_id=row["agent_id"],
+                    user_id=row["user_id"],
+                    agent_name=row["agent_name"],
+                    created_at=row["created_at"],
+                    last_updated=row["last_updated"],
+                    last_run=row["last_run"],
+                    next_run=(schedule.get_next_run() if schedule else None),
+                    latest_notification_string=row["latest_agent_message"],
+                    automation_enabled=row["automation_enabled"],
+                    unread_notification_count=row["unread_notification_count"] or 0,
+                    schedule=schedule,
+                )
             )
-            for row in rows
-        ]
+        return output
 
     async def update_agent_name(self, agent_id: str, agent_name: str) -> None:
         return await self.pg.generic_update(
@@ -591,6 +596,17 @@ class AsyncDB:
             where={"agent_id": agent_id},
             values_to_update={"schedule": schedule.model_dump_json()},
         )
+
+    async def get_agent_schedule(self, agent_id: str) -> Optional[AgentSchedule]:
+        sql = """
+        SELECT schedule FROM agent.agents
+        WHERE agent_id = %(agent_id)s
+        """
+        rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
+        if not rows:
+            return None
+        schedule = rows[0]["schedule"]
+        return AgentSchedule.model_validate(schedule) if schedule else None
 
     async def insert_agent_custom_notification(self, cn: CustomNotification) -> None:
         """

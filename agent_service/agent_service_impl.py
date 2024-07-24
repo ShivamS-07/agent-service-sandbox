@@ -81,7 +81,10 @@ from agent_service.utils.redis_queue import (
     get_notification_event_channel,
     wait_for_messages,
 )
-from agent_service.utils.scheduling import get_schedule_from_user_description
+from agent_service.utils.scheduling import (
+    AgentSchedule,
+    get_schedule_from_user_description,
+)
 from agent_service.utils.string_utils import is_valid_uuid
 from agent_service.utils.task_executor import TaskExecutor
 
@@ -404,10 +407,12 @@ class AgentServiceImpl:
 
     async def enable_agent_automation(self, agent_id: str) -> EnableAgentAutomationResponse:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=True)
-
-        # TEMPORARY: return next run time as tomorrow
-        tomorrow = get_now_utc() + datetime.timedelta(days=1)
-        return EnableAgentAutomationResponse(success=True, next_run=tomorrow)
+        schedule = await self.pg.get_agent_schedule(agent_id=agent_id)
+        if not schedule:
+            schedule = AgentSchedule.default()
+            await self.pg.update_agent_schedule(agent_id=agent_id, schedule=schedule)
+        next_run = schedule.get_next_run()
+        return EnableAgentAutomationResponse(success=True, next_run=next_run)
 
     async def disable_agent_automation(self, agent_id: str) -> DisableAgentAutomationResponse:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=False)

@@ -14,6 +14,7 @@ COPY regression_test/ ./regression_test
 COPY prefect_serve.py .
 COPY prefect_sqs_serve.py .
 COPY sqs_execute.py .
+COPY cron_scheduler_worker.py .
 COPY scripts/ ./scripts
 COPY config/ ./config
 CMD ["pipenv", "run", "python", "application.py"]

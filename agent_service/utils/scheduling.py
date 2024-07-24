@@ -1,20 +1,21 @@
+import datetime
 import logging
-from typing import Tuple
+from typing import Optional, Tuple
 
+import pytz
+from apscheduler.triggers.cron import CronTrigger
 from cron_descriptor import get_description
+from pydantic import BaseModel
 
-from agent_service.endpoints.models import AgentSchedule
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
+from agent_service.utils.constants import DEFAULT_CRON_SCHEDULE
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prompt_utils import FilledPrompt, Prompt
 from agent_service.utils.string_utils import strip_code_backticks
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_CRON_SCHEDULE = "0 8 * * *"  # Daily at 8am
-DEFAULT_CRON_DESCRIPTION = get_description(DEFAULT_CRON_SCHEDULE)
-
 
 CRON_GEN_PROMPT = Prompt(
     template="""Given this description for a schedule in natural language,
@@ -23,6 +24,15 @@ possible. The job that will be run is a financial analysis job. If the user asks
 for running something 'weekly' please default to Monday at 8am. If the user asks
 for running something 'daily' please default to 8am.
 
+Please return a cron string with exactly 5 components:
+    minute
+    hour
+    day of month
+    month
+    day of week
+
+Commas, hyphens, and slashes are also supported.
+
 Input schedule description:
 {schedule_desc}
 
@@ -30,6 +40,49 @@ Your cron schedule output:
 """,
     name="AGENT_SCHEDULER_CRON_GENERATION",
 )
+
+_DAY_OF_WEEK_MAP = {
+    "0": "sun",
+    "1": "mon",
+    "2": "tue",
+    "3": "wed",
+    "4": "thu",
+    "5": "fri",
+    "6": "sat",
+}
+
+
+class AgentSchedule(BaseModel):
+    cron_schedule: str = DEFAULT_CRON_SCHEDULE
+    user_schedule_description: Optional[str] = None
+    # A human-readable description of the above cron schedule
+    generated_schedule_description: str = "Daily at 8am"
+    timezone: str = "US/Eastern"
+
+    @staticmethod
+    def default() -> "AgentSchedule":
+        return AgentSchedule()
+
+    def get_next_run(self) -> Optional[datetime.datetime]:
+        trigger = self.to_cron_trigger()
+        return trigger.get_next_fire_time(previous_fire_time=get_now_utc(), now=get_now_utc())
+
+    def to_cron_trigger(self) -> CronTrigger:
+        values = self.cron_schedule.split()
+        day_of_week = values[4]
+        # Hacky because we need to handle cases with commas, dashes, etc.
+        if day_of_week != "*":
+            for num, weekday in _DAY_OF_WEEK_MAP.items():
+                day_of_week = day_of_week.replace(num, weekday)
+        trigger = CronTrigger(
+            minute=values[0],
+            hour=values[1],
+            day=values[2],
+            month=values[3],
+            day_of_week=day_of_week,
+            timezone=pytz.timezone(self.timezone),
+        )
+        return trigger
 
 
 async def _get_cron_from_gpt(agent_id: str, user_desc: str) -> str:
@@ -52,19 +105,17 @@ async def get_schedule_from_user_description(
     """
     try:
         cron_schedule = await _get_cron_from_gpt(agent_id=agent_id, user_desc=user_desc)
+        logger.info(f"Got cron schedule from GPT: {cron_schedule}")
+        assert len(cron_schedule.split()) == 5
         cron_description = get_description(cron_schedule)
-        success = True
+        return (
+            AgentSchedule(
+                cron_schedule=cron_schedule,
+                user_schedule_description=user_desc,
+                generated_schedule_description=cron_description,
+            ),
+            True,
+        )
     except Exception:
         logger.exception(f"Failed to handle user schedule request: {user_desc=}")
-        cron_schedule = DEFAULT_CRON_SCHEDULE
-        cron_description = DEFAULT_CRON_DESCRIPTION
-        success = False
-
-    return (
-        AgentSchedule(
-            cron_schedule=cron_schedule,
-            user_schedule_description=user_desc,
-            generated_schedule_description=cron_description,
-        ),
-        success,
-    )
+        return (AgentSchedule.default(), False)

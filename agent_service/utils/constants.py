@@ -128,3 +128,5 @@ def get_B3_prefix() -> str:
 
 
 SUPPORTED_FILE_TYPES = ["Current and Historical Portfolio Holdings"]
+
+DEFAULT_CRON_SCHEDULE = "0 8 * * *"  # Daily at 8am

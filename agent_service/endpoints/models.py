@@ -13,6 +13,7 @@ from agent_service.io_types.text import TextOutput
 from agent_service.planner.planner_types import PlanStatus, RunMetadata
 from agent_service.types import Message
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.scheduling import AgentSchedule
 
 
 ####################################################################################################
@@ -67,13 +68,6 @@ class DisableAgentAutomationResponse(BaseModel):
 ####################################################################################################
 # Agent scheduling
 ####################################################################################################
-class AgentSchedule(BaseModel):
-    cron_schedule: Optional[str] = None
-    user_schedule_description: Optional[str] = None
-    # A human-readable description of the above cron schedule
-    generated_schedule_description: Optional[str] = None
-
-
 class SetAgentScheduleRequest(BaseModel):
     agent_id: str
     user_schedule_description: str
