@@ -130,6 +130,9 @@ DATE_RANGE_SYS_PROMPT = Prompt(
         "such as in a comparison. If you are interpreting 'previous month' in the context of "
         "a request to compare last month to the previous month, since last month is the last 30 days "
         "the previous month must be the 30 days before that."
+        "Usually date ranges are in the past, but please check the context carefully to see if "
+        "something ambiguious like '1 month' might be asking for dates in the future, for example "
+        "upcoming earnings. "
         "Do not include any wrapper around the JSON. (no ```)"
     ),
 )

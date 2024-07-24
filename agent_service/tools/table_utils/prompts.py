@@ -4,19 +4,18 @@ DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT = Prompt(
     name="DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT",
     template="""
 You will be given a json object describing the columns of a pandas
-dataframe. You should transform this json into another json with the same schema
-representing a dataframe after a transformation is applied. The transformation
-will be described to you, and you should produce only the json output for the
-new columns. If the output columns are identical to the inputs, simply return an
-empty list. Note that you should try to keep the table vertically aligned if
-possible (that is, more rows than columns).
+dataframe. You should transform this json into another json which uses the same basic
+schema representing a dataframe after the transformation is applied. The transformation
+will be described to you. If the output columns are identical to the inputs, you can
+simply return an empty list. Note that you should try to keep the table vertically
+aligned if possible (that is, more rows than columns).
 
-Use descriptive column names so that someone looking at the schema would know
+Use descriptive column names so that someone looking at the list of columns would know
 immediately what the table has inside it. Please make sure that the column order
 makes sense for a viewer as if it were being viewed in a table. For example, a
 date column or a stock ID column (if they are present) should be on the left
 side, specifically in the order (date, stock ID, other data...). Please also
-make sure that only RELEVANT columns are in the output. Columns that are entirely
+make sure that only RELEVANT columns are in the output. Input columns that are entirely
 irrelevant or only useful for intermediate calculations should typically be dropped.
 For example, if the user asks for a list of stocks ranked or filtered by a specific
 column, include that exact column in the output, even if the column is not in the
@@ -34,10 +33,14 @@ percent change, include the percent change column NOT the raw data column
 (e.g. price). Imagine that the user is looking at the table, and think hard
 about what columns they would most want to see.
 
-Dropping the DATE column from your output schema when it is in the input schema is
+In nearly all cases you will have a stock column. Typically you will only have
+one stock column, but in rare cases (e.g. correlations) you may end up creating two,
+do them as two separate columns rather than a single pair.
+
+Dropping the DATE column from your output columns when it is in the input columns is
 very common. If the transformation explicitly mentions outputing only a single datapoint
 for a single date (for each stock), or no dates at all, you must not include a DATE
-column in your output. Please be very careful about this, if you have the wrong schema
+column in your output. Please be very careful about this, if you have the wrong columns
 everything else will fail.
 
 If you are being asked to calculate a ranking or filtering of a table of stocks, it
@@ -56,9 +59,8 @@ or "monthly" operation, then you should compute a value for every day/week/month
 and include a DATE column.
 
 If the transformation description does not relate AT ALL to pandas or any sort
-of dataframe transformation, please just return the dataframe unchanged. You
+of dataframe transformation, please just keep the columns unchanged. You
 should still not output anything other than json.
-
 
 Below is the json schema of the json you should produce. You should produce a
 list of these objects, one for each column. Note that if the column type is
@@ -158,6 +160,29 @@ output (e.g. stocks with highest/lowest value), output at least 10 stocks. In
 cases where ranks are asked for, make sure to output the 10 ranked highest or
 lowest! If the user specifies a number, make sure to output that specific
 number!
+
+Note that you may be sometimes asked to rank by correlation. If you are
+doing correlation of stock statistics, you will often end up with a correlation
+matrix where the index and columns are both labeled "Security" (or "Stock"), if
+this is the case, you MUST change the label for either columns or rows before you
+transform the matrix back to a format with two columns (one for each security),
+you can't have two columns with the same name!
+
+For example, if you have created a correlation table as such:
+
+df_pivoted = df.pivot(index='Date', columns='Security', values='Close Price')
+correlation_matrix = df_pivoted.corr()
+
+You must do to this to the correlation matrix before you proceed:
+
+correlation_matrix.index.name = "Security_1"
+correlation_matrix.columns.name = "Security_2"
+
+Do not miss this step, if you directly stack the result it will crash!!!!
+You must not set an index in a table where there are two security columns, BTW
+
+If you are doing a more complex calculation such as correlation, don't forget to
+rank and/or filter as required by the transformation description!
 
 2. You will sometime be asked to do some mathematical operations across the
 columns of a table of stocks, for example you will be given a table with

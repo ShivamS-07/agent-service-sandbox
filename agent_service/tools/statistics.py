@@ -128,7 +128,9 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
         " required it will assume the request is for the most recent date for which data exists."
         " You must not get a date range if the client has not specified one in their request, just use the"
         " default!"
-        " This tool does NOT handle sentiment scores, use the get_stock_recommendations tool for that."
+        " This tool does NOT generally handle news sentiment scores or quant ratings, use the get_stock_recommendations"
+        " tool for that. However, if the user asks specifically for `analyst expectations`, use this tool, not the"
+        " recommendations tool!"
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,

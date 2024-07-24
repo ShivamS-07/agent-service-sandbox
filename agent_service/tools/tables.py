@@ -283,6 +283,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
         )
 
     debug_info["table_schema"] = dump_io_type(new_col_schema)
+    logger.info(f"Table Schema: {debug_info['table_schema']}")
     await tool_log(log="Transforming table", context=context)
     data_df = args.input_table.to_df(stocks_as_hashables=True)
     if old_code:

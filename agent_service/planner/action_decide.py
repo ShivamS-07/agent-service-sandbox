@@ -13,6 +13,7 @@ from agent_service.planner.prompts import (
     ERROR_ACTION_DECIDER_SYS_PROMPT,
     ERROR_REPLAN_GUIDELINES,
     NOTIFICATION_CREATE_MAIN_PROMPT,
+    NOTIFICATION_DEFAULT_MAIN_PROMPT,
     NOTIFICATION_EXAMPLE,
     NOTIFICATION_UPDATE_MAIN_PROMPT,
 )
@@ -65,7 +66,7 @@ class InputActionDecider:
         main_prompt = NOTIFICATION_CREATE_MAIN_PROMPT.format(
             chat_context=chat_context.get_gpt_input(), example=NOTIFICATION_EXAMPLE
         )
-        result = await self.llm.do_chat_w_sys_prompt(main_prompt, NO_PROMPT)
+        result = (await self.llm.do_chat_w_sys_prompt(main_prompt, NO_PROMPT)).replace("\n\n", "\n")
         return result
 
     async def update_custom_notifications(
@@ -77,7 +78,14 @@ class InputActionDecider:
             example=NOTIFICATION_EXAMPLE,
         )
 
-        result = await self.llm.do_chat_w_sys_prompt(main_prompt, NO_PROMPT)
+        result = (await self.llm.do_chat_w_sys_prompt(main_prompt, NO_PROMPT)).replace("\n\n", "\n")
+        return result
+
+    async def generate_default_custom_notifications(self, chat_context: ChatContext) -> str:
+        main_prompt = NOTIFICATION_DEFAULT_MAIN_PROMPT.format(
+            chat_context=chat_context.get_gpt_input()
+        )
+        result = (await self.llm.do_chat_w_sys_prompt(main_prompt, NO_PROMPT)).replace("\n\n", "\n")
         return result
 
 

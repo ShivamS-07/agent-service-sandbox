@@ -587,12 +587,14 @@ class GetStockRecommendationsInput(ToolArgs):
         "The future (investment horizon) or into the past (delta) to consider, you should increase them from the "
         "defaults only when the client expresses some specific interest in a longer term view. "
         "By default, the ML algorithm uses a mixture of quantitative information and news sentiment. "
+        "If the user asks for a quant rating or quant score for a set of stocks, you should use this function"
+        "with filter=False and news_only=False"
         "You should use also use this function (and not filter_stocks_by_profile!) with the news_only flag "
         "when the client wants to filter stocks based on news semtiment, ."
         "When you get such a request, e.g. `filter to stocks with only positive "
         "news sentiment`, the optional news_only should be set to True, and only news information will be used in "
         "rating and corresponding rationale. "
-        "If the client asks for recommendations AND includes a requirement that news be positivie, it is "
+        "If the client asks for recommendations AND includes a requirement that news be positive, it is "
         "perfectly reasonable to run this tool twice, first with news_only=True, and the second time "
         "with news_only=False. You should never use the filter by profile function for filtering by simple "
         "news sentiment!!!!"
@@ -603,6 +605,8 @@ class GetStockRecommendationsInput(ToolArgs):
         "Valid horizons for the horizon arguments are 1W, 1M, 3M, and 1Y, do not pass anything else!"
         "If the client mentions an investment policy/style, it should be passed in as investment style. "
         "If no stock ID's are provided (which must only happen when filter=True!), the S&P 500 stocks are used"
+        "You must not use this tool when the client asks for `analyst expectations`, analyst expectations "
+        "is a statistic that accessible through the get_statistic_data tool!"
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

@@ -4,7 +4,6 @@ from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
-from agent_service.utils.prefect import get_prefect_logger
 
 
 class CombineListsInput(ToolArgs):
@@ -35,7 +34,7 @@ async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IO
         result = list(set(args.list1 + args.list2))
 
     await tool_log(
-        log=f"Merged list is of size = {len(result)}",
+        log=f"Merged list has {len(result)} items",
         context=context,
     )
 
@@ -56,7 +55,6 @@ async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IO
     is_visible=False,
 )
 async def intersect_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
-    logger = get_prefect_logger(__name__)
     try:
         # Do this if the lists have complex io types in them
         result = list(ComplexIOBase.intersect_sets(set(args.list1), set(args.list2)))  # type: ignore
@@ -64,13 +62,32 @@ async def intersect_lists(args: CombineListsInput, context: PlanRunContext) -> L
         # otherwise just do a normal intersection
         result = list(set(args.list1) & set(args.list2))  # type: ignore
 
-    logger.info(f"Intersection is of size = {len(result)}")
     await tool_log(
-        log=f"Intersection is of size = {len(result)}",
+        log=f"Intersection has {len(result)} items",
         context=context,
     )
 
     return result  # type: ignore
+
+
+@tool(
+    description=(
+        "This function outputs a list of things in the first list that are not in the second (set difference). "
+        " For example, if list1 is [1, 2, 3, 4] and list2 is [3, 4, 5], the output diff is [1, 2]."
+        " You will want to use this function if, for example, you want all the stocks in a particular universe"
+        " except for a subset of them (e.g. R1k stocks excluding S&P 500 stocks)"
+    ),
+    category=ToolCategory.LIST,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def diff_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
+    result = list(set(args.list1) - set(args.list2))
+    await tool_log(
+        log=f"Difference has {len(result)} items",
+        context=context,
+    )
+    return result
 
 
 class GetIndexInput(ToolArgs):
