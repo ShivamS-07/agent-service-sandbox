@@ -26,8 +26,9 @@ GET_CATEGORIES_FOR_STOCK_SYS_PROMPT = Prompt(
     Here is the chat context which may include information to make \
     the output more specific or accurate:
     {chat_context}
-    You'll be provided the sentence of a hypothesis evaluating something \
+    You may be provided the sentence of a hypothesis evaluating something \
     in a financial setting, return the 3-{limit} most important criteria to evaluate it.
+    If you are not provided with this prompt, you should ignore this step.
 
     Think about the criteria in a financial setting where the user is trying to \
     evaluate future looking trends. When looking at a hypothesis about a company \
@@ -70,6 +71,12 @@ GET_CATEGORIES_FOR_STOCK_SYS_PROMPT = Prompt(
     Towing Capacity of future and current models
     Fuel efficiency of current and future models
 
+    You also may be provided a list of names of topics that the user is interested in
+    using for a hypothesis evaluating something in a financial setting.
+    If this is the case, you should append this to the list of categories
+    generated in the previous step.
+    If this list is none, you can skip this step.
+
     Output the list in the format [CRITERIA_1, CRITERIA_2, CRITERIA_3] where \
     each CRITERIA is a pythonic dictionary containing:
     name: containing the criteria heading
@@ -83,6 +90,7 @@ GET_CATEGORIES_FOR_STOCK_SYS_PROMPT = Prompt(
     is provided in the CRITERIA dictionary list
     IMPORTANT: Ensure that the name of the company and company \
     specific products are not mentioned in the criteria explanation or justification
+    IMPORTANT: Ensure that you are returning exactly one criteria for each user provided topic name
     """,
 )
 GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT = Prompt(
@@ -90,6 +98,7 @@ GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT = Prompt(
     template="""
     {company_description_str}
     Here is the hypothesis: \"{prompt}\"
+    Here are the names of the requested category topics: \"{names}\"
     """,
 )
 
@@ -124,6 +133,9 @@ class Category(ComplexIOBase):
             f"Justification: {self.justification}."
         )
 
+    def __hash__(self) -> int:
+        return hash((self.name, self.explanation, self.justification, self.weight))
+
     @classmethod
     def multi_to_gpt_input(cls, categories: List[Self]) -> str:
         output_list = []
@@ -147,7 +159,8 @@ class Categories(ComplexIOBase):
 
 
 class CategoriesForStockInput(ToolArgs):
-    prompt: str
+    prompt: Optional[str] = None
+    category_names: Optional[List[str]] = None
     stock: Optional[StockID] = None
     limit: Optional[int] = None
 
@@ -155,14 +168,25 @@ class CategoriesForStockInput(ToolArgs):
 @tool(
     description=f"""
     This function returns a list of success criteria
-    that would be useful in evaluating a prompt or query.
+    that would be useful in evaluating a prompt.
+    This function also takes in a list of user requested category names
+    and creates a list of success criteria.
+    IMPORTANT: If the user wants to add categories to a list of criteria,
+    this function MUST be used to first convert the list of category_names to a list of
+    criteria before invoking add_lists.
     By default, the function returns up to {DEFAULT_CATEGORY_LIMIT}
-    criteria however, a optional limit parameter can be passed in to
+    criteria for prompts however, a optional limit parameter can be passed in to
     increase or decrease the number of criteria outputted.
+    The function must only return one criteria for each user provided topic name.
+    If the user provides a prompt, the function generate a list of criteria.
+    If the user provides a list of specific category_names to be included,
+    the function will return a list of corresponding criteria for those category_names.
     In order to enhance the accuracy of the tool's output, you may
     also provide the StockID of the stock associated with the prompt.
     IMPORTANT: This tool should only be used to identify success criteria
-    for a prompt. Do not use this tool in conjunction with other tools.
+    for a prompt or user specified list of topics they want criteria generated for.
+    IMPORTANT: Either a prompt or a list of category_names or both must be provided.
+    Do not use this tool in conjunction with other tools.
     """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -173,6 +197,7 @@ async def get_categories(args: CategoriesForStockInput, context: PlanRunContext)
         llm=llm,
         context=context,
         prompt=args.prompt,
+        category_names=args.category_names,
         stock=args.stock,
         limit=args.limit,
     )
@@ -185,12 +210,17 @@ async def get_categories(args: CategoriesForStockInput, context: PlanRunContext)
 
 
 async def get_categories_for_stock_impl(
-    llm: GPT, context: PlanRunContext, prompt: str, stock: Optional[StockID], limit: Optional[int]
+    llm: GPT,
+    context: PlanRunContext,
+    prompt: Optional[str],
+    category_names: Optional[List[str]],
+    stock: Optional[StockID],
+    limit: Optional[int],
 ) -> List[Category]:
     logger = get_prefect_logger(__name__)
 
-    if prompt is None or prompt == "":
-        logger.info("Could not generate categories because missing prompt")
+    if (prompt is None or prompt == "") and (category_names is None or category_names == []):
+        logger.info("Could not generate categories because missing prompt and category names")
         return []
 
     if not limit:
@@ -210,8 +240,7 @@ async def get_categories_for_stock_impl(
     # initial prompt for categories
     initial_categories_gpt_resp = await llm.do_chat_w_sys_prompt(
         main_prompt=GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT.format(
-            prompt=prompt,
-            company_description_str=company_description_str,
+            prompt=prompt, names=category_names, company_description_str=company_description_str
         ),
         sys_prompt=GET_CATEGORIES_FOR_STOCK_SYS_PROMPT.format(
             chat_context=context.chat,
