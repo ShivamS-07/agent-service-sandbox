@@ -1,6 +1,7 @@
 import datetime
 from typing import Any, List, Optional
 
+import numpy as np
 import pandas as pd
 from pa_portfolio_service_proto_v1.pa_service_common_messages_pb2 import TimeDelta
 from pa_portfolio_service_proto_v1.watchlist_pb2 import StockWithWeight
@@ -38,7 +39,7 @@ PortfolioID = str
 db = get_psql()
 
 
-class GetPortfolioWorkspaceHoldingsInput(ToolArgs):
+class GetPortfolioHoldingsInput(ToolArgs):
     portfolio_id: PortfolioID
 
 
@@ -59,7 +60,7 @@ class GetPortfolioWorkspaceHoldingsInput(ToolArgs):
     is_visible=False,
 )
 async def get_portfolio_holdings(
-    args: GetPortfolioWorkspaceHoldingsInput, context: PlanRunContext
+    args: GetPortfolioHoldingsInput, context: PlanRunContext
 ) -> StockTable:
     logger = get_prefect_logger(__name__)
     workspace = await get_all_holdings_in_workspace(context.user_id, args.portfolio_id)
@@ -76,6 +77,7 @@ async def get_portfolio_holdings(
         "Weight": [holding.weight for holding in workspace.holdings],
     }
     df = pd.DataFrame(data)
+    df = df.sort_values(by="Weight", ascending=False)
     table = StockTable.from_df_and_cols(
         data=df,
         columns=[
@@ -187,7 +189,7 @@ TIME_DELTA_MAP = {
 
 class GetPortfolioPerformanceInput(ToolArgs):
     portfolio_id: PortfolioID
-    performance_level: str = "overall"
+    performance_level: str = "monthly"
     date_range: Optional[DateRange] = None
     sector_performance_horizon: Optional[str] = "1M"  # 1W, 1M, 3M, 6M, 9M, 1Y
 
@@ -197,8 +199,10 @@ class GetPortfolioPerformanceInput(ToolArgs):
         if not isinstance(value, str):
             raise ValueError("performance level must be a string")
 
-        if value not in ["overall", "stock", "sector"]:
-            raise ValueError("performance level must be one of ('overall', 'stock', 'sector')")
+        if value not in ["overall", "stock", "sector", "monthly"]:
+            raise ValueError(
+                "performance level must be one of ('overall', 'stock', 'sector', 'monthly')"
+            )
         return value
 
     @field_validator("sector_performance_horizon", mode="before")
@@ -216,7 +220,8 @@ class GetPortfolioPerformanceInput(ToolArgs):
     description=(
         "This function returns the performance of a portfolio given a portfolio id "
         "and a performance level and date range. "
-        "\nThe performance level MUST one of  ('overall', 'stock', 'sector')."
+        "\nThe performance level MUST one of  ('overall', 'stock', 'sector', 'monthly'). "
+        "The default performance level is 'monthly'. "
         "\nThe date range is optional and defaults to the last month."
         "\nThe sector performance horizon is optional and defaults to 1 month. "
         "sector_performance_horizon must be one of ('1W', '1M', '3M', '6M', '9M', '1Y')."
@@ -230,6 +235,9 @@ class GetPortfolioPerformanceInput(ToolArgs):
         "\nWhen the performance level is 'sector', it returns the performance of each sector in the portfolio. "
         "Table schema for sector performance level: "
         "sector: string, return: float,weight: float, weighted-return: float"
+        "\nWhen the performance level is 'monthly', it returns the monthly returns of the portfolio. "
+        "Table schema for monthly performance level: "
+        "month: string, return: float, return-vs-benchmark: float"
     ),
     category=ToolCategory.PORTFOLIO,
     tool_registry=ToolRegistry,
@@ -251,11 +259,10 @@ async def get_portfolio_performance(
     linked_portfolio_id = str(db.get_workspace_linked_id(args.portfolio_id))
 
     # get the performance for overall performance level
-    if args.performance_level == "overall":
+    if args.performance_level == "monthly":
         # get the full strategy info for the linked_portfolio_id
         portfolio_details = await get_full_strategy_info(context.user_id, linked_portfolio_id)
         performance_details = portfolio_details.backtest_results.performance_info
-
         # Create a DataFrame for the monthly returns
         data_length = len(performance_details.monthly_gains.headers)
         df = pd.DataFrame(
@@ -271,11 +278,17 @@ async def get_portfolio_performance(
             },
             index=range(data_length),
         )
+        # drop YTD row (last row)
+        df = df.drop(df.index[-1])
+        # convert month to datetime
+        df["month"] = pd.to_datetime(
+            df["month"] + " " + str(datetime.datetime.now().year), format="%b %Y"
+        )
         # create a Table
         table = Table.from_df_and_cols(
             data=df,
             columns=[
-                TableColumnMetadata(label="month", col_type=TableColumnType.STRING),
+                TableColumnMetadata(label="month", col_type=TableColumnType.DATETIME),
                 TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
                 TableColumnMetadata(label="return-vs-benchmark", col_type=TableColumnType.FLOAT),
             ],
@@ -283,7 +296,7 @@ async def get_portfolio_performance(
     elif args.performance_level == "stock":
         # get portfolio holdings
         portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
-            GetPortfolioWorkspaceHoldingsInput(portfolio_id=args.portfolio_id), context
+            GetPortfolioHoldingsInput(portfolio_id=args.portfolio_id), context
         )
         portfolio_holdings_df = portfolio_holdings_table.to_df()
         # get gbi_ids
@@ -292,7 +305,6 @@ async def get_portfolio_performance(
         stock_performance = await get_stock_performance_for_date_range(
             gbi_ids=gbi_ids,
             start_date=date_range.start_date,
-            end_date=date_range.end_date,
             user_id=context.user_id,
         )
         # Create a DataFrame for the stock performance
@@ -320,7 +332,7 @@ async def get_portfolio_performance(
     elif args.performance_level == "sector":
         # get portfolio holdings
         portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
-            GetPortfolioWorkspaceHoldingsInput(portfolio_id=args.portfolio_id), context
+            GetPortfolioHoldingsInput(portfolio_id=args.portfolio_id), context
         )
         portfolio_holdings_df = portfolio_holdings_table.to_df()
         gbi_ids = [stock.gbi_id for stock in portfolio_holdings_df[STOCK_ID_COL_NAME_DEFAULT]]
@@ -369,6 +381,40 @@ async def get_portfolio_performance(
                 TableColumnMetadata(label="weighted-return", col_type=TableColumnType.FLOAT),
             ],
         )
+    elif args.performance_level == "overall":
+        # get the full strategy info for the linked_portfolio_id
+        portfolio_details = await get_full_strategy_info(context.user_id, linked_portfolio_id)
+        performance_details = portfolio_details.backtest_results.performance_info
+
+        df = pd.DataFrame(
+            index=list(performance_details.performance_grid.rows),
+            columns=list(performance_details.performance_grid.headers),
+            data=[
+                [v.float_val for v in row.values]
+                for row in performance_details.performance_grid.row_values
+            ],
+        )
+        # replace 0.0 with NA
+        df = df.reset_index().replace(0, np.nan)
+        # only keep the 'portfolio' and returns columns
+        # Melt the DataFrame
+        melted_df = df.melt(id_vars=["index"], var_name="Horizon", value_name="Portfolio-return")
+
+        # Filter for the 'portfolio' index
+        portfolio_df = (
+            melted_df[melted_df["index"] == "portfolio"]
+            .drop(columns="index")
+            .reset_index(drop=True)
+        )
+        # create a Table
+        table = Table.from_df_and_cols(
+            data=portfolio_df,
+            columns=[
+                TableColumnMetadata(label="Horizon", col_type=TableColumnType.STRING),
+                TableColumnMetadata(label="Portfolio-return", col_type=TableColumnType.FLOAT),
+            ],
+        )
+
     else:
         raise ValueError("Invalid performance level")
     return table

@@ -66,6 +66,7 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "\n-----\n"
         "{chat_context}"
         "\n-----\n"
+        "For reference, today's date is {today}. "
         "Now please craft a macroeconomic commentary and provide a list of text numbers "
         "which MUST ONLY include top sources (less than 50 sources). "
         "After writing the commentary, double check the list of sources and make sure "
@@ -124,12 +125,16 @@ PORTFOLIO_PROMPT = Prompt(
         "\n### Portfolio Geography Info\n"
         "{portfolio_geography_prompt}"
         "\n### Portfolio Performance\n"
-        "\nPortfolio performance overall:\n"
-        "{portfolio_performance_overall}"
         "\nPortfolio performance by sector:\n"
         "{portfolio_performance_by_sector}"
         "\nPortfolio performance by stock:\n"
         "{portfolio_performance_by_stock}"
+        "\n###Benchmark performance:\n"
+        "The following are the performance statistics of the benchmark in the given time period. "
+        "\nBenchmark performance by sector:\n"
+        "{benchmark_performance_by_sector}"
+        "\nBenchmark performance by stock:\n"
+        "{benchmark_performance_by_stock}"
     ),
 )
 
@@ -326,6 +331,8 @@ WRITE_COMMENTARY_DESCRIPTION = (
     "\n- 'client_type' MUST be either 'Technical' or 'Simple'. Choose based on client's request. "
     "\n- 'writing_format' MUST be either 'Long', 'Short' or 'Bullets'. Choose based on client's request."
     "\n- 'portfolio_id' can be provided if user wants a commentary based on a specific portfolio."
+    "\n='benchmark_name' is the name of the benchmark to be used in the commentary. "
+    "The default benchmark is 'S&P 500'."
 )
 
 UPDATE_COMMENTARY_INSTRUCTIONS = (
@@ -354,8 +361,11 @@ SUMMARIZE_TEXT_PROMPT = Prompt(
         "\nRely strictly on the provided text, without including external information. "
         "\nFormat the summary in paragraph form for easy understanding. "
         "\nEnsure that the summary is well-structured, coherent, and logically organized. "
-        "\nThe length of the summary MUST be less than 1000 words. "
+        "\nThe length of the summary MUST be less than 500 words in bullet point format. "
         "\nSummary must start with a title showing type and main topic of the text. "
+        "\n###Text\n"
+        "Here is the text to be summarized: \n"
+        "{text}"
         "\nNow, please create a summary of the provided text."
     ),
 )

@@ -23,15 +23,17 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.portfolio import TIME_DELTA_MAP, map_input_to_closest_horizon
 from agent_service.tools.stocks import (
     GetStockUniverseInput,
+    StockIdentifierLookupInput,
     get_stock_info_for_universe,
     get_stock_universe_table_from_universe_company_id,
+    stock_identifier_lookup,
 )
 from agent_service.types import PlanRunContext
 
 
 class GetUniversePerformanceInput(ToolArgs):
     universe_name: str
-    performance_level: str = "stock"
+    performance_level: str = "overall"
     date_range: DateRange = DateRange(
         start_date=datetime.date.today() - datetime.timedelta(days=30),
         end_date=datetime.date.today(),
@@ -44,8 +46,8 @@ class GetUniversePerformanceInput(ToolArgs):
         if not isinstance(value, str):
             raise ValueError("performance level must be a string")
 
-        if value not in ["stock", "sector"]:
-            raise ValueError("performance level must be one of ('stock', 'sector')")
+        if value not in ["overall", "stock", "sector"]:
+            raise ValueError("performance level must be one of ('overall', 'stock', 'sector')")
         return value
 
     @field_validator("sector_performance_horizon", mode="before")
@@ -63,11 +65,12 @@ class GetUniversePerformanceInput(ToolArgs):
     description=(
         "This function returns the performance of a universe/benchmark given a universe name "
         "and a performance level and date range. "
-        "\nThe performance level MUST one of  ('stock', 'sector')."
+        "\nThe performance level MUST one of  ('overall', 'stock', 'sector')."
         "\nThe date range is optional and defaults to the last month."
         "\nThe sector performance horizon is optional and defaults to 1 month. "
         "sector_performance_horizon must be one of ('1W', '1M', '3M', '6M', '9M', '1Y')."
         "sector_performance_horizon MUST be provided when the performance level is 'sector'."
+        "\nWhen the performance level is 'overall', it returns the performance of the universe as a whole. "
         "\nWhen the performance level is 'stock', it returns the performance of each stock in the universe. "
         "Table schema for stock performance level: "
         "stock: StockID, return: float "
@@ -102,7 +105,6 @@ async def get_universe_performance(
         stock_performance = await get_stock_performance_for_date_range(
             gbi_ids=gbi_ids,
             start_date=args.date_range.start_date,
-            end_date=args.date_range.end_date,
             user_id=context.user_id,
         )
         # Create a DataFrame for the stock performance
@@ -171,6 +173,37 @@ async def get_universe_performance(
                 TableColumnMetadata(label="weight", col_type=TableColumnType.FLOAT),
                 TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
                 TableColumnMetadata(label="weighted-return", col_type=TableColumnType.FLOAT),
+            ],
+        )
+    elif args.performance_level == "overall":
+        # we can treat the universe as a stock to get the performance
+        # get the gbi_id for universe
+        universe_stockid_obj: StockID = await stock_identifier_lookup(  # type: ignore
+            StockIdentifierLookupInput(stock_name=args.universe_name),
+            context,
+        )
+        # get the universe performance for the date range
+        overall_performance = await get_stock_performance_for_date_range(
+            gbi_ids=[universe_stockid_obj.gbi_id],
+            start_date=args.date_range.start_date,
+            user_id=context.user_id,
+        )
+        # Create a DataFrame for the universe performance
+        data = {
+            STOCK_ID_COL_NAME_DEFAULT: [universe_stockid_obj],
+            "return": [
+                universe.performance for universe in overall_performance.stock_performance_list
+            ],
+        }
+        df = pd.DataFrame(data)
+        # create a Table
+        table = StockTable.from_df_and_cols(
+            data=df,
+            columns=[
+                TableColumnMetadata(
+                    label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
+                ),
+                TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
             ],
         )
 

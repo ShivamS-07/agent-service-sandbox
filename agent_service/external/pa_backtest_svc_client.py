@@ -165,13 +165,12 @@ async def get_stocks_sector_performance_for_date_range(
 @grpc_retry
 @async_perf_logger
 async def get_stock_performance_for_date_range(
-    gbi_ids: List[int], start_date: datetime.date, end_date: datetime.date, user_id: str
+    gbi_ids: List[int], start_date: datetime.date, user_id: str
 ) -> GetStockPerformanceForDateRangeResponse:
     with _get_service_stub() as stub:
         req = GetStockPerformanceForDateRangeRequest(
             gbi_ids=gbi_ids,
             start_date=date_to_pb_timestamp(start_date),
-            end_date=date_to_pb_timestamp(end_date),
         )
 
         response: GetStockPerformanceForDateRangeResponse = (

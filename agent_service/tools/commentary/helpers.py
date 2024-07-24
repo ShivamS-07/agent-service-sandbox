@@ -42,8 +42,8 @@ from agent_service.tools.news import (
     get_news_articles_for_topics,
 )
 from agent_service.tools.portfolio import (
+    GetPortfolioHoldingsInput,
     GetPortfolioPerformanceInput,
-    GetPortfolioWorkspaceHoldingsInput,
     PortfolioID,
     get_portfolio_holdings,
     get_portfolio_performance,
@@ -58,6 +58,10 @@ from agent_service.tools.themes import (
     get_news_developments_about_theme,
 )
 from agent_service.tools.tool_log import tool_log
+from agent_service.tools.universe import (
+    GetUniversePerformanceInput,
+    get_universe_performance,
+)
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.postgres import get_psql
@@ -66,6 +70,7 @@ from agent_service.utils.prompt_utils import FilledPrompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
 
 logger = get_prefect_logger(__name__)
+PERFORMANCE_LEVELS = ["sector", "stock"]
 
 
 # Helper functions
@@ -242,15 +247,15 @@ async def get_texts_for_topics(
     topics = topics if topics else []
     for topic in topics:
         try:
-            themes = await get_macroeconomic_themes(
+            themes: List[ThemeText] = await get_macroeconomic_themes(  # type: ignore
                 GetMacroeconomicThemeInput(theme_refs=[topic]), context
             )
             await tool_log(
-                log=f"Found {len(themes)} themes for topic: {topic}.",  # type: ignore
+                log=f"Found {len(themes)} themes for topic: {topic}.",
                 context=context,
                 associated_data=themes,
             )
-            res = await get_theme_related_texts(themes, context)  # type: ignore
+            res = await get_theme_related_texts(themes, date_range, context)
             await tool_log(
                 log=f"Found {len(res)} theme-related texts for topic: {topic}.",
                 context=context,
@@ -285,13 +290,13 @@ async def get_texts_for_topics(
 
 
 async def prepare_portfolio_prompt(
-    portfolio_id: PortfolioID, date_range: DateRange, context: PlanRunContext
+    portfolio_id: PortfolioID, date_range: DateRange, benchmark_name: str, context: PlanRunContext
 ) -> FilledPrompt:
     """
     This function prepares the portfolio prompt for the commentary.
     """
     portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
-        GetPortfolioWorkspaceHoldingsInput(portfolio_id=portfolio_id), context
+        GetPortfolioHoldingsInput(portfolio_id=portfolio_id), context
     )
     portfolio_holdings_df = portfolio_holdings_table.to_df()
 
@@ -305,62 +310,50 @@ async def prepare_portfolio_prompt(
         associated_data=regions_to_weight,
     )
     portfolio_geography_prompt = GEOGRAPHY_PROMPT.format(portfolio_geography=portfolio_geography)
-
-    # get the overall portfolio performance
-    overall_performance_table: Table = await get_portfolio_performance(  # type: ignore
-        GetPortfolioPerformanceInput(
-            portfolio_id=portfolio_id,
-            performance_level="overall",
-        ),
-        context,
-    )
-    await tool_log(
-        log="Retrieved overall portfolio performance.",
-        context=context,
-        associated_data=overall_performance_table,
-    )
+    performance_dict: Dict[str, Table] = {}
     # get the sector level portfolio performance
     sector_performance_horizon = (
         await match_daterange_to_timedelta(date_range) if date_range else "1M"
     )
-    sector_performance_table: Table = await get_portfolio_performance(  # type: ignore
-        GetPortfolioPerformanceInput(
-            portfolio_id=portfolio_id,
-            performance_level="sector",
-            sector_performance_horizon=sector_performance_horizon,
-        ),
-        context,
-    )
-    await tool_log(
-        log=(
-            "Retrieved sector level portfolio performance."
-            "for duration {sector_performance_horizon}."
-        ),
-        context=context,
-        associated_data=sector_performance_table,
-    )
-    # get stock level portfolio performance
-    stock_performance_table: Table = await get_portfolio_performance(  # type: ignore
-        GetPortfolioPerformanceInput(
-            portfolio_id=portfolio_id,
-            performance_level="stock",
-            date_range=date_range,
-        ),
-        context,
-    )
-    await tool_log(
-        log="Retrieved stock level portfolio performance.",
-        context=context,
-        associated_data=stock_performance_table,
-    )
+    # get the portfolio performance on levels in PERFORMANCE_LEVELS
+    # TODO: This can be parallelized
+    for performance_level in PERFORMANCE_LEVELS:
+        performance_dict[f"portfolio_{performance_level}"] = await get_portfolio_performance(  # type: ignore
+            GetPortfolioPerformanceInput(
+                portfolio_id=portfolio_id,
+                performance_level=performance_level,
+                sector_performance_horizon=sector_performance_horizon,
+            ),
+            context,
+        )
+        await tool_log(
+            log=f"Retrieved {performance_level} portfolio performance.",
+            context=context,
+            associated_data=performance_dict[f"portfolio_{performance_level}"],
+        )
+        performance_dict[f"benchmark_{performance_level}"] = await get_universe_performance(  # type: ignore
+            GetUniversePerformanceInput(
+                universe_name=benchmark_name,
+                performance_level=performance_level,
+                date_range=date_range,
+                sector_performance_horizon=sector_performance_horizon,
+            ),
+            context,
+        )
+        await tool_log(
+            log=f"Retrieved {performance_level} benchmark performance.",
+            context=context,
+            associated_data=performance_dict[f"benchmark_{performance_level}"],
+        )
 
     # Prepare the portfolio prompt
     portfolio_prompt = PORTFOLIO_PROMPT.format(
         portfolio_holdings=str(portfolio_holdings_df),
         portfolio_geography_prompt=portfolio_geography_prompt.filled_prompt,
-        portfolio_performance_overall=str(overall_performance_table.to_df()),
-        portfolio_performance_by_sector=str(sector_performance_table.to_df()),
-        portfolio_performance_by_stock=str(stock_performance_table.to_df()),
+        portfolio_performance_by_sector=str(performance_dict["portfolio_sector"].to_df()),
+        portfolio_performance_by_stock=str(performance_dict["portfolio_stock"].to_df()),
+        benchmark_performance_by_sector=str(performance_dict["benchmark_sector"].to_df()),
+        benchmark_performance_by_stock=str(performance_dict["benchmark_stock"].to_df()),
     )
     return portfolio_prompt
 
@@ -377,7 +370,6 @@ async def prepare_stocks_stats_prompt(
     stock_performance = await get_stock_performance_for_date_range(
         gbi_ids=gbi_ids,
         start_date=date_range.start_date,
-        end_date=date_range.end_date,
         user_id=context.user_id,
     )
     # Create a DataFrame/Table for the stock performance
@@ -412,7 +404,7 @@ async def summarize_text_mapping(text_mapping: Dict[str, List[Text]]) -> Dict[st
     """
     llm = GPT(model=GPT4_O)
     for text_type in text_mapping:
-        if text_type in ("SEC filing", "Company Description"):
+        if text_type in ("SEC filing", "Company Description", "Earnings Call Summary"):
             tasks = []
             texts_str_list = await Text.get_all_strs(text_mapping[text_type], include_header=True)
             for text in texts_str_list:
@@ -463,6 +455,7 @@ async def prepare_main_prompt(
         writing_style_prompt=writing_style_prompt.filled_prompt,
         texts=texts,
         chat_context=chat_context,
+        today=str(date.today().strftime("%Y-%m-%d")),
     )
 
     main_prompt_token_length = GPTTokenizer(COMMENTARY_LLM).get_token_length(
@@ -508,6 +501,7 @@ async def prepare_main_prompt(
             writing_style_prompt=writing_style_prompt.filled_prompt,
             texts=trunctated_texts,
             chat_context=chat_context,
+            today=str(date.today().strftime("%Y-%m-%d")),
         )
         main_prompt_token_length = GPTTokenizer(COMMENTARY_LLM).get_token_length(
             main_prompt.filled_prompt

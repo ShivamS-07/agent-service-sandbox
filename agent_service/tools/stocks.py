@@ -930,7 +930,7 @@ async def get_stock_universe_table_from_universe_company_id(
     stock_ids = await StockID.from_gbi_id_list(gbi_ids)
     data = {
         STOCK_ID_COL_NAME_DEFAULT: stock_ids,
-        "Weight": [row["weight"] for row in rows],
+        "Weight": [row["weight"] / 100 for row in rows],
     }
     df = pd.DataFrame(data)
     table = StockTable.from_df_and_cols(

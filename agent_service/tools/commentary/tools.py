@@ -8,10 +8,12 @@ from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
+from agent_service.io_types.table import StockTable
 from agent_service.io_types.text import Text, TextGroup, ThemeText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.commentary.constants import (
     COMMENTARY_LLM,
+    DEFAULT_BENCHMARK_NAME,
     MAX_DEVELOPMENTS_PER_COMMENTARY,
     MAX_STOCKS_PER_COMMENTARY,
     MAX_THEMES_PER_COMMENTARY,
@@ -46,7 +48,13 @@ from agent_service.tools.other_text import (
     GetAllTextDataForStocksInput,
     get_all_text_data_for_stocks,
 )
-from agent_service.tools.portfolio import PortfolioID
+from agent_service.tools.portfolio import (
+    GetPortfolioHoldingsInput,
+    GetPortfolioInput,
+    PortfolioID,
+    convert_portfolio_mention_to_portfolio_id,
+    get_portfolio_holdings,
+)
 from agent_service.tools.themes import (
     GetTopNThemesInput,
     get_top_N_macroeconomic_themes,
@@ -74,6 +82,7 @@ class WriteCommentaryInput(ToolArgs):
     client_type: Optional[str] = "Simple"
     writing_format: Optional[str] = "Long"
     portfolio_id: Optional[PortfolioID] = None
+    benchmark_name: Optional[str] = None
 
 
 @tool(
@@ -95,16 +104,24 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         )
 
     # Prepare the portfolio prompt
-    portfolio_prompt = NO_PROMPT
-    if args.portfolio_id:
-        portfolio_prompt = await prepare_portfolio_prompt(
-            args.portfolio_id, args.date_range, context
-        )
-    else:
+    if args.portfolio_id is None:
         await tool_log(
-            log="No portfolio name is provided. Skipping portfolio based commentary.",
+            log="No portfolio name is provided. A default portfolio will be used.",
             context=context,
         )
+        args.portfolio_id = await convert_portfolio_mention_to_portfolio_id(  # type: ignore
+            GetPortfolioInput(portfolio_name="portfolio"),
+            context,
+        )
+    if args.benchmark_name is None:
+        args.benchmark_name = DEFAULT_BENCHMARK_NAME
+        await tool_log(
+            log=f"No benchmark name is provided. A default benchmark will be used: {args.benchmark_name}.",
+            context=context,
+        )
+    portfolio_prompt = await prepare_portfolio_prompt(
+        args.portfolio_id, args.date_range, args.benchmark_name, context  # type: ignore
+    )
 
     # Prepare the stock performance prompt
     stocks_stats_prompt = NO_PROMPT
@@ -191,7 +208,9 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     )
 
     # Prepare texts for commentary
-    texts = await Text.get_all_strs(all_text_group, include_header=True, text_group_numbering=True)
+    texts_str: str = await Text.get_all_strs(  # type: ignore
+        all_text_group, include_header=True, text_group_numbering=True
+    )
 
     # Prepare the main prompt using the above prompts
     main_prompt = await prepare_main_prompt(
@@ -201,7 +220,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         watchlist_prompt,
         client_type_prompt,
         writing_style_prompt,
-        texts,  # type: ignore
+        texts_str,
         text_mapping,
         context,
     )
@@ -237,7 +256,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     if len(citation_ids) > 50:
         # filter most important citations
         citation_ids = await filter_most_important_citations(
-            texts, commentary_text, citation_ids  # type: ignore
+            texts_str, commentary_text, citation_ids  # type: ignore
         )
     # create commentary object
     commentary = Text(val=commentary_text)
@@ -270,19 +289,18 @@ async def get_commentary_inputs(
 
     logger = get_prefect_logger(__name__)
     texts: List[Text] = []
+    if args.portfolio_id is None:
+        args.portfolio_id = await convert_portfolio_mention_to_portfolio_id(  # type: ignore
+            GetPortfolioInput(portfolio_name="portfolio"),
+            context,
+        )
 
     # If general_commentary is True, get the top themes and related texts
     if args.general_commentary:
-        if args.portfolio_id:
-            await tool_log(
-                log=f"Portfolio is provided. Retrieving top {args.theme_num} market themes...",
-                context=context,
-            )
-        else:
-            await tool_log(
-                log=f"No portfolio is provided. Retrieving top {args.theme_num} market themes...",
-                context=context,
-            )
+        await tool_log(
+            log=f"Retrieving top {args.theme_num} market themes...",
+            context=context,
+        )
         try:
             # get top themes
             theme_num: int = args.theme_num if args.theme_num else 3
@@ -323,29 +341,42 @@ async def get_commentary_inputs(
             logger.exception(f"Failed to get texts for topics: {e}")
 
     # If stock_ids are provided, get the texts for the stock_ids
-    if args.stock_ids:
-        if len(args.stock_ids) > MAX_STOCKS_PER_COMMENTARY:
-            await tool_log(
-                log=(
-                    f"Number of stock ids provided is more than {MAX_STOCKS_PER_COMMENTARY}. "
-                    f"Only first {MAX_STOCKS_PER_COMMENTARY} stocks will be considered."
-                ),
-                context=context,
-            )
-            args.stock_ids = args.stock_ids[:MAX_STOCKS_PER_COMMENTARY]
-        try:
-            stock_texts: List[Text] = await get_all_text_data_for_stocks(  # type: ignore
-                GetAllTextDataForStocksInput(stock_ids=args.stock_ids, date_range=args.date_range),
-                context,
-            )
-            await tool_log(
-                log=f"Retrieved {len(stock_texts)} texts for given stock ids.",
-                context=context,
-                associated_data=stock_texts,
-            )
-            texts.extend(stock_texts)
-        except Exception as e:
-            logger.exception(f"Failed to get texts for stock ids: {e}")
+    if not args.stock_ids:
+        holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
+            GetPortfolioHoldingsInput(
+                portfolio_id=args.portfolio_id,  # type: ignore
+            ),
+            context,
+        )
+        await tool_log(
+            log="No stock ids provided. Getting texts for top weighted stocks in portfolio.",
+            context=context,
+            associated_data=holdings_table,
+        )
+        args.stock_ids = holdings_table.get_stocks()
+    if len(args.stock_ids) > MAX_STOCKS_PER_COMMENTARY:
+        await tool_log(
+            log=(
+                f"Number of stocks is more than {MAX_STOCKS_PER_COMMENTARY}. "
+                f"Only first {MAX_STOCKS_PER_COMMENTARY} stocks will be considered."
+            ),
+            context=context,
+        )
+        args.stock_ids = args.stock_ids[:MAX_STOCKS_PER_COMMENTARY]
+
+    try:
+        stock_texts: List[Text] = await get_all_text_data_for_stocks(  # type: ignore
+            GetAllTextDataForStocksInput(stock_ids=args.stock_ids, date_range=args.date_range),
+            context,
+        )
+        await tool_log(
+            log=f"Retrieved {len(stock_texts)} texts for given stock ids.",
+            context=context,
+            associated_data=stock_texts,
+        )
+        texts.extend(stock_texts)
+    except Exception as e:
+        logger.exception(f"Failed to get texts for stock ids: {e}")
 
     return texts
 

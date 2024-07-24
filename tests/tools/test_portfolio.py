@@ -80,7 +80,7 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
 
     @patch("agent_service.tools.portfolio.get_full_strategy_info")
     @patch("agent_service.tools.portfolio.get_psql")
-    async def test_get_portfolio_performance_overall(
+    async def test_get_portfolio_performance_monthly(
         self, mock_get_psql: MagicMock, mock_get_full_strategy_info: MagicMock
     ):
         # Create a mock database and mock psql
@@ -91,12 +91,24 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         # Mock portfolio details response
         mock_portfolio_details = MagicMock()
         mock_performance_info = MagicMock()
-        mock_performance_info.monthly_gains.headers = ["2023-01", "2023-02"]
+        mock_performance_info.monthly_gains.headers = ["Jan", "Feb", "YTD"]
         mock_performance_info.monthly_gains.row_values = [
-            MagicMock(values=[MagicMock(float_val=1.0), MagicMock(float_val=2.0)])
+            MagicMock(
+                values=[
+                    MagicMock(float_val=1.0),
+                    MagicMock(float_val=2.0),
+                    MagicMock(float_val=2.0),
+                ]
+            )
         ]
         mock_performance_info.monthly_gains_v_benchmark.row_values = [
-            MagicMock(values=[MagicMock(float_val=0.5), MagicMock(float_val=1.5)])
+            MagicMock(
+                values=[
+                    MagicMock(float_val=0.5),
+                    MagicMock(float_val=1.5),
+                    MagicMock(float_val=1.5),
+                ]
+            )
         ]
         mock_portfolio_details.backtest_results.performance_info = mock_performance_info
 
@@ -106,14 +118,15 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         valid_uuid = str(uuid4())
         args = GetPortfolioPerformanceInput(
             portfolio_id=valid_uuid,
-            performance_level="overall",
+            performance_level="monthly",
             date_range=DATE_RANGE_TEST,
             sector_performance_horizon="1M",
         )
 
         result = await get_portfolio_performance(args, self.context)
+        print(result.to_df())
         expected_data = {
-            "month": ["2023-01", "2023-02"],
+            "month": [datetime.date(2024, 1, 1), datetime.date(2024, 2, 1)],
             "return": [1.0, 2.0],
             "return-vs-benchmark": [0.5, 1.5],
         }
