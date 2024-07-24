@@ -65,6 +65,8 @@ from agent_service.endpoints.models import (
     MarkNotificationsAsUnreadResponse,
     RenameMemoryRequest,
     RenameMemoryResponse,
+    SetAgentScheduleRequest,
+    SetAgentScheduleResponse,
     SharePlanRunRequest,
     SharePlanRunResponse,
     UnsharePlanRunRequest,
@@ -677,6 +679,18 @@ async def disable_agent_automation(
     return await application.state.agent_service_impl.disable_agent_automation(
         agent_id=req.agent_id
     )
+
+
+@router.post(
+    "/agent/set-schedule",
+    response_model=SetAgentScheduleResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def set_agent_schedule(
+    req: SetAgentScheduleRequest, user: User = Depends(parse_header)
+) -> SetAgentScheduleResponse:
+    validate_user_agent_access(user.user_id, req.agent_id)
+    return await application.state.agent_service_impl.set_agent_schedule(req=req)
 
 
 @router.get(

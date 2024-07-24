@@ -43,6 +43,7 @@ scipy = {version = "==1.10.1", index = "pypi"}
 devtools  = {version = "==0.12.2", index = "pypi"}
 psycopg-pool  = {version = "~=3.2.0", index = "pypi"}
 country_converter = {version = "*", index = "pypi"}
+cron-descriptor = {version = "==1.4.3", index = "pypi"}
 
 # External services
 gpt-service-proto-v1 = {version = "==1.4.0", index = "gbi"}

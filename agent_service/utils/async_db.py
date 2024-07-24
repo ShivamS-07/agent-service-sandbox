@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from agent_service.endpoints.models import (
     AgentMetadata,
     AgentOutput,
+    AgentSchedule,
     CustomNotification,
 )
 from agent_service.io_type_utils import IOType, load_io_type
@@ -450,7 +451,7 @@ class AsyncDB:
         WITH a_id AS
           (
             SELECT a.agent_id, a.user_id, agent_name, a.created_at,
-              a.last_updated, a.automation_enabled
+              a.last_updated, a.automation_enabled, a.schedule
              FROM agent.agents a
              WHERE a.user_id = %(user_id)s
              {agent_where_clause}
@@ -476,7 +477,8 @@ class AsyncDB:
           )
           SELECT a_id.agent_id::VARCHAR, a_id.user_id::VARCHAR, a_id.agent_name, a_id.created_at,
             a_id.last_updated, a_id.automation_enabled, lr.created_at AS last_run,
-            msg.message AS latest_agent_message, nu.num_unread AS unread_notification_count
+            msg.message AS latest_agent_message, nu.num_unread AS unread_notification_count,
+            a_id.schedule
           FROM a_id
           LEFT JOIN lr ON lr.agent_id = a_id.agent_id
           LEFT JOIN msg ON msg.agent_id = a_id.agent_id
@@ -496,6 +498,7 @@ class AsyncDB:
                 latest_notification_string=row["latest_agent_message"],
                 automation_enabled=row["automation_enabled"],
                 unread_notification_count=row["unread_notification_count"] or 0,
+                schedule=AgentSchedule.model_validate(row["schedule"]) if row["schedule"] else None,
             )
             for row in rows
         ]
@@ -580,6 +583,13 @@ class AsyncDB:
             table_name="agent.agents",
             where={"agent_id": agent_id},
             values_to_update={"automation_enabled": enabled},
+        )
+
+    async def update_agent_schedule(self, agent_id: str, schedule: AgentSchedule) -> None:
+        await self.pg.generic_update(
+            table_name="agent.agents",
+            where={"agent_id": agent_id},
+            values_to_update={"schedule": schedule.model_dump_json()},
         )
 
     async def insert_agent_custom_notification(self, cn: CustomNotification) -> None:

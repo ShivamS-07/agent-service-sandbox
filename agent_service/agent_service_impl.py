@@ -45,6 +45,8 @@ from agent_service.endpoints.models import (
     NotificationEvent,
     PlanTemplateTask,
     RenameMemoryResponse,
+    SetAgentScheduleRequest,
+    SetAgentScheduleResponse,
     SharePlanRunResponse,
     Tooltips,
     UnsharePlanRunResponse,
@@ -79,6 +81,7 @@ from agent_service.utils.redis_queue import (
     get_notification_event_channel,
     wait_for_messages,
 )
+from agent_service.utils.scheduling import get_schedule_from_user_description
 from agent_service.utils.string_utils import is_valid_uuid
 from agent_service.utils.task_executor import TaskExecutor
 
@@ -409,6 +412,23 @@ class AgentServiceImpl:
     async def disable_agent_automation(self, agent_id: str) -> DisableAgentAutomationResponse:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=False)
         return DisableAgentAutomationResponse(success=True)
+
+    async def set_agent_schedule(self, req: SetAgentScheduleRequest) -> SetAgentScheduleResponse:
+        schedule, success = await get_schedule_from_user_description(
+            agent_id=req.agent_id, user_desc=req.user_schedule_description
+        )
+        error_msg = None
+        if not success:
+            # TODO for now just hardode an error
+            error_msg = "Unable to fulfill scheduling request, reverting to default."
+        else:
+            await self.pg.update_agent_schedule(agent_id=req.agent_id, schedule=schedule)
+        return SetAgentScheduleResponse(
+            agent_id=req.agent_id,
+            schedule=schedule,
+            success=success,
+            error_msg=error_msg,
+        )
 
     def get_secure_ld_user(self, user_id: str) -> GetSecureUserResponse:
         ld_user = get_user_context(user_id=user_id)

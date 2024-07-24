@@ -65,6 +65,28 @@ class DisableAgentAutomationResponse(BaseModel):
 
 
 ####################################################################################################
+# Agent scheduling
+####################################################################################################
+class AgentSchedule(BaseModel):
+    cron_schedule: Optional[str] = None
+    user_schedule_description: Optional[str] = None
+    # A human-readable description of the above cron schedule
+    generated_schedule_description: Optional[str] = None
+
+
+class SetAgentScheduleRequest(BaseModel):
+    agent_id: str
+    user_schedule_description: str
+
+
+class SetAgentScheduleResponse(BaseModel):
+    agent_id: str
+    schedule: AgentSchedule
+    success: bool = True
+    error_msg: Optional[str] = None
+
+
+####################################################################################################
 # GetAllAgents, GetAgent
 ####################################################################################################
 class AgentMetadata(BaseModel):
@@ -80,6 +102,8 @@ class AgentMetadata(BaseModel):
     latest_notification_string: Optional[str] = None
     unread_notification_count: int = 0
     automation_enabled: bool = False
+
+    schedule: Optional[AgentSchedule] = None
 
     def to_agent_row(self) -> Dict[str, Any]:
         return {
