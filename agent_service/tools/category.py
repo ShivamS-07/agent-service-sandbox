@@ -137,15 +137,18 @@ class Category(ComplexIOBase):
         return hash((self.name, self.explanation, self.justification, self.weight))
 
     @classmethod
-    def multi_to_gpt_input(cls, categories: List[Self]) -> str:
+    def multi_to_gpt_input(cls, categories: List[Self], include_weight: bool = True) -> str:
         output_list = []
         for idx, category in enumerate(categories):
-            output_list.append(
+            text = (
                 f"- {idx}: {category.name}\n"
                 f"Explanation: {category.explanation}\n"
-                f"Justification: {category.justification}\n"
-                f"Weight: {category.weight}"
+                f"Justification: {category.justification}"
             )
+            if include_weight:
+                text += f"\nWeight: {category.weight}"
+
+            output_list.append(text)
 
         return "\n".join(output_list)
 

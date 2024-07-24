@@ -378,19 +378,26 @@ All changes related to a particular category are equally relevant. For example, 
 you must say relevant to both texts which implying 'High Market Share' as well as 'Low Market Share' \
 You absolutely must not think a text is relevant just because the text and the category are both good (or bad) \
 for the company, there must be a clear topical connection between the text and the category \
-that goes well beyond a general positive or negative effect on the company. Unless there is a specific \
-category associated with stock preformance, a text which refers to the just to the company's stock performance \
-in general is not relevant.
-You should be fairly conservative, you must say irrelevant if there's no clear reason that there might \
+that goes well beyond a general positive or negative effect on the company.
+Unless there is a specific category associated with stock performance, a text which refers to the \
+company's stock performance or stock split in general is NOT relevant. For example, topics talking about \
+stock prices, stock splits, market cap/value, or stock performance in general are NOT relevant to any \
+other categories than stock performance category. Read and interpret the text carefully! \
+Topics like 'Stock Price Record Highs', 'Market Cap surged to $1 trillion' are ONLY relevant to stock \
+performance, and should not fall into other categories even if they mention some seemingly relevant keywords.
+If the category is about Innovation or Efficiency, topics with concrete examples are relevant, \
+which should usually mention a specific product or service of the company, or mention the comparison \
+or improvement to the predecessors. \
+Topics that mention more than one company are preferred in general. You should tell if they are competitors \
+or partners, and classify them into the relevant categories like 'Competition', 'Ecosystem', 'Partership', etc.
+You should be very conservative, you must say irrelevant if there's no clear reason that there might \
 be a measurable connection between the text and the categories.
-Do not be too conservative. As long as there is a strong topical link to the category \
-it should be included as relevant even when the category is not explicitly mention. \
 For example, if there is a category about a specific product, texts that indicate a change in supply, \
 demand, or cost of that product would all be considered directly relevant.
 The output should be in a key-value JSON format with 2 keys.
 The first key should be 'relevant_categories' and the value is a list of integers for the indices of \
-the most relevant categories, e.g. '[0,3]'. The indices should be 0-based. If this text is not relevant \
-to any of the categories, this should be any empty list.
+the MOST relevant categories, e.g. '[0,3]'. Do not choose more than 2 categories. The indices should \
+be 0-based. If this text is not relevant to any of the categories, this should be any empty list.
 The second key should be 'reason' and the value is a short sentence of explanation for why you chose \
 those categories. Absolutely no more than 50 words.
 Most texts will be relevant to no categories, or only one. You should be very conservative about including more \
@@ -412,7 +419,8 @@ Here is the text:
     gpt = GPT(context=gpt_context, model=SONNET, gpt_service_stub=gpt_service_stub)
 
     # Create GPT tasks
-    category_str = Category.multi_to_gpt_input(categories)
+    # Don't want categories' weights to confuse GPT
+    category_str = Category.multi_to_gpt_input(categories, include_weight=False)
 
     news_tasks = []
     for news_dev in news_devs_with_text:
