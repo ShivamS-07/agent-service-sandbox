@@ -29,6 +29,7 @@ from agent_service.io_types.output import (
 from agent_service.io_types.stock import StockID
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.sec.constants import LINK_TO_FILING_DETAILS
 from agent_service.utils.sec.sec_api import SecFiling
 
@@ -604,14 +605,18 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
         ]
 
 
+# Parent class that is not intended to be used on its own, should always use one of the child classes
 @io_type
-class StockEarningsSummaryText(StockText):
+class StockEarningsText(StockText):
     id: str
+
+
+class StockEarningsSummaryText(StockEarningsText):
     text_type: ClassVar[str] = "Earnings Call Summary"
 
     @classmethod
     async def _get_strs_lookup(
-        cls, earnings_summaries: List[StockEarningsSummaryText]  # type: ignore
+        cls, earnings_texts: List[StockEarningsSummaryText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         sql = """
         SELECT summary_id::TEXT, summary
@@ -621,9 +626,7 @@ class StockEarningsSummaryText(StockText):
         from agent_service.utils.postgres import get_psql
 
         db = get_psql()
-        rows = db.generic_read(
-            sql, {"earnings_ids": [summary.id for summary in earnings_summaries]}
-        )
+        rows = db.generic_read(sql, {"earnings_ids": [summary.id for summary in earnings_texts]})
         str_lookup = {}
         for row in rows:
             output = []
@@ -635,31 +638,30 @@ class StockEarningsSummaryText(StockText):
                         output.append(f"- {point['header']}: {point['detail']}")
             output_str = "\n".join(output)
             str_lookup[row["summary_id"]] = output_str
-
         return str_lookup
 
+
+class StockEarningsTranscriptText(StockEarningsText):
+    text_type: ClassVar[str] = "Earnings Call Transcript"
+
     @classmethod
-    async def get_citations_for_output(
-        cls, texts: List[Self], db: BoostedPG
-    ) -> List[CitationOutput]:
-        sql = """
-        SELECT ms.symbol, ecs.year, ecs.quarter, ecs.created_timestamp
-        FROM nlp_service.earnings_call_summaries ecs
-        JOIN master_security ms ON ecs.gbi_id = ms.gbi_security_id
-        WHERE summary_id = ANY(%(earnings_ids)s)
+    async def _get_strs_lookup(
+        cls, earnings_texts: List[StockEarningsSummaryText]  # type: ignore
+    ) -> Dict[TextIDType, str]:
+        earnings_transcript_sql = """
+            SELECT id::TEXT, transcript
+            FROM company_earnings.full_earning_transcripts
+            WHERE id IN %(ids)s
         """
-        params = {"earnings_ids": [text.id for text in texts]}
-        rows = await db.generic_read(sql, params)
-        # TODO enhance this
-        return [
-            CitationOutput(
-                citation_type=CitationType.TEXT,
-                # e.g. "NVDA Earnings Call - Q1 2024"
-                name=f"{row['symbol'] or ''} Earnings Call - Q{row['quarter']} {row['year']}",
-                published_at=row["created_timestamp"],
-            )
-            for row in rows
-        ]
+        ch = Clickhouse()
+        transcript_query_result = ch.clickhouse_client.query(
+            earnings_transcript_sql,
+            parameters={
+                "ids": [earnings_text.id for earnings_text in earnings_texts],
+            },
+        )
+        str_lookup = {row[0]: row[1] for row in transcript_query_result.result_rows}
+        return str_lookup
 
 
 @io_type
@@ -730,7 +732,7 @@ class StockEarningsSummaryPointText(StockText):
 
     @classmethod
     async def init_from_earnings_texts(
-        cls, earnings_summaries: List[StockEarningsSummaryText]
+        cls, earnings_summaries: List[StockEarningsText]
     ) -> List[Self]:
         from agent_service.utils.postgres import get_psql
 

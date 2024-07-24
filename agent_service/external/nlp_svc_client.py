@@ -1,3 +1,4 @@
+import datetime
 import logging
 import os
 from contextlib import contextmanager
@@ -16,10 +17,17 @@ from nlp_service_proto_v1.commentary_pb2 import (
     GetCommentaryTopicsResponse,
 )
 from nlp_service_proto_v1.earnings_impacts_pb2 import (
+    EventInfo,
+    GetEarningsCallEventsRequest,
+    GetEarningsCallEventsResponse,
+    GetEarningsCallTranscriptsRequest,
+    GetEarningsCallTranscriptsResponse,
     GetEarningsPeersAffectedByStocksRequest,
     GetEarningsPeersAffectedByStocksResponse,
     GetEarningsPeersAffectingStocksRequest,
     GetEarningsPeersAffectingStocksResponse,
+    GetLatestEarningsCallEventsRequest,
+    GetLatestEarningsCallEventsResponse,
 )
 from nlp_service_proto_v1.news_pb2 import (
     NEWS_DELTA_HORIZON_3M,
@@ -35,7 +43,11 @@ from nlp_service_proto_v1.themes_pb2 import (
 )
 from nlp_service_proto_v1.well_known_types_pb2 import UUID
 
-from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
+from agent_service.external.grpc_utils import (
+    date_to_timestamp,
+    get_default_grpc_metadata,
+    grpc_retry,
+)
 from agent_service.tools.portfolio import PortfolioID
 from agent_service.utils.logs import async_perf_logger
 
@@ -175,4 +187,53 @@ async def get_earnings_peers_impacting_stocks(
             raise ValueError(
                 f"Failed to get Earnings Peers affecting Companies: {response.status.message}"
             )
+        return response
+
+
+@grpc_retry
+@async_perf_logger
+async def get_earnings_call_events(
+    user_id: str, gbi_ids: List[int], start_date: datetime.date, end_date: datetime.date
+) -> GetEarningsCallEventsResponse:
+    start_timestamp = date_to_timestamp(start_date)
+    end_timestamp = date_to_timestamp(end_date)
+    with _get_service_stub() as stub:
+        request = GetEarningsCallEventsRequest(
+            gbi_ids=gbi_ids, start_date=start_timestamp, end_date=end_timestamp
+        )
+        response: GetEarningsCallEventsResponse = await stub.GetEarningCallEvents(
+            request, metadata=get_default_grpc_metadata(user_id=user_id)
+        )
+        if response.status.code != 0:
+            raise ValueError(f"Failed to get Earnings Call Events: {response.status.message}")
+        return response
+
+
+@grpc_retry
+@async_perf_logger
+async def get_latest_earnings_call_events(
+    user_id: str, gbi_ids: List[int]
+) -> GetLatestEarningsCallEventsResponse:
+    with _get_service_stub() as stub:
+        request = GetLatestEarningsCallEventsRequest(gbi_ids=gbi_ids)
+        response: GetLatestEarningsCallEventsResponse = await stub.GetLatestEarningCallEvents(
+            request, metadata=get_default_grpc_metadata(user_id=user_id)
+        )
+        if response.status.code != 0:
+            raise ValueError(f"Failed to get Earnings Call Events: {response.status.message}")
+        return response
+
+
+@grpc_retry
+@async_perf_logger
+async def get_earnings_call_transcripts(
+    user_id: str, events: List[EventInfo]
+) -> GetEarningsCallTranscriptsResponse:
+    with _get_service_stub() as stub:
+        request = GetEarningsCallTranscriptsRequest(earnings_event_info=events)
+        response: GetEarningsCallTranscriptsResponse = await stub.GetEarningCallTranscripts(
+            request, metadata=get_default_grpc_metadata(user_id=user_id)
+        )
+        if response.status.code != 0:
+            raise ValueError(f"Failed to get Earning Transcripts: {response.status.message}")
         return response

@@ -18,6 +18,7 @@ from agent_service.io_types.text import (
     StockDescriptionText,
     StockEarningsSummaryPointText,
     StockEarningsSummaryText,
+    StockEarningsText,
     StockNewsDevelopmentText,
     StockSecFilingSectionText,
     StockSecFilingText,
@@ -178,7 +179,10 @@ async def download_content_for_text_data(all_text_data: List[StockText]) -> Tupl
 
     news_developments = [t for t in all_text_data if isinstance(t, StockNewsDevelopmentText)]
 
-    earnings_summaries = [t for t in all_text_data if isinstance(t, StockEarningsSummaryText)]
+    # Currently ignoring earning texts containing transcripts instead of summaries
+    earnings_summaries: List[StockEarningsText] = [
+        t for t in all_text_data if isinstance(t, StockEarningsSummaryText)
+    ]
     earnings_summary_points = await StockEarningsSummaryPointText.init_from_earnings_texts(
         earnings_summaries
     )

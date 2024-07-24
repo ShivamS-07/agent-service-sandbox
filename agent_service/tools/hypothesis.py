@@ -11,6 +11,7 @@ from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
     CustomDocumentSummaryText,
     StockEarningsSummaryText,
+    StockEarningsText,
     StockHypothesisCustomDocumentText,
     StockHypothesisEarningsSummaryPointText,
     StockHypothesisNewsDevelopmentText,
@@ -245,7 +246,7 @@ class TestEarningsHypothesisInput(ToolArgs):
     """
 
     hypothesis: str
-    earnings_summary_list: List[StockEarningsSummaryText]
+    earnings_summary_list: List[StockEarningsText]
 
 
 @tool(
@@ -268,12 +269,14 @@ async def test_hypothesis_for_earnings_summaries(
     logger = get_prefect_logger(__name__)
 
     # segerate earnings summaries by stocks
-    stock_to_summaries: Dict[StockID, List[StockEarningsSummaryText]] = defaultdict(list)
+    stock_to_summaries: Dict[StockID, List[StockEarningsText]] = defaultdict(list)
     for earnings_summary in args.earnings_summary_list:
         if earnings_summary.stock_id is None:
             continue
 
-        stock_to_summaries[earnings_summary.stock_id].append(earnings_summary)
+        # Only look at earnings with summary for now
+        if isinstance(earnings_summary, StockEarningsSummaryText):
+            stock_to_summaries[earnings_summary.stock_id].append(earnings_summary)
 
     logger.info(f"Processing hypothesis {args.hypothesis} for {len(stock_to_summaries)} stocks")
 
@@ -400,7 +403,7 @@ EARNINGS_SUMMARY_SYS_PROMPT = Prompt(EARNINGS_SUMMARY_SYS_PROMPT_STR, "EARNINGS_
 
 
 async def get_summary_and_score_for_earnings(
-    hypothesis: str, earnings_summaries: List[StockEarningsSummaryText], agent_id: str
+    hypothesis: str, earnings_summaries: List[StockEarningsText], agent_id: str
 ) -> Tuple[Score, str, List[TextCitation]]:
 
     earnings_text_group = TextGroup(val=earnings_summaries)  # type: ignore
@@ -427,7 +430,7 @@ async def get_summary_and_score_for_earnings(
 class TestAndSummarizeEarningsHypothesisInput(ToolArgs):
 
     hypothesis: str
-    earnings_summaries: List[StockEarningsSummaryText]
+    earnings_summaries: List[StockEarningsText]
 
 
 @tool(
@@ -446,11 +449,16 @@ class TestAndSummarizeEarningsHypothesisInput(ToolArgs):
 async def test_and_summarize_hypothesis_with_earnings_summaries(
     args: TestAndSummarizeEarningsHypothesisInput, context: PlanRunContext
 ) -> Text:
-    if not args.earnings_summaries:
+    earnings_summaries: List[StockEarningsText] = [
+        earning_text
+        for earning_text in args.earnings_summaries
+        if isinstance(earning_text, StockEarningsSummaryText)
+    ]
+    if not earnings_summaries:
         raise ValueError("Could not find any relevant earnings summary points")
 
     support_score, summary, citations = await get_summary_and_score_for_earnings(
-        args.hypothesis, args.earnings_summaries, agent_id=context.agent_id
+        args.hypothesis, earnings_summaries, agent_id=context.agent_id
     )
 
     return Text(val=summary, history=[HistoryEntry(score=support_score, citations=citations)])  # type: ignore  # noqa
