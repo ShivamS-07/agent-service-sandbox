@@ -153,7 +153,8 @@ class HypothesisAnalysisByCategory(ComplexIOBase):
     val: List[Text] = []
 
     async def split_into_components(self) -> List[IOType]:
-        self.prepare_categorical_hypothesis_outputs()
+        if not self.val:
+            self.prepare_categorical_hypothesis_outputs()
         return self.val  # type: ignore
 
     def prepare_categorical_hypothesis_outputs(self) -> None:
