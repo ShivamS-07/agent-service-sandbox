@@ -437,6 +437,11 @@ async def get_peer_group_for_stock(
     peer_stock_ids: Dict[int, StockID] = {}
     # Dict[gbi_id, justification]
     peer_justifications: Dict[int, str] = {}
+
+    # we don't want the internal decision making of stock_identifier_lookup
+    # to pollute the work log for peers tool
+    no_tool_log_context = context.model_copy(update={"skip_db_commit": True})
+
     for peer in initial_peer_group:
         stock_id: Optional[StockID] = None
         stock_name = "isin"
@@ -446,7 +451,7 @@ async def get_peer_group_for_stock(
                     StockIdentifierLookupInput(
                         stock_name=peer[stock_name],
                     ),
-                    context=context,
+                    context=no_tool_log_context,
                 )
             except ValueError:
                 if stock_name == "symbol":
