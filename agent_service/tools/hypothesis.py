@@ -208,6 +208,7 @@ class TestAndSummarizeNewsHypothesisInput(ToolArgs):
     ),
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def test_and_summarize_hypothesis_with_news_developments(
     args: TestAndSummarizeNewsHypothesisInput, context: PlanRunContext
@@ -445,6 +446,7 @@ class TestAndSummarizeEarningsHypothesisInput(ToolArgs):
     ),
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def test_and_summarize_hypothesis_with_earnings_summaries(
     args: TestAndSummarizeEarningsHypothesisInput, context: PlanRunContext
@@ -618,6 +620,7 @@ class TestAndSummarizeCustomDocsHypothesisInput(ToolArgs):
     ),
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def test_and_summarize_hypothesis_with_custom_documents(
     args: TestAndSummarizeCustomDocsHypothesisInput, context: PlanRunContext
@@ -662,6 +665,7 @@ class SummarizeHypothesisFromVariousSourcesInput(ToolArgs):
     " `test_and_summarize_hypothesis_with_custom_documents`.",
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def summarize_hypothesis_from_various_sources(
     args: SummarizeHypothesisFromVariousSourcesInput, context: PlanRunContext
