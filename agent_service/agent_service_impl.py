@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
+import traceback
 from collections import defaultdict
 from typing import Any, AsyncGenerator, Dict, List, Optional
 from uuid import uuid4
@@ -628,10 +629,18 @@ class AgentServiceImpl:
         infos = self.ch.get_info_for_test_suite_run(test_run_id=test_run_id)
         for test_name, test_info in infos.items():
             if "output" in test_info and test_info["output"]:
-                my_output = test_info["output"]
-                output_str = load_io_type(json.dumps(my_output[0]))
-                output_from_io_type = await get_output_from_io_type(val=output_str, pg=self.pg.pg)
-                test_info["formatted_output"] = output_from_io_type.model_dump()
+                try:
+                    my_output = test_info["output"]
+                    output_str = load_io_type(json.dumps(my_output[0]))
+                    output_from_io_type = await get_output_from_io_type(
+                        val=output_str, pg=self.pg.pg
+                    )
+                    test_info["formatted_output"] = output_from_io_type.model_dump()
+                except Exception:
+                    LOGGER.info(
+                        f"Error while displaying formatted output for test case {test_name}, "
+                        f"version={test_info['service_version']}: {traceback.format_exc()}"
+                    )
         return GetTestSuiteRunInfoResponse(test_suite_run_info=infos)
 
     def get_test_suite_runs(self) -> GetTestSuiteRunsIdsResponse:
@@ -644,10 +653,18 @@ class AgentServiceImpl:
         infos = self.ch.get_info_for_test_case(test_name=test_name)
         for info in infos:
             if "output" in info and info["output"]:
-                my_output = info["output"]
-                output_str = load_io_type(json.dumps(my_output[0]))
-                output_from_io_type = await get_output_from_io_type(val=output_str, pg=self.pg.pg)
-                info["formatted_output"] = output_from_io_type.model_dump()
+                try:
+                    my_output = info["output"]
+                    output_str = load_io_type(json.dumps(my_output[0]))
+                    output_from_io_type = await get_output_from_io_type(
+                        val=output_str, pg=self.pg.pg
+                    )
+                    info["formatted_output"] = output_from_io_type.model_dump()
+                except Exception:
+                    LOGGER.info(
+                        f"Error while displaying formatted output for test case {test_name}, "
+                        f"version={info['service_version']}: {traceback.format_exc()}"
+                    )
         return GetTestCaseInfoResponse(test_case_info=infos)
 
     async def upload_file(
