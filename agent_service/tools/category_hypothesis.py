@@ -221,12 +221,11 @@ class AnalyzeHypothesisWithCategoriesInput(ToolArgs):
         "This analysis must be focused on a specific stock or a small group of stocks, this function "
         "must NOT be used to filter stocks more generally! (i.e. Do not use it for "
         " `Give/find me stocks...` type queries, use the filter by profile tool). "
-        "If a specific company is mentioned in the user input, then an identifier for that "
-        "company MUST be passed as the target stock. Only leave target_stock empty if no "
-        "company or more than one company is mentioned in the user question/hypothesis. "
+        "If a single specific company is mentioned in the user input, then an identifier for that "
+        "company MUST be passed as the target stock."
         "For example, if the question is, `Is NVDA a leader in AI chips?, you MUST pass NVDA in "
-        "as the target stock. But if the question is `Who is the leader in AI chips?`, "
-        "or `Is NVDA or AMD the leader in AI chips?`, you must leave target_stock empty."
+        "as the target stock."
+        "Do not leave target_stock empty unless there are no specific companies mentioned!!!!"
     ),
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,

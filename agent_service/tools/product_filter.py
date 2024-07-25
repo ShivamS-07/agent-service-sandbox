@@ -104,7 +104,7 @@ PRODUCT_DESCRIPTION_PROMPT = Prompt(
 class FilterStocksByProductOrServiceInput(ToolArgs):
     stock_ids: List[StockID]
     product_str: str
-    must_include_stocks: Optional[List[str]] = None
+    must_include_stocks: Optional[List[StockID]] = None
 
 
 @tool(
@@ -119,10 +119,13 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "of the product or service based on a company description. "
         "Note that retail should be considered a general service, and then retailers that sell specific kinds "
         "of products are a more specific kind of service. "
-        "\n 'stock_ids' is a list of stock ids to filter. "
+        "\n 'stock_ids' is a list of stock ids to filter, it should be a large list like a stock universe "
+        "never pass a single stock."
         "\n 'product_str' is a string representing the product or service to filter by. "
         "For example, 'electric vehicles', 'cloud computing', 'solar panels', 'smartphones', 'AI chips', "
         "'Online retail', etc. "
+        "\n must_include stocks is a list of stocks that the output of tool must have, for instance if the "
+        "\n user asks `Is NVDA the leader in AI chips, NVDA must be included in the output."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
