@@ -51,6 +51,9 @@ VALUE_LABEL = "Value"
 UNIVERSE_ADD_STOCK_DIFF = "{company} was added to the {universe} stock universe"
 UNIVERSE_REMOVE_STOCK_DIFF = "{company} was removed from the {universe} stock universe"
 
+ETF_ADD_STOCK_DIFF = "{company} was added to the universe of ETFs"
+ETF_REMOVE_STOCK_DIFF = "{company} was removed from the universe of ETFs"
+
 FACTOR_ADD_STOCK_DIFF = "{company} was added to the {factor} list"
 FACTOR_REMOVE_STOCK_DIFF = "{company} was removed from the {factor} list"
 
@@ -775,6 +778,56 @@ async def multi_stock_identifier_lookup(
             )
         )
     return output
+
+
+class GetETFUniverseInput(ToolArgs):
+    pass
+
+
+@tool(
+    description=(
+        "This function takes no arguments."
+        " It returns the full list of StockIds for the entire universe of supported ETFs"
+        " You should call this function to get a list of ETFs to be filtered or sorted later."
+        " If the client wants to filter over ETFs but does not specify an initial set"
+        " of stocks, you should call this tool first."
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def get_etf_list(args: GetETFUniverseInput, context: PlanRunContext) -> List[StockID]:
+    """Returns the full list of ETFs.
+
+    Args:
+        args (GetETFUniverseInput): The input arguments for the ETF universe lookup.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        list[StockID]: The list of ETF identifiers in the universe.
+    """
+    logger = get_prefect_logger(__name__)
+
+    db = get_psql()
+
+    sql = """
+    SELECT gbi_id, spiq_company_id, name
+    FROM "data".etf_universes
+    """
+
+    # TODO: cache this
+    etf_rows = db.generic_read(sql)
+    gbi_ids = [r["gbi_id"] for r in etf_rows]
+    stock_list = await StockID.from_gbi_id_list(gbi_ids)
+
+    log_str = f"found {len(stock_list)} ETFs"
+    logger.info(log_str)
+    await tool_log(
+        log=log_str,
+        context=context,
+    )
+
+    return stock_list
 
 
 class GetStockUniverseInput(ToolArgs):
