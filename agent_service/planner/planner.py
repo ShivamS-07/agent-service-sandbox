@@ -708,6 +708,10 @@ class Planner:
                         output.append(str(val))
                 elif isinstance(item, ast.Name):
                     output.append(item.id)
+                else:
+                    raise ExecutionPlanParsingError(
+                        f"Value '{val}' has list with non supported syntax"
+                    )
             return output
         except Exception:
             logger = get_prefect_logger(__name__)
@@ -801,11 +805,11 @@ class Planner:
             # First check for an undefined variable
             if not parsed_variable_type:
                 logger.warning(
-                    f"{tool.name}' has undefined variable argument '{arg} "
-                    f"{val=}, {variable_lookup=}"
+                    f"{tool.name}' has undefined variable argument '{val}]' for arg '{arg}"
+                    f", {variable_lookup=}"
                 )
                 raise ExecutionPlanParsingError(
-                    f"Tool '{tool.name}' has undefined variable argument '{arg}'."
+                    f"Tool '{tool.name}' has undefined variable argument '{val}' for arg '{arg}'."
                 )
             # Next, check if the variable's type matches the expected type for the argument
             if not check_type_is_valid(actual=parsed_variable_type, expected=arg_info.annotation):
