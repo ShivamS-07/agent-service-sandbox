@@ -322,7 +322,7 @@ async def filter_stocks_round2(
         )
     results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
     for stock, result in zip(filtered_stocks1, results):
-        explanation, _ = result.split(SEPARATOR)
+        explanation = result.split(SEPARATOR)[0]
         if "yes" in result.lower():
             filtered_stock_dict[stock] = explanation.strip()
     return filtered_stock_dict
