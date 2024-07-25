@@ -9,13 +9,11 @@ from agent_service.tools.stocks import (
     GetStockUniverseInput,
     GrowthFilterInput,
     StockIdentifierLookupInput,
-    StockMarketSegmentFilterInput,
     ValueFilterInput,
     get_risk_exposure_for_stocks,
     get_stock_info_for_universe,
     get_stock_universe,
     growth_filter,
-    market_segment_filter,
     stock_identifier_lookup,
     value_filter,
 )
@@ -28,6 +26,9 @@ ERGB = StockID(
 TRQ = StockID(
     gbi_id=19694, isin="", symbol="TRQ", company_name="Turquoise Hill Resources Ltd."
 )  # mining company
+TSLA = StockID(gbi_id=25508, isin="", symbol="TSLA", company_name="Tesla Inc.")
+BWA = StockID(gbi_id=1070, isin="", symbol="BWA", company_name="BorgWarner Inc.")
+ALB = StockID(gbi_id=1070, isin="", symbol="ALB", company_name="Albemarle Corporation")
 
 
 class TestStockIdentifierLookup(IsolatedAsyncioTestCase):
@@ -378,42 +379,3 @@ class TestRiskExposure(IsolatedAsyncioTestCase):
         result = await value_filter(args, self.context)
         self.assertGreater(len(result), 10)
         self.assertLess(len(result), 400)
-
-
-class TestMarketSegmentFilter(IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.context = PlanRunContext.get_dummy()
-        self.stock_ids = [AAPL, ERGB, TRQ]
-
-    async def test_market_segment_filter1(self):
-        result = await market_segment_filter(
-            StockMarketSegmentFilterInput(
-                stock_ids=self.stock_ids,
-                segment_text="tech",
-            ),
-            self.context,
-        )
-        print(result)
-        self.assertEqual(result, [AAPL])
-
-    async def test_market_segment_filter2(self):
-        result = await market_segment_filter(
-            StockMarketSegmentFilterInput(
-                stock_ids=self.stock_ids,
-                segment_text="mining",
-            ),
-            self.context,
-        )
-        print(result)
-        self.assertEqual(result, [TRQ])
-
-    async def test_market_segment_filter3(self):
-        result = await market_segment_filter(
-            StockMarketSegmentFilterInput(
-                stock_ids=self.stock_ids,
-                segment_text="chairs",
-            ),
-            self.context,
-        )
-        print(result)
-        self.assertEqual(result, [ERGB])

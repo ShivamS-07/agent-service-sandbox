@@ -359,6 +359,7 @@ class GeneralPeersForStockInput(ToolArgs):
     """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_general_peers(
     args: GeneralPeersForStockInput, context: PlanRunContext
