@@ -1,4 +1,5 @@
 import datetime
+import logging
 from typing import List, Optional
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
@@ -31,6 +32,8 @@ from agent_service.utils.output_utils.prompts import (
 from agent_service.utils.output_utils.utils import io_type_to_gpt_input
 from agent_service.utils.string_utils import strip_code_backticks
 
+logger = logging.getLogger(__name__)
+
 NO_CHANGE_STOCK_LIST_DIFF = "Nothing added or removed from the stock list."
 
 
@@ -61,7 +64,6 @@ class OutputDiffer:
     async def _compute_diff_for_texts(
         self, latest_output: Text, prev_output: Text, prev_run_time: datetime.datetime
     ) -> OutputDiff:
-
         # FIXME: we should not do this using time which could be unreliable, but instead input texts to task
         new_cited_texts = [
             citation.source_text
@@ -181,6 +183,7 @@ class OutputDiffer:
             if added_output:
                 final_output.append("\n".join(["  - Added stocks"] + added_output))
 
+        final_str = None
         if removed_stocks:
             removed_output = []
             for stock in removed_stocks:
@@ -258,25 +261,31 @@ class OutputDiffer:
                 plan_id=self.context.plan_id,
                 latest_plan_run_id=self.context.plan_run_id,
             )
-            # If this is the first run of the plan, or the previous output is
-            # misisng for some reason, notify just to be safe.
             if prev_outputs_and_time is None:
+                # If this is the first run of the plan, or the previous output is
+                # misisng for some reason.
+                logger.info("No previous output found, won't notify.")
                 return [
                     OutputDiff(
-                        diff_summary_message="Agent completed with new outputs!",
-                        should_notify=True,
+                        diff_summary_message="",
+                        should_notify=False,
                     )
                 ]
 
-            # Assuming the plan is the same, the number of outputs should ideally be
-            # the same also. If not, we can't easily compare, so notify just to be
-            # safe.
             prev_outputs, prev_run_time = prev_outputs_and_time
         if len(prev_outputs) != len(latest_outputs):
+            # Assuming the plan is the same, the number of outputs should ideally be
+            # the same also. If not, we can't easily compare.
+            logger.info(
+                (
+                    f"Got {len(prev_outputs)} prev outputs and "
+                    f"{len(latest_outputs)} latest outputs, cannot diff."
+                )
+            )
             return [
                 OutputDiff(
-                    diff_summary_message="Agent completed with new outputs!",
-                    should_notify=True,
+                    diff_summary_message="",
+                    should_notify=False,
                 )
             ]
 
