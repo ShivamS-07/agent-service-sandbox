@@ -601,8 +601,6 @@ async def rank_and_summarize_for_each_category(
 ) -> Dict[int, Dict]:
     logger = get_prefect_logger(__name__)
 
-    # FIXME: Parallelize
-
     # Rank + Summarize for each category
     rank_by_category_sys_prompt_str = """
         You are a financial analyst who is creating a ranking list for the provided companies for a hypothesis
@@ -717,6 +715,7 @@ async def rank_and_summarize_for_each_category(
     )
     gpt = GPT(context=gpt_context, model=GPT4_O, gpt_service_stub=gpt_service_stub)
     category_idx_to_result: Dict[int, Dict] = {}
+    category_tasks = []
     for category_idx, mixed_topics in category_idx_to_mixed_topics.items():
         logger.info(f"Ranking and summarizing for category <{categories[category_idx].name}>")
 
@@ -726,21 +725,34 @@ async def rank_and_summarize_for_each_category(
         other_categories = [categories[i] for i in range(len(categories)) if i != category_idx]
         other_categories_str = Category.multi_to_gpt_input(other_categories)
 
-        resp = await gpt.do_chat_w_sys_prompt(
-            main_prompt=rank_by_category_main_prompt.format(
-                hypothesis=hypothesis,
-                category=category_str,
-                other_categories=other_categories_str,
-                company_descriptions=company_description_str,
-                topics=topics_str,
-                summary_str=summary_str,
-                total_citations=total_citations,
-            ),
-            sys_prompt=rank_by_category_sys_prompt.format(),
+        async def ranking_and_summarizing_categories_task(
+            category_idx: int, topics_str: str, category_str: str, other_categories_str: str
+        ) -> None:
+            resp = await gpt.do_chat_w_sys_prompt(
+                main_prompt=rank_by_category_main_prompt.format(
+                    hypothesis=hypothesis,
+                    category=category_str,
+                    other_categories=other_categories_str,
+                    company_descriptions=company_description_str,
+                    topics=topics_str,
+                    summary_str=summary_str,
+                    total_citations=total_citations,
+                ),
+                sys_prompt=rank_by_category_sys_prompt.format(),
+            )
+            result = json.loads(clean_to_json_if_needed(resp))
+            category_idx_to_result[category_idx] = result
+
+        category_tasks.append(
+            ranking_and_summarizing_categories_task(
+                category_idx=category_idx,
+                topics_str=topics_str,
+                category_str=category_str,
+                other_categories_str=other_categories_str,
+            )
         )
 
-        result = json.loads(clean_to_json_if_needed(resp))
-        category_idx_to_result[category_idx] = result
+    await gather_with_concurrency(category_tasks)
 
     await tool_log(
         log="Ranked all the relevant stocks for each category and created summaries",
