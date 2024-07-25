@@ -660,6 +660,7 @@ class Clickhouse(ClickhouseBase):
         rows = self.generic_read(sql, {"test_name": test_name})
         tz = datetime.timezone.utc
         for row in rows:
+            row["output_str"] = row["output"]
             for key in ["output", "execution_plan"]:
                 if row[key]:
                     row[key] = json.loads(row[key])

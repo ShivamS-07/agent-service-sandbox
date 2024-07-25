@@ -82,7 +82,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         self.assertEqual(len(res.messages), 3)
 
     def test_agent_output(self):
-        agent_id = "a440f037-a0d6-4fb1-9abc-1aec0a8db684"
+        agent_id = "6a69d259-8d4c-4056-8f60-712f42f7546f"
         res = self.get_agent_output(agent_id=agent_id)
         self.assertGreater(len(res.outputs), 0)
 
@@ -136,7 +136,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
     def test_get_test_run_info(self):
 
         test_run_id = "8e1b5600-b6a5-44df-927f-ec3c90c32424"
-        test_run_info = self.agent_service_impl.get_info_for_test_suite_run(
+        test_run_info = self.get_info_for_test_suite_run(
             test_run_id=test_run_id
         ).test_suite_run_info
         self.assertTrue(test_run_info)
@@ -149,9 +149,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
     def test_get_test_case_info(self):
 
         test_name = "test_pe_nvda_feb_2024"
-        test_case_info = self.agent_service_impl.get_info_for_test_case(
-            test_name=test_name
-        ).test_case_info
+        test_case_info = self.get_info_for_test_case(test_name=test_name).test_case_info
         self.assertTrue(test_case_info)
 
     def test_get_test_cases(self):

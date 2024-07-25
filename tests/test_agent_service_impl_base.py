@@ -32,6 +32,8 @@ from agent_service.endpoints.models import (
     GetAgentTaskOutputResponse,
     GetAllAgentsResponse,
     GetChatHistoryResponse,
+    GetTestCaseInfoResponse,
+    GetTestSuiteRunInfoResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
 )
@@ -104,4 +106,14 @@ class TestAgentServiceImplBase(unittest.TestCase):
     def get_agent_debug_info(self, agent_id: str) -> GetAgentDebugInfoResponse:
         return self.loop.run_until_complete(
             self.agent_service_impl.get_agent_debug_info(agent_id=agent_id)
+        )
+
+    def get_info_for_test_suite_run(self, test_run_id: str) -> GetTestSuiteRunInfoResponse:
+        return self.loop.run_until_complete(
+            self.agent_service_impl.get_info_for_test_suite_run(test_run_id=test_run_id)
+        )
+
+    def get_info_for_test_case(self, test_name: str) -> GetTestCaseInfoResponse:
+        return self.loop.run_until_complete(
+            self.agent_service_impl.get_info_for_test_case(test_name=test_name)
         )

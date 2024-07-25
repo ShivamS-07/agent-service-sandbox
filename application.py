@@ -809,7 +809,7 @@ async def rename_memory(
     response_model=GetTestSuiteRunInfoResponse,
     status_code=status.HTTP_200_OK,
 )
-def get_info_for_test_run_id(
+async def get_info_for_test_run_id(
     test_run_id: str, user: User = Depends(parse_header)
 ) -> GetTestSuiteRunInfoResponse:
     if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
@@ -818,7 +818,9 @@ def get_info_for_test_run_id(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
-    return application.state.agent_service_impl.get_info_for_test_suite_run(test_run_id=test_run_id)
+    return await application.state.agent_service_impl.get_info_for_test_suite_run(
+        test_run_id=test_run_id
+    )
 
 
 @router.get(
@@ -856,7 +858,7 @@ def get_test_cases(user: User = Depends(parse_header)) -> GetTestCasesResponse:
     response_model=GetTestCaseInfoResponse,
     status_code=status.HTTP_200_OK,
 )
-def get_info_for_test_case(
+async def get_info_for_test_case(
     test_name: str, user: User = Depends(parse_header)
 ) -> GetTestCaseInfoResponse:
     if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
@@ -865,7 +867,7 @@ def get_info_for_test_case(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
-    return application.state.agent_service_impl.get_info_for_test_case(test_name=test_name)
+    return await application.state.agent_service_impl.get_info_for_test_case(test_name=test_name)
 
 
 # Account Management Enpoints

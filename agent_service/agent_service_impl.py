@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import json
 import logging
 from collections import defaultdict
 from typing import Any, AsyncGenerator, Dict, List, Optional
@@ -56,7 +57,7 @@ from agent_service.endpoints.models import (
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
-from agent_service.io_type_utils import TableColumnType
+from agent_service.io_type_utils import TableColumnType, load_io_type
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
     TableOutput,
@@ -623,10 +624,15 @@ class AgentServiceImpl:
         )
         return GetAgentDebugInfoResponse(tooltips=tool_tips, debug=debug)
 
-    def get_info_for_test_suite_run(self, test_run_id: str) -> GetTestSuiteRunInfoResponse:
-        return GetTestSuiteRunInfoResponse(
-            test_suite_run_info=self.ch.get_info_for_test_suite_run(test_run_id=test_run_id)
-        )
+    async def get_info_for_test_suite_run(self, test_run_id: str) -> GetTestSuiteRunInfoResponse:
+        infos = self.ch.get_info_for_test_suite_run(test_run_id=test_run_id)
+        for test_name, test_info in infos.items():
+            if "output" in test_info and test_info["output"]:
+                my_output = test_info["output"]
+                output_str = load_io_type(json.dumps(my_output[0]))
+                output_from_io_type = await get_output_from_io_type(val=output_str, pg=self.pg.pg)
+                test_info["formatted_output"] = output_from_io_type.model_dump()
+        return GetTestSuiteRunInfoResponse(test_suite_run_info=infos)
 
     def get_test_suite_runs(self) -> GetTestSuiteRunsIdsResponse:
         return GetTestSuiteRunsIdsResponse(test_suite_run_ids=self.ch.get_test_suite_run_ids())
@@ -634,10 +640,15 @@ class AgentServiceImpl:
     def get_test_cases(self) -> GetTestCasesResponse:
         return GetTestCasesResponse(test_cases=self.ch.get_test_cases())
 
-    def get_info_for_test_case(self, test_name: str) -> GetTestCaseInfoResponse:
-        return GetTestCaseInfoResponse(
-            test_case_info=self.ch.get_info_for_test_case(test_name=test_name)
-        )
+    async def get_info_for_test_case(self, test_name: str) -> GetTestCaseInfoResponse:
+        infos = self.ch.get_info_for_test_case(test_name=test_name)
+        for info in infos:
+            if "output" in info and info["output"]:
+                my_output = info["output"]
+                output_str = load_io_type(json.dumps(my_output[0]))
+                output_from_io_type = await get_output_from_io_type(val=output_str, pg=self.pg.pg)
+                info["formatted_output"] = output_from_io_type.model_dump()
+        return GetTestCaseInfoResponse(test_case_info=infos)
 
     async def upload_file(
         self, upload: UploadFile, user: User, agent_id: Optional[str] = None
