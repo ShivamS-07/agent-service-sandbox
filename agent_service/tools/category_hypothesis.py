@@ -27,7 +27,7 @@ from agent_service.io_types.text import (
     TextCitation,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
-from agent_service.tools.category import Categories, Category
+from agent_service.tools.category import Category
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
@@ -36,220 +36,6 @@ from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
-
-
-@io_type
-class CategoricalHypothesisTexts(ComplexIOBase):
-    val: List[Text]
-    categories: Categories
-
-    async def split_into_components(self) -> List[IOType]:
-        return [self.val[0], self.categories] + self.val[1:]  # type: ignore
-
-
-class AnalyzeHypothesisWithCategoriesInput(ToolArgs):
-    hypothesis: str
-    categories: List[Category]
-    stocks: List[StockID]
-    all_text_data: List[StockText]
-    # if only 1 stock mentioned in `hypothesis`, it will be assigned. If no stock or more than 1
-    # stocks are mentioned, it will be None.
-    target_stock: Optional[StockID] = None
-
-
-@tool(
-    description=(
-        "Given a list of relevant text data and a list of categories used to break hypothesis down, "
-        "this function generates a score indicating the extent to which the provided hypothesis is "
-        "supported, and a short summary which explains the score with reference to "
-        "the information in the provided text data."
-        "This hypothesis must be focused on a specific stock or a small group of stocks, this function "
-        "must NOT be used to filter stocks more generally! (i.e. Do not use it for "
-        " `Give/find me stocks...` type queries, use the filter by profile tool). "
-        "If the hypothesis specifies a company, then it should be the target stock. Otherwise, leave it to None."
-    ),
-    category=ToolCategory.HYPOTHESIS,
-    tool_registry=ToolRegistry,
-)
-async def analyze_hypothesis_with_categories(
-    args: AnalyzeHypothesisWithCategoriesInput, context: PlanRunContext
-) -> CategoricalHypothesisTexts:
-    logger = get_prefect_logger(__name__)
-
-    # Step: Download content for text data
-    logger.info("Downloading content for text data")
-    (
-        gbi_id_to_short_description,
-        news_devs_with_text,
-        earnings_points_with_text,
-        sec_filings_sections_with_text,
-    ) = await download_content_for_text_data(args.all_text_data)
-
-    stocks = list(
-        {t.stock_id for t in news_devs_with_text if t.stock_id}
-        | {t.stock_id for t in earnings_points_with_text if t.stock_id}
-        | {t.stock_id for t in sec_filings_sections_with_text if t.stock_id}
-    )
-
-    gpt_service_stub = _get_gpt_service_stub()[0]
-
-    # Step: Revise hypothesis to remove company specific information
-    logger.info("Revising hypothesis to remove any company specific information")
-    revised_hypothesis = await revise_hypothesis(args.hypothesis, context, gpt_service_stub)
-    logger.info(f"Revised hypothesis: {revised_hypothesis}")  # Not visible to users
-
-    # Step: Classify topics into categories
-    logger.info("Classifying news, earnings, SEC topics into categories")
-    categories = sorted(args.categories, key=lambda x: x.weight, reverse=True)
-    category_idx_to_mixed_topics = await filter_and_classify_topics_into_category(
-        revised_hypothesis,
-        categories,
-        gbi_id_to_short_description,
-        news_devs_with_text,
-        earnings_points_with_text,
-        sec_filings_sections_with_text,
-        context,
-        gpt_service_stub,
-    )
-
-    # Step: Rank and summarize for each category
-    logger.info("Ranking and summarizing for each category")
-    candidate_target_stock = args.target_stock
-    category_to_result = await rank_and_summarize_for_each_category(
-        candidate_target_stock,
-        stocks,
-        revised_hypothesis,
-        categories,
-        category_idx_to_mixed_topics,
-        gbi_id_to_short_description,
-        context,
-        gpt_service_stub,
-    )
-
-    # Step: Calculate weighted average scores and determine the real target stock
-    actual_target_stock, total_scores = calculate_weighted_average_scores(
-        candidate_target_stock, stocks, categories, category_to_result
-    )
-
-    # Step: Overall summary
-    # we need to use the original hypothesis here
-    logger.info("Generating the final summary")
-    final_summary = await overall_summary(
-        actual_target_stock,
-        args.hypothesis,
-        categories,
-        category_to_result,
-        total_scores,
-        context,
-        gpt_service_stub,
-    )
-    await tool_log(log="Generated the final summary", context=context)
-
-    # Step: Prepare outputs
-    output = await prepare_categorical_hypothesis_outputs(
-        actual_target_stock,
-        final_summary,
-        total_scores[actual_target_stock.symbol],  # type: ignore
-        categories,
-        category_idx_to_mixed_topics,
-        category_to_result,
-    )
-
-    return output
-
-
-####################################################################################################
-# Utils
-####################################################################################################
-async def download_content_for_text_data(all_text_data: List[StockText]) -> Tuple[
-    Dict[int, str],
-    List[StockNewsDevelopmentText],
-    List[StockEarningsSummaryPointText],
-    List[StockSecFilingSectionText],
-]:
-    """
-    1. Download the actual text content for these text objects
-    2. Assign the text content to the corresponding text objects's `val` field
-    """
-
-    logger = get_prefect_logger(__name__)
-
-    logger.info("Separate text data by sources")
-    company_descriptions = [t for t in all_text_data if isinstance(t, StockDescriptionText)]
-
-    news_developments = [t for t in all_text_data if isinstance(t, StockNewsDevelopmentText)]
-
-    # Currently ignoring earning texts containing transcripts instead of summaries
-    earnings_summaries: List[StockEarningsText] = [
-        t for t in all_text_data if isinstance(t, StockEarningsSummaryText)
-    ]
-    earnings_summary_points = await StockEarningsSummaryPointText.init_from_earnings_texts(
-        earnings_summaries
-    )
-
-    # it does the downloading of the content inside `init_from_filings`
-    logger.info("Downloading content for 10K/10Q and split into sections")
-    sec_filings = [t for t in all_text_data if isinstance(t, StockSecFilingText)]
-    sec_filing_sections_with_text = await StockSecFilingSectionText.init_from_filings(sec_filings)
-    logger.info(
-        f"Got {len(sec_filing_sections_with_text)} sections from {len(sec_filings)} filings"
-    )
-
-    logger.info("Downloading content for company descriptions")
-    gbi_ids = [t.stock_id.gbi_id for t in company_descriptions if t.stock_id]
-    descriptions = get_psql().get_short_company_descriptions_for_gbi_ids(gbi_ids)
-    gbi_id_to_short_description = {
-        gbi_id: desc for gbi_id, (desc, _) in descriptions.items() if desc
-    }
-
-    # NOTE: meaningless to parallelize as they are using the same PSQL object
-    logger.info("Downloading content for news developments")
-    topic_id_to_news_dev = await StockNewsDevelopmentText._get_strs_lookup(news_developments)
-    news_devs_with_text = []
-    for news_dev in news_developments:
-        if news_dev.id in topic_id_to_news_dev:
-            news_dev.val = topic_id_to_news_dev[news_dev.id]
-            news_devs_with_text.append(news_dev)
-
-    logger.info("Downloading content for earnings summary points")
-    hash_id_to_earnings_point = await StockEarningsSummaryPointText._get_strs_lookup(
-        earnings_summary_points
-    )
-    earnings_points_with_text = []
-    for earnings_point in earnings_summary_points:
-        if earnings_point.id in hash_id_to_earnings_point:
-            earnings_point.val = hash_id_to_earnings_point[earnings_point.id]
-            earnings_points_with_text.append(earnings_point)
-
-    return (
-        gbi_id_to_short_description,
-        news_devs_with_text,
-        earnings_points_with_text,
-        sec_filing_sections_with_text,
-    )
-
-
-async def revise_hypothesis(
-    hypothesis: str, context: PlanRunContext, gpt_service_stub: Optional[GPTServiceStub] = None
-) -> str:
-    prompt_str = """
-        Given the hypothesis, revise it to make it non company-specific. \
-        For example, if the original hypothesis is 'Is Expedia the leader in the travel industry?', \
-        the revised hypothesis should be 'Who is the leader in the travel industry?'. \
-        If no stock/company is mentioned in the hypothesis, return the original hypothesis.
-        Here is the original hypothesis: {hypothesis}
-    """
-    prompt = Prompt(template=prompt_str, name="REVISE_HYPOTHESIS_SYS_PROMPT")
-
-    gpt_context = create_gpt_context(
-        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
-    )
-    return await GPT(
-        context=gpt_context, model=GPT4_O, gpt_service_stub=gpt_service_stub
-    ).do_chat_w_sys_prompt(
-        main_prompt=prompt.format(hypothesis=hypothesis),
-        sys_prompt=NO_PROMPT,
-    )
 
 
 @io_type
@@ -355,6 +141,294 @@ class MixedTopics(ComplexIOBase):
             return self.earnings_topics[idx]
         idx -= len(self.earnings_topics)
         return self.news_topics[idx]
+
+
+@io_type
+class HypothesisAnalysisByCategory(ComplexIOBase):
+    actual_target_stock: StockID
+    final_scores: Dict[str, float]
+    ranked_categories: List[Category]
+    category_idx_to_topics: Dict[int, MixedTopics]
+    category_idx_to_result: Dict[int, Dict]
+    val: List[Text] = []
+
+    async def split_into_components(self) -> List[IOType]:
+        self.prepare_categorical_hypothesis_outputs()
+        return self.val  # type: ignore
+
+    def prepare_categorical_hypothesis_outputs(self) -> None:
+        # each category ranking widget
+        for category_idx, result in sorted(
+            self.category_idx_to_result.items(), key=lambda x: -self.ranked_categories[x[0]].weight
+        ):
+            # score
+            score = 0
+            for each_ranking in result["ranking"]:
+                if each_ranking["symbol"] == self.actual_target_stock.symbol:
+                    score = each_ranking["score"]
+                    break
+
+            # text
+            rankings_list = [f"{result['summary']}"]
+            for each_ranking in result["ranking"]:
+                rankings_list.append(
+                    (
+                        f"- {each_ranking['symbol']}\n"
+                        f"  - Score: {each_ranking['score']}\n"
+                        f"  - Explanation: {each_ranking['explanation']}"
+                    )
+                )
+            rankings_list_str = "\n".join(rankings_list)
+
+            # citations
+            citation_idxs = result["citations"]
+            mixed_topics = self.category_idx_to_topics[category_idx]
+            citations = []
+            for idx in citation_idxs:
+                topic = mixed_topics.get_topic(idx)
+                topic.reset_value()  # remove the content to save DB space
+                citations.append(TextCitation(source_text=topic))
+
+            self.val.append(
+                Text(
+                    val=rankings_list_str,
+                    history=[
+                        HistoryEntry(
+                            score=Score.scale_input(score, lb=0, ub=10), citations=citations  # type: ignore
+                        )
+                    ],
+                    title=f"Analysis - {self.ranked_categories[category_idx].name}",
+                )
+            )
+
+
+class AnalyzeHypothesisWithCategoriesInput(ToolArgs):
+    hypothesis: str
+    categories: List[Category]
+    stocks: List[StockID]
+    all_text_data: List[StockText]
+    # if only 1 stock mentioned in `hypothesis`, it will be assigned. If no stock or more than 1
+    # stock are mentioned, it will be None.
+    target_stock: Optional[StockID] = None
+
+
+@tool(
+    description=(
+        "Given a list of relevant text data and a list of categories used to break market analysis down, "
+        "this function generates scores and their explanations for each category indicating the extent to which "
+        "it is supported with reference to the information in the provided text data."
+        "This analysis must be focused on a specific stock or a small group of stocks, this function "
+        "must NOT be used to filter stocks more generally! (i.e. Do not use it for "
+        " `Give/find me stocks...` type queries, use the filter by profile tool). "
+        "If the analysis specifies a company, then it should be the target stock. Otherwise, leave it to None."
+    ),
+    category=ToolCategory.HYPOTHESIS,
+    tool_registry=ToolRegistry,
+)
+async def analyze_hypothesis_with_categories(
+    args: AnalyzeHypothesisWithCategoriesInput, context: PlanRunContext
+) -> HypothesisAnalysisByCategory:
+    logger = get_prefect_logger(__name__)
+
+    # Step: Download content for text data
+    logger.info("Downloading content for text data")
+    (
+        gbi_id_to_short_description,
+        news_devs_with_text,
+        earnings_points_with_text,
+        sec_filings_sections_with_text,
+    ) = await download_content_for_text_data(args.all_text_data)
+
+    stocks = list(
+        {t.stock_id for t in news_devs_with_text if t.stock_id}
+        | {t.stock_id for t in earnings_points_with_text if t.stock_id}
+        | {t.stock_id for t in sec_filings_sections_with_text if t.stock_id}
+    )
+
+    gpt_service_stub = _get_gpt_service_stub()[0]
+
+    # Step: Revise hypothesis to remove company specific information
+    logger.info("Revising hypothesis to remove any company specific information")
+    revised_hypothesis = await revise_hypothesis(args.hypothesis, context, gpt_service_stub)
+    logger.info(f"Revised hypothesis: {revised_hypothesis}")  # Not visible to users
+
+    # Step: Classify topics into categories
+    logger.info("Classifying news, earnings, SEC topics into categories")
+    categories = sorted(args.categories, key=lambda x: x.weight, reverse=True)
+    category_idx_to_mixed_topics = await filter_and_classify_topics_into_category(
+        revised_hypothesis,
+        categories,
+        gbi_id_to_short_description,
+        news_devs_with_text,
+        earnings_points_with_text,
+        sec_filings_sections_with_text,
+        context,
+        gpt_service_stub,
+    )
+
+    # Step: Rank and summarize for each category
+    logger.info("Ranking and summarizing for each category")
+    candidate_target_stock = args.target_stock
+    category_to_result = await rank_and_summarize_for_each_category(
+        candidate_target_stock,
+        stocks,
+        revised_hypothesis,
+        categories,
+        category_idx_to_mixed_topics,
+        gbi_id_to_short_description,
+        context,
+        gpt_service_stub,
+    )
+
+    # Step: Calculate weighted average scores and determine the real target stock
+    actual_target_stock, total_scores = calculate_weighted_average_scores(
+        candidate_target_stock, stocks, categories, category_to_result
+    )
+
+    # Step: Prepare outputs
+    output = HypothesisAnalysisByCategory(
+        actual_target_stock=actual_target_stock,
+        final_scores=total_scores,
+        ranked_categories=categories,
+        category_idx_to_topics=category_idx_to_mixed_topics,
+        category_idx_to_result=category_to_result,
+    )
+
+    return output
+
+
+class GenerateSummaryForHypothesisWithCategoriesInput(ToolArgs):
+    hypothesis: str
+    hypothesis_analysis_by_category: HypothesisAnalysisByCategory
+
+
+@tool(
+    description=(
+        "Given a market analysis broken down by categories, for a specific stock or group of stocks, "
+        "this function generates a short summary for the analysis. This function must be called after "
+        "analyze_hypothesis_with_categories."
+    ),
+    category=ToolCategory.HYPOTHESIS,
+    tool_registry=ToolRegistry,
+)
+async def generate_summary_for_hypothesis_with_categories(
+    args: GenerateSummaryForHypothesisWithCategoriesInput, context: PlanRunContext
+) -> Text:
+    logger = get_prefect_logger(__name__)
+
+    gpt_service_stub = _get_gpt_service_stub()[0]
+
+    logger.info("Generating the final summary")
+    final_summary = await overall_summary(
+        target_stock=args.hypothesis_analysis_by_category.actual_target_stock,
+        hypothesis=args.hypothesis,
+        categories=args.hypothesis_analysis_by_category.ranked_categories,
+        category_idx_to_result=args.hypothesis_analysis_by_category.category_idx_to_result,
+        final_scores=args.hypothesis_analysis_by_category.final_scores,
+        context=context,
+        gpt_service_stub=gpt_service_stub,
+    )
+    await tool_log(log="Generated the final summary", context=context)
+    final_score = args.hypothesis_analysis_by_category.final_scores[
+        args.hypothesis_analysis_by_category.actual_target_stock.symbol  # type: ignore
+    ]
+    return Text(
+        val=final_summary, history=[HistoryEntry(score=Score.scale_input(final_score, lb=0, ub=10))]
+    )
+
+
+####################################################################################################
+# Utils
+####################################################################################################
+async def download_content_for_text_data(all_text_data: List[StockText]) -> Tuple[
+    Dict[int, str],
+    List[StockNewsDevelopmentText],
+    List[StockEarningsSummaryPointText],
+    List[StockSecFilingSectionText],
+]:
+    """
+    1. Download the actual text content for these text objects
+    2. Assign the text content to the corresponding text objects's `val` field
+    """
+
+    logger = get_prefect_logger(__name__)
+
+    logger.info("Separate text data by sources")
+    company_descriptions = [t for t in all_text_data if isinstance(t, StockDescriptionText)]
+
+    news_developments = [t for t in all_text_data if isinstance(t, StockNewsDevelopmentText)]
+
+    # Currently ignoring earning texts containing transcripts instead of summaries
+    earnings_summaries: List[StockEarningsText] = [
+        t for t in all_text_data if isinstance(t, StockEarningsSummaryText)
+    ]
+    earnings_summary_points = await StockEarningsSummaryPointText.init_from_earnings_texts(
+        earnings_summaries
+    )
+
+    # it does the downloading of the content inside `init_from_filings`
+    logger.info("Downloading content for 10K/10Q and split into sections")
+    sec_filings = [t for t in all_text_data if isinstance(t, StockSecFilingText)]
+    sec_filing_sections_with_text = await StockSecFilingSectionText.init_from_filings(sec_filings)
+    logger.info(
+        f"Got {len(sec_filing_sections_with_text)} sections from {len(sec_filings)} filings"
+    )
+
+    logger.info("Downloading content for company descriptions")
+    gbi_ids = [t.stock_id.gbi_id for t in company_descriptions if t.stock_id]
+    descriptions = get_psql().get_short_company_descriptions_for_gbi_ids(gbi_ids)
+    gbi_id_to_short_description = {
+        gbi_id: desc for gbi_id, (desc, _) in descriptions.items() if desc
+    }
+
+    # NOTE: meaningless to parallelize as they are using the same PSQL object
+    logger.info("Downloading content for news developments")
+    topic_id_to_news_dev = await StockNewsDevelopmentText._get_strs_lookup(news_developments)
+    news_devs_with_text = []
+    for news_dev in news_developments:
+        if news_dev.id in topic_id_to_news_dev:
+            news_dev.val = topic_id_to_news_dev[news_dev.id]
+            news_devs_with_text.append(news_dev)
+
+    logger.info("Downloading content for earnings summary points")
+    hash_id_to_earnings_point = await StockEarningsSummaryPointText._get_strs_lookup(
+        earnings_summary_points
+    )
+    earnings_points_with_text = []
+    for earnings_point in earnings_summary_points:
+        if earnings_point.id in hash_id_to_earnings_point:
+            earnings_point.val = hash_id_to_earnings_point[earnings_point.id]
+            earnings_points_with_text.append(earnings_point)
+
+    return (
+        gbi_id_to_short_description,
+        news_devs_with_text,
+        earnings_points_with_text,
+        sec_filing_sections_with_text,
+    )
+
+
+async def revise_hypothesis(
+    hypothesis: str, context: PlanRunContext, gpt_service_stub: Optional[GPTServiceStub] = None
+) -> str:
+    prompt_str = """
+        Given the hypothesis, revise it to make it non company-specific. \
+        For example, if the original hypothesis is 'Is Expedia the leader in the travel industry?', \
+        the revised hypothesis should be 'Who is the leader in the travel industry?'. \
+        If no stock/company is mentioned in the hypothesis, return the original hypothesis.
+        Here is the original hypothesis: {hypothesis}
+    """
+    prompt = Prompt(template=prompt_str, name="REVISE_HYPOTHESIS_SYS_PROMPT")
+
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    return await GPT(
+        context=gpt_context, model=GPT4_O, gpt_service_stub=gpt_service_stub
+    ).do_chat_w_sys_prompt(
+        main_prompt=prompt.format(hypothesis=hypothesis),
+        sys_prompt=NO_PROMPT,
+    )
 
 
 async def filter_and_classify_topics_into_category(
@@ -763,70 +837,6 @@ async def overall_summary(
     return resp
 
 
-async def prepare_categorical_hypothesis_outputs(
-    actual_target_stock: StockID,
-    final_summary: str,
-    final_score: float,
-    categories: List[Category],
-    category_idx_to_topics: Dict[int, MixedTopics],
-    category_idx_to_result: Dict[int, Dict],
-) -> CategoricalHypothesisTexts:
-    output = CategoricalHypothesisTexts(
-        val=[], categories=Categories(val=categories, title="Categories")
-    )
-
-    # top summary
-    output.val.append(
-        Text(
-            val=final_summary,
-            history=[HistoryEntry(score=Score.scale_input(final_score, lb=0, ub=10))],
-            title="Summary",  # FIXME: use GPT to generate a title
-        )
-    )
-
-    # each category ranking widget
-    for category_idx, result in sorted(
-        category_idx_to_result.items(), key=lambda x: -categories[x[0]].weight
-    ):
-        # score
-        score = 0
-        for each_ranking in result["ranking"]:
-            if each_ranking["symbol"] == actual_target_stock.symbol:
-                score = each_ranking["score"]
-                break
-
-        # text
-        rankings_list = [f"{result['summary']}"]
-        for each_ranking in result["ranking"]:
-            rankings_list.append(
-                (
-                    f"- {each_ranking['symbol']}\n"
-                    f"  - Score: {each_ranking['score']}\n"
-                    f"  - Explanation: {each_ranking['explanation']}"
-                )
-            )
-        rankings_list_str = "\n".join(rankings_list)
-
-        # citations
-        citation_idxs = result["citations"]
-        mixed_topics = category_idx_to_topics[category_idx]
-        citations = []
-        for idx in citation_idxs:
-            topic = mixed_topics.get_topic(idx)
-            topic.reset_value()  # remove the content to save DB space
-            citations.append(TextCitation(source_text=topic))
-
-        output.val.append(
-            Text(
-                val=rankings_list_str,
-                history=[HistoryEntry(score=Score.scale_input(score, lb=0, ub=10), citations=citations)],  # type: ignore # noqa
-                title=f"Analysis - {categories[category_idx].name}",
-            )
-        )
-
-    return output
-
-
 if __name__ == "__main__":
 
     async def main(hypothesis: str, main_stock: str) -> None:
@@ -863,7 +873,7 @@ if __name__ == "__main__":
 
         categories = await get_categories(CategoriesForStockInput(prompt=hypothesis), context)
 
-        output = await analyze_hypothesis_with_categories(
+        output: HypothesisAnalysisByCategory = await analyze_hypothesis_with_categories(
             AnalyzeHypothesisWithCategoriesInput(
                 hypothesis=hypothesis,
                 categories=categories,  # type: ignore
@@ -873,7 +883,13 @@ if __name__ == "__main__":
             ),
             context,
         )
-        print(output)
+        summary = await generate_summary_for_hypothesis_with_categories(
+            GenerateSummaryForHypothesisWithCategoriesInput(
+                hypothesis=hypothesis, hypothesis_analysis_by_category=output
+            ),
+            context,
+        )
+        print(summary)
 
     import asyncio
 
