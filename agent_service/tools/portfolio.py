@@ -33,6 +33,13 @@ from agent_service.utils.constants import get_B3_prefix
 from agent_service.utils.date_utils import convert_horizon_to_days
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.tool_diff import (
+    add_task_id_to_stocks_history,
+    get_prev_run_info,
+)
+
+PORTFOLIO_ADD_STOCK_DIFF = "{company} was added to the portfolio: {portfolio}"
+PORTFOLIO_REMOVE_STOCK_DIFF = "{company} was removed from the portfolio: {portfolio}"
 
 PortfolioID = str
 # Get the postgres connection
@@ -41,6 +48,15 @@ db = get_psql()
 
 class GetPortfolioHoldingsInput(ToolArgs):
     portfolio_id: PortfolioID
+
+
+async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
+    workspaces = await get_all_workspaces(user_id=user_id)
+    for workspace in workspaces:
+        if portfolio_id == workspace.workspace_id.id:
+            return workspace.name
+
+    return None
 
 
 @tool(
@@ -64,11 +80,19 @@ async def get_portfolio_holdings(
 ) -> StockTable:
     logger = get_prefect_logger(__name__)
     workspace = await get_all_holdings_in_workspace(context.user_id, args.portfolio_id)
+
+    workspace_name = await get_workspace_name(
+        user_id=context.user_id, portfolio_id=args.portfolio_id
+    )
+    if not workspace_name:
+        workspace_name = args.portfolio_id
+
     gbi_ids = [holding.gbi_id for holding in workspace.holdings]
 
     logger.info(f"found {len(gbi_ids)} holdings")
 
     stock_ids = await StockID.from_gbi_id_list(gbi_ids)
+    stock_list = stock_ids
     gbi_id2_stock_id = {s.gbi_id: s for s in stock_ids}
     data = {
         STOCK_ID_COL_NAME_DEFAULT: [
@@ -88,6 +112,41 @@ async def get_portfolio_holdings(
     await tool_log(
         f"Found {len(stock_ids)} holdings in portfolio", context=context, associated_data=table
     )
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        # we need to add the task id to all runs, including the first one, so we can track changes
+        if context.task_id:
+            stock_list = add_task_id_to_stocks_history(stock_list, context.task_id)
+            if context.diff_info is not None:
+                # 2nd arg is the name of the function we are in
+                prev_run_info = await get_prev_run_info(context, "get_portfolio_holdings")
+                if prev_run_info is not None:
+                    prev_output_table: StockTable = prev_run_info.output  # type:ignore
+                    prev_output = prev_output_table.get_stocks()
+                    # corner case here where S&P 500 change causes output to change, but not going to
+                    # bother with it on first pass
+                    curr_stock_set = set(stock_list)
+                    prev_stock_set = set(prev_output)
+                    added_stocks = curr_stock_set - prev_stock_set
+                    removed_stocks = prev_stock_set - curr_stock_set
+                    context.diff_info[context.task_id] = {
+                        "added": {
+                            added_stock: PORTFOLIO_ADD_STOCK_DIFF.format(
+                                company=added_stock.company_name, portfolio=workspace_name
+                            )
+                            for added_stock in added_stocks
+                        },
+                        "removed": {
+                            removed_stock: PORTFOLIO_REMOVE_STOCK_DIFF.format(
+                                company=removed_stock.company_name, portfolio=workspace_name
+                            )
+                            for removed_stock in removed_stocks
+                        },
+                    }
+
+    except Exception as e:
+        logger.warning(f"Error creating diff info from previous run: {e}")
+
     return table
 
 

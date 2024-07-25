@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from functools import lru_cache
 from typing import Generator, List, Tuple
 
+from cache import AsyncTTL
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
     LOCAL_TAG,
@@ -44,6 +45,8 @@ from pa_portfolio_service_proto_v1.workspace_pb2 import (
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
 from agent_service.utils.logs import async_perf_logger
+
+ONE_MINUTE = 60
 
 logger = logging.getLogger(__name__)
 
@@ -141,9 +144,11 @@ async def get_all_holdings_in_workspace(
         return response.workspaceStocks[0]
 
 
+@AsyncTTL(time_to_live=ONE_MINUTE, maxsize=10)
 @grpc_retry
 @async_perf_logger
 async def get_all_workspaces(user_id: str) -> List[WorkspaceMetadata]:
+    # just need this cached long enough to call it again in the same plan
     with _get_service_stub() as stub:
         response: GetAllWorkspacesResponse = await stub.GetAllWorkspaces(
             GetAllWorkspacesRequest(), metadata=get_default_grpc_metadata(user_id=user_id)

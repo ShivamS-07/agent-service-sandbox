@@ -255,13 +255,15 @@ async def get_texts_for_topics(
                 context=context,
                 associated_data=themes,
             )
-            res = await get_theme_related_texts(themes, date_range, context)
+            res = await get_theme_related_texts(
+                themes_texts=themes, date_range=date_range, context=context
+            )
             await tool_log(
                 log=f"Found {len(res)} theme-related texts for topic: {topic}.",
                 context=context,
                 associated_data=res,
             )
-            texts.extend(res + themes)  # type: ignore
+            texts.extend(res + themes)
 
         except Exception as e:
             logger.warning(f"Failed to find any news theme for topic {topic}: {e}")

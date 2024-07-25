@@ -44,14 +44,15 @@ from agent_service.utils.tool_diff import (
     get_prev_run_info,
 )
 
-logger = get_prefect_logger(__name__)
-
 STOCK_ID_COL_NAME_DEFAULT = "Security"
 GROWTH_LABEL = "Growth"
 VALUE_LABEL = "Value"
 
 UNIVERSE_ADD_STOCK_DIFF = "{company} was added to the {universe} stock universe"
 UNIVERSE_REMOVE_STOCK_DIFF = "{company} was removed from the {universe} stock universe"
+
+FACTOR_ADD_STOCK_DIFF = "{company} was added to the {factor} list"
+FACTOR_REMOVE_STOCK_DIFF = "{company} was removed from the {factor} list"
 
 # constants used to massage the match scores for stocks to be in a good order
 
@@ -747,6 +748,9 @@ class MultiStockIdentifierLookupInput(ToolArgs):
 async def multi_stock_identifier_lookup(
     args: MultiStockIdentifierLookupInput, context: PlanRunContext
 ) -> List[StockID]:
+
+    logger = get_prefect_logger(__name__)
+
     # Just runs stock identifier look up below for each stock in the list
     # Probably can be done more efficiently
 
@@ -914,6 +918,7 @@ async def get_stock_universe_table_from_universe_company_id(
     Returns:
         StockTable: The table of stock identifiers and weights in the universe.
     """
+    # logger = get_prefect_logger(__name__)
     db = get_psql()
 
     # Find the stocks in the universe
@@ -958,6 +963,7 @@ async def get_stock_ids_from_company_ids(
     Returns:
         Dict[int, StockID]: Mapping from company ID to output stock ID
     """
+    # logger = get_prefect_logger(__name__)
     db = get_psql()
 
     # Find the stocks in the universe
@@ -1032,6 +1038,9 @@ class GetRiskExposureForStocksInput(ToolArgs):
 async def get_risk_exposure_for_stocks(
     args: GetRiskExposureForStocksInput, context: PlanRunContext
 ) -> Table:
+
+    # logger = get_prefect_logger(__name__)
+
     def format_column_name(col_name: str) -> str:
         if "_" in col_name:
             return col_name.replace("_", " ").title()
@@ -1147,6 +1156,7 @@ class GrowthFilterInput(ToolArgs):
     is_visible=True,
 )
 async def growth_filter(args: GrowthFilterInput, context: PlanRunContext) -> List[StockID]:
+    logger = get_prefect_logger(__name__)
     stock_ids = args.stock_ids
     if stock_ids == []:
         # degenerate case should i log or throw?
@@ -1170,9 +1180,51 @@ async def growth_filter(args: GrowthFilterInput, context: PlanRunContext) -> Lis
     # mypy thinks this is not a table but a generic ComplexIO Base
     df = risk_table.to_df()  # type: ignore
     filtered_df = df.loc[df[GROWTH_LABEL] >= args.min_value]
-    stocks = filtered_df[STOCK_ID_COL_NAME_DEFAULT].squeeze().to_list()
-    await tool_log(log=f"Filtered {len(stock_ids)} stocks down to {len(stocks)}", context=context)
-    return stocks
+    stock_list = filtered_df[STOCK_ID_COL_NAME_DEFAULT].squeeze().to_list()
+    await tool_log(
+        log=f"Filtered {len(stock_ids)} stocks down to {len(stock_list)}", context=context
+    )
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        # we need to add the task id to all runs, including the first one, so we can track changes
+        if context.task_id:
+            stock_list = add_task_id_to_stocks_history(stock_list, context.task_id)
+            if context.diff_info is not None:
+                # 2nd arg is the name of the function we are in
+                prev_run_info = await get_prev_run_info(context, "growth_filter")
+                if prev_run_info is not None:
+                    prev_input = GrowthFilterInput.model_validate_json(prev_run_info.inputs_str)
+                    prev_output: List[StockID] = prev_run_info.output  # type:ignore
+                    # corner case here where S&P 500 change causes output to change, but not going to
+                    # bother with it on first pass
+                    if args.stock_ids and prev_input.stock_ids:
+                        # we only care about stocks that were inputs for both
+                        shared_inputs = set(prev_input.stock_ids) & set(args.stock_ids)
+                    else:
+                        shared_inputs = set()
+                    curr_stock_set = set(stock_list)
+                    prev_stock_set = set(prev_output)
+                    added_stocks = (curr_stock_set - prev_stock_set) & shared_inputs
+                    removed_stocks = (prev_stock_set - curr_stock_set) & shared_inputs
+                    context.diff_info[context.task_id] = {
+                        "added": {
+                            added_stock: FACTOR_ADD_STOCK_DIFF.format(
+                                company=added_stock.company_name, factor="growth"
+                            )
+                            for added_stock in added_stocks
+                        },
+                        "removed": {
+                            removed_stock: FACTOR_REMOVE_STOCK_DIFF.format(
+                                company=removed_stock.company_name, factor="growth"
+                            )
+                            for removed_stock in removed_stocks
+                        },
+                    }
+
+    except Exception as e:
+        logger.warning(f"Error creating diff info from previous run: {e}")
+
+    return stock_list
 
 
 class ValueFilterInput(ToolArgs):
@@ -1199,6 +1251,7 @@ class ValueFilterInput(ToolArgs):
     is_visible=True,
 )
 async def value_filter(args: ValueFilterInput, context: PlanRunContext) -> List[StockID]:
+    logger = get_prefect_logger(__name__)
     stock_ids = args.stock_ids
     if stock_ids == []:
         # degenerate case should i log or throw?
@@ -1223,10 +1276,52 @@ async def value_filter(args: ValueFilterInput, context: PlanRunContext) -> List[
     # mypy thinks this is not a table but a generic ComplexIO Base
     df = risk_table.to_df()  # type: ignore
     filtered_df = df.loc[df[VALUE_LABEL] >= args.min_value]
-    stocks = filtered_df[STOCK_ID_COL_NAME_DEFAULT].squeeze().to_list()
+    stock_list = filtered_df[STOCK_ID_COL_NAME_DEFAULT].squeeze().to_list()
 
-    await tool_log(log=f"Filtered {len(stock_ids)} stocks down to {len(stocks)}", context=context)
-    return stocks
+    await tool_log(
+        log=f"Filtered {len(stock_ids)} stocks down to {len(stock_list)}", context=context
+    )
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        # we need to add the task id to all runs, including the first one, so we can track changes
+        if context.task_id:
+            stock_list = add_task_id_to_stocks_history(stock_list, context.task_id)
+            if context.diff_info is not None:
+                # 2nd arg is the name of the function we are in
+                prev_run_info = await get_prev_run_info(context, "value_filter")
+                if prev_run_info is not None:
+                    prev_input = ValueFilterInput.model_validate_json(prev_run_info.inputs_str)
+                    prev_output: List[StockID] = prev_run_info.output  # type:ignore
+                    # corner case here where S&P 500 change causes output to change, but not going to
+                    # bother with it on first pass
+                    if args.stock_ids and prev_input.stock_ids:
+                        # we only care about stocks that were inputs for both
+                        shared_inputs = set(prev_input.stock_ids) & set(args.stock_ids)
+                    else:
+                        shared_inputs = set()
+                    curr_stock_set = set(stock_list)
+                    prev_stock_set = set(prev_output)
+                    added_stocks = (curr_stock_set - prev_stock_set) & shared_inputs
+                    removed_stocks = (prev_stock_set - curr_stock_set) & shared_inputs
+                    context.diff_info[context.task_id] = {
+                        "added": {
+                            added_stock: FACTOR_ADD_STOCK_DIFF.format(
+                                company=added_stock.company_name, factor="value"
+                            )
+                            for added_stock in added_stocks
+                        },
+                        "removed": {
+                            removed_stock: FACTOR_REMOVE_STOCK_DIFF.format(
+                                company=removed_stock.company_name, factor="value"
+                            )
+                            for removed_stock in removed_stocks
+                        },
+                    }
+
+    except Exception as e:
+        logger.warning(f"Error creating diff info from previous run: {e}")
+
+    return stock_list
 
 
 async def get_stock_universe_gbi_stock_universe(
@@ -1418,6 +1513,9 @@ STOCK_MARKET_SEGMENT_FILTER_MAIN_PROMPT = Prompt(
 async def market_segment_filter(
     args: StockMarketSegmentFilterInput, context: PlanRunContext
 ) -> List[StockID]:
+
+    # logger = get_prefect_logger(__name__)
+
     # get company/stock descriptions
     description_texts = await get_company_descriptions(
         GetStockDescriptionInput(

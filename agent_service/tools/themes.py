@@ -187,7 +187,7 @@ async def get_macroeconomic_themes(
     ]
     if not themes:
         raise Exception("was not able to find any relevant themes matching the input")
-    return themes  # type: ignore
+    return themes
 
 
 class GetStocksAffectedByThemesInput(ToolArgs):

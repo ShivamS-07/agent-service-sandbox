@@ -9,6 +9,15 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
+from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.tool_diff import (
+    add_task_id_to_stocks_history,
+    get_prev_run_info,
+)
+
+# seems unlikely stocks will ever change region, but I guess it is possible
+REGION_ADD_STOCK_DIFF = "{company} was added to the {region} region"
+REGION_REMOVE_STOCK_DIFF = "{company} was removed from the {region} region"
 
 
 class FilterStockRegionInput(ToolArgs):
@@ -190,6 +199,8 @@ async def filter_stocks_by_region(
     Returns: List[StockId]
     """
 
+    logger = get_prefect_logger(__name__)
+
     # GPT is passing in some non-iso3 strings sometimes like FRANCE
     # this lib is really good at converting arbitrary country mentions to ISO codes
     countries = get_country_iso3s(args.region_name)
@@ -222,5 +233,46 @@ async def filter_stocks_by_region(
     stock_list = [stock for stock in args.stock_ids if stock.gbi_id in stocks_to_include]
     if not stock_list:
         raise NonRetriableError(message="Stock filter resulted in an empty list of stocks")
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        # we need to add the task id to all runs, including the first one, so we can track changes
+        if context.task_id:
+            stock_list = add_task_id_to_stocks_history(stock_list, context.task_id)
+            if context.diff_info is not None:
+                # 2nd arg is the name of the function we are in
+                prev_run_info = await get_prev_run_info(context, "filter_stocks_by_region")
+                if prev_run_info is not None:
+                    prev_input = FilterStockRegionInput.model_validate_json(
+                        prev_run_info.inputs_str
+                    )
+                    prev_output: List[StockID] = prev_run_info.output  # type:ignore
+                    # corner case here where S&P 500 change causes output to change, but not going to
+                    # bother with it on first pass
+                    if args.stock_ids and prev_input.stock_ids:
+                        # we only care about stocks that were inputs for both
+                        shared_inputs = set(prev_input.stock_ids) & set(args.stock_ids)
+                    else:
+                        shared_inputs = set()
+                    curr_stock_set = set(stock_list)
+                    prev_stock_set = set(prev_output)
+                    added_stocks = (curr_stock_set - prev_stock_set) & shared_inputs
+                    removed_stocks = (prev_stock_set - curr_stock_set) & shared_inputs
+                    context.diff_info[context.task_id] = {
+                        "added": {
+                            added_stock: REGION_ADD_STOCK_DIFF.format(
+                                company=added_stock.company_name, region=args.region_name
+                            )
+                            for added_stock in added_stocks
+                        },
+                        "removed": {
+                            removed_stock: REGION_REMOVE_STOCK_DIFF.format(
+                                company=removed_stock.company_name, region=args.region_name
+                            )
+                            for removed_stock in removed_stocks
+                        },
+                    }
+
+    except Exception as e:
+        logger.warning(f"Error creating diff info from previous run: {e}")
 
     return stock_list
