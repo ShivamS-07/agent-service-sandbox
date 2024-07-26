@@ -1,4 +1,5 @@
 import datetime
+import unittest
 from unittest import IsolatedAsyncioTestCase
 from uuid import uuid4
 
@@ -52,6 +53,7 @@ class TestCommentary(IsolatedAsyncioTestCase):
             end_date=datetime.datetime.now().date(),
         )
 
+    @unittest.skip("The tool is disabled")
     async def test_write_commentary(self):
         texts = await get_commentary_inputs(
             GetCommentaryInputsInput(

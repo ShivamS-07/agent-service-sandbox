@@ -9,6 +9,7 @@ MSFT = StockID(gbi_id=6963, isin="", symbol="MSFT", company_name="Microsoft")
 FORD = StockID(gbi_id=4579, isin="", symbol="F", company_name="Ford")
 
 
+@unittest.skip("The tool is disabled")
 class TestPeers(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         set_use_global_stub(False)

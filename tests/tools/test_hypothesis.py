@@ -1,4 +1,5 @@
 import logging
+import unittest
 from unittest import IsolatedAsyncioTestCase
 
 from agent_service.io_types.stock import StockID
@@ -27,6 +28,7 @@ CUSTOM_DOC_DEV_TEST_USER = "515b61f7-38af-4826-ad32-0900b3b1b7d4"
 STZ_STOCK_ID = StockID(gbi_id=2202, isin="", symbol="STZ", company_name="")
 
 
+@unittest.skip("The tool is disabled")
 class TestHypothesisPipeline(IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):

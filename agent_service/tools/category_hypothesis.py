@@ -490,7 +490,8 @@ you chose and why. Absolutely no more than 50 words. You must explitly say wheth
 related to stock performance or not. \
 The second key should be 'relevant_categories' and the value is a list of integers for the indices of \
 the MOST relevant categories, e.g. '[0,3]'. You must NOT include this topic if you think it's primarily \
-related to stock performance. Do not choose more than 2 categories. The indices should be 0-based. \
+related to stock performance. Do not choose more than 2 categories. The indices should be 0-based \
+and the maximum index of the categories is {max_category_idx}. I'll say it again, DO NOT exceed the bounds! \
 If this text is not relevant to any of the categories, this should be any empty list.
 Most texts will be relevant to no categories, or only one. You should be very conservative about including more \
 than one.
@@ -584,6 +585,11 @@ Here is the text:
             continue
 
         for category_idx in relevant_category_idxs:
+            if category_idx < 0 or category_idx >= len(categories):
+                logger.warning(
+                    f"Category index {category_idx} is out of range for {text_obj} {result}"
+                )
+                continue
             category_to_mixed_topics[category_idx].insert_topic(text_obj)
 
     category_topic_log = ""
