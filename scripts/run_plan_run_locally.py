@@ -91,7 +91,10 @@ async def main() -> IOType:
         for task_id, output in task_id_output_map.items():
             override_output_dict[task_id] = output
 
-    with patch(target="agent_service.planner.executor.get_psql"):
+    with patch(target="agent_service.planner.executor.get_psql"), patch(
+        target="agent_service.planner.executor.AsyncDB"
+    ), patch(target="agent_service.planner.executor.check_cancelled") as cc:
+        cc.return_value = False
         result = await run_execution_plan_local(
             plan=plan, context=context, override_task_output_lookup=override_output_dict
         )

@@ -70,8 +70,12 @@ class Text(ComplexIOBase):
         )
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        score = ScoreOutput.from_entry_list(self.history)
         text = await self.get()
-        return f"<Text: {text.val}>"
+        if not score:
+            return f"<Text: {text.val}>"
+        else:
+            return f"<Text Score(s) (0 - 1 scale): {score.to_gpt_input()}, Text: {text.val}>"
 
     @staticmethod
     def _to_string_recursive(val: IOType) -> IOType:

@@ -262,6 +262,13 @@ class ScoreOutput(BaseModel):
         aggregate_score = aggregate_score / num_scores
         return ScoreOutput(val=aggregate_score, sub_scores=sub_scores)
 
+    def to_gpt_input(self) -> str:
+        if not self.sub_scores:
+            return str(self.val)
+        else:
+            sub_scores = ", ".join((f"{score.source}: {score.val}" for score in self.sub_scores))
+            return f"(Overall Score: {self.val}, {sub_scores})"
+
 
 @io_type
 class HistoryEntry(SerializeableBase):
