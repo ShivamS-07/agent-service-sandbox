@@ -28,6 +28,8 @@ from pa_portfolio_service_proto_v1.watchlist_pb2 import (
     GetAllWatchlistsResponse,
     GetWatchlistStocksAndWeightsRequest,
     GetWatchlistStocksAndWeightsResponse,
+    RenameWatchlistRequest,
+    RenameWatchlistResponse,
 )
 from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID, StockHolding
 from pa_portfolio_service_proto_v1.workspace_pb2 import (
@@ -39,6 +41,8 @@ from pa_portfolio_service_proto_v1.workspace_pb2 import (
     GetTSWorkspacesHoldingsResponse,
     ModifyWorkspaceHistoricalHoldingsRequest,
     ModifyWorkspaceHistoricalHoldingsResponse,
+    RenameWorkspaceRequest,
+    RenameWorkspaceResponse,
     WorkspaceMetadata,
     WorkspaceTrade,
 )
@@ -93,6 +97,22 @@ async def get_all_watchlists(user_id: str) -> GetAllWatchlistsResponse:
                 f"Failed to get all watchlists: {response.status.code} {response.status.message}"
             )
         return response
+
+
+@grpc_retry
+@async_perf_logger
+async def rename_watchlist(user_id: str, watchlist_id: str, name: str) -> bool:
+    with _get_service_stub() as stub:
+        response: RenameWatchlistResponse = await stub.RenameWatchlist(
+            RenameWatchlistRequest(watchlist_id=UUID(id=watchlist_id), name=name),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to rename watchlist {watchlist_id}: {response.status.code}"
+                f" {response.status.message}"
+            )
+        return True
 
 
 @grpc_retry
@@ -195,6 +215,22 @@ async def create_ts_workspace(
                 f" {response.status.message}"
             )
         return (response.workspace_id.id, response.strategy_id.id)
+
+
+@grpc_retry
+@async_perf_logger
+async def rename_workspace(user_id: str, workspace_id: str, name: str) -> bool:
+    with _get_service_stub() as stub:
+        response: RenameWorkspaceResponse = await stub.RenameWorkspace(
+            RenameWorkspaceRequest(workspace_id=UUID(id=workspace_id), name=name),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to rename workspace {workspace_id}: {response.status.code}"
+                f" {response.status.message}"
+            )
+        return True
 
 
 @grpc_retry

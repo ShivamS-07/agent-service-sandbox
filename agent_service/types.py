@@ -1,4 +1,5 @@
 import datetime
+import enum
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -94,3 +95,8 @@ class PlanRunContext(BaseModel):
             skip_task_cache=True,
             run_tasks_without_prefect=True,
         )
+
+
+class MemoryType(str, enum.Enum):
+    PORTFOLIO = "portfolio"
+    WATCHLIST = "watchlist"

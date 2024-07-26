@@ -57,14 +57,19 @@ from agent_service.endpoints.models import (
     UploadFileResponse,
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
-from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
+from agent_service.external.pa_svc_client import (
+    get_all_watchlists,
+    get_all_workspaces,
+    rename_watchlist,
+    rename_workspace,
+)
 from agent_service.io_type_utils import TableColumnType, load_io_type
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
     TableOutput,
     TableOutputColumn,
 )
-from agent_service.types import ChatContext, Message
+from agent_service.types import ChatContext, MemoryType, Message
 from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.agent_name import generate_name_for_agent
@@ -454,7 +459,7 @@ class AgentServiceImpl:
             memory_item = MemoryItem(
                 id=workspace.workspace_id.id,
                 name=workspace.name,
-                type="portfolio",
+                type=MemoryType.PORTFOLIO,
                 time_created=workspace.created_at.ToDatetime(),
                 time_updated=workspace.last_updated.ToDatetime(),
             )
@@ -465,7 +470,7 @@ class AgentServiceImpl:
             memory_item = MemoryItem(
                 id=watchlist.watchlist_id.id,
                 name=watchlist.name,
-                type="watchlist",
+                type=MemoryType.WATCHLIST,
                 time_created=watchlist.created_at.ToDatetime(),
                 time_updated=watchlist.last_updated.ToDatetime(),
             )
@@ -489,7 +494,7 @@ class AgentServiceImpl:
                 memory_item = MemoryItem(
                     id=workspace.workspace_id.id,
                     name=workspace.name,
-                    type="portfolio",
+                    type=MemoryType.PORTFOLIO,
                     time_created=workspace.created_at.ToDatetime(),
                     time_updated=workspace.last_updated.ToDatetime(),
                 )
@@ -501,7 +506,7 @@ class AgentServiceImpl:
                 memory_item = MemoryItem(
                     id=watchlist.watchlist_id.id,
                     name=watchlist.name,
-                    type="watchlist",
+                    type=MemoryType.WATCHLIST,
                     time_created=watchlist.created_at.ToDatetime(),
                     time_updated=watchlist.last_updated.ToDatetime(),
                 )
@@ -513,7 +518,7 @@ class AgentServiceImpl:
         self, user_id: str, type: str, id: str
     ) -> GetMemoryContentResponse:
         cols = [TableOutputColumn(name=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)]
-        if type == "portfolio":
+        if type == MemoryType.PORTFOLIO:
             cols.append(TableOutputColumn(name="Weight", col_type=TableColumnType.FLOAT))
 
         table = TableOutput(title="Memory Content", columns=cols, rows=[])
@@ -526,7 +531,21 @@ class AgentServiceImpl:
     async def rename_memory(
         self, user_id: str, type: str, id: str, new_name: str
     ) -> RenameMemoryResponse:
-        return RenameMemoryResponse(success=True)
+        if new_name == "":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="name cannot be empty"
+            )
+        try:
+            if type == MemoryType.PORTFOLIO:
+                return RenameMemoryResponse(success=await rename_workspace(user_id, id, new_name))
+            if type == MemoryType.WATCHLIST:
+                return RenameMemoryResponse(success=await rename_watchlist(user_id, id, new_name))
+        # catch rpc error and raise as HTTPException
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=repr(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"type {type} is not supported"
+        )
 
     # Requires no authorization
     async def get_plan_run_output(self, plan_run_id: str) -> GetPlanRunOutputResponse:
