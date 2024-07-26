@@ -3,13 +3,11 @@ from typing import Dict, List, Optional, Set
 
 from agent_service.GPT.constants import (
     FILTER_CONCURRENCY,
-    GPT4_O,
+    GPT4_O_MINI,
     GPT35_TURBO,
-    MAX_TOKENS,
     NO_PROMPT,
 )
 from agent_service.GPT.requests import GPT
-from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
@@ -157,8 +155,8 @@ async def filter_stocks_by_product_or_service(
 
     # first round of filtering
     # initiate GPT llm models
-    llm_gpt35 = GPT(model=CHEAP_LLM)
-    llm_gpt4 = GPT(model=GPT4_O)
+    llm_cheap = GPT(model=CHEAP_LLM)
+    llm_big = GPT(model=GPT4_O_MINI)
 
     # get must include stocks prompt
     if args.must_include_stocks:
@@ -177,8 +175,8 @@ async def filter_stocks_by_product_or_service(
                 stocks=stocks,
                 stock_description_map=stock_description_map,
                 must_include_stocks_prompt=must_include_stocks_prompt,
-                llm_gpt35=llm_gpt35,
-                llm_gpt4=llm_gpt4,
+                llm_cheap=llm_cheap,
+                llm_big=llm_big,
             )
         )
     filtered_stocks1_set_list: List[Set[StockID]] = await gather_with_concurrency(
@@ -202,7 +200,7 @@ async def filter_stocks_by_product_or_service(
                 filtered_stocks1=filtered_stocks1,
                 stock_description_map=stock_description_map,
                 must_include_stocks_prompt=must_include_stocks_prompt,
-                llm_gpt4=llm_gpt4,
+                llm_big=llm_big,
             )
         )
     filtered_stocks2_dict_list: List[Dict[StockID, str]] = await gather_with_concurrency(
@@ -255,11 +253,11 @@ async def filter_stocks_round1(
     stocks: List[StockID],
     stock_description_map: Dict[StockID, str],
     must_include_stocks_prompt: str,
-    llm_gpt35: GPT,
-    llm_gpt4: GPT,
+    llm_cheap: GPT,
+    llm_big: GPT,
 ) -> Set[StockID]:
     # get product description from GPT
-    product_description = await llm_gpt4.do_chat_w_sys_prompt(
+    product_description = await llm_big.do_chat_w_sys_prompt(
         main_prompt=PRODUCT_DESCRIPTION_PROMPT.format(product_str=product_str),
         sys_prompt=NO_PROMPT,
     )
@@ -267,31 +265,19 @@ async def filter_stocks_round1(
     tasks = []
     filtered_stock_set: Set[StockID] = set()
     for stock in stocks:
-        # check token length
         main_prompt = STOCK_PRODUCT_FILTER1_MAIN_PROMPT.format(
             must_include_stocks_prompt=must_include_stocks_prompt,
             separator=SEPARATOR,
             company_description=stock_description_map[stock],
             product_description=product_description,
         )
-        main_prompt_token_size = GPTTokenizer(CHEAP_LLM).get_token_length(
-            input=main_prompt.filled_prompt
+        tasks.append(
+            llm_cheap.do_chat_w_sys_prompt(
+                main_prompt=main_prompt,
+                sys_prompt=NO_PROMPT,
+            )
         )
-        # if token size is less than CHEAP_LLM, use CHEAP_LLM, else use GPT4_O
-        if main_prompt_token_size < MAX_TOKENS[CHEAP_LLM]:
-            tasks.append(
-                llm_gpt35.do_chat_w_sys_prompt(
-                    main_prompt=main_prompt,
-                    sys_prompt=NO_PROMPT,
-                )
-            )
-        else:
-            tasks.append(
-                llm_gpt4.do_chat_w_sys_prompt(
-                    main_prompt=main_prompt,
-                    sys_prompt=NO_PROMPT,
-                )
-            )
+
     results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
     for stock, result in zip(stocks, results):
         if "yes" in result.lower():
@@ -304,10 +290,10 @@ async def filter_stocks_round2(
     filtered_stocks1: List[StockID],
     stock_description_map: Dict[StockID, str],
     must_include_stocks_prompt: str,
-    llm_gpt4: GPT,
+    llm_big: GPT,
 ) -> Dict[StockID, str]:
     # get product description from GPT
-    product_description = await llm_gpt4.do_chat_w_sys_prompt(
+    product_description = await llm_big.do_chat_w_sys_prompt(
         main_prompt=PRODUCT_DESCRIPTION_PROMPT.format(product_str=product_str),
         sys_prompt=NO_PROMPT,
     )
@@ -315,7 +301,7 @@ async def filter_stocks_round2(
     filtered_stock_dict: Dict[StockID, str] = {}
     for stock in filtered_stocks1:
         tasks.append(
-            llm_gpt4.do_chat_w_sys_prompt(
+            llm_big.do_chat_w_sys_prompt(
                 STOCK_PRODUCT_FILTER2_MAIN_PROMPT.format(
                     must_include_stocks_prompt=must_include_stocks_prompt,
                     separator=SEPARATOR,

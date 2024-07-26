@@ -14,6 +14,7 @@ from agent_service.external.pa_backtest_svc_client import (
 from agent_service.GPT.constants import (
     FILTER_CONCURRENCY,
     GPT4_O,
+    GPT4_O_MINI,
     MAX_TOKENS,
     NO_PROMPT,
 )
@@ -404,7 +405,7 @@ async def summarize_text_mapping(text_mapping: Dict[str, List[Text]]) -> Dict[st
     """
     This function summarizes some texts in the text mapping.
     """
-    llm = GPT(model=GPT4_O)
+    llm = GPT(model=GPT4_O_MINI)
     for text_type in text_mapping:
         if text_type in ("SEC filing", "Company Description", "Earnings Call Summary"):
             tasks = []
