@@ -527,6 +527,7 @@ Here is the text:
                     hypothesis=hypothesis,
                     categories=category_str,
                     topic=news_dev.val,
+                    max_category_idx=len(categories) - 1,
                 ),
                 sys_prompt=NO_PROMPT,
             )
@@ -542,6 +543,7 @@ Here is the text:
                     hypothesis=hypothesis,
                     categories=category_str,
                     topic=earnings_point.val,
+                    max_category_idx=len(categories) - 1,
                 ),
                 sys_prompt=NO_PROMPT,
             )
@@ -558,6 +560,7 @@ Here is the text:
                     hypothesis=hypothesis,
                     categories=category_str,
                     topic=text,
+                    max_category_idx=len(categories) - 1,
                 ),
                 sys_prompt=NO_PROMPT,
             )
