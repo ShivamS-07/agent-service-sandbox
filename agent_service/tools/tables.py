@@ -219,7 +219,11 @@ Tables are simply wrappers around pandas dataframes. There are a few primary use
 - Aggregating tables ACROSS row or stocks
 
 For things like percent change of price, or other per-stock calculations, please
-use the `get_statistic_data_for_companies` function instead. Do NOT use this.
+use the `get_statistic_data_for_companies` function instead. Do NOT use this. In particular,
+if a user expresses a statisic that is a simple mathematical combination of two simpler
+statistics (earnings over assets, debt minus ), you must pass that full mathematical expression
+to the get_statistic_data_for_companies for companies tool, you must avoid using this tool in
+those situations.
 
 The `transformation_description` argument is a free text description of a
 transformation that will be applied to the table by an LLM, so feel free to be

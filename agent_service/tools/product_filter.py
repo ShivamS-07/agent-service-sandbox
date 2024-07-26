@@ -117,6 +117,8 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "In these complex cases, use the filter_stocks_by_profile tool instead. "
         "This tool is only for simple cases where it should be clear whether a company counts as a provider"
         "of the product or service based on a company description. "
+        "If the user specifically mentions a sector that is covered by the sector_identifier tool, use "
+        "that tool instead, but some things the user refers to as sectors will be covered by this tool."
         "Note that retail should be considered a general service, and then retailers that sell specific kinds "
         "of products are a more specific kind of service. "
         "\n 'stock_ids' is a list of stock ids to filter, it should be a large list like a stock universe "

@@ -63,7 +63,7 @@ class Chatbot:
     async def generate_initial_preplan_response(self, chat_context: ChatContext) -> str:
         main_prompt = INITIAL_PREPLAN_MAIN_PROMPT.format(chat_context=chat_context.get_gpt_input())
         sys_prompt = INITIAL_PREPLAN_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
-        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=50)
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=70)
         return result
 
     async def generate_initial_midplan_response(self, chat_context: ChatContext) -> str:

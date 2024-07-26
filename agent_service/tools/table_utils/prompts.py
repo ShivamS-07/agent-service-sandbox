@@ -236,104 +236,100 @@ I repeat: Never, ever assume that the last day in the data is today, it will not
 be true. Even if you are working with days like today or yesterday as your anchor,
 you must always follow the instructions below to identify the relevant dates.
 
-Please follow these instructions to identify valid absolute and relative dates
-in your data to do your calculation. Always do all of these steps whenever you
-are dealing with dates in your calculation.
+Please follow these instructions to identify valid dates in your data to do your calculation.
+Always do all of these steps whenever you are dealing with calculation over dates.
 
-First, we assume you have some initial_anchor_date (a Pandas datetime object) that is
-derived from your transformation description and/or today's date.
+First, before you write code, you must define the specific range of data you need to access in
+order to carry out your transformation. State the specific start and end dates of the range
+you are calculating over in a comment before you write any code. The start date must always
+be before the end date. For a calculation across time, they must NEVER be the same date. Sometimes
+the end date is not explicitly defined, but if so it should be today.
+For example, if your request is for yesterday's percentage gain, which requires data from both
+yesterday and the day before, your initial send date
+should be yesterday, and your initial start date would be the day before.
+Then, write the exact number of days between the two dates on the following line,
+and indicate which of the two methods you must use to derive your method, and what it means
 
-initial_anchor_date = pd.Timestamp('YYYY-MM-DD')
+# initial start date is 2023-07-23
+# initial end date is 2024-07-24
+# days: 366 (Long Ranges method, derive start and end dates separately)
 
-In most transformations, the initial_anchor_date is today. However, if the transformation
-instructions mention wanting data from some other specific date, or some date that is
-defined relative to today (e.g. yesterday), you should use THAT as your initial_anchor_date,
-not today.
+or
 
-Note: the initial anchor date must be a date of data you actually want to use in your calcuation,
-and in nearly all circumstances it should be the last relevant date of data.
-For example, if your request is for yesterday's percentage gain, which requires
-data from both yesterday and the day before, your initial_anchor_date
-should be yesterday, i.e. one date less than the provided date for today.
-In this case, you should get yesterday by setting initial_anchor_date equal to yesterday.
-For example, if the provided date for today is 2024-6-25, and the user asks for
-yesterday's data, you should set:
+# initial start date is 2024-07-23
+# initial end date is 2024-07-24
+# days: 1 (Short Ranges method, derive start date from end date)
 
-initial_anchor_date = pd.Timestamp('2024-06-24')  # this is yesterday's date
+If the number of days between the two dates is greater than 5, you will follow the instructions
+immediately below, in the Long Ranges section. If the number is less than or equal to 5, you will follow
+other instructions defined in the Short Ranges section
 
-You must always use the terminology 'initial_anchor_date', and you must justify your
-choice of initial anchor date in the comment before your line of code.
-First, write `Relevant dates:` And please state what dates, if any, are involved in the
-calculation for the tranformation request.
-If there are no explicit dates, it is implied that the user wants
-the latest data, and today is probably your anchor date.
-Note that phrases such as "the last week" and "the last month" almost always refer to a
-period of time ending at the current day, and indicate that today is your anchor date.
-dates based on the user request, you MUST explicitly justify your choice using the
-rule that you should always prefer a later date over an earlier date.  For example, if both
-yesterday and the day before yesterday are possible, then you should prefer yesterday since
-it is a later (further in the future). Do not attempt to derive these
-date programmatically using pandas (using pd.Timedelta) just set your initial_anchor_date
-to the correct date directly. It is FINE if it is not today if the request involves other
-dates!!!!
+Long Ranges
 
-Again, your initial anchor date IS your desired anchor data, which is a date of data you actually
-need to use in your calculation.
+Assuming the initial start and end dates are at least 5 days apart, create initial start end date objects
+for those dates:
 
-You also need to create a sorted list of all the dates in your data,
+initial_start_date = pd.Timestamp('2023-07-23')
+initial_end_date = pd.Timestamp('2024-07-24')
+
+You must always use the terminology 'initial_start/end_date', and you must not attempt
+to derive these date programmatically using pandas (using pd.Timedelta), you must just set your
+initial dates to the correct dates directly.
+
+Next, you will need to create a sorted list of all the dates in your data,
 which you can do as follows:
 
 date_series = pd.Series(df['Date'].unique()).sort_values(ignore_index=True)
 
-This next step depends on whether your initial date is the beginning or the end
-of a range. The most common case is that it is the end of a span, e.g. today.
-In that case, you can get the last valid date the date series as follows:
+As we stated above, you can NEVER be certain any particular date you choose is
+actually present in the data. In order to get what we call anchor dates (real dates
+in the data rather than dates that you have picked), you must always do the follow operations,
+you can never use initial dates directly. For the start date, you will find the first date that is
+the same or later than your initial start date:
 
-anchor_date = date_series[date_series['Date'] <= initial_anchor_date].iloc[-1]
+start_anchor_date = date_series[date_series['Date'] >= initial_start_date].iloc[0]
 
-This will get a valid date that is as closest to your desired date as possible
-if your date was the beginning of a span, you would instead do this
+For end date, you will find the last date that is the same or before your initial end date:
 
-anchor_date = date_series[date_series['Date'] >= initial_anchor_date].iloc[0]
+end_anchor_date = date_series[date_series['Date'] <= initial_end_date].iloc[-1]
 
-you would only do one of the two for any given date, don't do both!
+Always use the  >=, iloc[0] version for start dates (start of the range), and always use
+the <=, iloc[-1] version for your end dates (end of the range), do not mix them up!
 
-Once you have found an reliable anchor date using this method, you can access the data for the
-specific date. Never use an initial_anchor_date directly except to convert to an
+This will get valid dates that are closest to your desired dates as possible.
+
+Short Ranges
+
+If the difference between the start and end date is less than or equal to 5 days,
+you will calculate ONLY the end_anchor_date using the Long Range above, i.e.:
+
+initial_end_date = pd.Timestamp('2024-07-24')
+date_series = pd.Series(df['Date'].unique()).sort_values(ignore_index=True)
+end_anchor_date = date_series[date_series['Date'] <= initial_end_date].iloc[-1]
+
+To get the start_anchor_date, you will get the date by getting the index of the end_anchor_date
+and stepping back the number of days between the two dates you noted earlier. If there were
+3 days between the two, you will subtract three from the index of the end_anchor_date to get
+the start_anchor_date
+
+end_anchor_index = date_series[date_series == end_anchor_date].index[0]
+start_anchor_date = date_series.iloc[anchor_index - 3]  # 3 trading days before
+
+DO NOT USE `pd.Timedelta` or `pd.resample` or `pd.DateOffset`, these functions will not properly
+work here, in this case, you must find dates using their index. If you use any of this functions,
+I will fire you!
+
+Again, you must only do this if the number of days between the start and end dates is no more than
+5, but if it is 5 or less, you must find the start_anchor_date in this way, and not the way
+described above.
+
+Once you have found reliable anchor dates using the appropriate method, you can access the data
+for the specific dates. Again, never, ever use an initial date directly except to convert to an
 anchor date using this method.
 
-If your calculation is defined by reference to multiple exact dates, then you must go through
-this process of finding an anchor date for each one, in this case you have multiple
-initial_anchor_date variables (initial_anchor_date_1, etc.) and multiple anchor_date variables
-(anchor_date_1, etc.). Every explicit date must be translated into a date in the data, again you
-may NEVER assume the data for a particular date is in the data.
-
-As alluded to above, our dates are trading days, not calendar days. If we have an anchor date
-and we want to find another date relative to this anchor date, we need to use
-the following mapping of time ranges into a specific number of "days" in our data:
-
-One week (1W) = 5 days
-One month (1M) = 21 days
-One quarter (3M) =  63 days
-One year (1Y) =  252 days
-
-Using this mapping, we will get a specific date for our relative dates by taking
-an absolute date that is in our data (as derived above) and moving forward or
-backward through the date_series. For instance, if we are looking for a date one month
-before the current anchor date, we would do the following:
-
-anchor_index = date_series[date_series == anchor_date].index[0]
-relative_date = date_series.iloc[anchor_index - 21]  # 21 trading days before
-
-For consistency, to get a relative date you must always add or subtract exactly
-the number provided in the above list, or a simple derivation (for instance, two
-months would be 21*2 = 42)
-
-Again, you MUST use this methodology whenever you need to find a relative date such
-in the case of 'stock price change over the last week'
-I repeat: DO NOT USE `pd.Timedelta` or `pd.resample` or `pd.DateOffset`,
-these functions will not properly work here, you must find relative dates
-using their index. Also, if you use any of this functions, I will fire you!
+If your calculation requires you to specificially identify other dates so you can access them
+directly in your pandas code, any other anchor dates must be identified using these two methods,
+which you should choose based on the proximity to existing dates.
 
 Once you have found the dates needed for your calculation, the calculations
 themselves are often fairly straightforward, just use the most appropriate
@@ -347,23 +343,36 @@ To set this up you should pull out the single-date data as a separate Series to
 do a df.join on. For example, to calculate a percentage gain, your code would
 look something like this:
 
-first_day_prices = df[df['Date'] == start_date].set_index('Security')['Close Price']
+first_day_prices = df[df['Date'] == start_anchor_date].set_index('Security')['Close Price']
 df = df.join(first_day_prices, on='Security', rsuffix='_first_day')
 df['Daily Percentage Gain'] = df['Close Price'] / df['Close Price_first_day'] - 1
 
 You should ALWAYS use a similar join or merge-based approach when calculating
 across dates. For example, to get the difference between prices on two dates:
 
-first_day_prices = df[df['Date'] == date_1].set_index('Security')['Close Price']
-second_day_prices = df[df['Date'] == date_2].set_index('Security')['Close Price']
-df = pd.merge(first_day_prices, second_day_prices, on='Security', suffixes=['_first_day, '_second_day'])
-df['Price Difference'] = df['Close Price_first_date'] - df['Close Price_second_day']
+start_day_prices = df[df['Date'] == start_anchor_date].set_index('Security')['Close Price']
+end_day_prices = df[df['Date'] == end_anchor_date].set_index('Security')['Close Price']
+df = pd.merge(start_day_prices, end_day_prices, on='Security', suffixes=['_first_day, '_second_day'])
+df['Price Difference'] = df['Close Price_first_day'] - df['Close Price_second_day']
+
+Other than via merge/join, you must NEVER create a brand new dataframe (with pd.DataFrame)
+during this process, it is very easy to mess that up and lose security columns
+
+I repeat, during this process, you must NOT use pd.DataFrame!!!!
+
+As alluded to above, our dates are trading days, not calendar days.
 
 If, instead of looking for a specific date, you need to calculate a moving average
 or something similar (e.g. using df.rolling), make sure the size of your
-window is selected using the same above timespan to num days mapping as you
-used for find relative dates, e.g. if you need to calculate a 2M rolling
-average, you window size would be (2 * 21) = 42.
+window is selected using the following mapping of calendar periods to trading days:
+
+One week (1W) = 5 days
+One month (1M) = 21 days
+One quarter (3M) =  63 days
+One year (1Y) =  252 days
+
+For example, if you need to calculate a 2M rolling average, you window size
+would be (2 * 21) = 42.
 
 Now, if you have a `Period` field instead of a `Date` field, things are much
 simpler. First, do not try to convert periods to dates, they are not dates,
@@ -378,8 +387,9 @@ change for some statistic over the last year, and the current date in isoformat
 is 2024-05-31, then the two quarters your need for your calculation are 2024Q2
 and 2023Q2. You must not do anything like the complex calculation used for dates,
 just generate the strings needed directly in your code, e.g.
-current_period = '2024Q2'
-last_year_period = '2023Q2'
+
+start_period = '2023Q2'
+end_period = '2024Q2'
 
 Otherwise, the calculations should be identical to what you would do with dates.
 

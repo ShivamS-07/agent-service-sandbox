@@ -177,6 +177,7 @@ class OutputDiffer:
                             added_output.append(
                                 f"    - {stock.company_name}: {self.context.diff_info[task_id]['added'][stock]}"
                             )
+                            found = True
                             break
                 if not found:
                     added_output.append(f"    - {stock.company_name}")

@@ -75,8 +75,23 @@ Return in this format: {{"correct_sector_id":"", "reason":""}}
 @tool(
     description="""
 This function takes a string like 'Healthcare' which
-refers to a GICS economic sector and converts it to an integer identifier,
-or -1 if no a matching sector is found.
+refers to a GICS economic sector and converts it to an identifier
+This function supports the following economic sectors:
+Energy
+Materials
+Industrials
+Consumer Discretionary
+Consumer Staples
+Health Care
+Financials
+Information Technology
+Communication Services
+Utilities
+Real Estate
+You must ONLY use this look up and the corresponding sector filter tool if the user specifically
+asks for one of these sectors directly. If the user asks for something else, including subsectors
+of these sectors, you must use the filter_product_or_service tool (for simple requests involving
+a clear class of product or services) or filter_by_profile_tool (for more complex stock filtering).
 """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

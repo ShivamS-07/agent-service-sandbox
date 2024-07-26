@@ -542,7 +542,10 @@ class GetStockRecommendationsInput(ToolArgs):
 
 @tool(
     description=(
-        "This function provides stock recommendations and/or text justifying those recommendations"
+        "This function provides stock recommendations, including ratings/scores for each stock outputted, "
+        "and text justifying those recommendations. The scores and the justification are displayed "
+        "in a table if the stock list is shown to the client. When a user asks for just a 'score' or a 'rating' "
+        "for stocks, you will use this tool."
         "There are two major modes, controlled by the filter boolean. If filter is on (True), the function"
         "will filter the provided stock list (or the S&P 500, if no stock list is provided) to a list of "
         "recommended buys (if buy = True) or recommended sells/shorts (if buy = False), the rankings of the "
@@ -587,7 +590,7 @@ class GetStockRecommendationsInput(ToolArgs):
         "The future (investment horizon) or into the past (delta) to consider, you should increase them from the "
         "defaults only when the client expresses some specific interest in a longer term view. "
         "By default, the ML algorithm uses a mixture of quantitative information and news sentiment. "
-        "If the user asks for a quant rating or quant score for a set of stocks, you should use this function"
+        "If the client asks for a quant rating or quant score for a set of stocks, you should use this function"
         "with filter=False and news_only=False"
         "You should use also use this function (and not filter_stocks_by_profile!) with the news_only flag "
         "when the client wants to filter stocks based on news semtiment, ."
@@ -605,8 +608,12 @@ class GetStockRecommendationsInput(ToolArgs):
         "Valid horizons for the horizon arguments are 1W, 1M, 3M, and 1Y, do not pass anything else!"
         "If the client mentions an investment policy/style, it should be passed in as investment style. "
         "If no stock ID's are provided (which must only happen when filter=True!), the S&P 500 stocks are used"
-        "You must not use this tool when the client asks for `analyst expectations`, analyst expectations "
-        "is a statistic that accessible through the get_statistic_data tool!"
+        "You must NOT use this tool when the client asks directly for `analyst expectations`, "
+        "analyst expectations is a statistic that accessible through the get_statistic_data tool! "
+        "However, analyst expectations should only be retrieved when someone uses exactly that wording. "
+        "If the client asks for a ranking of stocks or scores for stocks without mentioning any other specific "
+        "statistic to rank on, e.g. `give me a table with stocks ranked by score` use this tool and "
+        "NOT transform table and/or the statistic tool."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

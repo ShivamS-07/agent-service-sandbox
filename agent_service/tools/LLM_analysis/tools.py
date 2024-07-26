@@ -180,28 +180,17 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
     else:
         extra_data_str = ""
     chat_str = context.chat.get_gpt_input()
-    if group1_str > group2_str:
-        group1_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
-            group1_str,
-            [
-                COMPARISON_MAIN_PROMPT.template,
-                COMPARISON_SYS_PROMPT.template,
-                chat_str,
-                group2_str,
-                extra_data_str,
-            ],
-        )
-    else:
-        group2_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
+    # FIXME using GPT4 tokenizer/limits for SONNET
+    group1_str, group2_str = GPTTokenizer(DEFAULT_LLM).do_multi_truncation_if_needed(
+        [group1_str, group2_str],
+        [
+            COMPARISON_MAIN_PROMPT.template,
+            COMPARISON_SYS_PROMPT.template,
+            chat_str,
             group2_str,
-            [
-                COMPARISON_MAIN_PROMPT.template,
-                COMPARISON_SYS_PROMPT.template,
-                chat_str,
-                group1_str,
-                extra_data_str,
-            ],
-        )
+            extra_data_str,
+        ],
+    )
     result = await llm.do_chat_w_sys_prompt(
         COMPARISON_MAIN_PROMPT.format(
             group1=group1_str,

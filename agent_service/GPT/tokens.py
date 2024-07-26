@@ -14,6 +14,30 @@ class GPTTokenizer:
         used = self.get_token_length("\n".join(other_prompt_strs))
         return self.chop_input_to_allowed_length(truncate_str, used)
 
+    def do_multi_truncation_if_needed(
+        self,
+        flex_strs: List[str],
+        other_prompt_strs: List[str],
+        output_len: int = DEFAULT_OUTPUT_LEN,
+    ) -> List[str]:
+        used = self.get_token_length("\n".join(other_prompt_strs))
+        tokens_per_flex_str = [self.get_token_length(flex_str) for flex_str in flex_strs]
+        flex_tokens_sum = sum(tokens_per_flex_str)
+        if flex_tokens_sum + output_len + used > MAX_TOKENS[self.model]:
+            available_tokens = MAX_TOKENS[self.model] - (output_len + used)
+            allowed_tokens_per_str = [
+                int(available_tokens * (flex_tokens / flex_tokens_sum))
+                for flex_tokens in tokens_per_flex_str
+            ]
+            output = []
+            for flex_str, flex_allowed_len in zip(flex_strs, allowed_tokens_per_str):
+                flex_input_tokens = self.encoder.encode(flex_str)
+                clipped_flex_input = self.encoder.decode(flex_input_tokens[:flex_allowed_len])
+                output.append(clipped_flex_input)
+            return output
+        else:
+            return flex_strs
+
     def chop_input_to_allowed_length(
         self,
         flexible_input: str,
