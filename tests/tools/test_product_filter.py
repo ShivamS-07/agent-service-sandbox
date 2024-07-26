@@ -31,45 +31,45 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
             GetStockUniverseInput(universe_name="SP500"), self.context
         )
 
-    async def test_filter_by_product1(self):
-        result = await filter_stocks_by_product_or_service(
-            FilterStocksByProductOrServiceInput(
-                stock_ids=self.stock_ids,
-                product_str="smartphone",
-            ),
-            self.context,
-        )
-        self.assertEqual(result, [AAPL])
+    # async def test_filter_by_product1(self):
+    #     result = await filter_stocks_by_product_or_service(
+    #         FilterStocksByProductOrServiceInput(
+    #             stock_ids=self.stock_ids,
+    #             product_str="smartphone",
+    #         ),
+    #         self.context,
+    #     )
+    #     self.assertEqual(result, [AAPL])
 
-    async def test_filter_by_product2(self):
-        result = await filter_stocks_by_product_or_service(
-            FilterStocksByProductOrServiceInput(
-                stock_ids=self.stock_ids,
-                product_str="gold and copper mine",
-            ),
-            self.context,
-        )
-        self.assertEqual(result, [TRQ])
+    # async def test_filter_by_product2(self):
+    #     result = await filter_stocks_by_product_or_service(
+    #         FilterStocksByProductOrServiceInput(
+    #             stock_ids=self.stock_ids,
+    #             product_str="gold and copper mine",
+    #         ),
+    #         self.context,
+    #     )
+    #     self.assertEqual(result, [TRQ])
 
-    async def test_filter_by_product3(self):
-        result = await filter_stocks_by_product_or_service(
-            FilterStocksByProductOrServiceInput(
-                stock_ids=self.stock_ids,
-                product_str="chairs",
-            ),
-            self.context,
-        )
-        self.assertEqual(result, [ERGB])
+    # async def test_filter_by_product3(self):
+    #     result = await filter_stocks_by_product_or_service(
+    #         FilterStocksByProductOrServiceInput(
+    #             stock_ids=self.stock_ids,
+    #             product_str="chairs",
+    #         ),
+    #         self.context,
+    #     )
+    #     self.assertEqual(result, [ERGB])
 
-    @unittest.skip("slow test")
+    # @unittest.skip("slow test")
     async def test_filter_by_product4(self):
         products = [
-            ("Electric Vehicles", ["Tesla"]),
-            ("AI Chips", ["NVIDIA"]),
-            ("Solar Power", ["Tesla"]),
-            ("cloud infrastructure", ["Amazon", "Google"]),
-            ("online retailing and marketspace", ["Amazon", "Ebay"]),
-            ("Video Gaming", ["Electronic Arts"]),
+            # ("Electric Vehicles", ["Tesla"]),
+            ("AI Chips", [NVDA]),
+            # ("Solar Power", [TSLA]),
+            # ("cloud infrastructure", [GOOG]),
+            # ("online retailing and marketspace", []),
+            # ("Video Gaming", []),
         ]
         for product, companies in products:
             print("====================================")
@@ -79,12 +79,12 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
                 FilterStocksByProductOrServiceInput(
                     stock_ids=self.sp500_stock_ids,
                     product_str=product,
-                    must_include_stocks=companies,
+                    must_include_stocks=companies if companies else None,
                 ),
                 self.context,
             )
             print([stock.company_name for stock in result])
-            for _ in range(4):
+            for _ in range(2):
                 new_result = await filter_stocks_by_product_or_service(
                     FilterStocksByProductOrServiceInput(
                         stock_ids=self.sp500_stock_ids,

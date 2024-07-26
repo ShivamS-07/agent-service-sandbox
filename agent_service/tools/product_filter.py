@@ -3,8 +3,8 @@ from typing import Dict, List, Optional, Set
 
 from agent_service.GPT.constants import (
     FILTER_CONCURRENCY,
+    GPT4_O,
     GPT4_O_MINI,
-    GPT35_TURBO,
     NO_PROMPT,
 )
 from agent_service.GPT.requests import GPT
@@ -26,7 +26,7 @@ logger = get_prefect_logger(__name__)
 
 
 SEPARATOR = "###"
-CHEAP_LLM = GPT35_TURBO
+CHEAP_LLM = GPT4_O_MINI
 # Number of rounds to perform GPT call and get results based on majority
 CONSISTENCY_ROUNDS = 3
 
@@ -124,8 +124,8 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "\n 'product_str' is a string representing the product or service to filter by. "
         "For example, 'electric vehicles', 'cloud computing', 'solar panels', 'smartphones', 'AI chips', "
         "'Online retail', etc. "
-        "\n must_include stocks is a list of stocks that the output of tool must have, for instance if the "
-        "\n user asks `Is NVDA the leader in AI chips, NVDA must be included in the output."
+        "\n must_include_stocks is a list of company names that the output of tool must have, for instance if the "
+        "\n user asks `Is NVDA the leader in AI chips', then the output must include NVDA."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -156,7 +156,7 @@ async def filter_stocks_by_product_or_service(
     # first round of filtering
     # initiate GPT llm models
     llm_cheap = GPT(model=CHEAP_LLM)
-    llm_big = GPT(model=GPT4_O_MINI)
+    llm_big = GPT(model=GPT4_O)
 
     # get must include stocks prompt
     if args.must_include_stocks:
