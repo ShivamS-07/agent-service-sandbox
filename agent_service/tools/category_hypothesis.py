@@ -341,9 +341,18 @@ async def generate_summary_for_hypothesis_with_categories(
         gpt_service_stub=gpt_service_stub,
     )
     await tool_log(log="Generated the final summary", context=context)
-    final_score = args.hypothesis_analysis_by_category.final_scores[
-        args.hypothesis_analysis_by_category.actual_target_stock.symbol  # type: ignore
-    ]
+
+    target_stock_symbol = args.hypothesis_analysis_by_category.actual_target_stock.symbol
+    final_scores = args.hypothesis_analysis_by_category.final_scores
+    if target_stock_symbol not in final_scores:
+        logger.warning(
+            f"The actual target stock ({target_stock_symbol}) is not in the final scores "
+            "large likely due to the lack of data. Set the final score to 0"
+        )
+        final_score = 0.0
+    else:
+        final_score = final_scores[target_stock_symbol]
+
     return Text(
         val=final_summary, history=[HistoryEntry(score=Score.scale_input(final_score, lb=0, ub=10))]
     )
@@ -816,15 +825,17 @@ async def overall_summary(
 ) -> str:
     # Prompt
     prompt_str = """
-    You'll be given a hypothesis and your job is to interpret the hypothesis and answer it
+    You'll be given a hypothesis and your job is to interpret the hypothesis and answer it \
     based on the information provided.
     The hypothesis is broken down into several categories, each with explanations, justifications, and weights.
-    For each category, you will also be provided with a ranking list of the companies and the explanations
-    why they are ranked in that order from the perspective of that category. You will also be provided with
+    For each category, you will also be provided with a ranking list of the companies and the explanations \
+    why they are ranked in that order from the perspective of that category. You will also be provided with \
     a weighted-average score for each company based on the rankings in each category.
     Return a string that consists of 3 to 5 sentences that focuses on the target company to answer the hypothesis.
-    Again, the summary should be consistent with the weighted-average scores, but you should never mention the scores,
+    Again, the summary should be consistent with the weighted-average scores, but you should never mention the scores, \
     nor repeat the hypothesis in the summary.
+    If the target company is not in any of the ranking lists, you should say that there is not enough information \
+    to discuss the target company, and then talk about other companies in the ranking lists.
     Also, you should mention the categories with the high weights more often in the summary.
     You should try to also mention other companies in the summary, but not too much.
     Here is the hypothesis: {hypothesis}
