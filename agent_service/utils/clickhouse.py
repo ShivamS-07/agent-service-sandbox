@@ -572,6 +572,34 @@ class Clickhouse(ClickhouseBase):
             res[plan_run_id][f"{tool_name}_{row['task_id']}"] = row
         return res
 
+    def get_agent_debug_cost_info(self, agent_id: str) -> Dict[str, Any]:
+        total_cost_sql = """select round(sum(cost_usd), 2) as total_cost_usd from llm.queries q
+        where agent_id =  %(agent_id)s"""
+        total_cost_rows = self.generic_read(total_cost_sql, {"agent_id": agent_id})
+        total_cost = total_cost_rows[0]["total_cost_usd"]
+        detailed_breakdown_sql = """select sum(num_input_tokens) as total_input_tokens,
+        sum(num_output_tokens) as total_output_tokens, round(sum(cost_usd), 2) as total_cost_usd,
+        main_prompt_name, model_id from llm.queries q where agent_id = %(agent_id)s group by
+        main_prompt_name, model_id order by total_cost_usd desc"""
+        detailed_breakdown_rows = self.generic_read(detailed_breakdown_sql, {"agent_id": agent_id})
+        detailed_breakdown_dict = {}
+        for row in detailed_breakdown_rows:
+            detailed_breakdown_dict[f"prompt_id={row['main_prompt_name']}"] = row
+        model_breakdown_sql = """select round(sum(cost_usd), 2) as total_cost_usd, model_id,
+        sum(num_input_tokens) as total_input_tokens, sum(num_output_tokens) as total_output_tokens
+        from llm.queries q  where agent_id = %(agent_id)s group by model_id order by
+        total_cost_usd desc"""
+        result = {}
+        result["detailed_breakdown"] = detailed_breakdown_dict
+        result["total_cost_usd"] = total_cost
+        model_breakdown_rows = self.generic_read(model_breakdown_sql, {"agent_id": agent_id})
+        model_breakdown_dict = {}
+        for row in model_breakdown_rows:
+            model_breakdown_dict[f"model_id={row['model_id']}"] = row
+            del row["model_id"]
+        result["model_breakdown"] = model_breakdown_dict
+        return result
+
     def get_agent_debug_worker_sqs_log(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         SELECT plan_id, plan_run_id, method, message, send_time_utc,

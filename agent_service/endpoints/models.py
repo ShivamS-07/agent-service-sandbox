@@ -431,6 +431,7 @@ class Tooltips(BaseModel):
 class Debug(BaseModel):
     run_execution_plans: Dict[str, Any]
     create_execution_plans: Dict[str, Any]
+    cost_info: Dict[str, Any]
     agent_owner_id: Optional[str]
 
 
