@@ -235,6 +235,13 @@ async def analyze_hypothesis_with_categories(
 ) -> HypothesisAnalysisByCategory:
     logger = get_prefect_logger(__name__)
 
+    if not args.stocks:
+        raise ValueError("At least one stock must be provided")
+    elif not args.categories:
+        raise ValueError("At least one category must be provided")
+    elif not args.all_text_data:
+        raise ValueError("At least one text data must be provided")
+
     # Step: Download content for text data
     logger.info("Downloading content for text data")
     (
@@ -859,7 +866,10 @@ if __name__ == "__main__":
     async def main(hypothesis: str, main_stock: str) -> None:
         import datetime
 
-        from agent_service.tools.category import CategoriesForStockInput, get_categories
+        from agent_service.tools.category import (
+            CategoriesForStockInput,
+            get_success_criteria,
+        )
         from agent_service.tools.lists import CombineListsInput, add_lists
         from agent_service.tools.other_text import (
             GetAllTextDataForStocksInput,
@@ -888,7 +898,7 @@ if __name__ == "__main__":
             context,
         )
 
-        categories = await get_categories(CategoriesForStockInput(prompt=hypothesis), context)
+        categories = await get_success_criteria(CategoriesForStockInput(prompt=hypothesis), context)
 
         output: HypothesisAnalysisByCategory = await analyze_hypothesis_with_categories(
             AnalyzeHypothesisWithCategoriesInput(
