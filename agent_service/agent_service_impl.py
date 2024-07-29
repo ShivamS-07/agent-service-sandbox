@@ -58,6 +58,8 @@ from agent_service.endpoints.models import (
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.external.pa_svc_client import (
+    delete_watchlist,
+    delete_workspace,
     get_all_watchlists,
     get_all_workspaces,
     rename_watchlist,
@@ -526,7 +528,21 @@ class AgentServiceImpl:
         return GetMemoryContentResponse(output=table)
 
     async def delete_memory(self, user_id: str, type: str, id: str) -> DeleteMemoryResponse:
-        return DeleteMemoryResponse(success=True)
+        try:
+            if type == MemoryType.PORTFOLIO:
+                return DeleteMemoryResponse(
+                    success=await delete_workspace(user_id=user_id, workspace_id=id)
+                )
+            if type == MemoryType.WATCHLIST:
+                return DeleteMemoryResponse(
+                    success=await delete_watchlist(user_id=user_id, watchlist_id=id)
+                )
+        # catch rpc error and raise as HTTPException
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=repr(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"type {type} is not supported"
+        )
 
     async def rename_memory(
         self, user_id: str, type: str, id: str, new_name: str

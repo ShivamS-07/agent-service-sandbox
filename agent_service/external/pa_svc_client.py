@@ -22,6 +22,8 @@ from pa_portfolio_service_proto_v1.portfolio_crud_actions_pb2 import (
     RecalcStrategiesResponse,
 )
 from pa_portfolio_service_proto_v1.watchlist_pb2 import (
+    DeleteWatchlistRequest,
+    DeleteWatchlistResponse,
     GetAllStocksInAllWatchlistsRequest,
     GetAllStocksInAllWatchlistsResponse,
     GetAllWatchlistsRequest,
@@ -35,6 +37,8 @@ from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID, StockHoldin
 from pa_portfolio_service_proto_v1.workspace_pb2 import (
     CreateTSWorkspaceRequest,
     CreateTSWorkspaceResponse,
+    DeleteWorkspaceRequest,
+    DeleteWorkspaceResponse,
     GetAllWorkspacesRequest,
     GetAllWorkspacesResponse,
     GetTSWorkspacesHoldingsRequest,
@@ -144,6 +148,36 @@ async def get_all_stocks_in_all_watchlists(user_id: str) -> List[int]:
                 f" {response.status.message}"
             )
         return list(response.gbi_ids)
+
+
+@grpc_retry
+@async_perf_logger
+async def delete_watchlist(user_id: str, watchlist_id: str) -> bool:
+    with _get_service_stub() as stub:
+        response: DeleteWatchlistResponse = await stub.DeleteWatchlist(
+            DeleteWatchlistRequest(watchlist_id=UUID(id=watchlist_id)),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to delete watchlist: {response.status.code} {response.status.message}"
+            )
+        return True
+
+
+@grpc_retry
+@async_perf_logger
+async def delete_workspace(user_id: str, workspace_id: str) -> bool:
+    with _get_service_stub() as stub:
+        response: DeleteWorkspaceResponse = await stub.DeleteWorkspace(
+            DeleteWorkspaceRequest(workspace_id=UUID(id=workspace_id)),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to delete workspace: {response.status.code} {response.status.message}"
+            )
+        return True
 
 
 @grpc_retry
