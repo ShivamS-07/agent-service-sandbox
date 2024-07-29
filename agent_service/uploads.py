@@ -3,7 +3,7 @@ import csv
 import enum
 import logging
 from io import StringIO
-from typing import Optional, Set, Tuple
+from typing import Any, Generator, List, Optional, Set, Tuple
 
 from fastapi import UploadFile
 from pa_portfolio_service_proto_v1.well_known_types_pb2 import StockHolding
@@ -22,6 +22,7 @@ from agent_service.external.pa_svc_client import (
 from agent_service.types import Message
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.constants import SUPPORTED_FILE_TYPES
 from agent_service.utils.logs import async_perf_logger
 
@@ -36,6 +37,11 @@ class UploadType(str, enum.Enum):
 class UploadResult(BaseModel):
     success: bool = True
     message: str = ""
+
+
+def chunks(input_list: List[Any], chunk_size: int) -> Generator[List[Any], None, None]:
+    for i in range(0, len(input_list), chunk_size):
+        yield input_list[i : i + chunk_size]
 
 
 @async_perf_logger
@@ -78,10 +84,18 @@ async def create_workspace_from_bytes(
         user_id=user_id, holdings=latest_holdings, workspace_name=name
     )
 
-    # insert history
-    # TODO: chunk these if it exceeds GRPC limit
-    await modify_workspace_historical_holdings(
-        user_id=user_id, workspace_id=workspace_id, holdings=holdings
+    # insert history in chunks of 5000
+
+    chunk_size = 5000
+    chunked_holdings = chunks(holdings, chunk_size)
+
+    await gather_with_concurrency(
+        [
+            modify_workspace_historical_holdings(
+                user_id=user_id, workspace_id=workspace_id, holdings=chunk
+            )
+            for chunk in chunked_holdings
+        ]
     )
 
     logger.info(f"Created workspace for {user_id=}, {workspace_id=} {strategy_id=}")

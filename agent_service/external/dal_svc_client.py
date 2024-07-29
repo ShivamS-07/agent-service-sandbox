@@ -65,6 +65,13 @@ class DALServiceClient:
             },
         )
 
+        if response.content_type != "application/json":
+            raw_text = await response.text()
+            logger.warn(f"DAL parse_file unexpected response {raw_text}")
+            raise Exception(
+                f"DAL parse_file response type was not JSON, instead it was {response.content_type}"
+            )
+
         response_content: Dict[str, Any] = await response.json()
 
         if response.status != 200:
