@@ -133,6 +133,7 @@ class Tool:
     update_instructions: Optional[str]
     is_output_tool: bool = False
     store_output: bool = True
+    enabled: bool = True
 
     def to_function_header(self) -> str:
         """
@@ -288,6 +289,8 @@ class ToolRegistry:
         for tool_category, tool_dict in cls._REGISTRY_CATEGORY_MAP.items():
             output.append(f"## {tool_category.get_description()}")
             for tool in tool_dict.values():
+                if not tool.enabled:
+                    continue
                 output.append(tool.to_function_header())
                 output.append(f"# {tool.description}")
         return "\n".join(output)
@@ -506,21 +509,21 @@ def tool(
             return value
 
         # Add the tool to the registry
-        if enabled:
-            tool_registry.register_tool(
-                Tool(
-                    name=func.__name__,
-                    func=wrapper,
-                    input_type=tool_args_type,
-                    return_type=sig.return_annotation,
-                    description=description,
-                    reads_chat=reads_chat,
-                    update_instructions=update_instructions,
-                    is_output_tool=is_output_tool,
-                    store_output=store_output,
-                ),
-                category=category,
-            )
+        tool_registry.register_tool(
+            Tool(
+                name=func.__name__,
+                func=wrapper,
+                input_type=tool_args_type,
+                return_type=sig.return_annotation,
+                description=description,
+                reads_chat=reads_chat,
+                update_instructions=update_instructions,
+                is_output_tool=is_output_tool,
+                store_output=store_output,
+                enabled=enabled,
+            ),
+            category=category,
+        )
         return wrapper
 
     return tool_deco
