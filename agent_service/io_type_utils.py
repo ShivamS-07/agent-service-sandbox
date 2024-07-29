@@ -272,7 +272,7 @@ class ScoreOutput(BaseModel):
 
 @io_type
 class HistoryEntry(SerializeableBase):
-    explanation: Optional[PrimitiveType] = None
+    explanation: Optional["IOType"] = None  # type: ignore
     title: str = ""
     entry_type: TableColumnType = TableColumnType.STRING
     unit: Optional[str] = None
