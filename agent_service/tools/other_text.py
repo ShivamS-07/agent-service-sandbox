@@ -10,7 +10,7 @@ from agent_service.tools.custom_documents import (
     get_user_custom_documents,
 )
 from agent_service.tools.earnings import (  # get_stock_aligned_earnings_call_summaries,
-    GetEarningsCallSummariesInput,
+    GetEarningsCallDataInput,
     get_earnings_call_summaries,
 )
 from agent_service.tools.news import (  # get_stock_aligned_news_developments,
@@ -93,7 +93,7 @@ async def get_all_text_data_for_stocks(
     await tool_log(log="Getting earnings summaries", context=context)
     try:
         earnings_data = await get_earnings_call_summaries(
-            GetEarningsCallSummariesInput(stock_ids=stock_ids, date_range=args.date_range),
+            GetEarningsCallDataInput(stock_ids=stock_ids, date_range=args.date_range),
             context=context,
         )
         all_data.extend(earnings_data)  # type: ignore

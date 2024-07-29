@@ -172,19 +172,19 @@ async def _get_earnings_summary_helper(
 
     # Get the transcripts for the events without summaries
     if len(events_without_summaries) > 0:
-        return await _get_earnings_full_transcripts(
+        return await get_earnings_full_transcripts(
             user_id, stock_ids, events_without_summaries, event_id_to_stock_id_lookup, output
         )
     else:
         return output
 
 
-async def _get_earnings_full_transcripts(
+async def get_earnings_full_transcripts(
     user_id: str,
     stock_ids: List[StockID],
-    events_without_summaries: List[EventInfo],
+    events: List[EventInfo],
     event_id_to_stock_id_lookup: Dict[int, StockID],
-    stock_earnings_text_dict: Dict[StockID, List[StockEarningsText]],
+    initial_stock_earnings_text_dict: Optional[Dict[StockID, List[StockEarningsText]]] = None,
 ) -> Dict[StockID, List[StockEarningsText]]:
     """
     This function will grab the full raw earnings transcript for a given earnings event by first checking if
@@ -199,6 +199,10 @@ async def _get_earnings_full_transcripts(
         FROM company_earnings.full_earning_transcripts
         WHERE gbi_id IN %(gbi_ids)s
     """
+    if initial_stock_earnings_text_dict is None:
+        stock_earnings_text_dict: Dict[StockID, List[StockEarningsText]] = defaultdict(list)
+    else:
+        stock_earnings_text_dict = initial_stock_earnings_text_dict
 
     ch = Clickhouse()
     transcript_query_result = ch.clickhouse_client.query(
@@ -211,11 +215,10 @@ async def _get_earnings_full_transcripts(
     transcript_db_data_lookup = {
         row["event_id"]: row for row in transcript_query_result.named_results()
     }
-
     # Track missing events not found within the db
     missing_events_in_db: List[EventInfo] = []
 
-    for event in events_without_summaries:
+    for event in events:
         stock_id = event_id_to_stock_id_lookup[event.event_id]
         db_data = transcript_db_data_lookup.get(event.event_id)
         if db_data:
@@ -266,25 +269,83 @@ async def _get_earnings_full_transcripts(
     return stock_earnings_text_dict
 
 
-class GetEarningsCallSummariesInput(ToolArgs):
+class GetEarningsCallDataInput(ToolArgs):
     stock_ids: List[StockID]
     date_range: Optional[DateRange] = None
 
 
 @tool(
     description=(
+        "This returns a list of all earnings call transcripts for one or more stocks "
+        "that were published within the provided date range. This should only be used when "
+        "a user explicitly asks for the full earnings transcript. Otherwise earnings data should "
+        "be retrieved through the get_earnings_call_summaries tool. "
+        "If no date range is provided, it defaults to the last quarter, containing the "
+        "the full earnings call transcript for the most recent earnings call and what the clients "
+        "are usually interested in unless they explicitly state otherwise. "
+        "You may alternatively provide a date_range created by the get_n_width_date_range_near_date tool"
+    ),
+    category=ToolCategory.EARNINGS,
+    tool_registry=ToolRegistry,
+)
+async def get_earnings_call_full_transcripts(
+    args: GetEarningsCallDataInput, context: PlanRunContext
+) -> List[StockEarningsText]:
+    if args.date_range:
+        start_date = args.date_range.start_date
+        end_date = args.date_range.end_date
+    else:
+        start_date = None
+        end_date = None
+
+    # Get all earning events we expect to have for the even date range
+    if start_date and end_date:
+        earning_call_events = (
+            await get_earnings_call_events(
+                context.user_id, [stock.gbi_id for stock in args.stock_ids], start_date, end_date
+            )
+        ).earnings_event_info
+    else:
+        # If no date range then get the latest available earnings
+        earning_call_events = (
+            await get_latest_earnings_call_events(
+                context.user_id, [stock.gbi_id for stock in args.stock_ids]
+            )
+        ).earnings_event_info
+
+    gbi_id_stock_id_lookup = {stock_id.gbi_id: stock_id for stock_id in args.stock_ids}
+    event_id_to_stock_id_lookup = {
+        event.event_id: gbi_id_stock_id_lookup[event.gbi_id] for event in earning_call_events
+    }
+    topic_lookup = await get_earnings_full_transcripts(
+        context.user_id, args.stock_ids, list(earning_call_events), event_id_to_stock_id_lookup
+    )
+
+    output: List[StockEarningsText] = []
+    for topic_list in topic_lookup.values():
+        output.extend(topic_list)
+    if not output:
+        raise Exception(
+            "Did not get any earnings call summaries for these stocks over the specified time period"
+        )
+    await tool_log(log=f"Found {len(output)} earnings call summaries", context=context)
+    return output
+
+
+@tool(
+    description=(
         "This returns a list of all earnings call summaries for one or more stocks "
-        " that were published within the provided date range. "
-        " If no date range is provided, it defaults to the last quarter, containing the "
-        " the summary for the most recent earnings call and what the clients are usually interested"
-        " in unless they explicitly state otherwise."
-        " You may alternatively provide a date_range created by the get_n_width_date_range_near_date tool"
+        "that were published within the provided date range. "
+        "If no date range is provided, it defaults to the last quarter, containing the "
+        "the summary for the most recent earnings call and what the clients are usually interested "
+        "in unless they explicitly state otherwise. "
+        "You may alternatively provide a date_range created by the get_n_width_date_range_near_date tool"
     ),
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,
 )
 async def get_earnings_call_summaries(
-    args: GetEarningsCallSummariesInput, context: PlanRunContext
+    args: GetEarningsCallDataInput, context: PlanRunContext
 ) -> List[StockEarningsText]:
     # if a date range obj was provided, fill in any missing dates
     if args.date_range:
@@ -327,7 +388,7 @@ class GetEarningsCallDatesInput(ToolArgs):
     tool_registry=ToolRegistry,
 )
 async def get_earnings_call_dates(
-    args: GetEarningsCallSummariesInput, context: PlanRunContext
+    args: GetEarningsCallDataInput, context: PlanRunContext
 ) -> StockTable:
     # if a date range obj was provided, fill in any missing dates
     if args.date_range:
@@ -390,7 +451,7 @@ async def main() -> None:
     print(len(impacting_stocks))  # type: ignore
 
     earnings_summaries = await get_earnings_call_summaries(
-        GetEarningsCallSummariesInput(stock_ids=impacting_stocks, date_range=date_range), plan_context  # type: ignore
+        GetEarningsCallDataInput(stock_ids=impacting_stocks, date_range=date_range), plan_context  # type: ignore
     )
 
     print(len(earnings_summaries))  # type: ignore
