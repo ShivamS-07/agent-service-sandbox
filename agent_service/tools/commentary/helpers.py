@@ -1,4 +1,3 @@
-import json
 import random
 import re
 from collections import defaultdict
@@ -68,24 +67,9 @@ from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import FilledPrompt
-from agent_service.utils.string_utils import clean_to_json_if_needed
 
 logger = get_prefect_logger(__name__)
 PERFORMANCE_LEVELS = ["sector", "stock"]
-
-
-# Helper functions
-async def split_text_and_citation_ids(GPT_ouput: str) -> Tuple[str, List[int]]:
-    lines = GPT_ouput.replace("\n\n", "\n").split("\n")
-    try:
-        citation_ids = json.loads(clean_to_json_if_needed(lines[-1]))
-    except json.JSONDecodeError as e:
-        logger.warning(
-            f"Got error `{e}` when loading `{lines[-1]}` for citations, no citations included"
-        )
-        citation_ids = []
-    main_text = "\n".join(lines[:-1])
-    return main_text, citation_ids
 
 
 async def get_sec_metadata_dao() -> SecuritiesMetadataDAO:

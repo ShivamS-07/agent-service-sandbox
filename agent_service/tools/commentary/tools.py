@@ -28,7 +28,6 @@ from agent_service.tools.commentary.helpers import (
     prepare_main_prompt,
     prepare_portfolio_prompt,
     prepare_stocks_stats_prompt,
-    split_text_and_citation_ids,
 )
 from agent_service.tools.commentary.prompts import (
     CLIENTELE_TEXT_DICT,
@@ -44,6 +43,7 @@ from agent_service.tools.commentary.prompts import (
     WRITING_FORMAT_TEXT_DICT,
     WRITING_STYLE_PROMPT,
 )
+from agent_service.tools.LLM_analysis.tools import split_text_and_citation_ids
 from agent_service.tools.other_text import (
     GetAllTextDataForStocksInput,
     get_all_text_data_for_stocks,
@@ -247,7 +247,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
                 main_prompt=main_prompt,
                 sys_prompt=COMMENTARY_SYS_PROMPT.format(),
             )
-            commentary_text, citation_ids = await split_text_and_citation_ids(result)
+            commentary_text, citation_ids = split_text_and_citation_ids(result)
             break
         except Exception as e:
             logger.exception(f"Failed to split text and citation ids: {e}")
