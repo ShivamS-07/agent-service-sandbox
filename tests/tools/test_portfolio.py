@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pandas as pd
 from google.protobuf.timestamp_pb2 import Timestamp
+from pa_portfolio_service_proto_v1.backtest_data_service_pb2 import StockPerformance
 from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID
 from pa_portfolio_service_proto_v1.workspace_pb2 import WorkspaceAuth, WorkspaceMetadata
 
@@ -19,9 +20,11 @@ from agent_service.io_types.table import (
 )
 from agent_service.tools.dates import DateRange
 from agent_service.tools.portfolio import (
+    GetPortfolioHoldingsInput,
     GetPortfolioInput,
     GetPortfolioPerformanceInput,
     convert_portfolio_mention_to_portfolio_id,
+    get_portfolio_holdings,
     get_portfolio_performance,
 )
 from agent_service.types import PlanRunContext
@@ -77,6 +80,69 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         args = GetPortfolioInput(portfolio_name="NonExistant Portfolio")
         result = await convert_portfolio_mention_to_portfolio_id(args, self.context)
         self.assertEqual(result, rows[0]["id"])
+
+    @patch("agent_service.tools.portfolio.get_all_holdings_in_workspace")
+    @patch("agent_service.tools.portfolio.get_workspace_name")
+    @patch("agent_service.tools.portfolio.get_latest_price")
+    @patch("agent_service.tools.portfolio.get_stock_performance_for_date_range")
+    async def test_get_portfolio_holdings(
+        self,
+        mock_get_stock_performance_for_date_range: MagicMock,
+        mock_get_latest_price: MagicMock,
+        mock_get_workspace_name: MagicMock,
+        mock_get_all_holdings_in_workspace: MagicMock,
+    ):
+        valid_uuid = str(uuid4())
+        mock_get_all_holdings_in_workspace_return = MagicMock(
+            workspace_id=valid_uuid,
+            holdings=[
+                MagicMock(
+                    gbi_id=AAPL.gbi_id,
+                    date=None,
+                    weight=0.6,
+                ),
+                MagicMock(
+                    gbi_id=ERGB.gbi_id,
+                    date=None,
+                    weight=0.4,
+                ),
+            ],
+        )
+        mock_get_all_holdings_in_workspace.return_value = mock_get_all_holdings_in_workspace_return
+
+        mock_get_workspace_name.return_value = "Test Workspace"
+
+        mock_get_latest_price.return_value = {AAPL.gbi_id: 215, ERGB.gbi_id: 123}
+
+        mock_get_stock_performance_for_date_range.return_value = MagicMock(
+            stock_performance_list=[
+                StockPerformance(gbi_id=AAPL.gbi_id, performance=0.23),
+                StockPerformance(gbi_id=ERGB.gbi_id, performance=0.04),
+            ]
+        )
+
+        args = GetPortfolioHoldingsInput(portfolio_id=valid_uuid)
+        result = await get_portfolio_holdings(args, self.context)
+
+        expected_portfolio_holdings = StockTable.from_df_and_cols(
+            data=pd.DataFrame(
+                {
+                    STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB],
+                    "Weight": [0.6, 0.4],
+                    "Price": [215, 123],
+                    "Performance": [0.23, 0.04],
+                }
+            ),
+            columns=[
+                TableColumnMetadata(
+                    label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
+                ),
+                TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="Price", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="Performance", col_type=TableColumnType.FLOAT),
+            ],
+        )
+        self.assertEqual(result, expected_portfolio_holdings)
 
     @patch("agent_service.tools.portfolio.get_full_strategy_info")
     @patch("agent_service.tools.portfolio.get_psql")

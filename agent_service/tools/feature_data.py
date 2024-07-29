@@ -1,7 +1,7 @@
 import datetime
 import json
 from threading import Lock
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -363,19 +363,20 @@ async def get_statistic_data(
     end_date: datetime.date,
     stock_ids: Optional[List[StockID]] = None,
     force_daily: bool = False,
+    ffill_days: Optional[int] = None,
 ) -> StockTable:
     stock_ids = stock_ids or []
     gbi_id_map = {stock.gbi_id: stock for stock in stock_ids}
     gbi_ids = list(gbi_id_map.keys())
     # if one date given, turn on ffill.
-    ffill_days = 0
+    ffill_days_val = ffill_days if ffill_days is not None else 0
 
     use_natural_axis = True  # use the axis the data prefers (quarterly or data)
 
-    if force_daily or (end_date - start_date).days < 90:
+    if (ffill_days is None) and (force_daily or (end_date - start_date).days < 90):
         # need to turn quarterly into daily and forward fill if it is going to be combined with daily
         # or if the range is less than a quarter
-        ffill_days = 180
+        ffill_days_val = 180
         use_natural_axis = False
 
     logger = get_prefect_logger(__name__)
@@ -392,7 +393,7 @@ async def get_statistic_data(
         stock_ids=gbi_ids,
         from_date=start_date,
         to_date=end_date,
-        ffill_days=ffill_days,
+        ffill_days=ffill_days_val,
         use_natural_axis=use_natural_axis,
     )
 
@@ -542,3 +543,31 @@ def get_latest_date() -> datetime.date:
 
     latest_datetime = feature_value_map["spiq_close"].index[-1].to_pydatetime()
     return latest_datetime.date()
+
+
+async def get_latest_price(context: PlanRunContext, stock_ids: List[StockID]) -> Dict[int, float]:
+    statistic_id = StatisticId(stat_id="spiq_close", stat_name="Price")
+    TODAY = datetime.date.today()
+    start_date = TODAY
+    end_date = TODAY
+    data_table = await get_statistic_data(
+        context=context,
+        statistic_id=statistic_id,
+        start_date=start_date,
+        end_date=end_date,
+        stock_ids=stock_ids,
+        ffill_days=7,  # to cover long holidays, check 7 days back for the last updated price
+    )
+
+    # Extract relevant columns
+    stock_column: List[StockID] = data_table.get_stocks()
+    price_column: List[float] = data_table.columns[2].data  # type: ignore
+
+    # Store the latest price for each stock
+    price_map = {}
+
+    for stock, price in zip(stock_column, price_column):
+        stock_gbi_id = stock.gbi_id
+        price_map[stock_gbi_id] = price
+
+    return price_map

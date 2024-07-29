@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 from typing import Any, List, Optional
 
@@ -27,6 +28,7 @@ from agent_service.io_types.table import (
     TableColumnType,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.feature_data import get_latest_price
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.constants import get_B3_prefix
@@ -48,6 +50,7 @@ db = get_psql()
 
 class GetPortfolioHoldingsInput(ToolArgs):
     portfolio_id: PortfolioID
+    fetch_stats: Optional[bool] = True
 
 
 async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
@@ -61,15 +64,21 @@ async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
 
 @tool(
     description=(
-        "This function returns a list of stocks and the weight at which they are held in a specific portfolio. "
+        "This function returns a list of stocks and the weight at which they are held in a specific portfolio, "
+        "and optionally their price and performance. "
         "Use this function if you want return all the stocks in a portfolio given a portfolio Id. "
         "A PortfolioID is not a portfolio name. "
         "A PortfolioID is not a stock identifier. "
+        "There is a fetch_stats flag which is optional and defaults to True. "
+        "If the eventual answer is just holdings, the flag should be on. "
+        "If the holdings are being fetched and then something else is being done with them later, "
+        "the flag should be turned off to avoid automatically fetching these extra columns."
         "This tool should only be used to get portfolio holdings, "
         "for ETF holdings you should use get_stock_universe tool instead. "
         "Do not use this function to find portfolio names or if no portfolio Id is present. "
         "If you only need a list of stocks without weights, MAKE SURE you use the "
-        "`get_stock_identifier_list_from_table` function on the table output by this function!"
+        "`get_stock_identifier_list_from_table` function on the table output by this function! "
+        "Output will contain these columns: 'Stock', 'Weight', and optionally 'Price' and 'Performance'."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -94,21 +103,59 @@ async def get_portfolio_holdings(
     stock_ids = await StockID.from_gbi_id_list(gbi_ids)
     stock_list = stock_ids
     gbi_id2_stock_id = {s.gbi_id: s for s in stock_ids}
+
     data = {
         STOCK_ID_COL_NAME_DEFAULT: [
             gbi_id2_stock_id[holding.gbi_id] for holding in workspace.holdings
         ],
         "Weight": [holding.weight for holding in workspace.holdings],
     }
+
+    if args.fetch_stats:
+        # TODO: add date range input - default to 30 days for now
+        date_range = DateRange(
+            start_date=datetime.date.today() - datetime.timedelta(days=30),
+            end_date=datetime.date.today(),
+        )
+
+        # get latest price + stock performance data
+        gbi_id2_price, stock_performance = await asyncio.gather(
+            get_latest_price(context, stock_ids),
+            get_stock_performance_for_date_range(
+                gbi_ids=gbi_ids,
+                start_date=date_range.start_date,
+                user_id=context.user_id,
+            ),
+        )
+
+        # convert stock performance to dict for mapping id to performance
+        gbi_id2_performance = {
+            stock.gbi_id: stock.performance for stock in stock_performance.stock_performance_list
+        }
+
+        data.update(
+            {
+                "Price": [gbi_id2_price[holding.gbi_id] for holding in workspace.holdings],
+                "Performance": [
+                    gbi_id2_performance[holding.gbi_id] for holding in workspace.holdings
+                ],
+            }
+        )
+
     df = pd.DataFrame(data)
     df = df.sort_values(by="Weight", ascending=False)
-    table = StockTable.from_df_and_cols(
-        data=df,
-        columns=[
-            TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-            TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
-        ],
-    )
+    columns = [
+        TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+        TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
+    ]
+    if args.fetch_stats:
+        columns.extend(
+            [
+                TableColumnMetadata(label="Price", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="Performance", col_type=TableColumnType.FLOAT),
+            ]
+        )
+    table = StockTable.from_df_and_cols(data=df, columns=columns)
     await tool_log(
         f"Found {len(stock_ids)} holdings in portfolio", context=context, associated_data=table
     )
