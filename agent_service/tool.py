@@ -340,9 +340,6 @@ def tool(
     cache_ttl: Integer number of seconds for the cached value's TTL. NOTE:
       if postgres is is used as the cache, this value is NOT USED.
 
-    cache_expiration: Timedelta representing amount of time the output should
-      exist in the cache.
-
     retries: An integer number of retries in case the task fails. NOTE: Only
       respected when `create_prefect_task` is also True.
 
@@ -456,7 +453,7 @@ def tool(
                     try:
                         cache_client = cache_backend if cache_backend else RedisCacheBackend()
                         key = cache_key_fn(tool_name, args, context)
-                        cached_val = await cache_client.get(key)
+                        cached_val = await cache_client.get(key, ttl=cache_ttl)
                         event_data["cache_key"] = key
                         if cached_val:
                             event_data["cache_hit"] = True

@@ -3,7 +3,6 @@ import unittest
 import warnings
 from typing import Any, List, Optional, Type, Union
 from unittest import IsolatedAsyncioTestCase
-from unittest.case import TestCase
 
 import pandas as pd
 
@@ -575,7 +574,7 @@ class TestPlans(IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
 
 
-class TestPlanConstructionValidation(TestCase):
+class TestPlanConstructionValidation(IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.tool_registry = get_test_registry()
 

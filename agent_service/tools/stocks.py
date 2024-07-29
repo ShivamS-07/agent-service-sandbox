@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, cast
 
 import pandas as pd
 from gbi_common_py_utils.numpy_common import NumpySheet
-from gbi_common_py_utils.utils.environment import get_environment_tag
+from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
 
 from agent_service.external.pa_backtest_svc_client import (
     universe_stock_factor_exposures,
@@ -23,6 +23,7 @@ from agent_service.io_types.table import (
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.cache_utils import PostgresCacheBackend
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
@@ -170,12 +171,32 @@ async def stock_confirmation_by_gpt(
     return None
 
 
+def get_stock_identifier_lookup_cache_key(
+    tool_name: str, args: StockIdentifierLookupInput, context: PlanRunContext
+) -> str:
+    key = "_".join(
+        [
+            # TODO add something to indicate "SOFTWARE_VERSION"
+            # as the cached values may not match the return vals for a newer implementation
+            "TOOL",
+            tool_name,
+            "ARGS",
+            args.stock_name.lower(),
+        ]
+    )
+    return key
+
+
 @tool(
     description=(
         "This function takes a string (microsoft, apple, AAPL, TESLA, META, e.g.) "
         "which refers to a stock, and converts it to an integer identifier."
     ),
     category=ToolCategory.STOCK,
+    use_cache=True,
+    cache_key_fn=get_stock_identifier_lookup_cache_key,
+    cache_ttl=60 * 60,  # ignored in postgres currently
+    cache_backend=PostgresCacheBackend(),
     tool_registry=ToolRegistry,
     is_visible=False,
 )
@@ -183,7 +204,8 @@ async def stock_confirmation_by_gpt(
 async def stock_identifier_lookup(
     args: StockIdentifierLookupInput, context: PlanRunContext
 ) -> StockID:
-    """Returns the integer identifier of a stock given its name or symbol (microsoft, apple, AAPL, TESLA, META, e.g.).
+    """
+    Returns the integer identifier of a stock given its name or symbol (microsoft, apple, AAPL, TESLA, META, e.g.).
 
     This function performs a series of queries to find the stock's identifier. It starts with an exact symbol match,
     followed by a word similarity name match, and finally a word similarity symbol match. It only
@@ -200,6 +222,7 @@ async def stock_identifier_lookup(
     logger = get_prefect_logger(__name__)
 
     try:  # since everything associated with diffing/rerun cache is optional, put in try/except
+        logger.info("Checking previous run info...")
         prev_run_info = await get_prev_run_info(context, "stock_identifier_lookup")
         if prev_run_info is not None:
             prev_args = StockIdentifierLookupInput.model_validate_json(prev_run_info.inputs_str)
@@ -520,6 +543,7 @@ async def stock_lookup_by_text_similarity(
 
     UNION
 
+(
     -- company name
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     ms.asset_type,
@@ -537,10 +561,13 @@ async def stock_lookup_by_text_similarity(
     -- this uses the trigram index which speeds up the qry
     -- https://www.postgresql.org/docs/current/pgtrgm.html#PGTRGM-OP-TABLE
     AND name %% %(search_term)s
-    AND %(search_term)s %% name
+    ORDER BY text_sim_score DESC
+    LIMIT 100
+)
 
     UNION
 
+(
     -- custom boosted db entries -  company alt name * 1.0
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     ms.asset_type,
@@ -565,10 +592,13 @@ async def stock_lookup_by_text_similarity(
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
     AND alt_name %% %(search_term)s
-    AND %(search_term)s %% alt_name
+    ORDER BY text_sim_score DESC
+    LIMIT 100
+)
 
     UNION
 
+(
     -- gbi alt name
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     ms.asset_type,
@@ -586,6 +616,9 @@ async def stock_lookup_by_text_similarity(
     AND ms.to_z is null
     AND alt_name %% %(search_term)s
     AND %(search_term)s %% alt_name
+    ORDER BY text_sim_score DESC
+    LIMIT 100
+)
 
     ORDER BY text_sim_score DESC
     LIMIT 200
@@ -1101,7 +1134,7 @@ async def get_risk_exposure_for_stocks(
     PROD_SP500_UNIVERSE_ID = "4e5f2fd3-394e-4db9-aad3-5c20abf9bf3c"
 
     universe_id = DEV_SP500_UNIVERSE_ID
-    if env == "PROD":
+    if env == PROD_TAG:  # AKA ALPHA
         # If we are in Prod use SPY
         universe_id = PROD_SP500_UNIVERSE_ID
 

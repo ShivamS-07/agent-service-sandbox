@@ -28,8 +28,18 @@ def testslow(c):
 
 
 @task
+def testfast(c):
+    # runs each test class in its own process 8 at a time
+    print("running tests in parallel")
+    c.run(
+        "RUN_IN_CI=true unittest-parallel -v --level class --disable-process-pooling --jobs 8  "
+        "-t . -s tests"
+    )
+
+
+@task
 def test(c):
-    testslow(c)
+    testfast(c)
     testregression(c)
 
 
@@ -38,15 +48,6 @@ def testregression(c):
     c.run(
         "RUN_IN_CI=true unittest-parallel -v --level class --disable-process-pooling --jobs 8  "
         "-t . -s regression_test"
-    )
-
-
-@task
-def testfast(c):
-    # runs each test class in its own process 8 at a time
-    c.run(
-        "RUN_IN_CI=true unittest-parallel -v --level class --disable-process-pooling --jobs 8  "
-        "-t . -s tests"
     )
 
 

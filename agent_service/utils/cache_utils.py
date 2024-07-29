@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from gbi_common_py_utils.utils.redis import RedisCache
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class CacheBackend(ABC):
     @abstractmethod
-    async def get(self, key: str) -> Optional[IOType]:
+    async def get(self, key: str, ttl: Optional[int] = None) -> Optional[IOType]:
         pass
 
     @abstractmethod
@@ -29,7 +29,8 @@ class RedisCacheBackend(CacheBackend):
             namespace="agent-tool-cache", serialize_func=dump_io_type, deserialize_func=load_io_type
         )
 
-    async def get(self, key: str) -> Optional[IOType]:
+    async def get(self, key: str, ttl: Optional[int] = None) -> Optional[IOType]:
+        # redis implements ttl on insert, so ignored here
         return self.client.get(key=key)
 
     async def set(self, key: str, val: IOType, ttl: Optional[int] = None) -> None:
@@ -41,14 +42,24 @@ class PostgresCacheBackend(CacheBackend):
         # TODO use async client
         self.db = get_psql()
 
-    async def get(self, key: str) -> Optional[IOType]:
-        rows = self.db.select_where(table_name="agent.task_cache", where={"cache_key": key})
+    async def get(self, key: str, ttl: Optional[int] = None) -> Optional[IOType]:
+        sql = """SELECT * FROM agent.task_cache  WHERE cache_key = %(cache_key)s
+        """
+        params: Dict[str, Any] = {"cache_key": key}
+
+        if ttl:
+            # only consider rows recent enough to satisfy ttl requirements
+            params["ttl"] = ttl
+            sql += " AND last_updated >= NOW() - %(ttl)s *  interval '1 second'"
+
+        rows = self.db.generic_read(sql, params)
         if not rows:
             return None
         val_str = rows[0]["cache_value"]
         return load_io_type(val_str)
 
     async def set(self, key: str, val: IOType, ttl: Optional[int] = None) -> None:
+        # postgres implements ttl on read, so ignored here
         sql = """
         INSERT INTO agent.task_cache (cache_key, cache_value) VALUES
           (%(key)s, %(val)s)
