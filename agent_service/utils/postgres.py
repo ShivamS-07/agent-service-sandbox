@@ -511,18 +511,6 @@ class Postgres(PostgresBase):
             },
         )
 
-    def get_latest_agent_custom_notification_prompt(self, agent_id: str) -> Optional[str]:
-        sql = """
-        SELECT notification_prompt FROM agent.custom_notifications
-        WHERE agent_id=%(agent_id)s
-        ORDER BY created_at DESC
-        LIMIT 1
-        """
-        rows = self.generic_read(sql, {"agent_id": agent_id})
-        if not rows:
-            return None
-        return rows[0]["notification_prompt"]
-
     # Profile Generation
     def get_industry_names(self, gic_type: str = "GGROUP") -> List[str]:
         sql = """

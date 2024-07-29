@@ -71,11 +71,12 @@ async def main() -> List[OutputDiff]:
             prev_outputs.append(load_io_type(row["output"]))
             prev_output_date = prev_output_date or row["created_at"]
 
-    custom_notification = (
-        args.custom_notification
-        or await db.get_latest_agent_custom_notification_prompt(agent_id=args.agent_id)
+    custom_notification = args.custom_notification or "\n".join(
+        (
+            cn.notification_prompt
+            for cn in await db.get_all_agent_custom_notifications(agent_id=args.agent_id)
+        )
     )
-
     plan = ExecutionPlan.model_validate(rows[0]["plan"])
     od = OutputDiffer(
         plan=plan,

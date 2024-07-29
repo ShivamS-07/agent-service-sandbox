@@ -643,18 +643,6 @@ class AsyncDB:
             sql, params={"agent_id": agent_id, "custom_notification_id": custom_notification_id}
         )
 
-    async def get_latest_agent_custom_notification_prompt(self, agent_id: str) -> Optional[str]:
-        sql = """
-        SELECT notification_prompt FROM agent.custom_notifications
-        WHERE agent_id=%(agent_id)s
-        ORDER BY created_at DESC
-        LIMIT 1
-        """
-        rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
-        if not rows:
-            return None
-        return rows[0]["notification_prompt"]
-
     async def get_all_agent_custom_notifications(self, agent_id: str) -> List[CustomNotification]:
         sql = """
         SELECT custom_notification_id::TEXT, agent_id::TEXT,

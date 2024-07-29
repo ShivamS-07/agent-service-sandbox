@@ -326,9 +326,10 @@ async def run_execution_plan(
         )
     elif scheduled_by_automation:
         logger.info("Generating diff message...")
-        custom_notifications = db.get_latest_agent_custom_notification_prompt(context.agent_id)
+        custom_notifications = await async_db.get_all_agent_custom_notifications(context.agent_id)
+        custom_notification_str = "\n".join((cn.notification_prompt for cn in custom_notifications))
         output_differ = OutputDiffer(
-            plan=plan, context=context, custom_notifications=custom_notifications
+            plan=plan, context=context, custom_notifications=custom_notification_str
         )
 
         output_diffs = await output_differ.diff_outputs(
@@ -365,7 +366,7 @@ async def run_execution_plan(
             )
             logger.info("Generating and sending notification")
             short_diff_summary = await output_differ.generate_short_diff_summary(
-                full_diff_summary, custom_notifications
+                full_diff_summary, custom_notification_str
             )
             await send_chat_message(
                 message=Message(
@@ -576,25 +577,23 @@ async def update_execution_after_input(
         if do_chat:
             message = await chatbot.generate_input_update_no_action_response(chat_context)
             await send_chat_message(
-                message=Message(agent_id=agent_id, message=message, is_user_message=False), db=db
+                message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                db=db,
+                send_notification=False,
             )
         if flow_run:
             await prefect_resume_agent_flow(flow_run)
         return None
 
     elif action == action.NOTIFICATION:
-        current_notifications = db.get_latest_agent_custom_notification_prompt(agent_id)
-        if current_notifications:
-            new_notifications = await decider.update_custom_notifications(
-                chat_context, current_notifications
-            )
-        else:
-            new_notifications = await decider.create_custom_notifications(chat_context)
-        db.insert_agent_custom_notification_prompt(agent_id, new_notifications)
         if do_chat:
-            message = await chatbot.generate_notification_response(chat_context)
+            message = "To update my notification settings, please visit the Settings tab."
             await send_chat_message(
-                message=Message(agent_id=agent_id, message=message, is_user_message=False), db=db
+                message=Message(
+                    agent_id=agent_id, message=message, is_user_message=False, visible_to_llm=False
+                ),
+                db=db,
+                send_notification=False,
             )
 
     elif action == Action.RERUN:
