@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import traceback
 from collections import OrderedDict
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
@@ -620,6 +621,24 @@ class Clickhouse(ClickhouseBase):
             row["message"] = json.loads(row["message"])
             res[row["method"]][row["send_time_utc"]] = row
         return res
+
+    def get_agents_cost_info(self, agent_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+        res = {}
+        try:
+            sql = """select sum(num_input_tokens) + sum(num_output_tokens) as num_tokens_used, agent_id
+            from llm.queries where agent_id in %(agent_ids)s group by agent_id"""
+            rows = self.generic_read(sql, params={"agent_ids": agent_ids})
+
+            for row in rows:
+                res[row["agent_id"]] = [
+                    {"label": "Total Tokens Used", "val": row["num_tokens_used"]}
+                ]
+            return res
+        except Exception:
+            logger.info(
+                f"Error in get_agent_cost_info for agent_ids={agent_ids}: {traceback.format_exc()}"
+            )
+            return {}
 
     ################################################################################################
     # Regression Test Run Info

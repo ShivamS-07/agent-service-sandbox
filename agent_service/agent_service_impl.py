@@ -129,6 +129,11 @@ class AgentServiceImpl:
 
     async def get_all_agents(self, user: User) -> GetAllAgentsResponse:
         agents = await self.pg.get_user_all_agents(user.user_id)
+        agent_id_list = [metadata.agent_id for metadata in agents]
+        cost_infos = self.ch.get_agents_cost_info(agent_ids=agent_id_list)
+        for agent_metadata in agents:
+            if agent_metadata.agent_id in cost_infos:
+                agent_metadata.cost_info = cost_infos[agent_metadata.agent_id]
         return GetAllAgentsResponse(agents=agents)
 
     async def get_agent(self, user: User, agent_id: str) -> AgentMetadata:
@@ -137,7 +142,11 @@ class AgentServiceImpl:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"No agent found for {agent_id=}"
             )
-        return agents[0]
+        cost_info = self.ch.get_agents_cost_info(agent_ids=[agent_id])
+        agent_metadata = agents[0]
+        if agent_id in cost_info:
+            agent_metadata.cost_info = cost_info[agent_id]
+        return agent_metadata
 
     async def delete_agent(self, agent_id: str) -> DeleteAgentResponse:
         await self.pg.delete_agent_by_id(agent_id)

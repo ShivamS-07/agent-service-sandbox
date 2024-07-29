@@ -23,6 +23,7 @@ from grpclib.client import Channel
 from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
+    AgentMetadata,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     CreateAgentResponse,
@@ -65,6 +66,11 @@ class TestAgentServiceImplBase(unittest.TestCase):
 
     def get_all_agents(self, user: User) -> GetAllAgentsResponse:
         return self.loop.run_until_complete(self.agent_service_impl.get_all_agents(user=user))
+
+    def get_agent(self, user: User, agent_id: str) -> AgentMetadata:
+        return self.loop.run_until_complete(
+            self.agent_service_impl.get_agent(user=user, agent_id=agent_id)
+        )
 
     def delete_agent(self, agent_id: str) -> DeleteAgentResponse:
         return self.loop.run_until_complete(self.agent_service_impl.delete_agent(agent_id=agent_id))

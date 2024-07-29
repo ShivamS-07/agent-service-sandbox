@@ -98,6 +98,7 @@ class AgentMetadata(BaseModel):
     automation_enabled: bool = False
 
     schedule: Optional[AgentSchedule] = None
+    cost_info: Optional[List[Dict[str, Any]]] = None
 
     def to_agent_row(self) -> Dict[str, Any]:
         return {
