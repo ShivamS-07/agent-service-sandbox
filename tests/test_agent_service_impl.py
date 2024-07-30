@@ -150,16 +150,16 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
 
     def test_get_test_run_info(self):
 
-        test_run_id = "8e1b5600-b6a5-44df-927f-ec3c90c32424"
+        service_version = "0.0.544"
         test_run_info = self.get_info_for_test_suite_run(
-            test_run_id=test_run_id
+            service_version=service_version
         ).test_suite_run_info
         self.assertTrue(test_run_info)
 
     def test_get_test_suite_runs(self):
 
-        test_suite_run_ids = self.agent_service_impl.get_test_suite_runs().test_suite_run_ids
-        self.assertTrue(test_suite_run_ids)
+        test_suite_runs = self.agent_service_impl.get_test_suite_runs().test_suite_runs
+        self.assertTrue(test_suite_runs)
 
     def test_get_test_case_info(self):
 

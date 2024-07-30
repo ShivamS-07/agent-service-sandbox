@@ -57,7 +57,7 @@ from agent_service.endpoints.models import (
     GetTestCaseInfoResponse,
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
-    GetTestSuiteRunsIdsResponse,
+    GetTestSuiteRunsResponse,
     ListMemoryItemsResponse,
     MarkNotificationsAsReadRequest,
     MarkNotificationsAsReadResponse,
@@ -806,12 +806,12 @@ async def rename_memory(
 
 
 @router.get(
-    "/regression-test/{test_run_id}",
+    "/regression-test/{service_version}",
     response_model=GetTestSuiteRunInfoResponse,
     status_code=status.HTTP_200_OK,
 )
-async def get_info_for_test_run_id(
-    test_run_id: str, user: User = Depends(parse_header)
+async def get_info_for_test_run(
+    service_version: str, user: User = Depends(parse_header)
 ) -> GetTestSuiteRunInfoResponse:
     if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
@@ -820,16 +820,16 @@ async def get_info_for_test_run_id(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
     return await application.state.agent_service_impl.get_info_for_test_suite_run(
-        test_run_id=test_run_id
+        service_version=service_version
     )
 
 
 @router.get(
-    "/regression-test-suite-run-ids",
-    response_model=GetTestSuiteRunsIdsResponse,
+    "/regression-test-suite-runs",
+    response_model=GetTestSuiteRunsResponse,
     status_code=status.HTTP_200_OK,
 )
-def get_test_suite_runs(user: User = Depends(parse_header)) -> GetTestSuiteRunsIdsResponse:
+def get_test_suite_runs(user: User = Depends(parse_header)) -> GetTestSuiteRunsResponse:
     if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
     if not user.is_super_admin and not is_user_agent_admin(user.user_id):

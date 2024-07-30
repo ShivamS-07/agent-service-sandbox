@@ -114,9 +114,9 @@ class TestAgentServiceImplBase(unittest.TestCase):
             self.agent_service_impl.get_agent_debug_info(agent_id=agent_id)
         )
 
-    def get_info_for_test_suite_run(self, test_run_id: str) -> GetTestSuiteRunInfoResponse:
+    def get_info_for_test_suite_run(self, service_version: str) -> GetTestSuiteRunInfoResponse:
         return self.loop.run_until_complete(
-            self.agent_service_impl.get_info_for_test_suite_run(test_run_id=test_run_id)
+            self.agent_service_impl.get_info_for_test_suite_run(service_version=service_version)
         )
 
     def get_info_for_test_case(self, test_name: str) -> GetTestCaseInfoResponse:

@@ -39,7 +39,7 @@ from agent_service.endpoints.models import (
     GetTestCaseInfoResponse,
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
-    GetTestSuiteRunsIdsResponse,
+    GetTestSuiteRunsResponse,
     ListMemoryItemsResponse,
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadResponse,
@@ -671,8 +671,10 @@ class AgentServiceImpl:
         )
         return GetAgentDebugInfoResponse(tooltips=tool_tips, debug=debug)
 
-    async def get_info_for_test_suite_run(self, test_run_id: str) -> GetTestSuiteRunInfoResponse:
-        infos = self.ch.get_info_for_test_suite_run(test_run_id=test_run_id)
+    async def get_info_for_test_suite_run(
+        self, service_version: str
+    ) -> GetTestSuiteRunInfoResponse:
+        infos = self.ch.get_info_for_test_suite_run(service_version=service_version)
         for test_name, test_info in infos.items():
             if "output" in test_info and test_info["output"]:
                 try:
@@ -689,8 +691,8 @@ class AgentServiceImpl:
                     )
         return GetTestSuiteRunInfoResponse(test_suite_run_info=infos)
 
-    def get_test_suite_runs(self) -> GetTestSuiteRunsIdsResponse:
-        return GetTestSuiteRunsIdsResponse(test_suite_run_ids=self.ch.get_test_suite_run_ids())
+    def get_test_suite_runs(self) -> GetTestSuiteRunsResponse:
+        return GetTestSuiteRunsResponse(test_suite_runs=self.ch.get_test_suite_runs())
 
     def get_test_cases(self) -> GetTestCasesResponse:
         return GetTestCasesResponse(test_cases=self.ch.get_test_cases())

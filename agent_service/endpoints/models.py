@@ -494,8 +494,8 @@ class GetTestSuiteRunInfoResponse(BaseModel):
     test_suite_run_info: Dict[str, Any]
 
 
-class GetTestSuiteRunsIdsResponse(BaseModel):
-    test_suite_run_ids: List[Dict[str, Any]]
+class GetTestSuiteRunsResponse(BaseModel):
+    test_suite_runs: List[Dict[str, Any]]
 
 
 class GetTestCaseInfoResponse(BaseModel):

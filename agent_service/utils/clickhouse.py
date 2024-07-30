@@ -644,13 +644,16 @@ class Clickhouse(ClickhouseBase):
     # Regression Test Run Info
     ################################################################################################
 
-    def get_info_for_test_suite_run(self, test_run_id: str) -> Dict[str, Any]:
-        sql = """SELECT test_name, prompt, agent_id, output, execution_plan, service_version, error_msg, warning_msg,
-        execution_finished_at_utc, execution_start_at_utc, execution_plan_started_at_utc,
-        execution_plan_finished_at_utc, execution_duration_seconds, execution_plan_duration_seconds FROM
-        agent.regression_test WHERE test_suite_id = %(test_run_id)s ORDER BY test_name"""
+    def get_info_for_test_suite_run(self, service_version: str) -> Dict[str, Any]:
+        sql = """SELECT DISTINCT ON (test_name) test_name, prompt, agent_id, test_suite_id AS test_suite_run_id,
+        output, execution_plan, error_msg, warning_msg, execution_finished_at_utc, execution_start_at_utc,
+        execution_plan_started_at_utc, execution_plan_finished_at_utc, execution_duration_seconds,
+        execution_plan_duration_seconds FROM agent.regression_test
+        WHERE service_version = CONCAT('374053208103.dkr.ecr.us-west-2.amazonaws.com/agent-service:',
+        %(service_version)s)
+        ORDER BY test_name ASC, timestamp DESC"""
         res: Dict[str, Any] = {}
-        rows = self.generic_read(sql, {"test_run_id": test_run_id})
+        rows = self.generic_read(sql, {"service_version": service_version})
         tz = datetime.timezone.utc
         for i, row in enumerate(rows):
             test_name = row.pop("test_name")
@@ -668,9 +671,10 @@ class Clickhouse(ClickhouseBase):
             res[f"{i} test_name={test_name}"] = row
         return res
 
-    def get_test_suite_run_ids(self) -> List[Dict[str, Any]]:
+    def get_test_suite_runs(self) -> List[Dict[str, Any]]:
         sql = """
-        SELECT test_suite_id as test_suite_run_id, MAX(timestamp) as timestamp, MAX(service_version) as service_version,
+        SELECT DISTINCT ON (service_version) MAX(substring(service_version, position(service_version, ':') + 1))
+        as service_version, test_suite_id as test_suite_run_id, MAX(timestamp) as timestamp,
         SUM(error_msg != '') AS error_count,
         SUM(warning_msg != '') AS warning_count,
         SUM(error_msg == '' AND warning_msg == '') AS success_count
