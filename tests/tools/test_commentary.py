@@ -18,7 +18,7 @@ from agent_service.utils.date_utils import get_now_utc
 user_id = "3b997275-dcfe-4c19-8bb2-3e1366c4d5f3"
 agent_id = "7cb9fb8f-690e-4535-8b48-f6e63494c366"
 plan_id = "b3330500-9870-480d-bcb1-cf6fe6b487e3"
-portfolio_id = "0ed58d16-6811-4dad-92ae-9fb81a714410"
+portfolio_id = "eb820abf-d5a3-450d-85df-b72825e6dcff"
 
 AAPL = StockID(gbi_id=714, isin="", symbol="AAPL", company_name="Apple")
 ERGB = StockID(
@@ -53,7 +53,7 @@ class TestCommentary(IsolatedAsyncioTestCase):
             end_date=datetime.datetime.now().date(),
         )
 
-    @unittest.skip("The tool is disabled")
+    @unittest.skip("skipped slow test")
     async def test_write_commentary(self):
         texts = await get_commentary_inputs(
             GetCommentaryInputsInput(
