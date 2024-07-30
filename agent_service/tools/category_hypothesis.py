@@ -647,17 +647,25 @@ Here is the text:
         if not isinstance(cleaned_result, dict):
             continue
 
-        relevant_category_idxs: List[int] = cleaned_result.get("relevant_categories", [])
-        if not relevant_category_idxs:
-            continue
-
-        for category_idx in relevant_category_idxs:
-            if category_idx < 0 or category_idx >= len(categories):
-                logger.warning(
-                    f"Category index {category_idx} is out of range for {text_obj} {result}"
-                )
+        # no single gpt calls should fail the whole process
+        try:
+            relevant_category_idxs: List[int] = cleaned_result.get("relevant_categories", [])
+            if not relevant_category_idxs:
                 continue
-            category_to_mixed_topics[category_idx].insert_topic(text_obj)
+
+            if isinstance(relevant_category_idxs, str):
+                # '[0,1,2]' -> [0, 1, 2]
+                relevant_category_idxs = json.loads(relevant_category_idxs)
+
+            for category_idx in relevant_category_idxs:
+                if category_idx < 0 or category_idx >= len(categories):
+                    logger.warning(
+                        f"Category index {category_idx} is out of range for {text_obj} {result}"
+                    )
+                    continue
+                category_to_mixed_topics[category_idx].insert_topic(text_obj)
+        except Exception as e:
+            logger.exception(f"Failed to process result {result} for text object {text_obj}: {e}")
 
     category_topic_log = ""
     for category_idx, topics in category_to_mixed_topics.items():
