@@ -34,7 +34,6 @@ async def get_sec_filings_helper(
         stock_filing_map[stock_id].append(
             StockSecFilingText(id=filing_str, stock_id=stock_id, db_id=db_id, timestamp=timestamp)
         )
-        print(stock_filing_map[stock_id][-1])
 
     return stock_filing_map
 

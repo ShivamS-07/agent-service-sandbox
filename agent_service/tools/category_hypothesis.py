@@ -1,6 +1,6 @@
 import json
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
@@ -142,6 +142,47 @@ class MixedTopics(ComplexIOBase):
         idx -= len(self.earnings_topics)
         return self.news_topics[idx]
 
+    def get_all_stocks(self) -> List[StockID]:
+        stocks = set()
+        for topic in self.news_topics + self.earnings_topics + self.sec_filing_sections:
+            if topic.stock_id:
+                stocks.add(topic.stock_id)
+
+        return list(stocks)
+
+
+@io_type
+class RankedCompany(ComplexIOBase):
+    # internal use only
+    symbol: str
+    score: float
+    explanation: str
+    citations: List[int]
+
+    @classmethod
+    def create_default_obj(cls, symbol: str, category_name: str) -> "RankedCompany":
+        return cls(
+            symbol=symbol,
+            score=-1.0,  # TODO: need product guidance on this
+            explanation=(
+                f"There is no information available regarding {symbol} in terms of {category_name}. "
+                f"Therefore, it is impossible to rank the company based on the provided criteria."
+            ),
+            citations=[],
+        )
+
+
+@io_type
+class RankingListAndSummary(ComplexIOBase):
+    summary: str
+    ranking: List[RankedCompany]
+
+    def inject_missing_stocks(self, symbols: List[str], category_name: str) -> None:
+        existing_symbols = {ranking.symbol for ranking in self.ranking}
+        for symbol in symbols:
+            if symbol not in existing_symbols:
+                self.ranking.append(RankedCompany.create_default_obj(symbol, category_name))
+
 
 @io_type
 class HypothesisAnalysisByCategory(ComplexIOBase):
@@ -149,7 +190,7 @@ class HypothesisAnalysisByCategory(ComplexIOBase):
     final_scores: Dict[str, float]
     ranked_categories: List[Category]
     category_idx_to_topics: Dict[int, MixedTopics]
-    category_idx_to_result: Dict[int, Dict]
+    category_idx_to_result: Dict[int, RankingListAndSummary]
     val: List[Text] = []
 
     async def split_into_components(self) -> List[IOType]:
@@ -158,31 +199,43 @@ class HypothesisAnalysisByCategory(ComplexIOBase):
         return self.val  # type: ignore
 
     def prepare_categorical_hypothesis_outputs(self) -> None:
-        # each category ranking widget
-        for category_idx, result in sorted(
-            self.category_idx_to_result.items(), key=lambda x: -self.ranked_categories[x[0]].weight
-        ):
+        for category_idx, category in enumerate(self.ranked_categories):
+            if category_idx not in self.category_idx_to_result:
+                self.val.append(
+                    Text(
+                        val="Sorry, there is no relevant information found for this category",
+                        history=[HistoryEntry(score=Score(val=0))],
+                        title=f"Analysis - {category.name}",
+                    )
+                )
+                continue
+
+            result = self.category_idx_to_result[category_idx]
+
             # score
-            score = 0
-            for each_ranking in result["ranking"]:
-                if each_ranking["symbol"] == self.actual_target_stock.symbol:
-                    score = each_ranking["score"]
+            score = 0.0
+            for each_ranking in result.ranking:
+                if each_ranking.symbol == self.actual_target_stock.symbol:
+                    score = each_ranking.score
                     break
 
             # text
-            rankings_list = [f"{result['summary']}"]
-            for each_ranking in result["ranking"]:
+            rankings_list = [f"{result.summary}"]
+            citation_idxs: Set[int] = set()
+            for each_ranking in result.ranking:
                 rankings_list.append(
                     (
-                        f"- {each_ranking['symbol']}\n"
-                        f"  - Score: {each_ranking['score']}\n"
-                        f"  - Explanation: {each_ranking['explanation']}"
+                        f"- {each_ranking.symbol}\n"
+                        f"  - Score: {each_ranking.score}\n"
+                        f"  - Explanation: {each_ranking.explanation}"
                     )
                 )
+
+                citation_idxs.update(each_ranking.citations)
+
             rankings_list_str = "\n".join(rankings_list)
 
             # citations
-            citation_idxs = result["citations"]
             mixed_topics = self.category_idx_to_topics[category_idx]
             citations = []
             for idx in citation_idxs:
@@ -225,7 +278,9 @@ class AnalyzeHypothesisWithCategoriesInput(ToolArgs):
         "company MUST be passed as the target stock."
         "For example, if the question is, `Is NVDA a leader in AI chips?, you MUST pass NVDA in "
         "as the target stock."
-        "Do not leave target_stock empty unless there are no specific companies mentioned!!!!"
+        "Do not leave target_stock empty unless there are no specific companies mentioned!!!! "
+        "You should only use this tool when there is at least 1 category generated from the other "
+        "tool `get_success_criteria`!"
     ),
     category=ToolCategory.HYPOTHESIS,
     tool_registry=ToolRegistry,
@@ -622,7 +677,7 @@ async def rank_and_summarize_for_each_category(
     gbi_id_to_description: Dict[int, str],
     context: PlanRunContext,
     gpt_service_stub: Optional[GPTServiceStub] = None,
-) -> Dict[int, Dict]:
+) -> Dict[int, RankingListAndSummary]:
     logger = get_prefect_logger(__name__)
 
     # Rank + Summarize for each category
@@ -694,13 +749,6 @@ async def rank_and_summarize_for_each_category(
         If there is no topic related to any company, they should be ranked at the bottom with a score \
         of -1 to distinguish and an explanation that there is not enough information to rank the company.
         {summary_str}
-        The third key should be 'citations' and the value should be a list of integers that represents the \
-        indices of the topics that you used to rank the companies. The indices should be 0-based. \
-        You should review all the provided topics carefully and cite the MOST RELEVANT ones. \
-        The order of the citations should be from the most relevant to the least relevant. \
-        You should include at least 1 citation for low ranked companies and at least 2 citations for top \
-        ranked companies. NO MORE than 3 citations for any company, so the total number of citations \
-        should be NO MORE THAN {total_citations}.
         Here is the hypothesis: {hypothesis}\n
         Here is the main criteria you should use to evaluate the hypothesis:{category}\n
         Here are the other criteria which are only used to provide context and should not be considered
@@ -726,32 +774,19 @@ async def rank_and_summarize_for_each_category(
             "It should also try to mention other companies and concisely compare them with the target stock."
         )
 
-    total_citations = 3 * len(stocks)
-
-    company_description_list = []
-    for stock in stocks:
-        description = gbi_id_to_description[stock.gbi_id]  # type: ignore
-        company_description_list.append(f"Symbol: {stock.symbol}. Description: {description}")
-    company_description_str = "\n".join(company_description_list)
-
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     gpt = GPT(context=gpt_context, model=GPT4_O, gpt_service_stub=gpt_service_stub)
-    category_idx_to_result: Dict[int, Dict] = {}
-    category_tasks = []
-    for category_idx, mixed_topics in category_idx_to_mixed_topics.items():
-        logger.info(f"Ranking and summarizing for category <{categories[category_idx].name}>")
 
-        topics_str = await mixed_topics.to_gpt_input()
-        category_str = await categories[category_idx].to_gpt_input()
-
-        other_categories = [categories[i] for i in range(len(categories)) if i != category_idx]
-        other_categories_str = Category.multi_to_gpt_input(other_categories)
-
-        async def ranking_and_summarizing_categories_task(
-            category_idx: int, topics_str: str, category_str: str, other_categories_str: str
-        ) -> None:
+    async def ranking_and_summarizing_categories_task(
+        category_idx: int,
+        topics_str: str,
+        category_str: str,
+        other_categories_str: str,
+        company_description_str: str,
+    ) -> None:
+        try:
             resp = await gpt.do_chat_w_sys_prompt(
                 main_prompt=rank_by_category_main_prompt.format(
                     hypothesis=hypothesis,
@@ -760,12 +795,45 @@ async def rank_and_summarize_for_each_category(
                     company_descriptions=company_description_str,
                     topics=topics_str,
                     summary_str=summary_str,
-                    total_citations=total_citations,
                 ),
                 sys_prompt=rank_by_category_sys_prompt.format(),
             )
-            result = json.loads(clean_to_json_if_needed(resp))
-            category_idx_to_result[category_idx] = result
+
+            await tool_log(
+                f"Finished ranking and summarizing for category <{categories[category_idx].name}>",
+                context=context,
+            )
+
+            cleaned_resp = clean_to_json_if_needed(resp)
+            obj = RankingListAndSummary.model_validate_json(cleaned_resp)
+            obj.inject_missing_stocks(
+                symbols=[stock.symbol for stock in stocks],  # type: ignore
+                category_name=categories[category_idx].name,
+            )
+            category_idx_to_result[category_idx] = obj
+        except Exception as e:
+            logger.exception(
+                f"Failed to rank and summarize for category <{categories[category_idx].name}>: {e}"
+            )
+
+    category_idx_to_result: Dict[int, RankingListAndSummary] = {}
+    category_tasks = []
+    for category_idx, mixed_topics in category_idx_to_mixed_topics.items():
+        # topics
+        topics_str = await mixed_topics.to_gpt_input()
+
+        # company descriptions
+        involved_stocks = mixed_topics.get_all_stocks()
+        company_description_list = [
+            f"Symbol: {stock.symbol}. Description: {gbi_id_to_description[stock.gbi_id]}"
+            for stock in involved_stocks
+        ]
+        company_description_str = "\n".join(company_description_list)
+
+        # categories
+        category_str = await categories[category_idx].to_gpt_input()
+        other_categories = [categories[i] for i in range(len(categories)) if i != category_idx]
+        other_categories_str = Category.multi_to_gpt_input(other_categories)
 
         category_tasks.append(
             ranking_and_summarizing_categories_task(
@@ -773,6 +841,7 @@ async def rank_and_summarize_for_each_category(
                 topics_str=topics_str,
                 category_str=category_str,
                 other_categories_str=other_categories_str,
+                company_description_str=company_description_str,
             )
         )
 
@@ -790,17 +859,17 @@ def calculate_weighted_average_scores(
     candidate_target_stock: Optional[StockID],
     stocks: List[StockID],
     categories: List[Category],
-    category_idx_to_result: Dict[int, Dict],
+    category_idx_to_result: Dict[int, RankingListAndSummary],
 ) -> Tuple[StockID, Dict[str, float]]:
     scores_mapping = {}
     for category_idx, result in category_idx_to_result.items():
         weight = categories[category_idx].weight
-        for ranking in result["ranking"]:
-            if ranking["symbol"] not in scores_mapping:
-                scores_mapping[ranking["symbol"]] = [ranking["score"] * weight, weight]
+        for ranking in result.ranking:
+            if ranking.symbol not in scores_mapping:
+                scores_mapping[ranking.symbol] = [ranking.score * weight, weight]
             else:
-                scores_mapping[ranking["symbol"]][0] += ranking["score"] * weight
-                scores_mapping[ranking["symbol"]][1] += weight
+                scores_mapping[ranking.symbol][0] += ranking.score * weight
+                scores_mapping[ranking.symbol][1] += weight
 
     final_scores = {symbol: score / weight for symbol, (score, weight) in scores_mapping.items()}
 
@@ -818,7 +887,7 @@ async def overall_summary(
     target_stock: StockID,
     hypothesis: str,
     categories: List[Category],
-    category_idx_to_result: Dict[int, Dict],
+    category_idx_to_result: Dict[int, RankingListAndSummary],
     final_scores: Dict[str, float],
     context: PlanRunContext,
     gpt_service_stub: Optional[GPTServiceStub] = None,
@@ -858,9 +927,7 @@ async def overall_summary(
 
     rankings_list = []
     for category_idx, result in category_idx_to_result.items():
-        rankings_list.append(
-            f"- Rankings for {categories[category_idx].name}:\n{result['ranking']}"
-        )
+        rankings_list.append(f"- Rankings for {categories[category_idx].name}:\n{result.ranking}")
     rankings_str = "\n".join(rankings_list)
 
     gpt_context = create_gpt_context(
@@ -890,17 +957,18 @@ if __name__ == "__main__":
             CategoriesForStockInput,
             get_success_criteria,
         )
-        from agent_service.tools.lists import CombineListsInput, add_lists
         from agent_service.tools.other_text import (
             GetAllTextDataForStocksInput,
             get_all_text_data_for_stocks,
         )
-        from agent_service.tools.peers import (
-            GeneralPeersForStockInput,
-            get_general_peers,
+        from agent_service.tools.product_filter import (
+            FilterStocksByProductOrServiceInput,
+            filter_stocks_by_product_or_service,
         )
         from agent_service.tools.stocks import (
+            GetStockUniverseInput,
             StockIdentifierLookupInput,
+            get_stock_universe,
             stock_identifier_lookup,
         )
 
@@ -910,11 +978,23 @@ if __name__ == "__main__":
         stock_id = await stock_identifier_lookup(
             StockIdentifierLookupInput(stock_name=main_stock), context
         )
-        peers = await get_general_peers(GeneralPeersForStockInput(stock_id=stock_id), context)  # type: ignore # noqa
-        stocks = await add_lists(CombineListsInput(list1=[stock_id], list2=peers), context)  # type: ignore # noqa
+
+        # Get stocks from universe
+        stocks: List[StockID] = await get_stock_universe(GetStockUniverseInput(universe_name="S&P 500"), context)  # type: ignore # noqa
+        if stock_id not in stocks:
+            stocks.append(stock_id)  # type: ignore
+
+        filtered_stocks: List[StockID] = await filter_stocks_by_product_or_service(  # type: ignore
+            FilterStocksByProductOrServiceInput(
+                stock_ids=stocks, product_str="AI chip", must_include_stocks=[stock_id]  # type: ignore
+            ),
+            context,
+        )
 
         all_texts: List[StockText] = await get_all_text_data_for_stocks(  # type: ignore
-            GetAllTextDataForStocksInput(stock_ids=stocks, start_date=datetime.date(2024, 4, 1)),  # type: ignore # noqa
+            GetAllTextDataForStocksInput(
+                stock_ids=filtered_stocks, start_date=datetime.date(2024, 6, 1)  # type: ignore # noqa
+            ),
             context,
         )
 
@@ -924,7 +1004,7 @@ if __name__ == "__main__":
             AnalyzeHypothesisWithCategoriesInput(
                 hypothesis=hypothesis,
                 categories=categories,  # type: ignore
-                stocks=stocks,  # type: ignore
+                stocks=filtered_stocks,
                 all_text_data=all_texts,
                 target_stock=stock_id,  # type: ignore
             ),
@@ -943,4 +1023,4 @@ if __name__ == "__main__":
     from agent_service.utils.logs import init_stdout_logging
 
     init_stdout_logging()
-    asyncio.run(main(hypothesis="Is NVDA the leader in the AI chips space?", main_stock="NVDA"))
+    asyncio.run(main(hypothesis="Is AMD the leader in AI chips space?", main_stock="AMD"))
