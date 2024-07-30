@@ -34,13 +34,36 @@ INDEX_NUM, KPI_NAME, JUSTIFICATION
 
 Where INDEX_NUM would be the index associated with the KPI, KPI_NAME is the name of the KPI, and JUSTIFICATION is the justification. 
 
-Do not use commas anywhere else other than to separate the three outputs in your response."""
+Do not use commas anywhere else other than to separate the three outputs in your response.
 
-CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT = """Given the topic '{topic}', determine if the topic is specific metric or if it is a more general product or service. A specific topic would be one that refers to a specific metric, like revenue or user growth, while a general topic would refer to a broader aspect of the company's assets or operations like a product. If the topic is specific, output 'Specific', if the topic is general, output 'General'"""
+If there are multiple KPIs separate them in different lines
+"""
+
+CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT = """Given the topic '{topic}', determine if the topic is specific metric or if it is a more general product or service. A specific topic would be one that refers to a specific metric, like specific revenue or user growth, while a general topic would refer to a broader aspect of the company's assets or operations like a product. If the topic is specific, output 'Specific', if the topic is general, output 'General'"""
 
 CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT = """You are a financial analyst that has been tasked to classify a topic as either a specific metric or a general product or service. You will be given a topic and must determine if the topic is specific or general. Any topic that involves a measurement such as 'revenue', 'sales', 'cost', 'subscribers', and so on must be considered a metric and thus should be classified as specific. If the topic in question simply names what appears to be a product or area of a company's business such as 'Advertisment' or 'Disney+' then you classify these as general.  Output 'Specific' if the topic is specific, output 'General' if the topic is general."""
 
-
+SPECIFIC_MULTI_KPI_INSTRUCTION = """
+For the company {company_name}, determine if an identified KPI {best_match_KPI} is what the topic '{query_topic}' is asking for exactly.
+You will be given a topic and a list of KPIs, and a single specific KPI that has been identified as best match to the topic from the list of KPIs.
+You must determine whether or not the KPI is semantically the only metric that the topic is referring to.
+Otherwise if the KPI is not an exact match, you should look for other KPIs that match the topic and output them as well.
+If you are given a topic like 'Apple Electronic Sales' and you are shown KPIs like 'Revenue - iPhone Sales', 'Revenue - MacBook Sales', 'Revenue - iPad Sales'
+you must output all of these KPIs.
+However, if you are asked for "Apple iPhone Sales" and you should only output 'Revenue - iPhone Sales' since this is an exact match. iPhone is a specific product. Even if there are other iPhone KPIs like "Units Sold - iPhone" you should not output them.
+Some topics may refer to a specific but more encompassing metric that is not an exact match for a single KPI like 'Consumer Lending Products'. This is not a specific product but a category of products.
+This could refer to any consumer lending products like loans, credit, mortgages.
+There isn't a single KPI that matches this topic exactly, but there are multiple KPIs that are relevant to this topic like 'Revenue - iPhone Sales', 'Sales - MacBook Sales', 'Sales - iPad Sales'
+In these cases, you will have multiple specific KPIs that are relevant to the topic. 
+In these cases, you must output all the KPIs that are relevant to the topic. 
+If however, it is an exact match, you should only output the best match KPI.
+For example, if you are given a topic like 'Total Revenue' and you are shown KPIs like 'Revenue - Total' and 'Revenue - iPhone' you should only output 'Revenue - Total' Since this is an exact match.
+Important!!! You must analyze the meaning of the topic and look for KPIs that include synonyms to the topic. For example, loans, credit, lending, and borrowing are all synonyms for the same topic.
+Sales, revenue, income, and earnings are all synonyms for the same metric.
+Ensure that the KPIs you output all report on the same metric and are not different metrics that are related to the topic.
+This is extremely important, the chosen best match KPI may not be the only KPI that the topic is referring to. You must output all KPIs that are relevant to the topic.
+It is also important to note that when there is an exact match, you must output the best match KPI and only the best match KPI.
+"""
 OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT_OBJ = Prompt(
     name="KPI_OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT",
     template=OVERLAPPING_KPIS_ACROSS_COMPANIES_SYS_PROMPT,

@@ -40,6 +40,7 @@ from agent_service.tools.kpis.prompts import (
     RELEVANCY_INSTRUCTION,
     SPECIFIC_KPI_INSTRUCTION,
     SPECIFIC_KPI_MAIN_PROMPT_OBJ,
+    SPECIFIC_MULTI_KPI_INSTRUCTION,
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
@@ -532,7 +533,7 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
 ) -> EquivalentKPITexts:
     llm = GPT(context=None, model=GPT4_O)
     company_info_list: List[CompanyInformation] = []
-    company_kpi_lists: List[KPIText] = []
+    company_kpi_lists: List[List[KPIText]] = []
     overlapping_kpi_list: List[KPIText] = []
 
     tasks = []
@@ -547,14 +548,16 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
             company_info_list.append(company_info)
             tasks.append(
                 get_specific_kpi_data_for_stock_id(
-                    stock_id, company_info, args.shared_metric, llm, context
+                    stock_id, company_info, args.shared_metric, llm, context, True
                 )
             )
             gbi_id_stock_id_map[stock_id.gbi_id] = stock_id
 
     company_kpi_lists = await gather_with_concurrency(tasks, n=20)
 
-    for stock_id, company_kpi in zip(args.stock_ids, company_kpi_lists):
+    flattened_array: List[KPIText] = [item for sublist in company_kpi_lists for item in sublist]
+
+    for stock_id, company_kpi in zip(args.stock_ids, flattened_array):
         if company_kpi is not None:
             overlapping_kpi_list.append(company_kpi)
 
@@ -639,14 +642,10 @@ async def classify_specific_or_general_topic(
         sys_prompt=CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ.format(),
     )
     if result.lower() == SPECIFIC:
-        specific_kpi = await get_specific_kpi_data_for_stock_id(
+        specific_kpi_list = await get_specific_kpi_data_for_stock_id(
             stock_id, company_info, topic, llm, context
         )
-        if specific_kpi is not None:
-            # Return it in a list to keep things consistent
-            topic_kpi_list = [specific_kpi]
-        else:
-            topic_kpi_list = []
+        topic_kpi_list = specific_kpi_list if specific_kpi_list is not None else []
     else:
         topic_kpi_list = await get_relevant_kpis_for_stock_id(stock_id, company_info, topic, llm)
     return topic_kpi_list
@@ -658,22 +657,41 @@ async def get_specific_kpi_data_for_stock_id(
     topic: str,
     llm: GPT,
     context: PlanRunContext,
-) -> Optional[KPIText]:
-    instructions = SPECIFIC_KPI_INSTRUCTION.format(
+    singleKPI: bool = False,
+) -> Optional[List[KPIText]]:
+    best_match_instructions = SPECIFIC_KPI_INSTRUCTION.format(
         company_name=company_info.company_name, query_topic=topic
     )
 
-    result = await llm.do_chat_w_sys_prompt(
+    best_match = await llm.do_chat_w_sys_prompt(
         SPECIFIC_KPI_MAIN_PROMPT_OBJ.format(
-            instructions=instructions,
+            instructions=best_match_instructions,
             company_name=company_info.company_name,
             company_description=company_info.company_description,
             kpi_str=company_info.kpi_str,
         ),
         KPI_RELEVANCY_SYS_PROMPT_OBJ.format(),
     )
+
+    if singleKPI is True:
+        result = best_match
+
+    else:
+        instructions = SPECIFIC_MULTI_KPI_INSTRUCTION.format(
+            company_name=company_info.company_name, query_topic=topic, best_match_KPI=best_match
+        )
+
+        result = await llm.do_chat_w_sys_prompt(
+            SPECIFIC_KPI_MAIN_PROMPT_OBJ.format(
+                instructions=instructions,
+                company_name=company_info.company_name,
+                company_description=company_info.company_description,
+                kpi_str=company_info.kpi_str,
+            ),
+            KPI_RELEVANCY_SYS_PROMPT_OBJ.format(),
+        )
+
     # Drop any line breaks since GPT should only be outputting one line anyways
-    result = result.replace("\n", "").replace("`", "")
     if result == "":
         await tool_log(
             f"No apprioriate KPI specific to {topic} was found for stock {stock_id.company_name} ({stock_id.symbol})",
@@ -681,37 +699,46 @@ async def get_specific_kpi_data_for_stock_id(
         )
         return None
 
-    try:
-        result.strip()
-        data = result.split(",")
-        index_num = int(data[0])
-        explanation = data[2].strip()
-        if not company_info.kpi_index_to_pid_mapping:
+    specific_kpi_list = []
+
+    for line in result.split("\n"):
+        try:
+            data = line.split(",")
+            index_num = int(data[0])
+            explanation = data[2].strip()
+            if not company_info.kpi_index_to_pid_mapping:
+                logger.warning(
+                    f"No KPI data available for stock {stock_id.company_name} {stock_id.symbol})"
+                )
+            pid = company_info.kpi_index_to_pid_mapping[index_num]
+            pid_metadata = company_info.kpi_lookup.get(pid, None)
+            if pid_metadata:
+                specific_kpi_list.append(
+                    KPIText(
+                        val=pid_metadata.name,
+                        pid=pid_metadata.pid,
+                        stock_id=stock_id,
+                        explanation=explanation,
+                    )
+                )
+            else:
+                logger.error(
+                    f"Failed to map {pid} (ID: pid) to an existing KPI",
+                )
+        except Exception:
             logger.warning(
-                f"No KPI data available for stock {stock_id.company_name} {stock_id.company_name})"
+                f"Failed to get pid for stock {stock_id.company_name} {stock_id.gbi_id} "
+                f"due to faulty GPT response for gpt response: '{result}', "
+                f"had {len((company_info.kpi_index_to_pid_mapping.keys()))+1}"
             )
-            return None
-        pid = company_info.kpi_index_to_pid_mapping[index_num]
-    except Exception:
-        logger.warning(
-            f"Failed to get pid for stock {stock_id.company_name} {stock_id.gbi_id} "
-            f"due to faulty GPT response for gpt response: '{result}', "
-            f"had {len((company_info.kpi_index_to_pid_mapping.keys()))+1}"
-        )
-        return None
+        if specific_kpi_list == []:
+            await tool_log(
+                f"Failed to KPIs for stock {stock_id.company_name} {stock_id.gbi_id} "
+                f"due to faulty GPT response for gpt response: '{result}', "
+                f"had {len((company_info.kpi_index_to_pid_mapping.keys()))+1}"
+            )
 
-    pid_metadata = company_info.kpi_lookup.get(pid, None)
-
-    if pid_metadata:
-        return KPIText(
-            val=pid_metadata.name, pid=pid_metadata.pid, stock_id=stock_id, explanation=explanation
-        )
-    else:
-        await tool_log(
-            f"Failed to map {data[1].strip()} (ID: pid) to an existing KPI",
-            context=context,
-        )
-    return None
+    return specific_kpi_list
 
 
 def interpret_date_quarter_inputs(
@@ -913,7 +940,7 @@ async def main() -> None:
     tr_stock_id = StockID(gbi_id=10753, symbol="TRI", isin="")
     tr_company_info = await get_company_data_and_kpis(tr_stock_id, context=plan_context)
     if tr_company_info is not None:
-        specific_kpi: KPIText = await get_specific_kpi_data_for_stock_id(  # type: ignore
+        specific_kpi: List[KPIText] = await get_specific_kpi_data_for_stock_id(  # type: ignore
             stock_id=tr_stock_id,
             company_info=tr_company_info,
             topic="thomson reuters legal profession revenue",
@@ -924,7 +951,7 @@ async def main() -> None:
             CompanyKPIsRequest(
                 stock_id=tr_stock_id,
                 table_name="TR Revenue",
-                kpis=[specific_kpi],
+                kpis=specific_kpi,
                 simple_output=True,
             ),
             context=plan_context,
@@ -1023,6 +1050,34 @@ async def main() -> None:
     df = equivalent_kpis_table.to_df()
     print(df.head())
     for column in equivalent_kpis_table.columns:
+        print(column.metadata.label)
+
+    amd = StockID(gbi_id=124, symbol="AMD", isin="")
+    nvda = StockID(gbi_id=7555, symbol="NVDA", isin="")
+    qcom = StockID(gbi_id=8707, symbol="QCOM", isin="")
+    mrvl = StockID(gbi_id=9345, symbol="MRVL", isin="")
+    csco = StockID(gbi_id=2849, symbol="CSCO", isin="")
+    goog = StockID(gbi_id=30336, symbol="GOOG", isin="")
+    avgo = StockID(gbi_id=35692, symbol="AVGO", isin="")
+
+    ai_chip_kpis: EquivalentKPITexts = await get_relevant_kpis_for_multiple_stocks_given_topic(
+        GetRelevantKPIsForStocksGivenTopic(  # type: ignore
+            stock_ids=[amd, nvda, qcom, mrvl, csco, goog, avgo], shared_metric="AI Chip Sales"
+        ),
+        context=plan_context,
+    )
+
+    ai_chip_table: Table = await get_overlapping_kpis_table_for_stocks(  # type: ignore
+        args=KPIsRequest(
+            equivalent_kpis=ai_chip_kpis,
+            table_name="AI Chip Sales",
+            simple_output=True,
+        ),
+        context=plan_context,
+    )
+    df = ai_chip_table.to_df()
+    print(df.head())
+    for column in ai_chip_table.columns:
         print(column.metadata.label)
 
 
