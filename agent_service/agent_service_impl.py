@@ -57,20 +57,8 @@ from agent_service.endpoints.models import (
     UploadFileResponse,
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
-from agent_service.external.pa_svc_client import (
-    delete_watchlist,
-    delete_workspace,
-    get_all_watchlists,
-    get_all_workspaces,
-    rename_watchlist,
-    rename_workspace,
-)
-from agent_service.io_type_utils import TableColumnType, load_io_type
-from agent_service.io_types.table import (
-    STOCK_ID_COL_NAME_DEFAULT,
-    TableOutput,
-    TableOutputColumn,
-)
+from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
+from agent_service.io_type_utils import load_io_type
 from agent_service.types import ChatContext, MemoryType, Message
 from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import send_chat_message
@@ -83,6 +71,7 @@ from agent_service.utils.feature_flags import (
     get_secure_mode_hash,
     get_user_context,
 )
+from agent_service.utils.memory_handler import MemoryHandler, get_handler
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
 from agent_service.utils.redis_queue import (
@@ -528,30 +517,20 @@ class AgentServiceImpl:
     async def get_memory_content(
         self, user_id: str, type: str, id: str
     ) -> GetMemoryContentResponse:
-        cols = [TableOutputColumn(name=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK)]
-        if type == MemoryType.PORTFOLIO:
-            cols.append(TableOutputColumn(name="Weight", col_type=TableColumnType.FLOAT))
-
-        table = TableOutput(title="Memory Content", columns=cols, rows=[])
-
-        return GetMemoryContentResponse(output=table)
-
-    async def delete_memory(self, user_id: str, type: str, id: str) -> DeleteMemoryResponse:
         try:
-            if type == MemoryType.PORTFOLIO:
-                return DeleteMemoryResponse(
-                    success=await delete_workspace(user_id=user_id, workspace_id=id)
-                )
-            if type == MemoryType.WATCHLIST:
-                return DeleteMemoryResponse(
-                    success=await delete_watchlist(user_id=user_id, watchlist_id=id)
-                )
+            handler: MemoryHandler = get_handler(type)
+            return GetMemoryContentResponse(output=await handler.get_content(user_id, id))  # type: ignore
         # catch rpc error and raise as HTTPException
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=repr(e))
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=f"type {type} is not supported"
-        )
+
+    async def delete_memory(self, user_id: str, type: str, id: str) -> DeleteMemoryResponse:
+        try:
+            handler: MemoryHandler = get_handler(type)
+            return DeleteMemoryResponse(success=await handler.delete(user_id, id))
+        # catch rpc error and raise as HTTPException
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=repr(e))
 
     async def rename_memory(
         self, user_id: str, type: str, id: str, new_name: str
@@ -561,16 +540,11 @@ class AgentServiceImpl:
                 status_code=status.HTTP_400_BAD_REQUEST, detail="name cannot be empty"
             )
         try:
-            if type == MemoryType.PORTFOLIO:
-                return RenameMemoryResponse(success=await rename_workspace(user_id, id, new_name))
-            if type == MemoryType.WATCHLIST:
-                return RenameMemoryResponse(success=await rename_watchlist(user_id, id, new_name))
+            handler: MemoryHandler = get_handler(type)
+            return RenameMemoryResponse(success=await handler.rename(user_id, id, new_name))
         # catch rpc error and raise as HTTPException
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=repr(e))
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=f"type {type} is not supported"
-        )
 
     # Requires no authorization
     async def get_plan_run_output(self, plan_run_id: str) -> GetPlanRunOutputResponse:
