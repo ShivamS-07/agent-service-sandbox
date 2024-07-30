@@ -1,6 +1,6 @@
 import asyncio
 import datetime
-from collections import defaultdict
+from collections import Counter, defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -862,10 +862,28 @@ async def get_overlapping_kpis_table_for_stocks(
             else:
                 company_kpi_data_lookup[stock_id] = kpi_data
 
+    all_stock_ids = set(company_kpi_data_lookup.keys())
+    most_common_unit = Counter(
+        [kpi_data[0].long_unit for kpi_data in company_kpi_data_lookup.values()]
+    ).most_common(1)[0][0]
+    filtered_kpi_data_lookup = {
+        stock_id: kpi_data
+        for stock_id, kpi_data in company_kpi_data_lookup.items()
+        if kpi_data[0].long_unit == most_common_unit
+    }
+
+    dropped_stock_ids = all_stock_ids - set(filtered_kpi_data_lookup.keys())
+
+    for stock_id in dropped_stock_ids:
+        await tool_log(
+            f"Could not find a comparable metric for {stock_id.company_name} ({stock_id.symbol})",
+            context=context,
+        )
+
     topic_kpi_table = await convert_multi_stock_data_to_table(
         kpi_name=args.equivalent_kpis.general_kpi_name,
         kpi_explanation_lookups=kpi_explanation_lookup,
-        data=company_kpi_data_lookup,
+        data=filtered_kpi_data_lookup,
         simple_table=args.simple_output,
     )
     return topic_kpi_table
