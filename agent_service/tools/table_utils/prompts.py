@@ -69,10 +69,9 @@ the "currency" column type for ANY field that holds a value that represents a
 price, currency, or money amount.
 
 JSON Schema:
-
     {schema}
 
-The 'col_type' field types are explained below:
+The 'col_type' field types are explained below, ONLY one of these must be chosen:
     {col_type_explain}
 
 The transformation that will be applied to the dataframe is:

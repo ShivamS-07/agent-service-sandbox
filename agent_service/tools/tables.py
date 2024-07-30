@@ -60,7 +60,7 @@ async def gen_new_column_schema(
 ) -> List[TableColumnMetadata]:
     logger = get_prefect_logger(__name__)
     prompt = DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT.format(
-        schema=TableColumnMetadata.schema_json(),
+        schema=TableColumnMetadata.to_gpt_schema(),
         transform=transformation_description,
         input_cols=_dump_cols(current_table_cols),
         col_type_explain=TableColumnType.get_type_explanations(),
@@ -78,7 +78,7 @@ async def gen_new_column_schema(
         return [TableColumnMetadata.model_validate(item) for item in cols]
     except (ValidationError, JSONDecodeError) as e:
         prompt = DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT.format(
-            schema=TableColumnMetadata.schema_json(),
+            schema=TableColumnMetadata.to_gpt_schema(),
             transform=transformation_description,
             input_cols=_dump_cols(current_table_cols),
             col_type_explain=TableColumnType.get_type_explanations(),
