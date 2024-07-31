@@ -196,10 +196,7 @@ async def filter_stocks_by_product_or_service(
         )
     debug_info["filtered_stocks1"] = filtered_stocks1
     await tool_log(
-        log=(
-            f"Number of stocks after first round of filtering: {len(filtered_stocks1)} || "
-            f"{[stock.company_name for stock in filtered_stocks1]}"
-        ),
+        log=(f"Number of stocks after first round of filtering: {len(filtered_stocks1)}"),
         context=context,
     )
     await tool_log(
@@ -217,10 +214,7 @@ async def filter_stocks_by_product_or_service(
 
     debug_info["filtered_stock2"] = dump_io_type(filtered_stocks2)
     await tool_log(
-        log=(
-            f"Number of stocks after second round of filtering: {len(filtered_stocks2)} ||"
-            f"{[stock.company_name for stock in filtered_stocks2]}"
-        ),
+        log=(f"Number of stocks after second round of filtering: {len(filtered_stocks2)}"),
         context=context,
     )
     # add explanation to the filtered stocks history
@@ -281,6 +275,7 @@ async def filter_stocks_round1(
                 llm_cheap.do_chat_w_sys_prompt(
                     main_prompt=main_prompt,
                     sys_prompt=NO_PROMPT,
+                    no_cache=True,
                 )
             )
     import time
@@ -332,6 +327,7 @@ async def filter_stocks_round2(
                         product_description=product_description,
                     ),
                     sys_prompt=NO_PROMPT,
+                    no_cache=True,
                 )
             )
     gpt_responses = await gather_with_concurrency(tasks, n=CUNCURRENT_CALLS_FILTER2)
