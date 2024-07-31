@@ -159,7 +159,7 @@ class CategoriesForStockInput(ToolArgs):
 
 @tool(
     description=f"""
-    This function returns a list of success criteria that would be useful in evaluating a prompt. \
+    This function returns a list of success criteria that would be useful in doing a market analysis. \
     By default, the function returns up to {DEFAULT_CATEGORY_LIMIT} criteria. However, an optional \
     'limit' parameter can be passed in to adjust the number of outputted criteria from the client query. \
     In addition, the function can also take in a list of criteria names that must be included in the \
@@ -171,6 +171,11 @@ class CategoriesForStockInput(ToolArgs):
     then you should set 'stock` as Expedia's stock identifier. If the query asks 'You should include \
     X, Y in the criteria and give the top 5 criteria', then 'must_include_criteria_names' should be \
     set as ['X', 'Y'] and 'limit' should be set as 5.
+    Note that these categories are very general and only appropriate as a high level rubric for evaulating
+    stocks in the same industry, the output of this tool is NOT appropriate for use in due diligence checklists
+    which are necessarily much more specific!
+    I repeat, never use this tool in the context of due diligence, use the summary tool to write the
+    due diligence criteria.
     """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

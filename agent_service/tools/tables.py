@@ -218,12 +218,15 @@ Tables are simply wrappers around pandas dataframes. There are a few primary use
 - Filtering or ranking tables based on numeric criteria
 - Aggregating tables ACROSS row or stocks
 
-For things like percent change of price, or other per-stock calculations, please
-use the `get_statistic_data_for_companies` function instead. Do NOT use this. In particular,
-if a user expresses a statisic that is a simple mathematical combination of two simpler
-statistics (earnings over assets, debt minus ), you must pass that full mathematical expression
-to the get_statistic_data_for_companies for companies tool, you must avoid using this tool in
-those situations.
+For things like percent change of price, or other per-stock, across time calculations, please
+use the `get_statistic_data_for_companies` function instead,  do NOT use this function. In particular,
+if a user expresses a statistic that is a simple mathematical combination of two simpler
+statistics (earnings over assets, debt minus assets), you must pass that full mathematical expression
+to the get_statistic_data_for_companies tool, avoid using this tool in those situations.
+Similarity, if a user asks for some averaging of some statistic across time,
+(average P/E over the last 3 years), you must NOT do the averaging in this function, but
+instead pass full statistic to get_statistic_data_for_companies (i.e. the entire statistic would
+be 'average P/E over the last 3 years').
 
 The `transformation_description` argument is a free text description of a
 transformation that will be applied to the table by an LLM, so feel free to be
@@ -231,6 +234,7 @@ detailed in your description of the desired transformation. Anything that could
 be done in pandas is supported here. Simple table formatting should not use
 this. It is better to be overly detailed than not detailed enough. Note again
 that the input MUST be a table, not a list!
+
 You must never pass a vague transformation_description into this tool, you must always be fully
 explicit about the operations, particularly filtering. If the client only mentioned, for example,
 a filtering to "high" or "good" values without providing a definition of what "high" or "good"

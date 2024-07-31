@@ -20,7 +20,7 @@ PLAN_RULES = """- Your output script must be valid Python code
 - In particular, you absolutely must not use the Python indexes [], e.g. you must not write anything involving the characters `[]` that is not defining a list. This includes inside a function argument, e.g. func(a=b[0]) is not allowed. Instead use the provided function which does the same thing.
 - Any arguments to the function must match the provided function headers in type. Be careful about inheritance, note that any type which contains the words of another Class is a typically subclass of that type, for instance StockNewsDevelopmentText is a subclass of StockText (a text linked to a particular stock), NewsText (a text that reports news), and Text.
 - Never pass None explicitly as an argument to a function
-- Never pass an empty list ([]) to a function 
+- Never pass an empty list ([]) as a function argument. All your arguments which are lists must have at least one element.
 - You must include all required arguments, though you can exclude those with defaults if you are not changing them
 - If values for any of the optional arguments (those with defaults) are mentioned or implied by the client input and different from the default, include those optional arguments.
 - If an argument has a default value according to the function definition, you must not pass that default value as an argument, you must leave it out.

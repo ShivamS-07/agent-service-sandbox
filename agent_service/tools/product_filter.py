@@ -99,6 +99,7 @@ PRODUCT_DESCRIPTION_PROMPT = Prompt(
 
 class FilterStocksByProductOrServiceInput(ToolArgs):
     stock_ids: List[StockID]
+    texts: List[Text]  # we are including this to help the planner not be stupid, not used!
     product_str: str
     must_include_stocks: Optional[List[StockID]] = None
 
@@ -113,6 +114,7 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "In these complex cases, use the filter_stocks_by_profile tool instead. "
         "This tool is only for simple cases where it should be clear whether a company counts as a provider"
         "of the product or service based on a company description. "
+        "You must pass in company descriptions for the relevant stocks as the texts"
         "If the user specifically mentions a sector that is covered by the sector_identifier tool, use "
         "that tool instead, but some things the user refers to as sectors will be covered by this tool."
         "Note that retail should be considered a general service, and then retailers that sell specific kinds "
@@ -123,7 +125,12 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "For example, 'electric vehicles', 'cloud computing', 'solar panels', 'smartphones', 'AI chips', "
         "'Online retail', etc. "
         "\n must_include_stocks is a list of companies that the output of tool must have, for instance if the "
-        "\n user asks `Is NVDA the leader in AI chips', then the output must include NVDA."
+        "\n user asks `Is NVDA the leader in AI chips', then the output must include NVDA. "
+        "If the user has not specified any specific universe of stocks, the S&P500 is a good default "
+        "to pass to this tool. However, if the client does not specify a region and there is clearly at least "
+        "one major international producer which has a major presence in the US, use the Vanguard World "
+        "Stock ETF instead of the S&P 500, for example cars because of major Japanese manufacturers like "
+        "Toyota, Honda, etc."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

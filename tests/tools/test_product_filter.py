@@ -34,8 +34,7 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
     async def test_filter_by_product1(self):
         result = await filter_stocks_by_product_or_service(
             FilterStocksByProductOrServiceInput(
-                stock_ids=self.stock_ids,
-                product_str="smartphone",
+                stock_ids=self.stock_ids, product_str="smartphone", texts=[]
             ),
             self.context,
         )
@@ -44,8 +43,7 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
     async def test_filter_by_product2(self):
         result = await filter_stocks_by_product_or_service(
             FilterStocksByProductOrServiceInput(
-                stock_ids=self.stock_ids,
-                product_str="gold and copper mine",
+                stock_ids=self.stock_ids, product_str="gold and copper mine", texts=[]
             ),
             self.context,
         )
@@ -54,8 +52,7 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
     async def test_filter_by_product3(self):
         result = await filter_stocks_by_product_or_service(
             FilterStocksByProductOrServiceInput(
-                stock_ids=self.stock_ids,
-                product_str="chairs",
+                stock_ids=self.stock_ids, product_str="chairs", texts=[]
             ),
             self.context,
         )
@@ -79,6 +76,7 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
                 FilterStocksByProductOrServiceInput(
                     stock_ids=self.sp500_stock_ids,
                     product_str=product,
+                    texts=[],
                     must_include_stocks=companies if companies else None,
                 ),
                 self.context,
@@ -105,8 +103,7 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
     async def test_filter_by_product5(self):
         new_result = await filter_stocks_by_product_or_service(
             FilterStocksByProductOrServiceInput(
-                stock_ids=self.sp500_stock_ids,
-                product_str="Solar Power",
+                stock_ids=self.sp500_stock_ids, product_str="Solar Power", texts=[]
             ),
             self.context,
         )
@@ -117,8 +114,7 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
     async def test_filter_by_product6(self):
         new_result = await filter_stocks_by_product_or_service(
             FilterStocksByProductOrServiceInput(
-                stock_ids=self.sp500_stock_ids,
-                product_str="AI Chips",
+                stock_ids=self.sp500_stock_ids, product_str="AI Chips", texts=[]
             ),
             self.context,
         )
