@@ -1,5 +1,6 @@
 # type: ignore
 from datetime import date
+from typing import DefaultDict, List
 
 from agent_service.io_type_utils import IOType, TableColumnType
 from agent_service.io_types.text import Text
@@ -68,10 +69,21 @@ class TestData(TestExecutionPlanner):
                 msg=number_of_data_points_mismatch_err_msg.format(stock="GOOG"),
             )
 
+        def validate_tool_args(execution_log: DefaultDict[str, List[dict]]):
+            tool_name = "get_statistic_data_for_companies"
+            actual_reference = execution_log[tool_name][0]["statistic_reference"]
+            expected_reference = "Relative Strength Indexgit "
+            self.assertSetEqual(
+                actual_reference,
+                expected_reference,
+                f"The args for tool {tool_name} " f"are different than expected",
+            )
+
         self.prompt_test(
             prompt=prompt,
             validate_output=validate_output,
             required_tools=["get_statistic_data_for_companies"],
+            validate_tool_args=validate_tool_args,
         )
 
     @skip_in_ci

@@ -20,6 +20,11 @@ class VisAlphaDataset(Enum):
     COMPANY_DATASET = "CD"  # Company Dataset
 
 
+def get_short_service_version(service_version: str) -> str:
+    index = service_version.find(":") + 1
+    return service_version[index:]
+
+
 class Clickhouse(ClickhouseBase):
     def __init__(self, environment: Optional[str] = None):
         environment: str = environment or EnvironmentUtils.aws_ssm_prefix
@@ -699,9 +704,9 @@ class Clickhouse(ClickhouseBase):
             row["timestamp"] = row["timestamp"].replace(tzinfo=tz).isoformat()
         return rows
 
-    def get_info_for_test_case(self, test_name: str) -> List[Dict[str, Any]]:
+    def get_info_for_test_case(self, test_name: str) -> Dict[str, Any]:
         sql = """
-            SELECT test_name, prompt, agent_id, output, execution_plan, service_version, error_msg, warning_msg,
+            SELECT prompt, agent_id, output, execution_plan, service_version, error_msg, warning_msg,
             execution_finished_at_utc, execution_start_at_utc, execution_plan_started_at_utc,
             execution_plan_finished_at_utc, execution_duration_seconds, execution_plan_duration_seconds
             FROM agent.regression_test
@@ -709,6 +714,7 @@ class Clickhouse(ClickhouseBase):
             ORDER BY timestamp DESC
             """
         rows = self.generic_read(sql, {"test_name": test_name})
+        res: Dict[str, Any] = {}
         tz = datetime.timezone.utc
         for row in rows:
             row["output_str"] = row["output"]
@@ -723,7 +729,10 @@ class Clickhouse(ClickhouseBase):
             ]:
                 if row[key]:
                     row[key] = row[key].replace(tzinfo=tz).isoformat()
-        return rows
+            service_version_short = get_short_service_version(row["service_version"])
+            del row["service_version"]
+            res[f"version={service_version_short}"] = row
+        return res
 
     ################################################################################################
     # Tool Diff Info

@@ -1,5 +1,5 @@
 import pprint
-from typing import Dict, List, Optional, Tuple, Union
+from typing import DefaultDict, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
 from prefect import flow
@@ -85,6 +85,7 @@ async def run_execution_plan(
     # in precomputed outputs for prior tasks.
     override_task_output_lookup: Optional[Dict[str, IOType]] = None,
     scheduled_by_automation: bool = False,
+    execution_log: Optional[DefaultDict[str, List[dict]]] = None,
 ) -> List[IOType]:
     ###########################################
     # PLAN RUN SETUP
@@ -185,6 +186,8 @@ async def run_execution_plan(
             # Run the tool, store its output, errors and replan
             try:
                 step_args = tool.input_type(**resolved_args)
+                if execution_log is not None:
+                    execution_log[step.tool_name].append(resolved_args)
                 tool_output = await tool.func(args=step_args, context=context)
             except NonRetriableError as nre:
                 logger.exception(f"Step '{step.tool_name}' failed due to {nre}")
@@ -917,6 +920,7 @@ async def run_execution_plan_local(
     replan_execution_error: bool = False,
     override_task_output_lookup: Optional[Dict[str, IOType]] = None,
     scheduled_by_automation: bool = False,
+    execution_log: Optional[DefaultDict[str, List[dict]]] = None,
 ) -> List[IOType]:
     context.run_tasks_without_prefect = True
     return await run_execution_plan.fn(
@@ -928,6 +932,7 @@ async def run_execution_plan_local(
         replan_execution_error=replan_execution_error,
         override_task_output_lookup=override_task_output_lookup,
         scheduled_by_automation=scheduled_by_automation,
+        execution_log=execution_log,
     )
 
 

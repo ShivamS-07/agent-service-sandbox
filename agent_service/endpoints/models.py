@@ -500,7 +500,7 @@ class GetTestSuiteRunsResponse(BaseModel):
 
 
 class GetTestCaseInfoResponse(BaseModel):
-    test_case_info: List[Dict[str, Any]]
+    test_case_info: Dict[str, Any]
 
 
 class GetTestCasesResponse(BaseModel):

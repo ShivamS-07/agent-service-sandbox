@@ -694,7 +694,7 @@ class AgentServiceImpl:
 
     async def get_info_for_test_case(self, test_name: str) -> GetTestCaseInfoResponse:
         infos = self.ch.get_info_for_test_case(test_name=test_name)
-        for info in infos:
+        for version, info in infos.items():
             if "output" in info and info["output"]:
                 try:
                     my_output = info["output"]
@@ -706,7 +706,7 @@ class AgentServiceImpl:
                 except Exception:
                     LOGGER.info(
                         f"Error while displaying formatted output for test case {test_name}, "
-                        f"version={info['service_version']}: {traceback.format_exc()}"
+                        f"version={version}: {traceback.format_exc()}"
                     )
         return GetTestCaseInfoResponse(test_case_info=infos)
 

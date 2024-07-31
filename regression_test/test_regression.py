@@ -8,6 +8,7 @@ import traceback
 import unittest
 import uuid
 import warnings
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
@@ -130,6 +131,7 @@ class TestExecutionPlanner(unittest.TestCase):
         raise_output_validation_error: Optional[bool] = False,
         user_id: Optional[str] = None,
         required_sample_plans: List[str] = [],
+        validate_tool_args: Callable = lambda execution_log: None,
         only_validate_plan: bool = os.getenv("RUN_IN_CI", False),
     ):
         test_name = inspect.stack()[1].function
@@ -151,7 +153,7 @@ class TestExecutionPlanner(unittest.TestCase):
 
         warning_msg = ""
         try:
-            sample_plans, plan, output = self.run_regression(
+            sample_plans, plan, output, execution_log = self.run_regression(
                 prompt=prompt,
                 regression_test_log=regression_test_log,
                 user_id=user_id,
@@ -177,6 +179,7 @@ class TestExecutionPlanner(unittest.TestCase):
             try:
                 if not only_validate_plan:
                     validate_output(prompt=prompt, output=output)
+                    validate_tool_args(execution_log=execution_log)
             except AssertionError as e:
                 if raise_output_validation_error:
                     raise e
@@ -255,7 +258,7 @@ class TestExecutionPlanner(unittest.TestCase):
         except Exception as e:
             raise PlanGenerationError(e)
         if skip_output:
-            return sample_plans, plan, None
+            return sample_plans, plan, None, None
         context = PlanRunContext(
             agent_id=agent_id,
             plan_id=plan_id,
@@ -267,6 +270,7 @@ class TestExecutionPlanner(unittest.TestCase):
         )
         context.chat = chat
         execution_started_at = datetime.datetime.utcnow().isoformat()
+        execution_log = defaultdict(list)
         output = self.loop.run_until_complete(
             run_execution_plan_local(
                 plan=plan,
@@ -274,6 +278,7 @@ class TestExecutionPlanner(unittest.TestCase):
                 do_chat=do_chat,
                 log_all_outputs=False,
                 replan_execution_error=False,
+                execution_log=execution_log,
             )
         )
         regression_test_log.event_data.update(
@@ -283,4 +288,4 @@ class TestExecutionPlanner(unittest.TestCase):
                 "output": dump_io_type(output),
             }
         )
-        return sample_plans, plan, output
+        return sample_plans, plan, output, execution_log
