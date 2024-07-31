@@ -752,10 +752,16 @@ async def filter_stocks_by_profile_match(
     except Exception as e:
         logger.warning(f"Error duplicating output for stocks with no text changes: {e}")
 
-    await tool_log(
-        f"Filtered {len(filtered_stocks_with_scores)} stocks for profile: {profile_str}",
-        context=context,
-    )
+    if isinstance(args.profile, TopicProfiles):
+        await tool_log(
+            f"Filtered {len(filtered_stocks_with_scores)} stocks for profile: {args.profile.topic}",
+            context=context,
+        )
+    elif isinstance(args.profile, str):
+        await tool_log(
+            f"Filtered {len(filtered_stocks_with_scores)} stocks for profile: {profile_str}",
+            context=context,
+        )
 
     if not filtered_stocks_with_scores:
         raise NonRetriableError(message="Stock profile filter resulted in an empty list of stocks")
