@@ -297,7 +297,7 @@ class ToolRegistry:
 
 
 def default_cache_key_func(tool_name: str, args: ToolArgs, _context: PlanRunContext) -> str:
-    args_str = args.model_dump_json()
+    args_str = args.model_dump_json(serialize_as_any=True)
     return f"{tool_name}-{args_str}"
 
 
@@ -413,7 +413,7 @@ def tool(
                 event_data: Dict[str, Any] = {
                     "tool_name": tool_name,
                     "start_time_utc": start,
-                    "args": args.model_dump_json(),
+                    "args": args.model_dump_json(serialize_as_any=True),
                     "context": context.model_dump_json(),
                 }
 
