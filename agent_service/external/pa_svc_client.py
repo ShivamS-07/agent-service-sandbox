@@ -41,12 +41,15 @@ from pa_portfolio_service_proto_v1.workspace_pb2 import (
     DeleteWorkspaceResponse,
     GetAllWorkspacesRequest,
     GetAllWorkspacesResponse,
+    GetTransitiveHoldingsFromStocksAndWeightsRequest,
+    GetTransitiveHoldingsFromStocksAndWeightsResponse,
     GetTSWorkspacesHoldingsRequest,
     GetTSWorkspacesHoldingsResponse,
     ModifyWorkspaceHistoricalHoldingsRequest,
     ModifyWorkspaceHistoricalHoldingsResponse,
     RenameWorkspaceRequest,
     RenameWorkspaceResponse,
+    StockAndWeight,
     WorkspaceMetadata,
     WorkspaceTrade,
 )
@@ -205,7 +208,8 @@ async def get_all_workspaces(user_id: str) -> List[WorkspaceMetadata]:
     # just need this cached long enough to call it again in the same plan
     with _get_service_stub() as stub:
         response: GetAllWorkspacesResponse = await stub.GetAllWorkspaces(
-            GetAllWorkspacesRequest(), metadata=get_default_grpc_metadata(user_id=user_id)
+            GetAllWorkspacesRequest(),
+            metadata=get_default_grpc_metadata(user_id=user_id),
         )
         if response.status.code != 0:
             raise ValueError(
@@ -309,3 +313,25 @@ async def recalc_strategies(user_id: str, strategy_ids: List[str]) -> None:
             raise ValueError(
                 f"Failed to recalc strategies: {response.status.code}" f" {response.status.message}"
             )
+
+
+@grpc_retry
+@async_perf_logger
+async def get_transitive_holdings_from_stocks_and_weights(
+    user_id: str, weighted_securities: List[StockAndWeight]
+) -> List[StockAndWeight]:
+    with _get_service_stub() as stub:
+        response: GetTransitiveHoldingsFromStocksAndWeightsResponse = (
+            await stub.GetTransitiveHoldingsFromStocksAndWeights(
+                GetTransitiveHoldingsFromStocksAndWeightsRequest(
+                    weighted_securities=weighted_securities
+                ),
+                metadata=get_default_grpc_metadata(user_id=user_id),
+            )
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to recalc strategies: {response.status.code}" f" {response.status.message}"
+            )
+
+    return [weighted_security for weighted_security in response.weighted_securities]

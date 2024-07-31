@@ -13,7 +13,6 @@ from agent_service.io_types.text import Text, TextGroup, ThemeText
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.commentary.constants import (
     COMMENTARY_LLM,
-    DEFAULT_BENCHMARK_NAME,
     MAX_DEVELOPMENTS_PER_COMMENTARY,
     MAX_STOCKS_PER_COMMENTARY,
     MAX_THEMES_PER_COMMENTARY,
@@ -69,8 +68,6 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 
-logger = get_prefect_logger(__name__)
-
 
 class WriteCommentaryInput(ToolArgs):
     date_range: DateRange = DateRange(
@@ -82,7 +79,6 @@ class WriteCommentaryInput(ToolArgs):
     client_type: Optional[str] = "Simple"
     writing_format: Optional[str] = "Long"
     portfolio_id: Optional[PortfolioID] = None
-    benchmark_name: Optional[str] = None
 
 
 @tool(
@@ -92,6 +88,7 @@ class WriteCommentaryInput(ToolArgs):
     update_instructions=UPDATE_COMMENTARY_INSTRUCTIONS,
 )
 async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) -> Text:
+    logger = get_prefect_logger(__name__)
 
     # get previous commentary if exists
     previous_commentaries = await get_previous_commentary_results(context)
@@ -113,14 +110,9 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
             GetPortfolioInput(portfolio_name="portfolio"),
             context,
         )
-    if args.benchmark_name is None:
-        args.benchmark_name = DEFAULT_BENCHMARK_NAME
-        await tool_log(
-            log=f"No benchmark name is provided. A default benchmark will be used: {args.benchmark_name}.",
-            context=context,
-        )
+
     portfolio_prompt = await prepare_portfolio_prompt(
-        args.portfolio_id, args.date_range, args.benchmark_name, context  # type: ignore
+        args.portfolio_id, args.date_range, context  # type: ignore
     )
 
     # Prepare the stock performance prompt

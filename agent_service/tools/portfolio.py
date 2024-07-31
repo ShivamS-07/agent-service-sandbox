@@ -6,9 +6,12 @@ import numpy as np
 import pandas as pd
 from pa_portfolio_service_proto_v1.pa_service_common_messages_pb2 import TimeDelta
 from pa_portfolio_service_proto_v1.watchlist_pb2 import StockWithWeight
-from pa_portfolio_service_proto_v1.workspace_pb2 import WorkspaceAuth
+from pa_portfolio_service_proto_v1.workspace_pb2 import StockAndWeight, WorkspaceAuth
 from pydantic import field_validator
 
+from agent_service.external.investment_policy_svc import (
+    get_portfolio_investment_policy_for_workspace,
+)
 from agent_service.external.pa_backtest_svc_client import (
     get_stock_performance_for_date_range,
     get_stocks_sector_performance_for_date_range,
@@ -17,6 +20,7 @@ from agent_service.external.pa_svc_client import (
     get_all_holdings_in_workspace,
     get_all_workspaces,
     get_full_strategy_info,
+    get_transitive_holdings_from_stocks_and_weights,
 )
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
@@ -46,10 +50,12 @@ PORTFOLIO_REMOVE_STOCK_DIFF = "{company} was removed from the portfolio: {portfo
 PortfolioID = str
 # Get the postgres connection
 db = get_psql()
+logger = get_prefect_logger(__name__)
 
 
 class GetPortfolioHoldingsInput(ToolArgs):
     portfolio_id: PortfolioID
+    expand_etfs: bool = False
     fetch_stats: Optional[bool] = True
 
 
@@ -67,18 +73,21 @@ async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
         "This function returns a list of stocks and the weight at which they are held in a specific portfolio, "
         "and optionally their price and performance. "
         "Use this function if you want return all the stocks in a portfolio given a portfolio Id. "
-        "A PortfolioID is not a portfolio name. "
-        "A PortfolioID is not a stock identifier. "
-        "There is a fetch_stats flag which is optional and defaults to True. "
-        "If the eventual answer is just holdings, the flag should be on. "
-        "If the holdings are being fetched and then something else is being done with them later, "
-        "the flag should be turned off to avoid automatically fetching these extra columns."
-        "This tool should only be used to get portfolio holdings, "
+        "\n- A PortfolioID is not a portfolio name. A PortfolioID is not a stock identifier. "
+        "\n- This tool should only be used to get portfolio holdings, "
         "for ETF holdings you should use get_stock_universe tool instead. "
         "Do not use this function to find portfolio names or if no portfolio Id is present. "
         "If you only need a list of stocks without weights, MAKE SURE you use the "
         "`get_stock_identifier_list_from_table` function on the table output by this function! "
-        "Output will contain these columns: 'Stock', 'Weight', and optionally 'Price' and 'Performance'."
+        "\n- There is a fetch_stats flag which is optional and defaults to True. "
+        "If the eventual answer is just holdings, the flag should be on. "
+        "If the holdings are being fetched and then something else is being done with them later, "
+        "the flag should be turned off to avoid automatically fetching these extra columns."
+        "\n- Output will contain these columns: 'Stock', 'Weight', and optionally 'Price' and 'Performance', "
+        "and optionally, if fetch_stats == True, 'Price' and 'Performance'."
+        "\n- 'expand_etfs' is an optional parameter that defaults to False. "
+        "If `expand_etfs` set to True, the function will expand ETFs into stock level "
+        "and adjust the weights accordingly. "
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -87,7 +96,6 @@ async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
 async def get_portfolio_holdings(
     args: GetPortfolioHoldingsInput, context: PlanRunContext
 ) -> StockTable:
-    logger = get_prefect_logger(__name__)
     workspace = await get_all_holdings_in_workspace(context.user_id, args.portfolio_id)
 
     workspace_name = await get_workspace_name(
@@ -97,18 +105,25 @@ async def get_portfolio_holdings(
         workspace_name = args.portfolio_id
 
     gbi_ids = [holding.gbi_id for holding in workspace.holdings]
-
-    logger.info(f"found {len(gbi_ids)} holdings")
-
-    stock_ids = await StockID.from_gbi_id_list(gbi_ids)
-    stock_list = stock_ids
-    gbi_id2_stock_id = {s.gbi_id: s for s in stock_ids}
+    weights = [holding.weight for holding in workspace.holdings]
+    if args.expand_etfs:
+        await tool_log("Expanding ETFs in portfolio holdings", context=context)
+        # get all the stocks in the portfolio ETFs
+        weighted_securities: List[StockAndWeight] = [
+            StockAndWeight(gbi_id=gbi_id, weight=weight) for gbi_id, weight in zip(gbi_ids, weights)
+        ]
+        expanded_weighted_securities: List[StockAndWeight] = (
+            await get_transitive_holdings_from_stocks_and_weights(
+                user_id=context.user_id, weighted_securities=weighted_securities
+            )
+        )
+        gbi_ids = [holding.gbi_id for holding in expanded_weighted_securities]
+        weights = [holding.weight for holding in expanded_weighted_securities]
+    stock_list = await StockID.from_gbi_id_list(gbi_ids)
 
     data = {
-        STOCK_ID_COL_NAME_DEFAULT: [
-            gbi_id2_stock_id[holding.gbi_id] for holding in workspace.holdings
-        ],
-        "Weight": [holding.weight for holding in workspace.holdings],
+        STOCK_ID_COL_NAME_DEFAULT: stock_list,
+        "Weight": weights,
     }
 
     if args.fetch_stats:
@@ -120,7 +135,7 @@ async def get_portfolio_holdings(
 
         # get latest price + stock performance data
         gbi_id2_price, stock_performance = await asyncio.gather(
-            get_latest_price(context, stock_ids),
+            get_latest_price(context, stock_list),
             get_stock_performance_for_date_range(
                 gbi_ids=gbi_ids,
                 start_date=date_range.start_date,
@@ -157,7 +172,7 @@ async def get_portfolio_holdings(
         )
     table = StockTable.from_df_and_cols(data=df, columns=columns)
     await tool_log(
-        f"Found {len(stock_ids)} holdings in portfolio", context=context, associated_data=table
+        f"Found {len(gbi_ids)} holdings in portfolio", context=context, associated_data=table
     )
 
     try:  # since everything associated with diffing is optional, put in try/except
@@ -215,7 +230,6 @@ class GetPortfolioInput(ToolArgs):
 async def convert_portfolio_mention_to_portfolio_id(
     args: GetPortfolioInput, context: PlanRunContext
 ) -> PortfolioID:
-    logger = get_prefect_logger(__name__)
     # Use PA Service to get all portfolios for the user
     workspaces = await get_all_workspaces(user_id=context.user_id)
 
@@ -362,7 +376,7 @@ async def get_portfolio_performance(
         date_range = args.date_range
 
     # get the linked_portfolio_id
-    linked_portfolio_id = str(db.get_workspace_linked_id(args.portfolio_id))
+    linked_portfolio_id: str = await get_linked_portfolio_id(context.user_id, args.portfolio_id)
 
     # get the performance for overall performance level
     if args.performance_level == "monthly":
@@ -524,3 +538,86 @@ async def get_portfolio_performance(
     else:
         raise ValueError("Invalid performance level")
     return table
+
+
+class GetPortfolioBenchmarkHoldingsInput(ToolArgs):
+    portfolio_id: PortfolioID
+    expand_etfs: bool = False
+
+
+@tool(
+    description=(
+        "This function returns a list of stocks and the weight at which they are held in the benchmark "
+        "related to a specific portfolio given a portfolio Id. "
+        "A PortfolioID is not a portfolio name. "
+        "A PortfolioID is not a stock identifier. "
+        "'expand_etfs' is an optional parameter that defaults to False. "
+        "If set to True, the function will expand ETFs into stock level and adjust the weights accordingly. "
+        "Only set this flag to True if user explicitly wants to see the expanded ETFs or on stock level. "
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_portfolio_benchmark_holdings(
+    args: GetPortfolioBenchmarkHoldingsInput, context: PlanRunContext
+) -> StockTable:
+    # get policy details
+    policy_details = await get_portfolio_investment_policy_for_workspace(
+        user_id=context.user_id, workspace_id=args.portfolio_id
+    )
+
+    # get benchmark holdings (gbi_ids and weights)
+    benchmark_holdings = policy_details.policy.custom_benchmark.weights
+    gbi_ids = [holding.gbi_id for holding in benchmark_holdings]
+    weights = [holding.weight for holding in benchmark_holdings]
+
+    if args.expand_etfs:
+        await tool_log("Expanding ETFs in benchmark holdings", context=context)
+        # get all the stocks in the benchmark ETFs
+        weighted_securities: List[StockAndWeight] = [
+            StockAndWeight(gbi_id=gbi_id, weight=weight) for gbi_id, weight in zip(gbi_ids, weights)
+        ]
+        expanded_weighted_securities: List[StockAndWeight] = (
+            await get_transitive_holdings_from_stocks_and_weights(
+                user_id=context.user_id, weighted_securities=weighted_securities
+            )
+        )
+        gbi_ids = [holding.gbi_id for holding in expanded_weighted_securities]
+        weights = [holding.weight for holding in expanded_weighted_securities]
+
+    data = {
+        STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(
+            [holding.gbi_id for holding in benchmark_holdings]
+        ),
+        "Weight": weights,
+    }
+    df = pd.DataFrame(data)
+    df = df.sort_values(by="Weight", ascending=False)
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
+        ],
+    )
+    await tool_log(
+        f"Found {len(gbi_ids)} holdings in benchmark", context=context, associated_data=table
+    )
+    return table
+
+
+async def get_linked_portfolio_id(user_id: str, portfolio_id: str) -> str:
+    linked_portfolio_id: str = ""
+    try:
+        workspaces = await get_all_workspaces(user_id=user_id)
+        for workspace in workspaces:
+            if portfolio_id == workspace.workspace_id.id:
+                if workspace.linked_strategy:
+                    linked_portfolio_id = workspace.linked_strategy.strategy_id.id
+                elif workspace.analyze_strategy:
+                    linked_portfolio_id = workspace.analyze_strategy.strategy_id.id
+    except Exception as e:
+        raise ValueError(f"Error getting linked_portfolio_id for {portfolio_id}: {e}")
+
+    return linked_portfolio_id

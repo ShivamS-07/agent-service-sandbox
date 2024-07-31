@@ -144,11 +144,27 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         )
         self.assertEqual(result, expected_portfolio_holdings)
 
+    @patch("agent_service.tools.portfolio.get_all_workspaces")
     @patch("agent_service.tools.portfolio.get_full_strategy_info")
     @patch("agent_service.tools.portfolio.get_psql")
     async def test_get_portfolio_performance_monthly(
-        self, mock_get_psql: MagicMock, mock_get_full_strategy_info: MagicMock
+        self,
+        mock_get_psql: MagicMock,
+        mock_get_full_strategy_info: MagicMock,
+        mock_get_all_workspaces: MagicMock,
     ):
+        rows = self.create_dummy_workspaces_for_user(self.context.user_id)
+
+        mock_get_all_workspaces.return_value = [
+            WorkspaceMetadata(
+                workspace_id=UUID(id=row["id"]),
+                name=row["name"],
+                user_auth_level=row["user_auth_level"],
+                last_updated=row["last_updated"],
+                created_at=self.to_timestamp(1600000000),
+            )
+            for row in rows
+        ]
         # Create a mock database and mock psql
         mock_db = MagicMock()
         mock_db.get_workspace_linked_id.return_value = str(uuid4())
@@ -200,13 +216,27 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
 
         pd.testing.assert_frame_equal(result.to_df(), expected_df)
 
+    @patch("agent_service.tools.portfolio.get_all_workspaces")
     @patch("agent_service.tools.portfolio.get_portfolio_holdings")
     @patch("agent_service.tools.portfolio.get_stocks_sector_performance_for_date_range")
     async def test_get_portfolio_performance_sector(
         self,
         mock_get_stocks_sector_performance_for_date_range: MagicMock,
         mock_get_portfolio_holdings: MagicMock,
+        mock_get_all_workspaces: MagicMock,
     ):
+        rows = self.create_dummy_workspaces_for_user(self.context.user_id)
+
+        mock_get_all_workspaces.return_value = [
+            WorkspaceMetadata(
+                workspace_id=UUID(id=row["id"]),
+                name=row["name"],
+                user_auth_level=row["user_auth_level"],
+                last_updated=row["last_updated"],
+                created_at=self.to_timestamp(1600000000),
+            )
+            for row in rows
+        ]
         # Mock portfolio holdings
         mock_portfolio_holdings = StockTable.from_df_and_cols(
             data=pd.DataFrame({STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB], "Weight": [0.6, 0.4]}),
@@ -258,13 +288,27 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
 
         pd.testing.assert_frame_equal(result.to_df(), expected_df)
 
+    @patch("agent_service.tools.portfolio.get_all_workspaces")
     @patch("agent_service.tools.portfolio.get_portfolio_holdings")
     @patch("agent_service.tools.portfolio.get_stock_performance_for_date_range")
     async def test_get_portfolio_performance_stock(
         self,
         mock_get_portfolio_stock_performance_for_date_range: MagicMock,
         mock_get_portfolio_holdings: MagicMock,
+        mock_get_all_workspaces: MagicMock,
     ):
+        rows = self.create_dummy_workspaces_for_user(self.context.user_id)
+
+        mock_get_all_workspaces.return_value = [
+            WorkspaceMetadata(
+                workspace_id=UUID(id=row["id"]),
+                name=row["name"],
+                user_auth_level=row["user_auth_level"],
+                last_updated=row["last_updated"],
+                created_at=self.to_timestamp(1600000000),
+            )
+            for row in rows
+        ]
         # Mock portfolio holdings
         mock_portfolio_holdings = StockTable.from_df_and_cols(
             data=pd.DataFrame({STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB], "Weight": [0.6, 0.4]}),

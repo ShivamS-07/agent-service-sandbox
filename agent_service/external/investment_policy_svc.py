@@ -11,6 +11,8 @@ from pa_portfolio_service_proto_v1.investment_policy_match_pb2 import (
     GetAllStockInvestmentPoliciesResponse,
     GetMatchScoresForStockInvestmentPoliciesRequest,
     GetMatchScoresForStockInvestmentPoliciesResponse,
+    GetPortfolioInvestmentPolicyForWorkspaceRequest,
+    GetPortfolioInvestmentPolicyForWorkspaceResponse,
     MatchDetails,
 )
 from pa_portfolio_service_proto_v1.investment_policy_service_grpc import (
@@ -95,3 +97,23 @@ async def get_stocks_match_scores_for_ism(
             raise ValueError(f"Failed to get match scores: {response.status.message}")
 
         return {match.gbi_id: match.match_list[0].match_details for match in response.style_matches}
+
+
+@grpc_retry
+@async_perf_logger
+async def get_portfolio_investment_policy_for_workspace(
+    user_id: str, workspace_id: str
+) -> GetPortfolioInvestmentPolicyForWorkspaceResponse:
+    with _get_service_stub() as stub:
+        response: GetPortfolioInvestmentPolicyForWorkspaceResponse = (
+            await stub.GetPortfolioInvestmentPolicyForWorkspace(
+                GetPortfolioInvestmentPolicyForWorkspaceRequest(workspace_id=UUID(id=workspace_id)),
+                metadata=get_default_grpc_metadata(user_id=user_id),
+            )
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to recalc strategies: {response.status.code}" f" {response.status.message}"
+            )
+
+    return response

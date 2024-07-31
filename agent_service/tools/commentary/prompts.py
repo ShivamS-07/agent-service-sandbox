@@ -125,14 +125,14 @@ PORTFOLIO_PROMPT = Prompt(
         "\n### Portfolio Geography Info\n"
         "{portfolio_geography_prompt}"
         "\n### Portfolio Performance\n"
+        "\nPortfolio performance overall:\n"
+        "{portfolio_performance_by_overall}"
         "\nPortfolio performance by sector:\n"
         "{portfolio_performance_by_sector}"
+        "\nPortfolio performance monthly vs Benchmark:\n"
+        "{portfolio_performance_by_monthly}"
         "\nPortfolio performance by stock:\n"
         "{portfolio_performance_by_stock}"
-        "\n###Benchmark performance:\n"
-        "The following are the performance statistics of the benchmark in the given time period. "
-        "\nBenchmark performance by sector:\n"
-        "{benchmark_performance_by_sector}"
         "\nBenchmark performance by stock:\n"
         "{benchmark_performance_by_stock}"
     ),
@@ -331,8 +331,6 @@ WRITE_COMMENTARY_DESCRIPTION = (
     "\n- 'client_type' MUST be either 'Technical' or 'Simple'. Choose based on client's request. "
     "\n- 'writing_format' MUST be either 'Long', 'Short' or 'Bullets'. Choose based on client's request."
     "\n- 'portfolio_id' can be provided if user wants a commentary based on a specific portfolio."
-    "\n='benchmark_name' is the name of the benchmark to be used in the commentary. "
-    "The default benchmark is 'S&P 500'."
 )
 
 UPDATE_COMMENTARY_INSTRUCTIONS = (

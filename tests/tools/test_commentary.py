@@ -15,6 +15,9 @@ from agent_service.tools.dates import DateRange
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 
+# the sample user_id, and portfolio_id are used for testing portfolio based commentary
+# belongs to the user "Mohammad Zarei"
+# the agent/plan id and sample plan id are used for testing the edit previous commentary
 user_id = "3b997275-dcfe-4c19-8bb2-3e1366c4d5f3"
 agent_id = "7cb9fb8f-690e-4535-8b48-f6e63494c366"
 plan_id = "b3330500-9870-480d-bcb1-cf6fe6b487e3"

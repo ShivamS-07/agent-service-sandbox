@@ -138,10 +138,6 @@ async def filter_stocks_by_product_or_service(
     TOOL_DEBUG_INFO.set(debug_info)
 
     # get company/stock descriptions
-    await tool_log(
-        log="Getting company descriptions for stocks",
-        context=context,
-    )
     description_texts = await get_company_descriptions(
         GetStockDescriptionInput(
             stock_ids=args.stock_ids,
@@ -217,6 +213,12 @@ async def filter_stocks_by_product_or_service(
         log=(f"Number of stocks after second round of filtering: {len(filtered_stocks2)}"),
         context=context,
     )
+    # add must_include_stocks to the result
+    if args.must_include_stocks:
+        for stock in args.must_include_stocks:
+            if stock not in filtered_stocks2_dict:
+                filtered_stocks2_dict[stock] = "Must include company"
+
     # add explanation to the filtered stocks history
     res = []
     for stock in filtered_stocks2_dict:
@@ -229,10 +231,6 @@ async def filter_stocks_by_product_or_service(
                 )
             )
         )
-
-    # add must_include_stocks to the result
-    if args.must_include_stocks:
-        res.extend(args.must_include_stocks)
 
     logger.info(
         (
