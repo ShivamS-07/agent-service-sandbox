@@ -4,7 +4,7 @@ import datetime
 import json
 from collections import defaultdict
 from itertools import chain
-from typing import Any, ClassVar, Dict, List, Literal, Optional, Type, Union
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Sequence, Type, Union
 from uuid import uuid4
 
 import mdutils
@@ -20,12 +20,15 @@ from agent_service.io_type_utils import (
     ScoreOutput,
     io_type,
 )
-from agent_service.io_types.output import (
+from agent_service.io_types.citations import (
     CitationOutput,
-    CitationType,
-    Output,
-    OutputType,
+    CustomDocumentCitationOutput,
+    NewsArticleCitationOutput,
+    NewsDevelopmentCitationOutput,
+    TextCitationOutput,
+    ThemeCitationOutput,
 )
+from agent_service.io_types.output import Output, OutputType
 from agent_service.io_types.stock import StockID
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
@@ -214,7 +217,7 @@ class Text(ComplexIOBase):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[Self], db: BoostedPG
-    ) -> List[CitationOutput]:
+    ) -> Sequence[CitationOutput]:
         """
         Given a list of texts of this type, return a list of citations related
         the the input texts.
@@ -287,23 +290,22 @@ class StockNewsDevelopmentText(NewsText, StockText):
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
         sql = """
-        SELECT DISTINCT ON (sn.topic_id)
-          news_id::TEXT, url, domain_url, headline, published_at
-        FROM nlp_service.stock_news sn
-        JOIN nlp_service.news_sources ns ON ns.source_id = sn.source_id
+        SELECT snt.topic_id::TEXT, topic_label, updated_at, (topic_descriptions->-1->>0)::TEXT AS summary,
+               COUNT(sn.news_id) AS num_articles
+        FROM nlp_service.stock_news_topics snt
+        JOIN nlp_service.stock_news sn ON sn.topic_id = snt.topic_id
         WHERE sn.topic_id = ANY(%(topic_ids)s)
-        ORDER BY sn.topic_id, sn.is_top_source DESC, published_at DESC
+        GROUP BY snt.topic_id
         """
         params = {"topic_ids": [text.id for text in texts]}
         rows = await db.generic_read(sql, params)
         return [
-            CitationOutput(
-                id=row["news_id"],
-                citation_type=CitationType.LINK,
-                name=row["domain_url"],
-                link=row["url"],
-                summary=row["headline"],
-                published_at=row["published_at"],
+            NewsDevelopmentCitationOutput(
+                id=row["topic_id"],
+                name=row["topic_label"],
+                summary=row["summary"],
+                last_updated_at=row["updated_at"],
+                num_articles=row["num_articles"],
             )
             for row in rows
         ]
@@ -354,13 +356,12 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
         params = {"news_ids": [text.id for text in texts]}
         rows = await db.generic_read(sql, params)
         return [
-            CitationOutput(
+            NewsArticleCitationOutput(
                 id=row["news_id"],
-                citation_type=CitationType.LINK,
                 name=row["domain_url"],
                 link=row["url"],
                 summary=row["headline"],
-                published_at=row["published_at"],
+                last_updated_at=row["published_at"],
             )
             for row in rows
         ]
@@ -397,13 +398,12 @@ class NewsPoolArticleText(NewsText):
         params = {"news_ids": [text.id for text in texts]}
         rows = await db.generic_read(sql, params)
         return [
-            CitationOutput(
+            NewsArticleCitationOutput(
                 id=row["news_id"],
-                citation_type=CitationType.LINK,
                 name=row["domain_url"],
                 link=row["url"],
                 summary=row["headline"],
-                published_at=row["published_at"],
+                last_updated_at=row["published_at"],
             )
             for row in rows
         ]
@@ -435,7 +435,7 @@ class CustomDocumentSummaryText(StockText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[Self], db: BoostedPG
-    ) -> List[CitationOutput]:
+    ) -> List[CustomDocumentCitationOutput]:
         # group by user id - we are assuming that anyone who is authed for the agent
         # has priv to see any documents utilized by the agent.
         articles_text_by_user: Dict[str, List[CustomDocumentSummaryText]] = defaultdict(list)
@@ -456,11 +456,10 @@ class CustomDocumentSummaryText(StockText):
                     citation_name = file_paths[0]
 
                 citations.append(
-                    CitationOutput(
+                    CustomDocumentCitationOutput(
                         id=chunk_id,
-                        citation_type=CitationType.CUSTOM_DOC,
                         name=f"User Document: {citation_name}",
-                        published_at=chunk_info.upload_time.ToDatetime(),
+                        last_updated_at=chunk_info.upload_time.ToDatetime(),
                         custom_doc_id=chunk_info.file_id,
                     )
                 )
@@ -507,18 +506,17 @@ class ThemeText(Text):
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
         sql = """
-        SELECT theme_id::TEXT, theme_name::TEXT AS name, theme_description, created_at
+        SELECT theme_id::TEXT, theme_name::TEXT AS name, theme_description, last_modified
         FROM nlp_service.themes
         WHERE theme_id = ANY(%(theme_id)s)
         """
         rows = await db.generic_read(sql, {"theme_id": [topic.id for topic in texts]})
         return [
-            CitationOutput(
+            ThemeCitationOutput(
                 id=row["theme_id"],
-                citation_type=CitationType.TEXT,
                 name="Theme: " + row["name"],
                 summary=row["theme_description"],
-                published_at=row["created_at"],
+                last_updated_at=row["last_modified"],
             )
             for row in rows
         ]
@@ -553,12 +551,11 @@ class ThemeNewsDevelopmentText(NewsText):
         """
         rows = await db.generic_read(sql, {"development_id": [topic.id for topic in texts]})
         return [
-            CitationOutput(
+            NewsDevelopmentCitationOutput(
                 id=row["development_id"],
-                citation_type=CitationType.TEXT,
                 name="News Development: " + row["label"],
                 summary=row["description"],
-                published_at=row["development_time"],
+                last_updated_at=row["development_time"],
             )
             for row in rows
         ]
@@ -597,13 +594,12 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
         params = {"news_ids": [text.id for text in texts]}
         rows = await db.generic_read(sql, params)
         return [
-            CitationOutput(
+            NewsArticleCitationOutput(
                 id=row["news_id"],
-                citation_type=CitationType.LINK,
                 name=row["domain_url"],
                 link=row["url"],
                 summary=row["headline"],
-                published_at=row["published_at"],
+                last_updated_at=row["published_at"],
             )
             for row in rows
         ]
@@ -709,7 +705,7 @@ class StockEarningsSummaryPointText(StockText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[Self], db: BoostedPG
-    ) -> List[CitationOutput]:
+    ) -> List[TextCitationOutput]:
         sql = """
         SELECT ecs.summary_id::TEXT, ms.symbol, ecs.year, ecs.quarter, ecs.created_timestamp
         FROM nlp_service.earnings_call_summaries ecs
@@ -723,8 +719,7 @@ class StockEarningsSummaryPointText(StockText):
         output = []
         for row in rows:
             text = summary_id_text_map.get(row["summary_id"])
-            citation = CitationOutput(
-                citation_type=CitationType.TEXT,
+            citation = TextCitationOutput(
                 # e.g. "NVDA Earnings Call - Q1 2024"
                 name=f"{row['symbol'] or ''} Earnings Call - Q{row['quarter']} {row['year']}",
                 published_at=row["created_timestamp"],
@@ -836,10 +831,7 @@ class StockDescriptionText(StockText):
     async def get_citations_for_output(
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
-        # TODO
-        return [
-            CitationOutput(citation_type=CitationType.TEXT, name=text.text_type) for text in texts
-        ]
+        return [TextCitationOutput(name=text.text_type) for text in texts]
 
 
 @io_type
@@ -898,9 +890,7 @@ class StockSecFilingText(StockText):
         cls, texts: List[Self], db: BoostedPG
     ) -> List[CitationOutput]:
         # TODO
-        return [
-            CitationOutput(citation_type=CitationType.TEXT, name=text.text_type) for text in texts
-        ]
+        return [TextCitationOutput(name=text.text_type) for text in texts]
 
 
 @io_type
@@ -974,10 +964,7 @@ class StockSecFilingSectionText(StockText):
     ) -> List[CitationOutput]:
         # FIXME: fix later
         count = len({t.filing_id for t in texts})
-        return [
-            CitationOutput(citation_type=CitationType.TEXT, name="SEC filing Section")
-            for _ in range(count)
-        ]
+        return [TextCitationOutput(name="SEC filing Section") for _ in range(count)]
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         return f"{self.header}: {self.val}"
@@ -1045,10 +1032,9 @@ class KPIText(Text):
         output: List[CitationOutput] = []
         for text in texts:
             output.append(
-                CitationOutput(
+                TextCitationOutput(
                     id=str(text.id),
                     name=text.val,
-                    citation_type=CitationType.TEXT,
                     summary=text.explanation,
                 )
             )
@@ -1119,6 +1105,11 @@ class TextOutput(Output):
 @io_type
 class TextCitation(Citation):
     source_text: Text
+    # Offset into the parent text for where this citation applies and should be inserted
+    citation_text_offset: Optional[int] = None
+    citation_snippet: Optional[str] = None
+    # Context around the snippet that contains the snippet itself.
+    citation_snippet_context: Optional[str] = None
 
     @classmethod
     async def resolve_citations(cls, citations: List[Self], db: BoostedPG) -> List[CitationOutput]:

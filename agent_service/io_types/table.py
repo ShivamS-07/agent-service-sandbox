@@ -18,8 +18,9 @@ from agent_service.io_type_utils import (
     TableColumnType,
     io_type,
 )
+from agent_service.io_types.citations import CitationID
 from agent_service.io_types.graph import GraphType
-from agent_service.io_types.output import CitationID, Output, OutputType
+from agent_service.io_types.output import Output, OutputType
 from agent_service.io_types.stock import StockID
 from agent_service.utils.async_utils import gather_with_concurrency, to_awaitable
 from agent_service.utils.boosted_pg import BoostedPG
