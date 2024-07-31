@@ -144,6 +144,7 @@ class ChatWithAgentRequest(BaseModel):
     is_first_prompt: bool = False
     # If true, DO NOT ask GPT for a response for this message, ONLY insert into the DB
     skip_agent_response: bool = False
+    canned_prompt_id: Optional[str] = None
 
 
 class ChatWithAgentResponse(BaseModel):

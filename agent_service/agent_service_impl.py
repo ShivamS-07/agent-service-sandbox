@@ -66,6 +66,7 @@ from agent_service.utils.agent_name import generate_name_for_agent
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import (
     get_custom_user_dict,
     get_secure_mode_hash,
@@ -187,6 +188,16 @@ class AgentServiceImpl:
                     LOGGER.exception(
                         f"Failed to generate name for agent from GPT with exception: {e}"
                     )
+                if req.canned_prompt_id:
+                    log_event(
+                        event_name="agent-canned-prompt",
+                        event_data={
+                            "agent_id": req.agent_id,
+                            "canned_prompt_id": req.canned_prompt_id,
+                            "canned_prompt_text": req.prompt,
+                            "user_id": user.user_id,
+                        },
+                    )
 
             return ChatWithAgentResponse(success=True, allow_retry=False, name=name)
 
@@ -234,6 +245,16 @@ class AgentServiceImpl:
                 await self.pg.update_agent_name(agent_id=agent_id, agent_name=name)
             except Exception as e:
                 LOGGER.exception(f"Failed to generate name for agent from GPT with exception: {e}")
+            if req.canned_prompt_id:
+                log_event(
+                    event_name="agent-canned-prompt",
+                    event_data={
+                        "agent_id": req.agent_id,
+                        "canned_prompt_id": req.canned_prompt_id,
+                        "canned_prompt_text": req.prompt,
+                        "user_id": user.user_id,
+                    },
+                )
             try:
                 LOGGER.info("Publishing GPT response to Redis")
                 await send_chat_message(gpt_msg, self.pg, insert_message_into_db=False)
