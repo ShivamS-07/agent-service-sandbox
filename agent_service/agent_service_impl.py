@@ -126,8 +126,10 @@ class AgentServiceImpl:
                 agent_metadata.cost_info = cost_infos[agent_metadata.agent_id]
         return GetAllAgentsResponse(agents=agents)
 
-    async def get_agent(self, user: User, agent_id: str) -> AgentMetadata:
-        agents = await self.pg.get_user_all_agents(user_id=user.user_id, agent_ids=[agent_id])
+    async def get_agent(self, user: Optional[User], agent_id: str) -> AgentMetadata:
+        agents = await self.pg.get_user_all_agents(
+            user_id=user.user_id if user else None, agent_ids=[agent_id]
+        )
         if not agents:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"No agent found for {agent_id=}"

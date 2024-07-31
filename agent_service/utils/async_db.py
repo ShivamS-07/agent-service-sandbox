@@ -430,7 +430,7 @@ class AsyncDB:
 
     @async_perf_logger
     async def get_user_all_agents(
-        self, user_id: str, agent_ids: Optional[List[str]] = None
+        self, user_id: Optional[str] = None, agent_ids: Optional[List[str]] = None
     ) -> List[AgentMetadata]:
         """
         This function retrieves all agents for a given user, optionally filtered
@@ -442,18 +442,25 @@ class AsyncDB:
 
         Returns: A list of all agents for the user, optionally filtered.
         """
-        params: Dict[str, Any] = {"user_id": user_id}
-        agent_where_clause = ""
+        agent_where_clauses = []
+        params: Dict[str, Any] = {}
+        if user_id:
+            params["user_id"] = user_id
+            agent_where_clauses.append("a.user_id = %(user_id)s")
         if agent_ids:
-            agent_where_clause = "AND a.agent_id = ANY(%(agent_ids)s)"
             params["agent_ids"] = agent_ids
+            agent_where_clauses.append("a.agent_id = ANY(%(agent_ids)s)")
+
+        agent_where_clause = ""
+        if agent_where_clauses:
+            agent_where_clause = "WHERE " + " AND ".join(agent_where_clauses)
+
         sql = f"""
         WITH a_id AS
           (
             SELECT a.agent_id, a.user_id, agent_name, a.created_at,
               a.last_updated, a.automation_enabled, a.schedule
              FROM agent.agents a
-             WHERE a.user_id = %(user_id)s
              {agent_where_clause}
           ),
           lr AS

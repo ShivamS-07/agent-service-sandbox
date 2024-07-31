@@ -1183,7 +1183,7 @@ class TextOutput(Output):
         Given a string representing this text's value, go through all the
         citations for this object and insert them into the text.
         """
-        template = """ ```{ "type": "citation", "citation_id": "{cit_id}" }``` """
+        template = """ ```{{ "type": "citation", "citation_id": "{cit_id}" }}``` """
         citation_offset_map = {}
         char_list = list(self.val)
         for cit in self.citations:
