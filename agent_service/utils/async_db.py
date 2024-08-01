@@ -465,7 +465,7 @@ class AsyncDB:
           ),
           lr AS
           (
-            SELECT DISTINCT ON (pr.agent_id) pr.agent_id, pr.created_at
+            SELECT DISTINCT ON (pr.agent_id) pr.agent_id, pr.created_at, pr.run_metadata
             FROM agent.plan_runs pr
             ORDER BY pr.agent_id, pr.created_at DESC
           ),
@@ -485,7 +485,7 @@ class AsyncDB:
           SELECT a_id.agent_id::VARCHAR, a_id.user_id::VARCHAR, a_id.agent_name, a_id.created_at,
             a_id.last_updated, a_id.automation_enabled, lr.created_at AS last_run,
             msg.message AS latest_agent_message, nu.num_unread AS unread_notification_count,
-            a_id.schedule
+            a_id.schedule, lr.run_metadata
           FROM a_id
           LEFT JOIN lr ON lr.agent_id = a_id.agent_id
           LEFT JOIN msg ON msg.agent_id = a_id.agent_id
@@ -498,6 +498,14 @@ class AsyncDB:
             # Handle this for backwards compatibility
             if row["automation_enabled"] and schedule is None:
                 schedule = AgentSchedule.default()
+            run_metadata = (
+                RunMetadata.model_validate(row["run_metadata"]) if row["run_metadata"] else None
+            )
+            notification_string = (
+                run_metadata.run_summary_short
+                if run_metadata and run_metadata.run_summary_short
+                else row["latest_agent_message"]
+            )
             output.append(
                 AgentMetadata(
                     agent_id=row["agent_id"],
@@ -507,7 +515,7 @@ class AsyncDB:
                     last_updated=row["last_updated"],
                     last_run=row["last_run"],
                     next_run=(schedule.get_next_run() if schedule else None),
-                    latest_notification_string=row["latest_agent_message"],
+                    latest_notification_string=notification_string,
                     automation_enabled=row["automation_enabled"],
                     unread_notification_count=row["unread_notification_count"] or 0,
                     schedule=schedule,
