@@ -222,7 +222,7 @@ class AsyncDB:
             LEFT JOIN agent.plan_runs pr
             ON ep.plan_id = pr.plan_id
             WHERE ep.agent_id = %(agent_id)s
-            ORDER BY last_updated DESC
+            ORDER BY pr.created_at DESC
             LIMIT 1;
         """
         rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
