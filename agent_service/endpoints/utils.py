@@ -86,7 +86,7 @@ async def get_agent_hierarchical_worklogs(
         for plan_run_id in plan_run_ids:
             all_plan_run_ids.append(plan_run_id)
 
-    plan_run_cancelled_ids = set(await db.get_cancelled_ids(ids_to_check=all_plan_run_ids))
+    cancelled_ids = set(await db.get_cancelled_ids(ids_to_check=all_plan_run_ids + plan_ids))
 
     for plan_id, plan_run_ids in plan_id_to_plan_run_ids.items():
         logger.info(f"Processing {plan_id=}, found {len(plan_run_ids)} runs...")
@@ -100,7 +100,7 @@ async def get_agent_hierarchical_worklogs(
                 plan_run_end = None
             else:
                 plan_run_status = Status.from_prefect_state(prefect_flow_run.state_type)
-                if plan_run_id in plan_run_cancelled_ids:
+                if plan_run_id in cancelled_ids or plan_id in cancelled_ids:
                     plan_run_status = Status.CANCELLED
                 plan_run_start = prefect_flow_run.start_time
                 plan_run_end = prefect_flow_run.end_time
