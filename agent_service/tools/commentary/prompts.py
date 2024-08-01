@@ -135,6 +135,8 @@ PORTFOLIO_PROMPT = Prompt(
         "{portfolio_performance_by_sector}"
         "\nPortfolio performance monthly vs Benchmark:\n"
         "{portfolio_performance_by_monthly}"
+        "\nPortfolio performance daily vs Benchmark:\n"
+        "{portfolio_performance_by_daily}"
         "\nPortfolio performance by stock:\n"
         "{portfolio_performance_by_stock}"
         "\nBenchmark performance by stock:\n"

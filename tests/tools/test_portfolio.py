@@ -30,7 +30,7 @@ from agent_service.tools.portfolio import (
 from agent_service.types import PlanRunContext
 
 DATE_RANGE_TEST = DateRange(
-    start_date=datetime.date.fromisoformat("2024-05-01"),
+    start_date=datetime.date.fromisoformat("2024-01-01"),
     end_date=datetime.date.fromisoformat("2024-06-01"),
 )
 

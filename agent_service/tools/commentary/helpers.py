@@ -69,7 +69,7 @@ from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import FilledPrompt
 
 logger = get_prefect_logger(__name__)
-PERFORMANCE_LEVELS = ["sector", "stock", "overall", "monthly"]
+PERFORMANCE_LEVELS = ["sector", "stock", "overall", "monthly", "daily"]
 
 
 async def get_sec_metadata_dao() -> SecuritiesMetadataDAO:
@@ -326,6 +326,7 @@ async def prepare_portfolio_prompt(
                 portfolio_id=portfolio_id,
                 performance_level=performance_level,
                 sector_performance_horizon=sector_performance_horizon,
+                date_range=date_range,
             ),
             context,
         )
@@ -377,6 +378,7 @@ async def prepare_portfolio_prompt(
         portfolio_geography_prompt=portfolio_geography_prompt.filled_prompt,
         portfolio_performance_by_overall=str(performance_dict["portfolio_overall"].to_df()),
         portfolio_performance_by_monthly=str(performance_dict["portfolio_monthly"].to_df()),
+        portfolio_performance_by_daily=str(performance_dict["portfolio_daily"].to_df()),
         portfolio_performance_by_sector=str(performance_dict["portfolio_sector"].to_df()),
         portfolio_performance_by_stock=str(performance_dict["portfolio_stock"].to_df()),
         benchmark_performance_by_stock=str(performance_dict["benchmark_stock"].to_df()),

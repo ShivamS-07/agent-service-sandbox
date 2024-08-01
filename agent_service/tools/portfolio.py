@@ -321,9 +321,9 @@ class GetPortfolioPerformanceInput(ToolArgs):
         if not isinstance(value, str):
             raise ValueError("performance level must be a string")
 
-        if value not in ["overall", "stock", "sector", "monthly"]:
+        if value not in ["overall", "stock", "sector", "monthly", "daily"]:
             raise ValueError(
-                "performance level must be one of ('overall', 'stock', 'sector', 'monthly')"
+                "performance level must be one of ('overall', 'stock', 'sector', 'monthly', 'daily')"
             )
         return value
 
@@ -342,7 +342,7 @@ class GetPortfolioPerformanceInput(ToolArgs):
     description=(
         "This function returns the performance of a portfolio given a portfolio id "
         "and a performance level and date range. "
-        "\nThe performance level MUST one of  ('overall', 'stock', 'sector', 'monthly'). "
+        "\nThe performance level MUST one of  ('overall', 'stock', 'sector', 'monthly', 'daily'). "
         "The default performance level is 'monthly'. "
         "\nThe date range is optional and defaults to the last month."
         "\nThe sector performance horizon is optional and defaults to 1 month. "
@@ -360,6 +360,9 @@ class GetPortfolioPerformanceInput(ToolArgs):
         "\nWhen the performance level is 'monthly', it returns the monthly returns of the portfolio. "
         "Table schema for monthly performance level: "
         "month: string, return: float, return-vs-benchmark: float"
+        "\nWhen the performance level is 'daily', it returns the daily returns of the portfolio. "
+        "Table schema for daily performance level: "
+        "date: string, return: float, return-vs-benchmark: float"
     ),
     category=ToolCategory.PORTFOLIO,
     tool_registry=ToolRegistry,
@@ -380,7 +383,7 @@ async def get_portfolio_performance(
     # get the linked_portfolio_id
     linked_portfolio_id: str = await get_linked_portfolio_id(context.user_id, args.portfolio_id)
 
-    # get the performance for overall performance level
+    # get the performance for monthly performance level
     if args.performance_level == "monthly":
         # get the full strategy info for the linked_portfolio_id
         portfolio_details = await get_full_strategy_info(context.user_id, linked_portfolio_id)
@@ -409,11 +412,49 @@ async def get_portfolio_performance(
         df["month"] = pd.to_datetime(
             df["month"] + " " + str(datetime.datetime.now().year), format="%b %Y"
         )
+        # filter based on date range
+        df = df[
+            (df["month"].dt.date >= date_range.start_date)
+            & (df["month"].dt.date <= date_range.end_date)
+        ]
         # create a Table
         table = Table.from_df_and_cols(
             data=df,
             columns=[
                 TableColumnMetadata(label="month", col_type=TableColumnType.DATETIME),
+                TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="return-vs-benchmark", col_type=TableColumnType.FLOAT),
+            ],
+        )
+    # get the performance for daily performance level
+    elif args.performance_level == "daily":
+        # get the full strategy info for the linked_portfolio_id
+        portfolio_details = await get_full_strategy_info(context.user_id, linked_portfolio_id)
+        chart_info = portfolio_details.backtest_results.chart_info.chart_info
+        # Create a DataFrame for the daily returns
+        data_length = len(list(chart_info))
+        df = pd.DataFrame(
+            {
+                "date": [x.date for x in chart_info],
+                "return": [x.value for x in chart_info],
+                "return-vs-benchmark": [x.benchmark for x in chart_info],
+            },
+            index=range(data_length),
+        )
+        # convert return to percentage
+        df["date"] = pd.to_datetime(df["date"], format="%Y-%m-%d")
+        df["return"] = df["return"] * 100
+        df["return-vs-benchmark"] = df["return-vs-benchmark"] * 100
+        # filter based on date range
+        df = df[
+            (df["date"].dt.date >= date_range.start_date)
+            & (df["date"].dt.date <= date_range.end_date)
+        ]
+        # create a Table
+        table = Table.from_df_and_cols(
+            data=df,
+            columns=[
+                TableColumnMetadata(label="date", col_type=TableColumnType.DATETIME),
                 TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
                 TableColumnMetadata(label="return-vs-benchmark", col_type=TableColumnType.FLOAT),
             ],
