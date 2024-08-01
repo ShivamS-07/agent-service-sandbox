@@ -421,7 +421,7 @@ async def get_portfolio_performance(
         table = Table.from_df_and_cols(
             data=df,
             columns=[
-                TableColumnMetadata(label="month", col_type=TableColumnType.DATETIME),
+                TableColumnMetadata(label="month", col_type=TableColumnType.DATE),
                 TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
                 TableColumnMetadata(label="return-vs-benchmark", col_type=TableColumnType.FLOAT),
             ],
@@ -454,11 +454,12 @@ async def get_portfolio_performance(
         table = Table.from_df_and_cols(
             data=df,
             columns=[
-                TableColumnMetadata(label="date", col_type=TableColumnType.DATETIME),
+                TableColumnMetadata(label="date", col_type=TableColumnType.DATE),
                 TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
                 TableColumnMetadata(label="return-vs-benchmark", col_type=TableColumnType.FLOAT),
             ],
         )
+
     elif args.performance_level == "stock":
         # get portfolio holdings
         portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
