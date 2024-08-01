@@ -213,6 +213,7 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
             "return-vs-benchmark": [50.0, 150.0],
         }
         expected_df = pd.DataFrame(expected_data)
+        expected_df = expected_df.melt(id_vars=["month"], var_name="field", value_name="value")
 
         pd.testing.assert_frame_equal(result.to_df(), expected_df)
 

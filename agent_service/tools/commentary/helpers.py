@@ -285,7 +285,7 @@ async def prepare_portfolio_prompt(
     portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
         GetPortfolioHoldingsInput(
             portfolio_id=portfolio_id,
-            fetch_stats=True,
+            fetch_stats=False,
         ),
         context,
     )
@@ -295,7 +295,7 @@ async def prepare_portfolio_prompt(
         GetPortfolioHoldingsInput(
             portfolio_id=portfolio_id,
             expand_etfs=True,
-            fetch_stats=True,
+            fetch_stats=False,
         ),
         context,
     )

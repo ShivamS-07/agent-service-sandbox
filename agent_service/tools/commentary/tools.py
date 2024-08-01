@@ -284,10 +284,13 @@ async def get_commentary_inputs(
     logger = get_prefect_logger(__name__)
     texts: List[Text] = []
     if args.portfolio_id is None:
-        args.portfolio_id = await convert_portfolio_mention_to_portfolio_id(  # type: ignore
-            GetPortfolioInput(portfolio_name="portfolio"),
-            context,
-        )
+        try:
+            args.portfolio_id = await convert_portfolio_mention_to_portfolio_id(  # type: ignore
+                GetPortfolioInput(portfolio_name="portfolio"),
+                context,
+            )
+        except Exception as e:
+            logger.exception(f"Failed to get any portfolio id: {e}")
 
     # If general_commentary is True, get the top themes and related texts
     if args.general_commentary:
@@ -298,12 +301,20 @@ async def get_commentary_inputs(
         try:
             # get top themes
             theme_num: int = args.theme_num if args.theme_num else 3
-            themes_texts_portfolio_related: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
-                GetTopNThemesInput(
-                    date_range=args.date_range, theme_num=theme_num, portfolio_id=args.portfolio_id
-                ),
-                context,
-            )
+            themes_texts_set = set()
+            try:
+                themes_texts_portfolio_related: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
+                    GetTopNThemesInput(
+                        date_range=args.date_range,
+                        theme_num=theme_num,
+                        portfolio_id=args.portfolio_id,
+                    ),
+                    context,
+                )
+                themes_texts_set.update(themes_texts_portfolio_related)
+            except Exception as e:
+                logger.exception(f"Failed to get top themes for portfolio: {e}")
+
             themes_texts_general: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
                 GetTopNThemesInput(
                     date_range=args.date_range, theme_num=theme_num, portfolio_id=None
@@ -311,18 +322,19 @@ async def get_commentary_inputs(
                 context,
             )
             # combine themes_texts and remove duplicates
-            themes_texts = list(set(themes_texts_portfolio_related + themes_texts_general))
+            themes_texts_set.update(themes_texts_general)
+            themes_texts_list = list(themes_texts_set)
 
             await tool_log(
-                log=f"Retrieved {len(themes_texts)} top themes for commentary.",
+                log=f"Retrieved {len(themes_texts_list)} top themes for commentary.",
                 context=context,
-                associated_data=themes_texts,
+                associated_data=themes_texts_list,
             )
-            themes_texts = themes_texts[:MAX_THEMES_PER_COMMENTARY]
+            themes_texts_list = themes_texts_list[:MAX_THEMES_PER_COMMENTARY]
             theme_related_texts = await get_theme_related_texts(
-                themes_texts, args.date_range, context
+                themes_texts_list, args.date_range, context
             )
-            texts.extend(themes_texts + theme_related_texts)
+            texts.extend(themes_texts_list + theme_related_texts)
             await tool_log(
                 log=f"Retrieved {len(texts)} theme related texts for top market trends.",
                 context=context,
@@ -344,7 +356,8 @@ async def get_commentary_inputs(
             logger.exception(f"Failed to get texts for topics: {e}")
 
     # If stock_ids are provided, get the texts for the stock_ids
-    if not args.stock_ids:
+    # if not, get the top weighted stocks in the portfolio and get the texts for them
+    if not args.stock_ids and args.portfolio_id:
         holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
             GetPortfolioHoldingsInput(
                 portfolio_id=args.portfolio_id,  # type: ignore
@@ -357,40 +370,41 @@ async def get_commentary_inputs(
             associated_data=holdings_table,
         )
         args.stock_ids = holdings_table.get_stocks()
-    if len(args.stock_ids) > MAX_STOCKS_PER_COMMENTARY:
-        await tool_log(
-            log=(
-                f"Number of stocks is more than {MAX_STOCKS_PER_COMMENTARY}. "
-                f"Only first {MAX_STOCKS_PER_COMMENTARY} stocks will be considered."
-            ),
-            context=context,
-        )
-        args.stock_ids = args.stock_ids[:MAX_STOCKS_PER_COMMENTARY]
+        if len(args.stock_ids) > MAX_STOCKS_PER_COMMENTARY:
+            await tool_log(
+                log=(
+                    f"Number of stocks is more than {MAX_STOCKS_PER_COMMENTARY}. "
+                    f"Only first {MAX_STOCKS_PER_COMMENTARY} stocks will be considered."
+                ),
+                context=context,
+            )
+            args.stock_ids = args.stock_ids[:MAX_STOCKS_PER_COMMENTARY]
 
-    try:
-        stock_devs: List[StockNewsDevelopmentText] = (
-            await get_all_news_developments_about_companies(  # type: ignore
-                GetNewsDevelopmentsAboutCompaniesInput(
-                    stock_ids=args.stock_ids, date_range=args.date_range
+    if args.stock_ids:
+        try:
+            stock_devs: List[StockNewsDevelopmentText] = (
+                await get_all_news_developments_about_companies(  # type: ignore
+                    GetNewsDevelopmentsAboutCompaniesInput(
+                        stock_ids=args.stock_ids, date_range=args.date_range
+                    ),
+                    context,
+                )
+            )
+            stock_news: List[Text] = await get_news_articles_for_stock_developments(  # type: ignore
+                GetNewsArticlesForStockDevelopmentsInput(
+                    developments_list=stock_devs,
                 ),
                 context,
             )
-        )
-        stock_news: List[Text] = await get_news_articles_for_stock_developments(  # type: ignore
-            GetNewsArticlesForStockDevelopmentsInput(
-                developments_list=stock_devs,
-            ),
-            context,
-        )
-        stock_texts: List[Text] = stock_devs + stock_news
-        await tool_log(
-            log=f"Retrieved {len(stock_texts)} news texts for given stock ids.",
-            context=context,
-            associated_data=stock_texts,
-        )
-        texts.extend(stock_texts)
-    except Exception as e:
-        logger.exception(f"Failed to get texts for stock ids: {e}")
+            stock_texts: List[Text] = stock_devs + stock_news
+            await tool_log(
+                log=f"Retrieved {len(stock_texts)} news texts for given stock ids.",
+                context=context,
+                associated_data=stock_texts,
+            )
+            texts.extend(stock_texts)
+        except Exception as e:
+            logger.exception(f"Failed to get texts for stock ids: {e}")
 
     return texts
 

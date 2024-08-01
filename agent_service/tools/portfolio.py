@@ -417,15 +417,18 @@ async def get_portfolio_performance(
             (df["month"].dt.date >= date_range.start_date)
             & (df["month"].dt.date <= date_range.end_date)
         ]
+        # transform df into month, field, value format
+        df = df.melt(id_vars=["month"], var_name="field", value_name="value")
         # create a Table
         table = Table.from_df_and_cols(
             data=df,
             columns=[
                 TableColumnMetadata(label="month", col_type=TableColumnType.DATE),
-                TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
-                TableColumnMetadata(label="return-vs-benchmark", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="field", col_type=TableColumnType.STRING),
+                TableColumnMetadata(label="value", col_type=TableColumnType.FLOAT),
             ],
         )
+
     # get the performance for daily performance level
     elif args.performance_level == "daily":
         # get the full strategy info for the linked_portfolio_id
@@ -450,13 +453,15 @@ async def get_portfolio_performance(
             (df["date"].dt.date >= date_range.start_date)
             & (df["date"].dt.date <= date_range.end_date)
         ]
+        # transform df into date, field, value format
+        df = df.melt(id_vars=["date"], var_name="field", value_name="value")
         # create a Table
         table = Table.from_df_and_cols(
             data=df,
             columns=[
                 TableColumnMetadata(label="date", col_type=TableColumnType.DATE),
-                TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
-                TableColumnMetadata(label="return-vs-benchmark", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="field", col_type=TableColumnType.STRING),
+                TableColumnMetadata(label="value", col_type=TableColumnType.FLOAT),
             ],
         )
 
