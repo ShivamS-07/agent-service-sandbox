@@ -128,9 +128,9 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
             data=pd.DataFrame(
                 {
                     STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB],
-                    "Weight": [0.6, 0.4],
+                    "Weight": [60, 40],
                     "Price": [215, 123],
-                    "Performance": [0.23, 0.04],
+                    "Performance": [23, 4],
                 }
             ),
             columns=[
@@ -209,8 +209,8 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         print(result.to_df())
         expected_data = {
             "month": [datetime.date(2024, 1, 1), datetime.date(2024, 2, 1)],
-            "return": [1.0, 2.0],
-            "return-vs-benchmark": [0.5, 1.5],
+            "return": [100.0, 200.0],
+            "return-vs-benchmark": [50.0, 150.0],
         }
         expected_df = pd.DataFrame(expected_data)
 
@@ -239,7 +239,7 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         ]
         # Mock portfolio holdings
         mock_portfolio_holdings = StockTable.from_df_and_cols(
-            data=pd.DataFrame({STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB], "Weight": [0.6, 0.4]}),
+            data=pd.DataFrame({STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB], "Weight": [60.0, 40.0]}),
             columns=[
                 TableColumnMetadata(
                     label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
@@ -254,14 +254,14 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
             MagicMock(
                 sector_name="Technology",
                 sector_performance=0.05,
-                sector_weight=0.6,
-                weighted_sector_performance=0.03,
+                sector_weight=60.0,
+                weighted_sector_performance=3.0,
             ),
             MagicMock(
                 sector_name="Healthcare",
                 sector_performance=0.02,
-                sector_weight=0.4,
-                weighted_sector_performance=0.008,
+                sector_weight=40.0,
+                weighted_sector_performance=0.8,
             ),
         ]
         mock_get_stocks_sector_performance_for_date_range.return_value = (
@@ -280,9 +280,9 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         result = await get_portfolio_performance(args, self.context)
         expected_data = {
             "sector": ["Technology", "Healthcare"],
-            "return": [0.05, 0.02],
-            "weight": [0.6, 0.4],
-            "weighted-return": [0.03, 0.008],
+            "return": [5.0, 2.0],
+            "weight": [60.0, 40.0],
+            "weighted-return": [3.0, 0.8],
         }
         expected_df = pd.DataFrame(expected_data)
 
@@ -311,7 +311,7 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         ]
         # Mock portfolio holdings
         mock_portfolio_holdings = StockTable.from_df_and_cols(
-            data=pd.DataFrame({STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB], "Weight": [0.6, 0.4]}),
+            data=pd.DataFrame({STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB], "Weight": [60.0, 40.0]}),
             columns=[
                 TableColumnMetadata(
                     label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
@@ -354,9 +354,9 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
             data=pd.DataFrame(
                 {
                     STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB],
-                    "return": [0.05, 0.02],
-                    "portfolio-weight": [0.6, 0.4],
-                    "weighted-return": [0.03, 0.008],
+                    "return": [5.0, 2.0],
+                    "portfolio-weight": [60.0, 40.0],
+                    "weighted-return": [3.0, 0.8],
                 }
             ),
             columns=[

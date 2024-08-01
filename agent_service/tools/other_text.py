@@ -9,11 +9,11 @@ from agent_service.tools.custom_documents import (
     GetCustomDocsInput,
     get_user_custom_documents,
 )
-from agent_service.tools.earnings import (  # get_stock_aligned_earnings_call_summaries,
+from agent_service.tools.earnings import (
     GetEarningsCallDataInput,
     get_earnings_call_summaries,
 )
-from agent_service.tools.news import (  # get_stock_aligned_news_developments,
+from agent_service.tools.news import (
     GetNewsDevelopmentsAboutCompaniesInput,
     get_all_news_developments_about_companies,
 )

@@ -159,11 +159,13 @@ async def get_portfolio_holdings(
 
     df = pd.DataFrame(data)
     df = df.sort_values(by="Weight", ascending=False)
+    df["Weight"] = df["Weight"] * 100
     columns = [
         TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
         TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
     ]
     if args.fetch_stats:
+        df["Performance"] = df["Performance"] * 100
         columns.extend(
             [
                 TableColumnMetadata(label="Price", col_type=TableColumnType.FLOAT),
@@ -398,6 +400,9 @@ async def get_portfolio_performance(
             },
             index=range(data_length),
         )
+        # convert return to percentage
+        df["return"] = df["return"] * 100
+        df["return-vs-benchmark"] = df["return-vs-benchmark"] * 100
         # drop YTD row (last row)
         df = df.drop(df.index[-1])
         # convert month to datetime
@@ -428,13 +433,17 @@ async def get_portfolio_performance(
             user_id=context.user_id,
         )
         # Create a DataFrame for the stock performance
-        data = {
-            STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(gbi_ids),
-            "return": [stock.performance for stock in stock_performance.stock_performance_list],
-            "portfolio-weight": portfolio_holdings_df["Weight"].values,
-        }
-        df = pd.DataFrame(data)
-        df["weighted-return"] = (df["return"] * df["portfolio-weight"]).values
+        df = pd.DataFrame(
+            {
+                STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(gbi_ids),
+                "return": [stock.performance for stock in stock_performance.stock_performance_list],
+                "portfolio-weight": portfolio_holdings_df["Weight"].values,
+            }
+        )
+        df["weighted-return"] = (df["return"] * df["portfolio-weight"] / 100).values
+        # convert return to percentage
+        df["return"] = df["return"] * 100
+        df["weighted-return"] = df["weighted-return"] * 100
         # sort the DataFrame by weighted-return
         df = df.sort_values(by="weighted-return", ascending=False)
         # create a Table
@@ -489,6 +498,10 @@ async def get_portfolio_performance(
         }
 
         df = pd.DataFrame(data)
+        # convert return to percentage
+        df["return"] = df["return"] * 100
+        df["weighted-return"] = df["weighted-return"]
+
         # sort the DataFrame by weighted-return
         df = df.sort_values(by="weighted-return", ascending=False)
         # create a Table
@@ -526,6 +539,8 @@ async def get_portfolio_performance(
             .drop(columns="index")
             .reset_index(drop=True)
         )
+        # convert return to percentage
+        portfolio_df["Portfolio-return"] = portfolio_df["Portfolio-return"] * 100
         # create a Table
         table = Table.from_df_and_cols(
             data=portfolio_df,
@@ -587,9 +602,7 @@ async def get_portfolio_benchmark_holdings(
         weights = [holding.weight for holding in expanded_weighted_securities]
 
     data = {
-        STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(
-            [holding.gbi_id for holding in benchmark_holdings]
-        ),
+        STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(gbi_ids),
         "Weight": weights,
     }
     df = pd.DataFrame(data)

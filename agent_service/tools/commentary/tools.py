@@ -5,11 +5,17 @@ from uuid import uuid4
 
 from agent_service.GPT.constants import NO_PROMPT
 from agent_service.GPT.requests import GPT
+from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTable
-from agent_service.io_types.text import Text, TextGroup, ThemeText
+from agent_service.io_types.text import (
+    StockNewsDevelopmentText,
+    Text,
+    TextGroup,
+    ThemeText,
+)
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.commentary.constants import (
     COMMENTARY_LLM,
@@ -43,9 +49,11 @@ from agent_service.tools.commentary.prompts import (
     WRITING_STYLE_PROMPT,
 )
 from agent_service.tools.LLM_analysis.tools import split_text_and_citation_ids
-from agent_service.tools.other_text import (
-    GetAllTextDataForStocksInput,
-    get_all_text_data_for_stocks,
+from agent_service.tools.news import (
+    GetNewsArticlesForStockDevelopmentsInput,
+    GetNewsDevelopmentsAboutCompaniesInput,
+    get_all_news_developments_about_companies,
+    get_news_articles_for_stock_developments,
 )
 from agent_service.tools.portfolio import (
     GetPortfolioHoldingsInput,
@@ -103,7 +111,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     # Prepare the portfolio prompt
     if args.portfolio_id is None:
         await tool_log(
-            log="No portfolio name is provided. A default portfolio will be used.",
+            log="No portfolio name is provided. Most recent portfolio will be used.",
             context=context,
         )
         args.portfolio_id = await convert_portfolio_mention_to_portfolio_id(  # type: ignore
@@ -146,7 +154,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         ]
     # show number of texts of each type
     await tool_log(
-        log=f"Retrieved texts of each type: {', '.join([f'{k}: {len(v)}' for k, v in text_mapping.items()])}",
+        log=f"Texts used for commentary: {', '.join([f'{k}: {len(v)}' for k, v in text_mapping.items()])}",
         context=context,
     )
     # convert text_mapping to list of texts
@@ -168,20 +176,10 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         GetStocksForUserAllWatchlistsInput(), context
     )
     await tool_log(
-        log="Retrieving watchlist stocks for commentary.",
+        log="Retrieving watchlist stocks to keep an eye.",
         context=context,
         associated_data=watchlist_stocks,
     )
-    # check the number of watchlist stocks
-    if len(watchlist_stocks) > MAX_STOCKS_PER_COMMENTARY:  # type: ignore
-        watchlist_stocks = watchlist_stocks[:MAX_STOCKS_PER_COMMENTARY]  # type: ignore
-        await tool_log(
-            log=(
-                f"Number of watchlist stocks is more than {MAX_STOCKS_PER_COMMENTARY}. "
-                f"Only first {MAX_STOCKS_PER_COMMENTARY} stocks will be considered."
-            ),
-            context=context,
-        )
 
     watchlist_prompt = WATCHLIST_PROMPT.format(
         watchlist_stocks=", ".join([await stock.to_gpt_input() for stock in watchlist_stocks])  # type: ignore
@@ -216,14 +214,18 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         text_mapping,
         context,
     )
+    main_prompt_token_length = GPTTokenizer(COMMENTARY_LLM).get_token_length(
+        main_prompt.filled_prompt
+    )
+    logger.info(f"Length of tokens in main prompt: {main_prompt_token_length}")
 
     # save main prompt as text file for debugging
-    # with open("main_prompt.txt", "w") as f:
-    #     f.write(main_prompt.filled_prompt)
+    with open("main_prompt.txt", "w") as f:
+        f.write(main_prompt.filled_prompt)
 
     # Write the commentary
     await tool_log(
-        log=f"Writing commentary for '{client_type}' client in '{writing_format}' format.",
+        log=f"Writing a '{client_type}' commentary in '{writing_format}' format.",
         context=context,
     )
     # Create GPT context and llm model
@@ -236,8 +238,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     for _ in range(3):
         try:
             result = await llm.do_chat_w_sys_prompt(
-                main_prompt=main_prompt,
-                sys_prompt=COMMENTARY_SYS_PROMPT.format(),
+                main_prompt=main_prompt, sys_prompt=COMMENTARY_SYS_PROMPT.format(), no_cache=True
             )
             commentary_text, citation_ids = split_text_and_citation_ids(result)
             break
@@ -250,6 +251,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         citation_ids = await filter_most_important_citations(
             texts_str, commentary_text, citation_ids  # type: ignore
         )
+        logger.info(f"Filtered most important citations size: {citation_ids}")
     # create commentary object
     commentary = Text(val=commentary_text)
     commentary = commentary.inject_history_entry(
@@ -296,12 +298,21 @@ async def get_commentary_inputs(
         try:
             # get top themes
             theme_num: int = args.theme_num if args.theme_num else 3
-            themes_texts: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
+            themes_texts_portfolio_related: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
                 GetTopNThemesInput(
                     date_range=args.date_range, theme_num=theme_num, portfolio_id=args.portfolio_id
                 ),
                 context,
             )
+            themes_texts_general: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
+                GetTopNThemesInput(
+                    date_range=args.date_range, theme_num=theme_num, portfolio_id=None
+                ),
+                context,
+            )
+            # combine themes_texts and remove duplicates
+            themes_texts = list(set(themes_texts_portfolio_related + themes_texts_general))
+
             await tool_log(
                 log=f"Retrieved {len(themes_texts)} top themes for commentary.",
                 context=context,
@@ -357,12 +368,23 @@ async def get_commentary_inputs(
         args.stock_ids = args.stock_ids[:MAX_STOCKS_PER_COMMENTARY]
 
     try:
-        stock_texts: List[Text] = await get_all_text_data_for_stocks(  # type: ignore
-            GetAllTextDataForStocksInput(stock_ids=args.stock_ids, date_range=args.date_range),
+        stock_devs: List[StockNewsDevelopmentText] = (
+            await get_all_news_developments_about_companies(  # type: ignore
+                GetNewsDevelopmentsAboutCompaniesInput(
+                    stock_ids=args.stock_ids, date_range=args.date_range
+                ),
+                context,
+            )
+        )
+        stock_news: List[Text] = await get_news_articles_for_stock_developments(  # type: ignore
+            GetNewsArticlesForStockDevelopmentsInput(
+                developments_list=stock_devs,
+            ),
             context,
         )
+        stock_texts: List[Text] = stock_devs + stock_news
         await tool_log(
-            log=f"Retrieved {len(stock_texts)} texts for given stock ids.",
+            log=f"Retrieved {len(stock_texts)} news texts for given stock ids.",
             context=context,
             associated_data=stock_texts,
         )

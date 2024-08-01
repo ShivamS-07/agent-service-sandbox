@@ -31,6 +31,7 @@ from agent_service.tools.commentary.constants import (
 )
 from agent_service.tools.commentary.prompts import (
     COMMENTARY_PROMPT_MAIN,
+    COMMENTARY_SYS_PROMPT,
     FILTER_CITATIONS_PROMPT,
     GEOGRAPHY_PROMPT,
     PORTFOLIO_PROMPT,
@@ -62,6 +63,7 @@ from agent_service.tools.themes import (
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import FilledPrompt
@@ -281,12 +283,28 @@ async def prepare_portfolio_prompt(
     This function prepares the portfolio prompt for the commentary.
     """
     portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
-        GetPortfolioHoldingsInput(portfolio_id=portfolio_id), context
+        GetPortfolioHoldingsInput(
+            portfolio_id=portfolio_id,
+            fetch_stats=True,
+        ),
+        context,
     )
     portfolio_holdings_df = portfolio_holdings_table.to_df()
 
+    portfolio_holdings_expanded_table: StockTable = await get_portfolio_holdings(  # type: ignore
+        GetPortfolioHoldingsInput(
+            portfolio_id=portfolio_id,
+            expand_etfs=True,
+            fetch_stats=True,
+        ),
+        context,
+    )
+    portfolio_holdings_expanded_df = portfolio_holdings_expanded_table.to_df()
+
     # Get the region weights from the portfolio holdings
-    regions_to_weight = await get_region_weights_from_portfolio_holdings(portfolio_holdings_df)
+    regions_to_weight = await get_region_weights_from_portfolio_holdings(
+        portfolio_holdings_expanded_df
+    )
     portfolio_geography = await get_portfolio_geography_str(regions_to_weight)
     # Prepare the geography prompt
     await tool_log(
@@ -336,9 +354,11 @@ async def prepare_portfolio_prompt(
         "benchmark-weight": benchmark_holdings_df["Weight"].values,
     }
     benchmark_stock_performance_df = pd.DataFrame(data)
+    benchmark_stock_performance_df["return"] = benchmark_stock_performance_df["return"] * 100
     benchmark_stock_performance_df["weighted-return"] = (
         benchmark_stock_performance_df["return"]
         * benchmark_stock_performance_df["benchmark-weight"]
+        / 100
     ).values
     benchmark_stock_performance_table = StockTable.from_df_and_cols(
         data=benchmark_stock_performance_df,
@@ -404,11 +424,14 @@ async def prepare_stocks_stats_prompt(
     return stocks_stats_prompt
 
 
-async def summarize_text_mapping(text_mapping: Dict[str, List[Text]]) -> Dict[str, List[Text]]:
+async def summarize_text_mapping(
+    text_mapping: Dict[str, List[Text]], agent_id: str
+) -> Dict[str, List[Text]]:
     """
     This function summarizes some texts in the text mapping.
     """
-    llm = GPT(model=GPT4_O_MINI)
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
+    llm = GPT(context=gpt_context, model=GPT4_O_MINI)
     for text_type in text_mapping:
         if text_type in ("SEC filing", "Company Description", "Earnings Call Summary"):
             tasks = []
@@ -468,27 +491,14 @@ async def prepare_main_prompt(
         main_prompt.filled_prompt
     )
     logger.info(f"Length of tokens in main prompt: {main_prompt_token_length}")
-    texts_token_length = GPTTokenizer(COMMENTARY_LLM).get_token_length(texts)
-    logger.info(f"Length of tokens in texts: {texts_token_length}")
     # if main prompt is too long, summerize some texts
     if main_prompt_token_length > MAX_TOKENS[COMMENTARY_LLM]:
 
-        text_mapping_summarized = await summarize_text_mapping(text_mapping)
-        # Prepare texts for commentary
-        all_text_group = TextGroup(
-            val=[text for text_list in text_mapping_summarized.values() for text in text_list]
-        )
-        summarized_texts = await Text.get_all_strs(
-            all_text_group, include_header=True, text_group_numbering=True
-        )
-        # truncate texts if needed
-        summarized_texts_token_length = GPTTokenizer(COMMENTARY_LLM).get_token_length(
-            str(summarized_texts)
-        )
-        logger.info(f"Length of tokens in summerzied texts: {summarized_texts_token_length}")
-        trunctated_texts = GPTTokenizer(COMMENTARY_LLM).do_truncation_if_needed(
-            str(summarized_texts),
+        texts = GPTTokenizer(COMMENTARY_LLM).do_truncation_if_needed(
+            texts,
             [
+                COMMENTARY_PROMPT_MAIN.template,
+                COMMENTARY_SYS_PROMPT.template,
                 previous_commentary_prompt.filled_prompt,
                 portfolio_prompt.filled_prompt,
                 stocks_stats_prompt.filled_prompt,
@@ -505,14 +515,16 @@ async def prepare_main_prompt(
             watchlist_prompt=watchlist_prompt.filled_prompt,
             client_type_prompt=client_type_prompt.filled_prompt,
             writing_style_prompt=writing_style_prompt.filled_prompt,
-            texts=trunctated_texts,
+            texts=texts,
             chat_context=chat_context,
             today=str(date.today().strftime("%Y-%m-%d")),
         )
         main_prompt_token_length = GPTTokenizer(COMMENTARY_LLM).get_token_length(
             main_prompt.filled_prompt
         )
-        logger.info(f"Length of tokens in main prompt (after): {main_prompt_token_length}")
+        logger.info(
+            f"Length of tokens in main prompt (after truncations): {main_prompt_token_length}"
+        )
         # show the length of tokens in text_mapping
         for text_type, text_list in text_mapping.items():
             text_list_str: str = await Text.get_all_strs(TextGroup(val=text_list), include_header=True)  # type: ignore
