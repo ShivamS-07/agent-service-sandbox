@@ -114,7 +114,9 @@ async def get_universe_performance(
             "return": [stock.performance for stock in stock_performance.stock_performance_list],
         }
         df = pd.DataFrame(data)
-        df["weighted-return"] = (df["return"] * df["weight"]).values
+        df["weight"] = df["weight"] * 100
+        df["return"] = df["return"] * 100
+        df["weighted-return"] = (df["return"] * df["weight"] / 100).values
         # sort the DataFrame by weighted-return
         df = df.sort_values(by="weighted-return", ascending=False)
         # create a Table
@@ -164,6 +166,9 @@ async def get_universe_performance(
         }
 
         df = pd.DataFrame(data)
+        df["weight"] = df["weight"] * 100
+        df["return"] = df["return"] * 100
+        df["weighted-return"] = df["weighted-return"] * 100
         df = df.sort_values(by="weighted-return", ascending=False)
         # create a Table
         table = StockTable.from_df_and_cols(
@@ -196,6 +201,7 @@ async def get_universe_performance(
             ],
         }
         df = pd.DataFrame(data)
+        df["return"] = df["return"] * 100
         # create a Table
         table = StockTable.from_df_and_cols(
             data=df,

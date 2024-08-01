@@ -500,7 +500,8 @@ async def get_portfolio_performance(
         df = pd.DataFrame(data)
         # convert return to percentage
         df["return"] = df["return"] * 100
-        df["weighted-return"] = df["weighted-return"]
+        df["weight"] = df["weight"] * 100
+        df["weighted-return"] = df["weighted-return"] * 100
 
         # sort the DataFrame by weighted-return
         df = df.sort_values(by="weighted-return", ascending=False)
@@ -539,6 +540,8 @@ async def get_portfolio_performance(
             .drop(columns="index")
             .reset_index(drop=True)
         )
+        # convert return to percentage
+        portfolio_df["Portfolio-return"] = portfolio_df["Portfolio-return"] * 100
         # convert return to percentage
         portfolio_df["Portfolio-return"] = portfolio_df["Portfolio-return"] * 100
         # create a Table

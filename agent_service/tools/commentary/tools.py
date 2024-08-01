@@ -220,8 +220,8 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     logger.info(f"Length of tokens in main prompt: {main_prompt_token_length}")
 
     # save main prompt as text file for debugging
-    with open("main_prompt.txt", "w") as f:
-        f.write(main_prompt.filled_prompt)
+    # with open("main_prompt.txt", "w") as f:
+    #     f.rite(main_prompt.filled_prompt)
 
     # Write the commentary
     await tool_log(

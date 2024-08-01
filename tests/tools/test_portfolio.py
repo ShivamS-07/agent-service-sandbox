@@ -128,9 +128,9 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
             data=pd.DataFrame(
                 {
                     STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB],
-                    "Weight": [60, 40],
+                    "Weight": [60.0, 40.0],
                     "Price": [215, 123],
-                    "Performance": [23, 4],
+                    "Performance": [23.0, 4.0],
                 }
             ),
             columns=[
@@ -142,7 +142,7 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
                 TableColumnMetadata(label="Performance", col_type=TableColumnType.FLOAT),
             ],
         )
-        self.assertEqual(result, expected_portfolio_holdings)
+        pd.testing.assert_frame_equal(result.to_df(), expected_portfolio_holdings.to_df())
 
     @patch("agent_service.tools.portfolio.get_all_workspaces")
     @patch("agent_service.tools.portfolio.get_full_strategy_info")
@@ -254,14 +254,14 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
             MagicMock(
                 sector_name="Technology",
                 sector_performance=0.05,
-                sector_weight=60.0,
-                weighted_sector_performance=3.0,
+                sector_weight=0.6,
+                weighted_sector_performance=0.03,
             ),
             MagicMock(
                 sector_name="Healthcare",
                 sector_performance=0.02,
-                sector_weight=40.0,
-                weighted_sector_performance=0.8,
+                sector_weight=0.4,
+                weighted_sector_performance=0.008,
             ),
         ]
         mock_get_stocks_sector_performance_for_date_range.return_value = (
