@@ -255,14 +255,14 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
             MagicMock(
                 sector_name="Technology",
                 sector_performance=0.05,
-                sector_weight=0.6,
-                weighted_sector_performance=0.03,
+                sector_weight=60.0,
+                weighted_sector_performance=3.0,
             ),
             MagicMock(
                 sector_name="Healthcare",
                 sector_performance=0.02,
-                sector_weight=0.4,
-                weighted_sector_performance=0.008,
+                sector_weight=40.0,
+                weighted_sector_performance=0.8,
             ),
         ]
         mock_get_stocks_sector_performance_for_date_range.return_value = (
