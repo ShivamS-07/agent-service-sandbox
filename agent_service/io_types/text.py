@@ -305,6 +305,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Sequence[CitationOutput]:
+        text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT snt.topic_id::TEXT, topic_label, updated_at, (topic_descriptions->-1->>0)::TEXT AS summary,
                COUNT(sn.news_id) AS num_articles
@@ -322,6 +323,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
                 summary=row["summary"],
                 last_updated_at=row["updated_at"],
                 num_articles=row["num_articles"],
+                inline_offset=text_id_map[row["topic_id"]].citation_text_offset,
             )
             for row in rows
         ]
@@ -363,6 +365,7 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Sequence[CitationOutput]:
+        text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT news_id::TEXT, url, domain_url, headline, published_at
         FROM nlp_service.stock_news sn
@@ -378,6 +381,7 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
                 link=row["url"],
                 summary=row["headline"],
                 last_updated_at=row["published_at"],
+                inline_offset=text_id_map[row["news_id"]].citation_text_offset,
             )
             for row in rows
         ]
@@ -405,6 +409,7 @@ class NewsPoolArticleText(NewsText):
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Sequence[CitationOutput]:
+        text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT news_id::TEXT, url, domain_url, headline, published_at
         FROM nlp_service.news_pool np
@@ -420,6 +425,7 @@ class NewsPoolArticleText(NewsText):
                 link=row["url"],
                 summary=row["headline"],
                 last_updated_at=row["published_at"],
+                inline_offset=text_id_map[row["news_id"]].citation_text_offset,
             )
             for row in rows
         ]
@@ -526,6 +532,7 @@ class ThemeText(Text):
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Sequence[CitationOutput]:
+        text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT theme_id::TEXT, theme_name::TEXT AS name, theme_description, last_modified
         FROM nlp_service.themes
@@ -538,6 +545,7 @@ class ThemeText(Text):
                 name="Theme: " + row["name"],
                 summary=row["theme_description"],
                 last_updated_at=row["last_modified"],
+                inline_offset=text_id_map[row["theme_id"]].citation_text_offset,
             )
             for row in rows
         ]
@@ -565,6 +573,7 @@ class ThemeNewsDevelopmentText(NewsText):
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Sequence[CitationOutput]:
+        text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT development_id::TEXT, label::TEXT, description, development_time
         FROM nlp_service.theme_developments
@@ -579,6 +588,7 @@ class ThemeNewsDevelopmentText(NewsText):
                 name="News Development: " + row["label"],
                 summary=row["description"],
                 last_updated_at=row["development_time"],
+                inline_offset=text_id_map[row["development_id"]].citation_text_offset,
             )
             for row in rows
         ]
@@ -608,6 +618,7 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Sequence[CitationOutput]:
+        text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT news_id::TEXT, url, domain_url, headline, published_at
         FROM nlp_service.theme_news tn
@@ -623,6 +634,7 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
                 link=row["url"],
                 summary=row["headline"],
                 last_updated_at=row["published_at"],
+                inline_offset=text_id_map[row["news_id"]].citation_text_offset,
             )
             for row in rows
         ]
@@ -729,6 +741,7 @@ class StockEarningsSummaryPointText(StockText):
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Sequence[CitationOutput]:
+        text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT ecs.summary_id::TEXT, ms.symbol, ecs.year, ecs.quarter, ecs.created_timestamp
         FROM nlp_service.earnings_call_summaries ecs
@@ -747,6 +760,7 @@ class StockEarningsSummaryPointText(StockText):
                 # e.g. "NVDA Earnings Call - Q1 2024"
                 name=f"{row['symbol'] or ''} Earnings Call - Q{row['quarter']} {row['year']}",
                 published_at=row["created_timestamp"],
+                inline_offset=text_id_map[row["summary_id"]].citation_text_offset,
             )
             if text:
                 point_str = str_lookup.get(text.id)
