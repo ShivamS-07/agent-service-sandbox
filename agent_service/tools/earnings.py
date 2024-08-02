@@ -146,6 +146,8 @@ async def _get_earnings_summary_helper(
                     id=row["summary_id"],
                     stock_id=stock_id,
                     timestamp=publish_time,
+                    year=year,
+                    quarter=quarter,
                 )
             )
             year_quarters_with_summaries.add((year, quarter))

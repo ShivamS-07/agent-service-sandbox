@@ -28,6 +28,7 @@ class CitationOutput(BaseModel, ABC):
     name: str
     inline_offset: Optional[int] = None
     summary: Optional[str] = None
+    last_updated_at: Optional[datetime.datetime] = None
 
     def model_dump(self, **kwargs: Any) -> Dict[str, Any]:
         return super().model_dump(serialize_as_any=True, **kwargs)
@@ -36,7 +37,8 @@ class CitationOutput(BaseModel, ABC):
         return super().model_dump_json(serialize_as_any=True, **kwargs)
 
 
-class DocumentCitationOutput(CitationOutput, ABC):
+class DocumentCitationOutput(CitationOutput):
+    citation_type: CitationType = CitationType.TEXT
     snippet_highlight_start: Optional[int] = None
     snippet_highlight_end: Optional[int] = None
 
@@ -54,13 +56,11 @@ class DocumentCitationOutput(CitationOutput, ABC):
 
 class ThemeCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.THEME
-    last_updated_at: Optional[datetime.datetime] = None
 
 
 class CustomDocumentCitationOutput(DocumentCitationOutput):
     citation_type: CitationType = CitationType.CUSTOM_DOC
     custom_doc_id: str
-    last_updated_at: Optional[datetime.datetime] = None
 
 
 class CompanyFilingCitationOutput(DocumentCitationOutput):
@@ -69,24 +69,19 @@ class CompanyFilingCitationOutput(DocumentCitationOutput):
 
 class NewsDevelopmentCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.NEWS_DEVELOPMENT
-    last_updated_at: Optional[datetime.datetime] = None
     num_articles: Optional[int] = None
 
 
 class NewsArticleCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.NEWS_ARTICLE
     link: Optional[str] = None
-    last_updated_at: Optional[datetime.datetime] = None
     article_id: Optional[str] = None
 
 
-# For backwards compatibility only, should not be used for new things
 class TextCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.TEXT
-    published_at: Optional[datetime.datetime] = None
 
 
 class LinkCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.LINK
-    published_at: Optional[datetime.datetime] = None
     link: Optional[str] = None

@@ -36,6 +36,7 @@ from agent_service.io_types.citations import (
     CitationOutput,
     CompanyFilingCitationOutput,
     CustomDocumentCitationOutput,
+    DocumentCitationOutput,
     NewsArticleCitationOutput,
     NewsDevelopmentCitationOutput,
     TextCitationOutput,
@@ -650,6 +651,17 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
 @io_type
 class StockEarningsText(StockText):
     id: str
+    year: Optional[int] = None
+    quarter: Optional[int] = None
+
+    def to_citation_title(self) -> str:
+        parts = []
+        if self.stock_id:
+            parts.append(self.stock_id.symbol or self.stock_id.company_name)
+        parts.append("Earnings Call Summary")
+        if self.year and self.quarter:
+            parts.append(f" (Q{self.quarter} {self.year})")
+        return "".join(parts)
 
 
 @io_type
@@ -682,6 +694,30 @@ class StockEarningsSummaryText(StockEarningsText):
             str_lookup[row["summary_id"]] = output_str
         return str_lookup
 
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[TextCitation], db: BoostedPG
+    ) -> Sequence[CitationOutput]:
+        output = []
+        for text in texts:
+            hl_start, hl_end = None, None
+            if text.citation_snippet_context and text.citation_snippet:
+                hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
+                    smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
+                )
+            output.append(
+                DocumentCitationOutput(
+                    name=text.source_text.to_citation_title(),  # type: ignore
+                    summary=text.citation_snippet_context,
+                    snippet_highlight_start=hl_start,
+                    snippet_highlight_end=hl_end,
+                    inline_offset=text.citation_text_offset,
+                    last_updated_at=text.source_text.timestamp,
+                )
+            )
+
+        return output
+
 
 @io_type
 class StockEarningsTranscriptText(StockEarningsText):
@@ -705,6 +741,30 @@ class StockEarningsTranscriptText(StockEarningsText):
         )
         str_lookup = {row[0]: row[1] for row in transcript_query_result.result_rows}
         return str_lookup
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[TextCitation], db: BoostedPG
+    ) -> Sequence[CitationOutput]:
+        output = []
+        for text in texts:
+            hl_start, hl_end = None, None
+            if text.citation_snippet_context and text.citation_snippet:
+                hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
+                    smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
+                )
+            output.append(
+                DocumentCitationOutput(
+                    name=text.source_text.text_type,
+                    summary=text.citation_snippet_context,
+                    snippet_highlight_start=hl_start,
+                    snippet_highlight_end=hl_end,
+                    inline_offset=text.citation_text_offset,
+                    last_updated_at=text.source_text.timestamp,
+                )
+            )
+
+        return output
 
 
 @io_type
@@ -765,7 +825,7 @@ class StockEarningsSummaryPointText(StockText):
             citation = TextCitationOutput(
                 # e.g. "NVDA Earnings Call - Q1 2024"
                 name=f"{row['symbol'] or ''} Earnings Call - Q{row['quarter']} {row['year']}",
-                published_at=row["created_timestamp"],
+                last_updated_at=row["created_timestamp"],
                 inline_offset=(
                     text_id_map[row["summary_id"]].citation_text_offset
                     if row["summary_id"] in text_id_map
@@ -879,7 +939,29 @@ class StockDescriptionText(StockText):
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Sequence[CitationOutput]:
-        return [TextCitationOutput(name=text.source_text.text_type) for text in texts]
+        output = []
+        for text in texts:
+            hl_start, hl_end = None, None
+            if text.citation_snippet_context and text.citation_snippet:
+                hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
+                    smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
+                )
+            name = text.source_text.text_type
+            if text.source_text.stock_id:
+                stock = text.source_text.stock_id
+                name = f"{stock.symbol or stock.company_name} Company Description"
+            output.append(
+                DocumentCitationOutput(
+                    name=name,
+                    summary=text.citation_snippet_context,
+                    snippet_highlight_start=hl_start,
+                    snippet_highlight_end=hl_end,
+                    inline_offset=text.citation_text_offset,
+                    last_updated_at=text.source_text.timestamp,
+                )
+            )
+
+        return output
 
 
 @io_type
@@ -944,13 +1026,18 @@ class StockSecFilingText(StockText):
                 hl_start, hl_end = CompanyFilingCitationOutput.get_offsets_from_snippets(
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
+            name = text.source_text.text_type
+            if text.source_text.stock_id:
+                stock = text.source_text.stock_id
+                name = f"{stock.symbol or stock.company_name} {name}"
             output.append(
                 CompanyFilingCitationOutput(
-                    name=text.source_text.text_type,
+                    name=name,
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
                     inline_offset=text.citation_text_offset,
+                    last_updated_at=text.source_text.timestamp,
                 )
             )
         return output
@@ -965,7 +1052,7 @@ class StockSecFilingSectionText(StockText):
 
     id: str = Field(default_factory=lambda: str(uuid4()))
 
-    text_type: ClassVar[str] = "SEC filing Section"
+    text_type: ClassVar[str] = "SEC Filing Section"
 
     filing_id: str
     header: str
@@ -1038,9 +1125,13 @@ class StockSecFilingSectionText(StockText):
                 hl_start, hl_end = CompanyFilingCitationOutput.get_offsets_from_snippets(
                     smaller_snippet=cit.citation_snippet, context=cit.citation_snippet_context
                 )
+            name = cit.source_text.text_type
+            if cit.source_text.stock_id:
+                stock = cit.source_text.stock_id
+                name = f"{stock.symbol or stock.company_name} {name}"
             output.append(
                 CompanyFilingCitationOutput(
-                    name="SEC filing Section",
+                    name=name,
                     summary=cit.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
