@@ -546,7 +546,7 @@ async def update_execution_after_input(
     use_sample_plans: bool = True,
 ) -> Optional[Tuple[str, ExecutionPlan, Action]]:
     logger = get_prefect_logger(__name__)
-    decider = InputActionDecider(agent_id=agent_id)
+    decider = InputActionDecider(agent_id=agent_id, skip_db_commit=skip_db_commit)
     db = get_psql(skip_commit=skip_db_commit)
 
     flow_run = await prefect_pause_current_agent_flow(agent_id=agent_id)
@@ -697,11 +697,19 @@ async def rewrite_execution_plan(
     planner = Planner(agent_id=agent_id)
     db = db or AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
     chatbot = Chatbot(agent_id=agent_id)
-
+    override_task_output_lookup = None
     logger.info(f"Starting rewrite of execution plan for {agent_id=}...")
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
-
+    automation_enabled = await db.get_agent_automation_enabled(agent_id=agent_id)
     _, old_plan, plan_timestamp, _, _ = await get_latest_execution_plan_from_db(agent_id, db)
+    if automation_enabled:
+        pg = get_psql()
+        live_plan = pg.get_agent_live_execution_plan(agent_id=agent_id)
+        if live_plan:
+            old_plan = live_plan
+        else:
+            raise RuntimeError(f"No live plan found for agent {agent_id}!")
+
     if not old_plan:  # shouldn't happen, just for mypy
         raise RuntimeError("Cannot rewrite a plan that does not exist!")
 
@@ -732,6 +740,12 @@ async def rewrite_execution_plan(
             use_sample_plans=use_sample_plans,
             plan_id=plan_id,
         )
+
+        if automation_enabled and action == Action.APPEND and new_plan:
+            task_ids = planner.replicate_plan_set_for_automated_run(old_plan, new_plan)
+            override_task_output_lookup = await db.get_task_outputs(
+                agent_id=agent_id, task_ids=task_ids
+            )
 
     if await check_cancelled(db=db, plan_id=plan_id):
         await publish_agent_plan_status(
@@ -800,7 +814,12 @@ async def rewrite_execution_plan(
 
     sync_db = get_psql(skip_commit=skip_db_commit)
     sync_db.insert_plan_run(agent_id=ctx.agent_id, plan_id=ctx.plan_id, plan_run_id=ctx.plan_run_id)
-    await prefect_run_execution_plan(plan=new_plan, context=ctx, do_chat=do_chat)
+    await prefect_run_execution_plan(
+        plan=new_plan,
+        context=ctx,
+        do_chat=do_chat,
+        override_task_output_lookup=override_task_output_lookup,
+    )
 
     return new_plan
 

@@ -353,6 +353,16 @@ class Planner:
 
         return None
 
+    @staticmethod
+    def replicate_plan_set_for_automated_run(
+        last_plan: ExecutionPlan, new_plan: ExecutionPlan
+    ) -> List[str]:
+        task_ids = []
+        for i, node in enumerate(last_plan.nodes):
+            new_plan.nodes[i].tool_task_id = last_plan.nodes[i].tool_task_id
+            task_ids.append(new_plan.nodes[i].tool_task_id)
+        return task_ids
+
     @async_perf_logger
     async def _rewrite_plan_after_input(
         self,

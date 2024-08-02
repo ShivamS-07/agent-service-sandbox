@@ -446,6 +446,7 @@ class AgentServiceImpl:
             schedule = AgentSchedule.default()
             await self.pg.update_agent_schedule(agent_id=agent_id, schedule=schedule)
         next_run = schedule.get_next_run()
+        await self.pg.set_latest_plan_for_automated_run(agent_id=agent_id)
         return EnableAgentAutomationResponse(success=True, next_run=next_run)
 
     async def disable_agent_automation(self, agent_id: str) -> DisableAgentAutomationResponse:

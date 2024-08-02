@@ -46,7 +46,7 @@ def main() -> None:
     agent_ids: List[str] = args.agent_ids
     if not agent_ids:
         agent_ids = db.get_scheduled_agents()
-    agents_info = db.get_agents_info(agent_ids=agent_ids)
+    agents_info = db.get_live_agents_info(agent_ids=agent_ids)
     chat_contexts = db.get_chat_contexts(agent_ids=agent_ids)
     for agent_info in agents_info:
         prefect_automated_run_execution_plan(

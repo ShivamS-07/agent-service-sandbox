@@ -19,14 +19,17 @@ from agent_service.planner.prompts import (
 )
 from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext, Message
+from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.postgres import SyncBoostedPG
 
 
 class InputActionDecider:
     def __init__(
         self,
         agent_id: str,
+        skip_db_commit: bool = False,
         model: str = GPT4_O,
         tool_registry: Type[ToolRegistry] = ToolRegistry,
     ) -> None:
@@ -34,6 +37,7 @@ class InputActionDecider:
         context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
         self.llm = GPT(context, model)
         self.tool_registry = tool_registry
+        self.db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
 
     async def decide_action(self, chat_context: ChatContext, current_plan: ExecutionPlan) -> Action:
         reads_chat_list = []
@@ -60,6 +64,9 @@ class InputActionDecider:
         action = Action[result.split()[-1].strip().upper()]
         if len(reads_chat_list) == 0 and action == Action.RERUN:  # GPT shouldn't do this
             action = Action.REPLAN
+        automation_enabled = await self.db.get_agent_automation_enabled(agent_id=self.agent_id)
+        if automation_enabled and action in [Action.RERUN, Action.REPLAN]:
+            return Action.APPEND
         return action
 
     async def create_custom_notifications(self, chat_context: ChatContext) -> str:

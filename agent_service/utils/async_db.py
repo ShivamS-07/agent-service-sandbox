@@ -1,4 +1,5 @@
 import datetime
+import json
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import (
@@ -606,6 +607,23 @@ class AsyncDB:
             values_to_update={"automation_enabled": enabled},
         )
 
+    async def get_agent_automation_enabled(self, agent_id: str) -> bool:
+        sql = "SELECT automation_enabled from agent.agents where agent_id = %(agent_id)s"
+        rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
+        return rows[0]["automation_enabled"]
+
+    async def set_latest_plan_for_automated_run(self, agent_id: str) -> None:
+        sql = """
+                WITH latest_plan AS (
+                    SELECT plan_id from agent.execution_plans where agent_id = %(agent_id)s
+                    ORDER BY created_at DESC LIMIT 1
+                )
+                UPDATE agent.execution_plans
+                SET automated_run = TRUE
+                WHERE plan_id IN (SELECT plan_id from latest_plan)
+                """
+        await self.pg.generic_write(sql, {"agent_id": agent_id})
+
     async def update_agent_schedule(self, agent_id: str, schedule: AgentSchedule) -> None:
         await self.pg.generic_update(
             table_name="agent.agents",
@@ -684,6 +702,18 @@ class AsyncDB:
                 "plan_run_id": context.plan_run_id,
             },
         )
+
+    async def get_task_outputs(self, agent_id: str, task_ids: List[str]) -> Dict[str, Any]:
+        sql = """
+        SELECT DISTINCT ON (task_id) task_id::VARCHAR, log_data AS output from agent.work_logs
+        WHERE agent_id = %(agent_id)s AND task_id = ANY(%(task_ids)s) and is_task_output = true
+        ORDER BY task_id, created_at DESC
+        """
+        rows = await self.pg.generic_read(sql, params={"agent_id": agent_id, "task_ids": task_ids})
+        res = {}
+        for row in rows:
+            res[row["task_id"]] = json.loads(row["output"])
+        return res
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:

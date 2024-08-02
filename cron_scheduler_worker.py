@@ -44,7 +44,7 @@ class AgentInfo:
 async def get_live_agent_infos() -> List[AgentInfo]:
     db = get_psql()
     agent_ids = db.get_scheduled_agents()
-    agents_info = db.get_agents_info(agent_ids=agent_ids)
+    agents_info = db.get_live_agents_info(agent_ids=agent_ids)
     chat_contexts = db.get_chat_contexts(agent_ids=agent_ids)
     outputs = []
     for agent_info in agents_info:

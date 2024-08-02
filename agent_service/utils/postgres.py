@@ -526,15 +526,31 @@ class Postgres(PostgresBase):
         rows = self.generic_read(sql)
         return [row["agent_id"] for row in rows]
 
-    def get_agents_info(self, agent_ids: List[str]) -> List[Dict[str, Any]]:
+    def get_agent_live_execution_plan(self, agent_id: str) -> Optional[ExecutionPlan]:
+        live_agents_info = self.get_live_agents_info(agent_ids=[agent_id])
+        if live_agents_info:
+            return ExecutionPlan.model_validate(live_agents_info[0]["plan"])
+        return None
+
+    def get_live_agents_info(self, agent_ids: List[str]) -> List[Dict[str, Any]]:
         sql = """
         SELECT DISTINCT ON (ag.agent_id) ag.agent_id::TEXT, ag.user_id::TEXT, ep.plan_id::TEXT, ep.plan,
           ag.schedule
         FROM agent.agents ag JOIN agent.execution_plans ep ON ag.agent_id = ep.agent_id
-        WHERE ag.agent_id = ANY(%(agent_ids)s) and ep.status = 'READY'
+        WHERE ag.agent_id = ANY(%(agent_ids)s) and ep.status = 'READY' and ep.automated_run
         ORDER BY ag.agent_id, ep.created_at DESC
         """
         rows = self.generic_read(sql, params={"agent_ids": agent_ids})
+        if not rows:
+            # If no plans marked for automated run, use latest plan
+            sql = """
+            SELECT DISTINCT ON (ag.agent_id) ag.agent_id::TEXT, ag.user_id::TEXT, ep.plan_id::TEXT, ep.plan,
+                ag.schedule
+            FROM agent.agents ag JOIN agent.execution_plans ep ON ag.agent_id = ep.agent_id
+            WHERE ag.agent_id = ANY(%(agent_ids)s) and ep.status = 'READY'
+            ORDER BY ag.agent_id, ep.created_at DESC
+            """
+            rows = self.generic_read(sql, params={"agent_ids": agent_ids})
         return rows
 
     def get_chat_contexts(self, agent_ids: List[str]) -> DefaultDict[str, ChatContext]:
