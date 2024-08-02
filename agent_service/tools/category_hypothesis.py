@@ -309,12 +309,6 @@ async def analyze_hypothesis_with_categories(
         sec_filings_sections_with_text,
     ) = await download_content_for_text_data(args.all_text_data)
 
-    stocks = list(
-        {t.stock_id for t in news_devs_with_text if t.stock_id}
-        | {t.stock_id for t in earnings_points_with_text if t.stock_id}
-        | {t.stock_id for t in sec_filings_sections_with_text if t.stock_id}
-    )
-
     gpt_service_stub = _get_gpt_service_stub()[0]
 
     # Step: Revise hypothesis to remove company specific information
@@ -341,7 +335,7 @@ async def analyze_hypothesis_with_categories(
     candidate_target_stock = args.target_stock
     category_to_result = await rank_and_summarize_for_each_category(
         candidate_target_stock,
-        stocks,
+        args.stocks,
         revised_hypothesis,
         categories,
         category_idx_to_mixed_topics,
@@ -352,7 +346,7 @@ async def analyze_hypothesis_with_categories(
 
     # Step: Calculate weighted average scores and determine the real target stock
     actual_target_stock, total_scores = calculate_weighted_average_scores(
-        candidate_target_stock, stocks, categories, category_to_result
+        candidate_target_stock, args.stocks, categories, category_to_result
     )
 
     # Step: Prepare outputs
@@ -997,7 +991,7 @@ if __name__ == "__main__":
 
         filtered_stocks: List[StockID] = await filter_stocks_by_product_or_service(  # type: ignore
             FilterStocksByProductOrServiceInput(
-                stock_ids=stocks, product_str="AI chip", must_include_stocks=[stock_id]  # type: ignore
+                stock_ids=stocks, texts=[], product_str="AI chip", must_include_stocks=[stock_id]  # type: ignore
             ),
             context,
         )
