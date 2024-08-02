@@ -1,8 +1,9 @@
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Union
 
 from agent_service.io_type_utils import (
     ComplexIOBase,
+    HistoryEntry,
     IOType,
     io_type,
     split_io_type_into_components,
@@ -10,7 +11,7 @@ from agent_service.io_type_utils import (
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTableColumn, Table, TableColumn
-from agent_service.io_types.text import StockText, Text
+from agent_service.io_types.text import StockText, Text, TextCitation
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.logs import async_perf_logger
@@ -22,27 +23,57 @@ def prepare_list_of_stocks(stocks: List[StockID]) -> Table:
     return Table(columns=columns)
 
 
+def _combine_text_list(
+    texts: Union[List[Text], List[StockText]],
+    per_line_prefix: str = "- ",
+    per_line_suffix: str = "\n",
+    overall_prefix: str = "",
+    overall_suffix: str = "",
+) -> Text:
+    strings = [overall_prefix]
+    all_citations = []
+    cur_offset = len(overall_prefix)
+    for text in texts:
+        line = f"{per_line_prefix}{text.val}{per_line_suffix}"
+        citations = text.get_all_citations()
+        cur_offset += len(per_line_prefix)
+        for cit in citations:
+            if isinstance(cit, TextCitation):
+                cit.citation_text_offset = (
+                    cit.citation_text_offset + cur_offset if cit.citation_text_offset else None
+                )
+            all_citations.append(cit)
+        cur_offset += len(text.val) + len(per_line_suffix)
+        strings.append(line)
+
+    entry = HistoryEntry(citations=all_citations)
+    strings.append(overall_suffix)
+    return Text(val="".join(strings), history=[entry])
+
+
+async def prepare_list_of_texts(texts: List[Text]) -> Text:
+    return _combine_text_list(texts=texts)
+
+
 async def prepare_list_of_stock_texts(texts: List[StockText]) -> Text:
     # Maps stocks to strings
-    stock_text_map: Dict[StockID, List[str]] = defaultdict(list)
+    stock_text_map: Dict[StockID, List[StockText]] = defaultdict(list)
     text_strs = await StockText.get_all_strs(texts)
     for text, text_str in zip(texts, text_strs):
         if text.stock_id:
-            stock_text_map[text.stock_id].append(text_str)
+            # Make sure the value is set
+            text.val = text_str
+            stock_text_map[text.stock_id].append(text)
 
-    # Now for each stock, construct a markdown string and stick it in a list
-    stock_strings = []
+    # Now for each stock, construct a text and stick it in a list
+    stock_texts = []
     for stock, text_list in stock_text_map.items():
-        # Add the symbol
-        mdown_strs = [f"{stock.to_markdown_string()}"]
-        # Add the history info
-        mdown_strs.append(stock.history_to_str())
-        # Add the text info
-        mdown_strs.extend((f"- {t}" for t in text_list))
-        stock_strings.append("\n".join(mdown_strs))
+        prefix = f"{stock.to_markdown_string()}\n{stock.history_to_str()}\n"
+        combined_text = _combine_text_list(text_list, overall_prefix=prefix)
+        stock_texts.append(combined_text)
 
     # Merge the markdown strings together
-    return Text(val="\n\n".join(stock_strings))
+    return _combine_text_list(texts=stock_texts, per_line_suffix="\n\n")
 
 
 @async_perf_logger
@@ -64,6 +95,8 @@ async def get_output_from_io_type(val: IOType, pg: BoostedPG, title: str = "") -
             val = prepare_list_of_stocks(stocks=val)
         elif isinstance(val[0], StockText):
             val = await prepare_list_of_stock_texts(texts=val)
+        elif isinstance(val[0], Text):
+            val = await prepare_list_of_texts(texts=val)
         else:
             val = await gather_with_concurrency([get_output_from_io_type(v, pg=pg) for v in val])
     elif isinstance(val, dict):
