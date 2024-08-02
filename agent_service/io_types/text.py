@@ -760,7 +760,11 @@ class StockEarningsSummaryPointText(StockText):
                 # e.g. "NVDA Earnings Call - Q1 2024"
                 name=f"{row['symbol'] or ''} Earnings Call - Q{row['quarter']} {row['year']}",
                 published_at=row["created_timestamp"],
-                inline_offset=text_id_map[row["summary_id"]].citation_text_offset,
+                inline_offset=(
+                    text_id_map[row["summary_id"]].citation_text_offset
+                    if row["summary_id"] in text_id_map
+                    else None
+                ),
             )
             if text:
                 point_str = str_lookup.get(text.id)
