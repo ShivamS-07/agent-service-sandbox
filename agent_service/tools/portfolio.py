@@ -4,11 +4,13 @@ from typing import Any, List, Optional
 
 import numpy as np
 import pandas as pd
+from dateutil.relativedelta import relativedelta
 from pa_portfolio_service_proto_v1.pa_service_common_messages_pb2 import TimeDelta
 from pa_portfolio_service_proto_v1.watchlist_pb2 import StockWithWeight
 from pa_portfolio_service_proto_v1.workspace_pb2 import StockAndWeight, WorkspaceAuth
 from pydantic import field_validator
 
+from agent_service.external.dal_svc_client import get_dal_client
 from agent_service.external.investment_policy_svc import (
     get_portfolio_investment_policy_for_workspace,
 )
@@ -682,3 +684,76 @@ async def get_linked_portfolio_id(user_id: str, portfolio_id: str) -> str:
         raise ValueError(f"Error getting linked_portfolio_id for {portfolio_id}: {e}")
 
     return linked_portfolio_id
+
+
+class GetPortfolioTradesInput(ToolArgs):
+    portfolio_id: PortfolioID
+
+
+@tool(
+    description=(
+        "This function returns a list of trades made in a specific portfolio, given a portfolio Id "
+        "Use this function if you want to retrieve all trades for a portfolio identified by a PortfolioID. "
+        "A PortfolioID is not a portfolio name. "
+        "A PortfolioID is not a stock identifier. "
+        "Do not use this function to find portfolio names or if no portfolio Id is present. "
+        "If you need a list of portfolio holdings, MAKE SURE you use the `get_portfolio_holdings` tool! "
+        "Output will contain the following columns: Security, Date, Action, Allocation Change. "
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_portfolio_trades(
+    args: GetPortfolioTradesInput, context: PlanRunContext
+) -> StockTable:
+
+    logger = get_prefect_logger(__name__)
+
+    workspaces = await get_all_workspaces(
+        user_id=context.user_id, workspace_ids=[args.portfolio_id]
+    )
+    if len(workspaces) == 0:
+        raise ValueError(f"Workspace doesn't exist for id: {args.portfolio_id}")
+    workspace = workspaces[0]
+
+    # Logic used in web-server
+    TODAY = datetime.datetime.now().date()
+    BEGIN_SEARCH = TODAY - relativedelta(years=2)
+    start_date = BEGIN_SEARCH
+    end_date = TODAY
+
+    dal_client = get_dal_client()
+    previous_trades = await dal_client.fetch_previous_trades(
+        workspace.linked_strategy.model_id.id,
+        workspace.linked_strategy.strategy_id.id,
+        start_date.isoformat(),
+        end_date.isoformat(),
+    )
+
+    logger.info(f"found {len(previous_trades)} trades")
+
+    gbi_ids = [trade.gbi_id for trade in previous_trades]
+
+    stock_ids = await StockID.from_gbi_id_list(gbi_ids)
+    gbi_id2_stock_id = {s.gbi_id: s for s in stock_ids}
+    data = {
+        STOCK_ID_COL_NAME_DEFAULT: [gbi_id2_stock_id[trade.gbi_id] for trade in previous_trades],
+        "Date": [trade.trade_date for trade in previous_trades],
+        "Action": [trade.action for trade in previous_trades],
+        "Allocation Change": [trade.allocation_change for trade in previous_trades],
+    }
+    df = pd.DataFrame(data)
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Date", col_type=TableColumnType.DATE),
+            TableColumnMetadata(label="Action", col_type=TableColumnType.STRING),
+            TableColumnMetadata(label="Allocation Change", col_type=TableColumnType.FLOAT),
+        ],
+    )
+    await tool_log(
+        f"Found {len(stock_ids)} trades in portfolio", context=context, associated_data=table
+    )
+    return table

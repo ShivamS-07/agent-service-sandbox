@@ -1,6 +1,6 @@
+import datetime
 import logging
 import os
-from datetime import datetime
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
@@ -12,6 +12,8 @@ from gbi_common_py_utils.utils.environment import (
     get_environment_tag,
 )
 from pydantic import BaseModel
+
+from agent_service.types import ActionType
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +28,20 @@ DAL_SERVICE_CLIENT = None
 class SecurityRow(BaseModel):
     gbi_id: int
     weight: Optional[float]
-    date: Optional[datetime]
+    date: Optional[datetime.datetime]
 
 
 class ParsePortfolioWorkspaceResponse(BaseModel):
     securities: List[SecurityRow]
     parse_failures: List[str]
     parse_warnings: List[str]
+
+
+class PreviousTradesMetadata(BaseModel):
+    gbi_id: int
+    trade_date: datetime.date
+    action: str
+    allocation_change: float
 
 
 @lru_cache(maxsize=1)
@@ -85,7 +94,7 @@ class DALServiceClient:
                     gbi_id=security_row["gbi_id"],
                     weight=security_row.get("weight"),
                     date=(
-                        datetime.strptime(security_row["date"], "%Y-%m-%d")
+                        datetime.datetime.strptime(security_row["date"], "%Y-%m-%d")
                         if "date" in security_row
                         else None
                     ),
@@ -95,6 +104,67 @@ class DALServiceClient:
             parse_failures=response_content.get("parse_failures", []),
             parse_warnings=response_content.get("parse_warnings", []),
         )
+
+    async def fetch_previous_trades(
+        self, model_id: str, portfolio_id: str, start_date: str, end_date: str
+    ) -> List[PreviousTradesMetadata]:
+        response: aiohttp.ClientResponse = await self._post(
+            "/api/v0/portfolio-analysis/get-data/",
+            {
+                "portfolio_id": portfolio_id,
+                "model_id": model_id,
+                "min_date": start_date,
+                "max_date": end_date,
+                "fields": [
+                    "shares_traded",
+                    "shares_owned",
+                    "price",
+                    "valid_signal",
+                    "allocation_traded",
+                ],
+                "return_format": "json",
+            },
+        )
+
+        response_content: Dict[str, Any] = await response.json()
+
+        if response.status != 200:
+            logger.warn(
+                f"Failed to fetch data from DAL: {response_content.get('message')} {response_content.get('detail')}"
+            )
+
+        # Generate the list of PreviousTradesMetadata objects
+        gbi_ids = response_content["rows"]
+        trade_dates = response_content["columns"]
+        field_indices = response_content["field_map"]
+        allocation_traded_idx = field_indices["allocation_traded"]
+        shares_traded_idx = field_indices["shares_traded"]
+
+        trades_metadata: List[PreviousTradesMetadata] = []
+        for idx, gbi_id in enumerate(gbi_ids):
+            stock_trade_list: List[Any] = response_content["data"][idx]
+            for i in range(len(stock_trade_list)):
+                trade_entry = stock_trade_list[i]
+                allocation_change = trade_entry[allocation_traded_idx]
+                shares_traded = trade_entry[shares_traded_idx]
+                action = ActionType.BUY if shares_traded > 0 else ActionType.SELL
+
+                if allocation_change != 0.0:
+                    trades_metadata.append(
+                        PreviousTradesMetadata(
+                            gbi_id=int(gbi_id),
+                            trade_date=datetime.datetime.strptime(
+                                trade_dates[i], "%Y-%m-%d"
+                            ).date(),
+                            action=action,
+                            allocation_change=allocation_change,
+                        )
+                    )
+
+        # Sort in descending order of trade date
+        sorted_trades = sorted(trades_metadata, key=lambda x: x.trade_date, reverse=True)
+
+        return sorted_trades
 
 
 def get_dal_client() -> DALServiceClient:

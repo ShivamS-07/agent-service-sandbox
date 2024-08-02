@@ -2,7 +2,7 @@ import datetime
 import logging
 import unittest
 from unittest import IsolatedAsyncioTestCase
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pandas as pd
@@ -11,6 +11,10 @@ from pa_portfolio_service_proto_v1.backtest_data_service_pb2 import StockPerform
 from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID
 from pa_portfolio_service_proto_v1.workspace_pb2 import WorkspaceAuth, WorkspaceMetadata
 
+from agent_service.external.dal_svc_client import (
+    DALServiceClient,
+    PreviousTradesMetadata,
+)
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
@@ -23,9 +27,11 @@ from agent_service.tools.portfolio import (
     GetPortfolioHoldingsInput,
     GetPortfolioInput,
     GetPortfolioPerformanceInput,
+    GetPortfolioTradesInput,
     convert_portfolio_mention_to_portfolio_id,
     get_portfolio_holdings,
     get_portfolio_performance,
+    get_portfolio_trades,
 )
 from agent_service.types import PlanRunContext
 
@@ -371,6 +377,72 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         )
 
         pd.testing.assert_frame_equal(result.to_df(), expected.to_df())
+
+    @patch("agent_service.tools.portfolio.get_all_workspaces")
+    @patch.object(
+        DALServiceClient,
+        "fetch_previous_trades",
+        AsyncMock(
+            return_value=[
+                PreviousTradesMetadata(
+                    gbi_id=AAPL.gbi_id,
+                    trade_date=datetime.date(2024, 7, 31),
+                    action="BUY",
+                    allocation_change=0.15,
+                ),
+                PreviousTradesMetadata(
+                    gbi_id=ERGB.gbi_id,
+                    trade_date=datetime.date(2024, 7, 20),
+                    action="SELL",
+                    allocation_change=-0.05,
+                ),
+            ]
+        ),
+    )
+    async def test_get_portfolio_trades(
+        self,
+        mock_get_all_workspaces: MagicMock,
+    ):
+        row = self.create_dummy_workspaces_for_user(self.context.user_id)[0]
+
+        mock_get_all_workspaces.return_value = [
+            WorkspaceMetadata(
+                workspace_id=UUID(id=row["id"]),
+                name=row["name"],
+                user_auth_level=row["user_auth_level"],
+                last_updated=row["last_updated"],
+                created_at=self.to_timestamp(1600000000),
+            )
+        ]
+
+        args = GetPortfolioTradesInput(
+            portfolio_id=row["id"],
+        )
+
+        result = await get_portfolio_trades(args, self.context)
+
+        # Expected data
+        expected_data = {
+            STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB],
+            "Date": [datetime.date(2024, 7, 31), datetime.date(2024, 7, 20)],
+            "Action": ["BUY", "SELL"],
+            "Allocation Change": [0.15, -0.05],
+        }
+        expected_df = pd.DataFrame(expected_data)
+        expected_table = StockTable.from_df_and_cols(
+            data=expected_df,
+            columns=[
+                TableColumnMetadata(
+                    label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
+                ),
+                TableColumnMetadata(label="Date", col_type=TableColumnType.DATE),
+                TableColumnMetadata(label="Action", col_type=TableColumnType.STRING),
+                TableColumnMetadata(label="Allocation Change", col_type=TableColumnType.FLOAT),
+            ],
+        )
+
+        # Assert the result
+        pd.testing.assert_frame_equal(result.to_df(), expected_table.to_df())
 
     def to_timestamp(self, seconds):
         timestamp = Timestamp()

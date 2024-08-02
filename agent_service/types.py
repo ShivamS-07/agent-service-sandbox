@@ -100,3 +100,8 @@ class PlanRunContext(BaseModel):
 class MemoryType(str, enum.Enum):
     PORTFOLIO = "portfolio"
     WATCHLIST = "watchlist"
+
+
+class ActionType(str, enum.Enum):
+    BUY = "BUY"
+    SELL = "SELL"
