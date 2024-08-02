@@ -582,7 +582,7 @@ class AsyncDB:
 
     async def mark_notifications_as_unread(self, agent_id: str, message_id: str) -> None:
         sql = """
-        SELECT created_at FROM agent.notifications
+        SELECT message_time FROM agent.chat_messages
         WHERE agent_id = %(agent_id)s AND message_id = %(message_id)s
         LIMIT 1
         """
@@ -590,11 +590,12 @@ class AsyncDB:
         if not rows:
             return None
 
-        message_timestamp = rows[0]["created_at"]
+        message_timestamp = rows[0]["message_time"]
         sql = """
         UPDATE agent.notifications
         SET unread = TRUE
         WHERE agent_id = %(agent_id)s AND created_at >= %(timestamp)s
+          AND message_id IS NOT NULL
         """
         await self.pg.generic_write(sql, {"agent_id": agent_id, "timestamp": message_timestamp})
 
