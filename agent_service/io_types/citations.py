@@ -46,7 +46,7 @@ class DocumentCitationOutput(CitationOutput, ABC):
     ) -> Tuple[Optional[int], Optional[int]]:
         try:
             start = context.index(smaller_snippet)
-            end = len(smaller_snippet) - 1
+            end = start + len(smaller_snippet) - 1
             return (start, end)
         except ValueError:
             return (None, None)
