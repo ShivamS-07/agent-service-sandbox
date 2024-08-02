@@ -1312,13 +1312,21 @@ class TextOutput(Output):
     val: str
     # Optional top level score for this segment of text
     score: Optional[ScoreOutput] = None
+    resolved_inline_citations: bool = False
 
-    def convert_inline_citations_to_output_format(self) -> str:
+    def convert_inline_citations_to_output_format(self) -> None:
         """
         Given a string representing this text's value, go through all the
         citations for this object and insert them into the text.
         """
         template = """ ```{{ "type": "citation", "citation_id": "{cit_id}" }}``` """
+        if self.resolved_inline_citations or """```{{ "type": "citation",""" in self.val:
+            # There are times that this function may be called more than once on
+            # the same object. This will prevent any issues or duplicate
+            # citations.
+            return
+
+        self.resolved_inline_citations = True
         citation_offset_map = {}
         char_list = list(self.val)
         for cit in self.citations:
@@ -1332,7 +1340,7 @@ class TextOutput(Output):
             if i in citation_offset_map:
                 output.append(citation_offset_map[i])
 
-        return "".join(output)
+        self.val = "".join(output)
 
     def __str__(self) -> str:
         return self.val

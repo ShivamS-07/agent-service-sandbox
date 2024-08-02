@@ -107,7 +107,7 @@ async def get_output_from_io_type(val: IOType, pg: BoostedPG, title: str = "") -
     val = await val.to_rich_output(pg, title=title)
     if isinstance(val, TextOutput):
         # Hacky, have to figure out a better place to call this...
-        val.val = val.convert_inline_citations_to_output_format()
+        val.convert_inline_citations_to_output_format()
     return val
 
 
