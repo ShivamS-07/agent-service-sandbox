@@ -1,3 +1,4 @@
+import json
 import random
 import re
 from collections import defaultdict
@@ -6,7 +7,15 @@ from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 from data_access_layer.core.dao.securities import SecuritiesMetadataDAO
+from feature_service_proto_v1.feature_metadata_service_pb2 import (
+    GetAllFeaturesMetadataResponse,
+)
+from gbi_common_py_utils.numpy_common import NumpySheet
 
+from agent_service.external.feature_svc_client import (
+    get_all_features_metadata,
+    get_feature_data,
+)
 from agent_service.external.pa_backtest_svc_client import (
     get_stock_performance_for_date_range,
 )
@@ -22,7 +31,7 @@ from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT, StockTable, Table
-from agent_service.io_types.text import Text, TextGroup, ThemeText
+from agent_service.io_types.text import StatisticsText, Text, TextGroup, ThemeText
 from agent_service.tools.commentary.constants import (
     COMMENTARY_LLM,
     MAX_ARTICLES_PER_DEVELOPMENT,
@@ -30,6 +39,7 @@ from agent_service.tools.commentary.constants import (
     MAX_MATCHED_ARTICLES_PER_TOPIC,
 )
 from agent_service.tools.commentary.prompts import (
+    CHOOSE_STATISTICS_PROMPT,
     COMMENTARY_PROMPT_MAIN,
     COMMENTARY_SYS_PROMPT,
     FILTER_CITATIONS_PROMPT,
@@ -67,6 +77,7 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import FilledPrompt
+from agent_service.utils.string_utils import clean_to_json_if_needed
 
 logger = get_prefect_logger(__name__)
 PERFORMANCE_LEVELS = ["sector", "stock", "overall", "monthly", "daily"]
@@ -101,8 +112,12 @@ async def get_theme_related_texts(
         context,
     )
     # print("article texts size", len(article_texts))
-    res.extend(development_texts)
-    res.extend(article_texts)
+    statistics_texts = await get_statistics_for_theme(
+        context=context, texts=themes_texts, date_range=date_range
+    )
+    res.extend(development_texts)  # type: ignore
+    res.extend(article_texts)  # type: ignore
+    res.extend(statistics_texts)  # type: ignore
     return res
 
 
@@ -218,6 +233,72 @@ async def filter_most_important_citations(
     cleaned_result = re.sub(r"[^\d,]", "", result)
     filtered_citations = list(map(int, cleaned_result.strip("[]").split(",")))
     return filtered_citations
+
+
+async def get_statistics_for_theme(
+    context: PlanRunContext, texts: List[ThemeText], date_range: DateRange
+) -> List[StatisticsText]:
+    # get all the features
+    resp = await get_all_features_metadata(context.user_id, filtered=True)
+    all_statistic_lookup: Dict[str, GetAllFeaturesMetadataResponse.FeatureMetadata] = {
+        feature_metadata.feature_id: feature_metadata
+        for feature_metadata in resp.features
+        if feature_metadata.importance <= 2
+    }
+    name_to_id_map = {
+        feature_metadata.name: feature_metadata.feature_id
+        for feature_metadata in resp.features
+        if feature_metadata.importance <= 2
+    }
+    all_statistics_str = "\n".join(
+        f"Statistic name {metadata.name}"
+        for name, metadata in all_statistic_lookup.items()
+        if metadata.is_global  # for now, we filter out all the non global features
+    )
+    # Create GPT context and llm model
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(model=GPT4_O, context=gpt_context)
+
+    result = await llm.do_chat_w_sys_prompt(
+        main_prompt=CHOOSE_STATISTICS_PROMPT.format(
+            statistic_list=all_statistics_str, theme_info="\n".join([text.val for text in texts])
+        ),
+        sys_prompt=NO_PROMPT,
+    )
+    json_obj: Dict[str, List[str]] = json.loads(clean_to_json_if_needed(result))
+    statistics_list = json_obj.get("statistics", [])
+    feature_ids = []
+    for feature_name in statistics_list:
+        feature_id = name_to_id_map.get(feature_name, None)
+        if feature_id:
+            feature_ids.append(feature_id)
+    # Using the chosen stats that have been selected create the prompt
+    all_stats_texts: List[StatisticsText] = []
+    if len(feature_ids) == 0:
+        return all_stats_texts
+    data = await get_feature_data(
+        statistic_ids=feature_ids,
+        stock_ids=[],
+        from_date=date_range.start_date,
+        to_date=date_range.end_date,
+    )
+    global_data = data.global_data
+    np_sheet = None
+    for data in global_data:
+        np_sheet = NumpySheet.initialize_from_proto_bytes(data.data_sheet, cols_are_dates=False)
+    if np_sheet:
+        index = [
+            all_statistic_lookup.get(feature_id, feature_id).name for feature_id in np_sheet.rows
+        ]
+        df = pd.DataFrame(np_sheet.np_data, index=index, columns=np_sheet.columns)
+        feature_dict = df.to_dict(orient="index")
+        all_stats_texts = [
+            StatisticsText(id=str(feature), val=json.dumps(feature_data))
+            for feature, feature_data in feature_dict.items()
+        ]
+    return all_stats_texts
 
 
 async def get_texts_for_topics(

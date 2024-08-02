@@ -66,6 +66,14 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "\n#####\n"
         "{texts}"
         "\n#####\n"
+        "Use this data to back up the commentary that is written."
+        "You can reference the data in the commentary"
+        "Just make sure that it is relevant to what you are writing about"
+        "DO NOT just include the data with out purpose"
+        "DO NOT mention any statistics that is not there"
+        "ONLY reference statistics that have data for, and use the statistic to strengthen your commentary"
+        "The following is time series data for statistics"
+        "\n#####\n"
         "Here is the transcript of your interaction with the client, delimited by -----:\n"
         "\n-----\n"
         "{chat_context}"
@@ -250,6 +258,22 @@ FILTER_CITATIONS_PROMPT = Prompt(
     ),
 )
 
+CHOOSE_STATISTICS_PROMPT = Prompt(
+    name="CHOOSE_STATISTICS_PROMPT",
+    template=(
+        "Provided will be a long list of statistics names that you have data for,"
+        "the statistics are delimited by \n here is the statistics list {statistic_list}"
+        "It is your job to determine which of those statistics are DIRECTLY relevant to the following"
+        "theme descriptions: {theme_info}"
+        "Make sure that the list of statistics is directly relevant to at least one of the themes."
+        "Choose AT MOST 5 statistics and "
+        "Make sure that they are the MOST IMPORTANT statistics as it relates to the theme"
+        "Return a json object that MUST starts with an open bracket and ends with a closed bracket"
+        "The json object will have one key called statistics. And the value of statistics MUST be a list"
+        "The list  MUST start with [ and ends with ] with the selected statistics are separated by a comma"
+        "DO NOT have anything else in the return except the json object"
+    ),
+)
 
 # Writing Format
 

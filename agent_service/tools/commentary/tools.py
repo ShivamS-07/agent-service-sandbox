@@ -418,7 +418,7 @@ async def main() -> None:
     context = PlanRunContext(
         agent_id="7cb9fb8f-690e-4535-8b48-f6e63494c366",
         plan_id="b3330500-9870-480d-bcb1-cf6fe6b487e3",
-        user_id=str(uuid4()),
+        user_id="a5d534c9-5426-4387-a298-723c5e09ecab",  # str(uuid4()),
         plan_run_id=str(uuid4()),
         chat=chat_context,
         skip_db_commit=True,
@@ -435,10 +435,10 @@ async def main() -> None:
     )
     print("Length of texts: ", len(texts))  # type: ignore
     args = WriteCommentaryInput(
-        texts=texts,  # type: ignore
+        inputs=texts,  # type: ignore
     )
-    result = await write_commentary(args, context)
-    print(result)
+    result = await write_commentary(args, context)  # type: ignore
+    print(result.val)  # type: ignore
 
 
 if __name__ == "__main__":

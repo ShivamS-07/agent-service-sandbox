@@ -274,6 +274,12 @@ class StockText(Text):
 
 
 @io_type
+class StatisticsText(Text):
+    id: str
+    text_type: ClassVar[str] = "STATISTICS"
+
+
+@io_type
 class EarningsPeersText(StockText):
     affecting_stock_id: Optional[StockID] = None
     year: int

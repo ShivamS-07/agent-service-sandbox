@@ -147,7 +147,6 @@ async def get_portfolio_holdings(
         gbi_id2_performance = {
             stock.gbi_id: stock.performance for stock in stock_performance.stock_performance_list
         }
-
         data.update(
             {
                 "Price": [gbi_id2_price[holding.gbi_id] for holding in workspace.holdings],
