@@ -1,10 +1,19 @@
 import enum
 from abc import ABC
-from typing import List
+from typing import List, Union
 
 from pydantic import BaseModel
 
-from agent_service.io_types.citations import CitationOutput
+from agent_service.io_types.citations import (
+    CitationOutput,
+    CompanyFilingCitationOutput,
+    CustomDocumentCitationOutput,
+    LinkCitationOutput,
+    NewsArticleCitationOutput,
+    NewsDevelopmentCitationOutput,
+    TextCitationOutput,
+    ThemeCitationOutput,
+)
 
 
 class OutputType(str, enum.Enum):
@@ -14,7 +23,19 @@ class OutputType(str, enum.Enum):
     LAYOUT = "layout"
 
 
+OutputCitationTypes = Union[
+    ThemeCitationOutput,
+    CustomDocumentCitationOutput,
+    CompanyFilingCitationOutput,
+    NewsDevelopmentCitationOutput,
+    NewsArticleCitationOutput,
+    TextCitationOutput,
+    LinkCitationOutput,
+    CitationOutput,
+]
+
+
 class Output(BaseModel, ABC):
     output_type: OutputType
     title: str = ""
-    citations: List[CitationOutput] = []
+    citations: List[OutputCitationTypes] = []
