@@ -658,6 +658,7 @@ class StockEarningsText(StockText):
         parts = []
         if self.stock_id:
             parts.append(self.stock_id.symbol or self.stock_id.company_name)
+            parts.append(" ")
         parts.append("Earnings Call Summary")
         if self.year and self.quarter:
             parts.append(f" (Q{self.quarter} {self.year})")
@@ -989,7 +990,7 @@ class StockSecFilingText(StockText):
 
     id: str
 
-    text_type: ClassVar[str] = "SEC filing"
+    text_type: ClassVar[str] = "SEC Filing"
 
     db_id: Optional[str] = None
 
@@ -1157,7 +1158,7 @@ class StockOtherSecFilingText(StockText):
 
     id: str  # SEC filing info
 
-    text_type: ClassVar[str] = "SEC filing"
+    text_type: ClassVar[str] = "SEC Filing"
 
     db_id: Optional[str] = None
 
