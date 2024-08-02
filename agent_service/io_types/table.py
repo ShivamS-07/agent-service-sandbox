@@ -273,20 +273,6 @@ class Table(ComplexIOBase):
                     objects=cast(List[ComplexIOBase], col.data)
                 )
                 additional_output_cols.extend((col.to_output_column() for col in additional_cols))
-                # Map to StockMetadata
-                col.data = [
-                    (
-                        StockMetadata(
-                            gbi_id=val.gbi_id,
-                            symbol=val.symbol,
-                            isin=val.isin,
-                            company_name=val.company_name,
-                        )
-                        if isinstance(val, StockID)
-                        else val
-                    )
-                    for val in col.data
-                ]
                 if is_first_col:
                     # Automatically highlight the first column if it's a stock column
                     output_col.is_highlighted = True
@@ -314,6 +300,18 @@ class Table(ComplexIOBase):
         score_col = fixed_table.get_score_column()
         if score_col:
             df = df.sort_values(by=str(score_col.metadata.label), ascending=False)
+        df = df.applymap(
+            lambda val: (
+                StockMetadata(
+                    gbi_id=val.gbi_id,
+                    symbol=val.symbol,
+                    isin=val.isin,
+                    company_name=val.company_name,
+                )
+                if isinstance(val, StockID)
+                else val
+            )
+        )
         rows = df.values.tolist()
 
         return TableOutput(title=title, columns=output_cols, rows=rows, citations=citations)
