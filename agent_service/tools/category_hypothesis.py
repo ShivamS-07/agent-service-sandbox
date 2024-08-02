@@ -333,9 +333,14 @@ async def analyze_hypothesis_with_categories(
     # Step: Rank and summarize for each category
     logger.info("Ranking and summarizing for each category")
     candidate_target_stock = args.target_stock
+
+    stocks = args.stocks[:]
+    if candidate_target_stock and candidate_target_stock not in stocks:
+        stocks.append(candidate_target_stock)
+
     category_to_result = await rank_and_summarize_for_each_category(
         candidate_target_stock,
-        args.stocks,
+        stocks,
         revised_hypothesis,
         categories,
         category_idx_to_mixed_topics,
@@ -346,7 +351,7 @@ async def analyze_hypothesis_with_categories(
 
     # Step: Calculate weighted average scores and determine the real target stock
     actual_target_stock, total_scores = calculate_weighted_average_scores(
-        candidate_target_stock, args.stocks, categories, category_to_result
+        candidate_target_stock, stocks, categories, category_to_result
     )
 
     # Step: Prepare outputs

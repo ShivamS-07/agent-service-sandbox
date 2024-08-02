@@ -30,7 +30,7 @@ from agent_service.utils.output_utils.prompts import (
     SUMMARY_CUSTOM_NOTIFICATION_TEMPLATE,
 )
 from agent_service.utils.output_utils.utils import io_type_to_gpt_input
-from agent_service.utils.string_utils import strip_code_backticks
+from agent_service.utils.string_utils import clean_to_json_if_needed
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class OutputDiffer:
             sys_prompt=GENERATE_DIFF_SYS_PROMPT,
             output_json=True,
         )
-        return OutputDiff.model_validate_json(strip_code_backticks(result))
+        return OutputDiff.model_validate_json(clean_to_json_if_needed(result))
 
     async def _compute_diff_for_io_types(
         self, latest_output: IOType, prev_output: IOType, prev_run_time: datetime.datetime
@@ -151,7 +151,7 @@ class OutputDiffer:
             output_json=True,
         )
         # TODO handle retries, errors, etc.
-        return OutputDiff.model_validate_json(strip_code_backticks(result))
+        return OutputDiff.model_validate_json(clean_to_json_if_needed(result))
 
     async def _compute_diff_for_stock_lists(
         self, curr_stock_list: List[StockID], prev_stock_list: List[StockID]
