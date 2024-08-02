@@ -58,6 +58,7 @@ stock-universe-service-proto-v1 = {version = "==0.43.0", index = "gbi"}
 pa-portfolio-service-proto-v1 = {version = "==1.306.0", index = "gbi"}
 discover_service_proto_v1 = {version = "==0.19.0", index = "gbi"}
 feature-service-proto-v1 = {version = "==1.48.0", index = "gbi"}
+user-service-proto-v1 = {version = "==1.55.0", index = "gbi"}
 
 [requires]
 python_version = "3.8"

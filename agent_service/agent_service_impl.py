@@ -13,6 +13,7 @@ from gpt_service_proto_v1.service_grpc import GPTServiceStub
 from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
+    Account,
     AgentEvent,
     AgentMetadata,
     ChatWithAgentRequest,
@@ -26,6 +27,7 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationResponse,
     ExecutionPlanTemplate,
+    GetAccountInfoResponse,
     GetAgentDebugInfoResponse,
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
@@ -54,10 +56,12 @@ from agent_service.endpoints.models import (
     UnsharePlanRunResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
+    UpdateUserResponse,
     UploadFileResponse,
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
+from agent_service.external.user_svc_client import get_users, update_user
 from agent_service.io_type_utils import load_io_type
 from agent_service.types import ChatContext, MemoryType, Message
 from agent_service.uploads import UploadHandler
@@ -724,3 +728,29 @@ class AgentServiceImpl:
         )
         await upload_handler.handle_upload()
         return UploadFileResponse()
+
+    async def update_user(
+        self, user_id: str, name: str, username: str, email: str
+    ) -> UpdateUserResponse:
+        if username == "" or email == "" or name == "":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="name and email cannot be empty"
+            )
+        return UpdateUserResponse(success=await update_user(user_id, name, username, email))
+
+    async def get_account_info(self, user: User) -> GetAccountInfoResponse:
+        res = await get_users(user.user_id, [user.user_id], False)
+        if len(res) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No Account Info found for {user.user_id}",
+            )
+        account = res[0]
+        return GetAccountInfoResponse(
+            account=Account(
+                user_id=account.user_id.id,
+                email=account.email,
+                username=account.username,
+                name=account.name,
+            )
+        )

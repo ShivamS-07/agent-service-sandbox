@@ -44,6 +44,7 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationRequest,
     EnableAgentAutomationResponse,
+    GetAccountInfoResponse,
     GetAgentDebugInfoResponse,
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
@@ -73,6 +74,8 @@ from agent_service.endpoints.models import (
     UnsharePlanRunResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
+    UpdateUserRequest,
+    UpdateUserResponse,
     UploadFileResponse,
 )
 from agent_service.external.grpc_utils import create_jwt
@@ -887,6 +890,30 @@ async def generate_jwt(user_id: str, user: User = Depends(parse_header)) -> str:
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
     return create_jwt(user_id=user_id, expiry_hours=1, include_aud=True)
+
+
+# Account Endpoints
+
+
+@router.post(
+    "/user/update-user",
+    response_model=UpdateUserResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def update_user(
+    req: UpdateUserRequest,
+    user: User = Depends(parse_header),
+) -> UpdateUserResponse:
+    return await application.state.agent_service_impl.update_user(
+        user_id=user.user_id, name=req.name, username=req.username, email=req.email
+    )
+
+
+@router.get(
+    "/user/get-account-info", response_model=GetAccountInfoResponse, status_code=status.HTTP_200_OK
+)
+async def get_account_info(user: User = Depends(parse_header)) -> GetAccountInfoResponse:
+    return await application.state.agent_service_impl.get_account_info(user=user)
 
 
 initialize_unauthed_endpoints(application)

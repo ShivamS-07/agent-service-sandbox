@@ -489,6 +489,32 @@ class RenameMemoryResponse(BaseModel):
     success: bool
 
 
+####################################################################################################
+# User
+####################################################################################################
+
+
+class Account(BaseModel):
+    user_id: str
+    email: str
+    username: str
+    name: str
+
+
+class UpdateUserRequest(BaseModel):
+    name: str
+    username: str
+    email: str
+
+
+class UpdateUserResponse(BaseModel):
+    success: bool
+
+
+class GetAccountInfoResponse(BaseModel):
+    account: Account
+
+
 # Regression Test Run Info
 ####################################################################################################
 class GetTestSuiteRunInfoResponse(BaseModel):
