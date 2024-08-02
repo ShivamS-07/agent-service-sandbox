@@ -941,7 +941,7 @@ class StockSecFilingText(StockText):
             output.append(
                 CompanyFilingCitationOutput(
                     name=text.source_text.text_type,
-                    cited_snippet=text.citation_snippet_context,
+                    summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
                     inline_offset=text.citation_text_offset,
@@ -1035,7 +1035,7 @@ class StockSecFilingSectionText(StockText):
             output.append(
                 CompanyFilingCitationOutput(
                     name="SEC filing Section",
-                    cited_snippet=cit.citation_snippet_context,
+                    summary=cit.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
                     inline_offset=cit.citation_text_offset,
@@ -1110,7 +1110,7 @@ class StockOtherSecFilingText(StockText):
             output.append(
                 CompanyFilingCitationOutput(
                     name=text.source_text.text_type,
-                    cited_snippet=text.citation_snippet_context,
+                    summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
                     inline_offset=text.citation_text_offset,

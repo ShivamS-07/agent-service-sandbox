@@ -27,6 +27,7 @@ class CitationOutput(BaseModel, ABC):
     citation_type: CitationType
     name: str
     inline_offset: Optional[int] = None
+    summary: Optional[str] = None
 
     def model_dump(self, **kwargs: Any) -> Dict[str, Any]:
         return super().model_dump(serialize_as_any=True, **kwargs)
@@ -36,7 +37,6 @@ class CitationOutput(BaseModel, ABC):
 
 
 class DocumentCitationOutput(CitationOutput, ABC):
-    cited_snippet: Optional[str] = None
     snippet_highlight_start: Optional[int] = None
     snippet_highlight_end: Optional[int] = None
 
@@ -54,7 +54,6 @@ class DocumentCitationOutput(CitationOutput, ABC):
 
 class ThemeCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.THEME
-    summary: Optional[str] = None
     last_updated_at: Optional[datetime.datetime] = None
 
 
@@ -70,7 +69,6 @@ class CompanyFilingCitationOutput(DocumentCitationOutput):
 
 class NewsDevelopmentCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.NEWS_DEVELOPMENT
-    summary: Optional[str] = None
     last_updated_at: Optional[datetime.datetime] = None
     num_articles: Optional[int] = None
 
@@ -78,7 +76,6 @@ class NewsDevelopmentCitationOutput(CitationOutput):
 class NewsArticleCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.NEWS_ARTICLE
     link: Optional[str] = None
-    summary: Optional[str] = None
     last_updated_at: Optional[datetime.datetime] = None
     article_id: Optional[str] = None
 
@@ -87,11 +84,9 @@ class NewsArticleCitationOutput(CitationOutput):
 class TextCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.TEXT
     published_at: Optional[datetime.datetime] = None
-    summary: Optional[str] = None
 
 
 class LinkCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.LINK
     published_at: Optional[datetime.datetime] = None
-    summary: Optional[str] = None
     link: Optional[str] = None
