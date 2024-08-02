@@ -1334,9 +1334,6 @@ class TextOutput(Output):
 
         return "".join(output)
 
-    def model_post_init(self, __context: Any) -> None:
-        self.val = self.convert_inline_citations_to_output_format()
-
     def __str__(self) -> str:
         return self.val
 
