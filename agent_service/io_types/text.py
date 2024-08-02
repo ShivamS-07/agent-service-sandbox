@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 from collections import defaultdict
 from itertools import chain
 from typing import (
@@ -47,6 +48,8 @@ from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.sec.constants import LINK_TO_FILING_DETAILS
 from agent_service.utils.sec.sec_api import SecFiling
+
+logger = logging.getLogger(__name__)
 
 TextIDType = Union[str, int]
 
@@ -1127,12 +1130,14 @@ class KPIText(Text):
 @io_type
 class TextGroup(ComplexIOBase):
     val: List[Text]
+    id_to_str: Optional[Dict[TextIDType, str]] = None
 
     @staticmethod
     def join(group1: TextGroup, group2: TextGroup) -> TextGroup:
         return TextGroup(val=group1.val + group2.val)
 
     def convert_to_str(self, id_to_str: Dict[TextIDType, str], numbering: bool = False) -> str:
+        self.id_to_str = id_to_str
         return "\n***\n".join(
             [
                 (f"Text Number: {i}\n" if numbering else "") + id_to_str[text.id]
@@ -1140,6 +1145,21 @@ class TextGroup(ComplexIOBase):
                 if text.id in id_to_str
             ]
         )
+
+    def convert_citation_num_to_text(self, citation_id: int) -> Optional[Text]:
+        try:
+            return self.val[int(citation_id)]
+        except (ValueError, IndexError):
+            logger.exception("Could not convert citation num to text")
+            return None
+
+    def get_str_for_text(self, text_id: TextIDType) -> Optional[str]:
+        try:
+            return self.id_to_str[text_id]  # type: ignore
+        except (TypeError, KeyError):
+            # can't log this due to circular import
+            logger.exception("Could not convert text ID to text")
+            return None
 
     def get_citations(self, citation_ids: List[int]) -> List[Citation]:
         # do int(i) just in case GPT screwed up

@@ -58,6 +58,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     TOPIC_FILTER_SYS_PROMPT,
     TOPIC_PHRASE,
 )
+from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.tools.news import (
     GetNewsDevelopmentsAboutCompaniesInput,
     get_all_news_developments_about_companies,
@@ -82,6 +83,7 @@ from agent_service.utils.tool_diff import (
 
 
 # Helper functions
+# to be depreciated
 def split_text_and_citation_ids(GPT_ouput: str) -> Tuple[str, List[int]]:
     lines = GPT_ouput.replace("\n\n", "\n").split("\n")
     try:
@@ -130,19 +132,27 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         texts_str,
         [SUMMARIZE_MAIN_PROMPT.template, SUMMARIZE_SYS_PROMPT.template, chat_str, topic_str],
     )
+    main_prompt = SUMMARIZE_MAIN_PROMPT.format(
+        texts=texts_str,
+        chat_context=chat_str,
+        topic_phrase=topic_str,
+        today=datetime.date.today(),
+    )
     result = await llm.do_chat_w_sys_prompt(
-        SUMMARIZE_MAIN_PROMPT.format(
-            texts=texts_str,
-            chat_context=chat_str,
-            topic_phrase=topic_str,
-            today=datetime.date.today(),
-        ),
+        main_prompt,
         SUMMARIZE_SYS_PROMPT.format(),
     )
-    text, citation_ids = split_text_and_citation_ids(result)
+    text, citations = await extract_citations_from_gpt_output(result, text_group, context)
+    if texts_str and not citations:  # missing all citations, do a retry
+        logger.warning(f"Retrying after no citations after first round for {result}")
+        result = await llm.do_chat_w_sys_prompt(
+            main_prompt, SUMMARIZE_SYS_PROMPT.format(), no_cache=True
+        )
+        text, citations = await extract_citations_from_gpt_output(result, text_group, context)
+
     summary = Text(val=text)
     summary = summary.inject_history_entry(
-        HistoryEntry(title="Summary", citations=text_group.get_citations(citation_ids))
+        HistoryEntry(title="Summary", citations=citations)  # type:ignore
     )
     return summary
 

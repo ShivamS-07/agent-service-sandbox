@@ -1,3 +1,5 @@
+import re
+
 from agent_service.GPT.constants import GPT4_O
 
 DEFAULT_LLM = GPT4_O
@@ -15,3 +17,11 @@ NO_CITATIONS_DIFF = (
     "Previous evidence which supported the stock's inclusion "
     "is no longer among the documents reviewed in this pass"
 )
+
+
+ANCHOR_REGEX = re.compile(r" ?\[([a-z]{1,2}),\d\]([\.\?\!]?)")
+# not worth adding NLTK for just this one case, so just use a regex
+SENTENCE_REGEX = re.compile(r"(?<=[^A-Z].[.?!]) +(?=[A-Z])")
+ANCHOR_HEADER = "### Anchor Mapping\n"
+UNITS = ["thousand", "million", "billion", "trillion"]
+CITATION_SNIPPET_BUFFER_LEN = 100

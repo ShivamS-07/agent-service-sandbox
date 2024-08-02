@@ -38,7 +38,7 @@ boosted-data-access-layer = {version = "==0.0.286", index = "gbi"}
 dateparser = {version = "==1.2.0", index = "pypi"}
 async-lru = {version = "==2.0.4", index = "pypi"}
 #TTL
-async-cache = {version = "*", index = "pypi"}
+async-cache = {version = "==1.1.1", index = "pypi"}
 mdutils = {version = "==1.6.0", index = "pypi"}
 sec-api = {version = "==1.0.16", index = "pypi"}
 json-repair = {version = "==0.16.3", index = "pypi"}
@@ -48,6 +48,7 @@ psycopg-pool  = {version = "~=3.2.0", index = "pypi"}
 country_converter = {version = "*", index = "pypi"}
 cron-descriptor = {version = "==1.4.3", index = "pypi"}
 apscheduler = {version = "==3.10.4", index = "pypi", extras = ["sqlalchemy"]}
+Levenshtein = {version = "==0.25.1", index = "pypi"}
 
 
 # External services
