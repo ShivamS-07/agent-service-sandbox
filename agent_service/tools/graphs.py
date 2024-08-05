@@ -139,7 +139,21 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
             x_axis_col = (col, df_col)
             continue
 
-        if not dataset_col and len(cols) > 2:
+        if (
+            not dataset_col
+            and len(cols) > 2
+            and col.metadata.col_type
+            not in (
+                TableColumnType.CURRENCY,
+                TableColumnType.FLOAT,
+                TableColumnType.INTEGER,
+                TableColumnType.DELTA,
+                TableColumnType.PCT_DELTA,
+                TableColumnType.PERCENT,
+                TableColumnType.INTEGER_WITH_UNIT,
+                TableColumnType.FLOAT_WITH_UNIT,
+            )
+        ):
             # We only have a dataset column if we have > 2 columns. Otherwise we
             # just have the X axis and the value.
             dataset_col = (col, df_col)
@@ -153,6 +167,8 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
             TableColumnType.DELTA,
             TableColumnType.PCT_DELTA,
             TableColumnType.PERCENT,
+            TableColumnType.INTEGER_WITH_UNIT,
+            TableColumnType.FLOAT_WITH_UNIT,
         ):
             data_col = (col, df_col)
 
@@ -167,7 +183,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
     data = []
     y_col, y_df_col = data_col
     x_col, x_df_col = x_axis_col
-    if dataset_col is None:
+    if dataset_col is None and len(cols) <= 2:
         # In this case, we only have a single dataset so we don't need to do any
         # fancy grouping. The dataset name is simply the name of the graphed
         # column. This only happens when there are exactly two columns, so we
@@ -182,6 +198,26 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
             ],
         )
         data = [dataset]
+    elif dataset_col is None:
+        # In this case, we have no "dataset" column (e.g. no stocks or whatever)
+        # and we just have an X axis with multiple data columns. In this case,
+        # we want to construct datasets simply based on the titles of the
+        # columns.
+        for col in cols:
+            if col.metadata == x_col.metadata:
+                # Ignore the x-axis
+                continue
+            data.append(
+                GraphDataset(
+                    dataset_id=str(col.metadata.label),
+                    dataset_id_type=TableColumnType.STRING,
+                    points=[
+                        DataPoint(x_val=x_val, y_val=y_val)  # type: ignore
+                        for x_val, y_val in zip(x_col.data, col.data)
+                        if x_val is not None and y_val is not None
+                    ],
+                )
+            )
     else:
         ds_col, dataset_df_col = dataset_col
         # get the unique dataset keys
