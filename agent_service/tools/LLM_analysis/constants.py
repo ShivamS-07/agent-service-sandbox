@@ -19,7 +19,7 @@ NO_CITATIONS_DIFF = (
 )
 
 
-ANCHOR_REGEX = re.compile(r" ?\[([a-z]{1,2}),\d\]([\.\?\!]?)")
+ANCHOR_REGEX = re.compile(r" ?\[([a-z]{1,2}),\d{1,2}\]([\.\?\!]?)")
 # not worth adding NLTK for just this one case, so just use a regex
 SENTENCE_REGEX = re.compile(r"(?<=[^A-Z].[.?!]) +(?=[A-Z])")
 ANCHOR_HEADER = "### Anchor Mapping\n"

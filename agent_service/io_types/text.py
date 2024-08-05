@@ -1247,16 +1247,22 @@ class KPIText(Text):
 class TextGroup(ComplexIOBase):
     val: List[Text]
     id_to_str: Optional[Dict[TextIDType, str]] = None
+    offset: int = 0  # for starting the numbering of a TextGroup from something other than 0
 
     @staticmethod
     def join(group1: TextGroup, group2: TextGroup) -> TextGroup:
-        return TextGroup(val=group1.val + group2.val)
+        texts = group1.val + group2.val
+        joined_id_to_str = {
+            **(group1.id_to_str if group1.id_to_str else {}),
+            **(group2.id_to_str if group2.id_to_str else {}),
+        }
+        return TextGroup(val=texts, id_to_str=joined_id_to_str)
 
     def convert_to_str(self, id_to_str: Dict[TextIDType, str], numbering: bool = False) -> str:
         self.id_to_str = id_to_str
         return "\n***\n".join(
             [
-                (f"Text Number: {i}\n" if numbering else "") + id_to_str[text.id]
+                (f"Text Number: {i + self.offset}\n" if numbering else "") + id_to_str[text.id]
                 for i, text in enumerate(self.val)
                 if text.id in id_to_str
             ]
@@ -1264,7 +1270,7 @@ class TextGroup(ComplexIOBase):
 
     def convert_citation_num_to_text(self, citation_id: int) -> Optional[Text]:
         try:
-            return self.val[int(citation_id)]
+            return self.val[int(citation_id) - self.offset]
         except (ValueError, IndexError):
             logger.exception("Could not convert citation num to text")
             return None
@@ -1280,7 +1286,7 @@ class TextGroup(ComplexIOBase):
     def get_citations(self, citation_ids: List[int]) -> List[Citation]:
         # do int(i) just in case GPT screwed up
         return [
-            TextCitation(source_text=self.val[int(i)])
+            TextCitation(source_text=self.val[int(i) - self.offset])
             for i in citation_ids
             if 0 <= int(i) < len(self.val)
         ]

@@ -1,6 +1,5 @@
 import copy
 import datetime
-import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -38,6 +37,8 @@ from agent_service.tool import (
     ToolRegistry,
     tool,
 )
+from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT
+from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.tools.news import (
     GetNewsDevelopmentsAboutCompaniesInput,
     get_all_news_developments_about_companies,
@@ -57,7 +58,6 @@ from agent_service.utils.date_utils import (
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
-from agent_service.utils.string_utils import clean_to_json_if_needed
 from agent_service.utils.tool_diff import get_prev_run_info
 
 
@@ -134,13 +134,9 @@ the context of getting recommendations, you should try to follow their instructi
 client has specifically asked for a quantitive analysis, you should focus on individual numbers mentioned in
 the documents which tell the story you are trying to tell. Your total outupt should be a medium length
 paragraph of 2-4 sentences, and definitely no more than about 200 words, brevity is good provided you make a
-compelling argument. Individual texts in your collection are delimited by ***, and each one starts with a
-Text Number. When you have finished your argument, on the last line, you must write a list of integers and
-nothing else (e.g. `[2, 5, 9]`) which corresponds to source texts for your argument. Please be selective,
-list only those texts from which you directly pulled information. You should never include the description
-among your sources. Important: You must not cite any sources in the body of the argument. You should only cite
-your sources in this list at the end.
+compelling argument.
 """
+RECOMMENDATION_SYS_PROMPT_STR += CITATION_PROMPT
 
 RECOMMENDATION_MAIN_PROMPT_STR = """
 Write an argument which supports an investment decision. The company in question is {company_name}. Here are the
@@ -299,6 +295,8 @@ async def add_scores_and_rationales_to_stocks(
     task_id: Optional[str] = None,
 ) -> List[StockID]:
 
+    logger = get_prefect_logger(__name__)
+
     if news_horizon:
         horizon_date = convert_horizon_to_date(news_horizon)
         texts: List[StockText] = await get_all_news_developments_about_companies(  # type: ignore
@@ -371,12 +369,11 @@ async def add_scores_and_rationales_to_stocks(
         text_group = aligned_text_groups.val[stock]
         scores = score_dict[stock]
         try:
-            lines = result.strip().replace("\n\n", "\n").split("\n")
-            rationale = "\n".join(lines[:-1])
-            citations = lines[-1]
-            citation_idxs = json.loads(clean_to_json_if_needed(citations))
-            citations = text_group.get_citations(citation_idxs)
-        except ValueError:
+            rationale, citations = await extract_citations_from_gpt_output(
+                result, text_group, context
+            )
+        except Exception as e:
+            logger.exception(f"Could not extra rationale with citations due to {e}")
             rationale = ""
             citations = []
 
@@ -384,7 +381,7 @@ async def add_scores_and_rationales_to_stocks(
             HistoryEntry(
                 explanation=rationale,
                 title="Recommendation Reasoning",
-                citations=citations,
+                citations=citations,  # type:ignore
                 task_id=task_id,
             )
         )

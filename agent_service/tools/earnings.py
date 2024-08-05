@@ -338,10 +338,12 @@ async def get_earnings_call_full_transcripts(
     description=(
         "This returns a list of all earnings call summaries for one or more stocks "
         "that were published within the provided date range. "
+        "If the client simply mentions `earnings calls`, you will get data using this tool unless "
+        "the term `transcript` is specifically used, at which point you would use the transcript tool. "
+        "Again, this tool is the default tool for getting earnings call information! "
         "If no date range is provided, it defaults to the last quarter, containing the "
         "the summary for the most recent earnings call and what the clients are usually interested "
         "in unless they explicitly state otherwise. "
-        "You may alternatively provide a date_range created by the get_n_width_date_range_near_date tool"
     ),
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,

@@ -185,7 +185,7 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
     group1_str: str = await Text.get_all_strs(
         text_group1, include_header=True, text_group_numbering=True
     )  # type: ignore
-    text_group2 = TextGroup(val=args.group2)
+    text_group2 = TextGroup(val=args.group2, offset=len(args.group1))
     group2_str: str = await Text.get_all_strs(
         text_group2, include_header=True, text_group_numbering=True
     )  # type: ignore
@@ -221,16 +221,11 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
         COMPARISON_SYS_PROMPT.format(),
     )
 
-    lines = result.replace("\n\n", "\n").split("\n")
-    citation_ids = json.loads(clean_to_json_if_needed(lines[-1]))
-    main_text = "\n".join(lines[:-1])
+    merged_group = TextGroup.join(text_group1, text_group2)
+    main_text, citations = await extract_citations_from_gpt_output(result, merged_group, context)
     comparison = Text(val=main_text)
     comparison = comparison.inject_history_entry(
-        HistoryEntry(
-            title="Text Comparison",
-            citations=text_group1.get_citations(citation_ids["group 1"])
-            + text_group2.get_citations(citation_ids["group 2"]),
-        )
+        HistoryEntry(title="Text Comparison", citations=citations)  # type:ignore
     )
     return comparison
 
@@ -266,12 +261,11 @@ async def answer_question_with_text_data(
         ANSWER_QUESTION_SYS_PROMPT.format(),
     )
 
-    text, citation_ids = split_text_and_citation_ids(result)
+    text, citations = await extract_citations_from_gpt_output(result, text_group, context)
     answer = Text(val=text)
     answer = answer.inject_history_entry(
-        HistoryEntry(title="Summary", citations=text_group.get_citations(citation_ids))
+        HistoryEntry(title="Summary", citations=citations)  # type:ignore
     )
-
     return answer
 
 
@@ -357,6 +351,7 @@ async def profile_filter_helper(
     profile: str,
     is_using_complex_profile: bool,
     llm: GPT,
+    context: PlanRunContext,
     topic: str = "",
 ) -> List[Tuple[bool, str, List[Citation]]]:
     tokenizer = GPTTokenizer(GPT4_O)
@@ -407,18 +402,21 @@ async def profile_filter_helper(
     output_tuples: List[Tuple[bool, str, List[Citation]]] = []
     for result, text_group in zip(results, aligned_text_groups.val.values()):
         try:
-            rationale, answer = result.strip().replace("\n\n", "\n").split("\n")
+            rationale, answer, citation_anchor_map = (
+                result.strip().replace("\n\n", "\n").split("\n")
+            )
             is_match = answer.lower().startswith("yes")
             if is_match:
-                citation_idxs = json.loads(clean_to_json_if_needed(answer))
-                citations = text_group.get_citations(citation_idxs)
+                rationale, citations = await extract_citations_from_gpt_output(
+                    "\n".join([rationale, citation_anchor_map]), text_group, context
+                )
             else:
                 citations = []
         except ValueError:
             is_match = False
             rationale = "No match"
             citations = []
-        output_tuples.append((is_match, rationale, citations))
+        output_tuples.append((is_match, rationale, citations))  # type:ignore
 
     return output_tuples
 
@@ -486,13 +484,12 @@ async def filtered_stocks_score_assignment(
 
     non_zero_scoring_stocks = []
     for stock, score in zip(stocks, scores):
-        level_score, explanation = score.split(SCORE_OUTPUT_DELIMITER)
+        level_score, _ = score.split(SCORE_OUTPUT_DELIMITER)
         # if level_score != "0":
-        score_justification = explanation.strip()
         non_zero_scoring_stocks.append(
             stock.inject_history_entry(
                 HistoryEntry(
-                    explanation=score_justification,
+                    explanation=stock_reason_map[stock][0],
                     title=f"Connection to '{profile}'",
                     score=Score(val=SCORE_MAPPING[level_score]),
                     citations=stock_reason_map[stock][1],
@@ -657,7 +654,12 @@ async def filter_stocks_by_profile_match(
         for stock, (is_relevant, reason, citations) in zip(
             aligned_text_groups.val.keys(),
             await profile_filter_helper(
-                aligned_text_groups, str_lookup, profile_str, is_using_complex_profile, llm=llm
+                aligned_text_groups,
+                str_lookup,
+                profile_str,
+                is_using_complex_profile,
+                llm=llm,
+                context=context,
             ),
         )
         if is_relevant

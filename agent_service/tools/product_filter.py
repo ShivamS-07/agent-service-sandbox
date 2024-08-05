@@ -106,37 +106,45 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
 
 @tool(
     description=(
-        "This tool can be used to determine whether a given list of stocks or companies produces a service "
-        "or product based on given product_str. This function should only be used if it "
-        "is plausible that the user is asking particularly for providers of products or services. "
-        "Do not use this function in cases where the user might be looking for consumers of such products "
-        "or services, or companies otherwise linked to the product via supply chains. "
-        "In these complex cases, use the filter_stocks_by_profile tool instead. "
+        "This tool is used to filter a given list of stocks to companies which offer the service "
+        "or product refered to by the product_str. This function should only be used the client wants to identify "
+        "companies which provide 'product_str' to others . It must not be used to identify those others, i.e. "
+        "do NOT use this function in cases where the user is looking for consumers of a product "
+        "or service, or companies otherwise linked to the product via supply chains. This tool only "
+        "finds suppliers of the product or service indicated by product_str. "
+        "Do NOT use this function if the client is asking for filtering based on properties more "
+        "complicated than just what specific product or service they sell, even when products or services "
+        "are mentioned. For every company X selected by this function, it will be true that "
+        "`Company X offers product_str`, if that is NOT what the user is asking for, DO NOT USE THIS FUNCTION! "
+        "You must never, ever use this function if someone asks the equivalent of `who uses X in their products?` "
+        "If the client need is more complicated that finding companies that are the providers of the specific "
+        "products or services indicated by product_str, use filter_stocks_by_profile tool instead. If you are "
+        "at all unsure, use the filter_stocks_by_profile tool. "
         "This tool is only for simple cases where it should be clear whether a company counts as a provider"
         "of the product or service based on a company description. "
-        "You must pass in company descriptions for the relevant stocks as the texts"
+        "For this product filter tool ONLY, you should always pass in company descriptions as the texts. "
         "If the user specifically mentions a sector that is covered by the sector_identifier tool, use "
         "that tool instead, but some things the user refers to as sectors will be covered by this tool."
         "Note that retail should be considered a general service, and then retailers that sell specific kinds "
         "of products are a more specific kind of service. "
-        "\n 'stock_ids' is a list of stock ids to filter, it should be a large list like a stock universe "
-        "never pass a single stock."
-        "\n 'product_str' is a string representing the product or service to filter by. "
-        "For example, 'electric vehicles', 'cloud computing', 'solar panels', 'smartphones', 'AI chips', "
-        "'Online retail', etc. "
+        "\n 'stock_ids' is a list of stock ids to filter, it should be a large list like a stock universe. "
+        "Never pass a single stock."
+        "\n Again, 'product_str' is a string representing the product or service the filtered companies provide. "
+        "For example, 'electric vehicles' (Tesla), 'cloud computing' (Amazon), 'solar panels' (First Solar), "
+        " 'smartphones' (Apple), 'AI chips' (Nvidia), 'online retail' (Amazon), etc. "
         "\n must_include_stocks is a list of companies that the output of tool must have, for instance if the "
-        "\n user asks `Is QCOM, IRDM, FBIN, FAST, are the leader in industrial IoT', then the output must include "
-        "all mentioned companies (e.g. QCOM, IRDM, FBIN, FAST)."
+        "\n client asks 'Which of QCOM, IRDM, FBIN, FAST are the leader in industrial IoT', then those companies "
+        "should be passed in a must_include_stocks and the output will include all of them. "
         "If the user has not specified any specific universe of stocks, the S&P500 is a good default "
-        "to pass to this tool. However, if the client does not specify a region and there is clearly at least "
+        "to pass to this tool. However, if the client has not mentioned a region and there is clearly at least "
         "one major international producer which has a major presence in the US, use the Vanguard World "
-        "Stock ETF instead of the S&P 500, for example cars because of major Japanese manufacturers like "
-        "Toyota, Honda, etc."
+        "Stock ETF instead of the S&P 500, for example if the product_str was cars, you should use the "
+        "world stocks because of major Japanese manufacturers like Toyota, Honda, etc."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
     is_visible=True,
-    enabled=True,
+    enabled=False,
 )
 async def filter_stocks_by_product_or_service(
     args: FilterStocksByProductOrServiceInput, context: PlanRunContext
