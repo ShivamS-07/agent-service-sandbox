@@ -144,7 +144,6 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
     is_visible=True,
-    enabled=False,
 )
 async def filter_stocks_by_product_or_service(
     args: FilterStocksByProductOrServiceInput, context: PlanRunContext
