@@ -150,7 +150,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         )
         text, citations = await extract_citations_from_gpt_output(result, text_group, context)
 
-    summary = Text(val=text)
+    summary = Text(val=text or result)
     summary = summary.inject_history_entry(
         HistoryEntry(title="Summary", citations=citations)  # type:ignore
     )

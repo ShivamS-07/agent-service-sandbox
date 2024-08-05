@@ -37,7 +37,7 @@ from agent_service.tool import (
     ToolRegistry,
     tool,
 )
-from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT
+from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT, CITATION_REMINDER
 from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.tools.news import (
     GetNewsDevelopmentsAboutCompaniesInput,
@@ -149,7 +149,11 @@ that discusses recommendations and integrate any particular instructions the use
 ---
 {chat_context}
 ---
-Now provide your reasoning for the investment decision in a short paragraph: """
+"""
+RECOMMENDATION_MAIN_PROMPT_STR += CITATION_REMINDER
+RECOMMENDATION_MAIN_PROMPT_STR += (
+    "\n\nNow provide your reasoning for the investment decision in a short paragraph:\n"
+)
 
 BUY_DIRECTION = (
     "In particular, you must write an argument that focuses on evidence for buying the stock."
