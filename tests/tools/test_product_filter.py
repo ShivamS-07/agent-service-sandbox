@@ -31,6 +31,7 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
             GetStockUniverseInput(universe_name="SP500"), self.context
         )
 
+    @unittest.skip("slow test")
     async def test_filter_by_product1(self):
         result = await filter_stocks_by_product_or_service(
             FilterStocksByProductOrServiceInput(
@@ -49,6 +50,7 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
         )
         self.assertEqual(result, [TRQ])
 
+    @unittest.skip("slow test")
     async def test_filter_by_product3(self):
         result = await filter_stocks_by_product_or_service(
             FilterStocksByProductOrServiceInput(

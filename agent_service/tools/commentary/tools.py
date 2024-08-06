@@ -24,7 +24,6 @@ from agent_service.tools.commentary.constants import (
     MAX_TOTAL_ARTICLES_PER_COMMENTARY,
 )
 from agent_service.tools.commentary.helpers import (
-    filter_most_important_citations,
     get_previous_commentary_results,
     get_texts_for_topics,
     get_theme_related_texts,
@@ -47,7 +46,7 @@ from agent_service.tools.commentary.prompts import (
     WRITING_FORMAT_TEXT_DICT,
     WRITING_STYLE_PROMPT,
 )
-from agent_service.tools.LLM_analysis.tools import split_text_and_citation_ids
+from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.tools.news import (
     GetNewsArticlesForStockDevelopmentsInput,
     GetNewsDevelopmentsAboutCompaniesInput,
@@ -221,29 +220,25 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=COMMENTARY_LLM)
-
-    # get commentary text and citations
-    for _ in range(3):
-        try:
-            result = await llm.do_chat_w_sys_prompt(
-                main_prompt=main_prompt, sys_prompt=COMMENTARY_SYS_PROMPT.format(), no_cache=True
-            )
-            commentary_text, citation_ids = split_text_and_citation_ids(result)
-            break
-        except Exception as e:
-            logger.exception(f"Failed to split text and citation ids: {e}")
-
-    # filter most important citations if more than 50
-    if len(citation_ids) > 50:
-        # filter most important citations
-        citation_ids = await filter_most_important_citations(
-            texts_str, commentary_text, citation_ids  # type: ignore
+    result = await llm.do_chat_w_sys_prompt(
+        main_prompt=main_prompt, sys_prompt=COMMENTARY_SYS_PROMPT.format(), no_cache=True
+    )
+    commentary_text, citations = await extract_citations_from_gpt_output(
+        result, all_text_group, context
+    )
+    if texts_str and not citations:  # missing all citations, do a retry
+        result = await llm.do_chat_w_sys_prompt(
+            main_prompt=main_prompt, sys_prompt=COMMENTARY_SYS_PROMPT.format(), no_cache=True
         )
-        logger.info(f"Filtered most important citations size: {citation_ids}")
+        commentary_text, citations = await extract_citations_from_gpt_output(
+            result, all_text_group, context
+        )
+        logger.info(f"Size of citations: {len(citations)}")  # type:ignore
+
     # create commentary object
-    commentary = Text(val=commentary_text)
+    commentary = Text(val=commentary_text or result)
     commentary = commentary.inject_history_entry(
-        HistoryEntry(title="Commentary", citations=all_text_group.get_citations(citation_ids))
+        HistoryEntry(title="Commentary", citations=citations)  # type:ignore
     )
 
     return commentary

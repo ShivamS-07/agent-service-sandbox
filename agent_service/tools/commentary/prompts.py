@@ -1,3 +1,4 @@
+from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT, CITATION_REMINDER
 from agent_service.utils.prompt_utils import Prompt
 
 COMMENTARY_SYS_PROMPT = Prompt(
@@ -20,14 +21,6 @@ COMMENTARY_SYS_PROMPT = Prompt(
         "\n- You MUST give higher priority to the most recent texts in your collection. "
         "\n- Individual texts in your collection are delimited by ***, "
         "and each one starts with a Text Number. "
-        "\nWhen you have finished your commentary, on the last line, "
-        "you MUST write a list of integers and nothing else (e.g. `[2, 5, 9]`) "
-        "which corresponds to Text Number of sources that you used for your commentary. "
-        "You MUST be extremely selective, "
-        "and list only those texts from which you directly pulled majority or main information. "
-        "DO NOT include sources with minor or duplicate information. "
-        "The size of your list of sources MUST be less than 50. "
-        "DO NOT cite your sources in the body of the commentary, only in this list at the end.\n"
         "\nEach text include a date, give more focus to the most recent texts. "
         "\nYour goal is not to reference the portfolio's performance or your portfolio "
         "management style. NEVER include ANY information about your portfolio that is not "
@@ -43,6 +36,7 @@ COMMENTARY_SYS_PROMPT = Prompt(
         "\nPlease double check your grammar when writing. "
         "\nYou can use markdown to format your text and highlight important points. "
         "\nHighlight numbers and statistics in your writing in bold for emphasis. "
+        f"\n {CITATION_PROMPT}"
     ),
 )
 
@@ -79,13 +73,8 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "{chat_context}"
         "\n-----\n"
         "For reference, today's date is {today}. "
-        "Now please craft a macroeconomic commentary and provide a list of text numbers "
-        "which MUST ONLY include top sources (less than 50 sources). "
-        "After writing the commentary, double check the list of sources and make sure "
-        "it is less than 50. If it is more than 50, you MUST remove the least important "
-        "sources to make it less than 50. If you can't decide which sources to remove, "
-        "randomly remove sources until the list is less than 50. "
-        "Now, please write the commentary. "
+        f"\n{CITATION_REMINDER}"
+        "\nNow, please write the commentary. "
     ),
 )
 
