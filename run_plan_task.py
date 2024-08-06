@@ -114,6 +114,8 @@ async def main() -> None:
         )
     # Don't connect to prefect
     context.run_tasks_without_prefect = True
+    # Don't commit to the DB
+    context.skip_db_commit = True
     print("Fetched args, running tool...\n--------------------")
     tool = ToolRegistry.get_tool(tool_name)
     result = await tool.func(args=tool_args, context=context)
