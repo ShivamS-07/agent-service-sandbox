@@ -101,8 +101,7 @@ class TestMarketCommentary(TestExecutionPlanner):
             required_tools=["get_commentary_inputs", "write_commentary"],
             raise_plan_validation_error=True,
             required_sample_plans=[
-                "4303c722-8db4-4670-baea-d2ea6bccc0e5",
-                "5b6340c7-63fd-480c-9b78-036bee113d38",
-                "f1dca623-8195-4e63-9bfa-e5a59ace258e",
+                "65d77f66-4975-4f32-81cf-9671406387e7",
+                "e10b0ebe-7ff7-4a79-92f8-55dbda81fd6e",
             ],
         )
