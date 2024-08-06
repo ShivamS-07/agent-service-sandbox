@@ -80,7 +80,7 @@ from agent_service.utils.prompt_utils import FilledPrompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
 
 logger = get_prefect_logger(__name__)
-PERFORMANCE_LEVELS = ["sector", "stock", "overall", "monthly", "daily"]
+PERFORMANCE_LEVELS = ["sector", "security", "stock", "overall", "monthly", "daily"]
 
 
 async def get_sec_metadata_dao() -> SecuritiesMetadataDAO:
@@ -137,9 +137,7 @@ async def organize_commentary_texts(texts: List[Text]) -> Dict[str, List[Text]]:
 
 async def get_portfolio_geography_str(regions_to_weight: List[Tuple[str, float]]) -> str:
     # convert weights to int percentages
-    portfolio_geography = "\n".join(
-        [f"{tup[0]}: {int(tup[1] * 100)}%" for tup in regions_to_weight]
-    )
+    portfolio_geography = "\n".join([f"{tup[0]}: {int(tup[1])}%" for tup in regions_to_weight])
     return portfolio_geography
 
 
@@ -394,7 +392,7 @@ async def prepare_portfolio_prompt(
         associated_data=regions_to_weight,
     )
     portfolio_geography_prompt = GEOGRAPHY_PROMPT.format(portfolio_geography=portfolio_geography)
-    performance_dict: Dict[str, Table] = {}
+    performance_dict: Dict[str, pd.DataFrame] = {}
     # get the sector level portfolio performance
     sector_performance_horizon = (
         await match_daterange_to_timedelta(date_range) if date_range else "1M"
@@ -402,7 +400,7 @@ async def prepare_portfolio_prompt(
     # get the portfolio performance on levels in PERFORMANCE_LEVELS
     # TODO: This can be parallelized
     for performance_level in PERFORMANCE_LEVELS:
-        performance_dict[f"portfolio_{performance_level}"] = await get_portfolio_performance(  # type: ignore
+        performance_table: Table = await get_portfolio_performance(  # type: ignore
             GetPortfolioPerformanceInput(
                 portfolio_id=portfolio_id,
                 performance_level=performance_level,
@@ -411,6 +409,7 @@ async def prepare_portfolio_prompt(
             ),
             context,
         )
+        performance_dict[f"portfolio_{performance_level}"] = performance_table.to_df()
         await tool_log(
             log=f"Retrieved {performance_level} portfolio performance.",
             context=context,
@@ -442,27 +441,31 @@ async def prepare_portfolio_prompt(
         * benchmark_stock_performance_df["benchmark-weight"]
         / 100
     ).values
-    benchmark_stock_performance_table = StockTable.from_df_and_cols(
-        data=benchmark_stock_performance_df,
-        columns=[
-            TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-            TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
-            TableColumnMetadata(label="benchmark-weight", col_type=TableColumnType.FLOAT),
-            TableColumnMetadata(label="weighted-return", col_type=TableColumnType.FLOAT),
-        ],
+    benchmark_stock_performance_df = benchmark_stock_performance_df.sort_values(
+        by="weighted-return", ascending=False
     )
-    performance_dict["benchmark_stock"] = benchmark_stock_performance_table
+
+    performance_dict["benchmark_stock"] = benchmark_stock_performance_df
+
+    # extract top contributing stocks
+    performance_dict["portfolio_stock_pos"] = performance_dict["portfolio_stock"].head(5)
+    performance_dict["portfolio_stock_neg"] = performance_dict["portfolio_stock"].tail(5)
+    performance_dict["benchmark_stock_pos"] = performance_dict["benchmark_stock"].head(5)
+    performance_dict["benchmark_stock_neg"] = performance_dict["benchmark_stock"].tail(5)
 
     # Prepare the portfolio prompt
     portfolio_prompt = PORTFOLIO_PROMPT.format(
         portfolio_holdings=str(portfolio_holdings_df),
         portfolio_geography_prompt=portfolio_geography_prompt.filled_prompt,
-        portfolio_performance_by_overall=str(performance_dict["portfolio_overall"].to_df()),
-        portfolio_performance_by_monthly=str(performance_dict["portfolio_monthly"].to_df()),
-        portfolio_performance_by_daily=str(performance_dict["portfolio_daily"].to_df()),
-        portfolio_performance_by_sector=str(performance_dict["portfolio_sector"].to_df()),
-        portfolio_performance_by_stock=str(performance_dict["portfolio_stock"].to_df()),
-        benchmark_performance_by_stock=str(performance_dict["benchmark_stock"].to_df()),
+        portfolio_performance_by_overall=str(performance_dict["portfolio_overall"]),
+        portfolio_performance_by_monthly=str(performance_dict["portfolio_monthly"]),
+        portfolio_performance_by_daily=str(performance_dict["portfolio_daily"]),
+        portfolio_performance_by_sector=str(performance_dict["portfolio_sector"]),
+        portfolio_performance_by_security=str(performance_dict["portfolio_security"]),
+        portfolio_performance_by_stock_positive=str(performance_dict["portfolio_stock_pos"]),
+        portfolio_performance_by_stock_negative=str(performance_dict["portfolio_stock_neg"]),
+        benchmark_performance_by_stock_positive=str(performance_dict["benchmark_stock_pos"]),
+        benchmark_performance_by_stock_negative=str(performance_dict["benchmark_stock_neg"]),
     )
     return portfolio_prompt
 

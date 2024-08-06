@@ -9,7 +9,6 @@ from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import StockTable
 from agent_service.io_types.text import (
     StockNewsDevelopmentText,
     Text,
@@ -55,13 +54,7 @@ from agent_service.tools.news import (
     get_all_news_developments_about_companies,
     get_news_articles_for_stock_developments,
 )
-from agent_service.tools.portfolio import (
-    GetPortfolioHoldingsInput,
-    GetPortfolioInput,
-    PortfolioID,
-    convert_portfolio_mention_to_portfolio_id,
-    get_portfolio_holdings,
-)
+from agent_service.tools.portfolio import PortfolioID
 from agent_service.tools.themes import (
     GetTopNThemesInput,
     get_top_N_macroeconomic_themes,
@@ -109,19 +102,14 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         )
 
     # Prepare the portfolio prompt
-    if args.portfolio_id is None:
-        await tool_log(
-            log="No portfolio name is provided. Most recent portfolio will be used.",
-            context=context,
-        )
-        args.portfolio_id = await convert_portfolio_mention_to_portfolio_id(  # type: ignore
-            GetPortfolioInput(portfolio_name="portfolio"),
-            context,
-        )
-
-    portfolio_prompt = await prepare_portfolio_prompt(
-        args.portfolio_id, args.date_range, context  # type: ignore
-    )
+    portfolio_prompt = NO_PROMPT
+    if args.portfolio_id:
+        try:
+            portfolio_prompt = await prepare_portfolio_prompt(
+                args.portfolio_id, args.date_range, context  # type: ignore
+            )
+        except Exception as e:
+            logger.info(f"Failed to prepare portfolio prompt: {e}, {args.portfolio_id}")
 
     # Prepare the stock performance prompt
     stocks_stats_prompt = NO_PROMPT
@@ -221,7 +209,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
     # save main prompt as text file for debugging
     # with open("main_prompt.txt", "w") as f:
-    #     f.rite(main_prompt.filled_prompt)
+    #     f.write(main_prompt.filled_prompt)
 
     # Write the commentary
     await tool_log(
@@ -269,7 +257,7 @@ class GetCommentaryInputsInput(ToolArgs):
         end_date=date.today(),
     )
     portfolio_id: Optional[str] = None
-    general_commentary: Optional[bool] = False
+    market_trend: Optional[bool] = False
     theme_num: Optional[int] = 3
 
 
@@ -283,17 +271,9 @@ async def get_commentary_inputs(
 
     logger = get_prefect_logger(__name__)
     texts: List[Text] = []
-    if args.portfolio_id is None:
-        try:
-            args.portfolio_id = await convert_portfolio_mention_to_portfolio_id(  # type: ignore
-                GetPortfolioInput(portfolio_name="portfolio"),
-                context,
-            )
-        except Exception as e:
-            logger.exception(f"Failed to get any portfolio id: {e}")
 
-    # If general_commentary is True, get the top themes and related texts
-    if args.general_commentary:
+    # If market_trend is True, get the top themes and related texts
+    if args.market_trend:
         await tool_log(
             log=f"Retrieving top {args.theme_num} market themes...",
             context=context,
@@ -302,18 +282,21 @@ async def get_commentary_inputs(
             # get top themes
             theme_num: int = args.theme_num if args.theme_num else 3
             themes_texts_set = set()
-            try:
-                themes_texts_portfolio_related: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
-                    GetTopNThemesInput(
-                        date_range=args.date_range,
-                        theme_num=theme_num,
-                        portfolio_id=args.portfolio_id,
-                    ),
-                    context,
-                )
-                themes_texts_set.update(themes_texts_portfolio_related)
-            except Exception as e:
-                logger.exception(f"Failed to get top themes for portfolio: {e}")
+            if args.portfolio_id:
+                try:
+                    themes_texts_portfolio_related: List[ThemeText] = (
+                        await get_top_N_macroeconomic_themes(  # type: ignore
+                            GetTopNThemesInput(
+                                date_range=args.date_range,
+                                theme_num=theme_num,
+                                portfolio_id=args.portfolio_id,
+                            ),
+                            context,
+                        )
+                    )
+                    themes_texts_set.update(themes_texts_portfolio_related)
+                except Exception as e:
+                    logger.exception(f"Failed to get top themes for portfolio: {e}")
 
             themes_texts_general: List[ThemeText] = await get_top_N_macroeconomic_themes(  # type: ignore
                 GetTopNThemesInput(
@@ -356,20 +339,7 @@ async def get_commentary_inputs(
             logger.exception(f"Failed to get texts for topics: {e}")
 
     # If stock_ids are provided, get the texts for the stock_ids
-    # if not, get the top weighted stocks in the portfolio and get the texts for them
-    if not args.stock_ids and args.portfolio_id:
-        holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
-            GetPortfolioHoldingsInput(
-                portfolio_id=args.portfolio_id,  # type: ignore
-            ),
-            context,
-        )
-        await tool_log(
-            log="No stock ids provided. Getting texts for top weighted stocks in portfolio.",
-            context=context,
-            associated_data=holdings_table,
-        )
-        args.stock_ids = holdings_table.get_stocks()
+    if args.stock_ids:
         if len(args.stock_ids) > MAX_STOCKS_PER_COMMENTARY:
             await tool_log(
                 log=(
@@ -379,8 +349,6 @@ async def get_commentary_inputs(
                 context=context,
             )
             args.stock_ids = args.stock_ids[:MAX_STOCKS_PER_COMMENTARY]
-
-    if args.stock_ids:
         try:
             stock_devs: List[StockNewsDevelopmentText] = (
                 await get_all_news_developments_about_companies(  # type: ignore
@@ -428,7 +396,7 @@ async def main() -> None:
     texts = await get_commentary_inputs(
         GetCommentaryInputsInput(
             topics=["cloud computing", "military industrial complex"],
-            general_commentary=True,
+            market_trend=True,
             theme_num=4,
         ),
         context,

@@ -312,7 +312,7 @@ TIME_DELTA_MAP = {
 
 class GetPortfolioPerformanceInput(ToolArgs):
     portfolio_id: PortfolioID
-    performance_level: str = "monthly"
+    performance_level: str = "sector"
     date_range: Optional[DateRange] = None
     sector_performance_horizon: Optional[str] = "1M"  # 1W, 1M, 3M, 6M, 9M, 1Y
 
@@ -322,9 +322,9 @@ class GetPortfolioPerformanceInput(ToolArgs):
         if not isinstance(value, str):
             raise ValueError("performance level must be a string")
 
-        if value not in ["overall", "stock", "sector", "monthly", "daily"]:
+        if value not in ["overall", "stock", "sector", "monthly", "daily", "security"]:
             raise ValueError(
-                "performance level must be one of ('overall', 'stock', 'sector', 'monthly', 'daily')"
+                "performance level must be one of ('overall', 'stock', 'security', 'sector', 'monthly', 'daily')"
             )
         return value
 
@@ -343,7 +343,7 @@ class GetPortfolioPerformanceInput(ToolArgs):
     description=(
         "This function returns the performance of a portfolio given a portfolio id "
         "and a performance level and date range. "
-        "\nThe performance level MUST one of  ('overall', 'stock', 'sector', 'monthly', 'daily'). "
+        "\nThe performance level MUST one of  ('overall', 'stock', 'sector', 'monthly', 'daily', 'security'). "
         "The default performance level is 'monthly'. "
         "\nThe date range is optional and defaults to the last month."
         "\nThe sector performance horizon is optional and defaults to 1 month. "
@@ -352,9 +352,16 @@ class GetPortfolioPerformanceInput(ToolArgs):
         "including the monthly returns and the returns versus benchmark. "
         "Table schema for overall performance level: "
         "month: string, return: float, return-vs-benchmark: float"
-        "\nWhen the performance level is 'stock', it returns the performance of each stock in the portfolio. "
+        "\nWhen the performance level is 'stock', it returns the performance of all stocks in the portfolio. "
+        "this will expand all ETFs into stock level. "
+        "Only use 'stock' if you want to expand ETFs into stock level and see the performance of each stock. "
         "Table schema for stock performance level: "
-        "stock: StockID, return: float "
+        "stock: StockID, return: float, portfolio-weight: float, weighted-return: float"
+        "\nWhen the performance level is 'security', it returns the performance of all securitys in the portfolio. "
+        "Use 'security' if you want to see the performance of each security in the portfolio. If they are ETFs, "
+        "they will not be expanded into stock level. "
+        "Table schema for security performance level: "
+        "stock: StockID, return: float, portfolio-weight: float, weighted-return: float"
         "\nWhen the performance level is 'sector', it returns the performance of each sector in the portfolio. "
         "Table schema for sector performance level: "
         "sector: string, return: float,weight: float, weighted-return: float"
@@ -469,7 +476,54 @@ async def get_portfolio_performance(
     elif args.performance_level == "stock":
         # get portfolio holdings
         portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
-            GetPortfolioHoldingsInput(portfolio_id=args.portfolio_id), context
+            GetPortfolioHoldingsInput(
+                portfolio_id=args.portfolio_id, expand_etfs=True, fetch_stats=False
+            ),
+            context,
+        )
+        portfolio_holdings_df = portfolio_holdings_table.to_df()
+        # get gbi_ids
+        gbi_ids = [stock.gbi_id for stock in portfolio_holdings_df[STOCK_ID_COL_NAME_DEFAULT]]
+        # get the stock performance for the date range
+        stock_performance = await get_stock_performance_for_date_range(
+            gbi_ids=gbi_ids,
+            start_date=date_range.start_date,
+            user_id=context.user_id,
+        )
+        # Create a DataFrame for the stock performance
+        df = pd.DataFrame(
+            {
+                STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(gbi_ids),
+                "return": [stock.performance for stock in stock_performance.stock_performance_list],
+                "portfolio-weight": portfolio_holdings_df["Weight"].values,
+            }
+        )
+        df["weighted-return"] = (df["return"] * df["portfolio-weight"] / 100).values
+        # convert return to percentage
+        df["return"] = df["return"] * 100
+        df["weighted-return"] = df["weighted-return"] * 100
+        # sort the DataFrame by weighted-return
+        df = df.sort_values(by="weighted-return", ascending=False)
+        # create a Table
+        table = StockTable.from_df_and_cols(
+            data=df,
+            columns=[
+                TableColumnMetadata(
+                    label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
+                ),
+                TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="portfolio-weight", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="weighted-return", col_type=TableColumnType.FLOAT),
+            ],
+        )
+
+    elif args.performance_level == "security":
+        # get portfolio holdings
+        portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
+            GetPortfolioHoldingsInput(
+                portfolio_id=args.portfolio_id, expand_etfs=False, fetch_stats=False
+            ),
+            context,
         )
         portfolio_holdings_df = portfolio_holdings_table.to_df()
         # get gbi_ids

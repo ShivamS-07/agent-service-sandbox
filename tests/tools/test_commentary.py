@@ -83,7 +83,7 @@ class TestCommentary(IsolatedAsyncioTestCase):
             GetCommentaryInputsInput(
                 topics=["cloud computing", "military industrial complex"],
                 date_ramge=self.date_range,
-                general_commentary=True,
+                market_trend=True,
             ),
             self.context,
         )
