@@ -312,7 +312,7 @@ TIME_DELTA_MAP = {
 
 class GetPortfolioPerformanceInput(ToolArgs):
     portfolio_id: PortfolioID
-    performance_level: str = "sector"
+    performance_level: str = "security"
     date_range: Optional[DateRange] = None
     sector_performance_horizon: Optional[str] = "1M"  # 1W, 1M, 3M, 6M, 9M, 1Y
 
