@@ -40,12 +40,15 @@ class CitationOutput(BaseModel, ABC):
 class DocumentCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.TEXT
     snippet_highlight_start: Optional[int] = None
-    snippet_highlight_end: Optional[int] = None
+    snippet_highlight_end: Optional[int] = None  # inclusive
 
     @staticmethod
     def get_offsets_from_snippets(
-        smaller_snippet: str, context: str
+        smaller_snippet: Optional[str], context: Optional[str]
     ) -> Tuple[Optional[int], Optional[int]]:
+        if not smaller_snippet or not context:
+            return (None, None)
+
         try:
             start = context.index(smaller_snippet)
             end = start + len(smaller_snippet) - 1

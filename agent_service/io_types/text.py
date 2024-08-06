@@ -811,37 +811,52 @@ class StockEarningsSummaryPointText(StockText):
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Sequence[CitationOutput]:
-        text_id_map = {text.source_text.id: text for text in texts}
+        summary_id_to_texts: Dict[str, List[TextCitation]] = defaultdict(list)
+        for text_obj in texts:
+            summary_id_to_texts[text_obj.source_text.summary_id].append(text_obj)  # type: ignore
+
         sql = """
-        SELECT ecs.summary_id::TEXT, ms.symbol, ecs.year, ecs.quarter, ecs.created_timestamp
-        FROM nlp_service.earnings_call_summaries ecs
-        JOIN master_security ms ON ecs.gbi_id = ms.gbi_security_id
-        WHERE summary_id = ANY(%(earnings_ids)s)
+            SELECT summary_id::TEXT, year, quarter, created_timestamp
+            FROM nlp_service.earnings_call_summaries
+            WHERE summary_id = ANY(%(summary_ids)s)
         """
-        text_list: List[Self] = cast(List[Self], [text.source_text for text in texts])
-        summary_id_text_map = {text.summary_id: text for text in text_list}
-        params = {"earnings_ids": [text.summary_id for text in text_list]}
-        str_lookup = await cls._get_strs_lookup(text_list)  # type: ignore
-        rows = await db.generic_read(sql, params)
-        output = []
-        for row in rows:
-            text = summary_id_text_map.get(row["summary_id"])
-            citation = TextCitationOutput(
-                # e.g. "NVDA Earnings Call - Q1 2024"
-                name=f"{row['symbol'] or ''} Earnings Call - Q{row['quarter']} {row['year']}",
-                last_updated_at=row["created_timestamp"],
-                inline_offset=(
-                    text_id_map[row["summary_id"]].citation_text_offset
-                    if row["summary_id"] in text_id_map
-                    else None
-                ),
-            )
-            if text:
-                point_str = str_lookup.get(text.id)
-                if point_str:
-                    citation.summary = f"{text.summary_type}: {point_str}"
-            output.append(citation)
-        return output
+        rows = await db.generic_read(sql, {"summary_ids": list(summary_id_to_texts.keys())})
+        summary_id_to_row = {row["summary_id"]: row for row in rows}
+
+        outputs = []
+        for summary_id, text_citations in summary_id_to_texts.items():
+            row = summary_id_to_row[summary_id]
+            year = row["year"]
+            quarter = row["quarter"]
+            last_updated_at = row["created_timestamp"]
+
+            for text_citation in text_citations:
+                text: Self = text_citation.source_text  # type: ignore
+
+                stock = text.stock_id
+                if not stock:
+                    continue
+
+                full_context: str = text_citation.citation_snippet_context  # type: ignore
+                snippet: str = text_citation.citation_snippet  # type: ignore
+
+                hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
+                    smaller_snippet=snippet, context=full_context
+                )
+
+                outputs.append(
+                    DocumentCitationOutput(
+                        # e.g. "NVDA Earnings Call - Q1 2024"
+                        name=f"{stock.symbol} Earnings Call - Q{quarter} {year}",
+                        last_updated_at=last_updated_at,
+                        inline_offset=text_citation.citation_text_offset,
+                        summary=text_citation.citation_snippet_context,
+                        snippet_highlight_start=hl_start,
+                        snippet_highlight_end=hl_end,
+                    )
+                )
+
+        return outputs
 
     @classmethod
     async def init_from_earnings_texts(
