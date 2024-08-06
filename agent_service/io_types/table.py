@@ -22,7 +22,12 @@ from agent_service.io_types.citations import CitationID
 from agent_service.io_types.graph import GraphType
 from agent_service.io_types.output import Output, OutputType
 from agent_service.io_types.stock import StockID
-from agent_service.utils.async_utils import gather_with_concurrency, to_awaitable
+from agent_service.io_types.text import Text, TextOutput
+from agent_service.utils.async_utils import (
+    gather_with_concurrency,
+    identity,
+    to_awaitable,
+)
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.stock_metadata import StockMetadata
 
@@ -105,7 +110,9 @@ class DateTableColumn(TableColumn):
     data: List[datetime.date]  # type: ignore
 
 
-def object_histories_to_columns(objects: List[ComplexIOBase]) -> List[TableColumn]:
+def object_histories_to_columns(
+    objects: List[ComplexIOBase],
+) -> List[TableColumn]:
     """
     Given a set of objects potentially with histories, aggregate those histories
     into columns and return them.
@@ -144,10 +151,20 @@ def object_histories_to_columns(objects: List[ComplexIOBase]) -> List[TableColum
                     ),
                     data=[None] * len(objects),
                 )
-                col.data[obj_i] = entry.explanation
                 entry_title_to_col_map[entry.title] = col
-            else:
-                entry_title_to_col_map[entry.title].data[obj_i] = entry.explanation
+            current_col = entry_title_to_col_map[entry.title]
+            current_col.data[obj_i] = entry.explanation
+            if (
+                isinstance(entry.explanation, str)
+                and entry.entry_type == TableColumnType.STRING
+                and entry.citations
+            ):
+                # If the explanation is a string and has citations (e.g. the
+                # output from a filter tool), store as a Text object in the
+                # table so that citations can be correctly resolved later.
+                current_col.data[obj_i] = Text(
+                    val=entry.explanation, history=[HistoryEntry(citations=entry.citations)]
+                )
 
     # Make sure the score column is the first one.
     if score_col:
@@ -247,10 +264,12 @@ class Table(ComplexIOBase):
         return cls(columns=out_columns)
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
-        fixed_cols = []
+        fixed_cols: List[TableColumn] = []
         output_cols = []
         is_first_col = True
-        citations = []
+        table_citations = await Citation.resolve_all_citations(
+            citations=self.get_all_citations(), db=pg
+        )
         for col_ref in self.columns:
             # Make sure we don't mutate the original object
             col = deepcopy(col_ref)
@@ -260,9 +279,9 @@ class Table(ComplexIOBase):
             additional_output_cols: List[TableOutputColumn] = []
             # First handle citations
             col_citations = await Citation.resolve_all_citations(
-                citations=self.get_all_citations(), db=pg
+                citations=col.get_all_citations(), db=pg
             )
-            citations.extend(col_citations)
+            table_citations.extend(col_citations)
 
             output_col = col.to_output_column()
             # Next handle special transformations
@@ -290,10 +309,30 @@ class Table(ComplexIOBase):
             output_cols.extend(additional_output_cols)
             is_first_col = False
 
-        # At this point, fixed_cols and output_cols match up with each
+        # Now do a final step of mapping, especially for citations
+        final_cols = []
+        for fixed_col in fixed_cols:
+            if fixed_col.metadata.col_type == TableColumnType.STRING:
+                output_texts = await gather_with_concurrency(
+                    tasks=[
+                        text.to_rich_output(pg=pg) if isinstance(text, Text) else identity(text)
+                        for text in fixed_col.data
+                    ]
+                )
+                new_data = []
+                for text in output_texts:
+                    if isinstance(text, TextOutput):
+                        new_data.append(text.val)
+                        table_citations.extend(text.citations)
+                    else:
+                        new_data.append(text)
+                fixed_col.data = new_data  # type: ignore
+            final_cols.append(fixed_col)
+
+        # At this point, final_cols and output_cols match up with each
         # other. Create a table from fixed_cols so that we can easily convert to
         # a row-based schema.
-        fixed_table = Table(columns=fixed_cols)
+        fixed_table = Table(columns=final_cols)
         df = fixed_table.to_df()
         df = df.replace(np.nan, None)
         # Make sure we sort before creating output (if necessary)
@@ -314,7 +353,7 @@ class Table(ComplexIOBase):
         )
         rows = df.values.tolist()
 
-        return TableOutput(title=title, columns=output_cols, rows=rows, citations=citations)
+        return TableOutput(title=title, columns=output_cols, rows=rows, citations=table_citations)
 
     def delete_data_before_start_date(self, start_date: datetime.date) -> None:
         date_column_idx = None
