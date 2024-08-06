@@ -55,6 +55,7 @@ from agent_service.endpoints.models import (
     GetChatHistoryResponse,
     GetMemoryContentResponse,
     GetSecureUserResponse,
+    GetTeamAccountsResponse,
     GetTestCaseInfoResponse,
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
@@ -64,6 +65,7 @@ from agent_service.endpoints.models import (
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadRequest,
     MarkNotificationsAsUnreadResponse,
+    NotificationEmailsResponse,
     RenameMemoryRequest,
     RenameMemoryResponse,
     SetAgentScheduleRequest,
@@ -74,6 +76,8 @@ from agent_service.endpoints.models import (
     UnsharePlanRunResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
+    UpdateNotificationEmailsRequest,
+    UpdateNotificationEmailsResponse,
     UpdateUserRequest,
     UpdateUserResponse,
     UploadFileResponse,
@@ -304,6 +308,35 @@ async def delete_agent_notification_criteria(
     return CustomNotificationStatusResponse(
         custom_notification_id=notification_criteria_id, success=True
     )
+
+
+@router.get(
+    "/agent/notification-emails/{agent_id}",
+    response_model=NotificationEmailsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_agent_notification_emails(
+    agent_id: str, user: User = Depends(parse_header)
+) -> NotificationEmailsResponse:
+    logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        validate_user_agent_access(user.user_id, agent_id)
+    return await application.state.agent_service_impl.get_agent_notification_emails(
+        agent_id=agent_id
+    )
+
+
+@router.post(
+    "/agent/notification-emails/update",
+    response_model=UpdateNotificationEmailsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def update_agent_notification_emails(
+    req: UpdateNotificationEmailsRequest, user: User = Depends(parse_header)
+) -> UpdateNotificationEmailsResponse:
+    #  Mock response
+    # TODO: update the notification email list
+    return UpdateNotificationEmailsResponse(success=True)
 
 
 @router.post(
@@ -914,6 +947,15 @@ async def update_user(
 )
 async def get_account_info(user: User = Depends(parse_header)) -> GetAccountInfoResponse:
     return await application.state.agent_service_impl.get_account_info(user=user)
+
+
+@router.get(
+    "/user/get-team-accounts",
+    response_model=GetTeamAccountsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_team_accounts(user: User = Depends(parse_header)) -> GetTeamAccountsResponse:
+    return await application.state.agent_service_impl.get_team_accounts(user=user)
 
 
 initialize_unauthed_endpoints(application)

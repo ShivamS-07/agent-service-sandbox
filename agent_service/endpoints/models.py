@@ -136,6 +136,22 @@ class CustomNotificationStatusResponse(BaseModel):
 
 
 ####################################################################################################
+# Agent Notification List
+####################################################################################################
+class NotificationEmailsResponse(BaseModel):
+    emails: List[str]
+
+
+class UpdateNotificationEmailsRequest(BaseModel):
+    agent_id: str
+    emails: List[str]
+
+
+class UpdateNotificationEmailsResponse(BaseModel):
+    success: bool
+
+
+####################################################################################################
 # ChatWithAgent
 ####################################################################################################
 class ChatWithAgentRequest(BaseModel):
@@ -513,6 +529,10 @@ class UpdateUserResponse(BaseModel):
 
 class GetAccountInfoResponse(BaseModel):
     account: Account
+
+
+class GetTeamAccountsResponse(BaseModel):
+    accounts: List[Account]
 
 
 # Regression Test Run Info

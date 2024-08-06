@@ -38,6 +38,7 @@ from agent_service.endpoints.models import (
     GetMemoryContentResponse,
     GetPlanRunOutputResponse,
     GetSecureUserResponse,
+    GetTeamAccountsResponse,
     GetTestCaseInfoResponse,
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
@@ -46,6 +47,7 @@ from agent_service.endpoints.models import (
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadResponse,
     MemoryItem,
+    NotificationEmailsResponse,
     NotificationEvent,
     PlanTemplateTask,
     RenameMemoryResponse,
@@ -168,6 +170,11 @@ class AgentServiceImpl:
         await self.pg.delete_agent_custom_notification_prompt(
             agent_id=agent_id, custom_notification_id=custom_notification_id
         )
+
+    async def get_agent_notification_emails(self, agent_id: str) -> NotificationEmailsResponse:
+        # Mock Data
+        # TODO: return the list of notification emails
+        return NotificationEmailsResponse(emails=["testEmail@boosted.ai", "testEmail2@boosted.ai"])
 
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
         agent_id = req.agent_id
@@ -754,4 +761,23 @@ class AgentServiceImpl:
                 username=account.username,
                 name=account.name,
             )
+        )
+
+    async def get_team_accounts(self, user: User) -> GetTeamAccountsResponse:
+        # Mock data
+        return GetTeamAccountsResponse(
+            accounts=[
+                Account(
+                    user_id=str(uuid4()),
+                    email="test1@boosted.ai",
+                    username="Test User 1",
+                    name="Test User 1",
+                ),
+                Account(
+                    user_id=str(uuid4()),
+                    email="test2@boosted.ai",
+                    username="Test User 2",
+                    name="Test User 2",
+                ),
+            ]
         )
