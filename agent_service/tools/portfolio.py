@@ -151,9 +151,12 @@ async def get_portfolio_holdings(
         }
         data.update(
             {
-                "Price": [gbi_id2_price[holding.gbi_id] for holding in workspace.holdings],
+                "Price": [
+                    gbi_id2_price.get(holding.gbi_id, np.nan) for holding in workspace.holdings
+                ],
                 "Performance": [
-                    gbi_id2_performance[holding.gbi_id] for holding in workspace.holdings
+                    gbi_id2_performance.get(holding.gbi_id, np.nan)
+                    for holding in workspace.holdings
                 ],
             }
         )
