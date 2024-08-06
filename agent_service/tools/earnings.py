@@ -85,12 +85,25 @@ async def _get_earnings_summary_helper(
     end_date: Optional[datetime.date] = None,
 ) -> Dict[StockID, List[StockEarningsText]]:
     db = get_psql()
-    earning_summary_sql = """
-        SELECT summary_id::TEXT, gbi_id, sources
-        FROM nlp_service.earnings_call_summaries
-        WHERE gbi_id = ANY(%(gbi_ids)s)
+    earning_summary_sql = """SELECT DISTINCT ON (gbi_id, year, quarter)
+    summary_id::TEXT,
+    summary,
+    gbi_id,
+    sources,
+    year,
+    quarter,
+    created_timestamp
+    FROM
+        nlp_service.earnings_call_summaries
+    WHERE
+        gbi_id = ANY(%(gbi_ids)s)
         AND (status_msg = 'COMPLETE' OR status_msg IS NULL)
-        """
+    ORDER BY
+        gbi_id,
+        year,
+        quarter,
+        created_timestamp DESC
+    """
 
     rows = db.generic_read(earning_summary_sql, {"gbi_ids": [stock.gbi_id for stock in stock_ids]})
     by_stock_lookup = defaultdict(list)
@@ -162,6 +175,7 @@ async def _get_earnings_summary_helper(
     events_without_summaries: List[EventInfo] = []
     event_id_to_stock_id_lookup: Dict[int, StockID] = {}
     gbi_id_stock_id_lookup = {stock_id.gbi_id: stock_id for stock_id in stock_ids}
+
     for gbi_id, earning_year_quarters in all_earning_fiscal_quarters.items():
         stock_id = gbi_id_stock_id_lookup[gbi_id]
         for year_quarter in earning_year_quarters:
@@ -174,11 +188,13 @@ async def _get_earnings_summary_helper(
 
     # Get the transcripts for the events without summaries
     if len(events_without_summaries) > 0:
-        return await get_earnings_full_transcripts(
+        finalized_output = await get_earnings_full_transcripts(
             user_id, stock_ids, events_without_summaries, event_id_to_stock_id_lookup, output
         )
     else:
-        return output
+        finalized_output = output
+
+    return finalized_output
 
 
 async def get_earnings_full_transcripts(
@@ -328,9 +344,9 @@ async def get_earnings_call_full_transcripts(
         output.extend(topic_list)
     if not output:
         raise Exception(
-            "Did not get any earnings call summaries for these stocks over the specified time period"
+            "Did not get any earnings call transcripts for these stocks over the specified time period"
         )
-    await tool_log(log=f"Found {len(output)} earnings call summaries", context=context)
+    await tool_log(log=f"Found {len(output)} earnings call transcripts", context=context)
     return output
 
 
@@ -370,7 +386,23 @@ async def get_earnings_call_summaries(
             "Did not get any earnings call summaries for these stocks over the specified time period"
         )
 
-    await tool_log(log=f"Found {len(output)} earnings call summaries", context=context)
+    num_earning_call_summaries = len(
+        [text for text in output if isinstance(text, StockEarningsSummaryText)]
+    )
+    num_earning_call_transcripts = len(
+        [text for text in output if isinstance(text, StockEarningsTranscriptText)]
+    )
+
+    await tool_log(
+        log=f"Found {num_earning_call_summaries} earnings call summaries", context=context
+    )
+    await tool_log(
+        log=(
+            f"Summaries unavailable for some companies, found {num_earning_call_transcripts} "
+            "earning call transcripts instead"
+        ),
+        context=context,
+    )
 
     return output
 
