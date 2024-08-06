@@ -1,6 +1,7 @@
 import json
+import re
 from collections import defaultdict
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
@@ -25,9 +26,12 @@ from agent_service.io_types.text import (
     StockText,
     Text,
     TextCitation,
+    TextGroup,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.category import Category
+from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT, CITATION_REMINDER
+from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
@@ -37,7 +41,109 @@ from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
 
+RANKING_HEADER = "Ranking List:\n"
+SUMMARY_HEADER = "Summary:\n"
 
+# Templates
+COMPANY_DESCRIPTION_TEMPLATE = (
+    "Company Name: {company_name}. Symbol: {symbol}. Description: {description}"
+)
+CATEGORY_RANKING_BULLET_POINT = "- {company_name} ({symbol}) Score {score}\n    - {explanation}\n"
+FINAL_SUMMARY_WEIGHTED_SCORE = "- {symbol}: {score}"
+FINAL_SUMMARY_CATEGORY_RANKING = "# Rankings for category <{category_name}>:\n{ranking}"
+
+####################################################################################################
+# Prompt
+#########################################################################################################
+RANK_BY_CATEGORY_SYS_PROMPT_STR = """
+    You are a financial analyst who is creating a ranking list for the provided companies for a hypothesis
+    on a specific financial success criteria. You must stay very strictly in the context of the main criteria
+    to test the hypothesis and rank the companies. You should not consider any other criteria and must not
+    mention other criteria.
+    You will be provided with the hypothesis, the criteria, the descriptions of these companies,
+    a list of companies' news topics and earnings topics relevant to the criteria.
+    You will be also provided with a list of other criteria, only for the purpose of context. You should
+    never use them to rank the companies. And you must not mention them in the explanation.
+    I'll say it again, focus on the main criteria!
+    For example, if the criteria is 'Revenue', then you should look through the topics related to
+    revenue, such as 'revenue growth', 'revenue diversification', 'revenue forecast', and analyze
+    how well these companies perform comprehensively in the criteria.
+    Your arguments should be supported by the evidence from the topics and try to concisely mention
+    numbers, specs, or comparisons in your summary or explanation. For example, '27% faster', '100X more' are
+    good proof to support your arguments.
+"""
+RANK_BY_CATEGORY_SYS_PROMPT = Prompt(
+    template=RANK_BY_CATEGORY_SYS_PROMPT_STR + CITATION_PROMPT, name="RANK_BY_CATEGORY_SYS_PROMPT"
+)
+
+RANK_BY_CATEGORY_MAIN_PROMPT_STR = """
+    Analyze the following information about the companies and rank them based on how well they perform \
+    compared to each other.
+    The output should be in a long text format that includes the ranking list and a summary. \
+    The first section should start with a text 'Ranking List:'. In the new line list the companies \
+    in the markdown format. And the second section should start with a text 'Summary:', \
+    followed by a paragraph summarizing the ranking list. Each section should be separated by '\n\n'. \
+    For example, it should look like below:
+
+    Ranking List:
+    - <Company Name1> (<symbol1>) Score <score1>
+        - <explanation1>
+    - <Company Name2> (<symbol2>) Score <score2>
+        - <explanation2>
+    ...
+    Summary:
+    <summary>
+
+    In detail, the ranking list should be in descending order of the companies' performance in the criteria.
+    'score' is a floating number in the range of 0 to 5 which represents how \
+    well the company performs in the criteria. 0 means the company performs the worst, 5 means the company \
+    performs the best. The score should be comparable to other companies in the ranking. You should take all \
+    companies into account.
+    'explanation' is a medium-sized paragraph that consists of 6 to 8 sentences that explains why the company \
+    is ranked here within the context of the main criteria, followed by the detailed evidence that supports \
+    your arguments. For example, a good explanation should be like 'Apple dominates the phone chip in terms \
+    of Innovation because the latest A15 chip is 20% faster than the previous A14 chip, and 2X faster than all \
+    the other competitors' phone chips', which makes a good point of Apple leads the phone chip in the criteria \
+    of innovation' and supported by the facts that it's making better chip than its own previous version but even \
+    way better than the competitors. If you see topics like this, you should try to include it in your explanation. \
+    You must consider all the provided information. You should not only focus on this company's topics, but also \
+    look at other companies' topics and analyze them together. For example, if a topic like 'Samsung's latest chip \
+    is 10% faster than the predecessor, chasing Apple's A15 chip'. This topic should be considered when ranking \
+    both Apple and Samsung, and of course beneficial to Samsung's score but not to Apple. \
+    I'll say it again, your conclusion should be derived from the topics with very concrete examples and \
+    focus solely on the main criteria. Topics that contain general information should be ignored. \
+    Topics that mention comparisons with predecessors, or with other competitors's similar products \
+    or services are preferred to include in the explanation. If there are exact numbers, or specs \
+    that can demonstrate the improvement or decline in the criteria, you MUST mention them \
+    in the explanation. Try to mention 4 to 5 topics that are most relevant to the ranking. \
+    Your explanation should match the score you give to the company but not explicitly mention the score. \
+    The top ranked companies MUST specify why and where they are better than the others, and the bottom \
+    ranked companies MUST specify why and where they fall behind than the higher ranked ones.
+    The 'ranking' list should contain all companies in the order of the ranking. If there are 3 or more \
+    companies in the ranking, the score of the bottom ranked company should be no higher than 1.5. \
+    You should also be conservative about the top company's score. If it is the undoubtedly best, the score \
+    should be 4.5 or above. However, if the top 1 doesn't show a significant leadership, its score should be \
+    no higher than 4. \
+    The difference of two companies' scores should reflect the difference of their performance in the criteria. \
+    0.5 point difference should represent a small difference in performance, 1.5 or more points difference \
+    should be a significant difference.
+    {summary_str}
+    Here is the hypothesis: {hypothesis}\n
+    Here is the main criteria you should use to evaluate the hypothesis:{category}\n
+    Here are the other criteria which are only used to provide context and should not be considered
+    to rank the companies. You must not mention them in the explanation:{other_categories}\n
+    Here are the companies' descriptions:\n{company_descriptions}\n
+    Here are the topics you should use to rank the companies:\n{topics}\n
+"""
+RANK_BY_CATEGORY_MAIN_PROMPT = Prompt(
+    template=RANK_BY_CATEGORY_MAIN_PROMPT_STR + CITATION_REMINDER,
+    name="RANK_BY_CATEGORY_MAIN_PROMPT",
+)
+
+
+####################################################################################################
+# Classes
+####################################################################################################
 @io_type
 class MixedTopics(ComplexIOBase):
     # all these objects must have content filled in
@@ -131,6 +237,10 @@ class MixedTopics(ComplexIOBase):
         else:
             self.sec_filing_sections.append(topic)
 
+    def get_all_topics(self) -> List[Text]:
+        # order matters!
+        return self.sec_filing_sections + self.earnings_topics + self.news_topics  # type: ignore
+
     def get_topic(
         self, idx: int
     ) -> Union[StockNewsDevelopmentText, StockEarningsSummaryPointText, StockSecFilingSectionText]:
@@ -155,33 +265,40 @@ class MixedTopics(ComplexIOBase):
 class RankedCompany(ComplexIOBase):
     # internal use only
     symbol: str
+    company_name: str
     score: float
     explanation: str
-    citations: List[int]
 
     @classmethod
-    def create_default_obj(cls, symbol: str, category_name: str) -> "RankedCompany":
+    def create_default_obj(
+        cls, symbol: str, company_name: str, category_name: str
+    ) -> "RankedCompany":
         return cls(
             symbol=symbol,
-            score=-1.0,  # TODO: need product guidance on this
+            company_name=company_name,
+            score=0.0,
             explanation=(
                 f"There is no information available regarding {symbol} in terms of {category_name}. "
                 f"Therefore, it is impossible to rank the company based on the provided criteria."
             ),
-            citations=[],
+        )
+
+    def __str__(self) -> str:
+        return CATEGORY_RANKING_BULLET_POINT.format(
+            company_name=self.company_name,
+            symbol=self.symbol,
+            score=self.score,
+            explanation=self.explanation,
         )
 
 
 @io_type
-class RankingListAndSummary(ComplexIOBase):
-    summary: str
+class RankingList(ComplexIOBase):
+    val: str  # well-formatted markdown (summary + ranking)
     ranking: List[RankedCompany]
 
-    def inject_missing_stocks(self, symbols: List[str], category_name: str) -> None:
-        existing_symbols = {ranking.symbol for ranking in self.ranking}
-        for symbol in symbols:
-            if symbol not in existing_symbols:
-                self.ranking.append(RankedCompany.create_default_obj(symbol, category_name))
+    def __str__(self) -> str:
+        return self.val
 
 
 @io_type
@@ -190,7 +307,7 @@ class HypothesisAnalysisByCategory(ComplexIOBase):
     final_scores: Dict[str, float]
     ranked_categories: List[Category]
     category_idx_to_topics: Dict[int, MixedTopics]
-    category_idx_to_result: Dict[int, RankingListAndSummary]
+    category_idx_to_result: Dict[int, RankingList]
     val: List[Text] = []
 
     async def split_into_components(self) -> List[IOType]:
@@ -219,36 +336,17 @@ class HypothesisAnalysisByCategory(ComplexIOBase):
                     score = each_ranking.score
                     break
 
-            # text
-            rankings_list = [f"{result.summary}"]
-            citation_idxs: Set[int] = set()
-            for each_ranking in result.ranking:
-                rankings_list.append(
-                    (
-                        f"- {each_ranking.symbol}\n"
-                        f"  - Score: {each_ranking.score}\n"
-                        f"  - Explanation: {each_ranking.explanation}"
-                    )
-                )
-
-                citation_idxs.update(each_ranking.citations)
-
-            rankings_list_str = "\n".join(rankings_list)
-
-            # citations
-            mixed_topics = self.category_idx_to_topics[category_idx]
-            citations = []
-            for idx in citation_idxs:
-                topic = mixed_topics.get_topic(idx)
-                topic.reset_value()  # remove the content to save DB space
-                citations.append(TextCitation(source_text=topic))
+            citations = result.history[0].citations
+            for c in citations:
+                if isinstance(c, TextCitation) or hasattr(c, "source_text"):
+                    c.source_text.reset_value()  # remove the content to save DB space
 
             self.val.append(
                 Text(
-                    val=rankings_list_str,
+                    val=result.val,
                     history=[
                         HistoryEntry(
-                            score=Score.scale_input(score, lb=0, ub=10), citations=citations  # type: ignore
+                            score=Score.scale_input(score, lb=0, ub=5), citations=citations
                         )
                     ],
                     title=f"Analysis - {self.ranked_categories[category_idx].name}",
@@ -256,6 +354,9 @@ class HypothesisAnalysisByCategory(ComplexIOBase):
             )
 
 
+####################################################################################################
+# Tools
+####################################################################################################
 class AnalyzeHypothesisWithCategoriesInput(ToolArgs):
     hypothesis: str
     categories: List[Category]
@@ -411,7 +512,7 @@ async def generate_summary_for_hypothesis_with_categories(
         final_score = final_scores[target_stock_symbol]
 
     return Text(
-        val=final_summary, history=[HistoryEntry(score=Score.scale_input(final_score, lb=0, ub=10))]
+        val=final_summary, history=[HistoryEntry(score=Score.scale_input(final_score, lb=0, ub=5))]
     )
 
 
@@ -687,90 +788,7 @@ async def rank_and_summarize_for_each_category(
     gbi_id_to_description: Dict[int, str],
     context: PlanRunContext,
     gpt_service_stub: Optional[GPTServiceStub] = None,
-) -> Dict[int, RankingListAndSummary]:
-    logger = get_prefect_logger(__name__)
-
-    # Rank + Summarize for each category
-    rank_by_category_sys_prompt_str = """
-        You are a financial analyst who is creating a ranking list for the provided companies for a hypothesis
-        on a specific financial success criteria. You must stay very strictly in the context of the main criteria
-        to test the hypothesis and rank the companies. You should not consider any other criteria and must not
-        mention other criteria.
-        You will be provided with the hypothesis, the criteria, the descriptions of these companies,
-        a list of companies' news topics and earnings topics relevant to the criteria.
-        You will be also provided with a list of other criteria, only for the purpose of context. You should
-        never use them to rank the companies. And you must not mention them in the explanation.
-        I'll say it again, focus on the main criteria!
-        For example, if the criteria is 'Revenue', then you should look through the topics related to
-        revenue, such as 'revenue growth', 'revenue diversification', 'revenue forecast', and analyze
-        how well these companies perform comprehensively in the criteria.
-        Your arguments should be supported by the evidence from the topics and try to concisely mention
-        numbers, specs, or comparisons in your summary or explanation. For example, '27% faster', '100X more' are
-        good proof to support your arguments.
-    """
-    rank_by_category_sys_prompt = Prompt(
-        template=rank_by_category_sys_prompt_str, name="RANK_BY_CATEGORY_SYS_PROMPT"
-    )
-
-    rank_by_category_main_prompt_str = """
-        Analyze the following information about the companies and rank them based on how well they perform \
-        compared to each other.
-        The output should be in the format of a deserializeable JSON (key-value pairs).
-        The first key should be 'ranking' and the value should be a list of objects, where each object has \
-        the following 4 keys and DO NOT include extra keys that are not mentioned:
-            - 'symbol': a string of the stock symbol
-            - 'score': an integer in the range of 0 to 10 which represents how well the company performs \
-                in the criteria. 0 means the company performs the worst, 10 means the company performs the best. \
-                The score should be comparable to other companies in the ranking. You should take all companies \
-                into account.
-            - 'explanation': a string of medium sized paragraph that consists of 6 to 8 sentences that explains \
-                why the company is ranked here within the context of the main criteria, followed by the detailed \
-                evidence that supports your arguments. \
-                For example, a good explanation should be like 'Apple dominates the phone chip in terms of Innovation \
-                because the latest A15 chip is 20% faster than the previous A14 chip, and 2X faster than all \
-                the other competitors' phone chips', which makes a good point of Apple leads the phone chip in the \
-                criteria of innovation' and supported by the facts that it's making better chip than its own previous \
-                version but even way better than the competitors. If you see topics like this, you should try to \
-                include it in your explanation. \
-                You must consider all the provided information. You should not only focus on this company's topics, \
-                but also look at other companies' topics and analyze them together. For example, if a topic like \
-                'Samsung's latest chip is 10% faster than the predecessor, chasing Apple's A15 chip'. This topic \
-                should be considered when ranking both Apple and Samsung, and of course beneficial to Samsung's score \
-                but not to Apple.
-                I'll say it again, your conclusion should be derived from the topics with very concrete examples and \
-                focus solely on the main criteria. Topics that contain general information should be ignored. \
-                Topics that mention comparisons with predecessors, or with other competitors's similar products \
-                or services are preferred to include in the explanation. If there are exact numbers, or specs \
-                that can demonstrate the improvement or decline in the criteria, you MUST mention them \
-                in the explanation. Try to mention 4 to 5 topics that are most relevant to the ranking. \
-                Your explanation should match the score you give to the company but not explicitly mention the score. \
-                The top ranked companies MUST specify why and where they are better than the others, and the bottom \
-                ranked companies MUST specify why and where they fall behind than the higher ranked ones. \
-            - 'citations': a list of integers that represents the indices of the topics that you used to \
-                rank the company. Return them from the most relevant to the least relevant. No more than 5. \
-        The 'ranking' list should contain all companies in the order of the ranking. If there are 3 or more \
-        companies in the ranking, the score of the bottom ranked company should be no higher than 3. \
-        You should also be conservative about the top company's score. If it is the undoubtedly best, you should score \
-        it 9 or 10. However, if it's the top 1 but doesn't show a significant lead, its score should be \
-        no higher than 8. \
-        The difference of two companies' scores should reflect the difference of their performance in the criteria. \
-        1 point difference should represent a small difference in performance, 3 or more points difference should be \
-        a significant difference. \
-        If there is no topic related to any company, they should be ranked at the bottom with a score \
-        of -1 to distinguish and an explanation that there is not enough information to rank the company.
-        {summary_str}
-        Here is the hypothesis: {hypothesis}\n
-        Here is the main criteria you should use to evaluate the hypothesis:{category}\n
-        Here are the other criteria which are only used to provide context and should not be considered
-        to rank the companies. You must not mention them in the explanation:{other_categories}\n
-        Here are the companies' descriptions:\n{company_descriptions}\n
-        Here are the topics you should use to rank the companies:\n{topics}\n
-        Now, generate the ranking list:
-    """
-    rank_by_category_main_prompt = Prompt(
-        template=rank_by_category_main_prompt_str, name="RANK_BY_CATEGORY_MAIN_PROMPT"
-    )
-
+) -> Dict[int, RankingList]:
     if target_stock is not None:
         summary_str = (
             "The second key should be 'summary' and the value should be a string that focuses on "
@@ -789,87 +807,194 @@ async def rank_and_summarize_for_each_category(
     )
     gpt = GPT(context=gpt_context, model=GPT4_O, gpt_service_stub=gpt_service_stub)
 
-    async def ranking_and_summarizing_categories_task(
-        category_idx: int,
-        topics_str: str,
-        category_str: str,
-        other_categories_str: str,
-        company_description_str: str,
-    ) -> None:
-        try:
-            resp = await gpt.do_chat_w_sys_prompt(
-                main_prompt=rank_by_category_main_prompt.format(
-                    hypothesis=hypothesis,
-                    category=category_str,
-                    other_categories=other_categories_str,
-                    company_descriptions=company_description_str,
-                    topics=topics_str,
-                    summary_str=summary_str,
-                ),
-                sys_prompt=rank_by_category_sys_prompt.format(),
-            )
-
-            await tool_log(
-                f"Finished ranking and summarizing for category <{categories[category_idx].name}>",
-                context=context,
-            )
-
-            cleaned_resp = clean_to_json_if_needed(resp)
-            obj = RankingListAndSummary.model_validate_json(cleaned_resp)
-            obj.inject_missing_stocks(
-                symbols=[stock.symbol for stock in stocks],  # type: ignore
-                category_name=categories[category_idx].name,
-            )
-            category_idx_to_result[category_idx] = obj
-        except Exception as e:
-            logger.exception(
-                f"Failed to rank and summarize for category <{categories[category_idx].name}>: {e}"
-            )
-
-    category_idx_to_result: Dict[int, RankingListAndSummary] = {}
+    sorted_category_idxs = sorted(category_idx_to_mixed_topics.keys())
     category_tasks = []
-    for category_idx, mixed_topics in category_idx_to_mixed_topics.items():
-        # topics
-        topics_str = await mixed_topics.to_gpt_input()
-
-        # company descriptions
-        involved_stocks = mixed_topics.get_all_stocks()
-        company_description_list = [
-            f"Symbol: {stock.symbol}. Description: {gbi_id_to_description[stock.gbi_id]}"
-            for stock in involved_stocks
-        ]
-        company_description_str = "\n".join(company_description_list)
-
-        # categories
-        category_str = await categories[category_idx].to_gpt_input()
-        other_categories = [categories[i] for i in range(len(categories)) if i != category_idx]
-        other_categories_str = Category.multi_to_gpt_input(other_categories)
+    for category_idx in sorted_category_idxs:
+        mixed_topics = category_idx_to_mixed_topics[category_idx]
 
         category_tasks.append(
-            ranking_and_summarizing_categories_task(
-                category_idx=category_idx,
-                topics_str=topics_str,
-                category_str=category_str,
-                other_categories_str=other_categories_str,
-                company_description_str=company_description_str,
+            _rank_by_gpt_and_post_process(
+                gpt,
+                hypothesis,
+                stocks,
+                summary_str,
+                category_idx,
+                categories,
+                mixed_topics,
+                gbi_id_to_description,
+                context,
             )
         )
 
-    await gather_with_concurrency(category_tasks)
+    results = await gather_with_concurrency(category_tasks)
 
     await tool_log(
         log="Ranked all the relevant stocks for each category and created summaries",
         context=context,
     )
 
+    category_idx_to_result: Dict[int, RankingList] = {
+        idx: result for idx, result in zip(sorted_category_idxs, results) if result is not None
+    }
     return category_idx_to_result
+
+
+async def _rank_by_gpt_and_post_process(
+    gpt: GPT,
+    hypothesis: str,
+    all_stocks: List[StockID],
+    summary_str: str,
+    category_idx: int,
+    categories: List[Category],
+    mixed_topics: MixedTopics,
+    gbi_id_to_description: Dict[int, str],
+    context: PlanRunContext,
+) -> Optional[RankingList]:
+    logger = get_prefect_logger(__name__)
+
+    category_name = categories[category_idx].name
+
+    try:
+        ####################
+        # Prepare GPT inputs
+        ####################
+        logger.info(f"Preparing GPT inputs to rank category <{category_name}>")
+
+        # topics
+        topics_str = await mixed_topics.to_gpt_input()
+
+        # company descriptions
+        involved_stocks = mixed_topics.get_all_stocks()
+        company_description_str = "\n".join(
+            COMPANY_DESCRIPTION_TEMPLATE.format(
+                company_name=stock.company_name,
+                symbol=stock.symbol,
+                description=gbi_id_to_description[stock.gbi_id],
+            )
+            for stock in involved_stocks
+        )
+
+        # categories
+        category_str = await categories[category_idx].to_gpt_input()
+        other_categories = [categories[i] for i in range(len(categories)) if i != category_idx]
+        other_categories_str = Category.multi_to_gpt_input(other_categories)
+
+        ####################
+        # Call GPT
+        ####################
+        logger.info(f"Calling GPT to rank category <{category_name}>")
+        result = await gpt.do_chat_w_sys_prompt(
+            main_prompt=RANK_BY_CATEGORY_MAIN_PROMPT.format(
+                hypothesis=hypothesis,
+                category=category_str,
+                other_categories=other_categories_str,
+                company_descriptions=company_description_str,
+                topics=topics_str,
+                summary_str=summary_str,
+            ),
+            sys_prompt=RANK_BY_CATEGORY_SYS_PROMPT.format(),
+        )
+
+        ##############################
+        # Extract citations from text
+        #############################
+        logger.info(f"Extracting inline citations for category <{category_name}>")
+        ranking_list_w_summary = await _rank_output_postprocess(
+            result, category_name, mixed_topics, all_stocks, context
+        )
+
+        await tool_log(
+            f"Finished ranking and summarizing for category <{categories[category_idx].name}>",
+            context=context,
+        )
+
+        return ranking_list_w_summary
+    except Exception as e:
+        logger.exception(f"Failed to rank category <{category_name}>: {e}")
+        return None
+
+
+async def _rank_output_postprocess(
+    gpt_output: str,
+    category_name: str,
+    mixed_topics: MixedTopics,
+    all_stocks: List[StockID],
+    context: PlanRunContext,
+) -> Optional[RankingList]:
+    logger = get_prefect_logger(__name__)
+
+    # Extract ranking, summary and citations
+    ranking_idx = gpt_output.find(RANKING_HEADER)
+    summary_idx = gpt_output.find(SUMMARY_HEADER)
+
+    ranking_section = gpt_output[ranking_idx + len(RANKING_HEADER) : summary_idx].strip()
+
+    citation_idx = gpt_output.rfind("\n")
+    citation_section = gpt_output[citation_idx + 1 :].strip()
+    summary_section = gpt_output[summary_idx + len(SUMMARY_HEADER) : citation_idx].strip()
+
+    # Use regex to match and create the objects for ranking
+
+    """
+    - Advanced Micro Devices, Inc. (AMD) Score 3.5
+        - Advanced Micro Devices, Inc. (AMD) has made significant strides...
+    ...
+    """
+
+    pattern = r"- (.+?) \((.+?)\) Score ([0-9]+(?:\.[0-9]+)?)\n\s{1,4}-(.*?)(?=\n\s{0,4}- |\n$|$)"
+    matches = re.findall(pattern, ranking_section, re.DOTALL)
+    if not matches:
+        logger.warning(f"Unable to match ranking list to the pattern: {ranking_section}")
+        return None
+
+    ranking_objs = []
+    symbol_to_stock = {stock.symbol: stock for stock in all_stocks}
+    for each_match in matches:
+        ranking_objs.append(
+            RankedCompany(
+                company_name=each_match[0],
+                symbol=each_match[1],
+                score=float(each_match[2]),
+                explanation=each_match[3].strip(),
+            )
+        )
+
+        symbol_to_stock.pop(each_match[1])  # delete existing stocks, and keep only missing ones
+
+    # Reorder the text
+    reordered_text = f"{summary_section}\n\n{ranking_section}\n\n{citation_section}"
+
+    # Extract citations from text
+    text_group = TextGroup(val=mixed_topics.get_all_topics())
+
+    # FIXME: this call is required to fill `id_to_str`. But the actual data fetch is done twice
+    # we should use `TextGroup` at the beginning to avoid this
+    await Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)
+
+    text, citations = await extract_citations_from_gpt_output(reordered_text, text_group, context)
+
+    # Add missing stocks in the end of the text
+    final_text_list = [text]
+    for stock in symbol_to_stock.values():
+        default_obj = RankedCompany.create_default_obj(
+            stock.symbol, stock.company_name, category_name  # type: ignore
+        )
+        ranking_objs.append(default_obj)
+        final_text_list.append(str(default_obj))  # formatted text
+
+    final_text = "\n".join(final_text_list)
+
+    ranking_list_w_summary = RankingList(
+        val=final_text, ranking=ranking_objs, history=[HistoryEntry(citations=citations)]  # type: ignore
+    )
+    return ranking_list_w_summary
 
 
 def calculate_weighted_average_scores(
     candidate_target_stock: Optional[StockID],
     stocks: List[StockID],
     categories: List[Category],
-    category_idx_to_result: Dict[int, RankingListAndSummary],
+    category_idx_to_result: Dict[int, RankingList],
 ) -> Tuple[StockID, Dict[str, float]]:
     scores_mapping = {}
     for category_idx, result in category_idx_to_result.items():
@@ -897,7 +1022,7 @@ async def overall_summary(
     target_stock: StockID,
     hypothesis: str,
     categories: List[Category],
-    category_idx_to_result: Dict[int, RankingListAndSummary],
+    category_idx_to_result: Dict[int, RankingList],
     final_scores: Dict[str, float],
     context: PlanRunContext,
     gpt_service_stub: Optional[GPTServiceStub] = None,
@@ -909,7 +1034,7 @@ async def overall_summary(
     The hypothesis is broken down into several categories, each with explanations, justifications, and weights.
     For each category, you will also be provided with a ranking list of the companies and the explanations \
     why they are ranked in that order from the perspective of that category. You will also be provided with \
-    a weighted-average score for each company based on the rankings in each category.
+    a weighted-average score for each company based on the rankings in each category. The score is in range of 5.
     Return a string that consists of 3 to 5 sentences that focuses on the target company to answer the hypothesis.
     Again, the summary should be consistent with the weighted-average scores, but you should never mention the scores, \
     nor repeat the hypothesis in the summary.
@@ -929,15 +1054,18 @@ async def overall_summary(
     category_str = Category.multi_to_gpt_input(categories)
 
     scores_str = "\n".join(
-        (
-            f"- {symbol}: {score}"
-            for symbol, score in sorted(final_scores.items(), key=lambda x: -x[1])
-        )
+        FINAL_SUMMARY_WEIGHTED_SCORE.format(symbol=symbol, score=round(score, 2))
+        for symbol, score in sorted(final_scores.items(), key=lambda x: -x[1])
     )
 
     rankings_list = []
     for category_idx, result in category_idx_to_result.items():
-        rankings_list.append(f"- Rankings for {categories[category_idx].name}:\n{result.ranking}")
+        rankings_list.append(
+            FINAL_SUMMARY_CATEGORY_RANKING.format(
+                category_name=categories[category_idx].name,
+                ranking=str(result),
+            )
+        )
     rankings_str = "\n".join(rankings_list)
 
     gpt_context = create_gpt_context(
