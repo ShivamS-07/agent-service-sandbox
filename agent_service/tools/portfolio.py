@@ -107,7 +107,7 @@ async def get_portfolio_holdings(
         workspace_name = args.portfolio_id
 
     gbi_ids = [holding.gbi_id for holding in workspace.holdings]
-    weights = [holding.weight for holding in workspace.holdings]
+    weights = {holding.gbi_id: holding.weight for holding in workspace.holdings}
     if args.expand_etfs:
         await tool_log("Expanding ETFs in portfolio holdings", context=context)
         # get all the stocks in the portfolio ETFs
@@ -120,12 +120,12 @@ async def get_portfolio_holdings(
             )
         )
         gbi_ids = [holding.gbi_id for holding in expanded_weighted_securities]
-        weights = [holding.weight for holding in expanded_weighted_securities]
+        weights = {holding.gbi_id: holding.weight for holding in expanded_weighted_securities}
     stock_list = await StockID.from_gbi_id_list(gbi_ids)
 
     data = {
         STOCK_ID_COL_NAME_DEFAULT: stock_list,
-        "Weight": weights,
+        "Weight": [weights.get(holding.gbi_id, np.nan) for holding in stock_list],
     }
 
     if args.fetch_stats:
@@ -151,12 +151,9 @@ async def get_portfolio_holdings(
         }
         data.update(
             {
-                "Price": [
-                    gbi_id2_price.get(holding.gbi_id, np.nan) for holding in workspace.holdings
-                ],
+                "Price": [gbi_id2_price.get(holding.gbi_id, np.nan) for holding in stock_list],
                 "Performance": [
-                    gbi_id2_performance.get(holding.gbi_id, np.nan)
-                    for holding in workspace.holdings
+                    gbi_id2_performance.get(holding.gbi_id, np.nan) for holding in stock_list
                 ],
             }
         )
