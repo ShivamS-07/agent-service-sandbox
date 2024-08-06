@@ -85,6 +85,7 @@ from agent_service.utils.tool_diff import (
 # Helper functions
 # to be depreciated
 def split_text_and_citation_ids(GPT_ouput: str) -> Tuple[str, List[int]]:
+    logger = get_prefect_logger(__name__)
     lines = GPT_ouput.replace("\n\n", "\n").split("\n")
     try:
         citation_ids = json.loads(clean_to_json_if_needed(lines[-1]))
@@ -102,9 +103,6 @@ class SummarizeTextInput(ToolArgs):
     topic: Optional[str] = None
 
 
-logger = get_prefect_logger(__name__)
-
-
 @tool(
     description=SUMMARIZE_DESCRIPTION,
     category=ToolCategory.LLM_ANALYSIS,
@@ -112,6 +110,7 @@ logger = get_prefect_logger(__name__)
     update_instructions=SUMMARIZE_UPDATE_INSTRUCTIONS,
 )
 async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> Text:
+    logger = get_prefect_logger(__name__)
     if context.chat is None:
         # just for mypy, shouldn't happen
         return Text(val="")
@@ -591,6 +590,7 @@ class FilterStocksByProfileMatch(ToolArgs):
 async def filter_stocks_by_profile_match(
     args: FilterStocksByProfileMatch, context: PlanRunContext
 ) -> List[StockID]:
+    logger = get_prefect_logger(__name__)
     if context.task_id is None:
         return []  # for mypy
 
