@@ -775,3 +775,29 @@ class Clickhouse(ClickhouseBase):
             event["event_namespace"] = event_namespace
 
         self.multi_row_insert(table_name="events", rows=[event])
+
+    ################################################################################################
+    # Follow up questions
+    ################################################################################################
+    async def get_task_outputs(
+        self, agent_id: str, task_ids: List[str], old_plan_id: str
+    ) -> Dict[str, Any]:
+        sql = """
+            SELECT DISTINCT ON (task_id)
+                task_id,
+                result AS output
+            FROM agent.tool_calls
+            WHERE
+                agent_id = %(agent_id)s
+                AND task_id IN %(task_ids)s
+                AND plan_id = %(old_plan_id)s
+                AND result <> ''
+            ORDER BY task_id, end_time_utc DESC
+        """
+        rows = self.generic_read(
+            sql, params={"agent_id": agent_id, "task_ids": task_ids, "old_plan_id": old_plan_id}
+        )
+        res = {}
+        for row in rows:
+            res[row["task_id"]] = json.loads(row["output"])
+        return res

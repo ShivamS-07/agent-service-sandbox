@@ -526,11 +526,15 @@ class Postgres(PostgresBase):
         rows = self.generic_read(sql)
         return [row["agent_id"] for row in rows]
 
-    def get_agent_live_execution_plan(self, agent_id: str) -> Optional[ExecutionPlan]:
+    def get_agent_live_execution_plan(
+        self, agent_id: str
+    ) -> Tuple[Optional[str], Optional[ExecutionPlan]]:
         live_agents_info = self.get_live_agents_info(agent_ids=[agent_id])
         if live_agents_info:
-            return ExecutionPlan.model_validate(live_agents_info[0]["plan"])
-        return None
+            return live_agents_info[0]["plan_id"], ExecutionPlan.model_validate(
+                live_agents_info[0]["plan"]
+            )
+        return None, None
 
     def get_live_agents_info(self, agent_ids: List[str]) -> List[Dict[str, Any]]:
         sql = """

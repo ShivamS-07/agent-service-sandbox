@@ -46,6 +46,7 @@ from agent_service.utils.async_db import (
     get_chat_history_from_db,
     get_latest_execution_plan_from_db,
 )
+from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.output_utils.output_diffs import OutputDiffer
 from agent_service.utils.output_utils.utils import output_for_log
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
@@ -698,19 +699,23 @@ async def rewrite_execution_plan(
     db = db or AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
     chatbot = Chatbot(agent_id=agent_id)
     override_task_output_lookup = None
+    replan_execution_error = True
     logger.info(f"Starting rewrite of execution plan for {agent_id=}...")
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
     automation_enabled = await db.get_agent_automation_enabled(agent_id=agent_id)
-    _, old_plan, plan_timestamp, _, _ = await get_latest_execution_plan_from_db(agent_id, db)
-    if automation_enabled:
+    old_plan_id, old_plan, plan_timestamp, _, _ = await get_latest_execution_plan_from_db(
+        agent_id, db
+    )
+    if automation_enabled and action == Action.APPEND:
         pg = get_psql()
-        live_plan = pg.get_agent_live_execution_plan(agent_id=agent_id)
+        old_plan_id, live_plan = pg.get_agent_live_execution_plan(agent_id=agent_id)
         if live_plan:
             old_plan = live_plan
         else:
             raise RuntimeError(f"No live plan found for agent {agent_id}!")
+        replan_execution_error = False
 
-    if not old_plan:  # shouldn't happen, just for mypy
+    if not old_plan or not old_plan_id:  # shouldn't happen, just for mypy
         raise RuntimeError("Cannot rewrite a plan that does not exist!")
 
     await publish_agent_plan_status(
@@ -743,8 +748,8 @@ async def rewrite_execution_plan(
 
         if automation_enabled and action == Action.APPEND and new_plan:
             task_ids = planner.replicate_plan_set_for_automated_run(old_plan, new_plan)
-            override_task_output_lookup = await db.get_task_outputs(
-                agent_id=agent_id, task_ids=task_ids
+            override_task_output_lookup = await Clickhouse().get_task_outputs(
+                agent_id=agent_id, task_ids=task_ids, old_plan_id=old_plan_id
             )
 
     if await check_cancelled(db=db, plan_id=plan_id):
@@ -819,6 +824,7 @@ async def rewrite_execution_plan(
         context=ctx,
         do_chat=do_chat,
         override_task_output_lookup=override_task_output_lookup,
+        replan_execution_error=replan_execution_error,
     )
 
     return new_plan

@@ -148,8 +148,8 @@ def get_plan_run_task_list(
     run_task_pair_to_status: Dict[Tuple[str, str], TaskRun],
 ) -> List[PlanRunTask]:
     # we want each run to have the full list of tasks with different statuses
-    incomplete_tasks: List[PlanRunTask] = []
-    complete_tasks: List[PlanRunTask] = []
+    incomplete_tasks_dict: Dict[str, PlanRunTask] = {}
+    complete_tasks_dict: Dict[str, PlanRunTask] = {}
     for node in plan_nodes:
         task_id = node.tool_task_id
         task_key = (plan_run_id, task_id)
@@ -167,16 +167,14 @@ def get_plan_run_task_list(
             task_key not in plan_run_id_task_id_to_task_output
             and task_key not in plan_run_id_task_id_to_logs
         ):
-            incomplete_tasks.append(
-                PlanRunTask(
-                    task_id=task_id,
-                    task_name=node.description,
-                    status=task_status,
-                    start_time=task_start,
-                    end_time=task_end,
-                    logs=[],
-                    has_output=node.store_output,
-                )
+            incomplete_tasks_dict[task_id] = PlanRunTask(
+                task_id=task_id,
+                task_name=node.description,
+                status=task_status,
+                start_time=task_start,
+                end_time=task_end,
+                logs=[],
+                has_output=node.store_output,
             )
             continue
         elif task_status == Status.NOT_STARTED:
@@ -207,11 +205,11 @@ def get_plan_run_task_list(
                 logs=[],
                 has_output=node.store_output,
             )
-        complete_tasks.append(task)
-
-    full_tasks: List[PlanRunTask] = (
-        sorted(complete_tasks, key=lambda x: x.start_time) + incomplete_tasks  # type: ignore # noqa
-    )
+        complete_tasks_dict[task_id] = task
+    full_tasks_dict = {**complete_tasks_dict, **incomplete_tasks_dict}
+    full_tasks: List[PlanRunTask] = []
+    for node in plan_nodes:
+        full_tasks.append(full_tasks_dict[node.tool_task_id])
     return full_tasks
 
 

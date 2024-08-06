@@ -1,5 +1,4 @@
 import datetime
-import json
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import (
@@ -702,18 +701,6 @@ class AsyncDB:
                 "plan_run_id": context.plan_run_id,
             },
         )
-
-    async def get_task_outputs(self, agent_id: str, task_ids: List[str]) -> Dict[str, Any]:
-        sql = """
-        SELECT DISTINCT ON (task_id) task_id::VARCHAR, log_data AS output from agent.work_logs
-        WHERE agent_id = %(agent_id)s AND task_id = ANY(%(task_ids)s) and is_task_output = true
-        ORDER BY task_id, created_at DESC
-        """
-        rows = await self.pg.generic_read(sql, params={"agent_id": agent_id, "task_ids": task_ids})
-        res = {}
-        for row in rows:
-            res[row["task_id"]] = json.loads(row["output"])
-        return res
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:
