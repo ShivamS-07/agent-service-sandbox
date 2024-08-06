@@ -83,6 +83,7 @@ async def extract_citations_from_gpt_output(
     text_group: TextGroup,
     context: PlanRunContext,
 ) -> Tuple[str, List[TextCitation]]:
+    logger = get_prefect_logger(__name__)
     llm = GPT(
         model=GPT4_O_MINI,
         context=create_gpt_context(GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID),
@@ -103,7 +104,17 @@ async def extract_citations_from_gpt_output(
             new_text
         )  # advance the index so it points at the last character of text so far
         if anchor in anchor_citation_dict:
+            if not isinstance(anchor_citation_dict[anchor], list):
+                logger.warning(
+                    f"Skipping anchor due to problem with citation list: {anchor_citation_dict[anchor]}"
+                )
+                continue
             for citation_json in anchor_citation_dict[anchor]:
+                if not isinstance(citation_json, dict) or "num" not in citation_json:
+                    logger.warning(
+                        f"Skipping citation due to problem with citation json: {citation_json}"
+                    )
+                    continue
                 source_text_obj = text_group.convert_citation_num_to_text(citation_json["num"])
                 if source_text_obj is None:
                     continue
@@ -158,7 +169,6 @@ async def extract_citations_from_gpt_output(
                     )
                 )
         else:
-            logger = get_prefect_logger(__name__)
             logger.warning(f"anchor {anchor} in text did not have corresponding citations")
 
         last_end = match.end()
