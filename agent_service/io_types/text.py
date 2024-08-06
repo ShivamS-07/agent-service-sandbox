@@ -81,12 +81,15 @@ class Text(ComplexIOBase):
         outputs = await gather_with_concurrency(tasks)
         citations = outputs[0] + outputs[1]
         text = await self.get()
-        return TextOutput(
+
+        output_val = TextOutput(
             val=text.val,
             title=title,
             citations=citations,
             score=ScoreOutput.from_entry_list(self.history),
         )
+        output_val.convert_inline_citations_to_output_format()
+        return output_val
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         score = ScoreOutput.from_entry_list(self.history)
@@ -1334,18 +1337,20 @@ class TextOutput(Output):
             return
 
         self.resolved_inline_citations = True
-        citation_offset_map = {}
+        citation_offset_map = defaultdict(list)
         char_list = list(self.val)
         for cit in self.citations:
             if not cit.inline_offset:
                 continue
-            citation_offset_map[cit.inline_offset] = template.format(cit_id=cit.id)
+            citation_offset_map[cit.inline_offset].append(template.format(cit_id=cit.id))
 
         output = []
         for i, char in enumerate(char_list):
             output.append(char)
             if i in citation_offset_map:
-                output.append(citation_offset_map[i])
+                # Could be multiple citations on a single index
+                for inline_citation in citation_offset_map[i]:
+                    output.append(inline_citation)
 
         self.val = "".join(output)
 

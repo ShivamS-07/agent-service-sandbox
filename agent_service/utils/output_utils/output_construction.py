@@ -11,7 +11,7 @@ from agent_service.io_type_utils import (
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTableColumn, Table, TableColumn
-from agent_service.io_types.text import StockText, Text, TextCitation, TextOutput
+from agent_service.io_types.text import StockText, Text, TextCitation
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.logs import async_perf_logger
@@ -105,9 +105,6 @@ async def get_output_from_io_type(val: IOType, pg: BoostedPG, title: str = "") -
     if not isinstance(val, ComplexIOBase):
         val = Text.from_io_type(val)
     val = await val.to_rich_output(pg, title=title)
-    if isinstance(val, TextOutput):
-        # Hacky, have to figure out a better place to call this...
-        val.convert_inline_citations_to_output_format()
     return val
 
 
