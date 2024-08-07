@@ -29,6 +29,7 @@ class CitationOutput(BaseModel, ABC):
     inline_offset: Optional[int] = None
     summary: Optional[str] = None
     last_updated_at: Optional[datetime.datetime] = None
+    is_snippet: bool = False
 
     def model_dump(self, **kwargs: Any) -> Dict[str, Any]:
         return super().model_dump(serialize_as_any=True, **kwargs)
@@ -41,6 +42,7 @@ class DocumentCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.TEXT
     snippet_highlight_start: Optional[int] = None
     snippet_highlight_end: Optional[int] = None  # inclusive
+    is_snippet: bool = True
 
     @staticmethod
     def get_offsets_from_snippets(

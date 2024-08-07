@@ -104,8 +104,13 @@ async def get_output_from_io_type(val: IOType, pg: BoostedPG, title: str = "") -
         val = {key: await get_output_from_io_type(v, pg=pg) for key, v in val.items()}
     if not isinstance(val, ComplexIOBase):
         val = Text.from_io_type(val)
-    val = await val.to_rich_output(pg, title=title)
-    return val
+    output_val = await val.to_rich_output(pg, title=title)
+    if output_val.citations:
+        output_val.citations = sorted(
+            output_val.citations, key=lambda cit: (cit.inline_offset or 0)
+        )
+
+    return output_val
 
 
 @io_type
