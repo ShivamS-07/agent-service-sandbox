@@ -271,14 +271,13 @@ async def get_earnings_full_transcripts(
                 "transcript": transcript_data.transcript,
             }
         )
-        if stock_earnings_text_dict.get(stock_id):
-            stock_earnings_text_dict[stock_id].append(
-                StockEarningsTranscriptText(
-                    id=str(transcript_entry_id),
-                    stock_id=stock_id,
-                    timestamp=publish_time,
-                )
+        stock_earnings_text_dict[stock_id].append(
+            StockEarningsTranscriptText(
+                id=str(transcript_entry_id),
+                stock_id=stock_id,
+                timestamp=publish_time,
             )
+        )
 
     if records_to_upload_to_db:
         ch.multi_row_insert(
