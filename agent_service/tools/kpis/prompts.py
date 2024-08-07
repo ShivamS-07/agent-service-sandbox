@@ -51,8 +51,7 @@ Otherwise if the KPI is not an exact match, you should look for other KPIs that 
 If you are given a topic like 'Apple Electronic Sales' and you are shown KPIs like 'Revenue - iPhone Sales', 'Revenue - MacBook Sales', 'Revenue - iPad Sales'
 you must output all of these KPIs.
 However, if you are asked for "Apple iPhone Sales" and you should only output 'Revenue - iPhone Sales' since this is an exact match. iPhone is a specific product. Even if there are other iPhone KPIs like "Units Sold - iPhone" you should not output them.
-Some topics may refer to a specific but more encompassing metric that is not an exact match for a single KPI like 'Consumer Lending Products'. This is not a specific product but a category of products.
-This could refer to any consumer lending products like loans, credit, mortgages.
+Some topics may refer to a specific but more encompassing metric that is not an exact match for a single KPI.
 There isn't a single KPI that matches this topic exactly, but there are multiple KPIs that are relevant to this topic like 'Revenue - iPhone Sales', 'Sales - MacBook Sales', 'Sales - iPad Sales'
 In these cases, you will have multiple specific KPIs that are relevant to the topic. 
 In these cases, you must output all the KPIs that are relevant to the topic. 
