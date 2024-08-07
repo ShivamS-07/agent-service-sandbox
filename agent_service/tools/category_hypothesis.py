@@ -1,7 +1,7 @@
 import json
 import re
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Type
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
@@ -27,6 +27,7 @@ from agent_service.io_types.text import (
     Text,
     TextCitation,
     TextGroup,
+    TextIDType,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.category import Category
@@ -40,6 +41,8 @@ from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
+
+RELEVANT_CATEGORIES = "relevant_categories"
 
 RANKING_HEADER = "Ranking List:\n"
 SUMMARY_HEADER = "Summary:\n"
@@ -145,29 +148,19 @@ RANK_BY_CATEGORY_MAIN_PROMPT = Prompt(
 # Classes
 ####################################################################################################
 @io_type
-class MixedTopics(ComplexIOBase):
-    # all these objects must have content filled in
-    news_topics: List[StockNewsDevelopmentText] = []
-    earnings_topics: List[StockEarningsSummaryPointText] = []
-    sec_filing_sections: List[StockSecFilingSectionText] = []
+class TopicGroup(TextGroup):
+    val: List[Text]
+    id_to_str: Dict[TextIDType, str] = {}  # type: ignore
 
-    async def to_gpt_input(self, use_abberivated_output: bool = True) -> str:
+    def convert_to_gpt_input(self) -> str:
+        # we don't care about the args here, just for mypy
+
         self._cut_input_topics(target_num=200)
 
         texts = []
-        idx = 0
-        for topic in self.sec_filing_sections:
-            text = await topic.to_gpt_input()
+        for idx, topic in enumerate(self.val):
+            text = self.id_to_str[topic.id]  # type: ignore
             texts.append(f"- {idx}: ({topic.stock_id.symbol}) {text}")  # type: ignore
-            idx += 1
-
-        for topic in self.earnings_topics:
-            texts.append(f"- {idx}: ({topic.stock_id.symbol}) {topic.val}")  # type: ignore
-            idx += 1
-
-        for topic in self.news_topics:
-            texts.append(f"- {idx}: ({topic.stock_id.symbol}) {topic.val}")  # type: ignore
-            idx += 1
 
         return "\n".join(texts)
 
@@ -178,87 +171,93 @@ class MixedTopics(ComplexIOBase):
             return
 
         # if there are too many news topics, we only reduce the number of news topics
-        if len(self.news_topics) > self.total * 0.6:
-            num_news_to_del = self.total - target_num
-            news_ratio = 1 - num_news_to_del / len(self.news_topics)
-            stock_to_news_topics: Dict[StockID, List[StockNewsDevelopmentText]] = defaultdict(list)
-            for topic in self.news_topics:
-                if topic.stock_id:
-                    stock_to_news_topics[topic.stock_id].append(topic)
+        news_topics = self.get_certain_type_topics(StockNewsDevelopmentText)
+        earnings_points = self.get_certain_type_topics(StockEarningsSummaryPointText)
+        filing_sections = self.get_certain_type_topics(StockSecFilingSectionText)
 
-            self.news_topics = []
+        num_news_topics = len(news_topics)
+        if num_news_topics > self.total * 0.6:
+            num_news_to_del = self.total - target_num
+            news_ratio = 1 - num_news_to_del / len(news_topics)
+            stock_to_news_topics: Dict[StockID, List[StockNewsDevelopmentText]] = defaultdict(list)
+            for topic in news_topics:
+                if topic.stock_id:
+                    stock_to_news_topics[topic.stock_id].append(topic)  # type: ignore
+
+            filtered_news_topics = []
             for topics in stock_to_news_topics.values():
-                # FIXME: should sort these news topics by date and then cut once we have that info
-                self.news_topics.extend(topics[: int(len(topics) * news_ratio)])
+                filtered_news_topics.extend(topics[: int(len(topics) * news_ratio)])
+
+            self.val = filtered_news_topics + earnings_points + filing_sections  # type: ignore
+            self.sync_map_with_val()
+
             return
 
         # otherwise we reduce the number of topics for each type and each company proportionally
-        stock_to_topics: Dict[StockID, MixedTopics] = defaultdict(MixedTopics)
-        for topic in self.news_topics + self.earnings_topics + self.sec_filing_sections:  # type: ignore
+        stock_to_topic_group: Dict[StockID, TopicGroup] = {}
+        for topic in self.val:
             if topic.stock_id:
-                stock_to_topics[topic.stock_id].insert_topic(topic)
+                if topic.stock_id not in stock_to_topic_group:
+                    stock_to_topic_group[topic.stock_id] = TopicGroup(val=[])
+
+                stock_to_topic_group[topic.stock_id].val.append(topic)
 
         # reset the lists
         ratio = target_num / self.total
-        self.news_topics = []
-        self.earnings_topics = []
-        self.sec_filing_sections = []
-        for mixed_topics in stock_to_topics.values():
-            if len(mixed_topics.news_topics) > mixed_topics.total * 0.6:
+        all_topics = []
+        for topic_group in stock_to_topic_group.values():
+            this_news_topics = topic_group.get_certain_type_topics(StockNewsDevelopmentText)
+            if len(this_news_topics) > topic_group.total * 0.6:
                 # if this company has too many news topics, we also only reduce news topics
-                mixed_topics._cut_input_topics(target_num=int(mixed_topics.total * ratio))
-                num_news_to_keep = len(mixed_topics.news_topics)
-                num_earnings_to_keep = len(mixed_topics.earnings_topics)
-                num_filings_to_keep = len(mixed_topics.sec_filing_sections)
+                topic_group._cut_input_topics(target_num=int(topic_group.total * ratio))
+                all_topics.extend(topic_group.val)
             else:
                 # otherwise, proportionally keep at least 1 topic for each type
-                num_news_to_keep = max(1, int(len(mixed_topics.news_topics) * ratio))
-                num_earnings_to_keep = max(1, int(len(mixed_topics.earnings_topics) * ratio))
-                num_filings_to_keep = max(1, int(len(mixed_topics.sec_filing_sections) * ratio))
+                this_earnings_points = topic_group.get_certain_type_topics(
+                    StockEarningsSummaryPointText
+                )
+                this_filing_sections = topic_group.get_certain_type_topics(
+                    StockSecFilingSectionText
+                )
 
-            self.news_topics.extend(mixed_topics.news_topics[:num_news_to_keep])
-            self.earnings_topics.extend(mixed_topics.earnings_topics[:num_earnings_to_keep])
-            self.sec_filing_sections.extend(mixed_topics.sec_filing_sections[:num_filings_to_keep])
+                num_news_to_keep = max(1, int(len(this_news_topics) * ratio))
+                num_earnings_to_keep = max(1, int(len(this_earnings_points) * ratio))
+                num_filings_to_keep = max(1, int(len(this_filing_sections) * ratio))
+                all_topics.extend(
+                    this_news_topics[:num_news_to_keep]
+                    + this_earnings_points[:num_earnings_to_keep]
+                    + this_filing_sections[:num_filings_to_keep]
+                )
+
+        self.val = all_topics
+        self.sync_map_with_val()
 
     @property
     def total(self) -> int:
-        return len(self.news_topics) + len(self.earnings_topics) + len(self.sec_filing_sections)
+        return len(self.val)
 
-    def insert_topic(
-        self,
-        topic: Union[
-            StockNewsDevelopmentText, StockEarningsSummaryPointText, StockSecFilingSectionText
-        ],
-    ) -> None:
-        if isinstance(topic, StockNewsDevelopmentText):
-            self.news_topics.append(topic)
-        elif isinstance(topic, StockEarningsSummaryPointText):
-            self.earnings_topics.append(topic)
-        else:
-            self.sec_filing_sections.append(topic)
+    def sync_map_with_val(self) -> None:
+        """
+        Sync `self.val` and `self.id_to_str`
+        When we are modifying `self.val` (usually cutting the number of topics), we need to update
+        `self.id_to_str` accordingly. Or drop the topics that are not in `self.id_to_str`.
+        """
 
-    def get_all_topics(self) -> List[Text]:
-        # order matters!
-        return self.sec_filing_sections + self.earnings_topics + self.news_topics  # type: ignore
+        texts = []
+        mapping = {}
+        for topic in self.val:
+            if topic.id in self.id_to_str:
+                texts.append(topic)
+                mapping[topic.id] = self.id_to_str[topic.id]
 
-    def get_topic(
-        self, idx: int
-    ) -> Union[StockNewsDevelopmentText, StockEarningsSummaryPointText, StockSecFilingSectionText]:
-        if idx < len(self.sec_filing_sections):
-            return self.sec_filing_sections[idx]
-        idx -= len(self.sec_filing_sections)
-        if idx < len(self.earnings_topics):
-            return self.earnings_topics[idx]
-        idx -= len(self.earnings_topics)
-        return self.news_topics[idx]
+        self.val = texts
+        self.id_to_str = mapping
 
     def get_all_stocks(self) -> List[StockID]:
-        stocks = set()
-        for topic in self.news_topics + self.earnings_topics + self.sec_filing_sections:
-            if topic.stock_id:
-                stocks.add(topic.stock_id)
+        return list({topic.stock_id for topic in self.val if topic.stock_id})
 
-        return list(stocks)
+    def get_certain_type_topics(self, topic_type: Type[Text]) -> List[Text]:
+        return [t for t in self.val if isinstance(t, topic_type)]
 
 
 @io_type
@@ -306,7 +305,7 @@ class HypothesisAnalysisByCategory(ComplexIOBase):
     actual_target_stock: StockID
     final_scores: Dict[str, float]
     ranked_categories: List[Category]
-    category_idx_to_topics: Dict[int, MixedTopics]
+    category_idx_to_topic_group: Dict[int, TopicGroup]
     category_idx_to_result: Dict[int, RankingList]
     val: List[Text] = []
 
@@ -403,12 +402,9 @@ async def analyze_hypothesis_with_categories(
 
     # Step: Download content for text data
     logger.info("Downloading content for text data")
-    (
-        gbi_id_to_short_description,
-        news_devs_with_text,
-        earnings_points_with_text,
-        sec_filings_sections_with_text,
-    ) = await download_content_for_text_data(args.all_text_data)
+    gbi_id_to_short_description, topic_group = await download_content_for_text_data(
+        args.all_text_data
+    )
 
     gpt_service_stub = _get_gpt_service_stub()[0]
 
@@ -420,13 +416,11 @@ async def analyze_hypothesis_with_categories(
     # Step: Classify topics into categories
     logger.info("Classifying news, earnings, SEC topics into categories")
     categories = sorted(args.categories, key=lambda x: x.weight, reverse=True)
-    category_idx_to_mixed_topics = await filter_and_classify_topics_into_category(
+    category_idx_to_topic_group = await filter_and_classify_topics_into_category(
         revised_hypothesis,
         categories,
         gbi_id_to_short_description,
-        news_devs_with_text,
-        earnings_points_with_text,
-        sec_filings_sections_with_text,
+        topic_group,
         context,
         gpt_service_stub,
     )
@@ -444,7 +438,7 @@ async def analyze_hypothesis_with_categories(
         stocks,
         revised_hypothesis,
         categories,
-        category_idx_to_mixed_topics,
+        category_idx_to_topic_group,
         gbi_id_to_short_description,
         context,
         gpt_service_stub,
@@ -460,7 +454,7 @@ async def analyze_hypothesis_with_categories(
         actual_target_stock=actual_target_stock,
         final_scores=total_scores,
         ranked_categories=categories,
-        category_idx_to_topics=category_idx_to_mixed_topics,
+        category_idx_to_topic_group=category_idx_to_topic_group,
         category_idx_to_result=category_to_result,
     )
 
@@ -519,12 +513,9 @@ async def generate_summary_for_hypothesis_with_categories(
 ####################################################################################################
 # Utils
 ####################################################################################################
-async def download_content_for_text_data(all_text_data: List[StockText]) -> Tuple[
-    Dict[int, str],
-    List[StockNewsDevelopmentText],
-    List[StockEarningsSummaryPointText],
-    List[StockSecFilingSectionText],
-]:
+async def download_content_for_text_data(
+    all_text_data: List[StockText],
+) -> Tuple[Dict[int, str], TopicGroup]:
     """
     1. Download the actual text content for these text objects
     2. Assign the text content to the corresponding text objects's `val` field
@@ -534,24 +525,11 @@ async def download_content_for_text_data(all_text_data: List[StockText]) -> Tupl
 
     logger.info("Separate text data by sources")
     company_descriptions = [t for t in all_text_data if isinstance(t, StockDescriptionText)]
-
     news_developments = [t for t in all_text_data if isinstance(t, StockNewsDevelopmentText)]
-
-    # Currently ignoring earning texts containing transcripts instead of summaries
     earnings_summaries: List[StockEarningsText] = [
         t for t in all_text_data if isinstance(t, StockEarningsSummaryText)
     ]
-    earnings_summary_points = await StockEarningsSummaryPointText.init_from_earnings_texts(
-        earnings_summaries
-    )
-
-    # it does the downloading of the content inside `init_from_filings`
-    logger.info("Downloading content for 10K/10Q and split into sections")
     sec_filings = [t for t in all_text_data if isinstance(t, StockSecFilingText)]
-    sec_filing_sections_with_text = await StockSecFilingSectionText.init_from_filings(sec_filings)
-    logger.info(
-        f"Got {len(sec_filing_sections_with_text)} sections from {len(sec_filings)} filings"
-    )
 
     logger.info("Downloading content for company descriptions")
     gbi_ids = [t.stock_id.gbi_id for t in company_descriptions if t.stock_id]
@@ -560,31 +538,27 @@ async def download_content_for_text_data(all_text_data: List[StockText]) -> Tupl
         gbi_id: desc for gbi_id, (desc, _) in descriptions.items() if desc
     }
 
-    # NOTE: meaningless to parallelize as they are using the same PSQL object
-    logger.info("Downloading content for news developments")
-    topic_id_to_news_dev = await StockNewsDevelopmentText._get_strs_lookup(news_developments)
-    news_devs_with_text = []
-    for news_dev in news_developments:
-        if news_dev.id in topic_id_to_news_dev:
-            news_dev.val = topic_id_to_news_dev[news_dev.id]
-            news_devs_with_text.append(news_dev)
-
-    logger.info("Downloading content for earnings summary points")
-    hash_id_to_earnings_point = await StockEarningsSummaryPointText._get_strs_lookup(
-        earnings_summary_points
+    # Currently ignoring earning texts containing transcripts instead of summaries
+    logger.info("Converting earnings summaries to points")
+    earnings_summary_points = await StockEarningsSummaryPointText.init_from_earnings_texts(
+        earnings_summaries
     )
-    earnings_points_with_text = []
-    for earnings_point in earnings_summary_points:
-        if earnings_point.id in hash_id_to_earnings_point:
-            earnings_point.val = hash_id_to_earnings_point[earnings_point.id]
-            earnings_points_with_text.append(earnings_point)
 
-    return (
-        gbi_id_to_short_description,
-        news_devs_with_text,
-        earnings_points_with_text,
-        sec_filing_sections_with_text,
+    # it does the downloading of the content inside `init_from_filings`
+    logger.info("Downloading content for 10K/10Q and split into sections")
+    sec_filing_sections_with_text = await StockSecFilingSectionText.init_from_filings(sec_filings)
+    logger.info(
+        f"Got {len(sec_filing_sections_with_text)} sections from {len(sec_filings)} filings"
     )
+
+    # sort the list by the timestamp for later cutting
+    text_list = news_developments + earnings_summary_points + sec_filing_sections_with_text
+    text_list.sort(key=lambda x: x.timestamp, reverse=True)  # type: ignore
+    topic_group = TopicGroup(val=text_list)  # type: ignore
+    await Text.get_all_strs(topic_group)  # fill in `id_to_str` dict
+    topic_group.sync_map_with_val()
+
+    return gbi_id_to_short_description, topic_group
 
 
 async def revise_hypothesis(
@@ -614,12 +588,10 @@ async def filter_and_classify_topics_into_category(
     hypothesis: str,
     categories: List[Category],
     gbi_id_to_description: Dict[int, str],
-    news_devs_with_text: List[StockNewsDevelopmentText],
-    earnings_points_with_text: List[StockEarningsSummaryPointText],
-    sec_filings_sections_with_text: List[StockSecFilingSectionText],
+    topic_group: TopicGroup,
     context: PlanRunContext,
     gpt_service_stub: Optional[GPTServiceStub] = None,
-) -> Dict[int, MixedTopics]:
+) -> Dict[int, TopicGroup]:
     logger = get_prefect_logger(__name__)
 
     # Prompt
@@ -682,64 +654,37 @@ Here is the text:
     # Don't want categories' weights to confuse GPT
     category_str = Category.multi_to_gpt_input(categories, include_weight=False)
 
-    news_tasks = []
-    for news_dev in news_devs_with_text:
+    tasks = []
+    for text in topic_group.val:
+        if not text.stock_id:
+            continue
+
+        text_str = topic_group.get_str_for_text(text.id)
+        if not text_str:
+            continue
+
         company_description = gbi_id_to_description.get(
-            news_dev.stock_id.gbi_id, "No company description"  # type: ignore
+            text.stock_id.gbi_id, "No company description"
         )
-        news_tasks.append(
+
+        tasks.append(
             gpt.do_chat_w_sys_prompt(
                 main_prompt=main_prompt.format(
                     company_description=company_description,
                     hypothesis=hypothesis,
                     categories=category_str,
-                    topic=news_dev.val,
+                    topic=text_str,
                     max_category_idx=len(categories) - 1,
                 ),
                 sys_prompt=NO_PROMPT,
             )
         )
 
-    earnings_tasks = []
-    for earnings_point in earnings_points_with_text:
-        company_description = gbi_id_to_description[earnings_point.stock_id.gbi_id]  # type: ignore
-        earnings_tasks.append(
-            gpt.do_chat_w_sys_prompt(
-                main_prompt=main_prompt.format(
-                    company_description=company_description,
-                    hypothesis=hypothesis,
-                    categories=category_str,
-                    topic=earnings_point.val,
-                    max_category_idx=len(categories) - 1,
-                ),
-                sys_prompt=NO_PROMPT,
-            )
-        )
-
-    filings_tasks = []
-    for filings_section in sec_filings_sections_with_text:
-        company_description = gbi_id_to_description[filings_section.stock_id.gbi_id]  # type: ignore
-        text = await filings_section.to_gpt_input()
-        filings_tasks.append(
-            gpt.do_chat_w_sys_prompt(
-                main_prompt=main_prompt.format(
-                    company_description=company_description,
-                    hypothesis=hypothesis,
-                    categories=category_str,
-                    topic=text,
-                    max_category_idx=len(categories) - 1,
-                ),
-                sys_prompt=NO_PROMPT,
-            )
-        )
-
-    all_tasks = news_tasks + earnings_tasks + filings_tasks
-    all_objects = news_devs_with_text + earnings_points_with_text + sec_filings_sections_with_text
-    results: List[str] = await gather_with_concurrency(tasks=all_tasks, n=min(300, len(all_tasks)))
+    results: List[str] = await gather_with_concurrency(tasks=tasks, n=300)
 
     # Divide results
-    category_to_mixed_topics: Dict[int, MixedTopics] = defaultdict(MixedTopics)
-    for text_obj, result in zip(all_objects, results):
+    category_idx_to_topic_group: Dict[int, TopicGroup] = {}
+    for text_obj, result in zip(topic_group.val, results):
         try:
             cleaned_result: Dict = json.loads(clean_to_json_if_needed(result))
         except Exception as e:
@@ -752,7 +697,7 @@ Here is the text:
 
         # no single gpt calls should fail the whole process
         try:
-            relevant_category_idxs: List[int] = cleaned_result.get("relevant_categories", [])
+            relevant_category_idxs: List[int] = cleaned_result.get(RELEVANT_CATEGORIES, [])
             if not relevant_category_idxs:
                 continue
 
@@ -766,17 +711,28 @@ Here is the text:
                         f"Category index {category_idx} is out of range for {text_obj} {result}"
                     )
                     continue
-                category_to_mixed_topics[category_idx].insert_topic(text_obj)
+
+                if category_idx not in category_idx_to_topic_group:
+                    category_idx_to_topic_group[category_idx] = TopicGroup(val=[])
+
+                category_idx_to_topic_group[category_idx].val.append(text_obj)
         except Exception as e:
             logger.exception(f"Failed to process result {result} for text object {text_obj}: {e}")
 
     category_topic_log = ""
-    for category_idx, topics in category_to_mixed_topics.items():
+    for category_idx, smaller_topic_group in category_idx_to_topic_group.items():
+        # prepare tool log
         category = categories[category_idx]
-        category_topic_log += f"Category <{category.name}>: {topics.total} topics; "
+        num_topics = len(smaller_topic_group.val)
+        category_topic_log += f"Category <{category.name}>: {num_topics} topics; "
+
+        # fill in `id_to_str` from the bigger text group
+        smaller_topic_group.id_to_str = topic_group.id_to_str
+        smaller_topic_group.sync_map_with_val()
+
     await tool_log(log=category_topic_log, context=context)
 
-    return category_to_mixed_topics
+    return category_idx_to_topic_group
 
 
 async def rank_and_summarize_for_each_category(
@@ -784,7 +740,7 @@ async def rank_and_summarize_for_each_category(
     stocks: List[StockID],
     hypothesis: str,
     categories: List[Category],
-    category_idx_to_mixed_topics: Dict[int, MixedTopics],
+    category_idx_to_topic_group: Dict[int, TopicGroup],
     gbi_id_to_description: Dict[int, str],
     context: PlanRunContext,
     gpt_service_stub: Optional[GPTServiceStub] = None,
@@ -807,10 +763,10 @@ async def rank_and_summarize_for_each_category(
     )
     gpt = GPT(context=gpt_context, model=GPT4_O, gpt_service_stub=gpt_service_stub)
 
-    sorted_category_idxs = sorted(category_idx_to_mixed_topics.keys())
+    sorted_category_idxs = sorted(category_idx_to_topic_group.keys())
     category_tasks = []
     for category_idx in sorted_category_idxs:
-        mixed_topics = category_idx_to_mixed_topics[category_idx]
+        topic_group = category_idx_to_topic_group[category_idx]
 
         category_tasks.append(
             _rank_by_gpt_and_post_process(
@@ -820,13 +776,13 @@ async def rank_and_summarize_for_each_category(
                 summary_str,
                 category_idx,
                 categories,
-                mixed_topics,
+                topic_group,
                 gbi_id_to_description,
                 context,
             )
         )
 
-    results = await gather_with_concurrency(category_tasks)
+    results = await gather_with_concurrency(category_tasks, n=len(category_tasks))
 
     await tool_log(
         log="Ranked all the relevant stocks for each category and created summaries",
@@ -846,7 +802,7 @@ async def _rank_by_gpt_and_post_process(
     summary_str: str,
     category_idx: int,
     categories: List[Category],
-    mixed_topics: MixedTopics,
+    topic_group: TopicGroup,
     gbi_id_to_description: Dict[int, str],
     context: PlanRunContext,
 ) -> Optional[RankingList]:
@@ -861,10 +817,10 @@ async def _rank_by_gpt_and_post_process(
         logger.info(f"Preparing GPT inputs to rank category <{category_name}>")
 
         # topics
-        topics_str = await mixed_topics.to_gpt_input()
+        topics_str = topic_group.convert_to_gpt_input()
 
         # company descriptions
-        involved_stocks = mixed_topics.get_all_stocks()
+        involved_stocks = topic_group.get_all_stocks()
         company_description_str = "\n".join(
             COMPANY_DESCRIPTION_TEMPLATE.format(
                 company_name=stock.company_name,
@@ -900,7 +856,7 @@ async def _rank_by_gpt_and_post_process(
         #############################
         logger.info(f"Extracting inline citations for category <{category_name}>")
         ranking_list_w_summary = await _rank_output_postprocess(
-            result, category_name, mixed_topics, all_stocks, context
+            result, category_name, topic_group, all_stocks, context
         )
 
         await tool_log(
@@ -917,7 +873,7 @@ async def _rank_by_gpt_and_post_process(
 async def _rank_output_postprocess(
     gpt_output: str,
     category_name: str,
-    mixed_topics: MixedTopics,
+    topic_group: TopicGroup,
     all_stocks: List[StockID],
     context: PlanRunContext,
 ) -> Optional[RankingList]:
@@ -964,14 +920,7 @@ async def _rank_output_postprocess(
     # Reorder the text
     reordered_text = f"{summary_section}\n\n{ranking_section}\n\n{citation_section}"
 
-    # Extract citations from text
-    text_group = TextGroup(val=mixed_topics.get_all_topics())
-
-    # FIXME: this call is required to fill `id_to_str`. But the actual data fetch is done twice
-    # we should use `TextGroup` at the beginning to avoid this
-    await Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)
-
-    text, citations = await extract_citations_from_gpt_output(reordered_text, text_group, context)
+    text, citations = await extract_citations_from_gpt_output(reordered_text, topic_group, context)  # type: ignore # noqa
 
     # Add missing stocks in the end of the text
     final_text_list = [text]

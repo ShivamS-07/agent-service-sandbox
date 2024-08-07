@@ -868,30 +868,60 @@ class StockEarningsSummaryPointText(StockText):
         from agent_service.utils.postgres import get_psql
 
         sql = """
-            SELECT summary_id::TEXT, summary
+            SELECT summary_id::TEXT,
+                CASE
+                    WHEN jsonb_typeof(summary->'Remarks') = 'array'
+                        THEN jsonb_array_length(summary->'Remarks')
+                        ELSE 0
+                END AS remarks_length,
+                CASE
+                    WHEN jsonb_typeof(summary->'Questions') = 'array'
+                        THEN jsonb_array_length(summary->'Questions')
+                        ELSE 0
+                END AS questions_length
             FROM nlp_service.earnings_call_summaries
             WHERE summary_id = ANY(%(summary_ids)s)
         """
+
         db = get_psql()
         summary_id_to_summary = {s.id: s for s in earnings_summaries}
         rows = db.generic_read(sql, {"summary_ids": list(summary_id_to_summary.keys())})
 
-        points = []
+        points: List[Self] = []
         for row in rows:
-            summary_obj = summary_id_to_summary[row["summary_id"]]
-            summary = row["summary"]
-            for section in ["Remarks", "Questions"]:
-                if section in summary and summary[section]:
-                    for idx, point in enumerate(summary[section]):
-                        points.append(
-                            cls(
-                                id=hash((row["summary_id"], section, idx)),
-                                summary_id=row["summary_id"],
-                                summary_type=section,
-                                summary_idx=idx,
-                                stock_id=summary_obj.stock_id,
-                            )
-                        )
+            summary_id = row["summary_id"]
+            summary_obj = summary_id_to_summary[summary_id]
+
+            remarks_length = row["remarks_length"]
+            questions_length = row["questions_length"]
+
+            points.extend(
+                (
+                    cls(
+                        id=hash((summary_id, "Remarks", idx)),
+                        summary_id=summary_id,
+                        summary_type="Remarks",
+                        summary_idx=idx,
+                        stock_id=summary_obj.stock_id,
+                        timestamp=summary_obj.timestamp,
+                    )
+                    for idx in range(remarks_length)
+                )
+            )
+
+            points.extend(
+                (
+                    cls(
+                        id=hash((summary_id, "Questions", idx)),
+                        summary_id=summary_id,
+                        summary_type="Questions",
+                        summary_idx=idx,
+                        stock_id=summary_obj.stock_id,
+                        timestamp=summary_obj.timestamp,
+                    )
+                    for idx in range(questions_length)
+                )
+            )
 
         return points
 
@@ -1101,6 +1131,7 @@ class StockSecFilingSectionText(StockText):
                         header=header,
                         stock_id=filing.stock_id,
                         db_id=filing.db_id,
+                        timestamp=filing.timestamp,
                     )
                 )
 
@@ -1112,22 +1143,26 @@ class StockSecFilingSectionText(StockText):
     ) -> Dict[TextIDType, str]:
         # In the DB we only store `header`, not `content` to save space
         filing_text_objs = {}
+        header_to_sections: Dict[str, List[StockSecFilingSectionText]] = defaultdict(list)
         for section in sections:
             if section.filing_id not in filing_text_objs:
                 filing_text_objs[section.filing_id] = StockSecFilingText(
                     id=section.filing_id, stock_id=section.stock_id, db_id=section.db_id
                 )
 
+            # same header, multiple sections (across stocks)
+            header_to_sections[section.header].append(section)
+
         filing_texts = await StockSecFilingText._get_strs_lookup(list(filing_text_objs.values()))
 
-        header_to_section = {section.header: section for section in sections}
-
         outputs = {}
-        for filing_text in filing_texts.values():
+        for filing_id, filing_text in filing_texts.items():
             split_sections = SecFiling.split_10k_10q_into_smaller_sections(filing_text)
             for header, content in split_sections.items():
-                if header in header_to_section:
-                    outputs[header_to_section[header].id] = f"{header}: {content}"
+                text_str = f"{header}: {content}"
+                for section in header_to_sections.get(header, []):
+                    if section.filing_id == filing_id:
+                        outputs[section.id] = text_str
 
         return outputs  # type: ignore
 

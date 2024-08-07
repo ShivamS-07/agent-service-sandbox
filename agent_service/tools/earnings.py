@@ -34,7 +34,7 @@ from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.clickhouse import Clickhouse
-from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.date_utils import get_now_utc, parse_date_str_in_utc
 from agent_service.utils.postgres import get_psql
 
 
@@ -147,7 +147,7 @@ async def _get_earnings_summary_helper(
         for row in sorted_rows:
             year = row["sources"][0]["year"]
             quarter = row["sources"][0]["quarter"]
-            publish_time = datetime.datetime.fromisoformat(row["sources"][0]["publishing_time"])
+            publish_time = parse_date_str_in_utc(row["sources"][0]["publishing_time"])
             publish_date = publish_time.date()
             if (start_date and publish_date < start_date) or (end_date and publish_date > end_date):
                 continue

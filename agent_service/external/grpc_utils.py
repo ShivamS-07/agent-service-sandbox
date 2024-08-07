@@ -87,7 +87,8 @@ def datetime_to_timestamp(dt: Optional[datetime.datetime]) -> Optional[Timestamp
 def timestamp_to_datetime(ts: Timestamp) -> Optional[datetime.datetime]:
     if ts is None or ts.seconds == 0:
         return None
-    return ts.ToDatetime()
+    dt = ts.ToDatetime()
+    return dt.replace(tzinfo=datetime.timezone.utc)
 
 
 def timestamp_to_date(

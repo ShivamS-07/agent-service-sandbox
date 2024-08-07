@@ -2,7 +2,7 @@ import datetime
 from collections import defaultdict
 from typing import Dict, Generator, List, Optional, Tuple
 
-from agent_service.external.grpc_utils import timestamp_to_date, timestamp_to_datetime
+from agent_service.external.grpc_utils import timestamp_to_datetime
 from agent_service.external.nlp_svc_client import get_multi_companies_news_topics
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, DEFAULT_EMBEDDING_MODEL
 from agent_service.GPT.requests import GPT
@@ -53,17 +53,17 @@ async def _get_news_developments_helper(
         topics = stock_to_topics_map[stock]
         topic_list = []
         for topic in topics:
-            topic_date = timestamp_to_date(topic.last_article_date)
-            if topic_date is None or topic_date < start_date or topic_date > end_date:
+            topic_dt = timestamp_to_datetime(topic.last_article_date)
+            if topic_dt is None:
+                continue
+
+            topic_date = topic_dt.date()
+            if topic_date < start_date or topic_date > end_date:
                 # Filter topics not in the time window
                 continue
             # Only return ID's
             topic_list.append(
-                StockNewsDevelopmentText(
-                    id=topic.topic_id.id,
-                    stock_id=stock,
-                    timestamp=timestamp_to_datetime(topic.last_article_date),
-                )
+                StockNewsDevelopmentText(id=topic.topic_id.id, stock_id=stock, timestamp=topic_dt)
             )
         output_dict[stock] = topic_list
 
