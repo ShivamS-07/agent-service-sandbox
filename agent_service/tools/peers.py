@@ -114,6 +114,7 @@ class PeersForStockInput(ToolArgs):
     between the two stocks and comes from Earnings Reports.
     This tool already has summarized the connection between the two stocks.
     Thus get_earnings_call_summaries does not need to be called in order to get the summarized connection.
+    Important!!! This tool should only be used when the user specifically mentions earnings.
     """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -187,6 +188,7 @@ async def get_affected_peers(
     connection between the two stocks and comes from Earnings Reports.
     This tool already has summarized the connection between the two stocks.
     Thus get_earnings_call_summaries does not need to be called in order to get the summarized connection.
+    Important!!! This tool should only be used when the user specifically mentions earnings.
     """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
