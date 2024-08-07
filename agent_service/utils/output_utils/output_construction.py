@@ -52,6 +52,10 @@ def _combine_text_list(
 
 
 async def prepare_list_of_texts(texts: List[Text]) -> Text:
+    # First make sure all texts are resolved by fetching their data
+    text_strs = await Text.get_all_strs(texts)
+    for text, text_str in zip(texts, text_strs):
+        text.val = text_str
     return _combine_text_list(texts=texts)
 
 
