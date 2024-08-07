@@ -106,6 +106,22 @@ async def create_workspace_from_bytes(
     return workspace_id, strategy_id, len(latest_holdings)
 
 
+@async_perf_logger
+async def create_watchlist_from_bytes(
+    data: bytes, name: str, content_type: str, user_id: str, jwt: Optional[str]
+) -> Optional[str]:
+    # encode file data into base 64
+    b64data = base64.b64encode(data).decode()
+
+    # call DAL to create workspace from file
+    dal_client = get_dal_client()
+    watchlist_id = await dal_client.create_watchlist_from_file(
+        b64data=b64data, content_type=content_type, name=name, user_id=user_id, jwt=jwt
+    )
+
+    return watchlist_id
+
+
 class UploadHandler:
     def __init__(
         self,
@@ -114,12 +130,14 @@ class UploadHandler:
         db: AsyncDB,
         agent_id: Optional[str] = None,
         send_chat_updates: bool = False,
+        jwt: Optional[str] = None,
     ) -> None:
         self.user_id = user_id
         self.upload = upload
         self.agent_id = agent_id
         self.send_chat_updates = send_chat_updates
         self.db = db
+        self.jwt = jwt
 
     async def _read_upload_bytes(self) -> bytes:
         raw_bytes = await self.upload.read(self.upload.size if self.upload.size is not None else 0)
@@ -144,7 +162,10 @@ class UploadHandler:
                         UploadType.PORTFOLIO,
                         "This looks to be a portfolio holdings file, let me import that...",
                     )
-                # TODO WC-731: return watchlist type here
+                return (
+                    UploadType.WATCHLIST,
+                    "This looks to be a watchlist file, let me import that...",
+                )
         except Exception:
             logger.exception(
                 f"Error while parsing upload '{self.upload.filename}' for {self.user_id=}"
@@ -167,14 +188,16 @@ class UploadHandler:
                         self.upload.content_type if self.upload.content_type else "text/csv"
                     ),
                 )
+
+                if not workspace_id or not strategy_id:
+                    raise Exception(
+                        f"Invalid workspace or strategy ID {workspace_id=} {strategy_id=}"
+                    )
             except Exception:
                 logger.exception(f"Failed to create portfolio for {self.user_id}")
                 return UploadResult(
                     message="Sorry, I ran into some issues while importing this portfolio."
                 )
-
-            if not workspace_id or not strategy_id:
-                return UploadResult()
 
             return UploadResult(
                 message="Based on this file, I've created a portfolio for you"
@@ -182,7 +205,34 @@ class UploadHandler:
                 + f" holding{'s' if latest_holding_count != 1 else ''}."
             )
 
-        return UploadResult()
+        if upload_type == UploadType.WATCHLIST:
+            data = await self._read_upload_bytes()
+            try:
+
+                watchlist_id = await create_watchlist_from_bytes(
+                    data,
+                    self.upload.filename,
+                    content_type=(
+                        self.upload.content_type if self.upload.content_type else "text/csv"
+                    ),
+                    user_id=self.user_id,
+                    jwt=self.jwt,
+                )
+
+                if not watchlist_id:
+                    raise Exception("Invalid watchlist ID")
+
+                logger.info(f"Created watchlist '{self.upload.filename}' for {self.user_id=}")
+
+            except Exception:
+                logger.exception(f"Failed to create watchlist for {self.user_id}")
+                return UploadResult(
+                    message="Sorry, I ran into issues while importing this watchlist."
+                )
+
+            return UploadResult(
+                message=f"Based on this file, I've created a watchlist for you named '{self.upload.filename}'."
+            )
 
     @async_perf_logger
     async def handle_upload(self) -> UploadResult:

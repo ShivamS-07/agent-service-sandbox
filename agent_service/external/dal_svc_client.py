@@ -62,7 +62,11 @@ class DALServiceClient:
         self.url_base = get_base_url()
         self.session = aiohttp.ClientSession()
 
-    async def _post(self, endpoint: str, body: dict) -> aiohttp.ClientResponse:
+    async def _post(
+        self, endpoint: str, body: dict, headers: Optional[dict] = None
+    ) -> aiohttp.ClientResponse:
+        if headers:
+            return await self.session.post(self.url_base + endpoint, json=body, headers=headers)
         return await self.session.post(self.url_base + endpoint, json=body)
 
     async def parse_file(self, b64data: str, content_type: str) -> ParsePortfolioWorkspaceResponse:
@@ -165,6 +169,47 @@ class DALServiceClient:
         sorted_trades = sorted(trades_metadata, key=lambda x: x.trade_date, reverse=True)
 
         return sorted_trades
+
+    async def create_watchlist_from_file(
+        self, b64data: str, content_type: str, name: str, user_id: str, jwt: Optional[str]
+    ) -> Optional[str]:
+        """
+        Creates a watchlist from base 64 encoded file data. Returns the watchlist ID.
+        """
+
+        headers = {
+            "User-Id": user_id,
+        }
+
+        if jwt:
+            headers["Authorization"] = f"Cognito {jwt}"
+
+        response: aiohttp.ClientResponse = await self._post(
+            "/api/v0/watchlist/create_watchlist_from_file/",
+            {
+                "file_bytes_base64": b64data,
+                "content_type": content_type,
+                "name": name,
+            },
+            headers=headers,
+        )
+
+        if response.content_type != "application/json":
+            raw_text = await response.text()
+            logger.warn(f"DAL create_watchlist_from_file unexpected response {raw_text}")
+            raise Exception(
+                f"DAL create_watchlist_from_file response type was not JSON, instead it was {response.content_type}"
+            )
+
+        response_content: Dict[str, Any] = await response.json()
+
+        if response.status != 200:
+            logger.warn(
+                f"Failed to create watchlist from file from DAL: "
+                f"{response_content.get('message')} {response_content.get('detail')}"
+            )
+
+        return response_content.get("watchlist_id")
 
 
 def get_dal_client() -> DALServiceClient:
