@@ -104,12 +104,16 @@ async def extract_citations_from_gpt_output(
             new_text
         )  # advance the index so it points at the last character of text so far
         if anchor in anchor_citation_dict:
-            if not isinstance(anchor_citation_dict[anchor], list):
-                logger.warning(
-                    f"Skipping anchor due to problem with citation list: {anchor_citation_dict[anchor]}"
-                )
-                continue
-            for citation_json in anchor_citation_dict[anchor]:
+            citation_list = anchor_citation_dict[anchor]
+            if not isinstance(citation_list, list):
+                if isinstance(citation_list, dict):  # GPT probably forgot the list, just add it
+                    citation_list = [citation_list]
+                else:
+                    logger.warning(
+                        f"Skipping anchor due to problem with citation list: {anchor_citation_dict[anchor]}"
+                    )
+                    continue
+            for citation_json in citation_list:
                 if not isinstance(citation_json, dict) or "num" not in citation_json:
                     logger.warning(
                         f"Skipping citation due to problem with citation json: {citation_json}"
