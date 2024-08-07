@@ -99,7 +99,7 @@ class AsyncDB:
 
         sql = f"""
                 SELECT ao.plan_id::VARCHAR, ao.output_id::VARCHAR, ao.plan_run_id::VARCHAR,
-                    ao.output_id::VARCHAR, ao.is_intermediate,
+                    ao.output_id::VARCHAR, ao.is_intermediate, ao.live_plan_output,
                     ao.output, ao.created_at, pr.shared, pr.run_metadata
                 FROM agent.agent_outputs ao
                 LEFT JOIN agent.plan_runs pr
@@ -612,7 +612,7 @@ class AsyncDB:
         return rows[0]["automation_enabled"]
 
     async def set_latest_plan_for_automated_run(self, agent_id: str) -> None:
-        sql = """
+        set_automated_run_plan_sql = """
                 WITH latest_plan AS (
                     SELECT plan_id from agent.execution_plans where agent_id = %(agent_id)s
                     ORDER BY created_at DESC LIMIT 1
@@ -621,7 +621,18 @@ class AsyncDB:
                 SET automated_run = TRUE
                 WHERE plan_id IN (SELECT plan_id from latest_plan)
                 """
-        await self.pg.generic_write(sql, {"agent_id": agent_id})
+        await self.pg.generic_write(set_automated_run_plan_sql, {"agent_id": agent_id})
+
+        set_live_plan_outputs_sql = """
+        WITH latest_plan AS (
+                SELECT plan_id from agent.execution_plans where agent_id = %(agent_id)s
+                ORDER BY created_at DESC LIMIT 1
+        )
+        UPDATE agent.agent_outputs
+        SET live_plan_output = TRUE
+        WHERE plan_id in (SELECT plan_id from latest_plan)
+        """
+        await self.pg.generic_write(set_live_plan_outputs_sql, {"agent_id": agent_id})
 
     async def update_agent_schedule(self, agent_id: str, schedule: AgentSchedule) -> None:
         await self.pg.generic_update(

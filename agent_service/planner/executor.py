@@ -260,9 +260,13 @@ async def run_execution_plan(
                     db.write_tool_output(output=obj, context=context)
         else:
             # We have an output node
+            live_plan_output = False
+            if override_task_output_lookup and step.tool_task_id in override_task_output_lookup:
+                live_plan_output = True
             await publish_agent_output(
                 outputs=split_outputs,
                 output_ids=output_ids,
+                live_plan_output=live_plan_output,
                 context=context,
                 db=db,
             )

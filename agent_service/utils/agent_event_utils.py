@@ -113,6 +113,7 @@ async def publish_agent_output(
     outputs: List[IOType],
     context: PlanRunContext,
     output_ids: List[str],
+    live_plan_output: bool = False,
     is_intermediate: bool = False,
     db: Optional[Postgres] = None,
 ) -> None:
@@ -120,7 +121,9 @@ async def publish_agent_output(
         db = get_psql()
     rich_outputs = []
     for output, output_id in zip(outputs, output_ids):
-        db.write_agent_output(output=output, output_id=output_id, context=context)
+        db.write_agent_output(
+            output=output, output_id=output_id, context=context, live_plan_output=live_plan_output
+        )
         rich_output = await get_output_from_io_type(output, pg=SyncBoostedPG())
         rich_outputs.append((rich_output, output_id))
     now = get_now_utc()
@@ -137,6 +140,7 @@ async def publish_agent_output(
                     is_intermediate=is_intermediate,
                     created_at=now,
                     shared=False,
+                    live_plan_output=live_plan_output,
                 )
                 for (rich_output, output_id) in rich_outputs
             ]

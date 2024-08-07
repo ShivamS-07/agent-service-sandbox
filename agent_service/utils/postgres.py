@@ -318,14 +318,20 @@ class Postgres(PostgresBase):
         )
 
     def write_agent_output(
-        self, output: IOType, output_id: str, context: PlanRunContext, is_intermediate: bool = False
+        self,
+        output: IOType,
+        output_id: str,
+        context: PlanRunContext,
+        is_intermediate: bool = False,
+        live_plan_output: bool = False,
     ) -> None:
         sql = """
         INSERT INTO agent.agent_outputs
-          (output_id, agent_id, plan_id, plan_run_id, output, is_intermediate)
+          (output_id, agent_id, plan_id, plan_run_id, output, is_intermediate, live_plan_output)
         VALUES
           (
-             %(output_id)s, %(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(output)s, %(is_intermediate)s
+             %(output_id)s, %(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(output)s, %(is_intermediate)s,
+             %(live_plan_output)s
           )
         """
         self.generic_write(
@@ -337,6 +343,7 @@ class Postgres(PostgresBase):
                 "plan_run_id": context.plan_run_id,
                 "output": dump_io_type(output),
                 "is_intermediate": is_intermediate,
+                "live_plan_output": live_plan_output,
             },
         )
 

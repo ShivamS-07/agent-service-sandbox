@@ -276,6 +276,7 @@ class AgentOutput(BaseModel):
     shared: bool = False
     # metadata from the run, currently only populated by certain db functions
     run_metadata: Optional[RunMetadata] = None
+    live_plan_output: bool = False
 
 
 class GetAgentOutputResponse(BaseModel):
