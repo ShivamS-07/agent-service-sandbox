@@ -41,6 +41,7 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.iterables import chunk
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -386,74 +387,111 @@ async def get_statistic_data(
         f"{start_date=}, {end_date=}"
     )
 
-    # TODO: is there a better way to get this across the wire? send as raw bytes?
-    result: GetFeatureDataResponse = await get_feature_data(
-        user_id=context.user_id,
-        statistic_ids=[statistic_id.stat_id],
-        stock_ids=gbi_ids,
-        from_date=start_date,
-        to_date=end_date,
-        ffill_days=ffill_days_val,
-        use_natural_axis=use_natural_axis,
-    )
-
-    # make the dataframe with index = dates, columns = stock ids
-    # or columns = statistic id (for global features)
-    # since we are requesting data for a single statistic_id, we can do a simple check
-    # and slice out the relevant data
-    security_data = None
-    global_data = None
-    data_time_axis = None
-    for sec_data in result.security_data:
-        np_cube = NumpyCube.initialize_from_proto_bytes(sec_data.data_cube, cols_are_dates=False)
-        if statistic_id.stat_id in np_cube.row_map:
-            is_global = False
-            data_time_axis = sec_data.time_axis
-            security_data = np_cube
-            break
-    for gl_data in result.global_data:
-        np_sheet = NumpySheet.initialize_from_proto_bytes(gl_data.data_sheet, cols_are_dates=False)
-        if statistic_id.stat_id in np_sheet.row_map:
-            is_global = True
-            data_time_axis = gl_data.time_axis
-            global_data = np_sheet
-            break
-    assert data_time_axis is not None
-    index_name = "Date"
-    index_type = TableColumnType.DATE
-    prefer_graph_type = GraphType.LINE
-    if data_time_axis != TimeAxis.TIME_AXIS_DATE:
-        index_name = "Period"
-        index_type = TableColumnType.QUARTER
-        prefer_graph_type = GraphType.BAR
-
-    if is_global:
-        assert global_data is not None
-        data = global_data.np_data[global_data.row_map[statistic_id.stat_id], :]
-        df = pd.DataFrame(
-            data,
-            index=(
-                global_data.columns
-                if index_type == TableColumnType.QUARTER
-                else pd.to_datetime(global_data.columns)
-            ),
-            columns=[statistic_id.stat_name],
-        )
+    # first, determine the currency to use instead of leaving to the service to
+    # infer for each chunk.
+    db = get_psql()
+    sql = """
+        SELECT ms.currency, count(1) as frequency
+        FROM master_security ms
+        WHERE gbi_security_id = ANY(%s)
+        GROUP BY currency
+        ORDER BY frequency DESC
+    """
+    requested_stock_currency_frequencies = db.generic_read(sql, [gbi_ids])
+    if len(requested_stock_currency_frequencies) > 0:
+        use_currency = requested_stock_currency_frequencies[0]["currency"]
     else:
-        assert security_data is not None
-        if not stock_ids:
-            raise ValueError("No stocks given to look up statistic for.")
-        # dims are (feats, dates, secs) -> (dates, secs)
-        data = security_data.np_data[security_data.row_map[statistic_id.stat_id], :, :]
-        df = pd.DataFrame(
-            data,
-            index=(
-                security_data.columns
-                if index_type == TableColumnType.QUARTER
-                else pd.to_datetime(security_data.columns)
-            ),
-            columns=[int(s) for s in security_data.fields],
+        use_currency = "USD"
+
+    # TODO: is there a better way to get this across the wire? send as raw bytes?
+    # Arbitrary chunk size of 300 - feel free to adjust as needed.
+    # Generally, feature service is capable of easily returning data for 300 stocks
+    # over large time ranges in seconds.
+    df_chunks: List[pd.DataFrame] = []
+    # make sure at least one chunk is sent - empty gbiid list is allowed for global
+    # macro series.
+    gbi_id_chunks = list(chunk(gbi_ids, n=300)) or [[]]
+    for chunk_i, gbi_id_chunk in enumerate(gbi_id_chunks):
+        logger.info(f"Fetching {statistic_id=} for {chunk_i + 1} / {len(gbi_id_chunks)} chunks.")
+        result: GetFeatureDataResponse = await get_feature_data(
+            user_id=context.user_id,
+            statistic_ids=[statistic_id.stat_id],
+            stock_ids=gbi_id_chunk,
+            from_date=start_date,
+            to_date=end_date,
+            ffill_days=ffill_days_val,
+            use_natural_axis=use_natural_axis,
+            target_currency=use_currency,
         )
+
+        # make the dataframe with index = dates, columns = stock ids
+        # or columns = statistic id (for global features)
+        # since we are requesting data for a single statistic_id, we can do a simple check
+        # and slice out the relevant data
+        security_data = None
+        global_data = None
+        data_time_axis = None
+        for sec_data in result.security_data:
+            np_cube = NumpyCube.initialize_from_proto_bytes(
+                sec_data.data_cube, cols_are_dates=False
+            )
+            if statistic_id.stat_id in np_cube.row_map:
+                is_global = False
+                data_time_axis = sec_data.time_axis
+                security_data = np_cube
+                break
+        for gl_data in result.global_data:
+            np_sheet = NumpySheet.initialize_from_proto_bytes(
+                gl_data.data_sheet, cols_are_dates=False
+            )
+            if statistic_id.stat_id in np_sheet.row_map:
+                is_global = True
+                data_time_axis = gl_data.time_axis
+                global_data = np_sheet
+                break
+        assert data_time_axis is not None
+        index_name = "Date"
+        index_type = TableColumnType.DATE
+        prefer_graph_type = GraphType.LINE
+        if data_time_axis != TimeAxis.TIME_AXIS_DATE:
+            index_name = "Period"
+            index_type = TableColumnType.QUARTER
+            prefer_graph_type = GraphType.BAR
+
+        if is_global:
+            assert global_data is not None
+            data = global_data.np_data[global_data.row_map[statistic_id.stat_id], :]
+            df_chunk = pd.DataFrame(
+                data,
+                index=(
+                    global_data.columns
+                    if index_type == TableColumnType.QUARTER
+                    else pd.to_datetime(global_data.columns)
+                ),
+                columns=[statistic_id.stat_name],
+            )
+        else:
+            assert security_data is not None
+            if not stock_ids:
+                raise ValueError("No stocks given to look up statistic for.")
+            # dims are (feats, dates, secs) -> (dates, secs)
+            data = security_data.np_data[security_data.row_map[statistic_id.stat_id], :, :]
+            df_chunk = pd.DataFrame(
+                data,
+                index=(
+                    security_data.columns
+                    if index_type == TableColumnType.QUARTER
+                    else pd.to_datetime(security_data.columns)
+                ),
+                columns=[int(s) for s in security_data.fields],
+            )
+        df_chunks.append(df_chunk)
+
+    # at this point, the dataframe has index = dates, columns = features(global) or stocks(nonglobal)
+    # concatenate the chunks along the columns
+    # here, lets assert we got at least one dataframe back before concatenating chunks.
+    assert len(df_chunks) > 0
+    df = pd.concat(df_chunks, axis=1)
     df = df.replace(0, np.nan).dropna(axis="index", how="all")
 
     # wrangle units
