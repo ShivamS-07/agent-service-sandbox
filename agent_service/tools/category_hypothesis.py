@@ -735,7 +735,7 @@ Here is the text:
 
     all_tasks = news_tasks + earnings_tasks + filings_tasks
     all_objects = news_devs_with_text + earnings_points_with_text + sec_filings_sections_with_text
-    results: List[str] = await gather_with_concurrency(tasks=all_tasks, n=min(50, len(all_tasks)))
+    results: List[str] = await gather_with_concurrency(tasks=all_tasks, n=min(300, len(all_tasks)))
 
     # Divide results
     category_to_mixed_topics: Dict[int, MixedTopics] = defaultdict(MixedTopics)
