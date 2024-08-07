@@ -13,6 +13,7 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.cache_utils import PostgresCacheBackend
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import get_psql
@@ -92,6 +93,7 @@ GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT = Prompt(
 )
 
 DEFAULT_CATEGORY_LIMIT = 7
+CATEGORY_CACHE_TTL = 10 * 365 * 24 * 60 * 60  # 10 years
 
 
 @io_type
@@ -157,6 +159,12 @@ class CategoriesForStockInput(ToolArgs):
     limit: Optional[int] = None
 
 
+# Cache on plan ID
+def category_cache_key_fn(tool_name: str, args: ToolArgs, context: PlanRunContext) -> str:
+    args_str = args.model_dump_json(serialize_as_any=True)
+    return f"{tool_name}-{args_str}-{context.plan_id}"
+
+
 @tool(
     description=f"""
     This function returns a list of success criteria that would be useful in doing a market analysis. \
@@ -179,6 +187,10 @@ class CategoriesForStockInput(ToolArgs):
     """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
+    use_cache=True,
+    cache_key_fn=category_cache_key_fn,
+    cache_ttl=CATEGORY_CACHE_TTL,
+    cache_backend=PostgresCacheBackend(),
 )
 async def get_success_criteria(
     args: CategoriesForStockInput, context: PlanRunContext
