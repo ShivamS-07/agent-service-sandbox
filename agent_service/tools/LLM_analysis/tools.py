@@ -203,7 +203,6 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
             COMPARISON_MAIN_PROMPT.template,
             COMPARISON_SYS_PROMPT.template,
             chat_str,
-            group2_str,
             extra_data_str,
         ],
     )
