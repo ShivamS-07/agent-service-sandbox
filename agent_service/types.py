@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from agent_service.io_type_utils import IOType
+from agent_service.io_type_utils import IOType  # type: ignore
 from agent_service.utils.date_utils import get_now_utc
 
 GPT_USER_TAG = "Client"

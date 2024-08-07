@@ -7,6 +7,7 @@ from uuid import uuid4
 from prefect.client.schemas.objects import StateType
 from pydantic import BaseModel, Field
 
+from agent_service.io_types.citations import CitationDetailsType
 from agent_service.io_types.graph import GraphOutput
 from agent_service.io_types.table import TableOutput
 from agent_service.io_types.text import TextOutput
@@ -290,6 +291,13 @@ class GetAgentOutputResponse(BaseModel):
 class GetPlanRunOutputResponse(BaseModel):
     outputs: List[AgentOutput]
     agent_name: str
+
+
+####################################################################################################
+# Citation Details
+####################################################################################################
+class GetCitationDetailsResponse(BaseModel):
+    details: Optional[CitationDetailsType]
 
 
 ####################################################################################################

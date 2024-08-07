@@ -16,7 +16,7 @@ class Variable:
 
 # Represents a tool's arguments that have had the literals resolved. Variable
 # arguments cannot be resolved until the execution plan is run.
-PartialToolArgs = Dict[str, Union[Variable, IOType, List[Union[Variable, IOType]]]]
+PartialToolArgs = Dict[str, Union[Variable, IOType, List[Union[Variable, IOType]]]]  # type: ignore
 
 
 @dataclass(frozen=True)

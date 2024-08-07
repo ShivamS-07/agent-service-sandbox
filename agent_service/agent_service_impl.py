@@ -65,6 +65,7 @@ from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
 from agent_service.external.user_svc_client import get_users, update_user
 from agent_service.io_type_utils import load_io_type
+from agent_service.io_types.citations import CitationDetailsType, CitationType
 from agent_service.types import ChatContext, MemoryType, Message
 from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import send_chat_message
@@ -401,6 +402,19 @@ class AgentServiceImpl:
             return GetAgentOutputResponse(outputs=final_outputs)
 
         return GetAgentOutputResponse(outputs=outputs)
+
+    async def get_citation_details(
+        self, citation_type: CitationType, citation_id: str
+    ) -> Optional[CitationDetailsType]:
+        if isinstance(citation_type, str):
+            # Just to be safe
+            citation_type = CitationType(citation_type)
+
+        citation_class = citation_type.to_citation_class()
+        citation_details = await citation_class.get_citation_details(
+            citation_id=citation_id, db=self.pg.pg
+        )
+        return citation_details
 
     async def stream_agent_events(
         self, request: Request, agent_id: str

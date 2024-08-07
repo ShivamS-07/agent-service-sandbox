@@ -37,6 +37,7 @@ from agent_service.io_types.citations import (
     CompanyFilingCitationOutput,
     CustomDocumentCitationOutput,
     DocumentCitationOutput,
+    EarningsSummaryCitationOutput,
     NewsArticleCitationOutput,
     NewsDevelopmentCitationOutput,
     TextCitationOutput,
@@ -328,7 +329,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
         rows = await db.generic_read(sql, params)
         return [
             NewsDevelopmentCitationOutput(
-                id=row["topic_id"],
+                internal_id=row["topic_id"],
                 name=row["topic_label"],
                 summary=row["summary"],
                 last_updated_at=row["updated_at"],
@@ -386,7 +387,7 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
         rows = await db.generic_read(sql, params)
         return [
             NewsArticleCitationOutput(
-                id=row["news_id"],
+                internal_id=row["news_id"],
                 name=row["domain_url"],
                 link=row["url"],
                 summary=row["headline"],
@@ -430,7 +431,7 @@ class NewsPoolArticleText(NewsText):
         rows = await db.generic_read(sql, params)
         return [
             NewsArticleCitationOutput(
-                id=row["news_id"],
+                internal_id=row["news_id"],
                 name=row["domain_url"],
                 link=row["url"],
                 summary=row["headline"],
@@ -493,7 +494,7 @@ class CustomDocumentSummaryText(StockText):
                 chunk_cit = text_id_map.get(chunk_info.chunk_id)
                 output_citations.append(
                     CustomDocumentCitationOutput(
-                        id=chunk_id,
+                        internal_id=chunk_id,
                         name=f"User Document: {citation_name}",
                         last_updated_at=chunk_info.upload_time.ToDatetime(),
                         custom_doc_id=chunk_info.file_id,
@@ -551,7 +552,7 @@ class ThemeText(Text):
         rows = await db.generic_read(sql, {"theme_id": [text.source_text.id for text in texts]})
         return [
             ThemeCitationOutput(
-                id=row["theme_id"],
+                internal_id=row["theme_id"],
                 name="Theme: " + row["name"],
                 summary=row["theme_description"],
                 last_updated_at=row["last_modified"],
@@ -594,7 +595,7 @@ class ThemeNewsDevelopmentText(NewsText):
         )
         return [
             NewsDevelopmentCitationOutput(
-                id=row["development_id"],
+                internal_id=row["development_id"],
                 name="News Development: " + row["label"],
                 summary=row["description"],
                 last_updated_at=row["development_time"],
@@ -639,7 +640,7 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
         rows = await db.generic_read(sql, params)
         return [
             NewsArticleCitationOutput(
-                id=row["news_id"],
+                internal_id=row["news_id"],
                 name=row["domain_url"],
                 link=row["url"],
                 summary=row["headline"],
@@ -653,7 +654,7 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
 # Parent class that is not intended to be used on its own, should always use one of the child classes
 @io_type
 class StockEarningsText(StockText):
-    id: str
+    id: str  # summary ID
     year: Optional[int] = None
     quarter: Optional[int] = None
 
@@ -710,7 +711,8 @@ class StockEarningsSummaryText(StockEarningsText):
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
             output.append(
-                DocumentCitationOutput(
+                EarningsSummaryCitationOutput(
+                    internal_id=str(text.source_text.id),
                     name=text.source_text.to_citation_title(),  # type: ignore
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
@@ -759,6 +761,7 @@ class StockEarningsTranscriptText(StockEarningsText):
                 )
             output.append(
                 DocumentCitationOutput(
+                    internal_id=str(text.source_text.id),
                     name=text.source_text.text_type,
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
@@ -1051,6 +1054,7 @@ class StockSecFilingText(StockText):
                 name = f"{stock.symbol or stock.company_name} {name}"
             output.append(
                 CompanyFilingCitationOutput(
+                    internal_id=str(text.source_text.id),
                     name=name,
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
@@ -1150,6 +1154,7 @@ class StockSecFilingSectionText(StockText):
                 name = f"{stock.symbol or stock.company_name} {name}"
             output.append(
                 CompanyFilingCitationOutput(
+                    internal_id=str(cit.source_text.id),
                     name=name,
                     summary=cit.citation_snippet_context,
                     snippet_highlight_start=hl_start,
@@ -1225,6 +1230,7 @@ class StockOtherSecFilingText(StockText):
                 )
             output.append(
                 CompanyFilingCitationOutput(
+                    internal_id=str(text.source_text.id),
                     name=text.source_text.text_type,
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
@@ -1250,7 +1256,7 @@ class KPIText(Text):
             text = cast(Self, cit.source_text)
             output.append(
                 TextCitationOutput(
-                    id=str(text.id),
+                    internal_id=str(text.id),
                     name=text.val,
                     summary=text.explanation,
                 )

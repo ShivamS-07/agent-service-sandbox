@@ -53,6 +53,7 @@ from agent_service.endpoints.models import (
     GetAutocompleteItemsRequest,
     GetAutocompleteItemsResponse,
     GetChatHistoryResponse,
+    GetCitationDetailsResponse,
     GetMemoryContentResponse,
     GetSecureUserResponse,
     GetTeamAccountsResponse,
@@ -84,6 +85,7 @@ from agent_service.endpoints.models import (
 )
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.GPT.requests import _get_gpt_service_stub
+from agent_service.io_types.citations import CitationType
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.clickhouse import Clickhouse
@@ -523,6 +525,20 @@ async def get_agent_plan_output(
     return await application.state.agent_service_impl.get_agent_plan_output(
         agent_id=agent_id, plan_run_id=plan_run_id
     )
+
+
+@router.get(
+    "/agent/get-citation-details/{citation_type}/{citation_id}",
+    response_model=GetCitationDetailsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_citation_details(
+    citation_type: CitationType, citation_id: str, user: User = Depends(parse_header)
+) -> GetCitationDetailsResponse:
+    details = await application.state.agent_service_impl.get_citation_details(
+        citation_type=citation_type, citation_id=citation_id
+    )
+    return GetCitationDetailsResponse(details=details)
 
 
 @router.get(
