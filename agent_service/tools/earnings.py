@@ -83,9 +83,15 @@ async def _get_earnings_summary_helper(
     stock_ids: List[StockID],
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
+    allow_simple_generated_earnings: bool = False,
 ) -> Dict[StockID, List[StockEarningsText]]:
     db = get_psql()
-    earning_summary_sql = """SELECT DISTINCT ON (gbi_id, year, quarter)
+    if allow_simple_generated_earnings:
+        simple_generation_clause = "AND fully_generated = TRUE"
+    else:
+        simple_generation_clause = ""
+
+    earning_summary_sql = f"""SELECT DISTINCT ON (gbi_id, year, quarter)
     summary_id::TEXT,
     summary,
     gbi_id,
@@ -98,6 +104,7 @@ async def _get_earnings_summary_helper(
     WHERE
         gbi_id = ANY(%(gbi_ids)s)
         AND (status_msg = 'COMPLETE' OR status_msg IS NULL)
+        {simple_generation_clause}
     ORDER BY
         gbi_id,
         year,
@@ -375,7 +382,7 @@ async def get_earnings_call_summaries(
         end_date = None
 
     topic_lookup = await _get_earnings_summary_helper(
-        context.user_id, args.stock_ids, start_date, end_date
+        context.user_id, args.stock_ids, start_date, end_date, True
     )
     output: List[StockEarningsText] = []
     for topic_list in topic_lookup.values():
