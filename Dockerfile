@@ -6,6 +6,7 @@ RUN pip install pipenv==2022.3.28
 WORKDIR /service
 COPY Pipfile.lock Pipfile ./
 RUN pipenv install
+RUN pipenv run pip install "clickhouse-connect==0.7.18"
 COPY agent_service/ ./agent_service
 COPY application.py .
 COPY no_auth_endpoints.py .

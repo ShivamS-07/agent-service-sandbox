@@ -6,8 +6,19 @@ from collections import OrderedDict
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-from gbi_common_py_utils.utils.clickhouse_base import ClickhouseBase
-from gbi_common_py_utils.utils.environment import PROD_TAG
+import backoff
+import clickhouse_connect
+from clickhouse_connect.driver.asyncclient import AsyncClient
+from clickhouse_connect.driver.query import QueryResult
+from gbi_common_py_utils.utils.clickhouse_base import (
+    ClickhouseBase,
+    ClickhouseConnectionConfig,
+    get_clickhouse_connection_config,
+)
+from gbi_common_py_utils.utils.environment import (
+    PROD_TAG,
+    get_non_local_environment_tag,
+)
 
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
@@ -23,6 +34,55 @@ class VisAlphaDataset(Enum):
 def get_short_service_version(service_version: str) -> str:
     index = service_version.find(":") + 1
     return service_version[index:]
+
+
+@backoff.on_exception(
+    backoff.expo,
+    (
+        clickhouse_connect.driver.exceptions.OperationalError,
+        clickhouse_connect.driver.exceptions.InternalError,
+        clickhouse_connect.driver.exceptions.DatabaseError,
+        ValueError,
+    ),
+    max_tries=5,
+    jitter=backoff.full_jitter,
+)
+async def get_client(clickhouse_connection_config: ClickhouseConnectionConfig) -> AsyncClient:
+    return await clickhouse_connect.get_async_client(**clickhouse_connection_config._asdict())
+
+
+class AsyncClickhouseBase:
+    def __init__(
+        self,
+        environment: Optional[str] = None,
+        clickhouse_connection_config: Optional[ClickhouseConnectionConfig] = None,
+    ):
+        self.environment = (
+            environment.lower() if environment else get_non_local_environment_tag().lower()
+        )
+        self.clickhouse_connection_config: ClickhouseConnectionConfig = (
+            get_clickhouse_connection_config(
+                environment=self.environment,
+                clickhouse_connection_config=clickhouse_connection_config,
+            )
+        )
+
+    async def generic_read(
+        self, sql: str, params: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        # This is a very simplistic thing to do, for now hopefully should be ok
+        client = await get_client(self.clickhouse_connection_config)
+        query_result: QueryResult = await client.query(sql, parameters=params)
+        column_names = query_result.column_names
+        result_rows = query_result.result_rows
+        result = []
+        for row in result_rows:
+            to_add = {}
+            for i, column_name in enumerate(column_names):
+                to_add[column_name] = row[i]
+            result.append(to_add)
+
+        return result
 
 
 class Clickhouse(ClickhouseBase):

@@ -72,6 +72,9 @@ class Text(ComplexIOBase):
             return self.id == other.id
         return False
 
+    def to_citation_title(self) -> str:
+        return self.text_type
+
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         # Get the citations for the current Text object, as well as any
         # citations from "child" (input) texts.
@@ -276,6 +279,14 @@ class NewsText(Text):
 class StockText(Text):
     # stock_id is mandatory, or else no output will be yielded.
     stock_id: Optional[StockID] = None
+
+    def to_citation_title(self) -> str:
+        title = super().to_citation_title()
+        if self.stock_id:
+            stock_name = self.stock_id.symbol or self.stock_id.company_name
+            title = f"{stock_name} {title}"
+
+        return title
 
 
 @io_type
@@ -663,9 +674,12 @@ class StockEarningsText(StockText):
         if self.stock_id:
             parts.append(self.stock_id.symbol or self.stock_id.company_name)
             parts.append(" ")
-        parts.append("Earnings Call Summary")
+        parts.append(self.text_type)
         if self.year and self.quarter:
             parts.append(f" (Q{self.quarter} {self.year})")
+        elif self.timestamp:
+            ts_str = self.timestamp.strftime("%Y-%m-%d")
+            parts.append(f" ({ts_str})")
         return "".join(parts)
 
 
@@ -713,7 +727,7 @@ class StockEarningsSummaryText(StockEarningsText):
             output.append(
                 EarningsSummaryCitationOutput(
                     internal_id=str(text.source_text.id),
-                    name=text.source_text.to_citation_title(),  # type: ignore
+                    name=text.source_text.to_citation_title(),
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
@@ -762,7 +776,7 @@ class StockEarningsTranscriptText(StockEarningsText):
             output.append(
                 DocumentCitationOutput(
                     internal_id=str(text.source_text.id),
-                    name=text.source_text.text_type,
+                    name=text.source_text.to_citation_title(),
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
@@ -998,13 +1012,9 @@ class StockDescriptionText(StockText):
                 hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
-            name = text.source_text.text_type
-            if text.source_text.stock_id:
-                stock = text.source_text.stock_id
-                name = f"{stock.symbol or stock.company_name} Company Description"
             output.append(
                 DocumentCitationOutput(
-                    name=name,
+                    name=text.source_text.to_citation_title(),
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
@@ -1040,10 +1050,9 @@ class StockSecFilingText(StockText):
     """
 
     id: str
-
     text_type: ClassVar[str] = "SEC Filing"
-
     db_id: Optional[str] = None
+    form_type: Optional[str] = None
 
     @classmethod
     async def _get_strs_lookup(
@@ -1078,14 +1087,11 @@ class StockSecFilingText(StockText):
                 hl_start, hl_end = CompanyFilingCitationOutput.get_offsets_from_snippets(
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
-            name = text.source_text.text_type
-            if text.source_text.stock_id:
-                stock = text.source_text.stock_id
-                name = f"{stock.symbol or stock.company_name} {name}"
+            form_type = f" ({text.source_text.form_type})" if text.source_text.form_type else ""  # type: ignore
             output.append(
                 CompanyFilingCitationOutput(
-                    internal_id=str(text.source_text.id),
-                    name=name,
+                    internal_id=str(text.source_text.db_id or text.source_text.id),  # type: ignore
+                    name=text.source_text.to_citation_title() + form_type,
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
@@ -1110,6 +1116,7 @@ class StockSecFilingSectionText(StockText):
     filing_id: str
     header: str
     db_id: Optional[str] = None
+    form_type: Optional[str] = None
 
     @classmethod
     async def init_from_filings(
@@ -1147,7 +1154,10 @@ class StockSecFilingSectionText(StockText):
         for section in sections:
             if section.filing_id not in filing_text_objs:
                 filing_text_objs[section.filing_id] = StockSecFilingText(
-                    id=section.filing_id, stock_id=section.stock_id, db_id=section.db_id
+                    id=section.filing_id,
+                    stock_id=section.stock_id,
+                    db_id=section.db_id,
+                    timestamp=section.timestamp,
                 )
 
             # same header, multiple sections (across stocks)
@@ -1183,14 +1193,11 @@ class StockSecFilingSectionText(StockText):
                 hl_start, hl_end = CompanyFilingCitationOutput.get_offsets_from_snippets(
                     smaller_snippet=cit.citation_snippet, context=cit.citation_snippet_context
                 )
-            name = cit.source_text.text_type
-            if cit.source_text.stock_id:
-                stock = cit.source_text.stock_id
-                name = f"{stock.symbol or stock.company_name} {name}"
+            form_type = f" ({cit.source_text.form_type})" if cit.source_text.form_type else ""  # type: ignore
             output.append(
                 CompanyFilingCitationOutput(
-                    internal_id=str(cit.source_text.id),
-                    name=name,
+                    internal_id=str(cit.source_text.db_id or cit.source_text.id),  # type: ignore
+                    name=cit.source_text.to_citation_title() + form_type,
                     summary=cit.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
@@ -1215,10 +1222,9 @@ class StockOtherSecFilingText(StockText):
     """
 
     id: str  # SEC filing info
-
     text_type: ClassVar[str] = "SEC Filing"
-
     db_id: Optional[str] = None
+    form_type: Optional[str] = None
 
     @classmethod
     async def _get_strs_lookup(
@@ -1263,10 +1269,11 @@ class StockOtherSecFilingText(StockText):
                 hl_start, hl_end = CompanyFilingCitationOutput.get_offsets_from_snippets(
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
+            form_type = f" ({text.source_text.form_type})" if text.source_text.form_type else ""  # type: ignore
             output.append(
                 CompanyFilingCitationOutput(
-                    internal_id=str(text.source_text.id),
-                    name=text.source_text.text_type,
+                    internal_id=str(text.source_text.db_id or text.source_text.id),  # type: ignore
+                    name=text.source_text.to_citation_title() + form_type,
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,

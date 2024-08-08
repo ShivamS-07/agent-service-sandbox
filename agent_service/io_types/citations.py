@@ -7,6 +7,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.sec.sec_api import SecFiling
 
 
 class CitationType(str, enum.Enum):
@@ -40,8 +41,6 @@ class CitationType(str, enum.Enum):
 
 CitationID = str
 
-NUM_TOP_ARTICLES = 8
-
 
 class CitationDetails(BaseModel):
     citation_id: CitationID
@@ -51,7 +50,6 @@ class CitationDetails(BaseModel):
 
 class RawTextCitationDetails(CitationDetails):
     raw_text: str
-    highlighted_text: Optional[str] = None
 
 
 class NewsDevelopmentCitationDetails(CitationDetails):
@@ -64,7 +62,7 @@ class NewsDevelopmentCitationDetails(CitationDetails):
     num_articles: int
     last_updated: datetime.datetime
     summary: Optional[str] = None
-    top_articles: List[ArticleInfo] = Field(default_factory=list)
+    articles: List[ArticleInfo] = Field(default_factory=list)
 
 
 CitationDetailsType = Union[RawTextCitationDetails, NewsDevelopmentCitationDetails, CitationDetails]
@@ -134,7 +132,21 @@ class CompanyFilingCitationOutput(DocumentCitationOutput):
     async def get_citation_details(
         cls, citation_id: str, db: BoostedPG
     ) -> Optional[RawTextCitationDetails]:
-        pass
+        from agent_service.io_types.stock import StockID
+
+        result = await SecFiling.get_filing_data_async(db_ids=[citation_id])
+        if not result:
+            return None
+        sec_data = result[citation_id]
+        stock = (await StockID.from_gbi_id_list([sec_data.gbi_id]))[0]
+        filed_at_str = sec_data.filed_at.strftime("%Y-%m-%d")
+        title = f"{stock.company_name} - {sec_data.form_type} ({filed_at_str})"
+        return RawTextCitationDetails(
+            citation_id=citation_id,
+            citation_type=CitationType.COMPANY_FILING,
+            title=title,
+            raw_text=sec_data.content,
+        )
 
 
 class NewsDevelopmentCitationOutput(CitationOutput):
@@ -184,7 +196,6 @@ class NewsDevelopmentCitationOutput(CitationOutput):
         if not news_rows:
             return None
         last_updated = max((row["published_at"] for row in news_rows))
-        top_articles = news_rows[:NUM_TOP_ARTICLES]
 
         return NewsDevelopmentCitationDetails(
             title=rows[0]["title"],
@@ -193,9 +204,7 @@ class NewsDevelopmentCitationOutput(CitationOutput):
             citation_type=CitationType.NEWS_DEVELOPMENT,
             num_articles=len(news_rows),
             last_updated=last_updated,
-            top_articles=[
-                NewsDevelopmentCitationDetails.ArticleInfo(**row) for row in top_articles
-            ],
+            articles=[NewsDevelopmentCitationDetails.ArticleInfo(**row) for row in news_rows],
         )
 
 

@@ -10,7 +10,7 @@ import backoff
 from gbi_common_py_utils.utils.ssm import get_param
 from sec_api import ExtractorApi, MappingApi, QueryApi, RenderApi  # type: ignore
 
-from agent_service.utils.clickhouse import Clickhouse
+from agent_service.utils.clickhouse import AsyncClickhouseBase, Clickhouse
 from agent_service.utils.date_utils import get_now_utc, parse_date_str_in_utc
 from agent_service.utils.sec.constants import (
     CIK,
@@ -219,6 +219,15 @@ class SecMapping:
             return None
         else:
             return result[0][CIK] if len(result) == 1 else None
+
+
+@dataclass(frozen=True)
+class SecFilingData:
+    db_id: str
+    gbi_id: int
+    form_type: str
+    filed_at: datetime.datetime
+    content: str
 
 
 class SecFiling:
@@ -555,6 +564,23 @@ class SecFiling:
         for tup in result.result_rows:
             filing_id = db_id_to_text_id[tup[0]]
             output[filing_id] = tup[1]
+
+        return output
+
+    @classmethod
+    async def get_filing_data_async(cls, db_ids: List[str]) -> Dict[str, SecFilingData]:
+        sql = """
+            SELECT id::TEXT AS db_id, content, gbi_id, formType AS form_type, filedAt AS filed_at
+            FROM sec.sec_filings
+            WHERE id IN %(db_ids)s
+        """
+        ch = AsyncClickhouseBase()
+        result = await ch.generic_read(sql, params={"db_ids": db_ids})
+
+        output = {}
+        for row in result:
+            filing_id = row["db_id"]
+            output[filing_id] = SecFilingData(**row)
 
         return output
 
