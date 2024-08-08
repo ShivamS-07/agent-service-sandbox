@@ -233,7 +233,6 @@ class TestStockIdentifierLookup8(TestStockIdentifierLookup):
         self.assertEqual(result.gbi_id, 389721)
 
 
-@unittest.skip("Too slow")
 class TestStockIdentifierLookup9(TestStockIdentifierLookup):
     async def test_stock_identifier_lookup_bloomberg(self):
         self.args = StockIdentifierLookupInput(stock_name="IBM US Equity")
@@ -251,6 +250,21 @@ class TestStockIdentifierLookup9(TestStockIdentifierLookup):
         self.args = StockIdentifierLookupInput(stock_name="6758 JP")
         result = await stock_identifier_lookup(self.args, self.context)
         self.assertEqual(result.gbi_id, 391887)  # sony
+
+
+class TestStockIdentifierLookupRIC_Yahoo(TestStockIdentifierLookup):
+    async def test_stock_identifier_lookup_ric_yahoo(self):
+        self.args = StockIdentifierLookupInput(stock_name="lnr.to")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.gbi_id, 6860)
+
+        self.args = StockIdentifierLookupInput(stock_name="ibm.l")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.gbi_id, 42154)
+
+        self.args = StockIdentifierLookupInput(stock_name="BTAF.F Equity")
+        result = await stock_identifier_lookup(self.args, self.context)
+        self.assertEqual(result.gbi_id, 41309)
 
 
 class TestStockUniverse1(IsolatedAsyncioTestCase):

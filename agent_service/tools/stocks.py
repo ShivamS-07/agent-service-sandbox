@@ -23,6 +23,7 @@ from agent_service.io_types.table import (
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.cache_utils import PostgresCacheBackend
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
@@ -700,6 +701,11 @@ async def stock_lookup_exact(
     if bloomberg_rows:
         logger.info("found bloomberg parsekey")
         return bloomberg_rows
+
+    ric_yahoo_rows = await stock_lookup_by_ric_yahoo_codes(args, context)
+    if ric_yahoo_rows:
+        logger.info("found RIC/Yahoo code")
+        return ric_yahoo_rows
 
     if is_isin(args.stock_name):
         isin_rows = await stock_lookup_by_isin(args, context)
@@ -1555,6 +1561,123 @@ async def stock_lookup_by_bloomberg_parsekey(
     return []
 
 
+async def stock_lookup_by_ric_yahoo_codes(
+    args: StockIdentifierLookupInput, context: PlanRunContext
+) -> List[Dict[str, Any]]:
+    """Returns the stocks with matching ticker and RIC/Yahoo exchange code
+    by mapping the exchange code to a country iso code and matching against our DB
+
+    Examples: "IBM.L", "LNR.TO"
+
+    Args:
+        args (StockIdentifierLookupInput): The input arguments for the stock lookup.
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        List of potential db matches
+    """
+    logger = get_prefect_logger(__name__)
+    db = AsyncPostgresBase()
+
+    search_term = args.stock_name
+    search_term = search_term.strip()
+
+    if "." not in search_term:
+        logger.info("not RIC/Yahoo format")
+        return []
+
+    # not really needed but just in case
+    if search_term.endswith("quity") or search_term.endswith("QUITY"):
+        search_term = search_term.replace(" Equity", "")
+        search_term = search_term.replace(" equity", "")
+        search_term = search_term.replace(" EQUITY", "")
+
+    search_term = search_term.strip()
+    search_terms = search_term.split(".")  # example: LNR.TO
+
+    MAX_TOKENS = 2
+    MAX_EXCH_CODE_LEN = 4
+    MAX_SYMBOL_LEN = 8
+
+    symbol = search_terms[0].upper()
+    exch_code = search_terms[-1]
+    if (
+        len(search_terms) != MAX_TOKENS
+        or len(exch_code) > MAX_EXCH_CODE_LEN
+        or len(symbol) > MAX_SYMBOL_LEN
+    ):
+        logger.info("not RIC/Yahoo format")
+        return []
+
+    # RIC has some upper and lower case versions
+    iso3 = ric_yahoo_exchange_to_country_iso3.get(exch_code.upper())
+
+    if not iso3:
+        iso3 = ric_yahoo_exchange_to_country_iso3.get(exch_code.lower())
+
+    if not iso3:
+        logger.info(
+            f"either '{args.stock_name}' just looked similar to a yahoo/RIC code"
+            f" or we are missing an exchange code mapping for: '{exch_code}'"
+        )
+        return []
+
+    logger.info(f"searching for {symbol=}  {iso3=}")
+
+    sql = """
+    -- ticker symbol + country (exact match only)
+    SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
+    ms.name, 'ticker symbol' as match_col, ms.symbol || ' ' || ms.security_region as match_text,
+    1.0 AS ws
+    FROM master_security ms
+    WHERE
+    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    AND ms.is_public
+    AND ms.to_z is null
+    AND ms.symbol = upper(%(symbol)s)
+    AND ms.security_region = upper(%(iso3)s)
+    """
+
+    rows = await db.generic_read(sql, {"symbol": symbol, "iso3": iso3})
+    if rows:
+        logger.info("found RIC/Yahoo code match")
+
+    # SPIQ stores some tickers in format XXXX.YY, so lets find those also just in case
+    sql2 = """
+    -- ticker symbol + country (exact match only)
+    SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
+    ms.name, 'ticker symbol' as match_col, ms.symbol as match_text,
+    1.0 AS ws
+    FROM master_security ms
+    WHERE
+    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    AND ms.is_public
+    AND ms.to_z is null
+    AND ms.symbol = upper(%(symbol)s)
+    """
+
+    symbol_dot_ex = symbol.upper() + "." + exch_code.upper()
+
+    logger.info(f"searching for {symbol_dot_ex=}")
+    rows2 = await db.generic_read(sql2, {"symbol": symbol_dot_ex})
+
+    if rows2:
+        logger.info("found SPIQ ticker XXXX.YY format match")
+
+    if not rows:
+        rows = []
+
+    if not rows2:
+        rows2 = []
+
+    all_rows = rows + rows2
+    if all_rows:
+        return all_rows
+
+    logger.info(f"Looks like a RIC/Yahoo code but couldn't find a match: '{args.stock_name}'")
+    return []
+
+
 # this was built by merging a list of bloomberg exchange codes
 # and the wikipedia page for iso2/3char country codes
 # this includes both specific exchanges like 'UN' = Nasdaq
@@ -2071,4 +2194,310 @@ bloomberg_exchange_to_country_iso3 = {
     "ZL": "ZMB",  # ZL ZM ZMB
     "ZH": "ZWE",  # ZH ZW HARARE
     "ZH": "ZWE",  # ZH ZW ZWE
+}
+
+
+# this was built by merging a list of yahoo exchange suffixes and Reuters/Refinitive RIC code suffixes
+# RIC codes took precedence and only used yahoo list if not already in RIC list
+#
+# https://en.wikipedia.org/wiki/Ticker_symbol
+# https://en.wikipedia.org/wiki/Refinitiv_Identification_Code
+#
+# yahoo codes
+# https://in.help.yahoo.com/kb/finance-app-for-ios/exchanges-data-providers-yahoo-finance-sln2310.html # noqa
+# https://lists.gnucash.org/docs/C/gnucash-manual/fq-spec-yahoo.html
+#
+# RIC codes (could not find an official source, but I notices a few errors that I corrected.. could be more though!)
+# some have a duplicate code, leaving them here for documentation purposes
+# I confirmed that all such dupes map to the same country
+# https://community.developers.refinitiv.com/questions/92114/how-to-find-the-list-with-the-exchange-for-which-t.html
+ric_yahoo_exchange_to_country_iso3 = {
+    # EXCH_ID :	ISO3 | Mnemonic |  Exchange Name | Country
+    "AD": "ARE",  # ABD	Abu Dhabi Securities Exch	UAE
+    "DI": "ARE",  # DIX	Nasdaq Dubai(ex-DIFX)	UAE
+    "DU": "ARE",  # DBX	Dubai Financial	UAE
+    "AE": "ARE",  # Yahoo	Dubai Financial Market	United Arab Emirates
+    "BA": "ARG",  # BUE	Buenos Aires	Argentina
+    "MZA": "ARG",  # MEN	MENDOZA STOCK EXCHANGE	Argentina
+    "RF": "ARG",  # RFX	ROSARIO FUTURES EXCHANGE	Argentina
+    "XA": "ARM",  # ARM	NASDAQ OMX Armenia	Armenia
+    "SF": "AUS",  # SFE	Sydney Futures Exch	Aus/New Zealand
+    "AUX": "AUS",  # AUX	Australia Consolidated	Australia
+    "AX": "AUS",  # ASX	Australian SE	Australia
+    "AXP": "AUS",  # AXP	ASX Pure Match	Australia
+    "CHA": "AUS",  # CHA	Chi-X AUS Securities Exch	Australia
+    "NH": "AUS",  # NSX	National SE for Australia	Australia
+    "v": "AUT",  # OTB	(OETOB) Austria	Austria
+    "VI": "AUT",  # VIE	Vienna SE	Austria
+    "AZ": "AZE",  # BAE	Baku Stock Exchange	Azerbaijan
+    # b" : "BEL", # BFX	Brussels Deriv Exchange	Belgium
+    "BR": "BEL",  # BRU	Euronext Brussels	Belgium
+    "CJ1": "BGD",  # CHT	Chittagong SE	Bangladesh
+    "DH": "BGD",  # DSE	Dhaka Stock Exchange	Bangladesh
+    "BB": "BGR",  # BLG	Bulgarian SE	Bulgaria
+    "BH": "BHR",  # BAH	Bahrain Bourse	Bahrain
+    "HW": "BHR",  # BHX	Bahrain Financial Exchange	Bahrain
+    "BJ": "BIH",  # BNL	Banja Luka SE	Bosnia & Herzegovina
+    "SJ": "BIH",  # SJR	Sarajevo SE	Bosnia & Herzegovina
+    "BSX": "BMU",  # BSX	Bermuda Stock Exchange	Bermuda
+    "SA": "BRA",  # SAO	Sao Paulo SE	Brazil
+    "SO": "BRA",  # SOMA	SOMA	Brazil
+    "BT": "BWA",  # BSM	Botswana SE	Botswana
+    "CAB": "CAN",  # CAQ	Canadian BBO Direct	Canada
+    "CCP": "CAN",  # CAQ	Canadian BBO Direct	Canada
+    "CD": "CAN",  # CNQ	CNSX-Canadian National	Canada
+    "CXC": "CAN",  # CXC	NASDAQ CX	Canada
+    "CXX": "CAN",  # CXX	NASDAQ CX2	Canada
+    "GO": "CAN",  # PTX	Pure Trading	Canada
+    "M": "CAN",  # MON	Montreal Exchange	Canada
+    "NBC": "CAN",  # NBC	Nasdaq Basic Canada	Canada
+    "NEO": "CAN",  # NEO	Aequitas Neo	Canada
+    "NLB": "CAN",  # NLB	Aequitas Neo Lit	Canada
+    "OMG": "CAN",  # OMG	OMEGA ATS	Canada
+    "TMX": "CAN",  # TMX	TMX Select	Canada
+    "TO": "CAN",  # TOR	Toronto SE	Canada
+    "V": "CAN",  # CVE	TSX Venture	Canada
+    "V": "CAN",  # NEX	TSX Venture-NEX	Canada
+    "NE": "CAN",  # Yahoo	Cboe Canada	Canada
+    "ALP": "CAN",  # ALP	Alpha Trading Systems	Canada (Toronto)
+    "ALV": "CAN",  # ALV	Alpha Trading Systems	Canada (Ventures)
+    "BN": "CHE",  # BRN	Berne SE	Switzerland
+    # EX" : "CHE", # EUX	Eurex Switzerland	Switzerland
+    "S": "CHE",  # QMH	Scoach Switzerland	Switzerland
+    "S": "CHE",  # SWX	SIX Swiss Exchange	Switzerland
+    "S": "CHE",  # VTX	Swiss Blue Chip Segment	Switzerland
+    "SW": "CHE",  # Yahoo	Swiss Exchange (SIX)	Switzerland
+    "CE": "CHL",  # BEC	Electronic Exchange	Chile
+    "SN": "CHL",  # SGO	Santiago SE	Chile
+    "SS": "CHN",  # SHH	Shanghai SE	China
+    "SS": "CHN",  # SHH	Shanghai SE	China
+    "SZ": "CHN",  # SHZ	Shenzhen SE	China
+    "CI": "CIV",  # ABJ	BRVM Ivory	Coast
+    "CN": "COL",  # COL	Colombia SE	Colombia
+    "CJ": "CRI",  # CRI	COSTA RICA SE	Costa Rica
+    "CJ": "CRI",  # CRI	Bolsa de Valores Nacional,SA	Costa Rica
+    "CY": "CYP",  # CYS	Cyprus SE	Cyprus
+    "PR": "CZE",  # PRA	Prague SE	Czech
+    "BE": "DEU",  # BER	Berlin SE	Germany
+    "D": "DEU",  # DUS	RWB Germany	Germany
+    "DE": "DEU",  # GER	Xetra Germany	Germany
+    "EW": "DEU",  # EWX	Euwax Germany	Germany
+    # EX" : "DEU", # EUX	Eurex Deutschland	Germany
+    "F": "DEU",  # FRA	Frankfurt SE	Germany
+    "H": "DEU",  # HAM	Hamburg SE	Germany
+    "HA": "DEU",  # HAN	Hanover SE	Germany
+    "MU": "DEU",  # MUN	Munich SE	Germany
+    "SG": "DEU",  # STU	Stuttgart SE	Germany
+    "TG": "DEU",  # TDG	Tradegate SE	Germany
+    "XR": "DEU",  # XIM	Xetra International Market	Germany
+    "BM": "DEU",  # Yahoo	Bremen Stock Exchange	Germany
+    "CO": "DNK",  # CPH	Copenhagen SE	Denmark
+    "GQ": "ECU",  # GYQ	BOLSA DE	Ecuador
+    "QU": "ECU",  # QTO	BOLSA DE QUITO	Ecuador
+    "CA": "EGY",  # CAI	Egyptian SE	Egypt
+    "PD": "EGY",  # EDP	Primary Dealers Bond Market	Egypt
+    "BC": "ESP",  # BAR	Barcelona SE	Spain
+    "BI": "ESP",  # BIL	Bilbao SE	Spain
+    "ES": "ESP",  # FDI	Spainish Investment Funds	SPAIN
+    "i": "ESP",  # MRV	MEFF (Renta Variable)	Spain
+    "LA": "ESP",  # LAT	Latino American Market	Spain
+    "MA": "ESP",  # MAD	Madrid SE	Spain
+    "MC": "ESP",  # MCE	Mercado Continuo	Spain
+    "SCT": "ESP",  # SOE	Infobolsa-SpanishOutcry Eq	Spain
+    "VA": "ESP",  # VLN	Valencia SE	Spain
+    "TL": "EST",  # TLX	Tallinn SE	Estonia
+    # h" : "FIN", # FOM	Finnish Options Market	Finland
+    "HE": "FIN",  # HEX	Helsinki SE	Finland
+    "LN": "FRA",  # LNM	Le Nouveau Marche	France
+    "p": "FRA",  # PAR	MONEP France	France
+    "PA": "FRA",  # PAR	Euronext Paris	France
+    "LT": "GBR",  # LSE	London Latest Touch system	Britain
+    "EA": "GBR",  # EDX	European Derivative	UK
+    "ED": "GBR",  # EQD	Equiduct UK	UK
+    "BCO": "GBR",  # BCO	BATS CHI-X OTC	United Kingdom
+    "BS": "GBR",  # BTE	BATS Europe	United Kingdom
+    "CH": "GBR",  # CISX	Channel Islands SE	United Kingdom
+    "CHI": "GBR",  # CHI	CHI-X Europe	United Kingdom
+    "CSX": "GBR",  # CSX	Cayman Island Stock Exchange	United Kingdom
+    # Ip" : "GBR", # ISE	Irish Mifid	United Kingdom
+    "ISD": "GBR",  # ISD	ICAP Sec & Deriv Exc(ISDX)	United Kingdom
+    "L": "GBR",  # LSE	London SE	United Kingdom
+    "L": "GBR",  # LIF	LIFFE United Kingdom	United Kingdom
+    "PZ": "GBR",  # PLU	PLUS Markets Group Plc	United Kingdom
+    "UP": "GBR",  # UKPX	UK Power Exchange	United Kingdom
+    "XC": "GBR",  # Yahoo	Cboe UK	United Kingdom
+    "IL": "GBR",  # Yahoo	London Stock Exchange	United Kingdom
+    "GH": "GHA",  # GSE	Ghana SE	Ghana
+    "AT": "GRC",  # ATH/ADE	Athens SE/Derivative	Greece
+    "GG": "GRC",  # BKG	Bank of	Greece
+    "GK": "GRC",  # MTF	MTSGreece Greece	Greece
+    "HK": "HKG",  # HKG	Hong Kong	Hong
+    "HF": "HKG",  # HFE	Hong Kong Futures Exchange	Hong Kong
+    "IXH": "HKG",  # IXH	Instinet HK	Hong Kong
+    "ZA": "HRV",  # ZAG	Zagreb SE	Croatia
+    "BU": "HUN",  # BUD	Budapest SE	Hungary
+    "QMF": "HUN",  # QMF	Quote MTF Ltd	Hungary
+    "JK": "IDN",  # JKT	Indonesia SE (formerly JSX)	Indonesia
+    "BO": "IND",  # BSE	Bombay SE	India
+    "CL": "IND",  # CAL	Calcutta SE	India
+    "DL": "IND",  # DES	Delhi Stock	India
+    "NS": "IND",  # NSI	National SE	India
+    "I": "IRL",  # ISE	Irish SE	Ireland
+    "Ip": "IRL",  # ISE	The Irish Stock Exchange	Ireland
+    "IR": "IRL",  # Yahoo	Euronext Dublin	Ireland
+    "IQ": "IRQ",  # ISX	Iraq Stock Exchange	Iraq
+    "IC": "ISL",  # ICX	Iceland SE	Iceland
+    "TA": "ISR",  # TLV	Tel Aviv SE	Israel
+    "TV": "ISR",  # MTT	MTSIsrael	Israel
+    "MI": "ITA",  # MIL	Milan SE	Italy
+    "TI": "ITA",  # ETX	Euro TLX	Italy
+    "TX": "ITA",  # ETX	Euro TLX	ITALY
+    "JS": "JAM",  # JAM	Jamaica Stock Exchange	Jamaica
+    "AM": "JOR",  # AMM	Amman SE	Jordan
+    "FU": "JPN",  # FKA	Fukuoka SE	Japan
+    "JA": "JPN",  # JNA	Tokyo AIM	Japan
+    "KY": "JPN",  # KYO	Kyoto SE	Japan
+    "NG": "JPN",  # NGO	Nagoya SE	Japan
+    "OS": "JPN",  # OSA	Hercules Nippon	Japan
+    "OS": "JPN",  # JSD	JASDAQ SE	Japan
+    "OS": "JPN",  # OSA	Osaka SE	Japan
+    "SP": "JPN",  # SAP	Sapporo Stock Exchange	Japan
+    "T": "JPN",  # TYO	Tokyo SE	Japan
+    "KZ": "KAZ",  # KAZ	Kazakhstan Stock Exchange	Kazakhstan
+    "NR": "KEN",  # NAI	Nairobi SE	Kenya
+    "KE": "KOR",  # KFE	KOFEX	South Korea
+    "KE": "KOR",  # KFE	KOFEX - KODAQ 50	South Korea
+    "KN": "KOR",  # KNX	KRX - KONEX Market	South Korea
+    "KQ": "KOR",  # KOE	KOSDAQ	South Korea
+    "KS": "KOR",  # KSC	Korea SE (Koscom)	South Korea
+    "KW": "KWT",  # KUW	Kuwait SE	Kuwait
+    "LK": "LAO",  # LSX	Lao Securities Exchange	Laos
+    "BY": "LBN",  # BDB	Beirut SE	Lebanon
+    "CM": "LKA",  # CSE	Colombo SE	Sri Lanka
+    "VL": "LTU",  # VLX	Vilnus SE	Lithuania
+    "VS": "LTU",  # Yahoo	Nasdaq OMX Vilnius	Lithuania
+    "LU": "LUX",  # LUX	Luxembourg SE	Luxembourg
+    "LUF": "LUX",  # RCT	Luxembourg Domiciled Funds	Luxembourg
+    "RI": "LVA",  # RIX	Riga Stock Exchange	Latvia
+    "RG": "LVA",  # Yahoo	Nasdaq OMX Riga	Latvia
+    "CS": "MAR",  # CAS	Casablanca SE	Morocco
+    "MX": "MEX",  # MEX	Mexico SE	Mexico
+    "MKE": "MKD",  # MKE	Macedonia Stock Exchange	Macedonia
+    "MT": "MLT",  # MLT	Malta SE	Malta
+    "YG": "MMR",  # YSX	Yangon Stock Exchange	Myanmar
+    "MOT": "MNE",  # MOT	Montenegro SE	Montenegro
+    "MNE": "MNG",  # MGS	Mongolia Stock Exchange	Mongolia
+    "MZ": "MUS",  # MAU	Mauritius SE	Mauritius
+    "MV": "MWI",  # MLS	Malawi SE	Malawi
+    "KF": "MYS",  # MDX	Bursa Msia Derivatives Ex	Malaysia
+    "KL": "MYS",  # KLS	Bursa Msia Securities Ex	Malaysia
+    "NM": "NAM",  # NSE	Namibian SE	Namibia
+    "LG": "NGA",  # LAG	Nigeria Stock Exchange	Nigeria
+    "APX": "NLD",  # APX	APX Netherlands	Netherlands
+    "AS": "NLD",  # AEX	Euronext Amsterdam	Netherlands
+    "E": "NLD",  # EOE/AEX	AEX-Options & Futures	Netherlands
+    "NFF": "NOR",  # NFF	Norwegian Fund Broker Asstn	Norway
+    "NP": "NOR",  # NWX	Nordpool Energy Exch Options	Norway
+    "OL": "NOR",  # OSL	Oslo SE	Norway
+    "OLT": "NOR",  # OSL	Oslo trades and broker info	Norway
+    "NZ": "NZL",  # NZC	New Zealand SE	New Zealand
+    "OM": "OMN",  # MUS	Muscat Sercuities Market	Oman
+    "KA": "PAK",  # KAR	Karachi SE	Pakistan
+    "LM": "PER",  # LMA	Lima SE	Peru
+    "PS": "PHL",  # PHS	Philippine SE	Philippines
+    "CT": "POL",  # CT1	Ceto OTC Regulated Market	Poland
+    "WA": "POL",  # WSE	Warsaw SE	Poland
+    "LS": "PRT",  # LIS	Euronext Lisbon	Portugal
+    "PL": "PSE",  # PLS	Palestinian Securities Exch	Palestinian
+    "QA": "QAT",  # DSM	Qatar Exchange	Qatar
+    "BRQ": "ROU",  # BUH	RASDAQ Listed/RSQ Traded	Romania
+    "BX": "ROU",  # BUH	Bucharest SE	Romania
+    "NL": "ROU",  # BUH	Romanian Equities TNL	Romania
+    "RO": "ROU",  # Yahoo	Bucharest Stock Exchange	Romania
+    "MM": "RUS",  # MCX	MICEX Russia	Russia
+    "MO": "RUS",  # MSE	Moscow SE	Russia
+    "PC": "RUS",  # SPC	Saint-Petersburg Currency	Russia
+    "PE": "RUS",  # SPS	Saint-Petersburg	Russia
+    "RTS": "RUS",  # RTS	Russian Trading System	Russia
+    "RW": "RWA",  # RSE	Rwanda Stock Exchange	Rwanda
+    "SE": "SAE",  # SAU	Saudi SE	Arabia
+    "SAU": "SAU",  # Yahoo	Saudi Stock Exchange (Tadawul)	Saudi Arabia
+    "SI": "SGP",  # SES	SGX-ST Singapore	Singapore
+    "BEL": "SRB",  # BEL	Belgrade Stock Exchange	Serbia
+    "BV": "SVK",  # BRA	Bratislava SE	Slovakia
+    "LJ": "SVN",  # LJU	Ljubljana SE	Slovenia
+    "MANG": "SWE",  # BQT	BeQuoted	Sweden
+    "NGM": "SWE",  # NGM	Nordic Growth Market	Sweden
+    "SHBK": "SWE",  # BQT	Be Quoted	Sweden
+    "ST": "SWE",  # STO	Stockholm Options	Sweden
+    # TE" : "SWE", # AKT	Spotlight Stock Market	Sweden
+    "DS": "SYR",  # DSX	Damascus Stock Exchange	Syria
+    "BK": "THA",  # SET	Thailand SE	Thailand
+    "FX": "THA",  # TFX	Thailand Futures	Thailand
+    "TN": "TUN",  # TUN	Tunis SE	Tunisia
+    "IS": "TUR",  # IST/TDE	Istanbul SE	Turkey
+    "TR": "TUR",  # IST	ISE Settl and Custody Bank	Turkey
+    "TC": "TWN",  # CBC	CBC,Taiwan	Taiwan
+    "TE": "TWN",  # TEJ	Taiwan Economic Journal	Taiwan
+    "TM": "TWN",  # TIM	Taiwan Futures Exchange	Taiwan
+    "TW": "TWN",  # TAI	Taiwan SE	Taiwan
+    "TWO": "TWN",  # TWO	ROC OTC SE	Taiwan
+    "TZ": "TZA",  # DSS	Dar Es Salaam SE Ltd	Tanzania
+    "PFT": "UKR",  # PFT	PFTS Stock Exchange	Ukraine
+    "UAX": "UKR",  # UAX	Ukrainian Exchange	Ukraine
+    "UG": "UKR",  # UGS	Uganda Stock Exchange	Ukraine
+    "MN": "URY",  # MTV	MONTEVIDEO STOCK EXCHANGE	Uruguay
+    "UE": "URY",  # UEX	URUGUAYAN ELECTRONIC EXCH	Uruguay
+    "A": "USA",  # AOE	NYSE American(Options)	United States
+    "A": "USA",  # ASE	NYSE American(Equities)	United States
+    "B": "USA",  # BOS	Boston SE	United States
+    "B": "USA",  # BOX	Boston Options Exchange	United States
+    "C": "USA",  # CIN	NYSE National	United States
+    "C": "USA",  # LCC	NYSE National For NASDAQ LC	United States
+    "DF": "USA",  # ADF	NASDAQ ADF	United States
+    "DG": "USA",  # GCD	Direct Edge Holdings EDGX	United States
+    "DY": "USA",  # GDA	Direct Edge Holdings	United States
+    "EI": "USA",  # IEX	Investors Exchange	United States
+    "K": "USA",  # PCQ	NYSE Arca Consolidated	United States
+    "LTS": "USA",  # LTE	Long Term SE	United States
+    "MW": "USA",  # MID	NYSE Chicago	United States
+    "N": "USA",  # NYS	New York SE	United States
+    "NB": "USA",  # NBN	Nasdaq Basic	United States
+    "O": "USA",  # NSQ	Nasdaq Consolidated	United States
+    "OB": "USA",  # OBB	OTC Bulletin Board	United States
+    "OQ": "USA",  # NSM	NASDAQ Stock Market	United States
+    "P": "USA",  # PAO	Pacific Options	United States
+    "P": "USA",  # PSE	NYSE Arca	United States
+    "P": "USA",  # LCP	Pacific Exchange/ARCA	United States
+    "PH": "USA",  # XPH	NASDAQ OMX PSX	United States
+    "PK": "USA",  # PNK	OTC (Finra)	United States
+    "TH": "USA",  # THM	Third Market Stock	United States
+    "U": "USA",  # OPQ	OPRA NBBO Options	United States
+    "W": "USA",  # WCB	Chicago Options	United States
+    "X": "USA",  # PHO	Philadelphia Options	United States
+    "Z": "USA",  # LCZ	BATS Trading For Nasdaq	United States
+    "CBT": "USA",  # Yahoo	Chicago Board of Trade (CBOT)***	United States of America
+    "CME": "USA",  # Yahoo	Chicago Mercantile Exchange (CME)***	United States of America
+    "NYB": "USA",  # Yahoo	ICE Futures US	United States of America
+    "CMX": "USA",  # Yahoo	New York Commodities Exchange (COMEX)***	United States of America
+    "NYM": "USA",  # Yahoo	New York Mercantile Exchange (NYMEX)***	United States of America
+    "II": "USA",  # ISS	Intl Sec Exch - Equities	USA
+    "K": "USA",  # NYQ	NYSE Consolidated	USA
+    "K": "USA",  # ASQ	NYSE Amex Consolidated	USA
+    "ZY": "USA",  # LCY	BATS Y Trading For Nasdaq OMX Global Market	USA
+    "CR": "VEN",  # CCS	Caracas SE	Venezuela
+    "HM": "VNM",  # HSX	Hochiminh S	Vietnam
+    "HN": "VNM",  # HNX	Hanoi Stock Exchange	Vietnam
+    "J": "ZAF",  # JNB/SFX	Johannesburg SE	South Africa
+    "JO": "ZAF",  # Yahoo	Johannesburg Stock Exchange	South Africa
+    "LZ": "ZMB",  # LUS	Lusaka Stock Exchange	Zambia
+    "ZI": "ZWE",  # ZSE	Zimbabwe Stock Exchange	Zimbabwe
+    # HNO" : "#N/A", # UPC	Unlisted Public Comp Mrkt	??
+    # RCT" : "#N/A", # Reuters Contributed Exchange	code
+    # BFC" : "#N/A", # TLX	Baltic Fund Market 	Estonia,Latvia,Lithuania
+    # SIG" : "#N/A", # SIG	Sigma X	EUROPE
+    # LP" : "#N/A", # LIP	Lipper	Global
+    # TQ" : "#N/A", # TRQ	TURQUOISE	Kingdom
+    # BD" : "#N/A", # BUR	Burgundy MTF	Nordic Region
+    # FN" : "#N/A", # STO	OMX First North	Nordic Region
 }
