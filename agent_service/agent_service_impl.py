@@ -623,6 +623,11 @@ class AgentServiceImpl:
         worker_sqs_log: Dict[str, Any] = self.ch.get_agent_debug_worker_sqs_log(agent_id=agent_id)
         tool_calls: Dict[str, Any] = self.ch.get_agent_debug_tool_calls(agent_id=agent_id)
         cost_info: Dict[str, Any] = self.ch.get_agent_debug_cost_info(agent_id=agent_id)
+        gpt_service_info = {}
+        try:
+            gpt_service_info = self.ch.get_agent_debug_gpt_service_info(agent_id=agent_id)
+        except Exception:
+            LOGGER.info(f"Unable to get gpt_service_info for {agent_id=}: {traceback.format_exc()}")
         tool_tips = Tooltips(
             create_execution_plans="Contains one entry for every 'create_execution_plan' SQS "
             "message processed, grouped by plan_id. Each entry will include "
@@ -691,6 +696,7 @@ class AgentServiceImpl:
             create_execution_plans=create_execution_plans,
             agent_owner_id=agent_owner_id,
             cost_info=cost_info,
+            gpt_service_info=gpt_service_info,
         )
         return GetAgentDebugInfoResponse(tooltips=tool_tips, debug=debug)
 

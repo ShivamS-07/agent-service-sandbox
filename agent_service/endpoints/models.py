@@ -460,6 +460,7 @@ class Debug(BaseModel):
     create_execution_plans: Dict[str, Any]
     cost_info: Dict[str, Any]
     agent_owner_id: Optional[str]
+    gpt_service_info: Dict[str, Any]
 
 
 class GetAgentDebugInfoResponse(BaseModel):
