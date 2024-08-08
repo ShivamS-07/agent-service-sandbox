@@ -9,7 +9,7 @@ from agent_service.io_types.text import StockOtherSecFilingText, StockSecFilingT
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.date_utils import parse_date_str_in_utc, timezoneify
-from agent_service.utils.sec.constants import FILE_10K, FILE_10Q
+from agent_service.utils.sec.constants import FILE_10K, FILE_10Q, FILED_TIMESTAMP
 from agent_service.utils.sec.sec_api import SecFiling
 
 
@@ -30,7 +30,7 @@ async def get_sec_filings_helper(
     for filing_str, gbi_id in filing_gbi_pairs:
         stock_id = gbi_id_to_stock_id[gbi_id]
         db_id = filing_to_db_id.get(filing_str, None)
-        timestamp = parse_date_str_in_utc(json.loads(filing_str)["filedAt"])
+        timestamp = parse_date_str_in_utc(json.loads(filing_str)[FILED_TIMESTAMP])
         stock_filing_map[stock_id].append(
             StockSecFilingText(id=filing_str, stock_id=stock_id, db_id=db_id, timestamp=timestamp)
         )

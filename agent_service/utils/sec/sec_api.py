@@ -2,6 +2,7 @@ import datetime
 import html
 import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -291,22 +292,29 @@ class SecFiling:
             if cik is None:
                 continue
 
-            queries = SecFiling._build_queries_for_filings(
-                cik, form_types=form_types, start_date=start_date, end_date=end_date
-            )
-            for query in queries:
-                resp: Optional[Dict] = SecFiling.query_api.get_filings(query=query)
-                if (not resp) or (FILINGS not in resp):
-                    continue
-                elif not resp[FILINGS]:
-                    break
+            try:
+                queries = SecFiling._build_queries_for_filings(
+                    cik, form_types=form_types, start_date=start_date, end_date=end_date
+                )
+                for query in queries:
+                    resp: Optional[Dict] = SecFiling.query_api.get_filings(query=query)
+                    if (not resp) or (FILINGS not in resp):
+                        continue
+                    elif not resp[FILINGS]:
+                        break
 
-                filing_gbi_pairs.extend([(json.dumps(filing), gbi_id) for filing in resp[FILINGS]])
+                    filing_gbi_pairs.extend(
+                        [(json.dumps(filing), gbi_id) for filing in resp[FILINGS]]
+                    )
 
-                if len(resp[FILINGS]) < cls.MAX_SEC_QUERY_SIZE:
-                    # If there are fewer than the max number of allowed
-                    # responses for this query, we're done.
-                    break
+                    if len(resp[FILINGS]) < cls.MAX_SEC_QUERY_SIZE:
+                        # If there are fewer than the max number of allowed
+                        # responses for this query, we're done.
+                        break
+                time.sleep(0.5)  # avoid rate limit
+            except Exception as e:
+                logger.exception(f"Failed to get filings for {gbi_id=}: {e}")
+                time.sleep(10)
 
         logger.info(
             f"Found {len(filing_gbi_pairs)} filings for {len(gbi_ids)} stocks "
@@ -426,47 +434,62 @@ class SecFiling:
     def get_concat_10k_10q_sections_from_api(
         cls, filing_gbi_pairs: List[Tuple[str, int]], insert_to_db: bool = True
     ) -> Dict[str, str]:
+        ch = Clickhouse()
+
         output = {}
         records_to_upload_to_db: List[Dict] = []
         for filing_info_str, gbi_id in filing_gbi_pairs:
             filing_info = json.loads(filing_info_str)
 
-            # NOTE that these downloaded sections are processed, not the raw data
-            management_section = SecFiling._download_10k_10q_section(
-                filing_info, section=MANAGEMENT_SECTION
-            )
-            risk_factor_section = SecFiling._download_10k_10q_section(
-                filing_info, section=RISK_FACTORS
-            )
-            text = (
-                f"Management Section:\n\n{management_section}\n\n"
-                f"Risk Factors Section:\n\n{risk_factor_section}"
-            )
-            output[filing_info_str] = text
+            try:
+                # NOTE that these downloaded sections are processed, not the raw data
+                management_section = SecFiling._download_10k_10q_section(
+                    filing_info, section=MANAGEMENT_SECTION
+                )
+                risk_factor_section = SecFiling._download_10k_10q_section(
+                    filing_info, section=RISK_FACTORS
+                )
 
-            # LINK_TO_HTML is ok for extracting sections, but LINK_TO_FILING_DETAILS is needed for full content
-            # See examples here:
-            # LINK_TO_HTML: https://www.sec.gov/Archives/edgar/data/320193/000032019324000069/0000320193-24-000069-index.htm  # noqa
-            # LINK_TO_FILING_DETAILS: https://www.sec.gov/Archives/edgar/data/320193/000032019324000069/aapl-20240330.htm  # noqa
+                text = (
+                    f"Management Section:\n\n{management_section}\n\n"
+                    f"Risk Factors Section:\n\n{risk_factor_section}"
+                )
+                output[filing_info_str] = text
 
-            full_content = SecFiling.render_api.get_filing(url=filing_info[LINK_TO_FILING_DETAILS])
-            processed_full_content = html.unescape(full_content)
+                # LINK_TO_HTML is ok for extracting sections, but LINK_TO_FILING_DETAILS is needed for full content
+                # See examples here:
+                # LINK_TO_HTML: https://www.sec.gov/Archives/edgar/data/320193/000032019324000069/0000320193-24-000069-index.htm  # noqa
+                # LINK_TO_FILING_DETAILS: https://www.sec.gov/Archives/edgar/data/320193/000032019324000069/aapl-20240330.htm  # noqa
 
-            records_to_upload_to_db.append(
-                {
-                    "gbi_id": gbi_id,
-                    CIK: filing_info[CIK],
-                    FORM_TYPE: filing_info[FORM_TYPE],  # '10-Q' or '10-K
-                    FILED_TIMESTAMP: parse_date_str_in_utc(filing_info[FILED_TIMESTAMP]),
-                    "filing": filing_info_str,
-                    "content": processed_full_content,
-                    MANAGEMENT_SECTION: management_section,
-                    RISK_FACTORS: risk_factor_section,
-                }
-            )
+                full_content = SecFiling.render_api.get_filing(
+                    url=filing_info[LINK_TO_FILING_DETAILS]
+                )
+                processed_full_content = html.unescape(full_content)
+                time.sleep(0.25)
+
+                if insert_to_db:
+                    records_to_upload_to_db.append(
+                        {
+                            "gbi_id": gbi_id,
+                            CIK: filing_info[CIK],
+                            FORM_TYPE: filing_info[FORM_TYPE],  # '10-Q' or '10-K
+                            FILED_TIMESTAMP: parse_date_str_in_utc(filing_info[FILED_TIMESTAMP]),
+                            "filing": filing_info_str,
+                            "content": processed_full_content,
+                            MANAGEMENT_SECTION: management_section,
+                            RISK_FACTORS: risk_factor_section,
+                        }
+                    )
+                    if len(records_to_upload_to_db) >= 3:
+                        ch.multi_row_insert(
+                            table_name="sec.sec_filings", rows=records_to_upload_to_db
+                        )
+                        records_to_upload_to_db = []
+            except Exception as e:
+                logger.exception(f"Failed to get 10K/10Q filing sections for {gbi_id=}: {e}")
+                time.sleep(10)
 
         if insert_to_db and records_to_upload_to_db:
-            ch = Clickhouse()
             ch.multi_row_insert(table_name="sec.sec_filings", rows=records_to_upload_to_db)
 
         return output
@@ -503,6 +526,7 @@ class SecFiling:
                 section=sec_section,
                 return_type=DEFAULT_FILING_FORMAT,
             )
+            time.sleep(0.25)
             return html.unescape(html_text)
         except Exception as e:
             cik = filing.get(CIK, None)
@@ -538,29 +562,43 @@ class SecFiling:
     def get_filings_content_from_api(
         cls, filing_gbi_pairs: List[Tuple[str, int]], insert_to_db: bool = True
     ) -> Dict[str, str]:
+        ch = Clickhouse()
+
         output = {}
         records_to_upload_to_db: List[Dict] = []
         for filing_info_str, gbi_id in filing_gbi_pairs:
             filing_info = json.loads(filing_info_str)
 
-            text = SecFiling.render_api.get_filing(url=filing_info[LINK_TO_FILING_DETAILS])
-            processed_text = html.unescape(text)
+            try:
+                text = SecFiling.render_api.get_filing(url=filing_info[LINK_TO_FILING_DETAILS])
 
-            output[filing_info_str] = processed_text
+                processed_text = html.unescape(text)
 
-            records_to_upload_to_db.append(
-                {
-                    "gbi_id": gbi_id,
-                    CIK: filing_info[CIK],
-                    FORM_TYPE: filing_info[FORM_TYPE],
-                    FILED_TIMESTAMP: parse_date_str_in_utc(filing_info[FILED_TIMESTAMP]),
-                    "filing": filing_info_str,
-                    "content": processed_text,
-                }
-            )
+                output[filing_info_str] = processed_text
+
+                if insert_to_db:
+                    records_to_upload_to_db.append(
+                        {
+                            "gbi_id": gbi_id,
+                            CIK: filing_info[CIK],
+                            FORM_TYPE: filing_info[FORM_TYPE],
+                            FILED_TIMESTAMP: parse_date_str_in_utc(filing_info[FILED_TIMESTAMP]),
+                            "filing": filing_info_str,
+                            "content": processed_text,
+                        }
+                    )
+                    if len(records_to_upload_to_db) >= 3:
+                        ch.multi_row_insert(
+                            table_name="sec.sec_filings", rows=records_to_upload_to_db
+                        )
+                        records_to_upload_to_db = []
+
+                time.sleep(0.5)  # avoid rate limit
+            except Exception as e:
+                logger.exception(f"Failed to get filing content for {gbi_id=}: {e}")
+                time.sleep(10)
 
         if insert_to_db and records_to_upload_to_db:
-            ch = Clickhouse()
             ch.multi_row_insert(table_name="sec.sec_filings", rows=records_to_upload_to_db)
 
         return output
