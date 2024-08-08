@@ -261,7 +261,9 @@ async def run_execution_plan(
         else:
             # We have an output node
             live_plan_output = False
-            if override_task_output_lookup and step.tool_task_id in override_task_output_lookup:
+            if scheduled_by_automation or (
+                override_task_output_lookup and step.tool_task_id in override_task_output_lookup
+            ):
                 live_plan_output = True
             await publish_agent_output(
                 outputs=split_outputs,

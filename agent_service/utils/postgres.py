@@ -98,7 +98,7 @@ class Postgres(PostgresBase):
         Optional[str],
     ]:
         sql = """
-            SELECT ep.plan_id::VARCHAR, ep.plan, ep.created_at, ep.status,
+            SELECT ep.plan_id::VARCHAR, ep.plan, pr.created_at, ep.status,
               pr.plan_run_id::VARCHAR AS upcoming_plan_run_id
             FROM agent.execution_plans ep
             LEFT JOIN agent.plan_runs pr
