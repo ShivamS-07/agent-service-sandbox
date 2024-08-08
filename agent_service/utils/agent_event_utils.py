@@ -272,15 +272,18 @@ async def get_agent_task_logs(
     rows = db.get_agent_worklogs(agent_id, task_ids=[task_id])
 
     if rows:
-        return [
-            PlanRunTaskLog(
-                log_id=row["log_id"],
-                log_message=cast(str, load_io_type(row["log_message"])),
-                created_at=row["created_at"],
-                has_output=row["has_output"],
-            )
-            for row in rows
-            if not row["is_task_output"]
-        ]
+        return sorted(
+            [
+                PlanRunTaskLog(
+                    log_id=row["log_id"],
+                    log_message=cast(str, load_io_type(row["log_message"])),
+                    created_at=row["created_at"],
+                    has_output=row["has_output"],
+                )
+                for row in rows
+                if not row["is_task_output"]
+            ],
+            key=lambda tl: tl.created_at,
+        )
 
     return []
