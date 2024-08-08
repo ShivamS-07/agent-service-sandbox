@@ -570,7 +570,8 @@ class SecFiling:
     @classmethod
     async def get_filing_data_async(cls, db_ids: List[str]) -> Dict[str, SecFilingData]:
         sql = """
-            SELECT id::TEXT AS db_id, content, gbi_id, formType AS form_type, filedAt AS filed_at
+            SELECT id::TEXT AS db_id, riskFactors, managementSection, gbi_id,
+                   formType AS form_type, filedAt AS filed_at
             FROM sec.sec_filings
             WHERE id IN %(db_ids)s
         """
@@ -580,6 +581,12 @@ class SecFiling:
         output = {}
         for row in result:
             filing_id = row["db_id"]
+            management_section = row.pop("managementSection")
+            risk_factor_section = row.pop("riskFactors")
+            row["content"] = (
+                f"Management Section:\n\n{management_section}\n\n"
+                f"Risk Factors Section:\n\n{risk_factor_section}"
+            )
             output[filing_id] = SecFilingData(**row)
 
         return output
