@@ -17,8 +17,6 @@ from grpclib import GRPCError
 from jwt import PyJWT
 from jwt.algorithms import RSAAlgorithm
 
-AUD = "o601d0dtctfaidudcanl2f3tt"
-
 
 def get_default_grpc_metadata(
     user_id: str = "", cognito_groups: Optional[List[str]] = None
@@ -31,7 +29,6 @@ def create_jwt(
     user_id: str,
     cognito_groups: Optional[List[str]] = None,
     expiry_hours: Optional[int] = None,
-    include_aud: Optional[bool] = False,
 ) -> str:
     tag = get_environment_tag()
     param_name = "/dev/token/webserver/jwk"
@@ -48,9 +45,6 @@ def create_jwt(
         "cognito:groups": [] if cognito_groups is None else cognito_groups,
         "iss": "https://boosted.ai",
     }
-
-    if include_aud:
-        payload_dict["aud"] = AUD
 
     if expiry_hours:
         payload_dict["exp"] = int(time.time()) * 3600 * expiry_hours

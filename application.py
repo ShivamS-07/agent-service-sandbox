@@ -938,7 +938,7 @@ async def generate_jwt(user_id: str, user: User = Depends(parse_header)) -> str:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
-    return create_jwt(user_id=user_id, expiry_hours=1, include_aud=True)
+    return create_jwt(user_id=user_id, expiry_hours=1)
 
 
 # Account Endpoints

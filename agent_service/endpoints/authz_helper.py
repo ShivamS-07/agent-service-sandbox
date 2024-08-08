@@ -9,17 +9,17 @@ from fastapi.security.api_key import APIKeyHeader
 from gbi_common_py_utils.utils.ssm import get_param
 from starlette.requests import Request
 
+from agent_service.external.cognito_client import (
+    COGNITO_URLS,
+    get_cognito_user_id_from_access_token,
+)
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.postgres import get_psql
 
 KEY_ID = "kid"
 RS_256 = "RS256"
 SUBJECT = "sub"
-AUD = "o601d0dtctfaidudcanl2f3tt"
 
-COGNITO_URLS = [
-    "https://cognito-idp.us-west-2.amazonaws.com///us-west-2_csB4xjtUm/.well-known/jwks.json"
-]
 SSM_KEYS = ["token/services/jwk"]
 
 COGNITO_PREFIX = "Cognito "
@@ -86,17 +86,16 @@ def extract_user_from_jwt(auth_token: str) -> Optional[User]:
         data = jwt.decode(
             auth_token,
             signing_key.key,
-            audience=AUD,
             algorithms=[RS_256],
         )
         sub = data.get(SUBJECT, None)
-        user_id = data.get("custom:user_id", sub)
+        user_id = get_cognito_user_id_from_access_token(auth_token)
         groups = data.get("cognito:groups", [])
         is_super_admin = "super-admin" in groups
         is_admin = "admin" in groups
         return User(
             auth_token=auth_token,
-            user_id=user_id,
+            user_id=user_id if user_id else sub,
             is_super_admin=is_super_admin,
             is_admin=is_admin,
             groups=groups,
