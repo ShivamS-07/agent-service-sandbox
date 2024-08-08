@@ -30,7 +30,11 @@ from agent_service.io_types.text import (
     TextIDType,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
-from agent_service.tools.category import Category
+from agent_service.tools.category import (
+    Category,
+    CriteriaForCompetitiveAnalysis,
+    get_criteria_for_competitive_analysis,
+)
 from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT, CITATION_REMINDER
 from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.tools.tool_log import tool_log
@@ -301,7 +305,7 @@ class RankingList(ComplexIOBase):
 
 
 @io_type
-class HypothesisAnalysisByCategory(ComplexIOBase):
+class CompetitiveAnalysis(ComplexIOBase):
     actual_target_stock: StockID
     final_scores: Dict[str, float]
     ranked_categories: List[Category]
@@ -356,6 +360,9 @@ class HypothesisAnalysisByCategory(ComplexIOBase):
 ####################################################################################################
 # Tools
 ####################################################################################################
+
+
+# for backward compatibility
 class AnalyzeHypothesisWithCategoriesInput(ToolArgs):
     hypothesis: str
     categories: List[Category]
@@ -366,37 +373,81 @@ class AnalyzeHypothesisWithCategoriesInput(ToolArgs):
     target_stock: Optional[StockID] = None
 
 
-@tool(
-    description=(
-        "Given a list of relevant text data and a list of categories used to break market analysis down, "
-        "this function generates scores and their explanations for each category indicating the extent to which "
-        "it is supported with reference to the information in the provided text data."
-        "This tool is not useful for applications other than market comparisons, it must not be used "
-        "in situations which are not focused on grading/ranking all companies which produce a product. "
-        "An example of a situation you would NOT use this is due diligence checklists"
-        "This analysis must be focused on a specific stock or a small group of stocks, this function "
-        "must NOT be used to filter stocks more generally! (i.e. Do not use it for "
-        " `Give/find me stocks...` type queries, use the filter by profile tool). "
-        "If a single specific company is mentioned in the user input, then an identifier for that "
-        "company MUST be passed as the target stock."
-        "For example, if the question is, `Is NVDA a leader in AI chips?, you MUST pass NVDA in "
-        "as the target stock."
-        "Do not leave target_stock empty unless there are no specific companies mentioned!!!! "
-        "You should only use this tool when there is at least 1 category generated from the other "
-        "tool `get_success_criteria`!"
-    ),
-    category=ToolCategory.HYPOTHESIS,
-    tool_registry=ToolRegistry,
-)
+@tool(description="", category=ToolCategory.COMPETITIVE_ANALYSIS, enabled=False)
 async def analyze_hypothesis_with_categories(
     args: AnalyzeHypothesisWithCategoriesInput, context: PlanRunContext
-) -> HypothesisAnalysisByCategory:
+) -> CompetitiveAnalysis:
+    return await do_competitive_analysis(  # type: ignore
+        args=DoCompetitiveAnalysisInput(
+            prompt=args.hypothesis,
+            criteria=args.categories,
+            stocks=args.stocks,
+            all_text_data=args.all_text_data,
+            target_stock=args.target_stock,
+        ),
+        context=context,
+    )
+
+
+class DoCompetitiveAnalysisInput(ToolArgs):
+    prompt: str
+    criteria: List[Category]
+    stocks: List[StockID]
+    all_text_data: List[StockText]
+    target_stock: Optional[StockID] = None
+
+
+@tool(
+    description=(
+        "This is the main tool that carries out a competitive market analysis to evaluate the relative "
+        "market position of a group of companies which sell comparable products or services.\n"
+        "The `prompt` is a string which is represents the question or request from the client that "
+        "forms the basis for the competitive analysis, e.g. `Is NVDA the leader in the AI chip space?` "
+        "It always contains at least one of two components: the mention of a market (e.g. AI chips) or the "
+        "mention of a company in that market (e.g. NVDA), and in many cases it will have both of these things.\n"
+        "The `criteria` are the criteria for judging the companies during the analysis and are derived from the "
+        "get_criteria_for_competitive_analysis tool. You must ALWAYS provide a list of criteria for any "
+        "competitive analysis, this list cannot be empty!\n"
+        "`stocks` should be a list of the stocks (companies) which will be evaluated as part of the analysis. "
+        "There are three potential sources of such stocks. If the client specifically lists a group of stocks "
+        "to be used in the analysis, you should take them from there. Otherwise, if the market is a particular "
+        "class of product or service, you should derive the stocks using the filter_stocks_by_product_or_service"
+        "tool. Finally, if the client requests a particular sector of stocks, you use the sector filtering tool.\n"
+        "`all_text_data` is the output of the all_text_data retrieval tool called over the `stocks` to "
+        "be included in this competitive analysis.\n"
+        "If a single specific company is mentioned in the user input, then an identifier for that "
+        "company MUST be passed as the target stock. "
+        "For example, if the question is, `Is NVDA a leader in AI chips?, you MUST pass NVDA's identifier in "
+        "as the target stock. "
+        "Do not leave target_stock empty unless there are no specific companies mentioned!!!! "
+        "This tool is not useful for applications other than market comparisons. It must only be used "
+        "in situations which are focused on grading/ranking all companies which produce a product. "
+        "An example of a situation you would NOT use this is due diligence checklists."
+        "This function is intended to provide an thorough analysis of the relative market position of "
+        "a small group of stocks in a single market. This function must NOT be used to filter stocks! "
+        "(i.e. Do not use it for `Give/find me stocks...` type queries, use a stock filter tool). "
+        "If the client is interested in ranking stocks by an easily quantifiable statistic, you should NOT "
+        "use this tool, instead get the statistics and rank using the transform_table tool. Competitive analysis "
+        "tools should be used only for a complex qualitative analysis. "
+        "If the client is interested in comparing the contents of two specific documents or groups of documents, "
+        "even if the comparison involves two different stocks, you should NOT use this tool, instead you "
+        "should use the compare_texts tool. You should only use this competitive analysis tool when a "
+        "comprehensive market analysis of two or more stocks is desired."
+        "The output of this tool is scores and explanation of those across each criterion and each stock, "
+        "indicating the relative ranking of these stocks in each evaluative category."
+    ),
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
+    tool_registry=ToolRegistry,
+)
+async def do_competitive_analysis(
+    args: DoCompetitiveAnalysisInput, context: PlanRunContext
+) -> CompetitiveAnalysis:
     logger = get_prefect_logger(__name__)
 
     if not args.stocks:
         raise ValueError("At least one stock must be provided")
-    elif not args.categories:
-        raise ValueError("At least one category must be provided")
+    elif not args.criteria:
+        raise ValueError("At least one criterion must be provided")
     elif not args.all_text_data:
         raise ValueError("At least one text data must be provided")
 
@@ -410,12 +461,12 @@ async def analyze_hypothesis_with_categories(
 
     # Step: Revise hypothesis to remove company specific information
     logger.info("Revising hypothesis to remove any company specific information")
-    revised_hypothesis = await revise_hypothesis(args.hypothesis, context, gpt_service_stub)
+    revised_hypothesis = await revise_hypothesis(args.prompt, context, gpt_service_stub)
     logger.info(f"Revised hypothesis: {revised_hypothesis}")  # Not visible to users
 
     # Step: Classify topics into categories
     logger.info("Classifying news, earnings, SEC topics into categories")
-    categories = sorted(args.categories, key=lambda x: x.weight, reverse=True)
+    categories = sorted(args.criteria, key=lambda x: x.weight, reverse=True)
     category_idx_to_topic_group = await filter_and_classify_topics_into_category(
         revised_hypothesis,
         categories,
@@ -450,7 +501,7 @@ async def analyze_hypothesis_with_categories(
     )
 
     # Step: Prepare outputs
-    output = HypothesisAnalysisByCategory(
+    output = CompetitiveAnalysis(
         actual_target_stock=actual_target_stock,
         final_scores=total_scores,
         ranked_categories=categories,
@@ -461,22 +512,47 @@ async def analyze_hypothesis_with_categories(
     return output
 
 
+# backwards compatibility
 class GenerateSummaryForHypothesisWithCategoriesInput(ToolArgs):
     hypothesis: str
-    hypothesis_analysis_by_category: HypothesisAnalysisByCategory
+    hypothesis_analysis_by_category: CompetitiveAnalysis
+
+
+@tool(
+    description="",
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
+    tool_registry=ToolRegistry,
+    enabled=False,
+)
+async def generate_summary_for_hypothesis_with_categories(
+    args: GenerateSummaryForHypothesisWithCategoriesInput, context: PlanRunContext
+) -> Text:
+    return await generate_summary_for_competitive_analysis(  # type: ignore
+        args=GenerateSummaryForCompetitiveAnalysisInput(
+            prompt=args.hypothesis, competitive_analysis=args.hypothesis_analysis_by_category
+        ),
+        context=context,
+    )
+
+
+class GenerateSummaryForCompetitiveAnalysisInput(ToolArgs):
+    prompt: str
+    competitive_analysis: CompetitiveAnalysis
 
 
 @tool(
     description=(
-        "Given a market analysis broken down by categories, for a specific stock or group of stocks, "
-        "this function generates a short summary for the analysis. This function must be called after "
-        "analyze_hypothesis_with_categories."
+        "Given a competitive market analysis for group of stocks, this function generates a short "
+        "text summary of the conclusions of the analysis. This prompt should be the same prompt passed "
+        "to the do_competitive_analysis tool, and the competitive_analysis should be its output. In "
+        "general, this tool will always be used directly after `do_competitive_analysis`. If there "
+        "was a target stock in the analysis, this tool will also output an overall score for that stock."
     ),
-    category=ToolCategory.HYPOTHESIS,
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,
 )
-async def generate_summary_for_hypothesis_with_categories(
-    args: GenerateSummaryForHypothesisWithCategoriesInput, context: PlanRunContext
+async def generate_summary_for_competitive_analysis(
+    args: GenerateSummaryForCompetitiveAnalysisInput, context: PlanRunContext
 ) -> Text:
     logger = get_prefect_logger(__name__)
 
@@ -484,18 +560,18 @@ async def generate_summary_for_hypothesis_with_categories(
 
     logger.info("Generating the final summary")
     final_summary = await overall_summary(
-        target_stock=args.hypothesis_analysis_by_category.actual_target_stock,
-        hypothesis=args.hypothesis,
-        categories=args.hypothesis_analysis_by_category.ranked_categories,
-        category_idx_to_result=args.hypothesis_analysis_by_category.category_idx_to_result,
-        final_scores=args.hypothesis_analysis_by_category.final_scores,
+        target_stock=args.competitive_analysis.actual_target_stock,
+        hypothesis=args.prompt,
+        categories=args.competitive_analysis.ranked_categories,
+        category_idx_to_result=args.competitive_analysis.category_idx_to_result,
+        final_scores=args.competitive_analysis.final_scores,
         context=context,
         gpt_service_stub=gpt_service_stub,
     )
     await tool_log(log="Generated the final summary", context=context)
 
-    target_stock_symbol = args.hypothesis_analysis_by_category.actual_target_stock.symbol
-    final_scores = args.hypothesis_analysis_by_category.final_scores
+    target_stock_symbol = args.competitive_analysis.actual_target_stock.symbol
+    final_scores = args.competitive_analysis.final_scores
     if target_stock_symbol not in final_scores:
         logger.warning(
             f"The actual target stock ({target_stock_symbol}) is not in the final scores "
@@ -1037,13 +1113,9 @@ async def overall_summary(
 
 if __name__ == "__main__":
 
-    async def main(hypothesis: str, main_stock: str) -> None:
+    async def main(prompt: str, product_str: str, main_stock: str) -> None:
         import datetime
 
-        from agent_service.tools.category import (
-            CategoriesForStockInput,
-            get_success_criteria,
-        )
         from agent_service.tools.other_text import (
             GetAllTextDataForStocksInput,
             get_all_text_data_for_stocks,
@@ -1073,7 +1145,7 @@ if __name__ == "__main__":
 
         filtered_stocks: List[StockID] = await filter_stocks_by_product_or_service(  # type: ignore
             FilterStocksByProductOrServiceInput(
-                stock_ids=stocks, texts=[], product_str="AI chip", must_include_stocks=[stock_id]  # type: ignore
+                stock_ids=stocks, texts=[], product_str=product_str, must_include_stocks=[stock_id]  # type: ignore
             ),
             context,
         )
@@ -1085,22 +1157,22 @@ if __name__ == "__main__":
             context,
         )
 
-        categories = await get_success_criteria(CategoriesForStockInput(prompt=hypothesis), context)
+        categories = await get_criteria_for_competitive_analysis(
+            CriteriaForCompetitiveAnalysis(market=product_str), context
+        )
 
-        output: HypothesisAnalysisByCategory = await analyze_hypothesis_with_categories(
-            AnalyzeHypothesisWithCategoriesInput(
-                hypothesis=hypothesis,
-                categories=categories,  # type: ignore
+        output: CompetitiveAnalysis = await do_competitive_analysis(
+            DoCompetitiveAnalysisInput(
+                prompt=prompt,
+                criteria=categories,  # type: ignore
                 stocks=filtered_stocks,
                 all_text_data=all_texts,
                 target_stock=stock_id,  # type: ignore
             ),
             context,
         )
-        summary = await generate_summary_for_hypothesis_with_categories(
-            GenerateSummaryForHypothesisWithCategoriesInput(
-                hypothesis=hypothesis, hypothesis_analysis_by_category=output
-            ),
+        summary = await generate_summary_for_competitive_analysis(
+            GenerateSummaryForCompetitiveAnalysisInput(prompt=prompt, competitive_analysis=output),
             context,
         )
         print(summary)
@@ -1110,4 +1182,8 @@ if __name__ == "__main__":
     from agent_service.utils.logs import init_stdout_logging
 
     init_stdout_logging()
-    asyncio.run(main(hypothesis="Is AMD the leader in AI chips space?", main_stock="AMD"))
+    asyncio.run(
+        main(
+            prompt="Is AMD the leader in AI chips space?", product_str="AI chips", main_stock="AMD"
+        )
+    )

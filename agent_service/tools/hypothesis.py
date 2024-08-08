@@ -105,7 +105,7 @@ class TestNewsHypothesisInput(ToolArgs):
     " among news developments."
     " For example, if a user asks `Is NVDA the leader in AI chips space?`, you should convert"
     " it to a statement like `NVDA is the leader in AI chips space` and test it against the news.",
-    category=ToolCategory.HYPOTHESIS,
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -162,7 +162,7 @@ class SummarizeNewsHypothesisInput(ToolArgs):
     " calculate the match score of how much this hypothesis is matched with these news topics and"
     " also generate a summary to explain."
     " This tool MUST be used when tool `test_hypothesis_for_news_developments` is used.",
-    category=ToolCategory.HYPOTHESIS,
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -206,7 +206,7 @@ class TestAndSummarizeNewsHypothesisInput(ToolArgs):
         "must NOT be used to filter stocks more generally! (i.e. Do not use it for "
         " `Give/find me stocks...` type queries, use the filter by profile tool)"
     ),
-    category=ToolCategory.HYPOTHESIS,
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -260,7 +260,7 @@ class TestEarningsHypothesisInput(ToolArgs):
     " among earnings summaries."
     " For example, if a user asks `Is NVDA the leader in AI chips space?`, you should convert"
     " it to a statement like `NVDA is the leader in AI chips space` and test it against the earnings.",
-    category=ToolCategory.HYPOTHESIS,
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -336,7 +336,7 @@ class SummarizeEarningsHypothesisInput(ToolArgs):
     " points, calculate the match score of how much this hypothesis is matched with these earnings"
     " summary points and also generate a summary to explain."
     " This tool MUST be used when tool `test_hypothesis_for_earnings_summaries` is used.",
-    category=ToolCategory.HYPOTHESIS,
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -444,7 +444,7 @@ class TestAndSummarizeEarningsHypothesisInput(ToolArgs):
         "must NOT be used to filter stocks more generally! (i.e. Do not use it for "
         " `Give/find me stocks...` type queries, use the filter by profile tool)"
     ),
-    category=ToolCategory.HYPOTHESIS,
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -487,7 +487,7 @@ class TestCustomDocsHypothesisInput(ToolArgs):
     " For example, if a user asks `Is NVDA the leader in AI chips space?`, you should convert"
     " it to a statement like `NVDA is the leader in AI chips space` and test it against the"
     " documents that the user has uploaded.",
-    category=ToolCategory.HYPOTHESIS,
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -577,7 +577,7 @@ class SummarizeCustomDocumentHypothesisInput(ToolArgs):
     " news, calculate the match score of how much this hypothesis is matched with these"
     " news topics and also generate a summary to explain."
     " This tool MUST be used when tool `test_hypothesis_for_custom_documents` is used.",
-    category=ToolCategory.HYPOTHESIS,
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -618,7 +618,7 @@ class TestAndSummarizeCustomDocsHypothesisInput(ToolArgs):
         "custom documents, and a short summary which explains the score with reference to "
         "the information in the custom documents."
     ),
-    category=ToolCategory.HYPOTHESIS,
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -663,7 +663,7 @@ class SummarizeHypothesisFromVariousSourcesInput(ToolArgs):
     " `test_and_summarize_hypothesis_with_news_developments`,"
     " `test_and_summarize_hypothesis_with_earnings_summaries` and"
     " `test_and_summarize_hypothesis_with_custom_documents`.",
-    category=ToolCategory.HYPOTHESIS,
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,
     enabled=False,
 )

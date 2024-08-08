@@ -23,14 +23,13 @@ from agent_service.utils.string_utils import repair_json_if_needed
 GET_CATEGORIES_FOR_STOCK_SYS_PROMPT = Prompt(
     name="GET_CATEGORIES_FOR_STOCK_SYS_PROMPT",
     template="""
-    You are a financial analyst who is creating a list of success criteria to evaluate a hypothesis \
-    in a financial setting. Return the top 3 to {limit} MOST important criteria.
-    The criteria should be in financial setting where the user is trying to evaluate future looking \
-    trends. When looking at a hypothesis about a specific company your objective is to find criteria \
-    that make it easy to compare the company with its peers and competitors. You should try to avoid \
-    overlap between criteria and make sure that each criteria is unique and distinct. \
+    You are a financial analyst who is creating a list of criteria for a competitive analysis
+    in a financial setting. Return the top 3 to {limit} MOST important criteria for that market.
+    The criteria should be in financial setting where the user is trying to evaluate future looking
+    trends.  Your objective is to find criteria that make it easy to a group of competitors.
+    You should try to avoid overlap between criteria and make sure that each criteria is unique and distinct.
 
-    For example if the question is "Is NVDA a leader in AI chip development" \
+    For example if the market is "AI chip development" \
     the criteria could potentially be:
     Innovation in Architecture
     Scalability
@@ -40,7 +39,7 @@ GET_CATEGORIES_FOR_STOCK_SYS_PROMPT = Prompt(
     Partnerships and Collaborations
     Manufacturing Capabilities
 
-    If the question is "Evaluate if AVGO is a leader in the smartphone market" \
+    If the market is "smartphone market" \
     the criteria could potentially be:
     Power Efficiency
     Connectivity Solutions
@@ -49,7 +48,7 @@ GET_CATEGORIES_FOR_STOCK_SYS_PROMPT = Prompt(
     Supply Chain Reliability
     Collaborations with Smartphone Manufacturers
 
-    If the question is "Tell me if Moderna is a leader in oncology" \
+    If the market is "oncology" \
     the criteria could potentially be:
     R&D Capabilities
     Robust Pipeline
@@ -58,8 +57,7 @@ GET_CATEGORIES_FOR_STOCK_SYS_PROMPT = Prompt(
     Commercialization Strategy
     Reputation and Credibility"
 
-    If the question is "How is Ford positioned in the automotive \
-    semi-truck market?"
+    If the market is "automotive semi-truck market"
     Appeal of Brand in the Semi-truck Space
     Cost of current and future models
     Warranty
@@ -77,7 +75,7 @@ GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT = Prompt(
     - weight: a float number out of 10.0 of how important this criteria is, 1.0 meaning the \
         criteria is not important at all and 10 meaning the most important criteria, it is not \
         a ranking but should be based on the importance of the criteria and be comparable
-    - justification: reason for why this criteria is important to evaluate the hypothesis, \
+    - justification: reason for why this criteria is important to carry out the competitive analysis, \
         be sure to include any specific key metrics to focus on during evaluation. Your justification \
         should be consistent with the explanation and the weight but you should never mention the weight \
         explictly.
@@ -85,8 +83,10 @@ GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT = Prompt(
     the CRITERIA dictionary list. Your explanation and justification must not contain any specific \
     company names or products.
 
-    Here is the hypothesis you should evaluate: {prompt}
-    Here are the chat context details you may use to make the output more specific and accurate: {chat_context}
+    Here is the market you are doing a competitive analysis for: {market}
+    Here are the chat context details you may use to make the output more specific and accurate:
+    {chat_context}
+
     {must_include_criteria_names_str}
     {company_description_str}
     """,
@@ -152,9 +152,38 @@ class Categories(ComplexIOBase):
         return await get_output_from_io_type(val=self.val, pg=pg, title=title)
 
 
+# for backward compatibility
+
+
 class CategoriesForStockInput(ToolArgs):
     prompt: str
     must_include_criteria_names: Optional[List[str]] = None
+    target_stock: Optional[StockID] = None
+    limit: Optional[int] = None
+
+
+@tool(
+    description="",
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
+    enabled=False,
+)
+async def get_success_criteria(
+    args: CategoriesForStockInput, context: PlanRunContext
+) -> List[Category]:
+    return await get_criteria_for_competitive_analysis(  # type: ignore
+        args=CriteriaForCompetitiveAnalysis(
+            market=args.prompt,
+            must_include_criteria=args.must_include_criteria_names,
+            target_stock=args.target_stock,
+            limit=args.limit,
+        ),
+        context=context,
+    )
+
+
+class CriteriaForCompetitiveAnalysis(ToolArgs):
+    market: str
+    must_include_criteria: Optional[List[str]] = None
     target_stock: Optional[StockID] = None
     limit: Optional[int] = None
 
@@ -167,49 +196,52 @@ def category_cache_key_fn(tool_name: str, args: ToolArgs, context: PlanRunContex
 
 @tool(
     description=f"""
-    This function returns a list of success criteria that would be useful in doing a market analysis. \
-    By default, the function returns up to {DEFAULT_CATEGORY_LIMIT} criteria. However, an optional \
-    'limit' parameter can be passed in to adjust the number of outputted criteria from the client query. \
-    In addition, the function can also take in a list of criteria names that must be included in the \
-    output which you should also get from the client query.
-    If a single specific company is mentioned in the user input, then an identifier for that company \
-    MUST be passed as the target stock. This stock will be used to get more information about the company \
-    thus enhancing the accuracy of the output.
-    For example, if the client query is 'What makes Expedia a leader in the travel industry', \
-    then you should set 'stock` as Expedia's stock identifier. If the query asks 'You should include \
-    X, Y in the criteria and give the top 5 criteria', then 'must_include_criteria_names' should be \
-    set as ['X', 'Y'] and 'limit' should be set as 5.
-    Note that these categories are very general and only appropriate as a high level rubric for evaulating
-    stocks in the same industry, the output of this tool is NOT appropriate for use in due diligence checklists
-    which are necessarily much more specific!
-    I repeat, never use this tool in the context of due diligence, use the summary tool to write the
-    due diligence criteria.
+    This function returns a list of criteria that is required for doing a competitive market analysis of
+    companies that offer the similar products or services. You use this function if and only if you are
+    also calling the other competitive_analysis tools.
+    The `market` is a string which describes the shared market for companies in the analysis. It is
+    typically a class of product or service, or possibly an entire industry or sector. It should be
+    as specific as possible, e.g. if the client asks for the leader in millennial gaming, the market
+    should be millenial gaming, not gaming.
+    If the client has explicitly mentioned relevant criteria in their request, the list of criteria should
+    be passed to this tool as `must_include_criteria` which is a list of strings. For example, if the request
+    includes the phrase `...make sure to compare based on innovation.`, then the string `innovation` should
+    be in the list.
+    If a single specific company is mentioned in the user input, then an identifier for that company
+    MUST be passed as the `target_stock`. This stock will be used to get more information about the company
+    thus enhancing the quality of the output. For example, if the client asks 'What makes Expedia
+    a leader in the travel industry', then you should set target_stock to Expedia's stock identifier.
+    By default, the function returns up to {DEFAULT_CATEGORY_LIMIT} criteria. However, an optional
+    'limit' parameter can be passed in to adjust the number of outputted criteria based on the user input.
+    Note that these criteria are very general and only appropriate as a high level rubric for evalulating
+    stocks in the context of a competitive analysis.
+    Never use this tool in the context of due diligence, use the summary tool to write due diligence criteria.
     """,
-    category=ToolCategory.STOCK,
+    category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,
     use_cache=True,
     cache_key_fn=category_cache_key_fn,
     cache_ttl=CATEGORY_CACHE_TTL,
     cache_backend=PostgresCacheBackend(),
 )
-async def get_success_criteria(
-    args: CategoriesForStockInput, context: PlanRunContext
+async def get_criteria_for_competitive_analysis(
+    args: CriteriaForCompetitiveAnalysis, context: PlanRunContext
 ) -> List[Category]:
-    if not args.prompt:
-        raise ValueError("Prompt must be provided")
+    if not args.market:
+        raise ValueError("A market must be provided")
 
     llm = GPT(context=None, model=GPT4_O)
     categories = await get_categories_for_stock_impl(
         llm=llm,
         context=context,
-        prompt=args.prompt,
-        must_include_criteria_names=args.must_include_criteria_names,
+        market=args.market,
+        must_include_criteria_names=args.must_include_criteria,
         target_stock=args.target_stock,
         limit=args.limit,
     )
 
     await tool_log(
-        log=f"Found {len(categories)} success criteria for prompt {args.prompt}", context=context
+        log=f"Found {len(categories)} criteria for market {args.market}", context=context
     )
 
     return categories
@@ -218,7 +250,7 @@ async def get_success_criteria(
 async def get_categories_for_stock_impl(
     llm: GPT,
     context: PlanRunContext,
-    prompt: str,
+    market: str,
     must_include_criteria_names: Optional[List[str]],
     target_stock: Optional[StockID],
     limit: Optional[int],
@@ -254,7 +286,7 @@ async def get_categories_for_stock_impl(
     initial_categories_gpt_resp = await llm.do_chat_w_sys_prompt(
         sys_prompt=GET_CATEGORIES_FOR_STOCK_SYS_PROMPT.format(limit=limit),
         main_prompt=GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT.format(
-            prompt=prompt,
+            market=market,
             chat_context=context.chat,
             must_include_criteria_names_str=must_include_criteria_names_str,
             company_description_str=company_description_str,
@@ -280,14 +312,17 @@ async def main() -> None:
         run_tasks_without_prefect=True,
         skip_db_commit=True,
     )
-    categories_input = CategoriesForStockInput(
-        prompt="Does EQIX have younger (or older) data centers than their competitors",
+    categories_input = CriteriaForCompetitiveAnalysis(
+        market="data centers",
         target_stock=StockID(
             gbi_id=5766, symbol="INTC", isin="US4581401001", company_name="Intel Corporation"
         ),
+        must_include_criteria=["age"],
         limit=7,
     )
-    categories: List[Category] = await get_success_criteria(args=categories_input, context=plan_context)  # type: ignore
+    categories: List[Category] = await get_criteria_for_competitive_analysis(
+        args=categories_input, context=plan_context
+    )  # type: ignore
     for category in categories:
         print(category.to_markdown_string())
 
