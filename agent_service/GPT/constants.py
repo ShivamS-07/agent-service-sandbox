@@ -31,8 +31,8 @@ TEXT_RESPONSE_FORMAT = {"type": "text"}
 
 NO_PROMPT = Prompt(name="", template="").format()
 
-FILTER_CONCURRENCY = 32
-CHEAP_FILTER_CONCURRENCY = 100
+FILTER_CONCURRENCY = 300
+CHEAP_FILTER_CONCURRENCY = 300
 
 
 def get_client_name() -> str:
