@@ -1,7 +1,7 @@
 import json
 import re
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Awaitable, Dict, List, Optional, Tuple, Type
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
@@ -39,7 +39,10 @@ from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT, CITATION_R
 from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
-from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.async_utils import (
+    gather_dict_as_completed,
+    gather_with_concurrency,
+)
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -730,45 +733,42 @@ Here is the text:
     # Don't want categories' weights to confuse GPT
     category_str = Category.multi_to_gpt_input(categories, include_weight=False)
 
-    tasks = []
-    for text in topic_group.val:
-        if not text.stock_id:
+    task_to_text_obj: Dict[Awaitable[str], Text] = {}
+    for text_obj in topic_group.val:
+        if not text_obj.stock_id:
             continue
 
-        text_str = topic_group.get_str_for_text(text.id)
+        text_str = topic_group.get_str_for_text(text_obj.id)
         if not text_str:
             continue
 
         company_description = gbi_id_to_description.get(
-            text.stock_id.gbi_id, "No company description"
+            text_obj.stock_id.gbi_id, "No company description"
         )
-
-        tasks.append(
-            gpt.do_chat_w_sys_prompt(
-                main_prompt=main_prompt.format(
-                    company_description=company_description,
-                    hypothesis=hypothesis,
-                    categories=category_str,
-                    topic=text_str,
-                    max_category_idx=len(categories) - 1,
-                ),
-                sys_prompt=NO_PROMPT,
-            )
+        task = gpt.do_chat_w_sys_prompt(
+            main_prompt=main_prompt.format(
+                company_description=company_description,
+                hypothesis=hypothesis,
+                categories=category_str,
+                topic=text_str,
+                max_category_idx=len(categories) - 1,
+            ),
+            sys_prompt=NO_PROMPT,
         )
+        task_to_text_obj[task] = text_obj
 
-    results: List[str] = await gather_with_concurrency(tasks=tasks, n=300)
-
-    # Divide results
     category_idx_to_topic_group: Dict[int, TopicGroup] = {}
-    for text_obj, result in zip(topic_group.val, results):
+    async for text_obj, result in gather_dict_as_completed(task_to_text_obj, n=300):
+        if text_obj is None or result is None:
+            continue
+
         try:
-            cleaned_result: Dict = json.loads(clean_to_json_if_needed(result))
+            cleaned_result = json.loads(clean_to_json_if_needed(result))
+            if not isinstance(cleaned_result, dict):
+                continue
         except Exception as e:
             # we should not fail the whole process if one of the results is not parseable
             logger.warning(f"Failed to parse result {result} for text object {text_obj}: {e}")
-            continue
-
-        if not isinstance(cleaned_result, dict):
             continue
 
         # no single gpt calls should fail the whole process

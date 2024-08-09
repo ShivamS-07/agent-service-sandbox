@@ -4,16 +4,20 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from typing import (
     Any,
+    AsyncIterable,
     Awaitable,
     Callable,
     Collection,
     Coroutine,
+    Dict,
     List,
     Optional,
+    Tuple,
     TypeVar,
 )
 
 T = TypeVar("T")
+ANY_TYPE = TypeVar("ANY_TYPE")
 
 MAX_CONCURRENCY = 4
 
@@ -89,6 +93,50 @@ async def gather_with_concurrency(tasks: Collection[Awaitable], n: int = MAX_CON
             return await task
 
     return await asyncio.gather(*(sem_task(task) for task in tasks))
+
+
+async def gather_dict_as_completed(
+    task_to_id: Dict[Awaitable[T], ANY_TYPE], n: Optional[int] = None
+) -> AsyncIterable[Tuple[Optional[ANY_TYPE], Optional[T]]]:
+    """Run multiple coroutines concurrently with limited semaphore and yield the results as soon as
+    they are done. Note this is MORE efficient than `gather_with_concurrency` as you can process
+    the tasks whenever they are done, instead of waiting for all of them to finish. However, the
+    order of the results is in the order of completion, not the order of the input.
+
+    To use it, do this:
+    async for task_id, result in gather_dict_as_completed(task_to_id, n):
+        # do something with the result
+
+    Args:
+        task_to_id (Dict[Awaitable[T], ANY_TYPE]): A dictionary of future to id mapping.
+    `id` could be anything that later helps you identify the order/result.
+        n (Optional[int]): number of coroutines to run concurrently. None means run
+    all of them concurrently.
+
+    Returns:
+        AsyncIterable[Tuple[Optional[ANY_TYPE], Optional[T]]]: An async generator that yields
+    the results of the coroutines as soon as it's done. When the task fails, it will yield None.
+    """
+    if n is None:
+        n = len(task_to_id)
+    else:
+        n = min(n, len(task_to_id))
+
+    semaphore = asyncio.Semaphore(n)
+
+    async def sem_task(task_id: ANY_TYPE, task: Awaitable[T]) -> Tuple[Any, T]:
+        async with semaphore:
+            result = await task
+            return task_id, result
+
+    wrapped_tasks = [sem_task(task_id, task) for task, task_id in task_to_id.items()]
+    for coro in asyncio.as_completed(wrapped_tasks):
+        try:
+            task_id, result = await coro
+            yield (task_id, result)
+        except Exception as e:
+            print(f"Error in gather_dict_as_completed: {e}")
+            yield (None, None)
 
 
 def async_wrap(func: Callable[..., T]) -> Callable[..., Coroutine[Any, Any, T]]:
