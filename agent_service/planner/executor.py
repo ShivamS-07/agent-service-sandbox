@@ -845,7 +845,7 @@ async def rewrite_execution_plan(
         plan=new_plan,
         context=ctx,
         do_chat=do_chat,
-        override_task_id_output_lookup=override_task_output_id_lookup,
+        override_task_output_id_lookup=override_task_output_id_lookup,
         replan_execution_error=replan_execution_error,
     )
 

@@ -7,7 +7,6 @@ WORKDIR /service
 COPY Pipfile.lock Pipfile ./
 RUN pipenv install
 RUN pipenv install --dev
-RUN pipenv run pip install "clickhouse-connect==0.7.18"
 COPY . .
 ENV ENVIRONMENT=DEV
 CMD ["pipenv", "run", "invoke", "verify"]
