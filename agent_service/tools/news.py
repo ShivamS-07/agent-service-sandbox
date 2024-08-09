@@ -53,9 +53,7 @@ async def _get_news_developments_helper(
         topics = stock_to_topics_map[stock]
         topic_list = []
         for topic in topics:
-            topic_dt = timestamp_to_datetime(topic.last_major_update_timestamp)
-            if topic_dt is None:
-                topic_dt = timestamp_to_datetime(topic.first_article_timestamp)
+            topic_dt = timestamp_to_datetime(topic.first_article_timestamp)
             if topic_dt is None:
                 continue
 
