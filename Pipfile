@@ -53,7 +53,7 @@ Levenshtein = {version = "==0.25.1", index = "pypi"}
 
 # External services
 gpt-service-proto-v1 = {version = "==1.4.0", index = "gbi"}
-nlp_service_proto_v1 = {version = "==1.137.0", index = "gbi"}
+nlp_service_proto_v1 = {version = "==1.139.0", index = "gbi"}
 stock-universe-service-proto-v1 = {version = "==0.43.0", index = "gbi"}
 pa-portfolio-service-proto-v1 = {version = "==1.306.0", index = "gbi"}
 discover_service_proto_v1 = {version = "==0.19.0", index = "gbi"}
