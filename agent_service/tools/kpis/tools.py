@@ -636,7 +636,6 @@ async def classify_specific_or_general_topic(
     llm: GPT,
     context: PlanRunContext,
 ) -> List[KPIText]:
-
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=CLASSIFY_SPECIFIC_GENERAL_MAIN_PROMPT_OBJ.format(topic=topic),
         sys_prompt=CLASSIFY_SPECIFIC_GENERAL_SYS_PROMPT_OBJ.format(),
@@ -735,7 +734,8 @@ async def get_specific_kpi_data_for_stock_id(
             await tool_log(
                 f"Failed to KPIs for stock {stock_id.company_name} {stock_id.gbi_id} "
                 f"due to faulty GPT response for gpt response: '{result}', "
-                f"had {len((company_info.kpi_index_to_pid_mapping.keys()))+1}"
+                f"had {len((company_info.kpi_index_to_pid_mapping.keys()))+1}",
+                context=context,
             )
 
     return specific_kpi_list
@@ -747,7 +747,6 @@ def interpret_date_quarter_inputs(
     anchor_date: Optional[datetime.date] = None,
     date_range: Optional[DateRange] = None,
 ) -> Tuple[int, int, datetime.datetime]:
-
     if date_range:
         anchor_date = date_range.end_date
         num_future_quarters = 0  # we will always do a look back instead of look forward

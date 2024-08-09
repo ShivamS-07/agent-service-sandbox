@@ -492,7 +492,7 @@ class CustomDocumentSummaryText(StockText):
         # support. Currently we just cite ALL chunks in the file.
         for user, citations in text_citation_by_user.items():
             article_info = await get_custom_doc_articles_info(
-                user, [cit.source_text.id for cit in citations]
+                user, [str(cit.source_text.id) for cit in citations]
             )
             for chunk_id, chunk_info in dict(article_info.file_chunk_info).items():
                 file_paths = list(chunk_info.file_paths)

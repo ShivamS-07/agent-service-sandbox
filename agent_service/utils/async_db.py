@@ -216,13 +216,13 @@ class AsyncDB:
         Optional[str],
     ]:
         sql = """
-            SELECT ep.plan_id::VARCHAR, ep.plan, pr.created_at, ep.status,
-              pr.plan_run_id::VARCHAR AS upcoming_plan_run_id
+            SELECT ep.plan_id::VARCHAR, ep.plan, COALESCE(pr.created_at, ep.created_at) AS created_at,
+             ep.status, pr.plan_run_id::VARCHAR AS upcoming_plan_run_id
             FROM agent.execution_plans ep
             LEFT JOIN agent.plan_runs pr
             ON ep.plan_id = pr.plan_id
             WHERE ep.agent_id = %(agent_id)s
-            ORDER BY pr.created_at DESC
+            ORDER BY ep.last_updated DESC, pr.created_at  DESC
             LIMIT 1;
         """
         rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})

@@ -16,13 +16,16 @@ from typing import (
     TypeVar,
 )
 
+from typing_extensions import ParamSpec
+
 T = TypeVar("T")
+P = ParamSpec("P")
 ANY_TYPE = TypeVar("ANY_TYPE")
 
 MAX_CONCURRENCY = 4
 
 
-def sync(async_fn: Callable[..., Coroutine[Any, Any, T]]) -> Callable[..., T]:
+def sync(async_fn: Callable[P, Coroutine[Any, Any, T]]) -> Callable[P, T]:
     """
     Wrapper class around an async function to expose a synchronous version by running
     it in its own event loop.
@@ -139,7 +142,7 @@ async def gather_dict_as_completed(
             yield (None, None)
 
 
-def async_wrap(func: Callable[..., T]) -> Callable[..., Coroutine[Any, Any, T]]:
+def async_wrap(func: Callable[P, T]) -> Callable[P, Coroutine[Any, Any, T]]:
     """A decorator to wrap a synchronous function to async.
     2 ways to use it:
         1) Put it above func like @async_wrap

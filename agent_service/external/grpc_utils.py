@@ -16,6 +16,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from grpclib import GRPCError
 from jwt import PyJWT
 from jwt.algorithms import RSAAlgorithm
+from typing_extensions import ParamSpec
 
 
 def get_default_grpc_metadata(
@@ -94,9 +95,10 @@ def timestamp_to_date(
 
 
 T = TypeVar("T")
+P = ParamSpec("P")
 
 
-def grpc_retry(func: Callable[..., T]) -> Callable[..., T]:
+def grpc_retry(func: Callable[P, T]) -> Callable[P, T]:
     """
     A generic retry decorator for gRPC calls - 3 retries with a `1 + uniform(0,1)` seconds interval
     Currently only retry on `GRPCError` in case of a network error, we can further customize to

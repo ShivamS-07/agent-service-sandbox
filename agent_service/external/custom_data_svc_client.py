@@ -114,7 +114,7 @@ async def get_custom_docs_by_topic(
 @async_perf_logger
 async def get_custom_doc_articles_info(
     user_id: str,
-    article_ids: str,
+    article_ids: List[str],
 ) -> GetFileChunkInfoResponse:
     with _get_service_stub() as stub:
         req = GetFileChunkInfoRequest(

@@ -41,11 +41,7 @@ from agent_service.utils.agent_event_utils import (
     publish_agent_task_status,
     send_chat_message,
 )
-from agent_service.utils.async_db import (
-    AsyncDB,
-    get_chat_history_from_db,
-    get_latest_execution_plan_from_db,
-)
+from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.output_utils.output_diffs import OutputDiffer
 from agent_service.utils.output_utils.utils import output_for_log
@@ -725,9 +721,7 @@ async def rewrite_execution_plan(
     logger.info(f"Starting rewrite of execution plan for {agent_id=}...")
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
     automation_enabled = await db.get_agent_automation_enabled(agent_id=agent_id)
-    old_plan_id, old_plan, plan_timestamp, _, _ = await get_latest_execution_plan_from_db(
-        agent_id, db
-    )
+    old_plan_id, old_plan, plan_timestamp, _, _ = await db.get_latest_execution_plan(agent_id)
     if automation_enabled and action == Action.APPEND:
         pg = get_psql()
         old_plan_id, live_plan = pg.get_agent_live_execution_plan(agent_id=agent_id)
@@ -737,7 +731,7 @@ async def rewrite_execution_plan(
             raise RuntimeError(f"No live plan found for agent {agent_id}!")
         replan_execution_error = False
 
-    if not old_plan or not old_plan_id:  # shouldn't happen, just for mypy
+    if not old_plan or not old_plan_id or not plan_timestamp:  # shouldn't happen, just for mypy
         raise RuntimeError("Cannot rewrite a plan that does not exist!")
 
     await publish_agent_plan_status(

@@ -904,18 +904,9 @@ async def main() -> None:
     AI_message = Message(message=AI_response, is_user_message=True, message_time=get_now_utc())
     chat_context = ChatContext(messages=[user_message, AI_message])
     planner = Planner("123")
-    plan = await planner.create_initial_plan(chat_context)
+    plan = await planner.create_initial_plan(chat_context, plan_id=str(uuid4()))
 
     print(plan)
-
-    # new_user_input = "I need you to include Amazon in the summary as well"
-    new_user_input = "Focus the summary on Generative AI research"
-
-    new_message = Message(message=new_user_input, is_user_message=True, message_time=get_now_utc())
-    chat_context.messages.append(new_message)
-    updated_plan = await planner.rewrite_plan_after_input(chat_context, plan)
-    print(updated_plan)
-    chat_context.messages.pop()
 
 
 if __name__ == "__main__":

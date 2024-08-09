@@ -1,5 +1,6 @@
 import asyncio
 from typing import List, Tuple, Type
+from uuid import uuid4
 
 from agent_service.GPT.constants import GPT4_O, GPT4_TURBO, NO_PROMPT
 from agent_service.GPT.requests import GPT
@@ -142,7 +143,7 @@ async def main() -> None:
     AI_message = Message(message=AI_response, is_user_message=True, message_time=get_now_utc())
     chat_context = ChatContext(messages=[user_message, AI_message])
     planner = Planner("123")
-    plan = await planner.create_initial_plan(chat_context)
+    plan = await planner.create_initial_plan(chat_context, plan_id=str(uuid4()))
 
     new_user_inputs = [
         "Thanks!",

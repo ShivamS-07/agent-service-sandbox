@@ -4,6 +4,8 @@ import sys
 import time
 from typing import Callable, Optional, TypeVar
 
+from typing_extensions import ParamSpec
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -51,7 +53,10 @@ def init_test_logging(
     )
 
 
-def async_perf_logger(func: Callable[..., T], level: int = logging.INFO) -> Callable[..., T]:
+P = ParamSpec("P")
+
+
+def async_perf_logger(func: Callable[P, T], level: int = logging.INFO) -> Callable[P, T]:
     @functools.wraps(func)
     async def wrapper_timer(*args, **kwargs) -> T:  # type: ignore
         start_time = time.perf_counter()

@@ -146,7 +146,6 @@ class UploadHandler:
 
     @async_perf_logger
     async def identify_upload_type(self) -> Tuple[Optional[UploadType], Optional[str]]:
-
         # TODO: use a better way to identify file types
         # just support basic portfolio / watchlist by parsing header column
         try:
@@ -175,8 +174,14 @@ class UploadHandler:
 
     @async_perf_logger
     async def process_upload(self, upload_type: UploadType) -> UploadResult:
+        if not self.upload.filename:
+            return UploadResult(
+                message=(
+                    "Sorry, I ran into some issues while importing this file."
+                    " Please me sure the file has a valid filename."
+                )
+            )
         if upload_type == UploadType.PORTFOLIO:
-
             data = await self._read_upload_bytes()
 
             try:
@@ -208,7 +213,6 @@ class UploadHandler:
         if upload_type == UploadType.WATCHLIST:
             data = await self._read_upload_bytes()
             try:
-
                 watchlist_id = await create_watchlist_from_bytes(
                     data,
                     self.upload.filename,

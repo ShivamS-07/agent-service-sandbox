@@ -281,6 +281,7 @@ async def get_statistics_for_theme(
         stock_ids=[],
         from_date=date_range.start_date,
         to_date=date_range.end_date,
+        user_id=context.user_id,
     )
     global_data = data.global_data
     np_sheet = None
@@ -579,7 +580,6 @@ async def prepare_main_prompt(
     logger.info(f"Length of tokens in main prompt: {main_prompt_token_length}")
     # if main prompt is too long, summerize some texts
     if main_prompt_token_length > MAX_TOKENS[COMMENTARY_LLM]:
-
         texts = GPTTokenizer(COMMENTARY_LLM).do_truncation_if_needed(
             texts,
             [
