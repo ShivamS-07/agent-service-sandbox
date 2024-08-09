@@ -161,6 +161,9 @@ class GetMacroeconomicThemeInput(ToolArgs):
         "do not include language that indicates the polarity/direction, for example if the query is "
         "`we want rising oil price losers`, the theme reference is `Oil Prices`, both `rising` and `losers "
         "should be excluded."
+        "Never use this tool or any other theme tool if the client asks you specifically to read over "
+        "documents to identify macroeconomic trends, this tool must only be used if the user asks for "
+        "a specific existing theme and uses the word `theme`."
     ),
     category=ToolCategory.THEME,
 )
@@ -200,6 +203,9 @@ class GetStocksAffectedByThemesInput(ToolArgs):
         "This function returns a list of stocks (stock identifiers) that are either positively (if "
         "positive is True) or negatively affected (if positive is False) by the macroeconomic themes"
         " The list of stocks includes information about how they are affect by the theme."
+        "Never use this tool or any other theme tool if the client asks you specifically to read over "
+        "documents to identify macroeconomic trends, this tool must only be used if the user asks for "
+        "a specific existing theme and uses the word `theme`."
     ),
     category=ToolCategory.THEME,
 )
@@ -257,9 +263,13 @@ class GetMacroeconomicThemesAffectingStocksInput(ToolArgs):
 
 @tool(
     description=(
-        "This function takes a list of stock identifiers and returns a list of "
+        "This function takes a short list of stock identifiers and returns a list of "
         "macroeconomic themes that are affecting the stocks."
         "This tool can be used when the themes related to a list of stocks are needed. "
+        "Never use this tool with a large universe of stocks"
+        "Never use this tool or any other theme tool if the client asks you to read over "
+        "documents to identify macroeconomic trends!"
+        "Never use this tool if the word 'theme' is not explicitly mentioned!"
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
@@ -293,6 +303,9 @@ class GetMacroeconomicThemeOutlookInput(ToolArgs):
     description=(
         "This function takes a list of macroeconomic themes and returns the information about their current "
         "trend or outlook for each theme. There is one outlook text for each input theme."
+        "Never use this tool or any other theme tool if the client asks you specifically to read over "
+        "documents to identify macroeconomic trends, this tool must only be used if the user asks for "
+        "a specific existing theme and uses the word `theme`."
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
