@@ -5,7 +5,7 @@ from typing import Awaitable, Dict, List, Optional, Tuple, Type
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
-from agent_service.GPT.constants import GPT4_O, NO_PROMPT, SONNET
+from agent_service.GPT.constants import GPT4_O, GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT, _get_gpt_service_stub
 from agent_service.io_type_utils import (
     ComplexIOBase,
@@ -727,7 +727,7 @@ Here is the text:
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    gpt = GPT(context=gpt_context, model=SONNET, gpt_service_stub=gpt_service_stub)
+    gpt = GPT(context=gpt_context, model=GPT4_O_MINI, gpt_service_stub=gpt_service_stub)
 
     # Create GPT tasks
     # Don't want categories' weights to confuse GPT
