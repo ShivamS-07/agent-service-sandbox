@@ -4,7 +4,7 @@ import json
 import logging
 from dataclasses import dataclass
 from logging import Logger, LoggerAdapter
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 from uuid import UUID
 
 import boto3
@@ -73,7 +73,7 @@ async def prefect_run_execution_plan(
     plan: ExecutionPlan,
     context: PlanRunContext,
     do_chat: bool = True,
-    override_task_output_lookup: Optional[Dict[str, Any]] = None,
+    override_task_id_output_lookup: Optional[Dict[str, str]] = None,
     replan_execution_error: bool = True,
 ) -> None:
     sqs = boto3.resource("sqs", region_name="us-west-2")
@@ -81,7 +81,7 @@ async def prefect_run_execution_plan(
         "plan": plan.model_dump(),
         "context": context.model_dump(),
         "do_chat": do_chat,
-        "override_task_output_lookup": override_task_output_lookup,
+        "override_task_id_output_lookup": override_task_id_output_lookup,
         "replan_execution_error": replan_execution_error,
     }
     message_contents = {

@@ -461,6 +461,7 @@ def tool(
                         if cached_val:
                             event_data["cache_hit"] = True
                             event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
+                            event_data["result"] = dump_io_type(cached_val)
                             log_event(event_name="agent-service-tool-call", event_data=event_data)
                             return cached_val
 

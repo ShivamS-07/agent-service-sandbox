@@ -865,6 +865,8 @@ order by num_queries desc"""
     async def get_task_outputs(
         self, agent_id: str, task_ids: List[str], old_plan_id: str
     ) -> Dict[str, Any]:
+        from agent_service.io_type_utils import load_io_type
+
         sql = """
             SELECT DISTINCT ON (task_id)
                 task_id,
@@ -882,5 +884,50 @@ order by num_queries desc"""
         )
         res = {}
         for row in rows:
-            res[row["task_id"]] = json.loads(row["output"])
+            res[row["task_id"]] = load_io_type(row["output"])
+        return res
+
+    async def get_task_outputs_from_replay_ids(self, replay_ids: List[str]) -> Dict[str, Any]:
+        from agent_service.io_type_utils import load_io_type
+
+        sql = """
+            SELECT
+                task_id,
+                result AS output
+            FROM agent.tool_calls
+            WHERE
+                replay_id IN %(replay_ids)s
+                AND result <> ''
+        """
+        rows = self.generic_read(sql, params={"replay_ids": replay_ids})
+        res = {}
+        for row in rows:
+            res[row["task_id"]] = load_io_type(row["output"])
+        return res
+
+    async def get_task_replay_ids(
+        self, agent_id: str, task_ids: List[str], plan_id: str
+    ) -> Dict[str, str]:
+        """
+        Given a list of task id's, return a mapping from task ID to replay ID
+        for the most recent row given the agent and plan ids.
+        """
+        sql = """
+            SELECT DISTINCT ON (task_id)
+                task_id,
+                replay_id
+            FROM agent.tool_calls
+            WHERE
+                agent_id = %(agent_id)s
+                AND task_id IN %(task_ids)s
+                AND plan_id = %(old_plan_id)s
+                AND result <> ''
+            ORDER BY task_id, end_time_utc DESC
+        """
+        rows = self.generic_read(
+            sql, params={"agent_id": agent_id, "task_ids": task_ids, "old_plan_id": plan_id}
+        )
+        res = {}
+        for row in rows:
+            res[row["task_id"]] = row["replay_id"]
         return res

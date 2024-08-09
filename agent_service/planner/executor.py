@@ -87,6 +87,13 @@ async def run_execution_plan(
     override_task_output_lookup: Optional[Dict[str, IOType]] = None,
     scheduled_by_automation: bool = False,
     execution_log: Optional[DefaultDict[str, List[dict]]] = None,
+    # This is the production ready alternative to
+    # `override_task_output_lookup`.  Instead of including the entire
+    # output in the dict (which could be very large), simply map task ID's to
+    # "replay ID's", which uniquely identify rows in clickhouse's tool_calls
+    # table. By doing this, we can avoid having to send massive objects over the
+    # network (sqs, to prefect, etc.).
+    override_task_output_id_lookup: Optional[Dict[str, str]] = None,
 ) -> List[IOType]:
     ###########################################
     # PLAN RUN SETUP
@@ -111,6 +118,15 @@ async def run_execution_plan(
 
     if scheduled_by_automation:
         context.diff_info = {}  # this will be populated during the run
+
+    if override_task_output_id_lookup:
+        try:
+            task_id_output_map = await Clickhouse().get_task_outputs_from_replay_ids(
+                replay_ids=list(override_task_output_id_lookup.values())
+            )
+            override_task_output_lookup = task_id_output_map
+        except Exception:
+            logger.exception("Unable to fetch task outputs using replay ID's from clickhouse")
 
     final_outputs = []
     final_outputs_with_ids: List[OutputWithID] = []
@@ -704,7 +720,7 @@ async def rewrite_execution_plan(
     planner = Planner(agent_id=agent_id)
     db = db or AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
     chatbot = Chatbot(agent_id=agent_id)
-    override_task_output_lookup = None
+    override_task_output_id_lookup = None
     replan_execution_error = True
     logger.info(f"Starting rewrite of execution plan for {agent_id=}...")
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
@@ -754,8 +770,8 @@ async def rewrite_execution_plan(
 
         if automation_enabled and action == Action.APPEND and new_plan:
             task_ids = planner.replicate_plan_set_for_automated_run(old_plan, new_plan)
-            override_task_output_lookup = await Clickhouse().get_task_outputs(
-                agent_id=agent_id, task_ids=task_ids, old_plan_id=old_plan_id
+            override_task_output_id_lookup = await Clickhouse().get_task_replay_ids(
+                agent_id=agent_id, task_ids=task_ids, plan_id=old_plan_id
             )
 
     if await check_cancelled(db=db, plan_id=plan_id):
@@ -829,7 +845,7 @@ async def rewrite_execution_plan(
         plan=new_plan,
         context=ctx,
         do_chat=do_chat,
-        override_task_output_lookup=override_task_output_lookup,
+        override_task_id_output_lookup=override_task_output_id_lookup,
         replan_execution_error=replan_execution_error,
     )
 
