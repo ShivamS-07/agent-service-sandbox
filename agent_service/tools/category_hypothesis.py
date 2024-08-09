@@ -571,6 +571,7 @@ async def generate_summary_for_competitive_analysis(
         context=context,
         gpt_service_stub=gpt_service_stub,
     )
+
     await tool_log(log="Generated the final summary", context=context)
 
     target_stock_symbol = args.competitive_analysis.actual_target_stock.symbol
@@ -936,7 +937,7 @@ async def _rank_by_gpt_and_post_process(
         )
 
         await tool_log(
-            f"Finished ranking and summarizing for category <{categories[category_idx].name}>",
+            log=f"Finished ranking and summarizing for category <{category_name}>",
             context=context,
         )
 

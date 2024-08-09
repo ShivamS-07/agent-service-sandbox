@@ -176,3 +176,17 @@ def async_wrap(func: Callable[..., T]) -> Callable[..., Coroutine[Any, Any, T]]:
 
 async def identity(x: Any) -> Any:
     return x
+
+
+def run_async_background(coro: Coroutine[Any, Any, T]) -> asyncio.Task:
+    """Run an async function in the background without waiting for it to complete.
+    Be careful! If the coroutine doesn't finish before the program exits, it will be terminated
+
+    Args:
+        coro (Coroutine[Any, Any, T]): An async function object, e.g `func(a, b, c)`
+
+    Returns:
+        asyncio.Task: Return the task object. If you need it to be awaited/blocking, use `await task`
+    in the program
+    """
+    return asyncio.create_task(coro)
