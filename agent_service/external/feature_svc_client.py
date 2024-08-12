@@ -6,6 +6,12 @@ from contextlib import contextmanager
 from functools import lru_cache
 from typing import Dict, Generator, List, Optional, Tuple
 
+import pandas as pd
+from feature_service_proto_v1.daily_pricing_pb2 import (
+    CubeFormat,
+    GetAdjustedCumulativeReturnsRequest,
+    GetAdjustedCumulativeReturnsResponse,
+)
 from feature_service_proto_v1.earnings_pb2 import (
     GetEarningsReleasesInRangeRequest,
     GetEarningsReleasesInRangeResponse,
@@ -23,12 +29,14 @@ from feature_service_proto_v1.feature_service_pb2 import (
     GetFeatureDataResponse,
     TimeAxis,
 )
+from feature_service_proto_v1.proto_cube_pb2 import ProtoCube
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
     LOCAL_TAG,
     PROD_TAG,
     get_environment_tag,
 )
+from google.protobuf.json_format import MessageToDict
 from grpclib.client import Channel
 
 from agent_service.external.grpc_utils import (
@@ -186,3 +194,72 @@ async def get_earnings_releases_in_range(
                 output[gbi_id].append(date)
 
     return output
+
+
+@grpc_retry
+@async_perf_logger
+async def get_return_for_stocks(
+    gbi_ids: List[int], start_date: datetime.date, end_date: datetime.date, user_id: str = ""
+) -> Dict[int, float]:
+    """
+    Given a list of stocks and a date range, returns the adjusted cumulative returns
+    for the stocks in the range. The output is a DataFrame with the following columns:
+    - gbi_id: the stock id
+    - Date: the most recent date in the range
+    - Return: the adjusted cumulative return for the stock on the given date
+
+    """
+
+    def proto_cube_to_dataframe(proto_cube: ProtoCube) -> Dict[int, float]:
+        # Convert ProtoCube to dictionary
+        proto_dict = MessageToDict(proto_cube)
+
+        # Extract the necessary data
+        rows = proto_dict.get("rows", [])
+        columns = proto_dict.get("columns", [])
+        fields = proto_dict.get("fields", [])
+        data = proto_dict.get("data", [])
+
+        # Prepare a list to gather data
+        records = []
+
+        # Populate the list with the necessary data
+        for i, row in enumerate(data):
+            for j, col in enumerate(row["columns"]):
+                field_values = col["fields"]
+                for k, field_value in enumerate(field_values):
+                    records.append({"Row": rows[i], "Date": columns[j], fields[k]: field_value})
+
+        # Create a DataFrame from the list
+        df_long = pd.DataFrame(records)
+        # Convert 'Date' column to datetime
+        df_long["Date"] = pd.to_datetime(df_long["Date"])
+        df_long["Row"] = df_long["Row"].astype(int)
+        # filter out rows with NaN values, reset index, rename columns, and drop 'Date' column
+        df_res = (
+            df_long.loc[df_long["adjusted_cumulative_return"].notna(), :]
+            .loc[df_long["Date"] == df_long.Date.max(), :]
+            .reset_index(drop=True)
+            .rename(columns={"Row": "gbi_id", "adjusted_cumulative_return": "cum_return"})
+            .drop(columns=["Date", "close_price", "dividend_amount"])
+        )
+
+        # convert df to dict mapping gbi_id to return
+        dict_res = df_res.set_index("gbi_id")["cum_return"].to_dict()
+        return dict_res
+
+    with _get_service_stub() as stub:
+        req = GetAdjustedCumulativeReturnsRequest(
+            gbi_ids=gbi_ids,
+            start_date=date_to_timestamp(start_date),
+            end_date=date_to_timestamp(end_date),
+            response_format=CubeFormat.CUBE_FORMAT_PROTOBUF,
+        )
+        resp: GetAdjustedCumulativeReturnsResponse = await stub.GetAdjustedCumulativeReturns(
+            req, metadata=get_default_grpc_metadata(user_id=user_id)
+        )
+        if resp.status.code != 0:
+            raise ValueError(
+                f"Failed to get stock return: {resp.status.code} - {resp.status.message}"
+            )
+    return proto_cube_to_dataframe(resp.data)

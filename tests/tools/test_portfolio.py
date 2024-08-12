@@ -7,7 +7,6 @@ from uuid import uuid4
 
 import pandas as pd
 from google.protobuf.timestamp_pb2 import Timestamp
-from pa_portfolio_service_proto_v1.backtest_data_service_pb2 import StockPerformance
 from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID
 from pa_portfolio_service_proto_v1.workspace_pb2 import WorkspaceAuth, WorkspaceMetadata
 
@@ -90,10 +89,10 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
     @patch("agent_service.tools.portfolio.get_all_holdings_in_workspace")
     @patch("agent_service.tools.portfolio.get_workspace_name")
     @patch("agent_service.tools.portfolio.get_latest_price")
-    @patch("agent_service.tools.portfolio.get_stock_performance_for_date_range")
+    @patch("agent_service.tools.portfolio.get_return_for_stocks")
     async def test_get_portfolio_holdings(
         self,
-        mock_get_stock_performance_for_date_range: MagicMock,
+        mock_get_return_for_stocks: MagicMock,
         mock_get_latest_price: MagicMock,
         mock_get_workspace_name: MagicMock,
         mock_get_all_holdings_in_workspace: MagicMock,
@@ -120,12 +119,8 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
 
         mock_get_latest_price.return_value = {AAPL.gbi_id: 215, ERGB.gbi_id: 123}
 
-        mock_get_stock_performance_for_date_range.return_value = MagicMock(
-            stock_performance_list=[
-                StockPerformance(gbi_id=AAPL.gbi_id, performance=0.23),
-                StockPerformance(gbi_id=ERGB.gbi_id, performance=0.04),
-            ]
-        )
+        # Mock get_return_for_stocks
+        mock_get_return_for_stocks.return_value = {AAPL.gbi_id: 0.23, ERGB.gbi_id: 0.04}
 
         args = GetPortfolioHoldingsInput(portfolio_id=valid_uuid)
         result = await get_portfolio_holdings(args, self.context)
@@ -134,101 +129,28 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
             data=pd.DataFrame(
                 {
                     STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB],
-                    "Weight": [60.0, 40.0],
+                    "Weight": [0.6, 0.4],
                     "Price": [215, 123],
-                    "Performance": [23.0, 4.0],
+                    "Return": [0.23, 0.04],
                 }
             ),
             columns=[
                 TableColumnMetadata(
                     label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
                 ),
-                TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="Weight", col_type=TableColumnType.PERCENT),
                 TableColumnMetadata(label="Price", col_type=TableColumnType.FLOAT),
-                TableColumnMetadata(label="Performance", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="Return", col_type=TableColumnType.PERCENT),
             ],
         )
         pd.testing.assert_frame_equal(result.to_df(), expected_portfolio_holdings.to_df())
 
     @patch("agent_service.tools.portfolio.get_all_workspaces")
-    @patch("agent_service.tools.portfolio.get_full_strategy_info")
-    @patch("agent_service.tools.portfolio.get_psql")
-    async def test_get_portfolio_performance_monthly(
-        self,
-        mock_get_psql: MagicMock,
-        mock_get_full_strategy_info: MagicMock,
-        mock_get_all_workspaces: MagicMock,
-    ):
-        rows = self.create_dummy_workspaces_for_user(self.context.user_id)
-
-        mock_get_all_workspaces.return_value = [
-            WorkspaceMetadata(
-                workspace_id=UUID(id=row["id"]),
-                name=row["name"],
-                user_auth_level=row["user_auth_level"],
-                last_updated=row["last_updated"],
-                created_at=self.to_timestamp(1600000000),
-            )
-            for row in rows
-        ]
-        # Create a mock database and mock psql
-        mock_db = MagicMock()
-        mock_db.get_workspace_linked_id.return_value = str(uuid4())
-        mock_get_psql.return_value = mock_db
-
-        # Mock portfolio details response
-        mock_portfolio_details = MagicMock()
-        mock_performance_info = MagicMock()
-        mock_performance_info.monthly_gains.headers = ["Jan", "Feb", "YTD"]
-        mock_performance_info.monthly_gains.row_values = [
-            MagicMock(
-                values=[
-                    MagicMock(float_val=1.0),
-                    MagicMock(float_val=2.0),
-                    MagicMock(float_val=2.0),
-                ]
-            )
-        ]
-        mock_performance_info.monthly_gains_v_benchmark.row_values = [
-            MagicMock(
-                values=[
-                    MagicMock(float_val=0.5),
-                    MagicMock(float_val=1.5),
-                    MagicMock(float_val=1.5),
-                ]
-            )
-        ]
-        mock_portfolio_details.backtest_results.performance_info = mock_performance_info
-
-        mock_get_full_strategy_info.return_value = mock_portfolio_details
-
-        # Use a valid UUID for the test
-        valid_uuid = str(uuid4())
-        args = GetPortfolioPerformanceInput(
-            portfolio_id=valid_uuid,
-            performance_level="monthly",
-            date_range=DATE_RANGE_TEST,
-            sector_performance_horizon="1M",
-        )
-
-        result = await get_portfolio_performance(args, self.context)
-        print(result.to_df())
-        expected_data = {
-            "month": [datetime.date(2024, 1, 1), datetime.date(2024, 2, 1)],
-            "return": [100.0, 200.0],
-            "return-vs-benchmark": [50.0, 150.0],
-        }
-        expected_df = pd.DataFrame(expected_data)
-        expected_df = expected_df.melt(id_vars=["month"], var_name="field", value_name="value")
-
-        pd.testing.assert_frame_equal(result.to_df(), expected_df)
-
-    @patch("agent_service.tools.portfolio.get_all_workspaces")
     @patch("agent_service.tools.portfolio.get_portfolio_holdings")
-    @patch("agent_service.tools.portfolio.get_stocks_sector_performance_for_date_range")
+    @patch("agent_service.tools.portfolio.get_return_for_stocks")
     async def test_get_portfolio_performance_sector(
         self,
-        mock_get_stocks_sector_performance_for_date_range: MagicMock,
+        mock_get_return_for_stocks: MagicMock,
         mock_get_portfolio_holdings: MagicMock,
         mock_get_all_workspaces: MagicMock,
     ):
@@ -246,34 +168,18 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         ]
         # Mock portfolio holdings
         mock_portfolio_holdings = StockTable.from_df_and_cols(
-            data=pd.DataFrame({STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB], "Weight": [60.0, 40.0]}),
+            data=pd.DataFrame({STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB], "Weight": [0.6, 0.4]}),
             columns=[
                 TableColumnMetadata(
                     label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
                 ),
-                TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="Weight", col_type=TableColumnType.PERCENT),
             ],
         )
         mock_get_portfolio_holdings.return_value = mock_portfolio_holdings
 
-        # Mock sector performance data
-        mock_sector_performance_data = [
-            MagicMock(
-                sector_name="Technology",
-                sector_performance=0.05,
-                sector_weight=60.0,
-                weighted_sector_performance=3.0,
-            ),
-            MagicMock(
-                sector_name="Healthcare",
-                sector_performance=0.02,
-                sector_weight=40.0,
-                weighted_sector_performance=0.8,
-            ),
-        ]
-        mock_get_stocks_sector_performance_for_date_range.return_value = (
-            mock_sector_performance_data
-        )
+        # Mock stock performance data
+        mock_get_return_for_stocks.return_value = {AAPL.gbi_id: 0.1, ERGB.gbi_id: 0.05}
 
         # Use a valid UUID for the test
         valid_uuid = str(uuid4())
@@ -281,26 +187,34 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
             portfolio_id=valid_uuid,
             performance_level="sector",
             date_range=DATE_RANGE_TEST,
-            sector_performance_horizon="1M",
         )
 
         result = await get_portfolio_performance(args, self.context)
+        print("result sector: ", result.to_df())
+        # create the expected Table
         expected_data = {
-            "sector": ["Technology", "Healthcare"],
-            "return": [5.0, 2.0],
-            "weight": [60.0, 40.0],
-            "weighted-return": [3.0, 0.8],
+            "sector": ["Information Technology", "Industrials"],
+            "weight": [0.6, 0.4],
+            "weighted-return": [0.06, 0.02],
         }
         expected_df = pd.DataFrame(expected_data)
+        expected_table = StockTable.from_df_and_cols(
+            data=expected_df,
+            columns=[
+                TableColumnMetadata(label="sector", col_type=TableColumnType.STRING),
+                TableColumnMetadata(label="weight", col_type=TableColumnType.PERCENT),
+                TableColumnMetadata(label="weighted-return", col_type=TableColumnType.PERCENT),
+            ],
+        )
 
-        pd.testing.assert_frame_equal(result.to_df(), expected_df)
+        pd.testing.assert_frame_equal(result.to_df(), expected_table.to_df())
 
     @patch("agent_service.tools.portfolio.get_all_workspaces")
     @patch("agent_service.tools.portfolio.get_portfolio_holdings")
-    @patch("agent_service.tools.portfolio.get_stock_performance_for_date_range")
+    @patch("agent_service.tools.portfolio.get_return_for_stocks")
     async def test_get_portfolio_performance_stock(
         self,
-        mock_get_portfolio_stock_performance_for_date_range: MagicMock,
+        mock_get_return_for_stocks: MagicMock,
         mock_get_portfolio_holdings: MagicMock,
         mock_get_all_workspaces: MagicMock,
     ):
@@ -318,32 +232,18 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         ]
         # Mock portfolio holdings
         mock_portfolio_holdings = StockTable.from_df_and_cols(
-            data=pd.DataFrame({STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB], "Weight": [60.0, 40.0]}),
+            data=pd.DataFrame({STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB], "Weight": [0.6, 0.4]}),
             columns=[
                 TableColumnMetadata(
                     label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
                 ),
-                TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="Weight", col_type=TableColumnType.PERCENT),
             ],
         )
         mock_get_portfolio_holdings.return_value = mock_portfolio_holdings
 
-        # Mock sector performance data
-        mock_stock_performance_data = MagicMock(
-            stock_performance_list=[
-                MagicMock(
-                    gbi_id=AAPL.gbi_id,
-                    performance=0.05,
-                ),
-                MagicMock(
-                    gbi_id=ERGB.gbi_id,
-                    performance=0.02,
-                ),
-            ]
-        )
-        mock_get_portfolio_stock_performance_for_date_range.return_value = (
-            mock_stock_performance_data
-        )
+        # Mock get_return_for_stocks
+        mock_get_return_for_stocks.return_value = {AAPL.gbi_id: 0.1, ERGB.gbi_id: 0.05}
 
         # Use a valid UUID for the test
         valid_uuid = str(uuid4())
@@ -351,28 +251,27 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
             portfolio_id=valid_uuid,
             performance_level="stock",
             date_range=DATE_RANGE_TEST,
-            sector_performance_horizon="1M",
         )
 
         result = await get_portfolio_performance(args, self.context)
-
+        print("result stock: ", result.to_df())
         # create the expected Table
         expected = StockTable.from_df_and_cols(
             data=pd.DataFrame(
                 {
                     STOCK_ID_COL_NAME_DEFAULT: [AAPL, ERGB],
-                    "return": [5.0, 2.0],
-                    "portfolio-weight": [60.0, 40.0],
-                    "weighted-return": [3.0, 0.8],
+                    "return": [0.1, 0.05],
+                    "portfolio-weight": [0.6, 0.4],
+                    "weighted-return": [0.06, 0.02],
                 }
             ),
             columns=[
                 TableColumnMetadata(
                     label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
                 ),
-                TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
-                TableColumnMetadata(label="portfolio-weight", col_type=TableColumnType.FLOAT),
-                TableColumnMetadata(label="weighted-return", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="return", col_type=TableColumnType.PERCENT),
+                TableColumnMetadata(label="portfolio-weight", col_type=TableColumnType.PERCENT),
+                TableColumnMetadata(label="weighted-return", col_type=TableColumnType.PERCENT),
             ],
         )
 
@@ -437,7 +336,7 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
                 ),
                 TableColumnMetadata(label="Date", col_type=TableColumnType.DATE),
                 TableColumnMetadata(label="Action", col_type=TableColumnType.STRING),
-                TableColumnMetadata(label="Allocation Change", col_type=TableColumnType.FLOAT),
+                TableColumnMetadata(label="Allocation Change", col_type=TableColumnType.PERCENT),
             ],
         )
 

@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import date
 from typing import Any, Dict, List, Tuple
 
+import numpy as np
 import pandas as pd
 from data_access_layer.core.dao.securities import SecuritiesMetadataDAO
 from feature_service_proto_v1.feature_metadata_service_pb2 import (
@@ -15,9 +16,7 @@ from gbi_common_py_utils.numpy_common import NumpySheet
 from agent_service.external.feature_svc_client import (
     get_all_features_metadata,
     get_feature_data,
-)
-from agent_service.external.pa_backtest_svc_client import (
-    get_stock_performance_for_date_range,
+    get_return_for_stocks,
 )
 from agent_service.GPT.constants import (
     FILTER_CONCURRENCY,
@@ -394,10 +393,7 @@ async def prepare_portfolio_prompt(
     )
     portfolio_geography_prompt = GEOGRAPHY_PROMPT.format(portfolio_geography=portfolio_geography)
     performance_dict: Dict[str, pd.DataFrame] = {}
-    # get the sector level portfolio performance
-    sector_performance_horizon = (
-        await match_daterange_to_timedelta(date_range) if date_range else "1M"
-    )
+
     # get the portfolio performance on levels in PERFORMANCE_LEVELS
     # TODO: This can be parallelized
     for performance_level in PERFORMANCE_LEVELS:
@@ -405,7 +401,6 @@ async def prepare_portfolio_prompt(
             GetPortfolioPerformanceInput(
                 portfolio_id=portfolio_id,
                 performance_level=performance_level,
-                sector_performance_horizon=sector_performance_horizon,
                 date_range=date_range,
             ),
             context,
@@ -423,24 +418,22 @@ async def prepare_portfolio_prompt(
     )
     benchmark_holdings_df = benchmark_holdings.to_df()  # type: ignore
     gbi_ids = [stock.gbi_id for stock in benchmark_holdings_df[STOCK_ID_COL_NAME_DEFAULT]]
-    benchmark_stock_performance = await get_stock_performance_for_date_range(
+    benchmark_stock_performance_map = await get_return_for_stocks(
         gbi_ids=gbi_ids,
         start_date=date_range.start_date,
+        end_date=date_range.end_date,
         user_id=context.user_id,
     )
+    returns = [benchmark_stock_performance_map.get(gbi_id, np.nan) for gbi_id in gbi_ids]
     data = {
         STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(gbi_ids),
-        "return": [
-            stock.performance for stock in benchmark_stock_performance.stock_performance_list
-        ],
+        "return": returns,
         "benchmark-weight": benchmark_holdings_df["Weight"].values,
     }
     benchmark_stock_performance_df = pd.DataFrame(data)
-    benchmark_stock_performance_df["return"] = benchmark_stock_performance_df["return"] * 100
     benchmark_stock_performance_df["weighted-return"] = (
         benchmark_stock_performance_df["return"]
         * benchmark_stock_performance_df["benchmark-weight"]
-        / 100
     ).values
     benchmark_stock_performance_df = benchmark_stock_performance_df.sort_values(
         by="weighted-return", ascending=False
@@ -480,16 +473,17 @@ async def prepare_stocks_stats_prompt(
     """
 
     gbi_ids = [stock.gbi_id for stock in stock_ids]
-    stock_performance = await get_stock_performance_for_date_range(
+    stock_performance_map = await get_return_for_stocks(
         gbi_ids=gbi_ids,
         start_date=date_range.start_date,
+        end_date=date_range.end_date,
         user_id=context.user_id,
     )
     # Create a DataFrame/Table for the stock performance
     stock_performance_df = pd.DataFrame(
         {
             STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(gbi_ids),
-            "return": [stock.performance for stock in stock_performance.stock_performance_list],
+            "return": [stock_performance_map.get(gbi_id, np.nan) for gbi_id in gbi_ids],
         }
     )
     stock_performance_table = StockTable.from_df_and_cols(

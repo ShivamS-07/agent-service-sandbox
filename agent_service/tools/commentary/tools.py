@@ -269,10 +269,6 @@ async def get_commentary_inputs(
 
     # If market_trend is True, get the top themes and related texts
     if args.market_trend:
-        await tool_log(
-            log=f"Retrieving top {args.theme_num} market themes...",
-            context=context,
-        )
         try:
             # get top themes
             theme_num: int = args.theme_num if args.theme_num else 3
@@ -326,8 +322,9 @@ async def get_commentary_inputs(
         try:
             topic_texts = await get_texts_for_topics(args.topics, args.date_range, context)
             await tool_log(
-                log=f"Retrieved {len(topic_texts)} texts for topics {args.topics}.",
+                log=f"Retrieved {len(topic_texts)} texts for topics: {args.topics}.",
                 context=context,
+                associated_data=topic_texts,
             )
             texts.extend(topic_texts)
         except Exception as e:

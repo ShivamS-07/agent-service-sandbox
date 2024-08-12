@@ -16,10 +16,6 @@ from pa_portfolio_service_proto_v1.backtest_data_service_grpc import (
     BacktestDataServiceStub,
 )
 from pa_portfolio_service_proto_v1.backtest_data_service_pb2 import (
-    GetHoldingsSectorPerformanceRequest,
-    GetHoldingsSectorPerformanceResponse,
-    GetStockPerformanceForDateRangeRequest,
-    GetStockPerformanceForDateRangeResponse,
     GetThemesWithImpactedStocksRequest,
     GetThemesWithImpactedStocksResponse,
     GetUniverseSectorPerformanceForDateRangeRequest,
@@ -29,9 +25,7 @@ from pa_portfolio_service_proto_v1.backtest_data_service_pb2 import (
     UniverseStockFactorExposuresRequest,
     UniverseStockFactorExposuresResponse,
 )
-from pa_portfolio_service_proto_v1.pa_service_common_messages_pb2 import TimeDelta
 from pa_portfolio_service_proto_v1.proto_sheet_pb2 import ProtoSheet
-from pa_portfolio_service_proto_v1.watchlist_pb2 import StockWithWeight
 from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID
 from pa_portfolio_service_proto_v1.workspace_pb2 import StockAndWeight
 
@@ -137,51 +131,3 @@ async def get_universe_sector_performance_for_date_range(
             )
 
     return list(response.sector_performance_list)
-
-
-@grpc_retry
-@async_perf_logger
-async def get_stocks_sector_performance_for_date_range(
-    user_id: str, stocks_and_weights: List[StockWithWeight], time_delta: TimeDelta  # type: ignore
-) -> List[GetHoldingsSectorPerformanceResponse.SectorPerformance]:
-    with _get_service_stub() as stub:
-        req = GetHoldingsSectorPerformanceRequest(
-            holdings=stocks_and_weights,  # type: ignore
-            time_delta=time_delta,
-        )
-
-        response: GetHoldingsSectorPerformanceResponse = await stub.GetHoldingsSectorPerformance(
-            req,
-            metadata=get_default_grpc_metadata(user_id=user_id),
-        )
-        if response.status.code != 0:
-            raise ValueError(
-                f"Failed to get portfolio sector performance: {response.status.code} {response.status.message}"
-            )
-
-    return [performance for performance in response.performance_for_sectors]
-
-
-@grpc_retry
-@async_perf_logger
-async def get_stock_performance_for_date_range(
-    gbi_ids: List[int], start_date: datetime.date, user_id: str
-) -> GetStockPerformanceForDateRangeResponse:
-    with _get_service_stub() as stub:
-        req = GetStockPerformanceForDateRangeRequest(
-            gbi_ids=gbi_ids,
-            start_date=date_to_pb_timestamp(start_date),
-        )
-
-        response: GetStockPerformanceForDateRangeResponse = (
-            await stub.GetStockPerformanceForDateRange(
-                req,
-                metadata=get_default_grpc_metadata(user_id=user_id),
-            )
-        )
-        if response.status.code != 0:
-            raise ValueError(
-                f"Failed to get stock performances: {response.status.code} {response.status.message}"
-            )
-
-    return response
