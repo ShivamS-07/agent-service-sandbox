@@ -190,8 +190,7 @@ class CriteriaForCompetitiveAnalysis(ToolArgs):
 
 # Cache on plan ID
 def category_cache_key_fn(tool_name: str, args: ToolArgs, context: PlanRunContext) -> str:
-    args_str = args.model_dump_json(serialize_as_any=True)
-    return f"{tool_name}-{args_str}-{context.plan_id}"
+    return f"{tool_name}-{context.task_id}-{context.plan_id}"
 
 
 @tool(
