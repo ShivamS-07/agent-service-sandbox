@@ -7,6 +7,7 @@ from agent_service.io_type_utils import HistoryEntry, dump_io_type
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
 from agent_service.io_types.text import Text
+from agent_service.planner.errors import NonRetriableError
 from agent_service.tool import (
     TOOL_DEBUG_INFO,
     ToolArgs,
@@ -152,7 +153,6 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
 async def filter_stocks_by_product_or_service(
     args: FilterStocksByProductOrServiceInput, context: PlanRunContext
 ) -> List[StockID]:
-
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)
 
@@ -260,6 +260,10 @@ async def filter_stocks_by_product_or_service(
             f"\n{[stock.company_name for stock in filtered_stocks2]}"
         )
     )
+    if len(res) == 0:
+        raise NonRetriableError(
+            message="Stock product/service filter resulted in an empty list of stocks"
+        )
     return res
 
 

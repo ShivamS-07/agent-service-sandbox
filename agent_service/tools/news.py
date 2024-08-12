@@ -1,9 +1,8 @@
 import datetime
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Dict, Generator, List, Optional, Tuple
 
-from agent_service.external.grpc_utils import timestamp_to_datetime
-from agent_service.external.nlp_svc_client import get_multi_companies_news_topics
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, DEFAULT_EMBEDDING_MODEL
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.dates import DateRange
@@ -17,7 +16,7 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
-from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.date_utils import get_now_utc, parse_date_str_in_utc
 from agent_service.utils.postgres import Postgres, get_psql
 from agent_service.utils.prompt_utils import Prompt
 
@@ -26,21 +25,24 @@ MIN_POOL_PERCENT_PER_BATCH = 0.1
 MAX_NUM_RELEVANT_NEWS_PER_TOPIC = 200
 
 
+@dataclass(frozen=True)
+class NewsTopic:
+    topic_id: str
+    first_article: datetime.datetime
+    last_article: datetime.datetime
+    major_updates: List[datetime.datetime]
+
+
 async def _get_news_developments_helper(
     stock_ids: List[StockID],
     user_id: str,
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
 ) -> Dict[StockID, List[StockNewsDevelopmentText]]:
-    response = await get_multi_companies_news_topics(
-        user_id=user_id, gbi_ids=[stock.gbi_id for stock in stock_ids]
-    )
+
     # Response now has a list of topics. Build an association dict to ensure correct ordering.
-    stock_to_topics_map: Dict[StockID, List] = defaultdict(list)
-    gbi_id_to_topics_map: Dict[int, StockID] = {stock.gbi_id: stock for stock in stock_ids}
-    for topic in response.topics:
-        stock = gbi_id_to_topics_map[topic.gbi_id]
-        stock_to_topics_map[stock].append(topic)
+    stock_to_topics_map: Dict[StockID, List[NewsTopic]] = defaultdict(list)
+    gbi_id_to_stock_map: Dict[int, StockID] = {stock.gbi_id: stock for stock in stock_ids}
 
     if not start_date:
         start_date = (get_now_utc() - datetime.timedelta(days=7)).date()
@@ -48,23 +50,96 @@ async def _get_news_developments_helper(
         # Add an extra day to be sure we don't miss anything with timezone weirdness
         end_date = get_now_utc().date() + datetime.timedelta(days=1)
 
+    start_dt = datetime.datetime(
+        year=start_date.year,
+        month=start_date.month,
+        day=start_date.day,
+        tzinfo=datetime.timezone.utc,
+    )
+    end_dt = datetime.datetime(
+        year=end_date.year,
+        month=end_date.month,
+        day=end_date.day,
+        hour=23,
+        minute=59,
+        second=59,
+        tzinfo=datetime.timezone.utc,
+    ) + datetime.timedelta(
+        hours=12
+    )  # add extra time to prevent timezone weirdness
+
+    sql = """
+            WITH t AS (
+              SELECT
+                snt.topic_id,
+                CASE WHEN snt.gbi_id = -1 THEN sntm.gbi_id ELSE snt.gbi_id END AS gbi_id,
+                snt.topic_descriptions,
+                snt.created_at
+              FROM nlp_service.stock_news_topics snt
+              LEFT JOIN nlp_service.stock_news_topic_map sntm ON snt.topic_id = sntm.topic_id
+            )
+            SELECT t.topic_id::TEXT, t.gbi_id, t.topic_descriptions,
+                MIN(sn.published_at) AS first_article_date,
+                MAX(sn.published_at) AS last_article_date
+            FROM nlp_service.stock_news sn
+            JOIN t ON sn.topic_id = t.topic_id
+            WHERE t.gbi_id = ANY(%(gbi_ids)s) AND sn.topic_id NOTNULL
+            GROUP BY t.topic_id, t.gbi_id, t.topic_descriptions
+            HAVING MAX(sn.published_at) >= %(start_date)s AND MIN(sn.published_at) <= %(end_date)s
+    """
+    rows = get_psql().generic_read(
+        sql,
+        {
+            "gbi_ids": list(gbi_id_to_stock_map.keys()),
+            "start_date": start_dt,
+            "end_date": end_dt,
+        },
+    )
+
+    for row in rows:
+        stock = gbi_id_to_stock_map[row["gbi_id"]]
+        stock_to_topics_map[stock].append(
+            NewsTopic(
+                topic_id=row["topic_id"],
+                first_article=row["first_article_date"],
+                last_article=row["last_article_date"],
+                major_updates=list(
+                    sorted((parse_date_str_in_utc(desc[1]) for desc in row["topic_descriptions"]))
+                ),
+            )
+        )
+
     output_dict: Dict[StockID, List[StockNewsDevelopmentText]] = {}
     for stock in stock_ids:
         topics = stock_to_topics_map[stock]
+        if not topics:
+            continue
         topic_list = []
         for topic in topics:
-            topic_dt = timestamp_to_datetime(topic.first_article_timestamp)
-            if topic_dt is None:
-                continue
-
-            topic_date = topic_dt.date()
-            if topic_date < start_date or topic_date > end_date:
-                # Filter topics not in the time window
-                continue
-            # Only return ID's
-            topic_list.append(
-                StockNewsDevelopmentText(id=topic.topic_id.id, stock_id=stock, timestamp=topic_dt)
-            )
+            major_updates_in_range = [
+                mu for mu in topic.major_updates if mu >= start_dt and mu <= end_dt
+            ]
+            if start_dt <= topic.first_article and end_dt >= topic.last_article:
+                # If the topic falls FULLY within the date range, we can just
+                # use the development text as-is (i.e. the description)
+                topic_list.append(
+                    StockNewsDevelopmentText(
+                        id=topic.topic_id, stock_id=stock, timestamp=topic.last_article
+                    )
+                )
+            elif major_updates_in_range:
+                # Otherwise, if some major update to the topic happened within
+                # the date range, use an article between the range's start and
+                # the major update's timestamp.
+                topic_list.append(
+                    StockNewsDevelopmentText(
+                        id=topic.topic_id,
+                        stock_id=stock,
+                        timestamp=major_updates_in_range[-1],
+                        only_get_articles_start=start_dt,
+                        only_get_articles_end=major_updates_in_range[-1],
+                    )
+                )
         output_dict[stock] = topic_list
 
     return output_dict

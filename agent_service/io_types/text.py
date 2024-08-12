@@ -48,6 +48,7 @@ from agent_service.io_types.stock import StockID
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.clickhouse import Clickhouse
+from agent_service.utils.date_utils import parse_date_str_in_utc
 from agent_service.utils.sec.constants import LINK_TO_FILING_DETAILS
 from agent_service.utils.sec.sec_api import SecFiling
 
@@ -307,11 +308,38 @@ class StockNewsDevelopmentText(NewsText, StockText):
     id: str
     text_type: ClassVar[str] = "News Development Summary"
 
+    # If this is non-null, don't show the topic sumamry to GPT, just show
+    # summaries of the most recent articles since this date. This can be useful
+    # if the topic is brand new or if the user wants info on a very specific
+    # time range.
+    only_get_articles_start: Optional[datetime.datetime] = None
+    only_get_articles_end: Optional[datetime.datetime] = None
+
     @classmethod
     async def _get_strs_lookup(
         cls,
         news_topics: List[StockNewsDevelopmentText],
     ) -> Dict[TextIDType, str]:  # type: ignore
+        news_topics_articles_only = {
+            topic.id: (topic.only_get_articles_start, topic.only_get_articles_end)
+            for topic in news_topics
+            if topic.only_get_articles_start and topic.only_get_articles_end
+        }
+        news_topics = [topic for topic in news_topics if not topic.only_get_articles_start]
+        article_sql = """
+        SELECT snt.topic_id::TEXT, (topic_descriptions->-1->>0)::TEXT AS description,
+               snt.topic_label,
+               json_agg(json_build_object('headline', sn.headline,
+                                     'summary', sn.summary,
+                                     'published_at', sn.published_at,
+                                     'is_top_source', sn.is_top_source))
+          AS news_items
+        FROM nlp_service.stock_news_topics snt
+        JOIN nlp_service.stock_news sn ON snt.topic_id = sn.topic_id
+        WHERE snt.topic_id = ANY(%(topic_ids)s)
+        GROUP BY snt.topic_id
+        """
+
         sql = """
         SELECT topic_id::TEXT, topic_label, (topic_descriptions->-1->>0)::TEXT AS description
         FROM nlp_service.stock_news_topics
@@ -321,7 +349,37 @@ class StockNewsDevelopmentText(NewsText, StockText):
 
         db = get_psql()
         rows = db.generic_read(sql, {"topic_ids": [topic.id for topic in news_topics]})
-        return {row["topic_id"]: f"{row['topic_label']}: {row['description']}" for row in rows}
+        rows_with_articles = []
+        if news_topics_articles_only:
+            rows_with_articles = db.generic_read(
+                article_sql, {"topic_ids": list(news_topics_articles_only.keys())}
+            )
+        for row in rows_with_articles:
+            # For the rows with articles, create a description based on the
+            # article headlines and summaries.
+            news_items = [
+                item
+                for item in row["news_items"]
+                # Make sure the published_at date is between the start and end
+                # dates. news_topics_articles_only stores tuples of (start, end)
+                # pairs for each topic.
+                if news_topics_articles_only[row["topic_id"]][0]
+                <= parse_date_str_in_utc(item["published_at"])
+                <= news_topics_articles_only[row["topic_id"]][1]
+            ]
+            news_items = list(
+                sorted(
+                    news_items, key=lambda n: (n["is_top_source"], n["published_at"]), reverse=True
+                )
+            )
+            if news_items:
+                best_article = news_items[0]
+                row["description"] = best_article["summary"]
+                row["topic_label"] = best_article["headline"]
+        return {
+            row["topic_id"]: f"{row['topic_label']}: {row['description']}"
+            for row in rows + rows_with_articles
+        }
 
     @classmethod
     async def get_citations_for_output(
