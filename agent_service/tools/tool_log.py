@@ -2,13 +2,11 @@ from typing import Optional
 
 from agent_service.io_type_utils import IOType, dump_io_type
 from agent_service.types import PlanRunContext
-from agent_service.utils.async_utils import async_wrap
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 
 
-@async_wrap
-def tool_log(
+async def tool_log(
     log: IOType, context: PlanRunContext, associated_data: Optional[IOType] = None
 ) -> None:
     if not context.skip_db_commit:
