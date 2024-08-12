@@ -170,3 +170,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
     def test_get_test_cases(self):
         test_cases = self.agent_service_impl.get_test_cases().test_cases
         self.assertTrue(test_cases)
+
+    def test_get_canned_prompts(self):
+        canned_prompts = self.get_canned_prompts()
+        self.assertEqual(len(canned_prompts.canned_prompts), 5)

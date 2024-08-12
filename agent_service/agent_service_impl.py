@@ -10,12 +10,14 @@ from uuid import uuid4
 from fastapi import HTTPException, Request, UploadFile, status
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
+from agent_service.canned_prompts.canned_prompts import CANNED_PROMPTS
 from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
     Account,
     AgentEvent,
     AgentMetadata,
+    CannedPrompt,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     CreateAgentResponse,
@@ -34,6 +36,7 @@ from agent_service.endpoints.models import (
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
     GetAutocompleteItemsResponse,
+    GetCannedPromptsResponse,
     GetChatHistoryResponse,
     GetMemoryContentResponse,
     GetPlanRunOutputResponse,
@@ -801,3 +804,11 @@ class AgentServiceImpl:
                 ),
             ]
         )
+
+    def get_canned_prompts(self) -> GetCannedPromptsResponse:
+        canned_prompts = []
+        for canned_prompt in CANNED_PROMPTS:
+            canned_prompts.append(
+                CannedPrompt(id=canned_prompt["id"], prompt=canned_prompt["prompt"])
+            )
+        return GetCannedPromptsResponse(canned_prompts=canned_prompts)

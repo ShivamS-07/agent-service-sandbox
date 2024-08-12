@@ -32,6 +32,7 @@ from agent_service.endpoints.models import (
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
     GetAllAgentsResponse,
+    GetCannedPromptsResponse,
     GetChatHistoryResponse,
     GetTestCaseInfoResponse,
     GetTestSuiteRunInfoResponse,
@@ -123,3 +124,6 @@ class TestAgentServiceImplBase(unittest.TestCase):
         return self.loop.run_until_complete(
             self.agent_service_impl.get_info_for_test_case(test_name=test_name)
         )
+
+    def get_canned_prompts(self) -> GetCannedPromptsResponse:
+        return self.agent_service_impl.get_canned_prompts()

@@ -52,6 +52,7 @@ from agent_service.endpoints.models import (
     GetAllAgentsResponse,
     GetAutocompleteItemsRequest,
     GetAutocompleteItemsResponse,
+    GetCannedPromptsResponse,
     GetChatHistoryResponse,
     GetCitationDetailsResponse,
     GetMemoryContentResponse,
@@ -972,6 +973,15 @@ async def get_account_info(user: User = Depends(parse_header)) -> GetAccountInfo
 )
 async def get_team_accounts(user: User = Depends(parse_header)) -> GetTeamAccountsResponse:
     return await application.state.agent_service_impl.get_team_accounts(user=user)
+
+
+@router.get(
+    "/canned-prompts",
+    response_model=GetCannedPromptsResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_canned_prompts(user: User = Depends(parse_header)) -> GetCannedPromptsResponse:
+    return application.state.agent_service_impl.get_canned_prompts()
 
 
 initialize_unauthed_endpoints(application)

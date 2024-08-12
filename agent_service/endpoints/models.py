@@ -561,3 +561,12 @@ class GetTestCaseInfoResponse(BaseModel):
 
 class GetTestCasesResponse(BaseModel):
     test_cases: List[Dict[str, Any]]
+
+
+class CannedPrompt(BaseModel):
+    id: str
+    prompt: str
+
+
+class GetCannedPromptsResponse(BaseModel):
+    canned_prompts: List[CannedPrompt]

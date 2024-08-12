@@ -1,18 +1,22 @@
 # type: ignore
 from typing import DefaultDict, List
 
+from agent_service.canned_prompts.canned_prompts import CANNED_PROMPTS
 from agent_service.io_type_utils import IOType
 from regression_test.test_regression import TestExecutionPlanner, get_output, skip_in_ci
+
+
+def get_canned_prompt_text(prompt_id: str) -> str:
+    for canned_prompt in CANNED_PROMPTS:
+        if canned_prompt["id"] == prompt_id:
+            return canned_prompt["prompt"]
+    raise Exception(f"Could not find canned prompt with {prompt_id=}")
 
 
 class TestHomeScreenQueries(TestExecutionPlanner):
     @skip_in_ci
     def test_home_screen_q1_commentary(self):
-        prompt = (
-            "Write a commentary on market performance over the last month. Back"
-            " observations up with data. Format the commentary to make it easy"
-            " to read."
-        )
+        prompt = get_canned_prompt_text(prompt_id="write_commentary")
 
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output=output)
@@ -47,12 +51,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
     @skip_in_ci
     def test_home_screen_q2_top_tech(self):
-        prompt = (
-            "Identify the top 5 performing stocks in the technology sector over"
-            " the past year, focusing on companies with a market cap above"
-            " $10B. Provide a summary of their recent financial performance and"
-            " any significant news"
-        )
+        prompt = get_canned_prompt_text(prompt_id="identify_top_tech_stocks")
 
         def validate_output(prompt: str, output: IOType):
             return
@@ -88,13 +87,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
     @skip_in_ci
     def test_home_screen_q3_COST_developments(self):
-        prompt = (
-            "Summarize all the major developments for COST over the past year."
-            " Focus your analysis on corporate filings and earnings calls. Show"
-            " the developments in point form as a timeline with dates. Bold"
-            " anything important. For each development mention if it is"
-            " positive or negative and why it is significant to COST"
-        )
+        prompt = get_canned_prompt_text(prompt_id="summarize_costco")
 
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output=output)
@@ -144,11 +137,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
     @skip_in_ci
     def test_home_screen_q4_netlfix_earnings_call(self):
-        prompt = (
-            "Give me all information available about NFLX that will affect its"
-            " upcoming earnings call, use only top news sources, refer to past"
-            " earnings transcripts. Show answer in bullet points."
-        )
+        prompt = get_canned_prompt_text(prompt_id="summarize_netflix")
 
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output=output)
@@ -198,13 +187,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
     @skip_in_ci
     def test_home_screen_q5_filter(self):
-        prompt = (
-            "Look at the bottom 100 stocks in SPY based on their percentage"
-            " gain over the past year. Then filter that down to companies with"
-            " a PE > 10 and PE < 25. Then filter those companies down to good"
-            " buys with positive news over the past 3 months. Then add a deep"
-            " dive into the top 3 ideas"
-        )
+        prompt = get_canned_prompt_text(prompt_id="spy_pe_news_filter")
 
         def validate_output(prompt: str, output: IOType):
             return
