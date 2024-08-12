@@ -4,7 +4,7 @@ import os
 from collections import defaultdict
 from contextlib import contextmanager
 from functools import lru_cache
-from typing import Dict, Generator, List, Optional, Tuple
+from typing import Dict, Generator, List, Optional, Set, Tuple
 
 import pandas as pd
 from feature_service_proto_v1.daily_pricing_pb2 import (
@@ -171,7 +171,7 @@ async def get_all_features_metadata(
 @async_perf_logger
 async def get_earnings_releases_in_range(
     gbi_ids: List[int], start_date: datetime.date, end_date: datetime.date, user_id: str = ""
-) -> Dict[int, List[datetime.date]]:
+) -> Dict[int, Set[datetime.date]]:
     """
     Given a list of stocks and a date range, return a mapping from gbi id to a
     list of earnings release dates within the range. Note that if no earnings
@@ -186,12 +186,12 @@ async def get_earnings_releases_in_range(
         resp: GetEarningsReleasesInRangeResponse = await stub.GetEarningsReleasesInRange(
             req, metadata=get_default_grpc_metadata(user_id=user_id)
         )
-    output: Dict[int, List[datetime.date]] = defaultdict(list)
+    output: Dict[int, Set[datetime.date]] = defaultdict(set)
     for date_releases in resp.data:
         for gbi_id in date_releases.gbi_ids:
             date = timestamp_to_date(date_releases.release_date)
             if date:
-                output[gbi_id].append(date)
+                output[gbi_id].add(date)
 
     return output
 
