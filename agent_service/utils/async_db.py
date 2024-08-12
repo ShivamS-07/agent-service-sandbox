@@ -614,7 +614,7 @@ class AsyncDB:
     async def set_latest_plan_for_automated_run(self, agent_id: str) -> None:
         set_automated_run_plan_sql = """
                 WITH latest_plan AS (
-                    SELECT plan_id from agent.execution_plans where agent_id = %(agent_id)s
+                    SELECT plan_id from agent.execution_plans where agent_id = %(agent_id)s AND status = 'READY'
                     ORDER BY created_at DESC LIMIT 1
                 )
                 UPDATE agent.execution_plans
@@ -625,7 +625,7 @@ class AsyncDB:
 
         set_live_plan_outputs_sql = """
         WITH latest_plan AS (
-                SELECT plan_id from agent.execution_plans where agent_id = %(agent_id)s
+                SELECT plan_id from agent.execution_plans where agent_id = %(agent_id)s AND status = 'READY'
                 ORDER BY created_at DESC LIMIT 1
         )
         UPDATE agent.agent_outputs

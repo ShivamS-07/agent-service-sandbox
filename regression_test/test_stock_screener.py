@@ -53,7 +53,7 @@ class TestStockScreener(TestExecutionPlanner):
 
     @skip_in_ci
     def test_best_gen_ai_stocks_july_2024(self):
-        prompt = "Give me your best Generative AI buying ideas for first week of July 2024"
+        prompt = "Give me your best Generative AI theme buying ideas for first week of July 2024"
 
         def validate_output(prompt: str, output: IOType):
             output_stock_ids = get_output(output=output)
@@ -91,7 +91,7 @@ class TestStockScreener(TestExecutionPlanner):
         )
 
     def test_best_gen_ai_stocks(self):
-        prompt = "Give me your best Generative AI buying ideas on a weekly basis"
+        prompt = "Give me your best Generative AI theme buying ideas on a weekly basis"
 
         def validate_output(prompt: str, output: IOType):
             output_stock_ids = get_output(output=output)
