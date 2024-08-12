@@ -108,6 +108,7 @@ async def get_portfolio_holdings(
 
     gbi_ids = [holding.gbi_id for holding in workspace.holdings]
     weights = [holding.weight for holding in workspace.holdings]
+    weights_map = {holding.gbi_id: holding.weight for holding in workspace.holdings}
     if args.expand_etfs:
         await tool_log("Expanding ETFs in portfolio holdings", context=context)
         # get all the stocks in the portfolio ETFs
@@ -120,12 +121,12 @@ async def get_portfolio_holdings(
             )
         )
         gbi_ids = [holding.gbi_id for holding in expanded_weighted_securities]
-        weights = [holding.weight for holding in expanded_weighted_securities]
+        weights_map = {holding.gbi_id: holding.weight for holding in expanded_weighted_securities}
 
     stock_list = await StockID.from_gbi_id_list(gbi_ids)
     data = {
         STOCK_ID_COL_NAME_DEFAULT: stock_list,
-        "Weight": weights,
+        "Weight": [weights_map.get(holding.gbi_id, np.nan) for holding in stock_list],
     }
 
     if args.fetch_stats:
@@ -406,6 +407,7 @@ async def get_portfolio_benchmark_holdings(
     benchmark_holdings = policy_details.policy.custom_benchmark.weights
     gbi_ids = [holding.gbi_id for holding in benchmark_holdings]
     weights = [holding.weight / 100 for holding in benchmark_holdings]
+    weights_map = {holding.gbi_id: holding.weight / 100 for holding in benchmark_holdings}
 
     if args.expand_etfs:
         await tool_log("Expanding ETFs in benchmark holdings", context=context)
@@ -419,11 +421,12 @@ async def get_portfolio_benchmark_holdings(
             )
         )
         gbi_ids = [holding.gbi_id for holding in expanded_weighted_securities]
-        weights = [holding.weight for holding in expanded_weighted_securities]
+        weights_map = {holding.gbi_id: holding.weight for holding in expanded_weighted_securities}
 
+    stock_list = await StockID.from_gbi_id_list(gbi_ids)
     data = {
-        STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(gbi_ids),
-        "Weight": weights,
+        STOCK_ID_COL_NAME_DEFAULT: stock_list,
+        "Weight": [weights_map.get(holding.gbi_id, np.nan) for holding in stock_list],
     }
     df = pd.DataFrame(data)
     df = df.sort_values(by="Weight", ascending=False)
