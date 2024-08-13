@@ -406,11 +406,6 @@ async def prepare_portfolio_prompt(
             context,
         )
         performance_dict[f"portfolio_{performance_level}"] = performance_table.to_df()
-        await tool_log(
-            log=f"Retrieved {performance_level} portfolio performance.",
-            context=context,
-            associated_data=performance_dict[f"portfolio_{performance_level}"],
-        )
 
     # get benchmark performance on stock level
     benchmark_holdings = await get_portfolio_benchmark_holdings(

@@ -362,17 +362,24 @@ async def get_portfolio_performance(
             context=context,
             expand_etfs=False,
         )
+
     elif args.performance_level == "sector":
         table = await get_performance_sector_level(
             portfolio_id=args.portfolio_id, date_range=args.date_range, context=context
         )
+
     elif args.performance_level == "overall":
         table = await get_performance_overall_level(
             portfolio_id=args.portfolio_id, date_range=args.date_range, context=context
         )
 
     else:
-        raise ValueError("Invalid performance level")
+        raise ValueError(f"Invalid performance level: {args.performance_level}")
+
+    await tool_log(
+        log="Universe performance table retrieved.", context=context, associated_data=table
+    )
+
     return table
 
 

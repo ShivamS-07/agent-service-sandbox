@@ -5,7 +5,10 @@ import numpy as np
 import pandas as pd
 from pydantic import field_validator
 
-from agent_service.external.feature_svc_client import get_return_for_stocks
+from agent_service.external.feature_svc_client import (
+    get_return_for_single_stock,
+    get_return_for_stocks,
+)
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
@@ -24,12 +27,13 @@ from agent_service.tools.stocks import (
     get_stock_universe_table_from_universe_company_id,
     stock_identifier_lookup,
 )
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 
 
 class GetUniversePerformanceInput(ToolArgs):
     universe_name: str
-    performance_level: str = "overall"
+    performance_level: str = "daily"
     date_range: DateRange = DateRange(
         start_date=datetime.date.today() - datetime.timedelta(days=30),
         end_date=datetime.date.today(),
@@ -41,8 +45,10 @@ class GetUniversePerformanceInput(ToolArgs):
         if not isinstance(value, str):
             raise ValueError("performance level must be a string")
 
-        if value not in ["overall", "security", "sector"]:
-            raise ValueError("performance level must be one of ('overall', 'security', 'sector')")
+        if value not in ["overall", "security", "sector", "daily"]:
+            raise ValueError(
+                "performance level must be one of ('overall', 'security', 'sector', 'daily')"
+            )
         return value
 
 
@@ -50,9 +56,10 @@ class GetUniversePerformanceInput(ToolArgs):
     description=(
         "This function returns the performance of a universe/benchmark given universe name, "
         "performance level, and date range. "
-        "\nThe performance level MUST be one of ('overall', 'security', 'sector')."
+        "\nThe performance level MUST be one of ('overall', 'security', 'sector', 'daily')."
         "\nThe date range is optional and defaults to the last month."
-        "\nWhen the performance level is 'overall', it returns the performance of the universe as a whole. "
+        "\nWhen the performance level is 'overall', it returns the total performance of the universe "
+        "as a single stock during the date range. "
         "Table schema for overall performance level: "
         "Security: StockID, return: float "
         "\nWhen the performance level is 'security', it returns the performance of each security in the universe. "
@@ -61,6 +68,10 @@ class GetUniversePerformanceInput(ToolArgs):
         "\nWhen the performance level is 'sector', it returns the performance of each sector in the universe. "
         "Table schema for sector performance level: "
         "sector: string, weight: float, weighted-return: float"
+        "\nWhen the performance level is 'daily', it returns the daily performance of the universe. "
+        "Table schema for daily performance level: "
+        "date: date, field: string, value: float"
+        "For line plot, you MUST only use 'daily' performance level."
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
@@ -105,6 +116,20 @@ async def get_universe_performance(
             date_range=args.date_range,
             context=context,
         )
+
+    elif args.performance_level == "daily":
+        table = await get_performance_daily_level(
+            universe_name=args.universe_name,
+            date_range=args.date_range,
+            context=context,
+        )
+
+    else:
+        raise ValueError(f"Invalid performance level: {args.performance_level}")
+
+    await tool_log(
+        log="Universe performance table retrieved.", context=context, associated_data=table
+    )
 
     return table
 
@@ -214,6 +239,37 @@ async def get_performance_overall_level(
         columns=[
             TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
             TableColumnMetadata(label="return", col_type=TableColumnType.PERCENT),
+        ],
+    )
+    return table
+
+
+async def get_performance_daily_level(
+    universe_name: str, date_range: DateRange, context: PlanRunContext
+) -> Table:
+    # we can treat the universe as a stock to get the performance
+    # get the gbi_id for universe
+    universe_stockid_obj: StockID = await stock_identifier_lookup(  # type: ignore
+        StockIdentifierLookupInput(stock_name=universe_name),
+        context,
+    )
+    # get the universe performance for the date range
+    df = await get_return_for_single_stock(
+        gbi_id=universe_stockid_obj.gbi_id,
+        start_date=date_range.start_date,
+        end_date=date_range.end_date,
+        user_id=context.user_id,
+    )
+
+    # transform df into date, field, value format
+    df = df.melt(id_vars=["date"], var_name="field", value_name="value")
+    # create a Table
+    table = Table.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label="date", col_type=TableColumnType.DATE),
+            TableColumnMetadata(label="field", col_type=TableColumnType.STRING),
+            TableColumnMetadata(label="value", col_type=TableColumnType.PERCENT),
         ],
     )
     return table

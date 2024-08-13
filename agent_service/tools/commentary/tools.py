@@ -1,7 +1,5 @@
-import asyncio
 from datetime import date, timedelta
 from typing import List, Optional
-from uuid import uuid4
 
 from agent_service.GPT.constants import NO_PROMPT
 from agent_service.GPT.requests import GPT
@@ -63,19 +61,18 @@ from agent_service.tools.watchlist import (
     GetStocksForUserAllWatchlistsInput,
     get_stocks_for_user_all_watchlists,
 )
-from agent_service.types import ChatContext, Message, PlanRunContext
-from agent_service.utils.date_utils import get_now_utc
+from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 
 
 class WriteCommentaryInput(ToolArgs):
+    stock_ids: List[StockID]
     date_range: DateRange = DateRange(
         start_date=date.today() - timedelta(days=30),
         end_date=date.today(),
     )
     inputs: List[Text]
-    stock_ids: Optional[List[StockID]] = None
     client_type: Optional[str] = "Simple"
     writing_format: Optional[str] = "Long"
     portfolio_id: Optional[PortfolioID] = None
@@ -245,8 +242,8 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
 
 class GetCommentaryInputsInput(ToolArgs):
+    stock_ids: List[StockID]
     topics: Optional[List[str]] = None
-    stock_ids: Optional[List[StockID]] = None
     date_range: DateRange = DateRange(
         start_date=date.today() - timedelta(days=30),
         end_date=date.today(),
@@ -367,39 +364,3 @@ async def get_commentary_inputs(
             logger.exception(f"Failed to get texts for stock ids: {e}")
 
     return texts
-
-
-# Test
-async def main() -> None:
-    input_text = "Write a general commentary with focus on cloud computing and my portfolio."
-    user_message = Message(message=input_text, is_user_message=True, message_time=get_now_utc())
-    chat_context = ChatContext(messages=[user_message])
-
-    context = PlanRunContext(
-        agent_id="7cb9fb8f-690e-4535-8b48-f6e63494c366",
-        plan_id="b3330500-9870-480d-bcb1-cf6fe6b487e3",
-        user_id="a5d534c9-5426-4387-a298-723c5e09ecab",  # str(uuid4()),
-        plan_run_id=str(uuid4()),
-        chat=chat_context,
-        skip_db_commit=True,
-        skip_task_cache=True,
-        run_tasks_without_prefect=True,
-    )
-    texts = await get_commentary_inputs(
-        GetCommentaryInputsInput(
-            topics=["cloud computing", "military industrial complex"],
-            market_trend=True,
-            theme_num=4,
-        ),
-        context,
-    )
-    print("Length of texts: ", len(texts))  # type: ignore
-    args = WriteCommentaryInput(
-        inputs=texts,  # type: ignore
-    )
-    result = await write_commentary(args, context)  # type: ignore
-    print(result.val)  # type: ignore
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
