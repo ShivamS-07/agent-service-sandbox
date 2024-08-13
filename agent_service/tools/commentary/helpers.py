@@ -92,7 +92,6 @@ async def get_theme_related_texts(
     """
     This function gets the theme related texts for the given themes.
     """
-    # print("themes texts size", len(themes_texts))
     res: List[Any] = []
     development_texts: List[Any] = await get_news_developments_about_theme(  # type: ignore
         GetThemeDevelopmentNewsInput(
@@ -102,7 +101,6 @@ async def get_theme_related_texts(
         ),
         context,
     )
-    # print("development texts size", len(development_texts))
     article_texts: List[Any] = await get_news_articles_for_theme_developments(  # type: ignore
         GetThemeDevelopmentNewsArticlesInput(
             developments_list=development_texts,
@@ -110,7 +108,6 @@ async def get_theme_related_texts(
         ),
         context,
     )
-    # print("article texts size", len(article_texts))
     statistics_texts = await get_statistics_for_theme(
         context=context, texts=themes_texts, date_range=date_range
     )
@@ -468,17 +465,23 @@ async def prepare_stocks_stats_prompt(
     """
 
     gbi_ids = [stock.gbi_id for stock in stock_ids]
+    # from_gbi_id_list doesn't return the stocks in the same order as the input list
+    stocks = await StockID.from_gbi_id_list(gbi_ids)
+    # get the gbi_ids of the stocks in same order as stocks
+    gbi_ids = [stock.gbi_id for stock in stocks]
     stock_performance_map = await get_return_for_stocks(
         gbi_ids=gbi_ids,
         start_date=date_range.start_date,
         end_date=date_range.end_date,
         user_id=context.user_id,
     )
+
+    returns = [stock_performance_map.get(gbi_id, np.nan) for gbi_id in gbi_ids]
     # Create a DataFrame/Table for the stock performance
     stock_performance_df = pd.DataFrame(
         {
-            STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(gbi_ids),
-            "return": [stock_performance_map.get(gbi_id, np.nan) for gbi_id in gbi_ids],
+            STOCK_ID_COL_NAME_DEFAULT: stocks,
+            "return": returns,
         }
     )
     stock_performance_table = StockTable.from_df_and_cols(
