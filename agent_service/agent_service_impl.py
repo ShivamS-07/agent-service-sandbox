@@ -55,6 +55,7 @@ from agent_service.endpoints.models import (
     MemoryItem,
     NotificationEmailsResponse,
     NotificationEvent,
+    NotificationUser,
     PlanTemplateTask,
     RenameMemoryResponse,
     SetAgentScheduleRequest,
@@ -69,7 +70,12 @@ from agent_service.endpoints.models import (
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
-from agent_service.external.user_svc_client import get_users, update_user
+from agent_service.external.user_svc_client import (
+    get_users,
+    list_team_members,
+    list_user_teams,
+    update_user,
+)
 from agent_service.io_type_utils import load_io_type
 from agent_service.io_types.citations import CitationDetailsType, CitationType
 from agent_service.types import ChatContext, MemoryType, Message
@@ -182,9 +188,30 @@ class AgentServiceImpl:
         )
 
     async def get_agent_notification_emails(self, agent_id: str) -> NotificationEmailsResponse:
-        # Mock Data
-        # TODO: return the list of notification emails
-        return NotificationEmailsResponse(emails=["testEmail@boosted.ai", "testEmail2@boosted.ai"])
+        emails = await self.pg.get_agent_subscriptions(agent_id=agent_id)
+        return NotificationEmailsResponse(
+            emails=[email_notification.email for email_notification in emails]
+        )
+
+    async def set_agent_notification_emails(self, agent_id: str, emails: List[str]) -> None:
+        await self.pg.set_agent_subscriptions(agent_id=agent_id, emails=emails)
+
+    async def delete_agent_notification_emails(self, agent_id: str, email: str) -> None:
+        await self.pg.delete_agent_emails(agent_id=agent_id, email=email)
+
+    async def get_valid_notification_users(self, user_id: str) -> List[NotificationUser]:
+        valid_users = []
+        # first we get all the teams that the user is a part of
+        user_teams = await list_user_teams(user_id)
+        for team in user_teams:
+            user_on_team = await list_team_members(team_id=team.team_id.id)
+            valid_users += user_on_team
+        return [
+            NotificationUser(
+                user_id=user.user_id.id, username=user.username, name=user.name, email=user.email
+            )
+            for user in valid_users
+        ]
 
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
         agent_id = req.agent_id

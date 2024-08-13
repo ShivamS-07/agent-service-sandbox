@@ -1,8 +1,10 @@
 import uuid
+from typing import List
 from unittest.mock import MagicMock, patch
 
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
+    AgentNotificationEmail,
     ChatWithAgentRequest,
     MediaType,
     UpdateAgentRequest,
@@ -220,3 +222,50 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
     def test_get_canned_prompts(self):
         canned_prompts = self.get_canned_prompts()
         self.assertEqual(len(canned_prompts.canned_prompts), 5)
+
+    def test_agent_notification(self):
+        # create the agent
+        test_user = str(uuid.uuid4())
+        user = User(user_id=test_user, is_admin=False, is_super_admin=False, auth_token="")
+        res = self.create_agent(user=user)
+        agent_id = res.agent_id
+
+        # insert a email notification
+        emails = ["test.email@test.com", "test.email.2@test.com"]
+        self.loop.run_until_complete(
+            self.pg.set_agent_subscriptions(agent_id=agent_id, emails=emails)
+        )
+
+        # get notification event info
+        notif_res: List[AgentNotificationEmail] = self.loop.run_until_complete(
+            self.pg.get_agent_subscriptions(agent_id=agent_id)
+        )
+        self.assertIsNotNone(notif_res)
+        self.assertEqual(len(notif_res), 2)
+        for email_notif in notif_res:
+            # make sure that the emails are correct
+            self.assertTrue(email_notif.email in emails)
+        # add a new subscription
+        new_email = "test.email.3@test.com"
+        self.loop.run_until_complete(
+            self.pg.set_agent_subscriptions(agent_id=agent_id, emails=[new_email])
+        )
+        notif_res: List[AgentNotificationEmail] = self.loop.run_until_complete(
+            self.pg.get_agent_subscriptions(agent_id=agent_id)
+        )
+        self.assertEqual(len(notif_res), 3)
+        res_emails = [agent_notif.email for agent_notif in notif_res]
+        self.assertTrue(new_email in res_emails)
+        # delete an email from the subscription
+        email_to_delete = "test.email@test.com"
+        self.loop.run_until_complete(
+            self.pg.delete_agent_emails(agent_id=agent_id, email=email_to_delete)
+        )
+        notif_res: List[AgentNotificationEmail] = self.loop.run_until_complete(
+            self.pg.get_agent_subscriptions(agent_id=agent_id)
+        )
+        self.assertEqual(len(notif_res), 2)
+        res_emails = [agent_notif.email for agent_notif in notif_res]
+        self.assertTrue(email_to_delete not in res_emails)
+
+        self.delete_agent(agent_id=agent_id)

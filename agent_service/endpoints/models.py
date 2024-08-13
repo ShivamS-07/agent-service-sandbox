@@ -152,6 +152,32 @@ class UpdateNotificationEmailsResponse(BaseModel):
     success: bool
 
 
+class RemoveNotificationEmailsRequest(BaseModel):
+    agent_id: str
+    email: str
+
+
+class RemoveNotificationEmailsResponse(BaseModel):
+    success: bool
+
+
+class AgentNotificationEmail(BaseModel):
+    email: str
+    user_id: Optional[str]
+    agent_id: str
+
+
+class NotificationUser(BaseModel):
+    user_id: str
+    username: str
+    name: str
+    email: str
+
+
+class ValidNotificationUsers(BaseModel):
+    users: List[NotificationUser]
+
+
 ####################################################################################################
 # ChatWithAgent
 ####################################################################################################

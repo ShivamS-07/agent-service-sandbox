@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import (
     AgentMetadata,
+    AgentNotificationEmail,
     AgentOutput,
     AgentSchedule,
     CustomNotification,
@@ -712,6 +713,29 @@ class AsyncDB:
                 "plan_run_id": context.plan_run_id,
             },
         )
+
+    async def set_agent_subscriptions(self, agent_id: str, emails: List[str]) -> None:
+        records_to_upload = [{"agent_id": agent_id, "email": email} for email in emails]
+        await self.pg.multi_row_insert(
+            table_name="agent.agent_notifications", rows=records_to_upload
+        )
+
+    async def delete_agent_emails(self, agent_id: str, email: str) -> None:
+        sql = """
+        DELETE FROM agent.agent_notifications
+        WHERE agent_id=%(agent_id)s
+          AND email = %(email)s
+        """
+        await self.pg.generic_write(sql, params={"agent_id": agent_id, "email": email})
+
+    async def get_agent_subscriptions(self, agent_id: str) -> List[AgentNotificationEmail]:
+        sql = """
+        SELECT agent_id::TEXT, user_id, email
+        FROM agent.agent_notifications
+        WHERE agent_id=%(agent_id)s
+        """
+        rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
+        return [AgentNotificationEmail(**row) for row in rows]
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:

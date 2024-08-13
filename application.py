@@ -22,6 +22,7 @@ from gbi_common_py_utils.utils.environment import (
 from gbi_common_py_utils.utils.event_logging import log_event
 from sse_starlette.sse import AsyncContentStream, EventSourceResponse, ServerSentEvent
 from starlette.requests import Request
+from user_service_proto_v1 import user_service_pb2
 
 from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.authz_helper import (
@@ -69,6 +70,8 @@ from agent_service.endpoints.models import (
     MarkNotificationsAsUnreadRequest,
     MarkNotificationsAsUnreadResponse,
     NotificationEmailsResponse,
+    RemoveNotificationEmailsRequest,
+    RemoveNotificationEmailsResponse,
     RenameMemoryRequest,
     RenameMemoryResponse,
     SetAgentScheduleRequest,
@@ -84,6 +87,7 @@ from agent_service.endpoints.models import (
     UpdateUserRequest,
     UpdateUserResponse,
     UploadFileResponse,
+    ValidNotificationUsers,
 )
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.GPT.requests import _get_gpt_service_stub
@@ -338,9 +342,56 @@ async def get_agent_notification_emails(
 async def update_agent_notification_emails(
     req: UpdateNotificationEmailsRequest, user: User = Depends(parse_header)
 ) -> UpdateNotificationEmailsResponse:
-    #  Mock response
-    # TODO: update the notification email list
-    return UpdateNotificationEmailsResponse(success=True)
+    agent_id = req.agent_id
+    emails = req.emails
+    try:
+        logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
+        if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+            validate_user_agent_access(user.user_id, agent_id)
+        await application.state.agent_service_impl.set_agent_notification_emails(
+            agent_id=agent_id, emails=emails
+        )
+        return UpdateNotificationEmailsResponse(success=True)
+    except Exception as e:
+        logger.warning(f"error in updating agent:{req.agent_id} emails:{req.emails}, error: {e}")
+        return UpdateNotificationEmailsResponse(success=False)
+
+
+@router.post(
+    "/agent/notification-emails/remove",
+    response_model=RemoveNotificationEmailsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def remove_agent_notification_emails(
+    req: RemoveNotificationEmailsRequest, user: User = Depends(parse_header)
+) -> RemoveNotificationEmailsResponse:
+    agent_id = req.agent_id
+    email = req.email
+    try:
+        logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
+        if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+            validate_user_agent_access(user.user_id, agent_id)
+        await application.state.agent_service_impl.delete_agent_notification_emails(
+            agent_id=agent_id, email=email
+        )
+        return RemoveNotificationEmailsResponse(success=True)
+    except Exception as e:
+        logger.warning(
+            f"error in removing emails:{req.email} from agent:{req.agent_id} notification, error: {e}"
+        )
+        return RemoveNotificationEmailsResponse(success=False)
+
+
+@router.get(
+    "/agent/notification-emails/get_valid_users",
+    response_model=ValidNotificationUsers,
+    status_code=status.HTTP_200_OK,
+)
+async def get_valid_notification_users(
+    user: User = Depends(parse_header),
+) -> List[user_service_pb2.User]:
+    logger.info(f"Getting valid users for  {user.user_id}")
+    return await application.state.agent_service_impl.get_valid_notification_users(user.user_id)
 
 
 @router.post(

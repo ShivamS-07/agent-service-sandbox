@@ -12,8 +12,17 @@ from gbi_common_py_utils.utils.environment import (
 )
 from grpclib.client import Channel
 from user_service_proto_v1.user_service_grpc import UserServiceStub
-from user_service_proto_v1.user_service_pb2 import GetUsersRequest, UpdateUserRequest
+from user_service_proto_v1.user_service_pb2 import (
+    GetUsersRequest,
+    ListTeamMembersRequest,
+    ListTeamMembersResponse,
+    ListUserTeamsRequest,
+    ListUserTeamsResponse,
+    UpdateUserRequest,
+)
+from user_service_proto_v1.user_service_pb2 import User
 from user_service_proto_v1.user_service_pb2 import User as Account
+from user_service_proto_v1.user_service_pb2 import UserTeamMembership
 from user_service_proto_v1.well_known_types_pb2 import UUID
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
@@ -78,3 +87,27 @@ async def update_user(user_id: str, name: str, username: str, email: str) -> boo
             metadata=get_default_grpc_metadata(user_id=user_id),
         )
         return True
+
+
+@grpc_retry
+@async_perf_logger
+async def list_user_teams(user_id: str) -> List[UserTeamMembership]:
+    with _get_service_stub() as stub:
+        teams_list: ListUserTeamsResponse = await stub.ListUserTeams(
+            ListUserTeamsRequest(
+                user_id=UUID(id=user_id),
+            )
+        )
+        return list(teams_list.team_memberships)
+
+
+@grpc_retry
+@async_perf_logger
+async def list_team_members(team_id: str, include_cognito_enabled: bool = True) -> List[User]:
+    with _get_service_stub() as stub:
+        team_members: ListTeamMembersResponse = await stub.ListTeamMembers(
+            ListTeamMembersRequest(
+                team_id=UUID(id=team_id), include_cognito_enabled=include_cognito_enabled
+            )
+        )
+        return [user for user in team_members.users if user.cognito_enabled]
