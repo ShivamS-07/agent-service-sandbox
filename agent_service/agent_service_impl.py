@@ -83,7 +83,7 @@ from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.agent_name import generate_name_for_agent
 from agent_service.utils.async_db import AsyncDB
-from agent_service.utils.async_utils import async_wrap
+from agent_service.utils.async_utils import async_wrap, gather_with_concurrency
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
 from agent_service.utils.date_utils import get_now_utc
@@ -140,13 +140,15 @@ class AgentServiceImpl:
         return CreateAgentResponse(success=True, allow_retry=False, agent_id=agent.agent_id)
 
     async def get_all_agents(self, user: User) -> GetAllAgentsResponse:
-        agents = await self.pg.get_user_all_agents(user.user_id)
+        agents, sections = await gather_with_concurrency(
+            [self.pg.get_user_all_agents(user.user_id), self.pg.get_user_sections(user.user_id)]
+        )
         agent_id_list = [metadata.agent_id for metadata in agents]
         cost_infos = self.ch.get_agents_cost_info(agent_ids=agent_id_list)
         for agent_metadata in agents:
             if agent_metadata.agent_id in cost_infos:
                 agent_metadata.cost_info = cost_infos[agent_metadata.agent_id]
-        return GetAllAgentsResponse(agents=agents)
+        return GetAllAgentsResponse(agents=agents, sections=sections)
 
     async def get_agent(self, user: Optional[User], agent_id: str) -> AgentMetadata:
         agents = await self.pg.get_user_all_agents(
@@ -864,3 +866,29 @@ class AgentServiceImpl:
                 CannedPrompt(id=canned_prompt["id"], prompt=canned_prompt["prompt"])
             )
         return GetCannedPromptsResponse(canned_prompts=canned_prompts)
+
+    async def create_section(self, name: str, user: User) -> str:
+        section_id = str(uuid4())
+        await self.pg.create_section(section_id=section_id, name=name, user_id=user.user_id)
+        return section_id
+
+    async def delete_section(self, section_id: str, user: User) -> bool:
+        await self.pg.update_agent_sections(
+            new_section_id=None, section_id=section_id, user_id=user.user_id
+        )
+        await self.pg.pg.delete_from_table_where(
+            table_name="agent.sections", id=section_id, user_id=user.user_id
+        )
+        return True
+
+    async def rename_section(self, section_id: str, new_name: str, user: User) -> bool:
+        await self.pg.rename_agent_section(
+            section_id=section_id, new_name=new_name, user_id=user.user_id
+        )
+        return True
+
+    async def set_agent_section(self, new_section_id: str, agent_id: str, user: User) -> bool:
+        await self.pg.set_agent_section(
+            new_section_id=new_section_id, agent_id=agent_id, user_id=user.user_id
+        )
+        return True

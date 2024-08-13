@@ -100,6 +100,7 @@ class AgentMetadata(BaseModel):
 
     schedule: Optional[AgentSchedule] = None
     cost_info: Optional[List[Dict[str, Any]]] = None
+    section_id: Optional[str] = None
 
     def to_agent_row(self) -> Dict[str, Any]:
         return {
@@ -111,7 +112,13 @@ class AgentMetadata(BaseModel):
         }
 
 
+class Section(BaseModel):
+    name: str
+    id: str
+
+
 class GetAllAgentsResponse(BaseModel):
+    sections: List[Section]
     agents: List[AgentMetadata]
 
 
@@ -609,3 +616,42 @@ class MediaType(str, enum.Enum):
 class ConvertMarkdownRequest(BaseModel):
     content: str
     format: MediaType
+
+
+####################################################################################################
+# Sidebar Organization
+####################################################################################################
+
+
+class CreateSectionRequest(BaseModel):
+    name: str
+
+
+class CreateSectionResponse(BaseModel):
+    section_id: str
+
+
+class DeleteSectionRequest(BaseModel):
+    section_id: str
+
+
+class DeleteSectionResponse(BaseModel):
+    success: bool
+
+
+class RenameSectionRequest(BaseModel):
+    section_id: str
+    new_name: str
+
+
+class RenameSectionResponse(BaseModel):
+    success: bool
+
+
+class SetAgentSectionRequest(BaseModel):
+    new_section_id: str
+    agent_id: str
+
+
+class SetAgentSectionResponse(BaseModel):
+    success: bool

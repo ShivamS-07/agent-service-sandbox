@@ -7,6 +7,7 @@ from agent_service.endpoints.models import (
     AgentOutput,
     AgentSchedule,
     CustomNotification,
+    Section,
 )
 from agent_service.io_type_utils import IOType, load_io_type
 
@@ -460,7 +461,7 @@ class AsyncDB:
         WITH a_id AS
           (
             SELECT a.agent_id, a.user_id, agent_name, a.created_at,
-              a.last_updated, a.automation_enabled, a.schedule
+              a.last_updated, a.automation_enabled, a.schedule, a.section_id
              FROM agent.agents a
              {agent_where_clause}
           ),
@@ -484,7 +485,7 @@ class AsyncDB:
                 GROUP BY n.agent_id
           )
           SELECT a_id.agent_id::VARCHAR, a_id.user_id::VARCHAR, a_id.agent_name, a_id.created_at,
-            a_id.last_updated, a_id.automation_enabled, lr.created_at AS last_run,
+            a_id.last_updated, a_id.automation_enabled, a_id.section_id::VARCHAR, lr.created_at AS last_run,
             msg.message AS latest_agent_message, nu.num_unread AS unread_notification_count,
             a_id.schedule, lr.run_metadata
           FROM a_id
@@ -520,9 +521,15 @@ class AsyncDB:
                     automation_enabled=row["automation_enabled"],
                     unread_notification_count=row["unread_notification_count"] or 0,
                     schedule=schedule,
+                    section_id=row["section_id"],
                 )
             )
         return output
+
+    async def get_user_sections(self, user_id: str) -> List[Section]:
+        sql = "SELECT id::VARCHAR, name from agent.sections where user_id = %(user_id)s"
+        rows = await self.pg.generic_read(sql=sql, params={"user_id": user_id})
+        return [Section(**row) for row in rows]
 
     async def update_agent_name(self, agent_id: str, agent_name: str) -> None:
         return await self.pg.generic_update(
@@ -736,6 +743,47 @@ class AsyncDB:
         """
         rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
         return [AgentNotificationEmail(**row) for row in rows]
+
+    async def create_section(self, section_id: str, name: str, user_id: str) -> None:
+        sql = """
+        INSERT INTO agent.sections (id, user_id, name)
+        VALUES (%(section_id)s, %(user_id)s, %(name)s)
+        """
+        await self.pg.generic_write(
+            sql=sql, params={"section_id": section_id, "user_id": user_id, "name": name}
+        )
+
+    async def update_agent_sections(
+        self, new_section_id: Optional[str], section_id: str, user_id: str
+    ) -> None:
+        sql = """
+        UPDATE agent.agents SET section_id = %(new_section_id)s
+        WHERE section_id = %(section_id)s and user_id = %(user_id)s
+        """
+        await self.pg.generic_write(
+            sql=sql,
+            params={"new_section_id": new_section_id, "section_id": section_id, "user_id": user_id},
+        )
+
+    async def rename_agent_section(self, new_name: str, section_id: str, user_id: str) -> None:
+
+        sql = """
+        UPDATE agent.sections SET name = %(new_name)s
+        WHERE id = %(section_id)s and user_id = %(user_id)s
+        """
+        await self.pg.generic_write(
+            sql=sql, params={"new_name": new_name, "section_id": section_id, "user_id": user_id}
+        )
+
+    async def set_agent_section(self, new_section_id: str, agent_id: str, user_id: str) -> None:
+        sql = """
+        UPDATE agent.agents SET section_id = %(new_section_id)s
+        WHERE agent_id = %(agent_id)s and user_id = %(user_id)s
+        """
+        await self.pg.generic_write(
+            sql=sql,
+            params={"new_section_id": new_section_id, "agent_id": agent_id, "user_id": user_id},
+        )
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:

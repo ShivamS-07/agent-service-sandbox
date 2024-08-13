@@ -39,9 +39,13 @@ from agent_service.endpoints.models import (
     ConvertMarkdownRequest,
     CreateAgentResponse,
     CreateCustomNotificationRequest,
+    CreateSectionRequest,
+    CreateSectionResponse,
     CustomNotification,
     CustomNotificationStatusResponse,
     DeleteAgentResponse,
+    DeleteSectionRequest,
+    DeleteSectionResponse,
     DisableAgentAutomationRequest,
     DisableAgentAutomationResponse,
     EnableAgentAutomationRequest,
@@ -74,8 +78,12 @@ from agent_service.endpoints.models import (
     RemoveNotificationEmailsResponse,
     RenameMemoryRequest,
     RenameMemoryResponse,
+    RenameSectionRequest,
+    RenameSectionResponse,
     SetAgentScheduleRequest,
     SetAgentScheduleResponse,
+    SetAgentSectionRequest,
+    SetAgentSectionResponse,
     SharePlanRunRequest,
     SharePlanRunResponse,
     UnsharePlanRunRequest,
@@ -1048,6 +1056,63 @@ async def convert_markdown(
 )
 def get_canned_prompts(user: User = Depends(parse_header)) -> GetCannedPromptsResponse:
     return application.state.agent_service_impl.get_canned_prompts()
+
+
+# Sections Endpoints
+@router.post(
+    "/create-section",
+    response_model=CreateSectionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def create_section(
+    req: CreateSectionRequest, user: User = Depends(parse_header)
+) -> CreateSectionResponse:
+
+    return CreateSectionResponse(
+        section_id=await application.state.agent_service_impl.create_section(
+            name=req.name, user=user
+        )
+    )
+
+
+@router.post(
+    "/delete-section",
+    response_model=DeleteSectionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def delete_section(
+    req: DeleteSectionRequest, user: User = Depends(parse_header)
+) -> DeleteSectionResponse:
+    await application.state.agent_service_impl.delete_section(section_id=req.section_id, user=user)
+    return DeleteSectionResponse(success=True)
+
+
+@router.post(
+    "/rename-agent",
+    response_model=RenameSectionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def rename_section(
+    req: RenameSectionRequest, user: User = Depends(parse_header)
+) -> RenameSectionResponse:
+    await application.state.agent_service_impl.rename_section(
+        section_id=req.section_id, new_name=req.new_name, user=user
+    )
+    return RenameSectionResponse(success=True)
+
+
+@router.post(
+    "/set-agent-section",
+    response_model=SetAgentSectionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def set_agent_section(
+    req: SetAgentSectionRequest, user: User = Depends(parse_header)
+) -> SetAgentSectionResponse:
+    await application.state.agent_service_impl.set_agent_section(
+        new_section_id=req.new_section_id, agent_id=req.agent_id, user=user
+    )
+    return SetAgentSectionResponse(success=True)
 
 
 initialize_unauthed_endpoints(application)
