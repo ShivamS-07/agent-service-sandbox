@@ -570,3 +570,16 @@ class CannedPrompt(BaseModel):
 
 class GetCannedPromptsResponse(BaseModel):
     canned_prompts: List[CannedPrompt]
+
+
+####################################################################################################
+# Document conversion
+####################################################################################################
+class MediaType(str, enum.Enum):
+    DOCX = "docx"
+    TXT = "txt"
+
+
+class ConvertMarkdownRequest(BaseModel):
+    content: str
+    format: MediaType

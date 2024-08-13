@@ -2,8 +2,13 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 from agent_service.endpoints.authz_helper import User
-from agent_service.endpoints.models import ChatWithAgentRequest, UpdateAgentRequest
+from agent_service.endpoints.models import (
+    ChatWithAgentRequest,
+    MediaType,
+    UpdateAgentRequest,
+)
 from agent_service.types import Notification
+from agent_service.utils.constants import MEDIA_TO_MIMETYPE
 from tests.test_agent_service_impl_base import TestAgentServiceImplBase
 
 
@@ -170,6 +175,47 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
     def test_get_test_cases(self):
         test_cases = self.agent_service_impl.get_test_cases().test_cases
         self.assertTrue(test_cases)
+
+    def test_convert_markdown(self):
+
+        test_content = """
+        # This is a test h1.
+        ## This is a test h2.
+
+        ### Test List
+        - List Item 1
+        - List Item 2
+            - List Item 2.5
+        - List Item 3
+
+        `Inline code`
+
+        ```
+        Code block
+        ```
+
+        **Bold** __Bold__ *Italic* _Italic_ ***Bold and Italic***
+
+        > This is a block quote.
+        >
+        >> This is a nested block quote.
+
+        And finally, this is a [Link](https://example.com).
+        """
+        converted_data, mimetype = self.loop.run_until_complete(
+            self.agent_service_impl.convert_markdown(test_content, MediaType.DOCX)
+        )
+        docx_magic = bytes([0x50, 0x4B, 0x03, 0x04])
+
+        self.assertEqual(converted_data[:4], docx_magic)
+        self.assertEqual(mimetype, MEDIA_TO_MIMETYPE["docx"])
+
+        converted_data, mimetype = self.loop.run_until_complete(
+            self.agent_service_impl.convert_markdown(test_content, MediaType.TXT)
+        )
+
+        self.assertIn("This is a test h1.", converted_data)
+        self.assertEqual(mimetype, MEDIA_TO_MIMETYPE["plain"])
 
     def test_get_canned_prompts(self):
         canned_prompts = self.get_canned_prompts()

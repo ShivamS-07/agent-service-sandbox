@@ -17,3 +17,6 @@ python sample_plans_upsert.py --action backup_and_upsert
 ```
 
 This saves a copy of the current prod table under /backups and sync's the dev table with prod.
+
+# For running document conversion endpoint locally
+Install pandoc with homebrew: `brew install pandoc`.

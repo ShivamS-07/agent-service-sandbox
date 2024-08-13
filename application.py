@@ -10,7 +10,7 @@ import uuid
 from typing import Any, Callable, Dict, List, Optional
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRouter
@@ -35,6 +35,7 @@ from agent_service.endpoints.models import (
     AgentMetadata,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
+    ConvertMarkdownRequest,
     CreateAgentResponse,
     CreateCustomNotificationRequest,
     CustomNotification,
@@ -973,6 +974,20 @@ async def get_account_info(user: User = Depends(parse_header)) -> GetAccountInfo
 )
 async def get_team_accounts(user: User = Depends(parse_header)) -> GetTeamAccountsResponse:
     return await application.state.agent_service_impl.get_team_accounts(user=user)
+
+
+@router.post(
+    "/convert/markdown",
+    response_class=Response,
+    status_code=status.HTTP_200_OK,
+)
+async def convert_markdown(
+    req: ConvertMarkdownRequest, user: User = Depends(parse_header)
+) -> Response:
+    raw_bytes, media_type = await application.state.agent_service_impl.convert_markdown(
+        content=req.content, new_type=req.format
+    )
+    return Response(content=raw_bytes, media_type=media_type)
 
 
 @router.get(

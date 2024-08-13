@@ -2,11 +2,13 @@ import asyncio
 import datetime
 import json
 import logging
+import re
 import traceback
 from collections import defaultdict
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 from uuid import uuid4
 
+import pandoc
 from fastapi import HTTPException, Request, UploadFile, status
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
@@ -49,6 +51,7 @@ from agent_service.endpoints.models import (
     ListMemoryItemsResponse,
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadResponse,
+    MediaType,
     MemoryItem,
     NotificationEmailsResponse,
     NotificationEvent,
@@ -74,7 +77,9 @@ from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.agent_name import generate_name_for_agent
 from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_utils import async_wrap
 from agent_service.utils.clickhouse import Clickhouse
+from agent_service.utils.constants import MEDIA_TO_MIMETYPE
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import (
@@ -82,6 +87,7 @@ from agent_service.utils.feature_flags import (
     get_secure_mode_hash,
     get_user_context,
 )
+from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.memory_handler import MemoryHandler, get_handler
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
@@ -804,6 +810,25 @@ class AgentServiceImpl:
                 ),
             ]
         )
+
+    @async_perf_logger
+    @async_wrap
+    def convert_markdown(self, content: str, new_type: MediaType) -> Tuple[bytes, str]:
+        # preprocess
+        # remove in-line citations
+        content = re.sub(r" *```\{ [\s\S]*? \}``` ?", "", content)
+        # gpt outputs only separate by one new line character, markdown needs two
+        content = content.replace("\n", "\n\n")
+
+        doc = pandoc.read(content, format="markdown")
+        if new_type == MediaType.DOCX:
+            output = pandoc.write(doc, format="docx")
+            mimetype = MEDIA_TO_MIMETYPE["docx"]
+        if new_type == MediaType.TXT:
+            output = pandoc.write(doc, format="plain")
+            mimetype = MEDIA_TO_MIMETYPE["plain"]
+
+        return output, mimetype
 
     def get_canned_prompts(self) -> GetCannedPromptsResponse:
         canned_prompts = []
