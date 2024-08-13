@@ -17,7 +17,6 @@ import datetime
 import enum
 import functools
 import inspect
-import json
 import logging
 import traceback
 from abc import ABC
@@ -428,7 +427,7 @@ def tool(
                         event_data["result"] = dump_io_type(result)
                         debug_info = TOOL_DEBUG_INFO.get()
                         if debug_info:
-                            event_data["debug_info"] = json.dumps(debug_info)
+                            event_data["debug_info"] = dump_io_type(debug_info)
                         if not previous_debug_info:
                             TOOL_DEBUG_INFO.set({})
                         else:
@@ -441,7 +440,7 @@ def tool(
                         event_data["error_msg"] = traceback.format_exc()
                         debug_info = TOOL_DEBUG_INFO.get()
                         if debug_info:
-                            event_data["debug_info"] = json.dumps(debug_info)
+                            event_data["debug_info"] = dump_io_type(debug_info)
                         if not previous_debug_info:
                             TOOL_DEBUG_INFO.set({})
                         else:
