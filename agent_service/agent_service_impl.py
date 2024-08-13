@@ -887,7 +887,9 @@ class AgentServiceImpl:
         )
         return True
 
-    async def set_agent_section(self, new_section_id: str, agent_id: str, user: User) -> bool:
+    async def set_agent_section(
+        self, new_section_id: Optional[str], agent_id: str, user: User
+    ) -> bool:
         await self.pg.set_agent_section(
             new_section_id=new_section_id, agent_id=agent_id, user_id=user.user_id
         )

@@ -649,7 +649,7 @@ class RenameSectionResponse(BaseModel):
 
 
 class SetAgentSectionRequest(BaseModel):
-    new_section_id: str
+    new_section_id: Optional[str]
     agent_id: str
 
 

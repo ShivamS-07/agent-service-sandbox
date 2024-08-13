@@ -1088,7 +1088,7 @@ async def delete_section(
 
 
 @router.post(
-    "/rename-agent",
+    "/rename-section",
     response_model=RenameSectionResponse,
     status_code=status.HTTP_200_OK,
 )

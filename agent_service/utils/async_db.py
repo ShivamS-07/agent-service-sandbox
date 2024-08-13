@@ -775,7 +775,9 @@ class AsyncDB:
             sql=sql, params={"new_name": new_name, "section_id": section_id, "user_id": user_id}
         )
 
-    async def set_agent_section(self, new_section_id: str, agent_id: str, user_id: str) -> None:
+    async def set_agent_section(
+        self, new_section_id: Optional[str], agent_id: str, user_id: str
+    ) -> None:
         sql = """
         UPDATE agent.agents SET section_id = %(new_section_id)s
         WHERE agent_id = %(agent_id)s and user_id = %(user_id)s
