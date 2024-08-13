@@ -310,13 +310,15 @@ async def filter_stocks_round1(
 
     # prepare result as mapper of filtered stocks to their explanations
     filtered_stocks1_dict: Dict[StockID, str] = {}
+    company_names = set()
     for results in results_list:
         for stock, result in zip(stocks, results):
             try:
                 explanation = result.split(SEPARATOR)[0]
                 decision = result.split(SEPARATOR)[1]
-                if "yes" in decision.lower():
+                if "yes" in decision.lower() and stock.company_name not in company_names:
                     filtered_stocks1_dict[stock] = explanation
+                    company_names.add(stock.company_name)
             except Exception as e:
                 logger.error(
                     f"Error while processing result: {result} for stock: {stock} in round 1.\nError: {e}"
