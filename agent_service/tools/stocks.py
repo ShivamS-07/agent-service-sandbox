@@ -772,9 +772,14 @@ class MultiStockIdentifierLookupInput(ToolArgs):
     description=(
         "This function takes a list of strings e.g. ['microsoft', 'apple', 'TESLA', 'META'] "
         "which refer to stocks, and converts them to a list of integer identifiers. "
-        " Since most other tools take lists of stocks, you should generally use this function "
-        " to look up stocks mentioned by the client (instead of stock_identifier_lookup), "
-        " even when there is only one stock."
+        "Since most other tools take lists of stocks, you should generally use this function "
+        "to look up stocks mentioned by the client (instead of stock_identifier_lookup), "
+        "even when there is only one stock."
+        "However, you must NEVER use this tool when you need to use the resulting identifiers in separate "
+        "tool calls, (e.g., you are creating multiple separate graphs or summmaries, one for each of the stocks)"
+        "since you are NOT allowed to access stock ids in the resulting list using indexing, "
+        "i.e. stock_ids[0] is NOT allowed, in those circumstances you should make separate calls to "
+        "the stock_indentifier_lookup, for each stock, do not use this tool."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
