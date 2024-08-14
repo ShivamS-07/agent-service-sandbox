@@ -75,11 +75,11 @@ class TestHomeScreenQueries(TestExecutionPlanner):
                     "get_statistic_data_for_companies",
                     "transform_table",
                     "get_stock_identifier_list_from_table",
-                    "get_date_range",
-                    "get_universe_performance",
+                    "get_all_news_developments_about_companies",
+                    "get_earnings_call_summaries",
+                    "get_10k_10q_sec_filings",
                     "get_all_text_data_for_stocks",
                     "summarize_texts",
-                    "get_all_news_developments_about_companies",
                     "prepare_output",
                 ],
                 validate_tool_args=validate_tool_args,
@@ -207,7 +207,11 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
     @skip_in_ci
     def test_home_screen_q6_hypothesis_leader(self):
-        prompt = "Is Nintendo a leader with millennial gamers?"
+        prompt = (
+            "Is Nintendo a leader with millennial gamers amongst the following"
+            " companies, microsoft, sony, taketwo, capcom, electronic arts, and"
+            " ubisoft?"
+        )
 
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output=output)
@@ -216,11 +220,28 @@ class TestHomeScreenQueries(TestExecutionPlanner):
         def validate_tool_args(execution_log: DefaultDict[str, List[dict]]):
             # Tool - stock_identifier_lookup
             tool_name = "stock_identifier_lookup"
+            ref_tool_arg = []
+            if tool_name in execution_log.keys():
+                arg_name = "stock_name"
+                ref_tool_arg = [execution_log[tool_name][0][arg_name]]
+            # Tool - multi_stock_identifier_lookup (only care about total univ)
+            tool_name = "multi_stock_identifier_lookup"
             self.assertTrue(tool_name in execution_log.keys())
-            arg_name = "stock_name"
-            ref_tool_arg = execution_log[tool_name][0][arg_name]
-            exp_tool_arg = "Nintendo"
-            self.assertEqual(
+            arg_name = "stock_names"
+            ref_tool_arg.extend(execution_log[tool_name][0][arg_name])
+            ref_tool_arg = set(ref_tool_arg)
+            exp_tool_arg = set(
+                [
+                    "nintendo",
+                    "microsoft",
+                    "sony",
+                    "taketwo",
+                    "capcom",
+                    "electronic arts",
+                    "ubisoft",
+                ]
+            )
+            self.assertSetEqual(
                 ref_tool_arg,
                 exp_tool_arg,
                 f"Args tool {tool_name} - {arg_name}",
@@ -237,15 +258,16 @@ class TestHomeScreenQueries(TestExecutionPlanner):
                 prompt=prompt,
                 validate_output=validate_output,
                 required_tools=[
-                    "get_stock_universe",
+                    # "stock_identifier_lookup",
+                    "multi_stock_identifier_lookup",
                     "get_company_descriptions",
-                    "stock_identifier_lookup",
-                    "filter_stocks_by_product_or_service",
+                    "get_all_news_developments_about_companies",
+                    "get_earnings_call_summaries",
+                    "get_10k_10q_sec_filings",
                     "get_all_text_data_for_stocks",
-                    "get_success_criteria",
-                    "analyze_hypothesis_with_categories",
-                    "generate_summary_for_hypothesis_with_categories",
-                    "prepare_output",
+                    "get_criteria_for_competitive_analysis",
+                    "do_competitive_analysis",
+                    "generate_summary_for_competitive_analysisprepare_output",
                 ],
                 validate_tool_args=validate_tool_args,
             )
