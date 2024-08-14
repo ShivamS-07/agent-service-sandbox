@@ -734,11 +734,18 @@ class StockEarningsText(StockText):
             parts.append(self.stock_id.symbol or self.stock_id.company_name)
             parts.append(" ")
         parts.append(self.text_type)
+        parts_in_parens = []
         if self.year and self.quarter:
-            parts.append(f" (Q{self.quarter} {self.year})")
-        elif self.timestamp:
+            year_num = str(self.year)[2:]
+            parts_in_parens.append(f"Q{self.quarter}'{year_num}")
+        if self.timestamp:
             ts_str = self.timestamp.strftime("%Y-%m-%d")
-            parts.append(f" ({ts_str})")
+            parts_in_parens.append(f"{ts_str}")
+        if parts_in_parens:
+            joined = " - ".join(parts_in_parens)
+            parts.append(f" ({joined})")
+        # Result should look like this:
+        # AAPL Earnings Call (Q1'25 - May 22, 2024)
         return "".join(parts)
 
 
@@ -893,7 +900,7 @@ class StockEarningsTranscriptText(StockEarningsText):
         cls, earnings_texts: List[StockEarningsSummaryText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         earnings_transcript_sql = """
-            SELECT id::TEXT, transcript
+            SELECT id::TEXT, transcript, fiscal_year, fiscal_quarter
             FROM company_earnings.full_earning_transcripts
             WHERE id IN %(ids)s
         """
@@ -997,8 +1004,6 @@ class StockEarningsSummaryPointText(StockText):
         outputs: List[CitationOutput] = []
         for summary_id, text_citations in summary_id_to_texts.items():
             row = summary_id_to_row[summary_id]
-            year = row["year"]
-            quarter = row["quarter"]
             last_updated_at = row["created_timestamp"]
             summary_dict: Dict = row["summary"]
 
@@ -1009,7 +1014,7 @@ class StockEarningsSummaryPointText(StockText):
                 if not stock:
                     continue
                 # e.g. "NVDA Earnings Call - Q1 2024"
-                citation_name = f"{stock.symbol} Earnings Call - Q{quarter} {year}"
+                citation_name = text_citation.source_text.to_citation_title()
 
                 summary_point: Dict = summary_dict[text.summary_type][text.summary_idx]
                 if (
