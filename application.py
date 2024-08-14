@@ -74,8 +74,6 @@ from agent_service.endpoints.models import (
     MarkNotificationsAsUnreadRequest,
     MarkNotificationsAsUnreadResponse,
     NotificationEmailsResponse,
-    RemoveNotificationEmailsRequest,
-    RemoveNotificationEmailsResponse,
     RenameMemoryRequest,
     RenameMemoryResponse,
     RenameSectionRequest,
@@ -376,31 +374,6 @@ async def update_agent_notification_emails(
     except Exception as e:
         logger.warning(f"error in updating agent:{req.agent_id} emails:{req.emails}, error: {e}")
         return UpdateNotificationEmailsResponse(success=False)
-
-
-@router.post(
-    "/agent/notification-emails/remove",
-    response_model=RemoveNotificationEmailsResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def remove_agent_notification_emails(
-    req: RemoveNotificationEmailsRequest, user: User = Depends(parse_header)
-) -> RemoveNotificationEmailsResponse:
-    agent_id = req.agent_id
-    email = req.email
-    try:
-        logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
-        if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-            validate_user_agent_access(user.user_id, agent_id)
-        await application.state.agent_service_impl.delete_agent_notification_emails(
-            agent_id=agent_id, email=email
-        )
-        return RemoveNotificationEmailsResponse(success=True)
-    except Exception as e:
-        logger.warning(
-            f"error in removing emails:{req.email} from agent:{req.agent_id} notification, error: {e}"
-        )
-        return RemoveNotificationEmailsResponse(success=False)
 
 
 @router.get(
