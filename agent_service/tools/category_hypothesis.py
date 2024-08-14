@@ -1,7 +1,7 @@
 import json
 import re
 from collections import defaultdict
-from typing import Awaitable, Dict, List, Optional, Tuple, Type
+from typing import Any, Awaitable, Dict, List, Optional, Tuple, Type, cast
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
@@ -12,7 +12,9 @@ from agent_service.io_type_utils import (
     HistoryEntry,
     IOType,
     Score,
+    dump_io_type,
     io_type,
+    load_io_type,
 )
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
@@ -27,9 +29,14 @@ from agent_service.io_types.text import (
     Text,
     TextCitation,
     TextGroup,
-    TextIDType,
 )
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import (
+    TOOL_DEBUG_INFO,
+    ToolArgs,
+    ToolCategory,
+    ToolRegistry,
+    tool,
+)
 from agent_service.tools.category import (
     Category,
     CriteriaForCompetitiveAnalysis,
@@ -42,12 +49,14 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import (
     gather_dict_as_completed,
     gather_with_concurrency,
+    identity,
 )
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
+from agent_service.utils.tool_diff import get_prev_run_info
 
 RELEVANT_CATEGORIES = "relevant_categories"
 
@@ -65,89 +74,215 @@ FINAL_SUMMARY_CATEGORY_RANKING = "# Rankings for category <{category_name}>:\n{r
 ####################################################################################################
 # Prompt
 #########################################################################################################
+
+
+RANK_BY_CATEGORY_EXPLANATION = """
+The output should be in a long text format that includes the ranking list and a summary. \
+The first section should start with a text 'Ranking List:'. In the new line list the companies \
+in the markdown format. And the second section should start with a text 'Summary:', \
+followed by a paragraph summarizing the ranking list. Each section should be separated by '\n\n'. \
+For example, it should look like below:
+
+Ranking List:
+- <Company Name1> (<symbol1>) Score <score1>
+    - <explanation1>
+- <Company Name2> (<symbol2>) Score <score2>
+    - <explanation2>
+...
+Summary:
+<summary>
+
+In detail, the ranking list should be in descending order by the companies' performance in the criteria.
+'score' is a float in the range of 0 to 5 which represents how \
+well the company performs in the criteria. 0 means the company performs the worst, 5 means the company \
+performs the best. The score should be comparable to other companies in the ranking. You should take all \
+companies into account.
+'explanation' is a medium-sized paragraph that consists of 6 to 8 sentences that explains why the company \
+is ranked here within the context of the main criteria, followed by the detailed evidence that supports \
+your arguments. For example, a good explanation should be like 'Apple dominates the phone chip in terms \
+of Innovation because the latest A15 chip is 20% faster than the previous A14 chip, and 2X faster than all \
+the other competitors' phone chips', which makes the good point that Apple leads the phone chip in the criteria \
+of innovation and supported by the facts that it's making better chip than its own previous version but even \
+way better than the competitors. If you see source documents like this, you should try to include them in your
+explanation. \
+You must consider all the provided information. You should not only focus on source documents associated with the
+current company, but also look at documents for other companies and analyze them together.
+For example, if a source document says 'Samsung's latest chip is 10% faster than the predecessor, getting close to
+Apple'sA15 chip'.This source document should be considered when ranking both Apple and Samsung, and of course
+beneficial to Samsung's score but not to Apple. I'll say it again, your conclusion should be derived from the
+source doument with very concrete examples and focused solely on the main criteria. Source documents that contain
+general information should be ignored. Source documents that mention comparisons with predecessors, or with other
+competitors's similar products or services are the most relevant, and must be included in the explanation. If there
+are exact numbers, or specs that can demonstrate the improvement or decline in the criteria, you MUST mention them \
+in the explanation. Try to mention 4 to 5 source documents that are most relevant to the ranking. \
+Your explanation should match the score you give to the company but not explicitly mention the score. \
+The top ranked companies MUST specify why and where they are better than the others, and the bottom \
+ranked companies MUST specify why and where they fall behind than the higher ranked ones.
+The 'ranking' list should contain all companies in the order of the ranking. If there are 3 or more \
+companies in the ranking, the score of the bottom ranked company should be no higher than 1.5. \
+You should also be conservative about the top company's score. If it is the undoubtedly best, the score \
+should be 4.5 or above. However, if the top 1 doesn't show a significant leadership, its score should be \
+no higher than 4. \
+The difference of two companies' scores should reflect the difference of their performance in the criteria. \
+0.5 point difference should represent a small difference in performance, 1.5 or more points difference \
+should be a significant difference.
+{summary_str}
+"""
+
+
 RANK_BY_CATEGORY_SYS_PROMPT_STR = """
-    You are a financial analyst who is creating a ranking list for the provided companies for a hypothesis
-    on a specific financial success criteria. You must stay very strictly in the context of the main criteria
-    to test the hypothesis and rank the companies. You should not consider any other criteria and must not
-    mention other criteria.
-    You will be provided with the hypothesis, the criteria, the descriptions of these companies,
-    a list of companies' news topics and earnings topics relevant to the criteria.
-    You will be also provided with a list of other criteria, only for the purpose of context. You should
-    never use them to rank the companies. And you must not mention them in the explanation.
-    I'll say it again, focus on the main criteria!
-    For example, if the criteria is 'Revenue', then you should look through the topics related to
-    revenue, such as 'revenue growth', 'revenue diversification', 'revenue forecast', and analyze
-    how well these companies perform comprehensively in the criteria.
-    Your arguments should be supported by the evidence from the topics and try to concisely mention
-    numbers, specs, or comparisons in your summary or explanation. For example, '27% faster', '100X more' are
-    good proof to support your arguments.
+You are a financial analyst who is creating a ranked list of companies for a competitive analysis
+focused on a specific criterion. You must stay very strictly focused on the provided criterion. You should
+not consider any other criteria and must not mention other criteria.
+You will be provided with the prompt for the competitive analysis, the criterion, descriptions of these companies,
+and a list of source documents that are relevant to the companies and (usually) the criterion. You should ignore
+source documents that you don't think are actually relevant to the criterion.
+You will be also provided with a list of other criteria, only for the purpose of context. You should
+never use them to rank the companies, and you must not mention them in the explanation.
+I'll say it again, focus on the target criterion!
+For example, if the criterion is 'Revenue', then you should look through the source documents related to
+revenue, such as 'revenue growth', 'revenue diversification', 'revenue forecast', and analyze
+how well these companies perform comprehensively with regards to this criterion.
+Your arguments should be supported by the evidence from the source documents. Try to concisely mention
+numbers, specs, or comparisons in your summary or explanation.
+For example, '27% faster', '100X more' examples of good evidence to support your arguments.
 """
 RANK_BY_CATEGORY_SYS_PROMPT = Prompt(
     template=RANK_BY_CATEGORY_SYS_PROMPT_STR + CITATION_PROMPT, name="RANK_BY_CATEGORY_SYS_PROMPT"
 )
 
-RANK_BY_CATEGORY_MAIN_PROMPT_STR = """
-    Analyze the following information about the companies and rank them based on how well they perform \
-    compared to each other.
-    The output should be in a long text format that includes the ranking list and a summary. \
-    The first section should start with a text 'Ranking List:'. In the new line list the companies \
-    in the markdown format. And the second section should start with a text 'Summary:', \
-    followed by a paragraph summarizing the ranking list. Each section should be separated by '\n\n'. \
-    For example, it should look like below:
+UPDATE_RANK_BY_CATEGORY_SYS_PROMPT_STR = """
+You are a financial analyst who is updating a ranked list of companies and an explanation for that
+ranking. This work is part of an overall competitive analysis, but you are currently focused on a specific criterion.
+You will be provided with the general prompt for the competitive analysis, the criterion, descriptions of
+these companies, the previous ranking along with expanations, a list of source documents that you used when generating
+the previous ranking, and new source documents that you must consider integrating into the updated ranking. You should
+ignore source documents that you don't think are actually relevant to the current criterion. You will also be provided
+with a list of other criteria, but only for the purpose of context. You should never use them to rank the companies,
+and you must not mention them in the explanation. I'll say it again, focus on the target criterion!
 
-    Ranking List:
-    - <Company Name1> (<symbol1>) Score <score1>
-        - <explanation1>
-    - <Company Name2> (<symbol2>) Score <score2>
-        - <explanation2>
-    ...
-    Summary:
-    <summary>
+Follow the specific instructions for writing such a ranking, provided further below. Since you are updating the
+ranking, there are a few extra guidelines you must follow:
+- You must ignore the specific ways that the previous ranking is not in line with the instructions. In particular,
+in the old ranking, the summary is found above the detailed ranking, but you will write the detailed ranking
+first. Most importantly, the old ranking does not include citations, but you must be very rigorous about citations.
+Detailed instructions for how to do citations are also found below, make sure you must cite one of the source documents
+for every single fact included in your final updated ranking. Follow the all instructions below carefully! Following the
+instructions takes precedence over the previous ranking.
+- You might find that for some facts included in the earlier ranking, there are no provided source documents related
+to them. You must not include in your new ranking facts in the earlier ranking that you no longer have a citations for!
+Just omit the discussion of that topic in the new ranking. Your old ranking should never be considered a source
+document.
+- If there are no new source documents with important information relevant to this particular company and the current
+criterion, you should copy the text of your previous ranking for that company, though don't forget to add citations,
+and to leave out any information from the original ranking where there is no source document to back it up.
+- If there are new source documents and at least one of those documents provides useful information that informs the
+ranking of the relevant company, then you should add that information to the explanation of the ranking (along with
+citations!). However, be fairly conservative about changing the scores. The score should only be changed when the
+information you are adding provides a significant new perspective on one or more of the relevant companies. It is fine
+to add new information into the ranking explanation without changing the score.
+- You must be EXTREMELY conservative about any major changes to the ranking of companies, only do it when there is major
+new information available that has really shaken up the associated market.
+- The summary should be updated based on relevant information that has been added or removed from the detailed rankings.
+Do not, however, change the wording to make it sound like an update (say `X is the leader`, not `X remains the leader`)
+unless a major change has occurred.
 
-    In detail, the ranking list should be in descending order of the companies' performance in the criteria.
-    'score' is a floating number in the range of 0 to 5 which represents how \
-    well the company performs in the criteria. 0 means the company performs the worst, 5 means the company \
-    performs the best. The score should be comparable to other companies in the ranking. You should take all \
-    companies into account.
-    'explanation' is a medium-sized paragraph that consists of 6 to 8 sentences that explains why the company \
-    is ranked here within the context of the main criteria, followed by the detailed evidence that supports \
-    your arguments. For example, a good explanation should be like 'Apple dominates the phone chip in terms \
-    of Innovation because the latest A15 chip is 20% faster than the previous A14 chip, and 2X faster than all \
-    the other competitors' phone chips', which makes a good point of Apple leads the phone chip in the criteria \
-    of innovation' and supported by the facts that it's making better chip than its own previous version but even \
-    way better than the competitors. If you see topics like this, you should try to include it in your explanation. \
-    You must consider all the provided information. You should not only focus on this company's topics, but also \
-    look at other companies' topics and analyze them together. For example, if a topic like 'Samsung's latest chip \
-    is 10% faster than the predecessor, chasing Apple's A15 chip'. This topic should be considered when ranking \
-    both Apple and Samsung, and of course beneficial to Samsung's score but not to Apple. \
-    I'll say it again, your conclusion should be derived from the topics with very concrete examples and \
-    focus solely on the main criteria. Topics that contain general information should be ignored. \
-    Topics that mention comparisons with predecessors, or with other competitors's similar products \
-    or services are preferred to include in the explanation. If there are exact numbers, or specs \
-    that can demonstrate the improvement or decline in the criteria, you MUST mention them \
-    in the explanation. Try to mention 4 to 5 topics that are most relevant to the ranking. \
-    Your explanation should match the score you give to the company but not explicitly mention the score. \
-    The top ranked companies MUST specify why and where they are better than the others, and the bottom \
-    ranked companies MUST specify why and where they fall behind than the higher ranked ones.
-    The 'ranking' list should contain all companies in the order of the ranking. If there are 3 or more \
-    companies in the ranking, the score of the bottom ranked company should be no higher than 1.5. \
-    You should also be conservative about the top company's score. If it is the undoubtedly best, the score \
-    should be 4.5 or above. However, if the top 1 doesn't show a significant leadership, its score should be \
-    no higher than 4. \
-    The difference of two companies' scores should reflect the difference of their performance in the criteria. \
-    0.5 point difference should represent a small difference in performance, 1.5 or more points difference \
-    should be a significant difference.
-    {summary_str}
-    Here is the hypothesis: {hypothesis}\n
-    Here is the main criteria you should use to evaluate the hypothesis:{category}\n
-    Here are the other criteria which are only used to provide context and should not be considered
-    to rank the companies. You must not mention them in the explanation:{other_categories}\n
-    Here are the companies' descriptions:\n{company_descriptions}\n
-    Here are the topics you should use to rank the companies:\n{topics}\n
+Here are the general instructions for writing these per-criterion competitive analysis rankings:
 """
+
+UPDATE_RANK_BY_CATEGORY_SYS_PROMPT_STR += RANK_BY_CATEGORY_EXPLANATION
+
+UPDATE_RANK_BY_CATEGORY_SYS_PROMPT_STR += "Here are the instructions for how to do citations:\n"
+
+UPDATE_RANK_BY_CATEGORY_SYS_PROMPT_STR += CITATION_PROMPT
+
+UPDATE_RANK_BY_CATEGORY_SYS_PROMPT = Prompt(
+    template=UPDATE_RANK_BY_CATEGORY_SYS_PROMPT_STR, name="UPDATE RANK_BY_CATEGORY_SYS_PROMPT"
+)
+
+RANK_BY_CATEGORY_MAIN_PROMPT_STR = (
+    "Analyze the following information about the companies and rank them based on how well they perform"
+    "compared to each other."
+)
+RANK_BY_CATEGORY_MAIN_PROMPT_STR += RANK_BY_CATEGORY_EXPLANATION
+
+RANK_BY_CATEGORY_MAIN_PROMPT_STR += """
+Here is the original prompt: {hypothesis}\n
+Here is the main criterion you should use to evaluate the hypothesis:{category}\n
+Here are the other criteria which are only used to provide context and should not be considered
+to rank the companies. You must not mention them in the explanation:{other_categories}\n
+Here are the companies' descriptions, delimited by ---:
+---
+{company_descriptions}
+---
+Here are the source documents you should use to rank the companies, also delimited by ---:
+---
+{topics}
+---
+"""
+
+RANK_BY_CATEGORY_MAIN_PROMPT_STR += CITATION_REMINDER
+
+RANK_BY_CATEGORY_MAIN_PROMPT_STR += " Now write your ranking with summary and citations:\n"
+
 RANK_BY_CATEGORY_MAIN_PROMPT = Prompt(
-    template=RANK_BY_CATEGORY_MAIN_PROMPT_STR + CITATION_REMINDER,
+    template=RANK_BY_CATEGORY_MAIN_PROMPT_STR,
     name="RANK_BY_CATEGORY_MAIN_PROMPT",
+)
+
+UPDATE_RANK_BY_CATEGORY_MAIN_PROMPT_STR = """
+Update this ranking with new information provided in the source document
+
+Here is the original prompt: {hypothesis}
+
+Here is the main criterion you should focus on:
+{category}
+
+Here are the other criteria which are only used to provide context and should not be considered
+when ranking the companies here. You must not mention them in the explanation:
+{other_categories}
+
+Here are the companies' descriptions, delimited by ---:
+---
+{company_descriptions}
+---
+
+Here are the new source documents that you should consider including, also delimited by ---:
+---
+{new_topics}
+---
+
+Here are old source documents, used in the original ranking text, also delimited by ---:
+---
+{old_topics}
+---
+
+And here is the previous ranking text, which you should be largely copying except to add citations, and
+when there is new information provided by the new source documents:
+---
+{old_ranking}
+---
+"""
+
+UPDATE_RANK_BY_CATEGORY_MAIN_PROMPT_STR += CITATION_REMINDER
+
+UPDATE_RANK_BY_CATEGORY_MAIN_PROMPT_STR += "Now rewrite the ranking, with summary and citations:\n"
+
+
+UPDATE_RANK_BY_CATEGORY_MAIN_PROMPT = Prompt(
+    template=UPDATE_RANK_BY_CATEGORY_MAIN_PROMPT_STR,
+    name="UPDATE_RANK_BY_CATEGORY_MAIN_PROMPT",
+)
+
+
+SUMMARY_STR_WTARGET = (
+    "The summmary should focus on the target stock ({stock}), justifying why it is positioned in that order. "
+    "It should also try to mention other companies and concisely compare them with the target stock."
+)
+
+SUMMARY_STR_NOTARGET = (
+    "The summmary should focus on the highest ranking stock, justifying why it is positioned in that order. "
+    "It should also try to mention other companies and concisely compare them with the highest ranked stock."
 )
 
 
@@ -156,20 +291,14 @@ RANK_BY_CATEGORY_MAIN_PROMPT = Prompt(
 ####################################################################################################
 @io_type
 class TopicGroup(TextGroup):
-    val: List[Text]
-    id_to_str: Dict[TextIDType, str] = {}  # type: ignore
 
     def convert_to_gpt_input(self) -> str:
         # we don't care about the args here, just for mypy
 
+        if not self.id_to_str:  # TopicGroups must have their id_to_str set separately
+            raise Exception("tried to Topic Group to string before deriving id_to_str")
         self._cut_input_topics(target_num=200)
-
-        texts = []
-        for idx, topic in enumerate(self.val):
-            text = self.id_to_str[topic.id]  # type: ignore
-            texts.append(f"- {idx}: ({topic.stock_id.symbol}) {text}")  # type: ignore
-
-        return "\n".join(texts)
+        return super().convert_to_str(self.id_to_str, numbering=True, symbols=True)
 
     def _cut_input_topics(self, target_num: int = 200) -> None:
         # if there are too many topics passed to GPT, it may cause the output being chopped off
@@ -249,6 +378,9 @@ class TopicGroup(TextGroup):
         When we are modifying `self.val` (usually cutting the number of topics), we need to update
         `self.id_to_str` accordingly. Or drop the topics that are not in `self.id_to_str`.
         """
+
+        if not self.id_to_str:
+            return
 
         texts = []
         mapping = {}
@@ -447,6 +579,9 @@ async def do_competitive_analysis(
 ) -> CompetitiveAnalysis:
     logger = get_prefect_logger(__name__)
 
+    debug_info: Dict[str, Any] = {}
+    TOOL_DEBUG_INFO.set(debug_info)
+
     if not args.stocks:
         raise ValueError("At least one stock must be provided")
     elif not args.criteria:
@@ -454,18 +589,57 @@ async def do_competitive_analysis(
     elif not args.all_text_data:
         raise ValueError("At least one text data must be provided")
 
+    prev_run_info = None
+    prev_internal_data = None
+    try:  # since everything associated with diffing is optional, put in try/except
+        if context.diff_info is not None:  # running updates
+            prev_run_info = await get_prev_run_info(context, "do_competitive_analysis")
+            if prev_run_info is not None:
+                prev_args = DoCompetitiveAnalysisInput.model_validate_json(prev_run_info.inputs_str)
+                # when doing automations, categories CANNOT change, so making sure of that
+                args.criteria = prev_args.criteria
+                prev_internal_data: Dict[str, str] = prev_run_info.debug  # type:ignore
+
+    except Exception as e:
+        logger.warning(f"Error getting info from previous run: {e}")
+
     # Step: Download content for text data
     logger.info("Downloading content for text data")
     gbi_id_to_short_description, topic_group = await download_content_for_text_data(
         args.all_text_data
     )
 
+    debug_info["input_topics"] = dump_io_type(topic_group.val)
+
     gpt_service_stub = _get_gpt_service_stub()[0]
 
-    # Step: Revise hypothesis to remove company specific information
-    logger.info("Revising hypothesis to remove any company specific information")
-    revised_hypothesis = await revise_hypothesis(args.prompt, context, gpt_service_stub)
-    logger.info(f"Revised hypothesis: {revised_hypothesis}")  # Not visible to users
+    if prev_internal_data and "revised hypothesis" in prev_internal_data:
+        logger.info("Using existing revised hypothesis")
+        revised_hypothesis = prev_internal_data["revised hypothesis"]
+
+    else:
+        # Step: Revise hypothesis to remove company specific information
+        logger.info("Revising hypothesis to remove any company specific information")
+        revised_hypothesis = await revise_hypothesis(args.prompt, context, gpt_service_stub)
+        logger.info(f"Revised hypothesis: {revised_hypothesis}")  # Not visible to users
+
+    debug_info["revised hypothesis"] = revised_hypothesis
+
+    orig_topic_group = None
+
+    if prev_internal_data and "input_topics" in prev_internal_data:
+        logger.info("Identifying new topics that need to be classified")
+        old_input_topics = load_io_type(prev_internal_data["input_topics"])
+        for topic in old_input_topics:
+            topic.reset_id()  # otherwise ids are different for snippets
+        old_input_topic_set = set(old_input_topics)
+        new_topics = []
+        for topic in topic_group.val:
+            if topic not in old_input_topic_set:
+                new_topics.append(topic)
+
+        orig_topic_group = topic_group
+        topic_group = TopicGroup(val=new_topics, id_to_str=topic_group.id_to_str)
 
     # Step: Classify topics into categories
     logger.info("Classifying news, earnings, SEC topics into categories")
@@ -487,15 +661,38 @@ async def do_competitive_analysis(
     if candidate_target_stock and candidate_target_stock not in stocks:
         stocks.append(candidate_target_stock)
 
-    category_to_result = await rank_and_summarize_for_each_category(
-        candidate_target_stock,
-        stocks,
-        revised_hypothesis,
-        categories,
-        category_idx_to_topic_group,
-        gbi_id_to_short_description,
-        context,
-        gpt_service_stub,
+    if prev_internal_data and orig_topic_group and "categories and ranks" in prev_internal_data:
+        old_rankings = [
+            tuple(pair) for pair in load_io_type(prev_internal_data["categories and ranks"])
+        ]
+
+        category_to_result = await update_rank_and_summarize_for_each_category(
+            candidate_target_stock,
+            stocks,
+            revised_hypothesis,
+            categories,
+            category_idx_to_topic_group,
+            old_rankings,
+            orig_topic_group,
+            gbi_id_to_short_description,
+            context,
+            gpt_service_stub,
+        )
+    else:
+
+        category_to_result = await rank_and_summarize_for_each_category(
+            candidate_target_stock,
+            stocks,
+            revised_hypothesis,
+            categories,
+            category_idx_to_topic_group,
+            gbi_id_to_short_description,
+            context,
+            gpt_service_stub,
+        )
+
+    debug_info["categories and ranks"] = dump_io_type(
+        [[category_idx, ranked_list] for category_idx, ranked_list in category_to_result.items()]
     )
 
     # Step: Calculate weighted average scores and determine the real target stock
@@ -674,6 +871,10 @@ async def filter_and_classify_topics_into_category(
 ) -> Dict[int, TopicGroup]:
     logger = get_prefect_logger(__name__)
 
+    if topic_group.total == 0:
+        await tool_log(log="No topics to process", context=context)
+        return {}
+
     # Prompt
     main_prompt_str = """
 You are a financial analyst who is evaluating whether a text about a stock is directly relevant to any \
@@ -823,17 +1024,10 @@ async def rank_and_summarize_for_each_category(
     gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> Dict[int, RankingList]:
     if target_stock is not None:
-        summary_str = (
-            "The second key should be 'summary' and the value should be a string that focuses on "
-            f"the target stock ({target_stock.symbol}) to answer why it's positioned in that order. "
-            "It should also try to mention other companies and concisely compare them with the target stock."
-        )
+
+        summary_str = SUMMARY_STR_WTARGET.format(stock=target_stock.symbol)
     else:
-        summary_str = (
-            "The second key should be 'summary' and the value should be a string that focuses on "
-            "the stock with the highest score to answer why it's ranked top. "
-            "It should also try to mention other companies and concisely compare them with the target stock."
-        )
+        summary_str = SUMMARY_STR_NOTARGET
 
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
@@ -868,6 +1062,65 @@ async def rank_and_summarize_for_each_category(
 
     category_idx_to_result: Dict[int, RankingList] = {
         idx: result for idx, result in zip(sorted_category_idxs, results) if result is not None
+    }
+    return category_idx_to_result
+
+
+async def update_rank_and_summarize_for_each_category(
+    target_stock: Optional[StockID],
+    stocks: List[StockID],
+    hypothesis: str,
+    categories: List[Category],
+    new_category_idx_to_topic_group: Dict[int, TopicGroup],
+    old_rankings: List[Tuple[int, RankingList]],
+    orig_topic_group: TopicGroup,
+    gbi_id_to_description: Dict[int, str],
+    context: PlanRunContext,
+    gpt_service_stub: Optional[GPTServiceStub] = None,
+) -> Dict[int, RankingList]:
+    if target_stock is not None:
+
+        summary_str = SUMMARY_STR_WTARGET.format(stock=target_stock.symbol)
+    else:
+        summary_str = SUMMARY_STR_NOTARGET
+
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    gpt = GPT(context=gpt_context, model=GPT4_O, gpt_service_stub=gpt_service_stub)
+
+    category_tasks = []
+    for category_idx, old_ranking in old_rankings:
+        if category_idx not in new_category_idx_to_topic_group:
+            category_tasks.append(identity(old_ranking))
+
+        else:
+            new_topic_group = new_category_idx_to_topic_group[category_idx]
+            category_tasks.append(
+                _update_rank_by_gpt_and_post_process(
+                    gpt,
+                    hypothesis,
+                    stocks,
+                    summary_str,
+                    category_idx,
+                    categories,
+                    new_topic_group,
+                    orig_topic_group,
+                    old_ranking,
+                    gbi_id_to_description,
+                    context,
+                )
+            )
+
+    results = await gather_with_concurrency(category_tasks, n=len(category_tasks))
+
+    await tool_log(
+        log="Updated ranking for all the relevant stocks for each category and created summaries",
+        context=context,
+    )
+
+    category_idx_to_result: Dict[int, RankingList] = {
+        idx: result for (idx, _), result in zip(old_rankings, results) if result is not None
     }
     return category_idx_to_result
 
@@ -944,6 +1197,106 @@ async def _rank_by_gpt_and_post_process(
         return ranking_list_w_summary
     except Exception as e:
         logger.exception(f"Failed to rank category <{category_name}>: {e}")
+        return None
+
+
+async def _update_rank_by_gpt_and_post_process(
+    gpt: GPT,
+    hypothesis: str,
+    all_stocks: List[StockID],
+    summary_str: str,
+    category_idx: int,
+    categories: List[Category],
+    new_topics_group: TopicGroup,
+    orig_topic_group: TopicGroup,
+    old_ranking: RankingList,
+    gbi_id_to_description: Dict[int, str],
+    context: PlanRunContext,
+) -> Optional[RankingList]:
+    logger = get_prefect_logger(__name__)
+
+    category_name = categories[category_idx].name
+
+    try:
+        ####################
+        # Prepare GPT inputs
+        ####################
+        logger.info(f"Preparing GPT inputs to rerank category <{category_name}>")
+
+        # new_topics
+        new_topics_str = new_topics_group.convert_to_gpt_input()
+
+        # old topics
+
+        input_topic_set = set(orig_topic_group.val)
+
+        # Get citation source texts from old ranking to use as references for new one
+        old_texts = []
+        for citation in old_ranking.history[0].citations:
+            text_citation = cast(TextCitation, citation)  # type: ignore
+            old_text = text_citation.source_text
+            old_text.reset_id()  # we need this to match these across runs
+            if old_text in input_topic_set:
+                old_texts.append(old_text)
+
+        old_topics_group = TopicGroup(
+            val=old_texts, offset=new_topics_group.total, id_to_str=orig_topic_group.id_to_str
+        )
+        old_topics_str = old_topics_group.convert_to_gpt_input()
+
+        # company descriptions
+        involved_stocks = list(
+            set(new_topics_group.get_all_stocks()) & set(old_topics_group.get_all_stocks())
+        )
+        company_description_str = "\n".join(
+            COMPANY_DESCRIPTION_TEMPLATE.format(
+                company_name=stock.company_name,
+                symbol=stock.symbol,
+                description=gbi_id_to_description[stock.gbi_id],
+            )
+            for stock in involved_stocks
+        )
+
+        # categories
+        category_str = await categories[category_idx].to_gpt_input()
+        other_categories = [categories[i] for i in range(len(categories)) if i != category_idx]
+        other_categories_str = Category.multi_to_gpt_input(other_categories)
+
+        ####################
+        # Call GPT
+        ####################
+        logger.info(f"Calling GPT to rank category <{category_name}>")
+
+        result = await gpt.do_chat_w_sys_prompt(
+            main_prompt=UPDATE_RANK_BY_CATEGORY_MAIN_PROMPT.format(
+                hypothesis=hypothesis,
+                category=category_str,
+                other_categories=other_categories_str,
+                company_descriptions=company_description_str,
+                new_topics=new_topics_str,
+                old_topics=old_topics_str,
+                old_ranking=old_ranking.val,
+            ),
+            sys_prompt=UPDATE_RANK_BY_CATEGORY_SYS_PROMPT.format(summary_str=summary_str),
+        )
+
+        ##############################
+        # Extract citations from text
+        #############################
+        combined_topic_group: TopicGroup = TextGroup.join(new_topics_group, old_topics_group)  # type: ignore
+        logger.info(f"Extracting inline citations for category <{category_name}>")
+        ranking_list_w_summary = await _rank_output_postprocess(
+            result, category_name, combined_topic_group, all_stocks, context
+        )
+
+        await tool_log(
+            f"Finished ranking and summarizing for category <{categories[category_idx].name}>",
+            context=context,
+        )
+
+        return ranking_list_w_summary
+    except Exception as e:
+        logger.exception(f"Failed to rerank category <{category_name}>: {e}")
         return None
 
 

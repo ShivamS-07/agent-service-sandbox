@@ -146,7 +146,7 @@ if __name__ == "__main__":
 
     init_stdout_logging()
 
-    agent_id = "263fd68c-14cc-485a-98b7-e231f6b50ef8"
+    agent_id = "cd1010c0-f51d-4a3c-9ddf-4c134bd6a0f1"
 
     asyncio.run(
         main(

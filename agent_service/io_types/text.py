@@ -20,7 +20,7 @@ from typing import (
 from uuid import uuid4
 
 import mdutils
-from pydantic import Field
+from pydantic import Field, field_serializer
 from typing_extensions import Self
 
 from agent_service.external.custom_data_svc_client import get_custom_doc_articles_info
@@ -76,6 +76,9 @@ class Text(ComplexIOBase):
 
     def to_citation_title(self) -> str:
         return self.text_type
+
+    def reset_id(self) -> None:
+        pass
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         # Get the citations for the current Text object, as well as any
@@ -518,6 +521,11 @@ class CustomDocumentSummaryText(StockText):
     requesting_user: str
     text_type: ClassVar[str] = "User Document Summary"
 
+    @field_serializer("val")
+    def serialize_val(self, val: str, _info: Any) -> str:
+        # Make sure we don't serialize unnecessary data, we only want to serialize the ID.
+        return ""
+
     @classmethod
     async def _get_strs_lookup(cls, articles_text: List[CustomDocumentSummaryText]) -> Dict[str, str]:  # type: ignore
         # group by user id - we are assuming that anyone who is authed for the agent
@@ -895,6 +903,11 @@ class StockEarningsSummaryText(StockEarningsText):
 class StockEarningsTranscriptText(StockEarningsText):
     text_type: ClassVar[str] = "Earnings Call"
 
+    @field_serializer("val")
+    def serialize_val(self, val: str, _info: Any) -> str:
+        # Make sure we don't serialize unnecessary data, we only want to serialize the ID.
+        return ""
+
     @classmethod
     async def _get_strs_lookup(
         cls, earnings_texts: List[StockEarningsSummaryText]  # type: ignore
@@ -946,12 +959,15 @@ class StockEarningsSummaryPointText(StockText):
     A subclass from `StockEarningsSummaryText` that only stores a point in the summary
     """
 
-    id: int  # hash((summary_id, summary_type, summary_idx))
+    int  # hash((summary_id, summary_type, summary_idx))
     text_type: ClassVar[str] = "Earnings Call Summary Point"
 
     summary_id: str  # UUID in DB
     summary_type: str  # "Remarks" or "Questions"
     summary_idx: int  # index of the point in the summary
+
+    def reset_id(self) -> None:
+        self.id = hash(((self.summary_id, self.summary_type, self.summary_idx)))
 
     @classmethod
     async def _get_strs_lookup(cls, earnings_summary_points: List[Self]) -> Dict[TextIDType, str]:
@@ -1156,6 +1172,11 @@ class StockDescriptionText(StockText):
     id: int  # gbi_id
     text_type: ClassVar[str] = "Company Description"
 
+    @field_serializer("val")
+    def serialize_val(self, val: str, _info: Any) -> str:
+        # Make sure we don't serialize unnecessary data, we only want to serialize the ID.
+        return ""
+
     @classmethod
     async def _get_strs_lookup(
         cls, company_descriptions: List[StockDescriptionText]  # type: ignore
@@ -1247,6 +1268,11 @@ class StockSecFilingText(StockText):
     db_id: Optional[str] = None
     form_type: Optional[str] = None
 
+    @field_serializer("val")
+    def serialize_val(self, val: str, _info: Any) -> str:
+        # Make sure we don't serialize unnecessary data, we only want to serialize the ID.
+        return ""
+
     @classmethod
     async def _get_strs_lookup(
         cls, sec_filing_list: List[StockSecFilingText]  # type: ignore
@@ -1302,7 +1328,7 @@ class StockSecFilingSectionText(StockText):
     (management, risk_factors) into even smaller sections and store them in this class.
     """
 
-    id: str = Field(default_factory=lambda: str(uuid4()))
+    id: Union[int, str]  # hash((self.filing_id, self.header))  (str for backwards compatibility)
 
     text_type: ClassVar[str] = "SEC Filing Section"
 
@@ -1310,6 +1336,15 @@ class StockSecFilingSectionText(StockText):
     header: str
     db_id: Optional[str] = None
     form_type: Optional[str] = None
+
+    @field_serializer("val")
+    def serialize_val(self, val: str, _info: Any) -> str:
+        # Make sure we don't serialize unnecessary data, we only want to serialize the ID.
+        return ""
+
+    # For identifying the same texts across runs (different hash seeds)
+    def reset_id(self) -> None:
+        self.id = hash((self.filing_id, self.header))
 
     @classmethod
     async def init_from_filings(
@@ -1326,6 +1361,7 @@ class StockSecFilingSectionText(StockText):
             for header, content in split_sections.items():
                 sections.append(
                     cls(
+                        id=hash((filing.id, header)),
                         val=content,
                         filing_id=filing.id,
                         header=header,
@@ -1418,6 +1454,11 @@ class StockOtherSecFilingText(StockText):
     text_type: ClassVar[str] = "SEC Filing"
     db_id: Optional[str] = None
     form_type: Optional[str] = None
+
+    @field_serializer("val")
+    def serialize_val(self, val: str, _info: Any) -> str:
+        # Make sure we don't serialize unnecessary data, we only want to serialize the ID.
+        return ""
 
     @classmethod
     async def _get_strs_lookup(
@@ -1517,11 +1558,19 @@ class TextGroup(ComplexIOBase):
         }
         return TextGroup(val=texts, id_to_str=joined_id_to_str)
 
-    def convert_to_str(self, id_to_str: Dict[TextIDType, str], numbering: bool = False) -> str:
+    def convert_to_str(
+        self, id_to_str: Dict[TextIDType, str], numbering: bool = False, symbols: bool = False
+    ) -> str:
         self.id_to_str = id_to_str
         return "\n***\n".join(
             [
-                (f"Text Number: {i + self.offset}\n" if numbering else "") + id_to_str[text.id]
+                (f"Text Number: {i + self.offset}\n" if numbering else "")
+                + (
+                    f"Stock: {text.stock_id.symbol}\n"
+                    if symbols and isinstance(text, StockText) and text.stock_id
+                    else ""
+                )
+                + id_to_str[text.id]
                 for i, text in enumerate(self.val)
                 if text.id in id_to_str
             ]

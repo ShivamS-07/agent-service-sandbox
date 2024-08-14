@@ -51,7 +51,7 @@ def get_origin_hypothesis_and_target_stock(
     )
 
     d = json.loads(result[0]["args"])
-    hypothesis = d["hypothesis"]
+    hypothesis = d["prompt"]
 
     if "target_stock" not in d or not d["target_stock"]:
         return hypothesis, None
@@ -70,6 +70,8 @@ def get_tool_call_output(agent_id: str, plan_run_id: str, tool_name: str) -> IOT
     result = ch.generic_read(
         sql=sql, params={"agent_id": agent_id, "plan_run_id": plan_run_id, "tool_name": tool_name}
     )
+
+    print({"agent_id": agent_id, "plan_run_id": plan_run_id, "tool_name": tool_name})
 
     row = result[0]
     return load_io_type(row["output"])
@@ -227,8 +229,11 @@ async def create_fake_past_run(
     # Prepare inputs that are no need to rerun
     ##########################################
     hypothesis, target_stock = get_origin_hypothesis_and_target_stock(
-        context.agent_id, latest_plan_run_id, tool_name="analyze_hypothesis_with_categories"
+        context.agent_id, latest_plan_run_id, tool_name="do_competitive_analysis"
     )
+
+    # update with original plan run id (even after it is deleted), only uncommented in main run
+    latest_plan_run_id = "0dd6cd8a-297f-4e32-9db6-0c9f7b71a6c9"
 
     stocks = get_tool_call_output(
         context.agent_id, latest_plan_run_id, tool_name="filter_stocks_by_product_or_service"
@@ -237,6 +242,9 @@ async def create_fake_past_run(
     categories = get_tool_call_output(
         context.agent_id, latest_plan_run_id, tool_name="get_criteria_for_competitive_analysis"
     )
+
+    temp_task_id = context.task_id
+    context.task_id = None
 
     ####################################
     # Prepare inputs that need to rerun
@@ -248,6 +256,8 @@ async def create_fake_past_run(
         ),
         context,
     )
+
+    context.task_id = temp_task_id
 
     ############################
     # Run agent as of past date
@@ -267,6 +277,10 @@ async def create_fake_past_run(
             prompt=hypothesis, competitive_analysis=category_deepdives
         ),
         context,
+    )
+
+    categories = get_tool_call_output(
+        context.agent_id, latest_plan_run_id, tool_name="generate_summary_for_competitive_analysis"
     )
 
     # write outputs
@@ -322,9 +336,17 @@ async def main(
     plan_id = row["plan_id"]
     latest_plan_run_id = row["plan_run_id"]
 
-    data_start = window_start
-    while data_start <= window_end:
-        data_end = data_start + datetime.timedelta(days=90)
+    _, plan, _, _, _ = db.get_latest_execution_plan(agent_id)
+
+    if plan:
+        for step in plan.nodes:
+            if step.tool_name == "do_competitive_analysis":
+                task_id = step.tool_task_id
+                break
+
+    data_end = window_start
+    while data_end <= window_end:
+        data_start = data_end - datetime.timedelta(days=90)
 
         fake_past_run_id = str(uuid4())
         fake_run_context = PlanRunContext(
@@ -332,11 +354,22 @@ async def main(
             user_id=user_id,
             plan_run_id=fake_past_run_id,
             plan_id=plan_id,
+            task_id=task_id,
             skip_db_commit=True,  # don't want to insert weird worklogs
         )
+
+        # comment out this code for first run
+        if data_end == window_start:
+            data_end += datetime.timedelta(days=1)
+            continue
+        fake_run_context.diff_info = {}
+
         await create_fake_past_run(fake_run_context, latest_plan_run_id, data_start, data_end)
 
-        data_start += datetime.timedelta(days=1)
+        # uncomment this for first run
+        # break
+
+        data_end += datetime.timedelta(days=1)
 
 
 if __name__ == "__main__":
@@ -344,13 +377,22 @@ if __name__ == "__main__":
 
     from agent_service.utils.logs import init_stdout_logging
 
-    agent_id = "b7495d9f-8a7a-4c6d-96de-9b5fc4becc4b"
+    agent_id = "cd1010c0-f51d-4a3c-9ddf-4c134bd6a0f1"
 
-    # # Drop the unneeded local generated runs
+    # Drop the unneeded local generated runs
     # drop_plan_run(
     #     agent_id=agent_id,
-    #     plan_run_id="88c5fd05-3199-437a-984b-c3b662dcfc9c",
+    #     plan_run_id="0ae9e953-d732-46cc-8228-a0037ae8d8c8",
     # )
+    # print(kjfdlsjf)
+
+    # Explanation of how I made this work for new competitive analysis diffing
+    # First, build a agent for today
+    # Run this tool only for the first day of the period, see associated comments
+    # in main, also need to uncomment plan_run_id in create_fake_past_run
+    # Then, delete the original (current day) plan run and make opposite changes
+    # in main and create_fake_past_run (must use original run id, stuff is still in clickhouse!)
+    # and run for rest.
 
     today = datetime.datetime.today()
     window_end = today - datetime.timedelta(days=1)
