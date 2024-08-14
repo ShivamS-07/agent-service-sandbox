@@ -32,7 +32,7 @@ from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.stock_metadata import StockMetadata
 
 STOCK_ID_COL_NAME_DEFAULT = "Security"
-SCORE_COL_NAME_DEFAULT = "Score"
+SCORE_COL_NAME_DEFAULT = "Criteria Match"
 
 MAX_DATAPOINTS_FOR_GPT = 50
 

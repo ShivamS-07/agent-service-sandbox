@@ -7,6 +7,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.clickhouse import AsyncClickhouseBase
 from agent_service.utils.sec.sec_api import SecFiling
 
 
@@ -17,6 +18,7 @@ class CitationType(str, enum.Enum):
     NEWS_ARTICLE = "news_article"
     COMPANY_FILING = "company_filing"
     EARNINGS_SUMMARY = "earnings_summary"
+    EARNINGS_TRANSCRIPT = "earnings_transcript"
 
     # Generic, should no longer be used
     LINK = "link"
@@ -35,6 +37,8 @@ class CitationType(str, enum.Enum):
             return CompanyFilingCitationOutput
         elif self == CitationType.EARNINGS_SUMMARY:
             return EarningsSummaryCitationOutput
+        elif self == CitationType.EARNINGS_TRANSCRIPT:
+            return EarningsTranscriptCitationOutput
 
         return CitationOutput
 
@@ -86,7 +90,7 @@ class CitationOutput(BaseModel, ABC):
 
     @classmethod
     async def get_citation_details(
-        cls, citation_id: str, db: BoostedPG
+        cls, citation_id: str, db: BoostedPG, user_id: str
     ) -> Optional[CitationDetails]:
         """
         Given a citation ID, converts the ID to a relevant CitationDetails
@@ -130,7 +134,7 @@ class CompanyFilingCitationOutput(DocumentCitationOutput):
 
     @classmethod
     async def get_citation_details(
-        cls, citation_id: str, db: BoostedPG
+        cls, citation_id: str, db: BoostedPG, user_id: str
     ) -> Optional[RawTextCitationDetails]:
         from agent_service.io_types.stock import StockID
 
@@ -155,7 +159,7 @@ class NewsDevelopmentCitationOutput(CitationOutput):
 
     @classmethod
     async def get_citation_details(
-        cls, citation_id: str, db: BoostedPG
+        cls, citation_id: str, db: BoostedPG, user_id: str
     ) -> Optional[NewsDevelopmentCitationDetails]:
         sql = """
         (
@@ -216,6 +220,75 @@ class NewsArticleCitationOutput(CitationOutput):
 
 class EarningsSummaryCitationOutput(DocumentCitationOutput):
     citation_type: CitationType = CitationType.EARNINGS_SUMMARY
+
+
+class EarningsTranscriptCitationOutput(DocumentCitationOutput):
+    citation_type: CitationType = CitationType.EARNINGS_TRANSCRIPT
+
+    @classmethod
+    def get_citation_internal_id(cls, gbi_id: int, year: int, quarter: int) -> str:
+        return f"{gbi_id}_{year}_{quarter}"
+
+    @classmethod
+    def parse_id(cls, citation_id: str) -> Union[Tuple[int, int, int], str]:
+        """
+        Earnings transcripts may be identifier EITHER by their gbi id, year,
+        quarter OR by the transcript ID for the record in clickhouse. This
+        function parses the identifier and returns one of those options.
+        """
+        parts = citation_id.split("_")
+        if len(parts) == 3:
+            return (int(parts[0]), int(parts[1]), int(parts[2]))
+        else:
+            # It's just a UUID, use as is
+            return citation_id
+
+    @classmethod
+    async def get_citation_details(
+        cls, citation_id: str, db: BoostedPG, user_id: str
+    ) -> Optional[RawTextCitationDetails]:
+        from agent_service.io_types.stock import StockID
+
+        parsed_id = cls.parse_id(citation_id)
+
+        ch = AsyncClickhouseBase()
+        if isinstance(parsed_id, tuple):
+            earnings_transcript_sql = """
+                SELECT gbi_id, earnings_date, transcript
+                FROM company_earnings.full_earning_transcripts
+                WHERE gbi_id = %(gbi_id)s AND fiscal_year=%(year)s AND fiscal_quarter=%(quarter)s
+                ORDER BY inserted_time DESC
+                LIMIT 1
+            """
+            rows = await ch.generic_read(
+                earnings_transcript_sql,
+                {"gbi_id": parsed_id[0], "year": parsed_id[1], "quarter": parsed_id[2]},
+            )
+        else:
+            earnings_transcript_sql = """
+                SELECT gbi_id, earnings_date, transcript
+                FROM company_earnings.full_earning_transcripts
+                WHERE id = %(citation_id)s
+            """
+            rows = await ch.generic_read(
+                earnings_transcript_sql,
+                {"citation_id": citation_id},
+            )
+        if not rows:
+            return None
+
+        row = rows[0]
+        gbi_id = row["gbi_id"]
+        stock = (await StockID.from_gbi_id_list([gbi_id]))[0]
+        earnings_date_str = row["earnings_date"].strftime("%Y-%m-%d")
+        title = f"{stock.company_name} - Earnings Call Transcript ({earnings_date_str})"
+
+        return RawTextCitationDetails(
+            citation_id=citation_id,
+            citation_type=CitationType.EARNINGS_TRANSCRIPT,
+            title=title,
+            raw_text=row["transcript"],
+        )
 
 
 # Deprecated

@@ -25,7 +25,8 @@ should be more than a simple repetition of those instructions. If you choose not
 you should omit any justification.
 
 Keep in mind that when you see a percentage, it is represented as a decimal. So
-0.02 is equivalent to 2%. It is extremely important you take note of this.
+0.02 is equivalent to 2%. It is extremely important you take note of this. When
+outputing text, make sure this is converted correctly to percentages.
 
 You will output ONLY a json object of the following json schema:
 {output_schema}

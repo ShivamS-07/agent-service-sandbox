@@ -38,6 +38,7 @@ from agent_service.io_types.citations import (
     CustomDocumentCitationOutput,
     DocumentCitationOutput,
     EarningsSummaryCitationOutput,
+    EarningsTranscriptCitationOutput,
     NewsArticleCitationOutput,
     NewsDevelopmentCitationOutput,
     TextCitationOutput,
@@ -743,7 +744,7 @@ class StockEarningsText(StockText):
 
 @io_type
 class StockEarningsSummaryText(StockEarningsText):
-    text_type: ClassVar[str] = "Earnings Call Summary"
+    text_type: ClassVar[str] = "Earnings Call"
 
     @classmethod
     async def _get_strs_lookup(
@@ -775,31 +776,117 @@ class StockEarningsSummaryText(StockEarningsText):
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Sequence[CitationOutput]:
-        output = []
-        for text in texts:
-            hl_start, hl_end = None, None
-            if text.citation_snippet_context and text.citation_snippet:
+        """
+        We do something different here: Originally each object is a point in the summary, with the
+        content of '<header>: <details>'. And we show the full text, and highlight the sentences GPT
+        thinks are relevant.
+        Now, we switch to the precomputed snippets. Each point can have one or multiple paragraphs
+        and highlighted sentences. So we break down the point into multiple outputs, each output
+        corresponds to a paragraph.
+        """
+
+        summary_id_to_text: Dict[str, List[TextCitation]] = defaultdict(list)
+        for text_obj in texts:
+            summary_id_to_text[text_obj.source_text.id].append(text_obj)  # type: ignore
+
+        sql = """
+            SELECT summary_id::TEXT, gbi_id, summary, year, quarter, created_timestamp
+            FROM nlp_service.earnings_call_summaries
+            WHERE summary_id = ANY(%(summary_ids)s)
+        """
+        rows = await db.generic_read(sql, {"summary_ids": list(summary_id_to_text.keys())})
+        summary_id_to_row = {row["summary_id"]: row for row in rows}
+
+        outputs: List[CitationOutput] = []
+        for summary_id, text_citation_list in summary_id_to_text.items():
+            row = summary_id_to_row[summary_id]
+            for text_citation in text_citation_list:
+                last_updated_at = row["created_timestamp"]
+                summary_dict: Dict = row["summary"]
+
+                text: Self = text_citation.source_text  # type: ignore
+
+                stock = text.stock_id
+                if not stock:
+                    continue
+                # e.g. "NVDA Earnings Call - Q1 2024"
+                citation_name = text.to_citation_title()
+                # we don't have transcript references filled in. Use the snippet in the object
+                full_context = text_citation.citation_snippet_context
+                snippet = text_citation.citation_snippet
                 hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
-                    smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
+                    smaller_snippet=snippet, context=full_context
                 )
-            output.append(
-                EarningsSummaryCitationOutput(
-                    internal_id=str(text.source_text.id),
-                    name=text.source_text.to_citation_title(),
-                    summary=text.citation_snippet_context,
+                # At any point, if we fail, just append the reference to the
+                fallback_citation = EarningsSummaryCitationOutput(
+                    name=citation_name,
+                    last_updated_at=last_updated_at,
+                    inline_offset=text_citation.citation_text_offset,
+                    summary=full_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
-                    inline_offset=text.citation_text_offset,
-                    last_updated_at=text.source_text.timestamp,
                 )
-            )
 
-        return output
+                if hl_start is None or hl_end is None or full_context is None or snippet is None:
+                    # No highlighting, can't tie it back to the transcript.
+                    outputs.append(fallback_citation)
+                    continue
+
+                remarks = summary_dict.get("Remarks") or []
+                questions = summary_dict.get("Questions") or []
+                found_references = False
+
+                for point in remarks + questions:
+                    if (
+                        "references" not in point
+                        or "reference" not in point["references"]
+                        or not point["references"]["reference"]
+                    ):
+                        continue
+                    # If we're here, we have a point with references. "snippet" in
+                    # this case is a snippet from the earnings call SUMMARY. We
+                    # basically need to decide if the current point we're looking at
+                    # is the one referenced, and then we need to swap out the
+                    # summary citation with the transcript citation.
+                    if snippet not in point["detail"] and snippet not in point["header"]:
+                        continue
+
+                    references = point["references"]["reference"]
+                    found_references = True
+                    for reference in references:
+                        # The annoying thing is - the highlight sentences are not guranteed to be
+                        # adjacent. To avoid more troubles, we just find the first and last sentence
+                        # and highlight the whole thing.
+                        full_context = " ".join(reference["paragraph"])
+                        highlight_sentences: List[str] = reference["highlight"]
+                        hl_start, _ = DocumentCitationOutput.get_offsets_from_snippets(
+                            smaller_snippet=highlight_sentences[0], context=full_context
+                        )
+                        _, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
+                            smaller_snippet=highlight_sentences[-1], context=full_context
+                        )
+                        outputs.append(
+                            EarningsTranscriptCitationOutput(
+                                name=citation_name,
+                                internal_id=EarningsTranscriptCitationOutput.get_citation_internal_id(
+                                    gbi_id=row["gbi_id"], year=row["year"], quarter=row["quarter"]
+                                ),
+                                last_updated_at=last_updated_at,
+                                inline_offset=text_citation.citation_text_offset,
+                                summary=full_context,
+                                snippet_highlight_start=hl_start,
+                                snippet_highlight_end=hl_end,
+                            )
+                        )
+                if not found_references:
+                    outputs.append(fallback_citation)
+
+        return outputs
 
 
 @io_type
 class StockEarningsTranscriptText(StockEarningsText):
-    text_type: ClassVar[str] = "Earnings Call Transcript"
+    text_type: ClassVar[str] = "Earnings Call"
 
     @classmethod
     async def _get_strs_lookup(
@@ -832,7 +919,7 @@ class StockEarningsTranscriptText(StockEarningsText):
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
             output.append(
-                DocumentCitationOutput(
+                EarningsTranscriptCitationOutput(
                     internal_id=str(text.source_text.id),
                     name=text.source_text.to_citation_title(),
                     summary=text.citation_snippet_context,
@@ -900,14 +987,14 @@ class StockEarningsSummaryPointText(StockText):
             summary_id_to_texts[text_obj.source_text.summary_id].append(text_obj)  # type: ignore
 
         sql = """
-            SELECT summary_id::TEXT, summary, year, quarter, created_timestamp
+            SELECT summary_id::TEXT, gbi_id, summary, year, quarter, created_timestamp
             FROM nlp_service.earnings_call_summaries
             WHERE summary_id = ANY(%(summary_ids)s)
         """
         rows = await db.generic_read(sql, {"summary_ids": list(summary_id_to_texts.keys())})
         summary_id_to_row = {row["summary_id"]: row for row in rows}
 
-        outputs = []
+        outputs: List[CitationOutput] = []
         for summary_id, text_citations in summary_id_to_texts.items():
             row = summary_id_to_row[summary_id]
             year = row["year"]
@@ -937,7 +1024,7 @@ class StockEarningsSummaryPointText(StockText):
                         smaller_snippet=snippet, context=full_context
                     )
                     outputs.append(
-                        DocumentCitationOutput(
+                        EarningsSummaryCitationOutput(
                             name=citation_name,
                             last_updated_at=last_updated_at,
                             inline_offset=text_citation.citation_text_offset,
@@ -961,7 +1048,10 @@ class StockEarningsSummaryPointText(StockText):
                             smaller_snippet=highlight_sentences[-1], context=full_context
                         )
                         outputs.append(
-                            DocumentCitationOutput(
+                            EarningsTranscriptCitationOutput(
+                                internal_id=EarningsTranscriptCitationOutput.get_citation_internal_id(
+                                    gbi_id=row["gbi_id"], year=row["year"], quarter=row["quarter"]
+                                ),
                                 name=citation_name,
                                 last_updated_at=last_updated_at,
                                 inline_offset=text_citation.citation_text_offset,

@@ -453,7 +453,7 @@ class AgentServiceImpl:
         return GetAgentOutputResponse(outputs=outputs)
 
     async def get_citation_details(
-        self, citation_type: CitationType, citation_id: str
+        self, citation_type: CitationType, citation_id: str, user_id: str
     ) -> Optional[CitationDetailsType]:
         if isinstance(citation_type, str):
             # Just to be safe
@@ -461,7 +461,7 @@ class AgentServiceImpl:
 
         citation_class = citation_type.to_citation_class()
         citation_details = await citation_class.get_citation_details(
-            citation_id=citation_id, db=self.pg.pg
+            citation_id=citation_id, db=self.pg.pg, user_id=user_id
         )
         return citation_details
 

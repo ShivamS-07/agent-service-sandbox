@@ -583,7 +583,7 @@ async def get_citation_details(
     citation_type: CitationType, citation_id: str, user: User = Depends(parse_header)
 ) -> GetCitationDetailsResponse:
     details = await application.state.agent_service_impl.get_citation_details(
-        citation_type=citation_type, citation_id=citation_id
+        citation_type=citation_type, citation_id=citation_id, user_id=user.user_id
     )
     return GetCitationDetailsResponse(details=details)
 
