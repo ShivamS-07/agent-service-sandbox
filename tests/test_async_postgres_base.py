@@ -23,14 +23,12 @@ class AsyncPostgresTest(unittest.IsolatedAsyncioTestCase):
         user_id = "f6fe6a54-c15c-4893-9909-90657be7f19f"  # DG
         await self.db.get_existing_agents_names(user_id)
 
-    @classmethod
-    def setUpClass(cls) -> None:
+    async def asyncSetUp(self) -> None:
         # WARNING: this is capable of writing to db permanently
         # so stick with read-only tests for now
-        cls.pg = AsyncPostgresBase()
-        cls.db = AsyncDB(cls.pg)
+        self.pg = AsyncPostgresBase()
+        self.db = AsyncDB(self.pg)
 
-    @classmethod
-    async def tearDownClass(cls) -> None:
-        await cls.pg.close()
-        cls.pg = None
+    async def asyncTearDown(self) -> None:
+        await self.pg.close()
+        self.pg = None

@@ -1,6 +1,5 @@
 import unittest
 
-from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_types.stock import StockID
 from agent_service.planner.errors import NonRetriableError
 from agent_service.tools.sectors import (
@@ -17,7 +16,6 @@ from agent_service.types import PlanRunContext
 
 class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        set_use_global_stub(False)
         self.context = PlanRunContext.get_dummy()
 
         # uncomment for easier debugging

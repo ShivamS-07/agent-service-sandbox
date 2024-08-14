@@ -239,10 +239,14 @@ class Table(ComplexIOBase):
         stocks_are_hashable_objs: bool = False,
     ) -> Self:
         out_columns: List[TableColumn] = []
-        expected_column_names_list = {col.label for col in columns}
         data = data.replace(np.nan, None)
-        df_columns = [col for col in data.columns if col in expected_column_names_list]
-        for col_meta, df_col in zip(columns, df_columns):
+        # this was accidentally? enforcing the column labels to line up with
+        # the physical column layout, even though we grab the data by column name/label instead
+        for col_meta in columns:
+            df_col = col_meta.label
+            if df_col not in data.columns:
+                raise Exception(f"Requested label: {df_col=} not in dataframe cols: {data.columns}")
+
             if col_meta.col_type == TableColumnType.DATE:
                 data[df_col] = data[df_col].apply(
                     func=lambda val: val.date() if isinstance(val, pd.Timestamp) else val

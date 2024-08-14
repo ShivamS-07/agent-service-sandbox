@@ -49,6 +49,10 @@ class StockID(ComplexIOBase):
             for meta in meta_dict.values()
         ]
 
+    @staticmethod
+    async def to_gbi_id_list(stock_ids: List["StockID"]) -> List[int]:
+        return [s.gbi_id for s in stock_ids]
+
     def to_markdown_string(self) -> str:
         return f"**{self.company_name} ({self.symbol or self.isin})**"
 

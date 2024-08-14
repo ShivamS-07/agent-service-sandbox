@@ -867,6 +867,371 @@ async def get_etf_list(args: GetETFUniverseInput, context: PlanRunContext) -> Li
     return stock_list
 
 
+class GetCountryInput(ToolArgs):
+    stock_ids: List[StockID]
+
+
+@tool(
+    description=(
+        "This function takes a list of StockIds"
+        " and returns a table with columns named: 'security' and 'country'."
+        " The 'security' column contains the original input stock_ids,"
+        " The country column contains 3-character ISO country codes"
+        " for each of the input stocks."
+        " Use this function to add country to a dataset before display"
+        " or for further processing."
+        " If you want to filter on a country or region do not use this function,"
+        " you should use the filter_stocks_by_region instead"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def get_country_for_stocks(args: GetCountryInput, context: PlanRunContext) -> StockTable:
+    """Returns the country for each stock
+
+    Returns:
+        StockTable: a table of stock identifiers and countries.
+    """
+    df = await get_metedata_for_stocks(args.stock_ids, context)
+
+    # we might not have found metadata for all the gbi_ids (rare)
+    # so lets select the ones we found and keep them for history
+    orig_stock_ids = {s.gbi_id: s for s in args.stock_ids}
+    new_stock_ids = [orig_stock_ids.get(id) for id in list(df["gbi_id"])]
+    df["Security"] = new_stock_ids
+
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Country", col_type=TableColumnType.STRING),
+        ],
+    )
+
+    return table
+
+
+class GetCurrencyInput(ToolArgs):
+    stock_ids: List[StockID]
+
+
+@tool(
+    description=(
+        "This function takes a list of StockIds"
+        " and returns a table with columns named: 'Security' and 'currency'."
+        " The 'Security' column contains the original input stock_ids,"
+        " The currency column contains 3-character ISO currency codes"
+        " for each of the input stocks."
+        " Use this function to add currency to a dataset before display"
+        " or for further processing"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def get_currency_for_stocks(args: GetCurrencyInput, context: PlanRunContext) -> StockTable:
+    """Returns the currency for each stock
+
+    Returns:
+        StockTable: a table of stock identifiers and currencies.
+    """
+
+    df = await get_metedata_for_stocks(args.stock_ids, context)
+    new_stock_ids = await StockID.from_gbi_id_list(list(df["gbi_id"]))
+    df["Security"] = new_stock_ids
+
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Currency", col_type=TableColumnType.STRING),
+        ],
+    )
+
+    return table
+
+
+class GetISINInput(ToolArgs):
+    stock_ids: List[StockID]
+
+
+@tool(
+    description=(
+        "This function takes a list of StockIds"
+        " and returns a table with columns named: 'Security' and 'ISIN'."
+        " The 'Security' column contains the original input stock_ids,"
+        " The ISIN column contains the 12-character alphanumeric ISIN code"
+        " for each of the input stocks."
+        " Use this function to add ISIN to a dataset before display"
+        " or for further processing"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def get_ISIN_for_stocks(args: GetISINInput, context: PlanRunContext) -> StockTable:
+    """Returns the ISIN for each stock
+
+    Returns:
+        StockTable: a table of stock identifiers and isin.
+    """
+
+    df = await get_metedata_for_stocks(args.stock_ids, context)
+    new_stock_ids = await StockID.from_gbi_id_list(list(df["gbi_id"]))
+    df["Security"] = new_stock_ids
+
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="ISIN", col_type=TableColumnType.STRING),
+        ],
+    )
+
+    return table
+
+
+class GetSectorInput(ToolArgs):
+    stock_ids: List[StockID]
+
+
+@tool(
+    description=(
+        "This function takes a list of StockIds"
+        " and returns a table with columns named: 'Security' and 'Sector'."
+        " The'Security' column contains the original input stock_ids,"
+        " The Sector column contains the name of the GICS level 1 Sector"
+        " that the stock belongs to."
+        " Use this function to add Sector to a dataset before display"
+        " or for further processing."
+        " If you want to filter on a sector do not use this function,"
+        " you should use the sector_filter instead"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def get_sector_for_stocks(args: GetSectorInput, context: PlanRunContext) -> StockTable:
+    """Returns the Sector for each stock
+
+    Returns:
+        StockTable: a table of stock identifiers and sectors.
+    """
+
+    df = await get_metedata_for_stocks(args.stock_ids, context)
+    new_stock_ids = await StockID.from_gbi_id_list(list(df["gbi_id"]))
+    df["Security"] = new_stock_ids
+
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Sector", col_type=TableColumnType.STRING),
+        ],
+    )
+
+    return table
+
+
+class GetIndustryGroupInput(ToolArgs):
+    stock_ids: List[StockID]
+
+
+@tool(
+    description=(
+        "This function takes a list of StockIds"
+        " and returns a table with columns named: 'Security' and 'Industry Group'."
+        " The'Security' column contains the original input stock_ids,"
+        " The Industry Group column contains the name of the GICS level 2 Industry Group"
+        " that the stock belongs to."
+        " Use this function to add Industry Group to a dataset before display"
+        " or for further processing."
+        " 'Industry Groups' are also known as 'Sub Sectors' or 'subsectors'."
+        " If you want to filter on an Industry group do not use this function,"
+        " you should use the sector_filter instead"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def get_industry_group_for_stocks(
+    args: GetIndustryGroupInput, context: PlanRunContext
+) -> StockTable:
+    """Returns the Industry Group for each stock
+
+    Returns:
+        StockTable: a table of stock identifiers and industry groups.
+    """
+
+    df = await get_metedata_for_stocks(args.stock_ids, context)
+    new_stock_ids = await StockID.from_gbi_id_list(list(df["gbi_id"]))
+    df["Security"] = new_stock_ids
+
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Industry Group", col_type=TableColumnType.STRING),
+        ],
+    )
+
+    return table
+
+
+class GetIndustryInput(ToolArgs):
+    stock_ids: List[StockID]
+
+
+@tool(
+    description=(
+        "This function takes a list of StockIds"
+        " and returns a table with columns named: 'Security' and 'Industry '."
+        " The'Security' column contains the original input stock_ids,"
+        " The Industry column contains the name of the GICS level 3 Industry"
+        " that the stock belongs to."
+        " Use this function to add Industry to a dataset before display"
+        " or for further processing."
+        " If you want to filter on an Industry do not use this function,"
+        " you should use the sector_filter instead"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def get_industry_for_stocks(args: GetIndustryInput, context: PlanRunContext) -> StockTable:
+    """Returns the Industry  for each stock
+
+    Returns:
+        StockTable: a table of stock identifiers and industries.
+    """
+
+    df = await get_metedata_for_stocks(args.stock_ids, context)
+    new_stock_ids = await StockID.from_gbi_id_list(list(df["gbi_id"]))
+    df["Security"] = new_stock_ids
+
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Industry", col_type=TableColumnType.STRING),
+        ],
+    )
+
+    return table
+
+
+class GetSubIndustryInput(ToolArgs):
+    stock_ids: List[StockID]
+
+
+@tool(
+    description=(
+        "This function takes a list of StockIds"
+        " and returns a table with columns named: 'Security' and 'Sub Industry '."
+        " The'Security' column contains the original input stock_ids,"
+        " The Sub Industry column contains the name of the GICS level 4 Sub Industry"
+        " that the stock belongs to."
+        " Use this function to add Sub Industry to a dataset before display"
+        " or for further processing."
+        " If you want to filter on a Sub Industry do not use this function,"
+        " you should use the sector_filter instead"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def get_sub_industry_for_stocks(
+    args: GetSubIndustryInput, context: PlanRunContext
+) -> StockTable:
+    """Returns the Sub Industry  for each stock
+
+    Returns:
+        StockTable: a table of stock identifiers and sub industries.
+    """
+
+    df = await get_metedata_for_stocks(args.stock_ids, context)
+    new_stock_ids = await StockID.from_gbi_id_list(list(df["gbi_id"]))
+    df["Security"] = new_stock_ids
+
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Sub Industry", col_type=TableColumnType.STRING),
+        ],
+    )
+
+    return table
+
+
+async def get_metedata_for_stocks(
+    stock_ids: List[StockID], context: PlanRunContext
+) -> pd.DataFrame:
+    """Returns the metadata for each stock
+
+    Args:
+        stock_ids: List[StockID]
+        context (PlanRunContext): The context of the plan run.
+
+    Returns:
+        dataframe: a table of stock identifiers and all metadata columns.
+    """
+
+    db = AsyncPostgresBase()
+
+    gbi_ids = await StockID.to_gbi_id_list(stock_ids)
+
+    # Find the stocks in the universe
+    sql = """
+    select *,
+    gics1.name AS gics1_name,
+    gics2.name AS gics2_name,
+    gics3.name AS gics3_name,
+    gics4.name AS gics4_name
+    FROM (
+    SELECT gbi_security_id AS gbi_id,
+    security_region AS country,
+    ms.isin AS isin,
+    ms.currency AS currency,
+    ms.gics AS gics4_sub_industry,
+    ms.gics / 100 AS gics3_industry,
+    ms.gics / 10000 AS gics2_industry_group,
+    ms.gics / 1000000 AS gics1_sector
+    FROM master_security ms
+    WHERE ms.gbi_security_id = ANY(%(stock_ids)s)
+    AND ms.is_public
+    ) msc
+    LEFT JOIN gic_sector gics1 ON  gics1.id = gics1_sector
+    LEFT JOIN gic_sector gics2 ON  gics2.id = gics2_industry_group
+    LEFT JOIN gic_sector gics3 ON  gics3.id = gics3_industry
+    LEFT JOIN gic_sector gics4 ON  gics4.id = gics4_sub_industry
+    """
+    rows = await db.generic_read(
+        sql,
+        params={
+            "stock_ids": gbi_ids,
+        },
+    )
+
+    df = pd.DataFrame(rows)
+
+    # the column names need to be changed to match the output column labels
+    df.rename(
+        columns={
+            "country": "Country",
+            "currency": "Currency",
+            "isin": "ISIN",
+            "gics1_name": "Sector",
+            "gics2_name": "Industry Group",
+            "gics3_name": "Industry",
+            "gics4_name": "Sub Industry",
+        },
+        inplace=True,
+    )
+    return df
+
+
 class GetStockUniverseInput(ToolArgs):
     # name of the universe to lookup
     universe_name: str

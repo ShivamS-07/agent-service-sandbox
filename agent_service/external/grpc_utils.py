@@ -6,6 +6,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
 import backoff
+import grpclib
 from gbi_common_py_utils.utils.environment import (
     PROD_TAG,
     STAGING_TAG,
@@ -112,6 +113,7 @@ def grpc_retry(func: Callable[P, T]) -> Callable[P, T]:
             exception=(
                 GRPCError,
                 socket.gaierror,
+                grpclib.exceptions.StreamTerminatedError,
             ),
             interval=1,
             max_tries=3,

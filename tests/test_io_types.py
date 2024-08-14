@@ -70,15 +70,15 @@ class TestIOType(unittest.TestCase):
             [
                 Table.from_df_and_cols(
                     data=df,
-                    columns=[TableColumnMetadata(label="A", col_type=TableColumnType.INTEGER)],
+                    columns=[TableColumnMetadata(label="x", col_type=TableColumnType.INTEGER)],
                 ),
                 1,
             ],
             Table.from_df_and_cols(
-                data=df, columns=[TableColumnMetadata(label="B", col_type=TableColumnType.STRING)]
+                data=df, columns=[TableColumnMetadata(label="y", col_type=TableColumnType.STRING)]
             ),
             Table.from_df_and_cols(
-                data=df, columns=[TableColumnMetadata(label="C", col_type=TableColumnType.FLOAT)]
+                data=df, columns=[TableColumnMetadata(label="z", col_type=TableColumnType.FLOAT)]
             ),
         ]
         for arg in cases:

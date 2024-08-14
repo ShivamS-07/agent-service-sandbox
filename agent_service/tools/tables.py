@@ -567,21 +567,23 @@ async def get_stock_identifier_list_from_table(
             stock_column = col
             rest_columns = args.input_table.columns[i + 1 :]
             break
-    if not stock_column or not rest_columns:
+    if not stock_column:
         raise RuntimeError("Cannot extract list of stocks, no stock column in table!")
     # Don't update in place to prevent issues in case this table is used elsewhere.
     # Use a set to prevent duplicates.
     stocks = copy.deepcopy(stock_column.data)
-    for col in rest_columns:
-        for i, stock in enumerate(stocks):
-            stock.history.append(
-                HistoryEntry(
-                    title=str(col.metadata.label),
-                    entry_type=col.metadata.col_type,
-                    unit=col.metadata.unit,
-                    explanation=col.data[i],  # type: ignore
+
+    if rest_columns:
+        for col in rest_columns:
+            for i, stock in enumerate(stocks):
+                stock.history.append(
+                    HistoryEntry(
+                        title=str(col.metadata.label),
+                        entry_type=col.metadata.col_type,
+                        unit=col.metadata.unit,
+                        explanation=col.data[i],  # type: ignore
+                    )
                 )
-            )
 
     seen_stocks = set()
     outputs = []
