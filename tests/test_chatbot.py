@@ -40,15 +40,15 @@ class TestPlans(IsolatedAsyncioTestCase):
         chat_context = ChatContext(messages=[user_message])
         chatbot = Chatbot("123")
         preplan_response = await chatbot.generate_initial_preplan_response(chat_context)
-        print(preplan_response)
+        print("preplan_response: ", preplan_response)
         chat_context.messages.append(Message(message=preplan_response, is_user_message=False))
         midplan_response = await chatbot.generate_initial_midplan_response(chat_context)
-        print(midplan_response)
+        print("midplan_response: ", midplan_response)
         chat_context.messages.append(Message(message=midplan_response, is_user_message=False))
         failed_plan_response = await chatbot.generate_initial_plan_failed_response_suggestions(
             chat_context
         )
-        print(failed_plan_response)
+        print("failed_plan_response: ", failed_plan_response)
         plan_nodes = [
             ToolExecutionNode(
                 tool_name="get_date_from_date_str",
@@ -107,6 +107,7 @@ class TestPlans(IsolatedAsyncioTestCase):
         postplan_response = await chatbot.generate_initial_postplan_response(
             chat_context, execution_plan
         )
+        print("postplan_response: ", postplan_response)
         chat_context.messages.append(Message(message=postplan_response, is_user_message=False))
         fake_output = [
             "Meta released a new open source model Llama 3 while Microsoft continues to milk OpenAI for all their worth. By comparison, all the news about Apple is how they are getting left in dust by everyone else. Losers!"  # noqa: E501
@@ -114,25 +115,26 @@ class TestPlans(IsolatedAsyncioTestCase):
         complete_response = await chatbot.generate_execution_complete_response(
             chat_context, execution_plan, fake_output
         )
+        print("complete_response: ", complete_response)
         chat_context.messages.append(Message(message=complete_response, is_user_message=False))
         no_action_input = "Oh, that's interesting, thanks!"
         chat_context.messages.append(Message(message=no_action_input, is_user_message=True))
         no_action_response = await chatbot.generate_input_update_no_action_response(chat_context)
-        print(no_action_response)
+        print("no_action_response: ", no_action_response)
         chat_context.messages.pop()
         rerun_input = "Okay, but can you rewrite the summary in a more casual style?"
         chat_context.messages.append(Message(message=rerun_input, is_user_message=True))
         rerun_response = await chatbot.generate_input_update_rerun_response(
             chat_context, execution_plan, "summarize_texts"
         )
-        print(rerun_response)
+        print("rerun_response: ", rerun_response)
         chat_context.messages.pop()
         replan_input = "Can you include Amazon in the summary?"
         chat_context.messages.append(Message(message=replan_input, is_user_message=True))
         replan_preplan_response = await chatbot.generate_input_update_replan_preplan_response(
             chat_context
         )
-        print(replan_preplan_response)
+        print("replan_preplan_response: ", replan_preplan_response)
         new_nodes = plan_nodes[:]
         new_nodes[1] = ToolExecutionNode(
             tool_name="stock_identifier_lookup_multi",
@@ -155,7 +157,7 @@ class TestPlans(IsolatedAsyncioTestCase):
         replan_postplan_response = await chatbot.generate_input_update_replan_postplan_response(
             chat_context, execution_plan, new_execution_plan
         )
-        print(replan_postplan_response)
+        print("replan_postplan_response: ", replan_postplan_response)
         chat_context.messages.pop()
         chat_context.messages.pop()
         error_info = ErrorInfo(
@@ -166,7 +168,7 @@ class TestPlans(IsolatedAsyncioTestCase):
         error_preplan_response = await chatbot.generate_error_replan_preplan_response(
             chat_context, execution_plan, error_info
         )
-        print(error_preplan_response)
+        print("error_preplan_response: ", error_preplan_response)
         chat_context.messages.append(Message(message=error_preplan_response, is_user_message=False))
         new_node = ToolExecutionNode(
             tool_name="filter_texts_by_topic",
@@ -184,4 +186,4 @@ class TestPlans(IsolatedAsyncioTestCase):
         error_postplan_response = await chatbot.generate_error_replan_postplan_response(
             chat_context, execution_plan, new_execution_plan
         )
-        print(error_postplan_response)
+        print("error_postplan_response: ", error_postplan_response)

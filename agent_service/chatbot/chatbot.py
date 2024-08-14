@@ -99,7 +99,6 @@ class Chatbot:
         sys_prompt = INITIAL_PLAN_FAILED_SUGGESTIONS_SYS_PROMPT.format(
             agent_description=AGENT_DESCRIPTION, tools=self.tool_registry.get_tool_str()
         )
-        print(sys_prompt)
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=500)
         return result
 
