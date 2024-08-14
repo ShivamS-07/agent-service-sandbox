@@ -35,6 +35,10 @@ class DeleteAgentResponse(BaseModel):
     success: bool
 
 
+class RestoreAgentResponse(BaseModel):
+    success: bool
+
+
 ####################################################################################################
 # UpdateAgent
 ####################################################################################################
@@ -90,6 +94,7 @@ class AgentMetadata(BaseModel):
     agent_name: str
     created_at: datetime.datetime
     last_updated: datetime.datetime
+    deleted: bool = False
 
     last_run: Optional[datetime.datetime] = None
     next_run: Optional[datetime.datetime] = None

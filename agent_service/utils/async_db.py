@@ -428,7 +428,18 @@ class AsyncDB:
         )
 
     async def delete_agent_by_id(self, agent_id: str) -> None:
-        await self.pg.delete_from_table_where(table_name="agent.agents", agent_id=agent_id)
+        await self.pg.generic_update(
+            table_name="agent.agents",
+            where={"agent_id": agent_id},
+            values_to_update={"deleted": True},
+        )
+
+    async def restore_agent_by_id(self, agent_id: str) -> None:
+        await self.pg.generic_update(
+            table_name="agent.agents",
+            where={"agent_id": agent_id},
+            values_to_update={"deleted": False},
+        )
 
     @async_perf_logger
     async def get_user_all_agents(
@@ -444,7 +455,7 @@ class AsyncDB:
 
         Returns: A list of all agents for the user, optionally filtered.
         """
-        agent_where_clauses = []
+        agent_where_clauses = ["not deleted"]
         params: Dict[str, Any] = {}
         if user_id:
             params["user_id"] = user_id
@@ -461,7 +472,7 @@ class AsyncDB:
         WITH a_id AS
           (
             SELECT a.agent_id, a.user_id, agent_name, a.created_at,
-              a.last_updated, a.automation_enabled, a.schedule, a.section_id
+              a.last_updated, a.automation_enabled, a.schedule, a.section_id, a.deleted
              FROM agent.agents a
              {agent_where_clause}
           ),
@@ -487,7 +498,7 @@ class AsyncDB:
           SELECT a_id.agent_id::VARCHAR, a_id.user_id::VARCHAR, a_id.agent_name, a_id.created_at,
             a_id.last_updated, a_id.automation_enabled, a_id.section_id::VARCHAR, lr.created_at AS last_run,
             msg.message AS latest_agent_message, nu.num_unread AS unread_notification_count,
-            a_id.schedule, lr.run_metadata
+            a_id.schedule, lr.run_metadata, a_id.deleted
           FROM a_id
           LEFT JOIN lr ON lr.agent_id = a_id.agent_id
           LEFT JOIN msg ON msg.agent_id = a_id.agent_id
@@ -522,6 +533,7 @@ class AsyncDB:
                     unread_notification_count=row["unread_notification_count"] or 0,
                     schedule=schedule,
                     section_id=row["section_id"],
+                    deleted=row["deleted"],
                 )
             )
         return output

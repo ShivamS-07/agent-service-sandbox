@@ -561,6 +561,7 @@ class TestPlans(IsolatedAsyncioTestCase):
             agent_name=DEFAULT_AGENT_NAME,
             created_at=get_now_utc(),
             last_updated=get_now_utc(),
+            deleted=False,
         )
         db.insert_agent(agent)
         db.write_execution_plan(

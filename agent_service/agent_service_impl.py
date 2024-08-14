@@ -58,6 +58,7 @@ from agent_service.endpoints.models import (
     NotificationUser,
     PlanTemplateTask,
     RenameMemoryResponse,
+    RestoreAgentResponse,
     SetAgentScheduleRequest,
     SetAgentScheduleResponse,
     SharePlanRunResponse,
@@ -135,6 +136,7 @@ class AgentServiceImpl:
             agent_name=DEFAULT_AGENT_NAME,
             created_at=now,
             last_updated=now,
+            deleted=False,
         )
         await self.pg.create_agent(agent)
         return CreateAgentResponse(success=True, allow_retry=False, agent_id=agent.agent_id)
@@ -167,6 +169,10 @@ class AgentServiceImpl:
     async def delete_agent(self, agent_id: str) -> DeleteAgentResponse:
         await self.pg.delete_agent_by_id(agent_id)
         return DeleteAgentResponse(success=True)
+
+    async def restore_agent(self, agent_id: str) -> RestoreAgentResponse:
+        await self.pg.restore_agent_by_id(agent_id)
+        return RestoreAgentResponse(success=True)
 
     async def update_agent(self, agent_id: str, req: UpdateAgentRequest) -> UpdateAgentResponse:
         await self.pg.update_agent_name(agent_id, req.agent_name)

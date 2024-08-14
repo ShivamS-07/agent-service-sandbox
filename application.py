@@ -80,6 +80,7 @@ from agent_service.endpoints.models import (
     RenameMemoryResponse,
     RenameSectionRequest,
     RenameSectionResponse,
+    RestoreAgentResponse,
     SetAgentScheduleRequest,
     SetAgentScheduleResponse,
     SetAgentSectionRequest,
@@ -243,6 +244,16 @@ async def create_agent(user: User = Depends(parse_header)) -> CreateAgentRespons
 async def delete_agent(agent_id: str, user: User = Depends(parse_header)) -> DeleteAgentResponse:
     validate_user_agent_access(user.user_id, agent_id)
     return await application.state.agent_service_impl.delete_agent(agent_id=agent_id)
+
+
+@router.post(
+    "/agent/restore-agent/{agent_id}",
+    response_model=RestoreAgentResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def restore_agent(agent_id: str, user: User = Depends(parse_header)) -> RestoreAgentResponse:
+    validate_user_agent_access(user.user_id, agent_id)
+    return await application.state.agent_service_impl.restore_agent(agent_id=agent_id)
 
 
 @router.put(

@@ -41,11 +41,18 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         all_agents = self.get_all_agents(user=user)
         self.assertEqual(all_agents.agents[0].agent_id, agent_id)
         self.assertEqual(all_agents.agents[0].agent_name, new_agent_name)
+        self.assertFalse(all_agents.agents[0].deleted)
 
         self.delete_agent(agent_id=agent_id)
 
         all_agents = self.get_all_agents(user=user)
         self.assertEqual(len(all_agents.agents), 0)
+
+        self.restore_agent(agent_id=agent_id)
+        all_agents = self.get_all_agents(user=user)
+        self.assertEqual(all_agents.agents[0].agent_id, agent_id)
+        self.assertEqual(all_agents.agents[0].agent_name, new_agent_name)
+        self.assertFalse(all_agents.agents[0].deleted)
 
     def test_get_agent(self):
         agent_id = "4bc82c91-3946-4ae7-b05b-942a59701d49"

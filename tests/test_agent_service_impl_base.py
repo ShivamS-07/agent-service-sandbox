@@ -36,6 +36,7 @@ from agent_service.endpoints.models import (
     GetChatHistoryResponse,
     GetTestCaseInfoResponse,
     GetTestSuiteRunInfoResponse,
+    RestoreAgentResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
 )
@@ -75,6 +76,11 @@ class TestAgentServiceImplBase(unittest.TestCase):
 
     def delete_agent(self, agent_id: str) -> DeleteAgentResponse:
         return self.loop.run_until_complete(self.agent_service_impl.delete_agent(agent_id=agent_id))
+
+    def restore_agent(self, agent_id: str) -> RestoreAgentResponse:
+        return self.loop.run_until_complete(
+            self.agent_service_impl.restore_agent(agent_id=agent_id)
+        )
 
     def update_agent(self, agent_id: str, req: UpdateAgentRequest) -> UpdateAgentResponse:
         return self.loop.run_until_complete(

@@ -45,6 +45,7 @@ async def gen_and_run_plan(
         agent_name=DEFAULT_AGENT_NAME,
         created_at=get_now_utc(),
         last_updated=get_now_utc(),
+        deleted=False,
     )
     user_msg = Message(
         agent_id=agent.agent_id,
