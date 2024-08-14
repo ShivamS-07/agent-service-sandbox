@@ -87,9 +87,9 @@ async def _get_earnings_summary_helper(
 ) -> Dict[StockID, List[StockEarningsText]]:
     db = get_psql()
     if allow_simple_generated_earnings:
-        simple_generation_clause = "AND fully_generated = TRUE"
-    else:
         simple_generation_clause = ""
+    else:
+        simple_generation_clause = "AND fully_generated = TRUE"
 
     earning_summary_sql = f"""SELECT DISTINCT ON (gbi_id, year, quarter)
     summary_id::TEXT,
@@ -261,12 +261,21 @@ async def get_earnings_full_transcripts(
     # Hit an nlp_service endpoint to grab earnings that were not stored in the db
     transcripts_response = await get_earnings_call_transcripts(user_id, missing_events_in_db)
 
+    # Create an event_id lookup for year, quarter (these are fiscal as they are taken direct from aiera)
+    event_year_quarter_lookup = {
+        event.event_id: {"year": event.year, "quarter": event.quarter}
+        for event in missing_events_in_db
+    }
+
     # Insert the missing entries and create StockEarningsText entries to map to them
     records_to_upload_to_db = []
     for transcript_data in transcripts_response.transcripts_data:
         stock_id = event_id_to_stock_id_lookup[transcript_data.event_id]
         event_id = transcript_data.event_id
         publish_time = timestamp_to_datetime(transcript_data.earnings_date)
+
+        year = event_year_quarter_lookup[event_id]["year"]
+        quarter = event_year_quarter_lookup[event_id]["quarter"]
 
         transcript_entry_id = uuid.uuid4()
         records_to_upload_to_db.append(
@@ -275,6 +284,8 @@ async def get_earnings_full_transcripts(
                 "gbi_id": stock_id.gbi_id,
                 "event_id": event_id,
                 "earnings_date": publish_time,
+                "fiscal_year": year,
+                "fiscal_quarter": quarter,
                 "transcript": transcript_data.transcript,
             }
         )
