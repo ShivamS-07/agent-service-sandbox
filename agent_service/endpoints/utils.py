@@ -10,6 +10,7 @@ from agent_service.endpoints.models import PlanRun, PlanRunTask, PlanRunTaskLog,
 from agent_service.io_type_utils import load_io_type
 from agent_service.planner.planner_types import RunMetadata, ToolExecutionNode
 from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.prefect import (
     get_prefect_plan_run_statuses,
@@ -117,14 +118,15 @@ async def get_agent_hierarchical_worklogs(
             plan_run_share_status = plan_run_id_to_share_status.get(plan_run_id, False)
             run_metadata = plan_run_id_to_run_metadata.get(plan_run_id, None)
             run_desc = run_metadata.run_summary_short if run_metadata else None
-
+            # Now should only be used if something has gone very wrong, don't wanna fully crash.
+            now = get_now_utc()
             run_history.append(
                 PlanRun(
                     plan_id=plan_id,
                     plan_run_id=plan_run_id,
                     status=plan_run_status,
-                    start_time=plan_run_start or full_tasks[0].start_time,  # type: ignore # noqa
-                    end_time=plan_run_end or full_tasks[-1].end_time,
+                    start_time=plan_run_start or full_tasks[0].start_time or now,
+                    end_time=plan_run_end or full_tasks[-1].end_time or now,
                     tasks=full_tasks,
                     shared=plan_run_share_status,
                     run_description=run_desc,
