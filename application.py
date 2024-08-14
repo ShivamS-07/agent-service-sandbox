@@ -146,6 +146,7 @@ class AuditInfo:
     error: Optional[str] = None
     client_timestamp: Optional[str] = None
     client_request_id: Optional[str] = None
+    real_user_id: Optional[str] = None
     request_number: int = -1
 
     def to_json_dict(self) -> Dict[str, Any]:
@@ -191,6 +192,7 @@ async def add_process_time_header(request: Request, call_next: Callable) -> Any:
             user_info = parse_header(request=request, auth_token=authorization)
             request.state.user_info = user_info
             audit_info.user_id = user_info.user_id
+            audit_info.real_user_id = user_info.real_user_id
         request_body = await request.body()
         audit_info.request_body = json.loads(request_body) if request_body else None
     except Exception:

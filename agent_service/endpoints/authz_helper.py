@@ -36,6 +36,7 @@ class User:
     is_super_admin: bool = False
     is_admin: bool = False
     groups: List[str] = field(default_factory=list)
+    real_user_id: str = ""
 
     def __str__(self) -> str:
         admin_str = " (is super admin)" if self.is_super_admin else ""
@@ -68,7 +69,7 @@ def get_keyid_to_key_map() -> Dict[Any, jwt.PyJWK]:
     return key_id_map
 
 
-def extract_user_from_jwt(auth_token: str) -> Optional[User]:
+def extract_user_from_jwt(auth_token: str, real_user_id: str) -> Optional[User]:
     try:
         header = jwt.get_unverified_header(auth_token)
         key_id = header.get(KEY_ID, None)
@@ -99,6 +100,7 @@ def extract_user_from_jwt(auth_token: str) -> Optional[User]:
             is_super_admin=is_super_admin,
             is_admin=is_admin,
             groups=groups,
+            real_user_id=real_user_id,
         )
     except Exception as e:
         logger.exception(f"Failed to parse auth_token with exception: {e}")
@@ -118,8 +120,12 @@ def parse_header(
 
     if auth_token.startswith(COGNITO_PREFIX):
         auth_token = auth_token[len(COGNITO_PREFIX) :]
-
-    user = extract_user_from_jwt(auth_token)
+    real_user_id = ""
+    for header_key_raw, header_value_raw in request.headers.raw:
+        header_key = header_key_raw.decode("utf-8")
+        if header_key == "realuserid":
+            real_user_id = header_value_raw.decode("utf-8")
+    user = extract_user_from_jwt(auth_token, real_user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user")
     return user

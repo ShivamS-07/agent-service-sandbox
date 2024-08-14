@@ -223,7 +223,12 @@ class AgentServiceImpl:
 
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
         agent_id = req.agent_id
-        user_msg = Message(agent_id=agent_id, message=req.prompt, is_user_message=True)
+        user_msg = Message(
+            agent_id=agent_id,
+            message=req.prompt,
+            is_user_message=True,
+            message_author=user.real_user_id,
+        )
         name = None
 
         # TODO should clean this up to prevent duplication
