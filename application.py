@@ -146,6 +146,7 @@ class AuditInfo:
     client_request_id: Optional[str] = None
     real_user_id: Optional[str] = None
     request_number: int = -1
+    frontend_version: Optional[str] = None
 
     def to_json_dict(self) -> Dict[str, Any]:
         data = dataclasses.asdict(self)
@@ -183,6 +184,7 @@ async def add_process_time_header(request: Request, call_next: Callable) -> Any:
         client_timestamp=client_timestamp,
         client_request_id=request.headers.get("clientrequestid", None),
         request_number=REQUEST_COUNTER,
+        frontend_version=request.headers.get("version", None),
     )
     try:
         authorization = request.headers.get("Authorization", None)
@@ -195,7 +197,6 @@ async def add_process_time_header(request: Request, call_next: Callable) -> Any:
         audit_info.request_body = json.loads(request_body) if request_body else None
     except Exception:
         audit_info.error = traceback.format_exc()
-
     try:
         response = await call_next(request)
     except Exception as e:
