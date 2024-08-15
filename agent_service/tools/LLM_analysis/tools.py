@@ -776,7 +776,14 @@ async def filter_stocks_by_profile_match(
 
     if not filtered_stocks_with_scores:
         raise NonRetriableError(message="Stock profile filter resulted in an empty list of stocks")
-    return filtered_stocks_with_scores
+    # dedup stocks
+    company_names = set()
+    dedup_res = []
+    for stock in filtered_stocks_with_scores:
+        if stock.company_name not in company_names:
+            company_names.add(stock.company_name)
+            dedup_res.append(stock)
+    return dedup_res
 
 
 async def main() -> None:

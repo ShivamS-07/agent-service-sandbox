@@ -67,7 +67,7 @@ from agent_service.utils.prefect import get_prefect_logger
 
 
 class WriteCommentaryInput(ToolArgs):
-    stock_ids: List[StockID]
+    stock_ids: List[StockID] = []
     date_range: DateRange = DateRange(
         start_date=date.today() - timedelta(days=30),
         end_date=date.today(),
@@ -242,7 +242,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
 
 class GetCommentaryInputsInput(ToolArgs):
-    stock_ids: List[StockID]
+    stock_ids: List[StockID] = []
     topics: Optional[List[str]] = None
     date_range: DateRange = DateRange(
         start_date=date.today() - timedelta(days=30),

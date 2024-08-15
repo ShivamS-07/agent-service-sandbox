@@ -13,6 +13,7 @@ COMMENTARY_SYS_PROMPT = Prompt(
         "This should be done in a storytelling manner as opposed to rambling off facts. "
         "\n- The writing should be backed by factoids (statistics, quotes, "
         "numbers) so that the information is factual."
+        "\n- Try your best to support your arguments with data and statistics and facts. "
         "\n- The writing must sound personal, like it came from the advisor, and not a "
         "regurgitation of facts like information they would get from their bank’s overall "
         "communications. It should be personalized by view, tone, opinion.\n"
@@ -66,13 +67,15 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "ONLY reference statistics that have data for, and use the statistic to strengthen your commentary"
         "The following is time series data for statistics"
         "\n#####\n"
-        "Here is the transcript of your interaction with the client, delimited by -----:\n"
+        "You must consider the client's requests and preferences, based on what they have said in the chat, "
+        "in your writing and deciding which text, or information to focus on and include in your commentary. "
+        "Here is the chat between you and the client, delimited by -----:\n"
         "\n-----\n"
         "{chat_context}"
         "\n-----\n"
-        "For reference, today's date is {today}. "
+        "For reference, today's date is {today}. Prioritize info from the most recent texts in your commentary. "
         f"\n{CITATION_REMINDER}"
-        "\nNow, please write the commentary. "
+        "\nNow, please write your commentary. "
     ),
 )
 
@@ -169,10 +172,11 @@ WATCHLIST_PROMPT = Prompt(
     name="WATCHLIST_PROMPT",
     template=(
         "\nThe following are a set of stocks that are on client's watchlist, as well as some "
-        "metadata. You can use these if you need to discuss how a topic might impact a "
-        "stock that is not in the portfolio. Please reference these stocks ONLY when they "
+        "metadata. Please reference these stocks ONLY when they "
         "are explicitly mentioned in a topic. DO NOT MENTION THESE SPECIFIC COMPANIES "
         "UNLESS MENTIONED IN YOUR INPUT. \n"
+        "ONLY use these stocks if client mentioned terms like 'watchlist', or client wants to know about "
+        "market update/trends which might impact these stocks. "
         "\n### Watchlist Stocks\n"
         "{watchlist_stocks}"
     ),
