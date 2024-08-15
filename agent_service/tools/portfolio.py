@@ -653,7 +653,8 @@ async def get_performance_sector_level(
 ) -> Table:
     # get portfolio holdings
     portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
-        GetPortfolioHoldingsInput(portfolio_id=portfolio_id), context
+        GetPortfolioHoldingsInput(portfolio_id=portfolio_id, expand_etfs=True, fetch_stats=False),
+        context,
     )
     portfolio_holdings_df = portfolio_holdings_table.to_df()
     gbi_ids = [stock.gbi_id for stock in portfolio_holdings_df[STOCK_ID_COL_NAME_DEFAULT]]
