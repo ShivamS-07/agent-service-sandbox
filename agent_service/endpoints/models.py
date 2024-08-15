@@ -15,6 +15,7 @@ from agent_service.planner.planner_types import PlanStatus, RunMetadata
 from agent_service.types import Message
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.scheduling import AgentSchedule
+from agent_service.utils.sidebar_sections import SidebarSection
 
 
 ####################################################################################################
@@ -123,7 +124,7 @@ class Section(BaseModel):
 
 
 class GetAllAgentsResponse(BaseModel):
-    sections: List[Section]
+    sections: List[SidebarSection]
     agents: List[AgentMetadata]
 
 
@@ -659,4 +660,13 @@ class SetAgentSectionRequest(BaseModel):
 
 
 class SetAgentSectionResponse(BaseModel):
+    success: bool
+
+
+class RearrangeSectionRequest(BaseModel):
+    new_index: int
+    section_id: str
+
+
+class RearrangeSectionResponse(BaseModel):
     success: bool

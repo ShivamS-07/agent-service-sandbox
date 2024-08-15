@@ -1,4 +1,5 @@
 import datetime
+import json
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import (
@@ -7,7 +8,6 @@ from agent_service.endpoints.models import (
     AgentOutput,
     AgentSchedule,
     CustomNotification,
-    Section,
 )
 from agent_service.io_type_utils import IOType, load_io_type
 
@@ -20,6 +20,7 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres
+from agent_service.utils.sidebar_sections import SidebarSection
 
 
 class AsyncDB:
@@ -538,11 +539,6 @@ class AsyncDB:
             )
         return output
 
-    async def get_user_sections(self, user_id: str) -> List[Section]:
-        sql = "SELECT id::VARCHAR, name from agent.sections where user_id = %(user_id)s"
-        rows = await self.pg.generic_read(sql=sql, params={"user_id": user_id})
-        return [Section(**row) for row in rows]
-
     async def update_agent_name(self, agent_id: str, agent_name: str) -> None:
         return await self.pg.generic_update(
             table_name="agent.agents",
@@ -756,13 +752,16 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
         return [AgentNotificationEmail(**row) for row in rows]
 
-    async def create_section(self, section_id: str, name: str, user_id: str) -> None:
+    async def set_agent_section(
+        self, new_section_id: Optional[str], agent_id: str, user_id: str
+    ) -> None:
         sql = """
-        INSERT INTO agent.sections (id, user_id, name)
-        VALUES (%(section_id)s, %(user_id)s, %(name)s)
+        UPDATE agent.agents SET section_id = %(new_section_id)s
+        WHERE agent_id = %(agent_id)s and user_id = %(user_id)s
         """
         await self.pg.generic_write(
-            sql=sql, params={"section_id": section_id, "user_id": user_id, "name": name}
+            sql=sql,
+            params={"new_section_id": new_section_id, "agent_id": agent_id, "user_id": user_id},
         )
 
     async def update_agent_sections(
@@ -777,26 +776,29 @@ class AsyncDB:
             params={"new_section_id": new_section_id, "section_id": section_id, "user_id": user_id},
         )
 
-    async def rename_agent_section(self, new_name: str, section_id: str, user_id: str) -> None:
-
+    async def get_sidebar_sections(self, user_id: str) -> List[SidebarSection]:
         sql = """
-        UPDATE agent.sections SET name = %(new_name)s
-        WHERE id = %(section_id)s and user_id = %(user_id)s
+        SELECT sections from agent.sidebar_sections where user_id = %(user_id)s
+        """
+        rows = await self.pg.generic_read(sql=sql, params={"user_id": user_id})
+        if not rows:
+            return []
+        return [SidebarSection(**section) for section in rows[0]["sections"]]
+
+    async def set_sidebar_sections(self, user_id: str, sections: List[SidebarSection]) -> None:
+        sql = """
+        INSERT INTO agent.sidebar_sections (user_id, sections) VALUES (%(user_id)s, %(sections)s)
+                ON CONFLICT (user_id)
+                DO UPDATE SET sections = EXCLUDED.sections
         """
         await self.pg.generic_write(
-            sql=sql, params={"new_name": new_name, "section_id": section_id, "user_id": user_id}
-        )
-
-    async def set_agent_section(
-        self, new_section_id: Optional[str], agent_id: str, user_id: str
-    ) -> None:
-        sql = """
-        UPDATE agent.agents SET section_id = %(new_section_id)s
-        WHERE agent_id = %(agent_id)s and user_id = %(user_id)s
-        """
-        await self.pg.generic_write(
-            sql=sql,
-            params={"new_section_id": new_section_id, "agent_id": agent_id, "user_id": user_id},
+            sql,
+            params={
+                "user_id": user_id,
+                "sections": json.dumps(
+                    [section.model_dump(exclude_none=True) for section in sections]
+                ),
+            },
         )
 
 

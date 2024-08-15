@@ -107,6 +107,7 @@ from agent_service.utils.scheduling import (
     AgentSchedule,
     get_schedule_from_user_description,
 )
+from agent_service.utils.sidebar_sections import SidebarSection, find_sidebar_section
 from agent_service.utils.string_utils import is_valid_uuid
 from agent_service.utils.task_executor import TaskExecutor
 
@@ -143,8 +144,10 @@ class AgentServiceImpl:
 
     async def get_all_agents(self, user: User) -> GetAllAgentsResponse:
         agents, sections = await gather_with_concurrency(
-            [self.pg.get_user_all_agents(user.user_id), self.pg.get_user_sections(user.user_id)]
+            [self.pg.get_user_all_agents(user.user_id), self.pg.get_sidebar_sections(user.user_id)]
         )
+        for i, section in enumerate(sections):
+            section.index = i
         agent_id_list = [metadata.agent_id for metadata in agents]
         cost_infos = self.ch.get_agents_cost_info(agent_ids=agent_id_list)
         for agent_metadata in agents:
@@ -878,30 +881,44 @@ class AgentServiceImpl:
             )
         return GetCannedPromptsResponse(canned_prompts=canned_prompts)
 
-    async def create_section(self, name: str, user: User) -> str:
-        section_id = str(uuid4())
-        await self.pg.create_section(section_id=section_id, name=name, user_id=user.user_id)
-        return section_id
+    async def create_sidebar_section(self, name: str, user: User) -> str:
+        section = SidebarSection(name=name)
+        sections: List[SidebarSection] = await self.pg.get_sidebar_sections(user_id=user.user_id)
+        sections.append(section)
+        await self.pg.set_sidebar_sections(user_id=user.user_id, sections=sections)
+        return section.id
 
-    async def delete_section(self, section_id: str, user: User) -> bool:
+    async def delete_sidebar_section(self, section_id: str, user: User) -> bool:
         await self.pg.update_agent_sections(
             new_section_id=None, section_id=section_id, user_id=user.user_id
         )
-        await self.pg.pg.delete_from_table_where(
-            table_name="agent.sections", id=section_id, user_id=user.user_id
-        )
+        sections: List[SidebarSection] = await self.pg.get_sidebar_sections(user_id=user.user_id)
+        index = find_sidebar_section(sections=sections, section_id=section_id)
+        sections.pop(index)
+        await self.pg.set_sidebar_sections(user_id=user.user_id, sections=sections)
         return True
 
-    async def rename_section(self, section_id: str, new_name: str, user: User) -> bool:
-        await self.pg.rename_agent_section(
-            section_id=section_id, new_name=new_name, user_id=user.user_id
-        )
+    async def rename_sidebar_section(self, section_id: str, new_name: str, user: User) -> bool:
+        sections: List[SidebarSection] = await self.pg.get_sidebar_sections(user_id=user.user_id)
+        index = find_sidebar_section(sections=sections, section_id=section_id)
+        sections[index].name = new_name
+        sections[index].updated_at = datetime.datetime.utcnow().isoformat()
+        await self.pg.set_sidebar_sections(user_id=user.user_id, sections=sections)
         return True
 
-    async def set_agent_section(
+    async def set_agent_sidebar_section(
         self, new_section_id: Optional[str], agent_id: str, user: User
     ) -> bool:
         await self.pg.set_agent_section(
             new_section_id=new_section_id, agent_id=agent_id, user_id=user.user_id
         )
+        return True
+
+    async def rearrange_sidebar_section(self, section_id: str, new_index: int, user: User) -> bool:
+        sections: List[SidebarSection] = await self.pg.get_sidebar_sections(user_id=user.user_id)
+        index = find_sidebar_section(sections=sections, section_id=section_id)
+        rearrange_section = sections.pop(index)
+        rearrange_section.updated_at = datetime.datetime.utcnow().isoformat()
+        sections.insert(new_index, rearrange_section)
+        await self.pg.set_sidebar_sections(user_id=user.user_id, sections=sections)
         return True

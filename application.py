@@ -74,6 +74,8 @@ from agent_service.endpoints.models import (
     MarkNotificationsAsUnreadRequest,
     MarkNotificationsAsUnreadResponse,
     NotificationEmailsResponse,
+    RearrangeSectionRequest,
+    RearrangeSectionResponse,
     RenameMemoryRequest,
     RenameMemoryResponse,
     RenameSectionRequest,
@@ -1056,7 +1058,7 @@ async def create_section(
 ) -> CreateSectionResponse:
 
     return CreateSectionResponse(
-        section_id=await application.state.agent_service_impl.create_section(
+        section_id=await application.state.agent_service_impl.create_sidebar_section(
             name=req.name, user=user
         )
     )
@@ -1070,7 +1072,9 @@ async def create_section(
 async def delete_section(
     req: DeleteSectionRequest, user: User = Depends(parse_header)
 ) -> DeleteSectionResponse:
-    await application.state.agent_service_impl.delete_section(section_id=req.section_id, user=user)
+    await application.state.agent_service_impl.delete_sidebar_section(
+        section_id=req.section_id, user=user
+    )
     return DeleteSectionResponse(success=True)
 
 
@@ -1082,7 +1086,7 @@ async def delete_section(
 async def rename_section(
     req: RenameSectionRequest, user: User = Depends(parse_header)
 ) -> RenameSectionResponse:
-    await application.state.agent_service_impl.rename_section(
+    await application.state.agent_service_impl.rename_sidebar_section(
         section_id=req.section_id, new_name=req.new_name, user=user
     )
     return RenameSectionResponse(success=True)
@@ -1096,10 +1100,24 @@ async def rename_section(
 async def set_agent_section(
     req: SetAgentSectionRequest, user: User = Depends(parse_header)
 ) -> SetAgentSectionResponse:
-    await application.state.agent_service_impl.set_agent_section(
+    await application.state.agent_service_impl.set_agent_sidebar_section(
         new_section_id=req.new_section_id, agent_id=req.agent_id, user=user
     )
     return SetAgentSectionResponse(success=True)
+
+
+@router.post(
+    "/rearrange-section",
+    response_model=RearrangeSectionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def rearrange_section(
+    req: RearrangeSectionRequest, user: User = Depends(parse_header)
+) -> RearrangeSectionResponse:
+    await application.state.agent_service_impl.rearrange_sidebar_section(
+        section_id=req.section_id, new_index=req.new_index, user=user
+    )
+    return RearrangeSectionResponse(success=True)
 
 
 initialize_unauthed_endpoints(application)

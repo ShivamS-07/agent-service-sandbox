@@ -14,6 +14,13 @@ from agent_service.utils.constants import MEDIA_TO_MIMETYPE
 from tests.test_agent_service_impl_base import TestAgentServiceImplBase
 
 
+def find_item(lst, field, value):
+    for item in lst:
+        if getattr(item, field) == value:
+            return item
+    return None
+
+
 async def generate_initial_preplan_response(chat_context):
     return "Hi this is Warren AI, how can I help you today?"
 
@@ -276,3 +283,111 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         self.assertTrue(email_to_delete not in res_emails)
 
         self.delete_agent(agent_id=agent_id)
+
+    def test_sidebar_organization(self):
+        test_user_id = str(uuid.uuid4())
+        test_user = User(user_id=test_user_id, is_admin=False, is_super_admin=False, auth_token="")
+        agent_id_1 = self.create_agent(user=test_user).agent_id
+        agent_id_2 = self.create_agent(user=test_user).agent_id
+        agent_id_3 = self.create_agent(user=test_user).agent_id
+
+        section_id_1 = self.loop.run_until_complete(
+            self.agent_service_impl.create_sidebar_section(name="Section 1", user=test_user)
+        )
+        section_id_2 = self.loop.run_until_complete(
+            self.agent_service_impl.create_sidebar_section(name="Section 2", user=test_user)
+        )
+
+        # Rename section
+        new_name = "Section 4"
+        self.loop.run_until_complete(
+            self.agent_service_impl.rename_sidebar_section(
+                new_name=new_name, section_id=section_id_1, user=test_user
+            )
+        )
+
+        # Add agents to sections
+        self.loop.run_until_complete(
+            self.agent_service_impl.set_agent_sidebar_section(
+                new_section_id=section_id_1, agent_id=agent_id_1, user=test_user
+            )
+        )
+
+        self.loop.run_until_complete(
+            self.agent_service_impl.set_agent_sidebar_section(
+                new_section_id=section_id_1, agent_id=agent_id_2, user=test_user
+            )
+        )
+
+        self.loop.run_until_complete(
+            self.agent_service_impl.set_agent_sidebar_section(
+                new_section_id=section_id_2, agent_id=agent_id_3, user=test_user
+            )
+        )
+
+        # Reassign agent to another section
+        self.loop.run_until_complete(
+            self.agent_service_impl.set_agent_sidebar_section(
+                new_section_id=section_id_2, agent_id=agent_id_1, user=test_user
+            )
+        )
+
+        # Get all agents and sections
+        response = self.loop.run_until_complete(
+            self.agent_service_impl.get_all_agents(user=test_user)
+        )
+
+        self.assertEqual(len(response.sections), 2)
+        self.assertEqual(response.sections[0].name, new_name)
+
+        # Verifying that all agents are under expected sections
+        self.assertEqual(
+            find_item(response.agents, "agent_id", agent_id_1).section_id, section_id_2
+        )
+        self.assertEqual(
+            find_item(response.agents, "agent_id", agent_id_2).section_id, section_id_1
+        )
+        self.assertEqual(
+            find_item(response.agents, "agent_id", agent_id_3).section_id, section_id_2
+        )
+
+        # Deleting section
+        self.loop.run_until_complete(
+            self.agent_service_impl.delete_sidebar_section(section_id=section_id_2, user=test_user)
+        )
+
+        response = self.loop.run_until_complete(
+            self.agent_service_impl.get_all_agents(user=test_user)
+        )
+
+        self.assertEqual(len(response.sections), 1)
+
+        # Vberifying that agents in deleted section are in default section
+        self.assertEqual(find_item(response.agents, "agent_id", agent_id_1).section_id, None)
+        self.assertEqual(
+            find_item(response.agents, "agent_id", agent_id_2).section_id, section_id_1
+        )
+        self.assertEqual(find_item(response.agents, "agent_id", agent_id_3).section_id, None)
+
+        section_id_3 = self.loop.run_until_complete(
+            self.agent_service_impl.create_sidebar_section(name="Section 3", user=test_user)
+        )
+
+        # Rearrange sections
+        self.loop.run_until_complete(
+            self.agent_service_impl.rearrange_sidebar_section(
+                section_id=section_id_3, new_index=0, user=test_user
+            )
+        )
+
+        response = self.loop.run_until_complete(
+            self.agent_service_impl.get_all_agents(user=test_user)
+        )
+        if response.sections[0].index == 0:
+            self.assertEqual(response.sections[0].id, section_id_3)
+        else:
+            self.assertEqual(response.sections[0].id, section_id_1)
+
+        self.assertEqual(
+            find_item(response.agents, "agent_id", agent_id_2).section_id, section_id_1
+        )
