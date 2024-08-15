@@ -424,8 +424,8 @@ async def prepare_portfolio_prompt(
     }
     benchmark_stock_performance_df = pd.DataFrame(data)
     benchmark_stock_performance_df["weighted-return"] = (
-        benchmark_stock_performance_df["return"]
-        * benchmark_stock_performance_df["benchmark-weight"]
+        benchmark_stock_performance_df["return"].astype(float)
+        * benchmark_stock_performance_df["benchmark-weight"].astype(float)
     ).values
     benchmark_stock_performance_df = benchmark_stock_performance_df.sort_values(
         by="weighted-return", ascending=False

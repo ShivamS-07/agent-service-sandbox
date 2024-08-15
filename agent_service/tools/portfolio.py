@@ -348,7 +348,7 @@ async def get_portfolio_performance(
         )
 
     elif args.performance_level == "stock":
-        table = await get_performance_seciurity_level(
+        table = await get_performance_security_level(
             portfolio_id=args.portfolio_id,
             date_range=args.date_range,
             context=context,
@@ -356,7 +356,7 @@ async def get_portfolio_performance(
         )
 
     elif args.performance_level == "security":
-        table = await get_performance_seciurity_level(
+        table = await get_performance_security_level(
             portfolio_id=args.portfolio_id,
             date_range=args.date_range,
             context=context,
@@ -597,7 +597,7 @@ async def get_performance_daily_level(
     return table
 
 
-async def get_performance_seciurity_level(
+async def get_performance_security_level(
     portfolio_id: PortfolioID,
     date_range: DateRange,
     context: PlanRunContext,
@@ -630,7 +630,9 @@ async def get_performance_seciurity_level(
             "portfolio-weight": weights,
         }
     )
-    df["weighted-return"] = (df["return"] * df["portfolio-weight"]).values
+    df["weighted-return"] = (
+        df["return"].astype(float) * df["portfolio-weight"].astype(float)
+    ).values
     # sort the DataFrame by weighted-return
     df = df.sort_values(by="weighted-return", ascending=False)
     # create a Table
@@ -675,7 +677,7 @@ async def get_performance_sector_level(
             "weight": weights,
         }
     )
-    df["weighted-return"] = (df["return"] * df["weight"]).values
+    df["weighted-return"] = (df["return"].astype(float) * df["weight"].astype(float)).values
 
     # group by sector and calculate the weighted return
     df = df.groupby("sector", as_index=False).agg({"weight": "sum", "weighted-return": "sum"})
@@ -723,7 +725,7 @@ async def get_performance_overall_level(
             "portfolio-weight": weights,
         }
     )
-    total_return = (df["return"] * df["portfolio-weight"]).sum()
+    total_return = np.nansum(df["return"].astype(float) * df["portfolio-weight"].astype(float))
 
     # Create a DataFrame for the universe performance
     data = {"portfolio": ["portfolio"], "return": [total_return]}
