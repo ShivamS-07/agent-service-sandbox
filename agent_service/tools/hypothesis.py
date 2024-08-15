@@ -298,7 +298,7 @@ async def test_hypothesis_for_earnings_summaries(
             pipeline.hypothesis = new_hypothesis_obj
 
         hypothesis_earnings_topics, _ = await pipeline.get_stock_hypothesis_earnings_topics(
-            summary_ids=[summary.id for summary in earnings_summary_list]
+            summary_ids=[summary.id for summary in earnings_summary_list]  # type: ignore
         )
 
         for topic in hypothesis_earnings_topics:

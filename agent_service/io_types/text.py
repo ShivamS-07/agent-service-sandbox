@@ -732,7 +732,6 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
 # Parent class that is not intended to be used on its own, should always use one of the child classes
 @io_type
 class StockEarningsText(StockText):
-    id: str  # summary ID
     year: Optional[int] = None
     quarter: Optional[int] = None
 
@@ -741,7 +740,7 @@ class StockEarningsText(StockText):
         if self.stock_id:
             parts.append(self.stock_id.symbol or self.stock_id.company_name)
             parts.append(" ")
-        parts.append(self.text_type)
+        parts.append("Earnings Call")
         parts_in_parens = []
         if self.year and self.quarter:
             year_num = str(self.year)[2:]
@@ -954,12 +953,12 @@ class StockEarningsTranscriptText(StockEarningsText):
 
 
 @io_type
-class StockEarningsSummaryPointText(StockText):
+class StockEarningsSummaryPointText(StockEarningsText):
     """
     A subclass from `StockEarningsSummaryText` that only stores a point in the summary
     """
 
-    int  # hash((summary_id, summary_type, summary_idx))
+    id: int  # hash((summary_id, summary_type, summary_idx))
     text_type: ClassVar[str] = "Earnings Call Summary Point"
 
     summary_id: str  # UUID in DB
@@ -1030,6 +1029,8 @@ class StockEarningsSummaryPointText(StockText):
                 if not stock:
                     continue
                 # e.g. "NVDA Earnings Call - Q1 2024"
+                text_citation.source_text.year = row["year"]  # type: ignore
+                text_citation.source_text.quarter = row["quarter"]  # type: ignore
                 citation_name = text_citation.source_text.to_citation_title()
 
                 summary_point: Dict = summary_dict[text.summary_type][text.summary_idx]
@@ -1091,7 +1092,7 @@ class StockEarningsSummaryPointText(StockText):
         from agent_service.utils.postgres import get_psql
 
         sql = """
-            SELECT summary_id::TEXT,
+            SELECT summary_id::TEXT, year, quarter,
                 CASE
                     WHEN jsonb_typeof(summary->'Remarks') = 'array'
                         THEN jsonb_array_length(summary->'Remarks')
@@ -1127,6 +1128,8 @@ class StockEarningsSummaryPointText(StockText):
                         summary_idx=idx,
                         stock_id=summary_obj.stock_id,
                         timestamp=summary_obj.timestamp,
+                        year=row["year"],
+                        quarter=row["quarter"],
                     )
                     for idx in range(remarks_length)
                 )
@@ -1141,6 +1144,8 @@ class StockEarningsSummaryPointText(StockText):
                         summary_idx=idx,
                         stock_id=summary_obj.stock_id,
                         timestamp=summary_obj.timestamp,
+                        year=row["year"],
+                        quarter=row["quarter"],
                     )
                     for idx in range(questions_length)
                 )
