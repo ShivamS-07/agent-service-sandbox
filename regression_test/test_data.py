@@ -353,7 +353,7 @@ class TestData(TestExecutionPlanner):
     @skip_in_ci
     def test_notify_big_big_developments_June_2024(self):
         prompt = (
-            "Scan all corporate filings for LIPO until June 2024 and notify me of any big developments or "
+            "Scan corporate filings for LIPO until June 2024 and notify me of any big developments or "
             "changes to cash flow"
         )
 
@@ -397,7 +397,7 @@ class TestData(TestExecutionPlanner):
 
     def test_notify_big_big_developments(self):
         prompt = (
-            "Scan all corporate filings for LIPO and notify me of any big developments or "
+            "Scan corporate filings for LIPO and notify me of any big developments or "
             "changes to cash flow"
         )
 

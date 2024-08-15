@@ -370,7 +370,7 @@ async def profile_filter_helper(
         if text_str == "":  # no text, skip
             tasks.append(identity(""))
 
-        if is_using_complex_profile:
+        elif is_using_complex_profile:
             tasks.append(
                 llm.do_chat_w_sys_prompt(
                     PROFILE_FILTER_MAIN_PROMPT.format(

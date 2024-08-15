@@ -109,7 +109,7 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
     description=(
         "This tool is used to filter a given list of stocks to companies which offer the service "
         "or product refered to by the product_str. This function should only be used the client wants to identify "
-        "companies which provide 'product_str' to others . It must not be used to identify those others, i.e. "
+        "companies which provide 'product_str' to others. It must not be used to identify those others, i.e. "
         "do NOT use this function in cases where the user is looking for consumers of a product "
         "or service, or companies otherwise linked to the product via supply chains. This tool only "
         "finds suppliers of the product or service indicated by product_str. "
@@ -141,10 +141,13 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "\n client asks 'Which of QCOM, IRDM, FBIN, FAST are the leader in industrial IoT', then those companies "
         "should be passed in a must_include_stocks and the output will include all of them. "
         "If the user has not specified any specific universe of stocks, the S&P500 is a good default "
-        "to pass to this tool. However, if the client has not mentioned a region and there is clearly at least "
-        "one major international producer which has a major presence in the US, use the Vanguard World "
-        "Stock ETF instead of the S&P 500, for example if the product_str was cars, you should use the "
-        "world stocks because of major Japanese manufacturers like Toyota, Honda, etc."
+        "to pass to this tool. If the user has mentioned a specific stock whose main market is domestic, "
+        "you should pass an region-specific index which contains that stock. "
+        "However, if the client has not mentioned a region and either there is a mention of a stock "
+        "which has an major international presence, or the product market involves major international "
+        "competition, you should instead use the Vanguard World Stock ETF instead of the S&P 500, for example "
+        "if the product_str was cars, you should use the world stocks because of major Japanese manufacturers "
+        "like Toyota, Honda, etc."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
