@@ -90,20 +90,6 @@ class TestStockScreener(TestExecutionPlanner):
             raise_plan_validation_error=True,
         )
 
-    def test_best_gen_ai_stocks(self):
-        prompt = "Give me your best Generative AI theme buying ideas on a weekly basis"
-
-        def validate_output(prompt: str, output: IOType):
-            output_stock_ids = get_output(output=output)
-            self.assertGreater(len(output_stock_ids), 0, msg="No stocks returned")
-
-        self.prompt_test(
-            prompt=prompt,
-            validate_output=validate_output,
-            required_tools=["get_macroeconomic_themes"],
-            raise_plan_validation_error=True,
-        )
-
     def test_growth_garp1(self):
         prompt = """Small and medium cap biotechnology companies that
         have made a major technology breakthrough in the past year

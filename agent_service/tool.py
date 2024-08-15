@@ -286,12 +286,16 @@ class ToolRegistry:
     def get_tool_str(cls) -> str:
         output = []
         for tool_category, tool_dict in cls._REGISTRY_CATEGORY_MAP.items():
-            output.append(f"## {tool_category.get_description()}")
+            tool_descriptions = []
             for tool in tool_dict.values():
                 if not tool.enabled:
                     continue
-                output.append(tool.to_function_header())
-                output.append(f"# {tool.description}")
+                tool_descriptions.append(tool.to_function_header())
+                tool_descriptions.append(f"# {tool.description}")
+            if tool_descriptions:
+                output.append(f"## {tool_category.get_description()}")
+                output.extend(tool_descriptions)
+
         return "\n".join(output)
 
 

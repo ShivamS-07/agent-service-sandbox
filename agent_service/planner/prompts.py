@@ -46,7 +46,7 @@ PLAN_GUIDELINES = """The top priority of a plan is that the information needs of
 - in particular, it is better to use functions that do everything you need to do in one batched call, rather than separate calls, and it is very, very bad to do both versions redundantly in one script
 - simple functions are preferred over API calls
 - internal APIs calls are preferred over external API
-- If you can accomplish the same thing with or without an LLM, do it without the LLM, it's much cheaper and faster. For example, if the user wants some information related to a general topic, you should check if there's a existing macroeconomic theme that you can use (which is a simple database lookup) rather than running a filter over stocks or texts.
+- If you can accomplish the same thing with or without an LLM, do it without the LLM, it's much cheaper and faster.
 - Please pay special attention to whether you might need to apply filtering functions to your data, many applications require filtering based on the specific needs of the client. If it is an LLM filtering function over something that is NOT already a text (i.e a stock), you must get appropriate data to carry out your filtering first, and convert it into the right format.
 - If the user does not specify the specific data source (news, earnings, SEC filing, etc.) for a filtering or other kind of stock analysis, you should always default to getting all text data for those stocks.
 - When doing stock filtering, please be very careful about whether the client wants to keep only a set of stocks (e.g. Filter to X) or wants to remove that set of stocks (Filter out X). Do not assume anything (sometimes a user will want ostensibly "negative" stocks). You should be crystal clear in any function arguments and in your associated comments whether you are filtering out stocks, or filtering to a set of stocks. That is, you must avoid saying just "filter stocks", you must always always use either the phrase "filter out stocks..." or "filter to stocks..."! Again, do NOT just say "Filter stocks" anywhere in your output!
@@ -62,7 +62,6 @@ PLAN_GUIDELINES = """The top priority of a plan is that the information needs of
 - If the client mentions wanting to compare numbers (e.g. iphone sales vs. iPad sales) where the numbers is not a part of the other, the correct way to do that show them in a bar chart. Do not use the text comparison tool for things that are not texts!
 - If the client mentions wanting to compare numbers where one or more of the numbers clearly makes up a part of another (e.g. Apple cloud revenue and Apple revenue), the correct way to do that show them in a pie chart. Do not use the text comparison tool for things that are not texts! 
 - If the client asks to graph the performance of a list of stocks, you should default to averaging their performance if there are clearly going to be more than 10 stocks, more than 10 stocks won't look good on a single graph. I repeat, do not graph a table of more than 10 stocks!!!
-- Don't use any theme tools if the client gives any indication that they want to derive macroeconomic theme trends from scratch from texts, get the relevant texts and use the summary tool!
 - Before you write a line, consider what each of the arguments of your function will be; if any of them is in the wrong form and so requires a function to be called on them before you can use it as a proper argument to this function, do that first!
 - If the information need of the client is numerical (e.g. stock price), data should always be output in the form of a Table or some kind of Graph, even if it is a single number (e.g. a stock price for a particular stock on a particular day)
 - You should generally interpret "big" and "small" in the context of companies or stocks (e.g. what are the 5 biggest companies"?) as referring to their market cap.
@@ -79,7 +78,6 @@ ERROR_REPLAN_GUIDELINES = """The top priority of a replan is to satisfy the info
 Action Plan for summary task: I will summarize the news about Apple
 Replan
 - One major type of task is a stock filter task, where the goal is a list of stocks (i.e. "Give me companies that..."), please mention that in your discussion explicitly, begin your discussion with `This is a stock filter task..` and if so then you MUST mention intending to use `filter_stocks_by_profile_match` which is the main stock filtering function. If your goal is stock filtering, you absolutely MUST NOT mention the `get_news_articles_for_topics` function . This is very important, you must listen to this or you will write a plan that will fail. Against, if it is a stock filter task, do not use `get_news_articles_for_topics`
--If you are replanning because of an error involving a theme function, you absolutely must avoid any function related to themes in your replan
 """
 
 PLAN_SAMPLE_TEMPLATE = (

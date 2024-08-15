@@ -166,6 +166,7 @@ class GetMacroeconomicThemeInput(ToolArgs):
         "a specific existing theme and uses the word `theme`."
     ),
     category=ToolCategory.THEME,
+    enabled=False,
 )
 async def get_macroeconomic_themes(
     args: GetMacroeconomicThemeInput, context: PlanRunContext
@@ -208,6 +209,7 @@ class GetStocksAffectedByThemesInput(ToolArgs):
         "a specific existing theme and uses the word `theme`."
     ),
     category=ToolCategory.THEME,
+    enabled=False,
 )
 async def get_stocks_affected_by_theme(
     args: GetStocksAffectedByThemesInput, context: PlanRunContext
@@ -273,6 +275,7 @@ class GetMacroeconomicThemesAffectingStocksInput(ToolArgs):
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_macroeconomic_themes_affecting_stocks(
     args: GetMacroeconomicThemesAffectingStocksInput, context: PlanRunContext
@@ -309,6 +312,7 @@ class GetMacroeconomicThemeOutlookInput(ToolArgs):
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_macroeconomic_theme_outlook(
     args: GetMacroeconomicThemeOutlookInput, context: PlanRunContext
@@ -362,6 +366,7 @@ class GetThemeDevelopmentNewsInput(ToolArgs):
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_news_developments_about_theme(
     args: GetThemeDevelopmentNewsInput, context: PlanRunContext
@@ -403,6 +408,7 @@ class GetThemeDevelopmentNewsArticlesInput(ToolArgs):
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_news_articles_for_theme_developments(
     args: GetThemeDevelopmentNewsArticlesInput, context: PlanRunContext
@@ -457,6 +463,7 @@ class GetTopNThemesInput(ToolArgs):
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_top_N_macroeconomic_themes(
     args: GetTopNThemesInput, context: PlanRunContext

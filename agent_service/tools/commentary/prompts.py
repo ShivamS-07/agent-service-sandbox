@@ -329,7 +329,7 @@ GET_COMMENTARY_INPUTS_DESCRIPTION = (
     "\nAdjust 'start_date' to get the text from that date based on client request. "
     "If no 'start_date' is provided, the function will only get text in last month. "
     "\n- 'market_trend' ONLY MUST be set to True when a client wants to know about "
-    "general market updates, trends, news, or to collect macroeconomic themes texts. "
+    "general market updates, trends, news, or to collect macroeconomic themes. "
     "When client doesn't mention any thing related to general market updates, "
     "'market_trend' MUST be set to False. "
     "\n- 'topics' is a list of topics client mentioned in the request. "
