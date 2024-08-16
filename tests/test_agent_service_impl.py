@@ -7,6 +7,7 @@ from agent_service.endpoints.models import (
     AgentNotificationEmail,
     ChatWithAgentRequest,
     MediaType,
+    NotificationUser,
     UpdateAgentRequest,
 )
 from agent_service.types import Notification
@@ -240,14 +241,25 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
     def test_agent_notification(self):
         # create the agent
         test_user = str(uuid.uuid4())
+        test_user_2 = str(uuid.uuid4())
         user = User(user_id=test_user, is_admin=False, is_super_admin=False, auth_token="")
         res = self.create_agent(user=user)
         agent_id = res.agent_id
 
         # insert a email notification
-        emails = ["test.email@test.com", "test.email.2@test.com"]
+        emails = {
+            "test.email@test.com": NotificationUser(
+                user_id=test_user, username="testuser", name="TestUser", email="test.email@test.com"
+            ),
+            "test.email.2@test.com": NotificationUser(
+                user_id=test_user_2,
+                username="testuser2",
+                name="TestUser2",
+                email="test.email.2@test.com",
+            ),
+        }
         self.loop.run_until_complete(
-            self.pg.set_agent_subscriptions(agent_id=agent_id, emails=emails)
+            self.pg.set_agent_subscriptions(agent_id=agent_id, emails_to_user=emails)
         )
 
         # get notification event info
@@ -261,8 +273,19 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
             self.assertTrue(email_notif.email in emails)
         # add a new subscription
         new_email = "test.email.3@test.com"
+        test_user_3 = str(uuid.uuid4())
         self.loop.run_until_complete(
-            self.pg.set_agent_subscriptions(agent_id=agent_id, emails=[new_email])
+            self.pg.set_agent_subscriptions(
+                agent_id=agent_id,
+                emails_to_user={
+                    new_email: NotificationUser(
+                        user_id=test_user_3,
+                        username="testuser3",
+                        name="TestUser3",
+                        email="test.email.3@test.com",
+                    )
+                },
+            )
         )
         notif_res: List[AgentNotificationEmail] = self.loop.run_until_complete(
             self.pg.get_agent_subscriptions(agent_id=agent_id)

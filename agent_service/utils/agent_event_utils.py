@@ -1,9 +1,16 @@
+import json
 import logging
 from typing import List, Optional, Union, cast
 
+import boto3
+from gbi_common_py_utils.utils.event_logging import json_serial
+
 from agent_service.endpoints.models import (
     AgentEvent,
+    AgentNotificationBody,
+    AgentNotificationData,
     AgentOutput,
+    AgentSubscriptionMessage,
     EventType,
     ExecutionPlanTemplate,
     ExecutionStatusEvent,
@@ -23,6 +30,7 @@ from agent_service.io_type_utils import IOType, load_io_type
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus
 from agent_service.types import Message, Notification, PlanRunContext
 from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.constants import NOTIFICATION_SERVICE_QUEUE
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
@@ -216,6 +224,7 @@ async def publish_agent_execution_status(
     updated_output_ids: Optional[List[str]] = None,
     run_summary_long: Optional[str] = None,
     run_summary_short: Optional[str] = None,
+    pg: Optional[AsyncDB] = None,
 ) -> None:
     try:
         await publish_agent_event(
@@ -287,3 +296,52 @@ async def get_agent_task_logs(
         )
 
     return []
+
+
+async def send_agent_emails(
+    pg: AsyncDB,
+    agent_id: str,
+    plan_run_id: str,
+    updated_output_ids: List[str],
+    run_summary_short: str,
+) -> None:
+    """
+
+    Args:
+        pg: Async database
+        agent_id: The agent id to retrieve the owner for
+        plan_run_id: The plan run id
+        updated_output_ids: List of output ids
+        run_summary_short: Summary of run
+
+    Returns: None this function checks at the completion of a plan and checks
+    if the agent has email subscriptions and sends a message to the notification service
+    to send the email
+    """
+    sqs = boto3.resource("sqs", region_name="us-west-2")
+    # Get agent Information
+    agent_name = await pg.get_agent_name(agent_id=agent_id)
+    agent_owner = await pg.get_agent_owner(agent_id=agent_id)
+    agent_subs = await pg.get_agent_subscriptions(agent_id=agent_id)
+    # if we have any agent subscriptions then send an sqs message
+    if agent_subs:
+        # share the plan
+        await pg.set_plan_run_share_status(plan_run_id=plan_run_id, status=True)
+        # create a subscription message
+        message = AgentSubscriptionMessage(
+            user_ids=[agent_sub.user_id for agent_sub in agent_subs],
+            agent_data=[
+                AgentNotificationData(
+                    agent_name=agent_name,
+                    agent_id=agent_id,
+                    output_id=updated_output_ids[0] if updated_output_ids else "",
+                    agent_owner=agent_owner if agent_owner else "",
+                    notification_body=AgentNotificationBody(
+                        summary_title=f"Update for {agent_name}",
+                        summary_body=run_summary_short if run_summary_short else "",
+                    ),
+                )
+            ],
+        )
+        queue = sqs.get_queue_by_name(QueueName=NOTIFICATION_SERVICE_QUEUE)
+        queue.send_message(MessageBody=json.dumps(message, default=json_serial))

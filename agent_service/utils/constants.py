@@ -108,6 +108,7 @@ BOOSTED_DAG_QUEUE = os.getenv("BOOSTED_DAG_QUEUE", "insights-backend-dev-boosted
 AGENT_AUTOMATION_WORKER_QUEUE = os.getenv(
     "AGENT_AUTOMATION_WORKER_QUEUE", "insights-backend-dev-agent-automation-worker"
 )
+NOTIFICATION_SERVICE_QUEUE = os.getenv("NOTIFICATION_SERVICE_QUEUE", "notification-service-dev")
 
 
 def get_B3_prefix() -> str:

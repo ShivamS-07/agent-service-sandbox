@@ -22,7 +22,6 @@ from gbi_common_py_utils.utils.environment import (
 from gbi_common_py_utils.utils.event_logging import log_event
 from sse_starlette.sse import AsyncContentStream, EventSourceResponse, ServerSentEvent
 from starlette.requests import Request
-from user_service_proto_v1 import user_service_pb2
 
 from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.authz_helper import (
@@ -74,6 +73,7 @@ from agent_service.endpoints.models import (
     MarkNotificationsAsUnreadRequest,
     MarkNotificationsAsUnreadResponse,
     NotificationEmailsResponse,
+    NotificationUser,
     RearrangeSectionRequest,
     RearrangeSectionResponse,
     RenameMemoryRequest,
@@ -370,13 +370,13 @@ async def update_agent_notification_emails(
         logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
         if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
             validate_user_agent_access(user.user_id, agent_id)
-        await application.state.agent_service_impl.set_agent_notification_emails(
-            agent_id=agent_id, emails=emails
+        bad_emails = await application.state.agent_service_impl.set_agent_notification_emails(
+            agent_id=agent_id, emails=emails, user_id=user.user_id
         )
-        return UpdateNotificationEmailsResponse(success=True)
+        return UpdateNotificationEmailsResponse(success=True, bad_emails=bad_emails)
     except Exception as e:
         logger.warning(f"error in updating agent:{req.agent_id} emails:{req.emails}, error: {e}")
-        return UpdateNotificationEmailsResponse(success=False)
+        return UpdateNotificationEmailsResponse(success=False, bad_emails=[])
 
 
 @router.get(
@@ -386,7 +386,7 @@ async def update_agent_notification_emails(
 )
 async def get_valid_notification_users(
     user: User = Depends(parse_header),
-) -> List[user_service_pb2.User]:
+) -> List[NotificationUser]:
     logger.info(f"Getting valid users for  {user.user_id}")
     return await application.state.agent_service_impl.get_valid_notification_users(user.user_id)
 
@@ -764,7 +764,9 @@ async def enable_agent_automation(
         agent_id (str): agent ID
     """
     validate_user_agent_access(user.user_id, req.agent_id)
-    return await application.state.agent_service_impl.enable_agent_automation(agent_id=req.agent_id)
+    return await application.state.agent_service_impl.enable_agent_automation(
+        agent_id=req.agent_id, user_id=user.user_id
+    )
 
 
 @router.post(
@@ -783,7 +785,7 @@ async def disable_agent_automation(
     """
     validate_user_agent_access(user.user_id, req.agent_id)
     return await application.state.agent_service_impl.disable_agent_automation(
-        agent_id=req.agent_id
+        agent_id=req.agent_id, user_id=user.user_id
     )
 
 

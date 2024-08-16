@@ -39,10 +39,12 @@ from agent_service.utils.agent_event_utils import (
     publish_agent_output,
     publish_agent_plan_status,
     publish_agent_task_status,
+    send_agent_emails,
     send_chat_message,
 )
 from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
 from agent_service.utils.clickhouse import Clickhouse
+from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.output_utils.output_diffs import OutputDiffer
 from agent_service.utils.output_utils.utils import output_for_log
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
@@ -419,8 +421,21 @@ async def run_execution_plan(
         updated_output_ids=updated_output_ids,
         run_summary_long=full_diff_summary,
         run_summary_short=short_diff_summary,
+        pg=async_db,
     )
     logger.info("Finished run!")
+    if get_ld_flag(
+        flag_name="agent-email-notification",
+        default=False,
+        user_context=get_user_context(user_id=context.user_id),
+    ):
+        await send_agent_emails(
+            pg=async_db,
+            agent_id=context.agent_id,
+            plan_run_id=context.plan_run_id,
+            updated_output_ids=updated_output_ids if updated_output_ids else [],
+            run_summary_short=short_diff_summary if short_diff_summary else "",
+        )
     return final_outputs
 
 

@@ -8,6 +8,7 @@ from agent_service.endpoints.models import (
     AgentOutput,
     AgentSchedule,
     CustomNotification,
+    NotificationUser,
 )
 from agent_service.io_type_utils import IOType, load_io_type
 
@@ -729,8 +730,13 @@ class AsyncDB:
             },
         )
 
-    async def set_agent_subscriptions(self, agent_id: str, emails: List[str]) -> None:
-        records_to_upload = [{"agent_id": agent_id, "email": email} for email in emails]
+    async def set_agent_subscriptions(
+        self, agent_id: str, emails_to_user: Dict[str, NotificationUser]
+    ) -> None:
+        records_to_upload = []
+        for email, user in emails_to_user.items():
+            row = {"agent_id": agent_id, "email": email, "user_id": user.user_id}
+            records_to_upload.append(row)
         await self.pg.multi_row_insert(
             table_name="agent.agent_notifications", rows=records_to_upload
         )

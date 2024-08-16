@@ -204,8 +204,33 @@ class AgentServiceImpl:
             emails=[email_notification.email for email_notification in emails]
         )
 
-    async def set_agent_notification_emails(self, agent_id: str, emails: List[str]) -> None:
-        await self.pg.set_agent_subscriptions(agent_id=agent_id, emails=emails)
+    async def set_agent_notification_emails(
+        self, agent_id: str, emails: List[str], user_id: str
+    ) -> List[str]:
+        """
+
+        Args:
+            agent_id: string agent id
+            emails: List of emails we want to add
+            user_id: string user id
+
+        Returns: A list of invalid emails that could not be set. An email can be invalid if
+        an email can be invalid if it doesnt belong to a user, or it does but the user is not on the correct team.
+
+        """
+        # get valid users
+        valid_users = await self.get_valid_notification_users(user_id=user_id)
+        valid_users_to_email = {user.email: user for user in valid_users}
+        email_to_user = {}
+        invalid_emails_to_user = []
+        for email in emails:
+            user = valid_users_to_email.get(email, None)
+            if user:
+                email_to_user[email] = user
+            else:
+                invalid_emails_to_user.append(email)
+        await self.pg.set_agent_subscriptions(agent_id=agent_id, emails_to_user=email_to_user)
+        return invalid_emails_to_user
 
     async def delete_agent_notification_emails(self, agent_id: str, email: str) -> None:
         await self.pg.delete_agent_emails(agent_id=agent_id, email=email)
@@ -215,7 +240,7 @@ class AgentServiceImpl:
         # first we get all the teams that the user is a part of
         user_teams = await list_user_teams(user_id)
         for team in user_teams:
-            user_on_team = await list_team_members(team_id=team.team_id.id)
+            user_on_team = await list_team_members(team_id=team.team_id.id, user_id=user_id)
             valid_users += user_on_team
         return [
             NotificationUser(
@@ -512,7 +537,9 @@ class AgentServiceImpl:
         await self.pg.mark_notifications_as_unread(agent_id=agent_id, message_id=message_id)
         return MarkNotificationsAsUnreadResponse(success=True)
 
-    async def enable_agent_automation(self, agent_id: str) -> EnableAgentAutomationResponse:
+    async def enable_agent_automation(
+        self, agent_id: str, user_id: str
+    ) -> EnableAgentAutomationResponse:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=True)
         schedule = await self.pg.get_agent_schedule(agent_id=agent_id)
         if not schedule:
@@ -520,9 +547,24 @@ class AgentServiceImpl:
             await self.pg.update_agent_schedule(agent_id=agent_id, schedule=schedule)
         next_run = schedule.get_next_run()
         await self.pg.set_latest_plan_for_automated_run(agent_id=agent_id)
+
+        # Now automatically subscribe the agent owner to email notifications
+        # get the email for the user
+        user = await get_users(user_id=user_id, user_ids=[user_id], include_user_enabled=True)
+        email = user[0].email
+        await self.pg.set_agent_subscriptions(
+            agent_id=agent_id,
+            emails_to_user={
+                email: NotificationUser(
+                    user_id=user_id, username=user[0].username, name=user[0].name, email=email
+                )
+            },
+        )
         return EnableAgentAutomationResponse(success=True, next_run=next_run)
 
-    async def disable_agent_automation(self, agent_id: str) -> DisableAgentAutomationResponse:
+    async def disable_agent_automation(
+        self, agent_id: str, user_id: str
+    ) -> DisableAgentAutomationResponse:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=False)
         return DisableAgentAutomationResponse(success=True)
 

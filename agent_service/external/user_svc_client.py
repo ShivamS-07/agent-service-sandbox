@@ -96,18 +96,22 @@ async def list_user_teams(user_id: str) -> List[UserTeamMembership]:
         teams_list: ListUserTeamsResponse = await stub.ListUserTeams(
             ListUserTeamsRequest(
                 user_id=UUID(id=user_id),
-            )
+            ),
+            metadata=get_default_grpc_metadata(user_id=user_id),
         )
         return list(teams_list.team_memberships)
 
 
 @grpc_retry
 @async_perf_logger
-async def list_team_members(team_id: str, include_cognito_enabled: bool = True) -> List[User]:
+async def list_team_members(
+    team_id: str, user_id: str, include_cognito_enabled: bool = True
+) -> List[User]:
     with _get_service_stub() as stub:
         team_members: ListTeamMembersResponse = await stub.ListTeamMembers(
             ListTeamMembersRequest(
                 team_id=UUID(id=team_id), include_cognito_enabled=include_cognito_enabled
-            )
+            ),
+            metadata=get_default_grpc_metadata(user_id=user_id),
         )
         return [user for user in team_members.users if user.cognito_enabled]

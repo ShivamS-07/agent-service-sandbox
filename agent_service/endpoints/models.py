@@ -163,6 +163,7 @@ class UpdateNotificationEmailsRequest(BaseModel):
 
 class UpdateNotificationEmailsResponse(BaseModel):
     success: bool
+    bad_emails: Optional[List[str]]
 
 
 class RemoveNotificationEmailsRequest(BaseModel):
@@ -176,7 +177,7 @@ class RemoveNotificationEmailsResponse(BaseModel):
 
 class AgentNotificationEmail(BaseModel):
     email: str
-    user_id: Optional[str]
+    user_id: str
     agent_id: str
 
 
@@ -189,6 +190,26 @@ class NotificationUser(BaseModel):
 
 class ValidNotificationUsers(BaseModel):
     users: List[NotificationUser]
+
+
+class AgentNotificationBody(BaseModel):
+    summary_title: str
+    summary_body: str
+
+
+class AgentNotificationData(BaseModel):
+    agent_name: str
+    agent_id: str
+    output_id: str
+    # the user id of the agent owner
+    agent_owner: str
+    notification_body: AgentNotificationBody
+
+
+class AgentSubscriptionMessage(BaseModel):
+    message_type: str = "agent_notification_event"
+    user_ids: List[str]
+    agent_data: List[AgentNotificationData]
 
 
 ####################################################################################################
