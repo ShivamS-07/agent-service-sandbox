@@ -285,18 +285,18 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         notif_res: List[AgentNotificationEmail] = self.loop.run_until_complete(
             self.pg.get_agent_subscriptions(agent_id=agent_id)
         )
-        self.assertEqual(len(notif_res), 3)
+        self.assertEqual(len(notif_res), 1)
         res_emails = [agent_notif.email for agent_notif in notif_res]
         self.assertTrue(new_email in res_emails)
         # delete an email from the subscription
-        email_to_delete = "test.email@test.com"
+        email_to_delete = "test.email.3@test.com"
         self.loop.run_until_complete(
             self.pg.delete_agent_emails(agent_id=agent_id, email=email_to_delete)
         )
         notif_res: List[AgentNotificationEmail] = self.loop.run_until_complete(
             self.pg.get_agent_subscriptions(agent_id=agent_id)
         )
-        self.assertEqual(len(notif_res), 2)
+        self.assertEqual(len(notif_res), 0)
         res_emails = [agent_notif.email for agent_notif in notif_res]
         self.assertTrue(email_to_delete not in res_emails)
 

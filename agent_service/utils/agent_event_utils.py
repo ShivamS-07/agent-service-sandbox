@@ -1,9 +1,7 @@
-import json
 import logging
 from typing import List, Optional, Union, cast
 
 import boto3
-from gbi_common_py_utils.utils.event_logging import json_serial
 
 from agent_service.endpoints.models import (
     AgentEvent,
@@ -224,7 +222,6 @@ async def publish_agent_execution_status(
     updated_output_ids: Optional[List[str]] = None,
     run_summary_long: Optional[str] = None,
     run_summary_short: Optional[str] = None,
-    pg: Optional[AsyncDB] = None,
 ) -> None:
     try:
         await publish_agent_event(
@@ -348,4 +345,4 @@ async def send_agent_emails(
             ],
         )
         queue = sqs.get_queue_by_name(QueueName=NOTIFICATION_SERVICE_QUEUE)
-        queue.send_message(MessageBody=json.dumps(message, default=json_serial))
+        queue.send_message(MessageBody=message.model_dump_json())

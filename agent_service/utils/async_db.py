@@ -734,6 +734,9 @@ class AsyncDB:
         self, agent_id: str, emails_to_user: Dict[str, Account]
     ) -> None:
         records_to_upload = []
+        # remove all the subs before adding new ones to avoid
+        # duplicates
+        await self.delete_all_email_subscriptions_for_agent(agent_id)
         for email, user in emails_to_user.items():
             row = {"agent_id": agent_id, "email": email, "user_id": user.user_id}
             records_to_upload.append(row)
@@ -748,6 +751,13 @@ class AsyncDB:
           AND email = %(email)s
         """
         await self.pg.generic_write(sql, params={"agent_id": agent_id, "email": email})
+
+    async def delete_all_email_subscriptions_for_agent(self, agent_id: str) -> None:
+        sql = """
+        DELETE FROM agent.agent_notifications
+        WHERE agent_id=%(agent_id)s
+        """
+        await self.pg.generic_write(sql, params={"agent_id": agent_id})
 
     async def get_agent_subscriptions(self, agent_id: str) -> List[AgentNotificationEmail]:
         sql = """

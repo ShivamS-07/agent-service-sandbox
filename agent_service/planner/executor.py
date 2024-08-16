@@ -421,7 +421,6 @@ async def run_execution_plan(
         updated_output_ids=updated_output_ids,
         run_summary_long=full_diff_summary,
         run_summary_short=short_diff_summary,
-        pg=async_db,
     )
     logger.info("Finished run!")
     if get_ld_flag(
