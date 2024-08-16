@@ -327,9 +327,13 @@ async def send_agent_emails(
     if agent_subs:
         # share the plan
         await pg.set_plan_run_share_status(plan_run_id=plan_run_id, status=True)
+        # Always include the agent owner in emails
+        user_ids = [agent_sub.user_id for agent_sub in agent_subs]
+        if agent_owner:
+            user_ids.append(agent_owner)
         # create a subscription message
         message = AgentSubscriptionMessage(
-            user_ids=[agent_sub.user_id for agent_sub in agent_subs],
+            user_ids=user_ids,
             agent_data=[
                 AgentNotificationData(
                     agent_name=agent_name,

@@ -188,10 +188,6 @@ class NotificationUser(BaseModel):
     email: str
 
 
-class ValidNotificationUsers(BaseModel):
-    users: List[NotificationUser]
-
-
 class AgentNotificationBody(BaseModel):
     summary_title: str
     summary_body: str

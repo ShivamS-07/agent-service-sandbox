@@ -73,7 +73,6 @@ from agent_service.endpoints.models import (
     MarkNotificationsAsUnreadRequest,
     MarkNotificationsAsUnreadResponse,
     NotificationEmailsResponse,
-    NotificationUser,
     RearrangeSectionRequest,
     RearrangeSectionResponse,
     RenameMemoryRequest,
@@ -96,7 +95,6 @@ from agent_service.endpoints.models import (
     UpdateUserRequest,
     UpdateUserResponse,
     UploadFileResponse,
-    ValidNotificationUsers,
 )
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.GPT.requests import _get_gpt_service_stub
@@ -377,18 +375,6 @@ async def update_agent_notification_emails(
     except Exception as e:
         logger.warning(f"error in updating agent:{req.agent_id} emails:{req.emails}, error: {e}")
         return UpdateNotificationEmailsResponse(success=False, bad_emails=[])
-
-
-@router.get(
-    "/agent/notification-emails/get_valid_users",
-    response_model=ValidNotificationUsers,
-    status_code=status.HTTP_200_OK,
-)
-async def get_valid_notification_users(
-    user: User = Depends(parse_header),
-) -> List[NotificationUser]:
-    logger.info(f"Getting valid users for  {user.user_id}")
-    return await application.state.agent_service_impl.get_valid_notification_users(user.user_id)
 
 
 @router.post(
@@ -1023,7 +1009,10 @@ async def get_account_info(user: User = Depends(parse_header)) -> GetAccountInfo
     status_code=status.HTTP_200_OK,
 )
 async def get_team_accounts(user: User = Depends(parse_header)) -> GetTeamAccountsResponse:
-    return await application.state.agent_service_impl.get_team_accounts(user=user)
+    accounts = await application.state.agent_service_impl.get_valid_notification_users(
+        user_id=user.user_id
+    )
+    return GetTeamAccountsResponse(accounts=accounts)
 
 
 @router.post(

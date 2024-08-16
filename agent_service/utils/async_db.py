@@ -3,12 +3,12 @@ import json
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import (
+    Account,
     AgentMetadata,
     AgentNotificationEmail,
     AgentOutput,
     AgentSchedule,
     CustomNotification,
-    NotificationUser,
 )
 from agent_service.io_type_utils import IOType, load_io_type
 
@@ -731,7 +731,7 @@ class AsyncDB:
         )
 
     async def set_agent_subscriptions(
-        self, agent_id: str, emails_to_user: Dict[str, NotificationUser]
+        self, agent_id: str, emails_to_user: Dict[str, Account]
     ) -> None:
         records_to_upload = []
         for email, user in emails_to_user.items():

@@ -43,7 +43,6 @@ from agent_service.endpoints.models import (
     GetMemoryContentResponse,
     GetPlanRunOutputResponse,
     GetSecureUserResponse,
-    GetTeamAccountsResponse,
     GetTestCaseInfoResponse,
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
@@ -55,7 +54,6 @@ from agent_service.endpoints.models import (
     MemoryItem,
     NotificationEmailsResponse,
     NotificationEvent,
-    NotificationUser,
     PlanTemplateTask,
     RenameMemoryResponse,
     RestoreAgentResponse,
@@ -74,7 +72,6 @@ from agent_service.external.pa_svc_client import get_all_watchlists, get_all_wor
 from agent_service.external.user_svc_client import (
     get_users,
     list_team_members,
-    list_user_teams,
     update_user,
 )
 from agent_service.io_type_utils import load_io_type
@@ -235,15 +232,15 @@ class AgentServiceImpl:
     async def delete_agent_notification_emails(self, agent_id: str, email: str) -> None:
         await self.pg.delete_agent_emails(agent_id=agent_id, email=email)
 
-    async def get_valid_notification_users(self, user_id: str) -> List[NotificationUser]:
+    async def get_valid_notification_users(self, user_id: str) -> List[Account]:
         valid_users = []
         # first we get all the teams that the user is a part of
-        user_teams = await list_user_teams(user_id)
-        for team in user_teams:
+        user = await get_users(user_id=user_id, user_ids=[user_id], include_user_enabled=True)
+        for team in user[0].team_memberships:
             user_on_team = await list_team_members(team_id=team.team_id.id, user_id=user_id)
             valid_users += user_on_team
         return [
-            NotificationUser(
+            Account(
                 user_id=user.user_id.id, username=user.username, name=user.name, email=user.email
             )
             for user in valid_users
@@ -565,7 +562,7 @@ class AgentServiceImpl:
         await self.pg.set_agent_subscriptions(
             agent_id=agent_id,
             emails_to_user={
-                email: NotificationUser(
+                email: Account(
                     user_id=user_id, username=user[0].username, name=user[0].name, email=email
                 )
             },
@@ -885,25 +882,6 @@ class AgentServiceImpl:
                 username=account.username,
                 name=account.name,
             )
-        )
-
-    async def get_team_accounts(self, user: User) -> GetTeamAccountsResponse:
-        # Mock data
-        return GetTeamAccountsResponse(
-            accounts=[
-                Account(
-                    user_id=str(uuid4()),
-                    email="test1@boosted.ai",
-                    username="Test User 1",
-                    name="Test User 1",
-                ),
-                Account(
-                    user_id=str(uuid4()),
-                    email="test2@boosted.ai",
-                    username="Test User 2",
-                    name="Test User 2",
-                ),
-            ]
         )
 
     @async_perf_logger
