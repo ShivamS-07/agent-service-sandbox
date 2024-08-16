@@ -54,6 +54,13 @@ async def get_live_agent_infos() -> List[AgentInfo]:
             if agent_info["schedule"]
             else AgentSchedule.default()
         )
+        chat_context = chat_contexts.get(agent_info["agent_id"])
+        if chat_context:
+            chat_context.messages = [
+                message
+                for message in chat_context.messages
+                if message.message_time < agent_info["plan_created_at"]
+            ]
         outputs.append(
             AgentInfo(
                 plan=ExecutionPlan(**agent_info["plan"]),
@@ -62,7 +69,7 @@ async def get_live_agent_infos() -> List[AgentInfo]:
                     plan_id=agent_info["plan_id"],
                     user_id=agent_info["user_id"],
                     plan_run_id=str(uuid.uuid4()),
-                    chat=chat_contexts.get(agent_info["agent_id"]),
+                    chat=chat_context,
                 ),
                 schedule=schedule,
             ),

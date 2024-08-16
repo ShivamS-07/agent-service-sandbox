@@ -294,7 +294,7 @@ async def run_execution_plan(
             variable_lookup[step.output_variable_name] = tool_output
 
         # Update the chat context in case of new messages
-        if not context.skip_db_commit:
+        if not context.skip_db_commit and not scheduled_by_automation:
             context.chat = db.get_chats_history_for_agent(agent_id=context.agent_id)
         if step.is_output_node:
             final_outputs.extend(split_outputs)

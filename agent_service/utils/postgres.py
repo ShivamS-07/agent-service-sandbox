@@ -546,7 +546,7 @@ class Postgres(PostgresBase):
     def get_live_agents_info(self, agent_ids: List[str]) -> List[Dict[str, Any]]:
         sql = """
         SELECT DISTINCT ON (ag.agent_id) ag.agent_id::TEXT, ag.user_id::TEXT, ep.plan_id::TEXT, ep.plan,
-          ag.schedule
+          ag.schedule, ep.created_at as plan_created_at
         FROM agent.agents ag JOIN agent.execution_plans ep ON ag.agent_id = ep.agent_id
         WHERE ag.agent_id = ANY(%(agent_ids)s) and ep.status = 'READY' and ep.automated_run
         ORDER BY ag.agent_id, ep.created_at DESC
