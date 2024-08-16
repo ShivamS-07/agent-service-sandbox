@@ -963,13 +963,13 @@ class StockEarningsTranscriptText(StockEarningsText):
             WHERE id IN %(ids)s
         """
         ch = Clickhouse()
-        transcript_query_result = ch.clickhouse_client.query(
+        transcript_query_result = await ch.generic_read(
             earnings_transcript_sql,
-            parameters={
+            params={
                 "ids": [earnings_text.id for earnings_text in earnings_texts],
             },
         )
-        str_lookup = {row[0]: row[1] for row in transcript_query_result.result_rows}
+        str_lookup = {row["id"]: row["transcript"] for row in transcript_query_result}
         return str_lookup
 
     @classmethod
@@ -1332,7 +1332,7 @@ class StockSecFilingText(StockText):
         output: Dict[TextIDType, str] = {}
 
         db_id_to_text_id = {filing.db_id: filing.id for filing in sec_filing_list if filing.db_id}
-        output.update(SecFiling.get_concat_10k_10q_sections_from_db(db_id_to_text_id))  # type: ignore
+        output.update(await SecFiling.get_concat_10k_10q_sections_from_db(db_id_to_text_id))  # type: ignore
 
         # Get the rest from SEC API directly
         filing_gbi_pairs = [
@@ -1341,7 +1341,7 @@ class StockSecFilingText(StockText):
             if not filing.db_id and filing.stock_id
         ]
         output.update(
-            SecFiling.get_concat_10k_10q_sections_from_api(filing_gbi_pairs, insert_to_db=True)  # type: ignore
+            await SecFiling.get_concat_10k_10q_sections_from_api(filing_gbi_pairs, insert_to_db=True)  # type: ignore
         )
 
         return output
@@ -1519,7 +1519,7 @@ class StockOtherSecFilingText(StockText):
         output: Dict[TextIDType, str] = {}
 
         db_id_to_text_id = {filing.db_id: filing.id for filing in sec_filing_list if filing.db_id}
-        output.update(SecFiling.get_filings_content_from_db(db_id_to_text_id))  # type: ignore
+        output.update(await SecFiling.get_filings_content_from_db(db_id_to_text_id))  # type: ignore
 
         # Get the rest from SEC API directly
         filing_gbi_pairs = [
@@ -1528,7 +1528,7 @@ class StockOtherSecFilingText(StockText):
             if not filing.db_id and filing.stock_id
         ]
         output.update(
-            SecFiling.get_filings_content_from_api(filing_gbi_pairs, insert_to_db=True)  # type: ignore
+            await SecFiling.get_filings_content_from_api(filing_gbi_pairs, insert_to_db=True)  # type: ignore
         )
 
         return output

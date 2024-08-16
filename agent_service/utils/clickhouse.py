@@ -11,7 +11,6 @@ import clickhouse_connect
 from clickhouse_connect.driver.asyncclient import AsyncClient
 from clickhouse_connect.driver.query import QueryResult
 from gbi_common_py_utils.utils.clickhouse_base import (
-    ClickhouseBase,
     ClickhouseConnectionConfig,
     get_clickhouse_connection_config,
 )
@@ -84,8 +83,25 @@ class AsyncClickhouseBase:
 
         return result
 
+    async def multi_row_insert(self, table_name: str, rows: List[Dict[str, Any]]) -> None:
+        client = await get_client(self.clickhouse_connection_config)
+        column_names = list(rows[0].keys())
+        data_to_insert = []
+        for row in rows:
+            tuple_to_add = []
+            for column_name in column_names:
+                tuple_to_add.append(row[column_name])
+            data_to_insert.append(tuple_to_add)
 
-class Clickhouse(ClickhouseBase):
+        await client.insert(
+            table=table_name,
+            data=data_to_insert,
+            column_names=column_names,
+            settings={"async_insert": 1},
+        )
+
+
+class Clickhouse(AsyncClickhouseBase):
     def __init__(self, environment: Optional[str] = None):
         environment: str = environment or EnvironmentUtils.aws_ssm_prefix
         super().__init__(environment)
@@ -101,33 +117,33 @@ class Clickhouse(ClickhouseBase):
         self._actual_env = EnvironmentUtils.aws_ssm_prefix
         self._env = environment
 
-    def get_cid_for_gbi_ids(self, gbi_ids: List[int]) -> Dict[int, str]:
+    async def get_cid_for_gbi_ids(self, gbi_ids: List[int]) -> Dict[int, str]:
         if self._actual_env.lower() == PROD_TAG.lower():
-            return self._get_cid_for_gbi_ids_alpha(gbi_ids)
+            return await self._get_cid_for_gbi_ids_alpha(gbi_ids)
         else:
-            return self._get_cid_for_gbi_ids_dev(gbi_ids)
+            return await self._get_cid_for_gbi_ids_dev(gbi_ids)
 
-    def _get_cid_for_gbi_ids_dev(self, gbi_ids: List[int]) -> Dict[int, str]:
+    async def _get_cid_for_gbi_ids_dev(self, gbi_ids: List[int]) -> Dict[int, str]:
         sql = """
             SELECT x.gbi_id, x.cid
             FROM nlp_service.gbi_cid_lookup_dev x
             WHERE x.gbi_id IN %(gbi_ids)s
         """
-        res = self.generic_read(sql, {"gbi_ids": gbi_ids})
+        res = await self.generic_read(sql, {"gbi_ids": gbi_ids})
         output = {item["gbi_id"]: str(item["cid"]) for item in res}
         return output
 
-    def _get_cid_for_gbi_ids_alpha(self, gbi_ids: List[int]) -> Dict[int, str]:
+    async def _get_cid_for_gbi_ids_alpha(self, gbi_ids: List[int]) -> Dict[int, str]:
         sql = """
             SELECT x.gbi_id, x.cid
             FROM nlp_service.gbi_cid_lookup_alpha x
             WHERE x.gbi_id IN %(gbi_ids)s
         """
-        res = self.generic_read(sql, {"gbi_ids": gbi_ids})
+        res = await self.generic_read(sql, {"gbi_ids": gbi_ids})
         output = {item["gbi_id"]: str(item["cid"]) for item in res}
         return output
 
-    def get_company_data_kpis(
+    async def get_company_data_kpis(
         self, cid: str, vid: Optional[str] = None, pids: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         vid_clause = "AND ViewId = %(vid)s" if vid is not None else ""
@@ -151,10 +167,12 @@ class Clickhouse(ClickhouseBase):
             {vid_clause}
             {pid_caluse}
         """
-        res = self.generic_read(sql, params=params)
+        res = await self.generic_read(sql, params=params)
         return res
 
-    def get_company_data_kpis_for_multiple_cids(self, cids: List[str]) -> List[Dict[str, Any]]:
+    async def get_company_data_kpis_for_multiple_cids(
+        self, cids: List[str]
+    ) -> List[Dict[str, Any]]:
         sql = """
             SELECT DISTINCT
                 VACompanyId,
@@ -163,10 +181,10 @@ class Clickhouse(ClickhouseBase):
             FROM visible_s3_queue.NormalizedCompanyMeta
             WHERE VACompanyId IN %(cids)s AND ParameterName IS NOT NULL AND TRIM(ParameterName) != ''
         """
-        res = self.generic_read(sql, params={"cids": cids})
+        res = await self.generic_read(sql, params={"cids": cids})
         return res
 
-    def get_kpi_actual_values_for_company_data(
+    async def get_kpi_actual_values_for_company_data(
         self, cid: str, pids: List[str], periods: List[str], use_fiscal_year: bool
     ) -> List[Dict[str, Any]]:
         # periods can be generated using visible_alpha.generate_periods(...)
@@ -208,10 +226,10 @@ class Clickhouse(ClickhouseBase):
                 ON ad.ParameterId = cm.ParameterId
                 AND ad.VACompanyId = cm.VACompanyId
         """
-        res = self.generic_read(sql, {"cid": cid, "pids": pids, "periods": periods})
+        res = await self.generic_read(sql, {"cid": cid, "pids": pids, "periods": periods})
         return res
 
-    def get_kpi_actual_values_for_standardized_data(
+    async def get_kpi_actual_values_for_standardized_data(
         self, cid: str, pids: List[str], periods: List[str], use_fiscal_year: bool
     ) -> List[Dict[str, Any]]:
         # periods can be generated using visible_alpha.generate_periods(...)
@@ -254,10 +272,10 @@ class Clickhouse(ClickhouseBase):
                 ON ad.ParameterId = cm.ParameterId
                 AND ad.VACompanyId = cm.VACompanyId
         """
-        res = self.generic_read(sql, {"cid": cid, "pids": pids, "periods": periods})
+        res = await self.generic_read(sql, {"cid": cid, "pids": pids, "periods": periods})
         return res
 
-    def get_kpi_estimate_values_for_company_data(
+    async def get_kpi_estimate_values_for_company_data(
         self, cid: str, pids: List[str], periods: List[str], use_fiscal_year: bool
     ) -> List[Dict[str, Any]]:
         # periods can be generated using visible_alpha.generate_periods(...)
@@ -303,10 +321,10 @@ class Clickhouse(ClickhouseBase):
             INNER JOIN company_meta cm ON cd.VACompanyId = cm.VACompanyId AND cd.ParameterId = cm.ParameterId
         """
 
-        res = self.generic_read(sql, {"cid": cid, "pids": pids, "periods": periods})
+        res = await self.generic_read(sql, {"cid": cid, "pids": pids, "periods": periods})
         return res
 
-    def get_kpi_estimate_values_for_standardized_data(
+    async def get_kpi_estimate_values_for_standardized_data(
         self, cid: str, pids: List[str], periods: List[str], use_fiscal_year: bool
     ) -> List[Dict[str, Any]]:
         # periods can be generated using visible_alpha.generate_periods(...)
@@ -352,12 +370,12 @@ class Clickhouse(ClickhouseBase):
             FROM consensus_data cd
             INNER JOIN company_meta cm ON cd.VACompanyId = cm.VACompanyId AND cd.ParameterId = cm.ParameterId
         """
-        res = self.generic_read(
+        res = await self.generic_read(
             sql, {"cid": cid, "pids": pids, "periods": periods, "calendar_type": calendar_type}
         )
         return res
 
-    def get_kpi_values_for_cid(
+    async def get_kpi_values_for_cid(
         self,
         cid: str,
         pids: List[str],
@@ -368,26 +386,26 @@ class Clickhouse(ClickhouseBase):
     ) -> List[Dict[str, Any]]:
         if dataset == VisAlphaDataset.COMPANY_DATASET:
             if estimate:
-                return self.get_kpi_estimate_values_for_company_data(
+                return await self.get_kpi_estimate_values_for_company_data(
                     cid, pids, periods, use_fiscal_year
                 )
             else:
-                return self.get_kpi_actual_values_for_company_data(
+                return await self.get_kpi_actual_values_for_company_data(
                     cid, pids, periods, use_fiscal_year
                 )
         elif dataset == VisAlphaDataset.STANDARD_DATASET:
             if estimate:
-                return self.get_kpi_estimate_values_for_standardized_data(
+                return await self.get_kpi_estimate_values_for_standardized_data(
                     cid, pids, periods, use_fiscal_year
                 )
             else:
-                return self.get_kpi_actual_values_for_standardized_data(
+                return await self.get_kpi_actual_values_for_standardized_data(
                     cid, pids, periods, use_fiscal_year
                 )
         else:
             raise ValueError("Unsupported dataset")
 
-    def get_kpi_estimate_values_for_company_data_for_multiple_cids(
+    async def get_kpi_estimate_values_for_company_data_for_multiple_cids(
         self, cid_pids_dict: Dict[str, List[int]], periods: List[str], use_fiscal_year: bool
     ) -> List[Dict[str, Any]]:
         # periods can be generated using visible_alpha.generate_periods(...)
@@ -438,12 +456,12 @@ class Clickhouse(ClickhouseBase):
             FROM consensus_data cd
             INNER JOIN company_meta cm ON cd.VACompanyId = cm.VACompanyId AND cd.ParameterId = cm.ParameterId
         """
-        res = self.generic_read(
+        res = await self.generic_read(
             sql, {"cids": cids, "cid_pid_pairwise_list": cid_pid_pairwise_list, "periods": periods}
         )
         return res
 
-    def get_kpi_actual_values_for_company_data_for_multiple_cids(
+    async def get_kpi_actual_values_for_company_data_for_multiple_cids(
         self, cid_pids_dict: Dict[str, List[int]], periods: List[str], use_fiscal_year: bool
     ) -> List[Dict[str, Any]]:
         # periods can be generated using visible_alpha.generate_periods(...)
@@ -490,12 +508,12 @@ class Clickhouse(ClickhouseBase):
                 ON ad.ParameterId = cm.ParameterId
                 AND ad.VACompanyId = cm.VACompanyId
         """
-        res = self.generic_read(
+        res = await self.generic_read(
             sql, {"cids": cids, "cid_pid_pairwise_list": cid_pid_pairwise_list, "periods": periods}
         )
         return res
 
-    def get_company_kpi_values_for_cids(
+    async def get_company_kpi_values_for_cids(
         self,
         cid_pids_dict: Dict[str, List[int]],
         periods: List[str],
@@ -506,18 +524,18 @@ class Clickhouse(ClickhouseBase):
         This is only meant for handling company specific line items
         """
         if estimate:
-            return self.get_kpi_estimate_values_for_company_data_for_multiple_cids(
+            return await self.get_kpi_estimate_values_for_company_data_for_multiple_cids(
                 cid_pids_dict, periods, use_fiscal_year
             )
         else:
-            return self.get_kpi_actual_values_for_company_data_for_multiple_cids(
+            return await self.get_kpi_actual_values_for_company_data_for_multiple_cids(
                 cid_pids_dict, periods, use_fiscal_year
             )
 
     ################################################################################################
     # Embeddings
     ################################################################################################
-    def sort_news_topics_via_embeddings(
+    async def sort_news_topics_via_embeddings(
         self,
         news_topic_ids: List[str],
         embedding_vector: List[float],
@@ -552,8 +570,8 @@ class Clickhouse(ClickhouseBase):
         """
         # FIXME: `generic_read` has bad performance, so we use `query` directly
         try:
-            result = self.clickhouse_client.query(sql, parameters=parameters)
-            return [tup[0] for tup in result.result_rows]
+            result = await self.generic_read(sql, params=parameters)
+            return [str(row["topic_id"]) for row in result]
         except Exception as e:
             logger.exception(e)
             return []
@@ -561,7 +579,7 @@ class Clickhouse(ClickhouseBase):
     ################################################################################################
     # Agent Debug Info
     ################################################################################################
-    def get_agent_debug_plan_selections(self, agent_id: str) -> List[Dict[str, Any]]:
+    async def get_agent_debug_plan_selections(self, agent_id: str) -> List[Dict[str, Any]]:
         sql = """
             SELECT plans, selection_str, selection, plan_id, service_version, start_time_utc,
             end_time_utc, duration_seconds
@@ -570,7 +588,7 @@ class Clickhouse(ClickhouseBase):
             ORDER BY end_time_utc ASC
             """
         res: List[Dict[str, Any]] = []
-        rows = self.generic_read(sql, {"agent_id": agent_id})
+        rows = await self.generic_read(sql, {"agent_id": agent_id})
         tz = datetime.timezone.utc
         for row in rows:
             row["start_time_utc"] = row["start_time_utc"].replace(tzinfo=tz).isoformat()
@@ -585,7 +603,7 @@ class Clickhouse(ClickhouseBase):
             res.append(row)
         return res
 
-    def get_agent_debug_plans(self, agent_id: str) -> List[Dict[str, Any]]:
+    async def get_agent_debug_plans(self, agent_id: str) -> List[Dict[str, Any]]:
         sql = """
         SELECT execution_plan, action, model_id, plan_str, plan_id, error_msg, service_version,
         start_time_utc, end_time_utc, duration_seconds, sample_plans
@@ -593,7 +611,7 @@ class Clickhouse(ClickhouseBase):
         WHERE agent_id = %(agent_id)s
         ORDER BY end_time_utc ASC
         """
-        rows = self.generic_read(sql, {"agent_id": agent_id})
+        rows = await self.generic_read(sql, {"agent_id": agent_id})
         tz = datetime.timezone.utc
         for row in rows:
             steps_dict: Dict[str, Any] = OrderedDict()
@@ -606,7 +624,7 @@ class Clickhouse(ClickhouseBase):
             row["execution_plan"] = steps_dict
         return rows
 
-    def get_agent_debug_tool_calls(self, agent_id: str) -> Dict[str, Any]:
+    async def get_agent_debug_tool_calls(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         SELECT  plan_id, plan_run_id, task_id, tool_name, args, result, start_time_utc,
         end_time_utc, service_version, duration_seconds, error_msg, replay_id, debug_info
@@ -614,7 +632,7 @@ class Clickhouse(ClickhouseBase):
         WHERE agent_id = %(agent_id)s
         ORDER BY end_time_utc ASC
         """
-        rows = self.generic_read(sql, {"agent_id": agent_id})
+        rows = await self.generic_read(sql, {"agent_id": agent_id})
         res: Dict[str, Any] = OrderedDict()
         tz = datetime.timezone.utc
         for row in rows:
@@ -638,16 +656,18 @@ class Clickhouse(ClickhouseBase):
             res[plan_run_id][f"{tool_name}_{row['task_id']}"] = row
         return res
 
-    def get_agent_debug_cost_info(self, agent_id: str) -> Dict[str, Any]:
+    async def get_agent_debug_cost_info(self, agent_id: str) -> Dict[str, Any]:
         total_cost_sql = """select round(sum(cost_usd), 2) as total_cost_usd from llm.queries q
         where agent_id =  %(agent_id)s"""
-        total_cost_rows = self.generic_read(total_cost_sql, {"agent_id": agent_id})
+        total_cost_rows = await self.generic_read(total_cost_sql, {"agent_id": agent_id})
         total_cost = total_cost_rows[0]["total_cost_usd"]
         detailed_breakdown_sql = """select sum(num_input_tokens) as total_input_tokens,
         sum(num_output_tokens) as total_output_tokens, round(sum(cost_usd), 2) as total_cost_usd,
         main_prompt_name, model_id from llm.queries q where agent_id = %(agent_id)s group by
         main_prompt_name, model_id order by total_cost_usd desc"""
-        detailed_breakdown_rows = self.generic_read(detailed_breakdown_sql, {"agent_id": agent_id})
+        detailed_breakdown_rows = await self.generic_read(
+            detailed_breakdown_sql, {"agent_id": agent_id}
+        )
         detailed_breakdown_dict = {}
         for row in detailed_breakdown_rows:
             detailed_breakdown_dict[f"prompt_id={row['main_prompt_name']}"] = row
@@ -658,7 +678,7 @@ class Clickhouse(ClickhouseBase):
         result = {}
         result["detailed_breakdown"] = detailed_breakdown_dict
         result["total_cost_usd"] = total_cost
-        model_breakdown_rows = self.generic_read(model_breakdown_sql, {"agent_id": agent_id})
+        model_breakdown_rows = await self.generic_read(model_breakdown_sql, {"agent_id": agent_id})
         model_breakdown_dict = {}
         for row in model_breakdown_rows:
             model_breakdown_dict[f"model_id={row['model_id']}"] = row
@@ -666,7 +686,7 @@ class Clickhouse(ClickhouseBase):
         result["model_breakdown"] = model_breakdown_dict
         return result
 
-    def get_agent_debug_gpt_service_info(self, agent_id: str) -> Dict[str, Any]:
+    async def get_agent_debug_gpt_service_info(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         select count(*) as num_queries, min(client_timestamp_utc) as first_request_sent_utc,
 max(client_timestamp_utc) as last_request_sent_utc,
@@ -682,14 +702,14 @@ from llm.gpt_service_requests gsr
 where agent_id =  %(agent_id)s
 group by main_prompt_name, model_id
 order by num_queries desc"""
-        rows = self.generic_read(sql=sql, params={"agent_id": agent_id})
+        rows = await self.generic_read(sql=sql, params={"agent_id": agent_id})
         result = {}
         for row in rows:
             result[f"prompt_id={row['main_prompt_name']}"] = row
             del row["main_prompt_name"]
         return result
 
-    def get_agent_debug_worker_sqs_log(self, agent_id: str) -> Dict[str, Any]:
+    async def get_agent_debug_worker_sqs_log(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         SELECT plan_id, plan_run_id, method, message, send_time_utc,
         wait_time_seconds,  error_msg,start_time_utc, end_time_utc, duration_seconds
@@ -698,7 +718,7 @@ order by num_queries desc"""
         ORDER BY end_time_utc ASC
         """
         res: Dict[str, Any] = dict()
-        rows = self.generic_read(sql, {"agent_id": agent_id})
+        rows = await self.generic_read(sql, {"agent_id": agent_id})
         res["run_execution_plan"] = OrderedDict()
         res["create_execution_plan"] = OrderedDict()
         tz = datetime.timezone.utc
@@ -710,12 +730,12 @@ order by num_queries desc"""
             res[row["method"]][row["send_time_utc"]] = row
         return res
 
-    def get_agents_cost_info(self, agent_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+    async def get_agents_cost_info(self, agent_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
         res = {}
         try:
             sql = """select sum(num_input_tokens) + sum(num_output_tokens) as num_tokens_used, agent_id
             from llm.queries where agent_id in %(agent_ids)s group by agent_id"""
-            rows = self.generic_read(sql, params={"agent_ids": agent_ids})
+            rows = await self.generic_read(sql, params={"agent_ids": agent_ids})
 
             for row in rows:
                 res[row["agent_id"]] = [
@@ -732,7 +752,7 @@ order by num_queries desc"""
     # Regression Test Run Info
     ################################################################################################
 
-    def get_info_for_test_suite_run(self, service_version: str) -> Dict[str, Any]:
+    async def get_info_for_test_suite_run(self, service_version: str) -> Dict[str, Any]:
         sql = """SELECT DISTINCT ON (test_name) test_name, prompt, agent_id, test_suite_id AS test_suite_run_id,
         output, execution_plan, error_msg, warning_msg, execution_finished_at_utc, execution_start_at_utc,
         execution_plan_started_at_utc, execution_plan_finished_at_utc, execution_duration_seconds,
@@ -741,7 +761,7 @@ order by num_queries desc"""
         %(service_version)s)
         ORDER BY test_name ASC, timestamp DESC"""
         res: Dict[str, Any] = {}
-        rows = self.generic_read(sql, {"service_version": service_version})
+        rows = await self.generic_read(sql, {"service_version": service_version})
         tz = datetime.timezone.utc
         for i, row in enumerate(rows):
             test_name = row.pop("test_name")
@@ -759,7 +779,7 @@ order by num_queries desc"""
             res[f"{i} test_name={test_name}"] = row
         return res
 
-    def get_test_suite_runs(self) -> List[Dict[str, Any]]:
+    async def get_test_suite_runs(self) -> List[Dict[str, Any]]:
         sql = """
         SELECT DISTINCT ON (service_version) MAX(substring(service_version, position(service_version, ':') + 1))
         as service_version, test_suite_id as test_suite_run_id, MAX(timestamp) as timestamp,
@@ -770,24 +790,24 @@ order by num_queries desc"""
         GROUP BY test_suite_id
         ORDER BY timestamp DESC
         """
-        rows = self.generic_read(sql)
+        rows = await self.generic_read(sql)
         tz = datetime.timezone.utc
         for row in rows:
             row["timestamp"] = row["timestamp"].replace(tzinfo=tz).isoformat()
         return rows
 
-    def get_test_cases(self) -> List[Dict[str, Any]]:
+    async def get_test_cases(self) -> List[Dict[str, Any]]:
         sql = """
         SELECT test_name as test_case, MAX(timestamp) as timestamp from agent.regression_test
         GROUP BY test_name ORDER BY timestamp DESC
         """
-        rows = self.generic_read(sql)
+        rows = await self.generic_read(sql)
         tz = datetime.timezone.utc
         for row in rows:
             row["timestamp"] = row["timestamp"].replace(tzinfo=tz).isoformat()
         return rows
 
-    def get_info_for_test_case(self, test_name: str) -> Dict[str, Any]:
+    async def get_info_for_test_case(self, test_name: str) -> Dict[str, Any]:
         sql = """
             SELECT prompt, agent_id, output, execution_plan, service_version, error_msg, warning_msg,
             execution_finished_at_utc, execution_start_at_utc, execution_plan_started_at_utc,
@@ -796,7 +816,7 @@ order by num_queries desc"""
             WHERE test_name = %(test_name)s
             ORDER BY timestamp DESC
             """
-        rows = self.generic_read(sql, {"test_name": test_name})
+        rows = await self.generic_read(sql, {"test_name": test_name})
         res: Dict[str, Any] = {}
         tz = datetime.timezone.utc
         for row in rows:
@@ -821,7 +841,7 @@ order by num_queries desc"""
     # Tool Diff Info
     ################################################################################################
 
-    def get_io_for_tool_run(
+    async def get_io_for_tool_run(
         self, plan_run_id: str, task_id: str, tool_name: str
     ) -> Optional[Tuple[str, str, str, datetime.datetime]]:
         sql = """
@@ -829,7 +849,7 @@ order by num_queries desc"""
         FROM agent.tool_calls
         WHERE plan_run_id = %(plan_run_id)s AND task_id = %(task_id)s AND tool_name = %(tool_name)s
         """
-        rows = self.generic_read(
+        rows = await self.generic_read(
             sql, {"plan_run_id": plan_run_id, "task_id": task_id, "tool_name": tool_name}
         )
         if not rows:
@@ -840,7 +860,7 @@ order by num_queries desc"""
     ################################################################################################
     # Manual Event Logging
     ################################################################################################
-    def log_event_manually(
+    async def log_event_manually(
         self,
         event_name: str,
         event_data: Optional[Dict[str, Any]] = None,
@@ -857,7 +877,7 @@ order by num_queries desc"""
         if event_namespace:
             event["event_namespace"] = event_namespace
 
-        self.multi_row_insert(table_name="events", rows=[event])
+        await self.multi_row_insert(table_name="events", rows=[event])
 
     ################################################################################################
     # Follow up questions
@@ -879,7 +899,7 @@ order by num_queries desc"""
                 AND result <> ''
             ORDER BY task_id, end_time_utc DESC
         """
-        rows = self.generic_read(
+        rows = await self.generic_read(
             sql, params={"agent_id": agent_id, "task_ids": task_ids, "old_plan_id": old_plan_id}
         )
         res = {}
@@ -899,7 +919,7 @@ order by num_queries desc"""
                 replay_id IN %(replay_ids)s
                 AND result <> ''
         """
-        rows = self.generic_read(sql, params={"replay_ids": replay_ids})
+        rows = await self.generic_read(sql, params={"replay_ids": replay_ids})
         res = {}
         for row in rows:
             res[row["task_id"]] = load_io_type(row["output"])
@@ -924,7 +944,7 @@ order by num_queries desc"""
                 AND result <> ''
             ORDER BY task_id, end_time_utc DESC
         """
-        rows = self.generic_read(
+        rows = await self.generic_read(
             sql, params={"agent_id": agent_id, "task_ids": task_ids, "old_plan_id": plan_id}
         )
         res = {}

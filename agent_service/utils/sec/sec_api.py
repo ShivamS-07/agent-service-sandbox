@@ -253,7 +253,7 @@ class SecFiling:
     # Get Filings (metadata)
     ################################################################################################
     @classmethod
-    def get_filings(
+    async def get_filings(
         cls,
         gbi_ids: List[int],
         form_types: List[str],
@@ -278,7 +278,7 @@ class SecFiling:
             # default to a quarter of data (one filing)
             start_date = end_date - datetime.timedelta(days=100)
 
-        filing_to_db_id = cls._get_db_ids_for_filings(
+        filing_to_db_id = await cls._get_db_ids_for_filings(
             gbi_ids, form_types=form_types, start_date=start_date, end_date=end_date
         )
 
@@ -378,7 +378,7 @@ class SecFiling:
         return queries
 
     @classmethod
-    def _get_db_ids_for_filings(
+    async def _get_db_ids_for_filings(
         cls,
         gbi_ids: List[int],
         form_types: List[str],
@@ -391,56 +391,54 @@ class SecFiling:
 
         sql = """
             SELECT DISTINCT ON (formType, gbi_id, filedAt)
-                id::TEXT, filing
+                id::TEXT AS id, filing
             FROM sec.sec_filings
             WHERE gbi_id IN %(gbi_ids)s AND formType IN %(form_types)s
                 AND filedAt >= %(start_date)s AND filedAt <= %(end_date)s
         """
         ch = Clickhouse()
-        result = ch.clickhouse_client.query(
+        result = await ch.generic_read(
             sql,
-            parameters={
+            params={
                 "gbi_ids": gbi_ids,
                 "form_types": form_types,
                 "start_date": start_date,
                 "end_date": end_date,
             },
         )
-        return {tup[1]: tup[0] for tup in result.result_rows}
+        return {row["filing"]: row["id"] for row in result}
 
     ################################################################################################
     # Get sections for 10K/10Q filings
     ################################################################################################
     @classmethod
-    def get_concat_10k_10q_sections_from_db(
+    async def get_concat_10k_10q_sections_from_db(
         cls, db_id_to_text_id: Dict[str, str]
     ) -> Dict[str, str]:
         sql = """
-            SELECT id::TEXT, riskFactors, managementSection
+            SELECT id::TEXT AS id, riskFactors, managementSection
             FROM sec.sec_filings
             WHERE formType in ('10-K', '10-Q') AND id IN %(db_ids)s
         """
         ch = Clickhouse()
-        result = ch.clickhouse_client.query(
-            sql, parameters={"db_ids": list(db_id_to_text_id.keys())}
-        )
+        result = await ch.generic_read(sql, params={"db_ids": list(db_id_to_text_id.keys())})
 
         output = {}
-        for tup in result.result_rows:
-            risk_factor_section = tup[1]
-            management_section = tup[2]
+        for row in result:
+            risk_factor_section = row["riskFactors"]
+            management_section = row["managementSection"]
             text = (
                 f"Management Section:\n\n{management_section}\n\n"
                 f"Risk Factors Section:\n\n{risk_factor_section}"
             )
 
-            filing_id = db_id_to_text_id[tup[0]]
+            filing_id = db_id_to_text_id[row["id"]]
             output[filing_id] = text
 
         return output
 
     @classmethod
-    def get_concat_10k_10q_sections_from_api(
+    async def get_concat_10k_10q_sections_from_api(
         cls, filing_gbi_pairs: List[Tuple[str, int]], insert_to_db: bool = True
     ) -> Dict[str, str]:
         ch = Clickhouse()
@@ -490,7 +488,7 @@ class SecFiling:
                         }
                     )
                     if len(records_to_upload_to_db) >= 3:
-                        ch.multi_row_insert(
+                        await ch.multi_row_insert(
                             table_name="sec.sec_filings", rows=records_to_upload_to_db
                         )
                         records_to_upload_to_db = []
@@ -499,7 +497,7 @@ class SecFiling:
                 time.sleep(10)
 
         if insert_to_db and records_to_upload_to_db:
-            ch.multi_row_insert(table_name="sec.sec_filings", rows=records_to_upload_to_db)
+            await ch.multi_row_insert(table_name="sec.sec_filings", rows=records_to_upload_to_db)
 
         return output
 
@@ -549,21 +547,19 @@ class SecFiling:
     # Get full content of filings
     ################################################################################################
     @classmethod
-    def get_filings_content_from_db(cls, db_id_to_text_id: Dict[str, str]) -> Dict[str, str]:
+    async def get_filings_content_from_db(cls, db_id_to_text_id: Dict[str, str]) -> Dict[str, str]:
         sql = """
-            SELECT id::TEXT, content
+            SELECT id::TEXT AS id, content
             FROM sec.sec_filings
             WHERE id IN %(db_ids)s
         """
         ch = Clickhouse()
-        result = ch.clickhouse_client.query(
-            sql, parameters={"db_ids": list(db_id_to_text_id.keys())}
-        )
+        result = await ch.generic_read(sql, params={"db_ids": list(db_id_to_text_id.keys())})
 
         output = {}
-        for tup in result.result_rows:
-            filing_id = db_id_to_text_id[tup[0]]
-            output[filing_id] = tup[1]
+        for row in result:
+            filing_id = db_id_to_text_id[row["id"]]
+            output[filing_id] = row["content"]
 
         return output
 
@@ -592,7 +588,7 @@ class SecFiling:
         return output
 
     @classmethod
-    def get_filings_content_from_api(
+    async def get_filings_content_from_api(
         cls, filing_gbi_pairs: List[Tuple[str, int]], insert_to_db: bool = True
     ) -> Dict[str, str]:
         ch = Clickhouse()
@@ -621,7 +617,7 @@ class SecFiling:
                         }
                     )
                     if len(records_to_upload_to_db) >= 3:
-                        ch.multi_row_insert(
+                        await ch.multi_row_insert(
                             table_name="sec.sec_filings", rows=records_to_upload_to_db
                         )
                         records_to_upload_to_db = []
@@ -632,7 +628,7 @@ class SecFiling:
                 time.sleep(10)
 
         if insert_to_db and records_to_upload_to_db:
-            ch.multi_row_insert(table_name="sec.sec_filings", rows=records_to_upload_to_db)
+            await ch.multi_row_insert(table_name="sec.sec_filings", rows=records_to_upload_to_db)
 
         return output
 

@@ -100,7 +100,7 @@ class HypothesisPipeline:
         news_topics = get_news_topics(topic_ids)
         topic_id_to_topic = {topic.topic_id: topic for topic in news_topics}
 
-        sorted_topic_ids = self.ch.sort_news_topics_via_embeddings(
+        sorted_topic_ids = await self.ch.sort_news_topics_via_embeddings(
             news_topic_ids=list(topic_id_to_topic.keys()),
             embedding_vector=self.hypothesis.embedding,  # type: ignore
             embedding_model_id=TEXT_3_LARGE,
@@ -221,7 +221,7 @@ class HypothesisPipeline:
         topic_id_to_topic = {topic.topic_id: topic for topic in news_topics}
         topic_id_to_news_id = {topic.topic_id: topic.news_id for topic in news_topics}
 
-        sorted_topic_ids = self.ch.sort_news_topics_via_embeddings(
+        sorted_topic_ids = await self.ch.sort_news_topics_via_embeddings(
             news_topic_ids=list(topic_id_to_topic.keys()),
             embedding_vector=self.hypothesis.embedding,  # type: ignore
             embedding_model_id=TEXT_3_LARGE,
@@ -344,10 +344,12 @@ class HypothesisPipeline:
         ref_time = get_now_utc()
 
         logger.info("Creating news and earnings topics from Text objects...")
-        news_topics, news_hypothesis_topics, news_groups = (
-            self._convert_hypothesis_news_developments_to_topics(
-                news_developments, ref_time=ref_time
-            )
+        (
+            news_topics,
+            news_hypothesis_topics,
+            news_groups,
+        ) = self._convert_hypothesis_news_developments_to_topics(
+            news_developments, ref_time=ref_time
         )
         (
             earnings_topics,
@@ -375,21 +377,24 @@ class HypothesisPipeline:
         )
 
         logger.info("Generating hypothesis summary...")
-        summary, news_ref_hypo_topics, earnings_ref_hypo_topics, custom_document_ref_hypo_topics = (
-            await self.generate_hypothesis_summary(
-                self.hypothesis.hypothesis_breakdown[PROPERTY],  # type: ignore
-                news_topics,
-                news_hypothesis_topics,
-                news_groups,
-                earnings_topics,
-                earnings_hypothesis_topics,
-                custom_document_news_topics,
-                custom_document_hypothesis_topics,
-                custom_document_news_groups,
-                max_count_pair,
-                match_score,
-                ref_time,
-            )
+        (
+            summary,
+            news_ref_hypo_topics,
+            earnings_ref_hypo_topics,
+            custom_document_ref_hypo_topics,
+        ) = await self.generate_hypothesis_summary(
+            self.hypothesis.hypothesis_breakdown[PROPERTY],  # type: ignore
+            news_topics,
+            news_hypothesis_topics,
+            news_groups,
+            earnings_topics,
+            earnings_hypothesis_topics,
+            custom_document_news_topics,
+            custom_document_hypothesis_topics,
+            custom_document_news_groups,
+            max_count_pair,
+            match_score,
+            ref_time,
         )
 
         id_to_development = {development.id: development for development in news_developments}

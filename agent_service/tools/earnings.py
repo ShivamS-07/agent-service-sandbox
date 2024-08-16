@@ -230,16 +230,14 @@ async def get_earnings_full_transcripts(
         stock_earnings_text_dict = initial_stock_earnings_text_dict
 
     ch = Clickhouse()
-    transcript_query_result = ch.clickhouse_client.query(
+    transcript_query_result = await ch.generic_read(
         earnings_transcript_sql,
-        parameters={
+        params={
             "gbi_ids": [stock.gbi_id for stock in stock_ids],
         },
     )
     # Lookup for all available db data, the transcripts are not included to reduce the size of the call
-    transcript_db_data_lookup = {
-        row["event_id"]: row for row in transcript_query_result.named_results()
-    }
+    transcript_db_data_lookup = {row["event_id"]: row for row in transcript_query_result}
     # Track missing events not found within the db
     missing_events_in_db: List[EventInfo] = []
 
@@ -298,7 +296,7 @@ async def get_earnings_full_transcripts(
         )
 
     if records_to_upload_to_db:
-        ch.multi_row_insert(
+        await ch.multi_row_insert(
             table_name="company_earnings.full_earning_transcripts", rows=records_to_upload_to_db
         )
     return stock_earnings_text_dict

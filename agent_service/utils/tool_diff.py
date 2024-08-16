@@ -32,7 +32,7 @@ async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional
     ch_db = Clickhouse()
     if context.task_id is None:  # shouldn't happen
         return None
-    io = ch_db.get_io_for_tool_run(previous_run, context.task_id, tool_name)
+    io = await ch_db.get_io_for_tool_run(previous_run, context.task_id, tool_name)
     if io is None:
         return None
     inputs_str, output_str, debug_str, timestamp = io

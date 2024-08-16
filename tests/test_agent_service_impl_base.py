@@ -43,7 +43,7 @@ from agent_service.endpoints.models import (
 from agent_service.utils.do_nothing_task_executor import DoNothingTaskExecutor
 
 
-class TestAgentServiceImplBase(unittest.TestCase):
+class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
         init_stdout_logging()

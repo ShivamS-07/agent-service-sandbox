@@ -104,21 +104,21 @@ class VisAlphaClickHouseClient:
             name=name,
         )
 
-    def get_cid_from_gbi_id(self, gbi_ids: List[int]) -> Dict[int, str]:
+    async def get_cid_from_gbi_id(self, gbi_ids: List[int]) -> Dict[int, str]:
         # TODO: Neet to handle gbis when running on prod, currently assumes gbis are from dev
-        gbi_cid_lookup = self.va_ch.get_cid_for_gbi_ids(gbi_ids)
+        gbi_cid_lookup = await self.va_ch.get_cid_for_gbi_ids(gbi_ids)
         if not gbi_cid_lookup:
             return {}
         return gbi_cid_lookup
 
-    def get_company_kpis_for_gbi(
+    async def get_company_kpis_for_gbi(
         self,
         gbi_id: int,
         vid_filter: Optional[VisibleAlphaVID] = None,
         pids_filter: Optional[List[int]] = None,
     ) -> List[KPIMetadata]:
         # TODO: make this work for multiple gbi_ids
-        cid = self.get_cid_from_gbi_id([gbi_id]).get(gbi_id)
+        cid = (await self.get_cid_from_gbi_id([gbi_id])).get(gbi_id)
         if cid is None:
             return []
 
@@ -126,11 +126,13 @@ class VisAlphaClickHouseClient:
             raise ValueError("Cannot have both a vid filter and a pid filter at the same time!")
 
         if vid_filter is not None:
-            line_items = self.va_ch.get_company_data_kpis(cid, vid=str(vid_filter.value))
+            line_items = await self.va_ch.get_company_data_kpis(cid, vid=str(vid_filter.value))
         elif pids_filter is not None:
-            line_items = self.va_ch.get_company_data_kpis(cid, pids=list(map(str, pids_filter)))
+            line_items = await self.va_ch.get_company_data_kpis(
+                cid, pids=list(map(str, pids_filter))
+            )
         else:
-            line_items = self.va_ch.get_company_data_kpis(cid)
+            line_items = await self.va_ch.get_company_data_kpis(cid)
         return [
             KPIMetadata(
                 line_item["ParameterName"],
@@ -140,16 +142,16 @@ class VisAlphaClickHouseClient:
             for line_item in line_items
         ]
 
-    def get_company_kpis_for_gbis(
+    async def get_company_kpis_for_gbis(
         self,
         gbi_ids: List[int],
     ) -> Dict[int, List[KPIMetadata]]:
         # TODO: make this work for multiple gbi_ids
-        gbi_cid_lookup = self.get_cid_from_gbi_id(gbi_ids)
+        gbi_cid_lookup = await self.get_cid_from_gbi_id(gbi_ids)
         cid_gbi_lookup = {cid: gbi for gbi, cid in gbi_cid_lookup.items()}
         cids = list(gbi_cid_lookup.values())
 
-        unsorted_pids_list = self.va_ch.get_company_data_kpis_for_multiple_cids(cids)
+        unsorted_pids_list = await self.va_ch.get_company_data_kpis_for_multiple_cids(cids)
 
         gbi_kpi_lookup: Dict[int, List[KPIMetadata]] = {gbi: [] for gbi in gbi_ids}
         for pid_data in unsorted_pids_list:
@@ -163,7 +165,7 @@ class VisAlphaClickHouseClient:
             )
         return gbi_kpi_lookup
 
-    def fetch_data_for_kpis(
+    async def fetch_data_for_kpis(
         self,
         gbi_id: int,
         kpis: List[KPIMetadata],
@@ -193,7 +195,7 @@ class VisAlphaClickHouseClient:
             ), "Must pass in year and quarter if starting_date is not specified"
 
         # TODO: Neet to handle gbis when running on prod, currently assumes gbis are from dev
-        gbi_cid_lookup = self.va_ch.get_cid_for_gbi_ids([gbi_id])
+        gbi_cid_lookup = await self.va_ch.get_cid_for_gbi_ids([gbi_id])
         if not gbi_cid_lookup:
             return {}
         cid = gbi_cid_lookup[gbi_id]
@@ -210,7 +212,7 @@ class VisAlphaClickHouseClient:
             periods = _generate_periods(quarter, year, num_prev_quarters, num_future_quarters)
 
         kpi_datapoints = defaultdict(list)
-        data = self.va_ch.get_kpi_values_for_cid(
+        data = await self.va_ch.get_kpi_values_for_cid(
             cid=cid,
             pids=pids,
             periods=periods,
@@ -236,7 +238,7 @@ class VisAlphaClickHouseClient:
             )
         return kpi_datapoints
 
-    def fetch_data_for_company_kpis_bulk(
+    async def fetch_data_for_company_kpis_bulk(
         self,
         gbi_pids_dict: Dict[int, List[KPIMetadata]],
         starting_date: datetime.date,
@@ -253,7 +255,7 @@ class VisAlphaClickHouseClient:
         """
         gbi_ids = list(gbi_pids_dict.keys())
         year, quarter = get_year_quarter_for_date(starting_date)
-        gbi_to_cid_map = self.va_ch.get_cid_for_gbi_ids(gbi_ids)
+        gbi_to_cid_map = await self.va_ch.get_cid_for_gbi_ids(gbi_ids)
         cid_to_gbi_map = {cid: gbi for gbi, cid in gbi_to_cid_map.items()}
         cid_pids_dict = {
             gbi_to_cid_map[gbi]: [pid.pid for pid in pids]
@@ -263,7 +265,7 @@ class VisAlphaClickHouseClient:
         periods = _generate_periods(
             quarter, year, num_prev_quarters, num_future_quarters, use_fiscal_periods=False
         )
-        data = self.va_ch.get_company_kpi_values_for_cids(
+        data = await self.va_ch.get_company_kpi_values_for_cids(
             cid_pids_dict=cid_pids_dict, periods=periods, estimate=estimate, use_fiscal_year=False
         )
         kpi_datapoints: Dict[int, List[KPIDatapoint]] = defaultdict(list)

@@ -163,7 +163,6 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         self.assertIsNotNone(debug_info)
 
     def test_get_agent_debug_info(self):
-
         agent_id = "7aa1a451-5811-4881-9d39-e596efb538cd"
         debug_info = self.get_agent_debug_info(agent_id=agent_id)
         self.assertIsNotNone(debug_info)
@@ -171,30 +170,26 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         self.assertIsNotNone(debug_info.debug.create_execution_plans)
 
     def test_get_test_run_info(self):
-
         service_version = "0.0.544"
         test_run_info = self.get_info_for_test_suite_run(
             service_version=service_version
         ).test_suite_run_info
         self.assertTrue(test_run_info)
 
-    def test_get_test_suite_runs(self):
-
-        test_suite_runs = self.agent_service_impl.get_test_suite_runs().test_suite_runs
+    async def test_get_test_suite_runs(self):
+        test_suite_runs = (await self.agent_service_impl.get_test_suite_runs()).test_suite_runs
         self.assertTrue(test_suite_runs)
 
     def test_get_test_case_info(self):
-
         test_name = "test_pe_nvda_feb_2024"
         test_case_info = self.get_info_for_test_case(test_name=test_name).test_case_info
         self.assertTrue(test_case_info)
 
-    def test_get_test_cases(self):
-        test_cases = self.agent_service_impl.get_test_cases().test_cases
+    async def test_get_test_cases(self):
+        test_cases = (await self.agent_service_impl.get_test_cases()).test_cases
         self.assertTrue(test_cases)
 
     def test_convert_markdown(self):
-
         test_content = """
         # This is a test h1.
         ## This is a test h2.

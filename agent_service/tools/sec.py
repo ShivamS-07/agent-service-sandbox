@@ -25,7 +25,7 @@ async def get_sec_filings_helper(
 
     gbi_id_to_stock_id = {stock.gbi_id: stock for stock in stock_ids}
 
-    filing_gbi_pairs, filing_to_db_id = SecFiling.get_filings(
+    filing_gbi_pairs, filing_to_db_id = await SecFiling.get_filings(
         gbi_ids=list(gbi_id_to_stock_id.keys()),
         form_types=[FILE_10K, FILE_10Q],
         start_date=start_date,
@@ -97,7 +97,7 @@ async def get_other_sec_filings_helper(
     end_date: Optional[datetime.date],
 ) -> Dict[StockID, List[StockOtherSecFilingText]]:
     gbi_id_to_stock_id = {stock.gbi_id: stock for stock in stock_ids}
-    filing_gbi_pairs, filing_to_db_id = SecFiling.get_filings(
+    filing_gbi_pairs, filing_to_db_id = await SecFiling.get_filings(
         gbi_ids=list(gbi_id_to_stock_id.keys()),
         form_types=form_types,
         start_date=start_date,

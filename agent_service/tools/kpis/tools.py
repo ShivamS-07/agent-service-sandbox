@@ -327,8 +327,10 @@ async def get_company_data_and_kpis(
     if short_description is None:
         short_description = ""
 
-    kpi_data = kpi_retriever.get_all_company_kpis_current_year_quarter_via_clickhouse(
-        gbi_ids=[gbi_id],
+    kpi_data = (
+        await kpi_retriever.get_all_company_kpis_current_year_quarter_via_clickhouse(
+            gbi_ids=[gbi_id],
+        )
     ).get(gbi_id)
 
     if kpi_data is None:
@@ -430,7 +432,9 @@ async def get_company_data_and_kpis_for_stocks(
     gbi_ids = [stock_id.gbi_id for stock_id in stock_ids]
     company_sec_dict = db.get_sec_metadata_from_gbi(gbi_ids)
     company_desc_dict = db.get_short_company_descriptions_for_gbi_ids(gbi_ids)
-    kpi_data_dict = kpi_retriever.get_all_company_kpis_current_year_quarter_via_clickhouse(gbi_ids)
+    kpi_data_dict = await kpi_retriever.get_all_company_kpis_current_year_quarter_via_clickhouse(
+        gbi_ids
+    )
 
     for stock_id in stock_ids:
         gbi_id = stock_id.gbi_id
@@ -789,11 +793,11 @@ async def get_kpis_table_for_stock(args: CompanyKPIsRequest, context: PlanRunCon
         None, None, None, args.date_range
     )
 
-    kpi_metadata_dict = kpi_retriever.convert_kpi_text_to_metadata(
+    kpi_metadata_dict = await kpi_retriever.convert_kpi_text_to_metadata(
         gbi_id=args.stock_id.gbi_id, kpi_texts=args.kpis
     )
     kpi_list = list(kpi_metadata_dict.values())
-    data = kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
+    data = await kpi_retriever.get_kpis_by_year_quarter_via_clickhouse(
         gbi_id=args.stock_id.gbi_id,
         kpis=kpi_list,
         starting_date=anchor_date,
@@ -862,8 +866,10 @@ async def get_overlapping_kpis_table_for_stocks(
         stock_id: StockID = kpi.stock_id  # type: ignore
         gbi_to_stock_id[stock_id.gbi_id] = stock_id
         kpi_row_mapping[i] = kpi.val
-        kpi_metadata = kpi_retriever.convert_kpi_text_to_metadata(
-            gbi_id=stock_id.gbi_id, kpi_texts=[kpi]
+        kpi_metadata = (
+            await kpi_retriever.convert_kpi_text_to_metadata(
+                gbi_id=stock_id.gbi_id, kpi_texts=[kpi]
+            )
         ).get(
             kpi.pid, None  # type: ignore
         )
@@ -871,7 +877,7 @@ async def get_overlapping_kpis_table_for_stocks(
         if kpi_metadata is not None:
             gbi_kpis_dict[stock_id.gbi_id] = [kpi_metadata]
 
-    gbi_data_lookup = kpi_retriever.get_bulk_kpis_by_date_via_clickhouse(
+    gbi_data_lookup = await kpi_retriever.get_bulk_kpis_by_date_via_clickhouse(
         gbi_kpi_dict=gbi_kpis_dict,
         starting_date=anchor_date,
         num_prev_quarters=num_prev_quarters,

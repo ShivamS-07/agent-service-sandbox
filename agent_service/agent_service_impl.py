@@ -146,7 +146,7 @@ class AgentServiceImpl:
         for i, section in enumerate(sections):
             section.index = i
         agent_id_list = [metadata.agent_id for metadata in agents]
-        cost_infos = self.ch.get_agents_cost_info(agent_ids=agent_id_list)
+        cost_infos = await self.ch.get_agents_cost_info(agent_ids=agent_id_list)
         for agent_metadata in agents:
             if agent_metadata.agent_id in cost_infos:
                 agent_metadata.cost_info = cost_infos[agent_metadata.agent_id]
@@ -160,7 +160,7 @@ class AgentServiceImpl:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"No agent found for {agent_id=}"
             )
-        cost_info = self.ch.get_agents_cost_info(agent_ids=[agent_id])
+        cost_info = await self.ch.get_agents_cost_info(agent_ids=[agent_id])
         agent_metadata = agents[0]
         if agent_id in cost_info:
             agent_metadata.cost_info = cost_info[agent_id]
@@ -717,16 +717,20 @@ class AgentServiceImpl:
 
     async def get_agent_debug_info(self, agent_id: str) -> GetAgentDebugInfoResponse:
         agent_owner_id: Optional[str] = await self.pg.get_agent_owner(agent_id)
-        plan_selections: List[Dict[str, Any]] = self.ch.get_agent_debug_plan_selections(
+        plan_selections: List[Dict[str, Any]] = await self.ch.get_agent_debug_plan_selections(
             agent_id=agent_id
         )
-        all_generated_plans: List[Dict[str, Any]] = self.ch.get_agent_debug_plans(agent_id=agent_id)
-        worker_sqs_log: Dict[str, Any] = self.ch.get_agent_debug_worker_sqs_log(agent_id=agent_id)
-        tool_calls: Dict[str, Any] = self.ch.get_agent_debug_tool_calls(agent_id=agent_id)
-        cost_info: Dict[str, Any] = self.ch.get_agent_debug_cost_info(agent_id=agent_id)
+        all_generated_plans: List[Dict[str, Any]] = await self.ch.get_agent_debug_plans(
+            agent_id=agent_id
+        )
+        worker_sqs_log: Dict[str, Any] = await self.ch.get_agent_debug_worker_sqs_log(
+            agent_id=agent_id
+        )
+        tool_calls: Dict[str, Any] = await self.ch.get_agent_debug_tool_calls(agent_id=agent_id)
+        cost_info: Dict[str, Any] = await self.ch.get_agent_debug_cost_info(agent_id=agent_id)
         gpt_service_info = {}
         try:
-            gpt_service_info = self.ch.get_agent_debug_gpt_service_info(agent_id=agent_id)
+            gpt_service_info = await self.ch.get_agent_debug_gpt_service_info(agent_id=agent_id)
         except Exception:
             LOGGER.info(f"Unable to get gpt_service_info for {agent_id=}: {traceback.format_exc()}")
         tool_tips = Tooltips(
@@ -804,7 +808,7 @@ class AgentServiceImpl:
     async def get_info_for_test_suite_run(
         self, service_version: str
     ) -> GetTestSuiteRunInfoResponse:
-        infos = self.ch.get_info_for_test_suite_run(service_version=service_version)
+        infos = await self.ch.get_info_for_test_suite_run(service_version=service_version)
         for test_name, test_info in infos.items():
             if "output" in test_info and test_info["output"]:
                 try:
@@ -821,14 +825,14 @@ class AgentServiceImpl:
                     )
         return GetTestSuiteRunInfoResponse(test_suite_run_info=infos)
 
-    def get_test_suite_runs(self) -> GetTestSuiteRunsResponse:
-        return GetTestSuiteRunsResponse(test_suite_runs=self.ch.get_test_suite_runs())
+    async def get_test_suite_runs(self) -> GetTestSuiteRunsResponse:
+        return GetTestSuiteRunsResponse(test_suite_runs=await self.ch.get_test_suite_runs())
 
-    def get_test_cases(self) -> GetTestCasesResponse:
-        return GetTestCasesResponse(test_cases=self.ch.get_test_cases())
+    async def get_test_cases(self) -> GetTestCasesResponse:
+        return GetTestCasesResponse(test_cases=await self.ch.get_test_cases())
 
     async def get_info_for_test_case(self, test_name: str) -> GetTestCaseInfoResponse:
-        infos = self.ch.get_info_for_test_case(test_name=test_name)
+        infos = await self.ch.get_info_for_test_case(test_name=test_name)
         for version, info in infos.items():
             if "output" in info and info["output"]:
                 try:

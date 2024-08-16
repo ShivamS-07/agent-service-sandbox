@@ -43,11 +43,11 @@ class KPIRetriever:
     def __init__(self) -> None:
         self.va_ch_client = VisAlphaClickHouseClient()
 
-    def convert_kpi_text_to_metadata(
+    async def convert_kpi_text_to_metadata(
         self, gbi_id: int, kpi_texts: List[KPIText]
     ) -> Dict[int, KPIMetadata]:
         # Assumes all kpis will be for the same gbi_id
-        kpis = self.get_all_company_kpis(gbi_id=gbi_id)
+        kpis = await self.get_all_company_kpis(gbi_id=gbi_id)
 
         relevant_pids = [kpi_text.pid for kpi_text in kpi_texts]
         kpi_lookup: Dict[int, KPIMetadata] = {}
@@ -97,7 +97,7 @@ class KPIRetriever:
             kpi_instances_dict[kpi_name] = kpi_instances
         return kpi_instances_dict
 
-    def _get_KPI_historical_results_via_clickhouse(
+    async def _get_KPI_historical_results_via_clickhouse(
         self,
         gbi: int,
         kpis: List[KPIMetadata],
@@ -108,7 +108,7 @@ class KPIRetriever:
         year: Optional[int] = None,
         max_date: Optional[datetime.datetime] = None,
     ) -> Dict[str, List[KPIInstance]]:
-        actuals_kpi_data = self.va_ch_client.fetch_data_for_kpis(
+        actuals_kpi_data = await self.va_ch_client.fetch_data_for_kpis(
             gbi_id=gbi,
             kpis=kpis,
             quarter=quarter,
@@ -118,7 +118,7 @@ class KPIRetriever:
             dataset=dataset,
             starting_date=max_date,
         )
-        estimates_kpi_data = self.va_ch_client.fetch_data_for_kpis(
+        estimates_kpi_data = await self.va_ch_client.fetch_data_for_kpis(
             gbi_id=gbi,
             kpis=kpis,
             quarter=quarter,
@@ -138,19 +138,21 @@ class KPIRetriever:
 
         return self._merge_actuals_and_estimates_data(kpis, actuals_kpi_data, estimates_kpi_data)
 
-    def get_all_company_kpis(self, gbi_id: int) -> List[KPIMetadata]:
-        return self.va_ch_client.get_company_kpis_for_gbi(gbi_id=gbi_id)
+    async def get_all_company_kpis(self, gbi_id: int) -> List[KPIMetadata]:
+        return await self.va_ch_client.get_company_kpis_for_gbi(gbi_id=gbi_id)
 
-    def get_all_company_kpis_for_multiple_gbi_ids(
+    async def get_all_company_kpis_for_multiple_gbi_ids(
         self, gbi_ids: List[int]
     ) -> Dict[int, List[KPIMetadata]]:
-        return self.va_ch_client.get_company_kpis_for_gbis(gbi_ids=gbi_ids)
+        return await self.va_ch_client.get_company_kpis_for_gbis(gbi_ids=gbi_ids)
 
-    def get_all_company_kpis_current_year_quarter_via_clickhouse(
+    async def get_all_company_kpis_current_year_quarter_via_clickhouse(
         self, gbi_ids: List[int]
     ) -> Dict[int, KPIData]:
-        gbi_kpi_metadata_dict = self.get_all_company_kpis_for_multiple_gbi_ids(gbi_ids=gbi_ids)
-        kpi_data_dict = self.va_ch_client.fetch_data_for_company_kpis_bulk(
+        gbi_kpi_metadata_dict = await self.get_all_company_kpis_for_multiple_gbi_ids(
+            gbi_ids=gbi_ids
+        )
+        kpi_data_dict = await self.va_ch_client.fetch_data_for_company_kpis_bulk(
             gbi_pids_dict=gbi_kpi_metadata_dict, starting_date=get_now_utc(), estimate=True
         )
         gbi_kpi_data_lookup = {}
@@ -164,7 +166,7 @@ class KPIRetriever:
             )
         return gbi_kpi_data_lookup
 
-    def get_kpis_by_year_quarter_via_clickhouse(
+    async def get_kpis_by_year_quarter_via_clickhouse(
         self,
         gbi_id: int,
         kpis: List[KPIMetadata],
@@ -199,7 +201,7 @@ class KPIRetriever:
 
         all_historical_kpis_dict: Dict[str, List[KPIInstance]] = {}
 
-        all_historical_kpis_dict = self._get_KPI_historical_results_via_clickhouse(
+        all_historical_kpis_dict = await self._get_KPI_historical_results_via_clickhouse(
             gbi=gbi_id,
             kpis=kpis,
             dataset=dataset,
@@ -290,7 +292,7 @@ class KPIRetriever:
                 )
         return output
 
-    def get_bulk_kpis_by_date_via_clickhouse(
+    async def get_bulk_kpis_by_date_via_clickhouse(
         self,
         starting_date: datetime.datetime,
         gbi_kpi_dict: Dict[int, List[KPIMetadata]],
@@ -302,7 +304,7 @@ class KPIRetriever:
         `num_past_earnings_to_retrieve` quarters for each stock.
         """
         gbi_ids = list(gbi_kpi_dict.keys())
-        actual_data = self.va_ch_client.fetch_data_for_company_kpis_bulk(
+        actual_data = await self.va_ch_client.fetch_data_for_company_kpis_bulk(
             gbi_pids_dict=gbi_kpi_dict,
             num_prev_quarters=num_prev_quarters,
             num_future_quarters=num_future_quarters,
@@ -310,7 +312,7 @@ class KPIRetriever:
             estimate=False,
         )
 
-        estimate_data = self.va_ch_client.fetch_data_for_company_kpis_bulk(
+        estimate_data = await self.va_ch_client.fetch_data_for_company_kpis_bulk(
             gbi_pids_dict=gbi_kpi_dict,
             num_prev_quarters=num_prev_quarters,
             num_future_quarters=num_future_quarters,
