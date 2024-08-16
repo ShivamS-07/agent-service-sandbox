@@ -4,7 +4,6 @@ import json
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from copy import deepcopy
-from itertools import chain
 from typing import (
     Any,
     Callable,
@@ -174,9 +173,15 @@ class Citation(SerializeableBase, ABC):
     displayed to the user.
     """
 
+    @abstractmethod
+    def __hash__(self) -> int:
+        pass
+
     @classmethod
     @abstractmethod
-    async def resolve_citations(cls, citations: List[Self], db: BoostedPG) -> List[CitationOutput]:
+    async def resolve_citations(
+        cls, citations: List[Self], db: BoostedPG
+    ) -> Dict[Self, List[CitationOutput]]:
         """
         Given a list of citations of the class's type, resolve them to an output
         list of citations.
@@ -184,15 +189,15 @@ class Citation(SerializeableBase, ABC):
         pass
 
     @staticmethod
-    async def resolve_all_citations(
+    async def resolve_all_citations_mapped(
         citations: List["Citation"], db: BoostedPG
-    ) -> List[CitationOutput]:
+    ) -> Dict["Citation", List[CitationOutput]]:
         """
         Given a list of ANY type of citation, resolve them all and put them in a
         list. NOTE: order is NOT preserved.
         """
         if not citations:
-            return []
+            return {}
         citation_type_map = defaultdict(list)
         for cit in citations:
             citation_type_map[type(cit)].append(cit)
@@ -202,11 +207,22 @@ class Citation(SerializeableBase, ABC):
             for typ, citation_list in citation_type_map.items()
         ]
         # List of lists, where each nested list has outputs for each type
-        outputs_nested = await gather_with_concurrency(tasks)
-        # Unnest into a single list
-        outputs = list(chain(*outputs_nested))
+        outputs_nested: List[Dict[Citation, List[CitationOutput]]] = await gather_with_concurrency(
+            tasks
+        )
+        mapped_citations: Dict[Citation, List[CitationOutput]] = defaultdict(list)
+        for output_dict in outputs_nested:
+            for cit, output_cits in output_dict.items():
+                mapped_citations[cit].extend(output_cits)
 
-        return outputs
+        return mapped_citations
+
+    @staticmethod
+    async def resolve_all_citations(
+        citations: List["Citation"], db: BoostedPG
+    ) -> List[CitationOutput]:
+        mapped_citations = await Citation.resolve_all_citations_mapped(citations=citations, db=db)
+        return list((cit for cit_list in mapped_citations.values() for cit in cit_list))
 
 
 @io_type

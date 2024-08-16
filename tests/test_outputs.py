@@ -7,7 +7,7 @@ from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockText, Text, TextCitation
 from agent_service.utils.output_utils.output_construction import (
-    _combine_text_list,
+    combine_text_list,
     prepare_list_of_stock_texts,
 )
 
@@ -145,7 +145,7 @@ class TestOutputConstruction(unittest.IsolatedAsyncioTestCase):
         overall_suffix: str,
         expected_result: Text,
     ):
-        output = _combine_text_list(
+        output = combine_text_list(
             texts=texts,
             per_line_prefix=per_line_prefix,
             per_line_suffix=per_line_suffix,

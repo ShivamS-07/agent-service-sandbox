@@ -4,7 +4,6 @@ import datetime
 import json
 import logging
 from collections import defaultdict
-from itertools import chain
 from typing import (
     Any,
     ClassVar,
@@ -80,15 +79,50 @@ class Text(ComplexIOBase):
     def reset_id(self) -> None:
         pass
 
-    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+    @staticmethod
+    async def multi_text_rich_output(pg: BoostedPG, texts: List[Text]) -> List[TextOutput]:
+        all_citations = []
+        citation_text_map = {}
+        for text in texts:
+            all_citations_for_text = text.get_all_citations()
+            all_citations.extend(all_citations_for_text)
+            for cit in all_citations_for_text:
+                citation_text_map[cit] = text
+
+        # Maps Citation to List[CitationOutput]
+        mapped_citations = await Citation.resolve_all_citations_mapped(
+            citations=all_citations, db=pg
+        )
+
+        # Maps Text to List[CitationOutput]
+        text_to_output_citations: Dict[Text, List[CitationOutput]] = {text: [] for text in texts}
+        for citation, output_citations in mapped_citations.items():
+            text = citation_text_map[citation]
+            text_to_output_citations[text].extend(output_citations)
+
+        tasks = [
+            text.to_rich_output(pg=pg, cached_resolved_citations=text_to_output_citations.get(text))
+            for text in texts
+        ]
+        return await gather_with_concurrency(tasks)
+
+    async def to_rich_output(
+        self,
+        pg: BoostedPG,
+        title: str = "",
+        cached_resolved_citations: Optional[List[CitationOutput]] = None,
+    ) -> Output:
         # Get the citations for the current Text object, as well as any
         # citations from "child" (input) texts.
-        tasks = [
-            Citation.resolve_all_citations(citations=self.get_all_citations(), db=pg),
-            self.get_citations_for_output(texts=[TextCitation(source_text=self)], db=pg),
-        ]
-        outputs = await gather_with_concurrency(tasks)
-        citations = outputs[0] + outputs[1]
+        if cached_resolved_citations is None:
+            tasks = [
+                Citation.resolve_all_citations(citations=self.get_all_citations(), db=pg),
+                self.get_citations_for_output(texts=[TextCitation(source_text=self)], db=pg),
+            ]
+            outputs = await gather_with_concurrency(tasks)
+            citations = outputs[0] + list(outputs[1].values())
+        else:
+            citations = cached_resolved_citations
         text = await self.get()
 
         output_val = TextOutput(
@@ -245,14 +279,12 @@ class Text(ComplexIOBase):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         """
-        Given a list of texts of this type, return a list of citations related
-        the the input texts.
-        Each input text citation may map to one or more output citations, so we
-        return a list of output citations.
+        Given a list of text citations of this type, return a mapping from the
+        input citation to a list of output citations.
         """
-        return []
+        return {}
 
     async def get(self) -> Text:
         """
@@ -388,7 +420,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT snt.topic_id::TEXT, topic_label, (topic_descriptions->-1->>0)::TEXT AS summary,
@@ -400,17 +432,19 @@ class StockNewsDevelopmentText(NewsText, StockText):
         """
         params = {"topic_ids": [text.source_text.id for text in texts]}
         rows = await db.generic_read(sql, params)
-        return [
-            NewsDevelopmentCitationOutput(
-                internal_id=row["topic_id"],
-                name=row["topic_label"],
-                summary=row["summary"],
-                last_updated_at=row["last_updated"],
-                num_articles=row["num_articles"],
-                inline_offset=text_id_map[row["topic_id"]].citation_text_offset,
-            )
+        return {
+            text_id_map[row["topic_id"]]: [
+                NewsDevelopmentCitationOutput(
+                    internal_id=row["topic_id"],
+                    name=row["topic_label"],
+                    summary=row["summary"],
+                    last_updated_at=row["last_updated"],
+                    num_articles=row["num_articles"],
+                    inline_offset=text_id_map[row["topic_id"]].citation_text_offset,
+                )
+            ]
             for row in rows
-        ]
+        }
 
 
 @io_type
@@ -448,7 +482,7 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT news_id::TEXT, url, domain_url, headline, published_at
@@ -458,17 +492,19 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
         """
         params = {"news_ids": [text.source_text.id for text in texts]}
         rows = await db.generic_read(sql, params)
-        return [
-            NewsArticleCitationOutput(
-                internal_id=row["news_id"],
-                name=row["domain_url"],
-                link=row["url"],
-                summary=row["headline"],
-                last_updated_at=row["published_at"],
-                inline_offset=text_id_map[row["news_id"]].citation_text_offset,
-            )
+        return {
+            text_id_map[row["news_id"]]: [
+                NewsArticleCitationOutput(
+                    internal_id=row["news_id"],
+                    name=row["domain_url"],
+                    link=row["url"],
+                    summary=row["headline"],
+                    last_updated_at=row["published_at"],
+                    inline_offset=text_id_map[row["news_id"]].citation_text_offset,
+                )
+            ]
             for row in rows
-        ]
+        }
 
 
 @io_type
@@ -492,7 +528,7 @@ class NewsPoolArticleText(NewsText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT news_id::TEXT, url, domain_url, headline, published_at
@@ -502,17 +538,19 @@ class NewsPoolArticleText(NewsText):
         """
         params = {"news_ids": [text.source_text.id for text in texts]}
         rows = await db.generic_read(sql, params)
-        return [
-            NewsArticleCitationOutput(
-                internal_id=row["news_id"],
-                name=row["domain_url"],
-                link=row["url"],
-                summary=row["headline"],
-                last_updated_at=row["published_at"],
-                inline_offset=text_id_map[row["news_id"]].citation_text_offset,
-            )
+        return {
+            text_id_map[row["news_id"]]: [
+                NewsArticleCitationOutput(
+                    internal_id=row["news_id"],
+                    name=row["domain_url"],
+                    link=row["url"],
+                    summary=row["headline"],
+                    last_updated_at=row["published_at"],
+                    inline_offset=text_id_map[row["news_id"]].citation_text_offset,
+                )
+            ]
             for row in rows
-        ]
+        }
 
 
 @io_type
@@ -546,7 +584,7 @@ class CustomDocumentSummaryText(StockText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         # group by user id - we are assuming that anyone who is authed for the agent
         # has priv to see any documents utilized by the agent.
         text_citation_by_user: Dict[str, List[TextCitation]] = defaultdict(list)
@@ -554,7 +592,7 @@ class CustomDocumentSummaryText(StockText):
         for cit in texts:
             text_citation_by_user[cit.source_text.requesting_user].append(cit)  # type: ignore
 
-        output_citations = []
+        output_citations: Dict[TextCitation, List[CitationOutput]] = defaultdict(list)
         # TODO this will need to change once custom docs have better citation
         # support. Currently we just cite ALL chunks in the file.
         for user, citations in text_citation_by_user.items():
@@ -570,16 +608,18 @@ class CustomDocumentSummaryText(StockText):
                     citation_name = file_paths[0]
 
                 chunk_cit = text_id_map.get(chunk_info.chunk_id)
-                output_citations.append(
+                if not chunk_cit:
+                    continue
+                output_citations[chunk_cit].append(
                     CustomDocumentCitationOutput(
                         internal_id=chunk_id,
                         name=f"User Document: {citation_name}",
                         last_updated_at=chunk_info.upload_time.ToDatetime(),
                         custom_doc_id=chunk_info.file_id,
-                        inline_offset=chunk_cit.citation_text_offset if chunk_cit else None,
+                        inline_offset=chunk_cit.citation_text_offset,
                     )
                 )
-        return output_citations
+        return output_citations  # type: ignore
 
 
 @io_type
@@ -620,7 +660,7 @@ class ThemeText(Text):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT theme_id::TEXT, theme_name::TEXT AS name, theme_description, last_modified
@@ -628,16 +668,18 @@ class ThemeText(Text):
         WHERE theme_id = ANY(%(theme_id)s)
         """
         rows = await db.generic_read(sql, {"theme_id": [text.source_text.id for text in texts]})
-        return [
-            ThemeCitationOutput(
-                internal_id=row["theme_id"],
-                name="Theme: " + row["name"],
-                summary=row["theme_description"],
-                last_updated_at=row["last_modified"],
-                inline_offset=text_id_map[row["theme_id"]].citation_text_offset,
-            )
+        return {
+            text_id_map[row["theme_id"]]: [
+                ThemeCitationOutput(
+                    internal_id=row["theme_id"],
+                    name="Theme: " + row["name"],
+                    summary=row["theme_description"],
+                    last_updated_at=row["last_modified"],
+                    inline_offset=text_id_map[row["theme_id"]].citation_text_offset,
+                )
+            ]
             for row in rows
-        ]
+        }
 
 
 @io_type
@@ -661,7 +703,7 @@ class ThemeNewsDevelopmentText(NewsText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT development_id::TEXT, label::TEXT, description, development_time
@@ -671,16 +713,18 @@ class ThemeNewsDevelopmentText(NewsText):
         rows = await db.generic_read(
             sql, {"development_id": [text.source_text.id for text in texts]}
         )
-        return [
-            NewsDevelopmentCitationOutput(
-                internal_id=row["development_id"],
-                name="News Development: " + row["label"],
-                summary=row["description"],
-                last_updated_at=row["development_time"],
-                inline_offset=text_id_map[row["development_id"]].citation_text_offset,
-            )
+        return {
+            text_id_map[row["development_id"]]: [
+                NewsDevelopmentCitationOutput(
+                    internal_id=row["development_id"],
+                    name="News Development: " + row["label"],
+                    summary=row["description"],
+                    last_updated_at=row["development_time"],
+                    inline_offset=text_id_map[row["development_id"]].citation_text_offset,
+                )
+            ]
             for row in rows
-        ]
+        }
 
 
 @io_type
@@ -706,7 +750,7 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT news_id::TEXT, url, domain_url, headline, published_at
@@ -716,17 +760,19 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
         """
         params = {"news_ids": [text.source_text.id for text in texts]}
         rows = await db.generic_read(sql, params)
-        return [
-            NewsArticleCitationOutput(
-                internal_id=row["news_id"],
-                name=row["domain_url"],
-                link=row["url"],
-                summary=row["headline"],
-                last_updated_at=row["published_at"],
-                inline_offset=text_id_map[row["news_id"]].citation_text_offset,
-            )
+        return {
+            text_id_map[row["news_id"]]: [
+                NewsArticleCitationOutput(
+                    internal_id=row["news_id"],
+                    name=row["domain_url"],
+                    link=row["url"],
+                    summary=row["headline"],
+                    last_updated_at=row["published_at"],
+                    inline_offset=text_id_map[row["news_id"]].citation_text_offset,
+                )
+            ]
             for row in rows
-        ]
+        }
 
 
 # Parent class that is not intended to be used on its own, should always use one of the child classes
@@ -789,7 +835,7 @@ class StockEarningsSummaryText(StockEarningsText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         """
         We do something different here: Originally each object is a point in the summary, with the
         content of '<header>: <details>'. And we show the full text, and highlight the sentences GPT
@@ -811,7 +857,7 @@ class StockEarningsSummaryText(StockEarningsText):
         rows = await db.generic_read(sql, {"summary_ids": list(summary_id_to_text.keys())})
         summary_id_to_row = {row["summary_id"]: row for row in rows}
 
-        outputs: List[CitationOutput] = []
+        outputs: Dict[TextCitation, List[CitationOutput]] = defaultdict(list)
         for summary_id, text_citation_list in summary_id_to_text.items():
             row = summary_id_to_row[summary_id]
             for text_citation in text_citation_list:
@@ -843,7 +889,7 @@ class StockEarningsSummaryText(StockEarningsText):
 
                 if hl_start is None or hl_end is None or full_context is None or snippet is None:
                     # No highlighting, can't tie it back to the transcript.
-                    outputs.append(fallback_citation)
+                    outputs[text_citation].append(fallback_citation)
                     continue
 
                 remarks = summary_dict.get("Remarks") or []
@@ -879,7 +925,7 @@ class StockEarningsSummaryText(StockEarningsText):
                         _, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
                             smaller_snippet=highlight_sentences[-1], context=full_context
                         )
-                        outputs.append(
+                        outputs[text_citation].append(
                             EarningsTranscriptCitationOutput(
                                 name=citation_name,
                                 internal_id=EarningsTranscriptCitationOutput.get_citation_internal_id(
@@ -893,9 +939,9 @@ class StockEarningsSummaryText(StockEarningsText):
                             )
                         )
                 if not found_references:
-                    outputs.append(fallback_citation)
+                    outputs[text_citation].append(fallback_citation)
 
-        return outputs
+        return outputs  # type: ignore
 
 
 @io_type
@@ -929,15 +975,15 @@ class StockEarningsTranscriptText(StockEarningsText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
-        output = []
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        output: Dict[TextCitation, List[CitationOutput]] = defaultdict(list)
         for text in texts:
             hl_start, hl_end = None, None
             if text.citation_snippet_context and text.citation_snippet:
                 hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
-            output.append(
+            output[text].append(
                 EarningsTranscriptCitationOutput(
                     internal_id=str(text.source_text.id),
                     name=text.source_text.to_citation_title(),
@@ -949,7 +995,7 @@ class StockEarningsTranscriptText(StockEarningsText):
                 )
             )
 
-        return output
+        return output  # type: ignore
 
 
 @io_type
@@ -994,7 +1040,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         """
         We do something different here: Originally each object is a point in the summary, with the
         content of '<header>: <details>'. And we show the full text, and highlight the sentences GPT
@@ -1016,7 +1062,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
         rows = await db.generic_read(sql, {"summary_ids": list(summary_id_to_texts.keys())})
         summary_id_to_row = {row["summary_id"]: row for row in rows}
 
-        outputs: List[CitationOutput] = []
+        outputs: Dict[TextCitation, List[CitationOutput]] = defaultdict(list)
         for summary_id, text_citations in summary_id_to_texts.items():
             row = summary_id_to_row[summary_id]
             last_updated_at = row["created_timestamp"]
@@ -1045,7 +1091,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
                     hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
                         smaller_snippet=snippet, context=full_context
                     )
-                    outputs.append(
+                    outputs[text_citation].append(
                         EarningsSummaryCitationOutput(
                             name=citation_name,
                             last_updated_at=last_updated_at,
@@ -1069,7 +1115,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
                         _, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
                             smaller_snippet=highlight_sentences[-1], context=full_context
                         )
-                        outputs.append(
+                        outputs[text_citation].append(
                             EarningsTranscriptCitationOutput(
                                 internal_id=EarningsTranscriptCitationOutput.get_citation_internal_id(
                                     gbi_id=row["gbi_id"], year=row["year"], quarter=row["quarter"]
@@ -1083,7 +1129,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
                             )
                         )
 
-        return outputs
+        return outputs  # type: ignore
 
     @classmethod
     async def init_from_earnings_texts(
@@ -1223,15 +1269,15 @@ class StockDescriptionText(StockText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
-        output = []
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        output = defaultdict(list)
         for text in texts:
             hl_start, hl_end = None, None
             if text.citation_snippet_context and text.citation_snippet:
                 hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
-            output.append(
+            output[text].append(
                 DocumentCitationOutput(
                     name=text.source_text.to_citation_title(),
                     summary=text.citation_snippet_context,
@@ -1242,7 +1288,7 @@ class StockDescriptionText(StockText):
                 )
             )
 
-        return output
+        return output  # type: ignore
 
 
 @io_type
@@ -1303,8 +1349,8 @@ class StockSecFilingText(StockText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
-        output = []
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        output = defaultdict(list)
         for text in texts:
             hl_start, hl_end = None, None
             if text.citation_snippet_context and text.citation_snippet:
@@ -1312,7 +1358,7 @@ class StockSecFilingText(StockText):
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
             form_type = f" ({text.source_text.form_type})" if text.source_text.form_type else ""  # type: ignore
-            output.append(
+            output[text].append(
                 CompanyFilingCitationOutput(
                     internal_id=str(text.source_text.db_id or text.source_text.id),  # type: ignore
                     name=text.source_text.to_citation_title() + form_type,
@@ -1323,7 +1369,7 @@ class StockSecFilingText(StockText):
                     last_updated_at=text.source_text.timestamp,
                 )
             )
-        return output
+        return output  # type: ignore
 
 
 @io_type
@@ -1413,8 +1459,8 @@ class StockSecFilingSectionText(StockText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
-        output = []
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        output = defaultdict(list)
         filing_id_set = set()
         for cit in texts:
             source_text = cit.source_text
@@ -1428,7 +1474,7 @@ class StockSecFilingSectionText(StockText):
                     smaller_snippet=cit.citation_snippet, context=cit.citation_snippet_context
                 )
             form_type = f" ({cit.source_text.form_type})" if cit.source_text.form_type else ""  # type: ignore
-            output.append(
+            output[cit].append(
                 CompanyFilingCitationOutput(
                     internal_id=str(cit.source_text.db_id or cit.source_text.id),  # type: ignore
                     name=cit.source_text.to_citation_title() + form_type,
@@ -1439,7 +1485,7 @@ class StockSecFilingSectionText(StockText):
                 )
             )
 
-        return output
+        return output  # type: ignore
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         return f"{self.header}: {self.val}"
@@ -1487,7 +1533,12 @@ class StockOtherSecFilingText(StockText):
 
         return output
 
-    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+    async def to_rich_output(
+        self,
+        pg: BoostedPG,
+        title: str = "",
+        cached_resolved_citations: Optional[List[CitationOutput]] = None,
+    ) -> Output:
         # the downloaded filings is very messy and not human readable
         # return a link to the filing on SEC website instead
         filing_dict = json.loads(self.id)
@@ -1500,8 +1551,8 @@ class StockOtherSecFilingText(StockText):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
-        output = []
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        output = defaultdict(list)
         for text in texts:
             hl_start, hl_end = None, None
             if text.citation_snippet_context and text.citation_snippet:
@@ -1509,7 +1560,7 @@ class StockOtherSecFilingText(StockText):
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
             form_type = f" ({text.source_text.form_type})" if text.source_text.form_type else ""  # type: ignore
-            output.append(
+            output[text].append(
                 CompanyFilingCitationOutput(
                     internal_id=str(text.source_text.db_id or text.source_text.id),  # type: ignore
                     name=text.source_text.to_citation_title() + form_type,
@@ -1519,7 +1570,7 @@ class StockOtherSecFilingText(StockText):
                     inline_offset=text.citation_text_offset,
                 )
             )
-        return output
+        return output  # type: ignore
 
 
 @io_type
@@ -1531,18 +1582,18 @@ class KPIText(Text):
     @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Sequence[CitationOutput]:
-        output = []
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        output = defaultdict(list)
         for cit in texts:
             text = cast(Self, cit.source_text)
-            output.append(
+            output[cit].append(
                 TextCitationOutput(
                     internal_id=str(text.id),
                     name=text.val,
                     summary=text.explanation,
                 )
             )
-        return output
+        return output  # type: ignore
 
 
 # These are not actual Text types, but build on top of them
@@ -1703,7 +1754,9 @@ class TextCitation(Citation):
         return False
 
     @classmethod
-    async def resolve_citations(cls, citations: List[Self], db: BoostedPG) -> List[CitationOutput]:
+    async def resolve_citations(
+        cls, citations: List[Self], db: BoostedPG
+    ) -> Dict[Self, List[CitationOutput]]:
         # First group citations based on type of the source text.
         text_type_map = defaultdict(list)
         for cit in citations:
@@ -1712,9 +1765,14 @@ class TextCitation(Citation):
         tasks = [
             typ.get_citations_for_output(text_list, db) for typ, text_list in text_type_map.items()  # type: ignore
         ]
+        outputs = defaultdict(list)
         # List of lists, where each nested list has outputs for each type
-        outputs_nested: List[Sequence[CitationOutput]] = await gather_with_concurrency(tasks)
+        outputs_nested: List[Dict[TextCitation, List[CitationOutput]]] = (
+            await gather_with_concurrency(tasks)
+        )
         # Unnest into a single list
-        outputs = list(chain(*outputs_nested))
+        for output_dict in outputs_nested:
+            for citation, output_cits in output_dict.items():
+                outputs[citation].extend(output_cits)
 
-        return outputs
+        return outputs  # type: ignore

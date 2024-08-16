@@ -23,11 +23,7 @@ from agent_service.io_types.graph import GraphType
 from agent_service.io_types.output import Output, OutputType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import Text, TextOutput
-from agent_service.utils.async_utils import (
-    gather_with_concurrency,
-    identity,
-    to_awaitable,
-)
+from agent_service.utils.async_utils import gather_with_concurrency, to_awaitable
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.stock_metadata import StockMetadata
 
@@ -317,11 +313,12 @@ class Table(ComplexIOBase):
         final_cols = []
         for fixed_col in fixed_cols:
             if fixed_col.metadata.col_type == TableColumnType.STRING:
-                output_texts = await gather_with_concurrency(
-                    tasks=[
-                        text.to_rich_output(pg=pg) if isinstance(text, Text) else identity(text)
+                output_texts = await Text.multi_text_rich_output(
+                    pg=pg,
+                    texts=[
+                        text if isinstance(text, Text) else Text(val=str(text))
                         for text in fixed_col.data
-                    ]
+                    ],
                 )
                 new_data = []
                 for text in output_texts:

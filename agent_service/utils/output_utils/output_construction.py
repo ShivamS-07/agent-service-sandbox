@@ -23,7 +23,7 @@ def prepare_list_of_stocks(stocks: List[StockID]) -> Table:
     return Table(columns=columns)
 
 
-def _combine_text_list(
+def combine_text_list(
     texts: Union[List[Text], List[StockText]],
     per_line_prefix: str = "- ",
     per_line_suffix: str = "\n",
@@ -56,7 +56,7 @@ async def prepare_list_of_texts(texts: List[Text]) -> Text:
     text_strs = await Text.get_all_strs(texts)
     for text, text_str in zip(texts, text_strs):
         text.val = text_str
-    return _combine_text_list(texts=texts)
+    return combine_text_list(texts=texts)
 
 
 async def prepare_list_of_stock_texts(texts: List[StockText]) -> Text:
@@ -73,11 +73,11 @@ async def prepare_list_of_stock_texts(texts: List[StockText]) -> Text:
     stock_texts = []
     for stock, text_list in stock_text_map.items():
         prefix = f"{stock.to_markdown_string()}\n{stock.history_to_str()}\n"
-        combined_text = _combine_text_list(text_list, overall_prefix=prefix)
+        combined_text = combine_text_list(text_list, overall_prefix=prefix)
         stock_texts.append(combined_text)
 
     # Merge the markdown strings together
-    return _combine_text_list(texts=stock_texts, per_line_suffix="\n\n")
+    return combine_text_list(texts=stock_texts, per_line_suffix="\n\n")
 
 
 @async_perf_logger
