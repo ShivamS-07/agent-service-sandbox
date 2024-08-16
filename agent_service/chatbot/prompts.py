@@ -144,19 +144,17 @@ INITIAL_PLAN_FAILED_SUGGESTIONS_MAIN_PROMPT_STR = (
 COMPLETE_EXECUTION_SYS_PROMPT_STR = (
     "{agent_description}"
     "The client requested some information, and you have just successfully executed a plan aimed at satisfying that information need. "
-    "Tell the client you are done, and, ask the client if they have more any more relevant work for you to do "
+    "Tell the client the report is ready, and, ask the client if they have any more relevant tasks for you to do "
     "(but do not use those exact words). "
     "Keep it as brief as possible: your total response should be no more than 40 words. "
     "You do not need to greet the client."
 )
 
 COMPLETE_EXECUTION_MAIN_PROMPT_STR = (
-    "Given the following interaction with the client, the plan you have executed, and the output of the plan, "
-    "inform the user you are done and mention the output. "
+    "Given the following interaction with the client "
+    "inform the client the report the ready and, ask the client if they have any more relevant work for you to do. "
     "Here is transcript of your interaction with the client so far, delimited by ---:"
     "\n---\n{chat_context}\n---\n"
-    "And here are the steps of your plan:\n---\n{plan}\n---\n"
-    "And here is the output:\n---\n{output}\n---\n"
     "Now write your short and concise message to the client: "
 )
 
