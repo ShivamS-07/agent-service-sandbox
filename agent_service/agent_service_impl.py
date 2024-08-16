@@ -474,11 +474,21 @@ class AgentServiceImpl:
                 detail=f"No output found for {agent_id=} and {plan_run_id=}",
             )
 
+        run_metadata = outputs[0].run_metadata
+        run_summary_long = run_metadata.run_summary_long if run_metadata else None
+        run_summary_short = run_metadata.run_summary_short if run_metadata else None
+
         final_outputs = [output for output in outputs if not output.is_intermediate]
         if final_outputs:
-            return GetAgentOutputResponse(outputs=final_outputs)
+            return GetAgentOutputResponse(
+                outputs=final_outputs,
+                run_summary_long=run_summary_long,
+                run_summary_short=run_summary_short,
+            )
 
-        return GetAgentOutputResponse(outputs=outputs)
+        return GetAgentOutputResponse(
+            outputs=outputs, run_summary_long=run_summary_long, run_summary_short=run_summary_short
+        )
 
     async def get_citation_details(
         self, citation_type: CitationType, citation_id: str, user_id: str
