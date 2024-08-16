@@ -84,6 +84,8 @@ class AnalyzeOutputInputs(ToolArgs):
         "information the user requires. "
         "Note that occasionally the outputs might be cutoff when there is too much data, if so, just work with "
         "what you have, do not tell the user anything about this issue in your output."
+        "Generally you should never call this tool on text output alone, it is unnecessary. If further analysis "
+        "of text is required after some follow-up question, use one of the LLM analysis tools and output the result."
     ),
     category=ToolCategory.OUTPUT,
 )

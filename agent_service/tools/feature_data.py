@@ -365,6 +365,7 @@ async def get_statistic_data(
     stock_ids: Optional[List[StockID]] = None,
     force_daily: bool = False,
     ffill_days: Optional[int] = None,
+    add_quarterly: bool = False,
 ) -> StockTable:
     stock_ids = stock_ids or []
     gbi_id_map = {stock.gbi_id: stock for stock in stock_ids}
@@ -515,6 +516,11 @@ async def get_statistic_data(
         if result.iso_currency and value_coltype == TableColumnType.CURRENCY
         else None
     )
+    statistic_label = statistic_id.stat_name
+    if add_quarterly:
+        statistic_label = "Quarterly " + statistic_label
+        df.rename(columns={statistic_id.stat_name: statistic_label}, inplace=True)
+
     if is_global:
         # if global, the stock column is actually a feature column
         df.index.rename(index_name, inplace=True)
@@ -522,14 +528,12 @@ async def get_statistic_data(
 
         # We now have a dataframe with only a few columns: Date, Statistic Name
         # currency may or may not be set.
-        df = df[df[statistic_id.stat_name].notna()]
+        df = df[df[statistic_label].notna()]
         stock_table = StockTable.from_df_and_cols(
             data=df,
             columns=[
                 TableColumnMetadata(label=index_name, col_type=index_type),
-                TableColumnMetadata(
-                    label=statistic_id.stat_name, col_type=value_coltype, unit=curr_unit
-                ),
+                TableColumnMetadata(label=statistic_label, col_type=value_coltype, unit=curr_unit),
             ],
         )
     else:
@@ -539,13 +543,13 @@ async def get_statistic_data(
         df = df.melt(
             id_vars=[index_name],
             var_name=STOCK_ID_COL_NAME_DEFAULT,
-            value_name=statistic_id.stat_name,
+            value_name=statistic_label,
         )
         # Map back to the StockID objects
         df[STOCK_ID_COL_NAME_DEFAULT] = df[STOCK_ID_COL_NAME_DEFAULT].map(gbi_id_map)
 
         # We now have a dataframe with only a few columns: Date, Stock ID, Statistic Name
-        df = df[df[statistic_id.stat_name].notna()]
+        df = df[df[statistic_label].notna()]
         stock_table = StockTable.from_df_and_cols(
             data=df,
             columns=[
@@ -553,9 +557,7 @@ async def get_statistic_data(
                 TableColumnMetadata(
                     label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
                 ),
-                TableColumnMetadata(
-                    label=statistic_id.stat_name, col_type=value_coltype, unit=curr_unit
-                ),
+                TableColumnMetadata(label=statistic_label, col_type=value_coltype, unit=curr_unit),
             ],
         )
     stock_table.prefer_graph_type = prefer_graph_type
