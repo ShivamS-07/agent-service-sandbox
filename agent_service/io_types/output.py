@@ -30,9 +30,9 @@ OutputCitationTypes = Union[
     CompanyFilingCitationOutput,
     NewsDevelopmentCitationOutput,
     NewsArticleCitationOutput,
+    DocumentCitationOutput,
     TextCitationOutput,
     LinkCitationOutput,
-    DocumentCitationOutput,
     CitationOutput,
 ]
 
