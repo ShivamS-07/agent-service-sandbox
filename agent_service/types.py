@@ -1,11 +1,12 @@
 import datetime
 import enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 from agent_service.io_type_utils import IOType  # type: ignore
+from agent_service.io_types.stock import StockID
 from agent_service.utils.date_utils import get_now_utc
 
 GPT_USER_TAG = "Client"
@@ -77,6 +78,11 @@ class PlanRunContext(BaseModel):
     # map from task_id to any information needed for final diff
     diff_info: Optional[Dict[str, Any]] = None
 
+    # Stores stock related information to track what stocks are referenced by
+    # the agent. Can be used for transforming output to make stocks
+    # clickable.
+    stock_info: Optional[Set[StockID]] = None
+
     # Useful for testing, etc.
     skip_db_commit: bool = False
     skip_task_cache: bool = False
@@ -97,6 +103,12 @@ class PlanRunContext(BaseModel):
             skip_task_cache=True,
             run_tasks_without_prefect=True,
         )
+
+    def add_stocks_to_context(self, stocks: List[StockID]) -> None:
+        if self.stock_info is None:
+            self.stock_info = set()
+
+        self.stock_info.update(stocks)
 
 
 class MemoryType(str, enum.Enum):

@@ -45,6 +45,7 @@ from agent_service.io_types.citations import (
 )
 from agent_service.io_types.output import Output, OutputType
 from agent_service.io_types.stock import StockID
+from agent_service.io_types.text_objects import CitationTextObject, TextObject
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.clickhouse import Clickhouse
@@ -64,6 +65,10 @@ class Text(ComplexIOBase):
     text_type: ClassVar[str] = "Misc"
     stock_id: Optional[StockID] = None
     timestamp: Optional[datetime.datetime] = None
+    # Text objects are rich "widgets" that are rendered on the UI. For example,
+    # inline citations, stock links, portfolio links, etc. could all be text
+    # objects.
+    text_objects: List[TextObject] = Field(default_factory=list)
 
     def __hash__(self) -> int:
         return self.id.__hash__()
@@ -131,7 +136,18 @@ class Text(ComplexIOBase):
             citations=citations,
             score=ScoreOutput.from_entry_list(self.history),
         )
-        output_val.convert_inline_citations_to_output_format()
+
+        citation_text_objects = []
+        for cit in citations:
+            if not cit.inline_offset:
+                continue
+            citation_text_objects.append(
+                CitationTextObject(index=cit.inline_offset, citation_id=cit.id)
+            )
+
+        output_val.render_text_objects(
+            text_objects=(self.text_objects or []) + citation_text_objects  # type: ignore
+        )
         return output_val
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
@@ -1683,37 +1699,26 @@ class TextOutput(Output):
     val: str
     # Optional top level score for this segment of text
     score: Optional[ScoreOutput] = None
-    resolved_inline_citations: bool = False
+    resolved_text_objects: bool = False
 
-    def convert_inline_citations_to_output_format(self) -> None:
+    def render_text_objects(self, text_objects: Optional[List[TextObject]] = None) -> None:
         """
         Given a string representing this text's value, go through all the
-        citations for this object and insert them into the text.
+        citations and text objects for this text and insert them into the value
+        string.
         """
-        template = """ ```{{ "type": "citation", "citation_id": "{cit_id}" }}``` """
-        if self.resolved_inline_citations or """```{{ "type": "citation",""" in self.val:
+        if not text_objects:
+            return
+
+        if self.resolved_text_objects or """```{{ "type": """ in self.val:
             # There are times that this function may be called more than once on
             # the same object. This will prevent any issues or duplicate
             # citations.
             return
 
-        self.resolved_inline_citations = True
-        citation_offset_map = defaultdict(list)
-        char_list = list(self.val)
-        for cit in self.citations:
-            if not cit.inline_offset:
-                continue
-            citation_offset_map[cit.inline_offset].append(template.format(cit_id=cit.id))
+        self.resolved_text_objects = True
 
-        output = []
-        for i, char in enumerate(char_list):
-            output.append(char)
-            if i in citation_offset_map:
-                # Could be multiple citations on a single index
-                for inline_citation in citation_offset_map[i]:
-                    output.append(inline_citation)
-
-        self.val = "".join(output)
+        self.val = CitationTextObject.render_text_objects(text=self.val, objects=text_objects)
 
     def __str__(self) -> str:
         return self.val

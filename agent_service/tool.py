@@ -47,6 +47,7 @@ from agent_service.io_type_utils import (
     dump_io_type,
     get_clean_type_name,
 )
+from agent_service.io_types.stock import StockID
 from agent_service.types import PlanRunContext
 from agent_service.utils.cache_utils import (
     DEFAULT_CACHE_TTL,
@@ -304,6 +305,16 @@ def default_cache_key_func(tool_name: str, args: ToolArgs, _context: PlanRunCont
     return f"{tool_name}-{args_str}"
 
 
+def _handle_tool_result(val: IOType, context: PlanRunContext) -> None:
+    # We want to identify stocks in the output later, so store any stocks that
+    # are produced by a tool for later matching.
+    if isinstance(val, StockID):
+        context.add_stocks_to_context([val])
+    elif isinstance(val, list):
+        stocks = [v for v in val if isinstance(v, StockID)]
+        context.add_stocks_to_context(stocks)
+
+
 def tool(
     description: str,
     category: ToolCategory = ToolCategory.MISC,
@@ -510,6 +521,7 @@ def tool(
             else:
                 # Otherwise, run locally without prefect running at all
                 value = await main_func(args, context)
+            _handle_tool_result(value, context)
             return value
 
         # Add the tool to the registry
