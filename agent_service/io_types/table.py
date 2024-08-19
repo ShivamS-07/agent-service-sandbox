@@ -189,17 +189,23 @@ class Table(ComplexIOBase):
         col_strings = "\n".join(columns)
         return f"<Table with {self.get_num_rows()} rows and columns:\n{col_strings}\n>\n"
 
-    def get_stock_column(self) -> Optional[TableColumn]:
+    def get_first_col_of_type(self, col_type: TableColumnType) -> Optional[TableColumn]:
         for col in self.columns:
-            if col.metadata.col_type == TableColumnType.STOCK:
+            if col.metadata.col_type == col_type:
+                return col
+        return None
+
+    def get_stock_column(self) -> Optional[TableColumn]:
+        return self.get_first_col_of_type(TableColumnType.STOCK)
+
+    def get_date_column(self) -> Optional[TableColumn]:
+        for col in self.columns:
+            if col.metadata.col_type.is_date_type():
                 return col
         return None
 
     def get_score_column(self) -> Optional[TableColumn]:
-        for col in self.columns:
-            if col.metadata.col_type == TableColumnType.SCORE:
-                return col
-        return None
+        return self.get_first_col_of_type(TableColumnType.SCORE)
 
     def to_df(
         self, stocks_as_tickers_only: bool = False, stocks_as_hashables: bool = False

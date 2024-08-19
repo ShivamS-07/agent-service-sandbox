@@ -37,7 +37,7 @@ In nearly all cases you will have a stock column. Typically you will only have
 one stock column, but in rare cases (e.g. correlations) you may end up creating two,
 do them as two separate columns rather than a single pair.
 
-Dropping the DATE column from your output columns when it is in the input columns is
+Dropping the date column from your output columns when it is in the input columns is
 very common. If the transformation explicitly mentions outputing only a single datapoint
 for a single date (for each stock), or no dates at all, you must not include a DATE
 column in your output. Please be very careful about this, if you have the wrong columns
@@ -54,9 +54,25 @@ You must NEVER include a column which indicates the stock's rank in the output t
 sort the rows directly, and, if required, take the top/bottom n.
 
 If the transformation description explicitly talks about creating a time series, you
-must include a DATE column in your output. If the user asks for a "daily" or "weekly"
+must ALWAYS include date column in your output! If the user asks for a "daily" or "weekly"
 or "monthly" operation, then you should compute a value for every day/week/month
-and include a DATE column.
+and include a date column.
+
+If the transformation involves some kind of summing or averaging across stocks, your
+output must NOT have a stock output column, you should replace it with a string
+output column named 'Stock Group'. Note that the correct col_type for string is
+`string` and not `str`!!! The column with the statistic you are aggregating
+across stock should be modified in the output to reflect that aggregation, i.e.
+`Performance Gain` would become `Average Performance Gain` if you were averaging
+across stocks.  Very important: if the transformation description indicates you are
+doing an aggregation across stocks (e.g. 'Average performance of stocks ...')
+and the input table has a date column, then you MUST preserve that date column in
+your output, do NOT drop it. It indicates that the user wants to see a time series,
+and if you drop that column then that isn't possible, you will fail on this request
+and be fired! Those cases will typically involve outputting three colums: the Date,
+the Stock Group, and then the averaged statistic, in that order.
+
+If a date column is required, you must always put it first in your output.
 
 If the transformation description does not relate AT ALL to pandas or any sort
 of dataframe transformation, please just keep the columns unchanged. You
@@ -124,7 +140,13 @@ you as above.
 
 If the transformation description does not relate AT ALL to pandas or any sort
 of dataframe transformation, please just return the dataframe unchanged. You
-should still not output anything other than code.
+should still not output anything other than code. You may also do this if you
+have no obvious way of mapping the transformation description to the data you
+have. Note, however, there are cases where there seems to be missing information
+passed to you, but in fact it is possible to proceed under some assumptions,
+especially when aggregating across stocks. You must be very conservative about
+just rejecting a dataframe entirely! If you do this and you are wrong you will
+be fired.
 
 Note that descriptions involving (percentage) change/gain/loss of stock price
 should be interpreted as a calculation relative to the first date in the time
@@ -160,6 +182,39 @@ cases where ranks are asked for, make sure to output the 10 ranked highest or
 lowest! If the user specifies a number, make sure to output that specific
 number!
 
+If your operation across stocks involves a sum, averaging, or other agglomeration across
+stocks, your output will NOT have a stock column (the rows of which correspond to
+individual stocks), but rather a string column, often (but not always) with a single row.
+At the end of your transformation, you should populate the STRING column with a label
+or labels that describe the rows, based on the stock group description included in the
+transformation description. Your row label should NOT state the operation you have carried
+out, instead it should describe the input stocks (e.g. Healthcare Stocks). Note that when you
+do this aggregation, you are responsible ONLY for the aggregation, the stocks will be selected
+using a different process and you should accept that it is correct, the purpose of the
+description of the relevant stocks in the transformation description is ONLY so you
+can provide a proper label to the output row (or rows). You must NOT reject the task simply
+because you did not create the list of stocks and do not have the information required
+to create the list of stocks, you must assume it already been done for you!
+
+For example, you might be asked to 'get average performance of stocks with P/E greater
+than 1' and be provided only a stock and performance column, not a P/E column. In such case
+you MUST assume that the list of stocks provided in the current table are exactly those
+with P/E greater than 1, and simply average their performance. In this case, the reason
+you have been given the information about the stocks is so that you can correctly output the
+row label, which in this case would be "Stocks with P/E greater than 1'.
+
+If you are doing an aggregation like averaging across stocks and your output table has
+a date column (you are outputting a time series), you must do your averaging across
+stocks for each date, and also output a time series. The transformation description
+will not necessarily mention this, but you must do it this way unless there
+is some explicit indication that you are also aggregating across dates as well.
+In this circumstance, your output will have multiple rows, one for each date, and
+you must insert the same string label for every row. Again, do not reject this
+case simply because it talks about criteria on the stock that you have data for,
+and do not just ignore the dates, do the required aggregation across all stocks
+for each date. For example, your output table might include an average performance
+metric on date 1, an average for date #2, etc.
+
 Note that you may be sometimes asked to rank by correlation. If you are
 doing correlation of stock statistics, you will often end up with a correlation
 matrix where the index and columns are both labeled "Security" (or "Stock"), if
@@ -182,6 +237,7 @@ You must not set an index in a table where there are two security columns, BTW
 
 If you are doing a more complex calculation such as correlation, don't forget to
 rank and/or filter as required by the transformation description!
+
 
 2. You will sometime be asked to do some mathematical operations across the
 columns of a table of stocks, for example you will be given a table with

@@ -15,6 +15,8 @@ from tests.tools.table_data import (
     TEST_STOCK_DATE_TABLE2,
     TEST_STOCK_TABLE1,
     TEST_STOCK_TABLE2,
+    TEST_STRING_DATE_TABLE1,
+    TEST_STRING_DATE_TABLE2,
 )
 
 
@@ -36,6 +38,35 @@ class TestTableTools(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.columns), 4)
         df = result.to_df()
         self.assertEqual(set((sec.gbi_id for sec in df["Security"])), {112, 124, 149, 72, 76, 78})
+
+    async def test_join_string_date_tables(self):
+        args = JoinTableArgs(input_tables=[TEST_STRING_DATE_TABLE1, TEST_STRING_DATE_TABLE2])
+        result: Table = await join_tables(args=args, context=PlanRunContext.get_dummy())
+
+        self.assertEqual(
+            [col.metadata for col in result.columns],
+            [
+                TableColumnMetadata(label="Date", col_type=TableColumnType.DATE, unit=None),
+                TableColumnMetadata(label="Security", col_type=TableColumnType.STRING, unit=None),
+                TableColumnMetadata(label="Close Price", col_type=TableColumnType.FLOAT, unit=None),
+                TableColumnMetadata(label="Open Price", col_type=TableColumnType.FLOAT, unit=None),
+            ],
+        )
+        self.assertEqual(result.get_num_rows(), 27)
+        self.assertEqual(len(result.columns), 4)
+
+    async def test_join_tables_vertically(self):
+        args = JoinTableArgs(
+            input_tables=[TEST_STRING_DATE_TABLE1, TEST_STRING_DATE_TABLE2], row_join=True
+        )
+        result: Table = await join_tables(args=args, context=PlanRunContext.get_dummy())
+
+        self.assertEqual(
+            [col.metadata.label for col in result.columns],
+            ["Date", "Security", "Close Price"],
+        )
+        self.assertEqual(result.get_num_rows(), 27)
+        self.assertEqual(len(result.columns), 3)
 
     async def test_join_stock_tables(self):
         args = JoinTableArgs(input_tables=[TEST_STOCK_TABLE1, TEST_STOCK_TABLE2])
@@ -76,7 +107,7 @@ class TestTableTools(unittest.IsolatedAsyncioTestCase):
                     ),
                 ],
                 gbi_id=112,
-                symbol="",
+                symbol="GOOG",
                 isin="",
                 company_name="",
             ),

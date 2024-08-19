@@ -235,6 +235,13 @@ be done in pandas is supported here. Simple table formatting should not use
 this. It is better to be overly detailed than not detailed enough. Note again
 that the input MUST be a table, not a list!
 
+Note that if you are doing some kind of stock aggregation (e.g. averaging), it is critical that
+you tell this tool explicitly what kind of stocks you are averaging, so the resulting row in the output
+table can be properly labeled. That is, in such cases, the transformation_description should NOT be
+something vague like 'average stocks' but rather something specific like 'average Healthcare stocks
+in the QQQ'. Do this in all cases, but this is especially critical if you are doing comparisons of
+aggregate statistics across different groupings of stocks.
+
 You must never pass a vague transformation_description into this tool, you must always be fully
 explicit about the operations, particularly filtering. If the client only mentioned, for example,
 a filtering to "high" or "good" values without providing a definition of what "high" or "good"
@@ -407,9 +414,33 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
 
 class JoinTableArgs(ToolArgs):
     input_tables: List[Table]
+    # If true, join vertically instead of horizontally, resulting in more rows
+    # instead of more columns.
+    row_join: bool = False
+
+
+def _join_two_tables_vertically(first: Table, second: Table) -> Table:
+    output_cols = []
+    for col1, col2 in zip(first.columns, second.columns):
+        if col1.metadata.col_type == col2.metadata.col_type:
+            new_col = copy.deepcopy(col1)
+            new_col.data.extend(col2.data)
+            new_col.union_history_with(col2)
+            output_cols.append(new_col)
+
+    output_table = Table(columns=output_cols, prefer_graph_type=first.prefer_graph_type)
+    output_table.history = copy.deepcopy(first.history) + copy.deepcopy(second.history)
+    output_table.dedup_history()
+    return output_table
 
 
 def _join_two_tables(first: Table, second: Table) -> Table:
+    have_stock_columns = (
+        first.get_stock_column() is not None and second.get_stock_column is not None
+    )
+    stock_col_type = TableColumnType.STOCK
+    if not have_stock_columns:
+        stock_col_type = TableColumnType.STRING
     # Find columns to join by, ideally a date column, stock column, or both
     first_stock_col = None
     second_stock_col = None
@@ -425,7 +456,7 @@ def _join_two_tables(first: Table, second: Table) -> Table:
         if not first_date_col and col.metadata.col_type.is_date_type():
             first_date_col = col
             continue
-        if not first_stock_col and col.metadata.col_type == TableColumnType.STOCK:
+        if not first_stock_col and col.metadata.col_type == stock_col_type:
             first_stock_col = col
             continue
         first_other_cols.append(col.metadata)
@@ -433,7 +464,7 @@ def _join_two_tables(first: Table, second: Table) -> Table:
         if not second_date_col and col.metadata.col_type.is_date_type():
             second_date_col = col
             continue
-        if not second_stock_col and col.metadata.col_type == TableColumnType.STOCK:
+        if not second_stock_col and col.metadata.col_type == stock_col_type:
             second_stock_col = col
             continue
         second_other_cols.append(col.metadata)
@@ -444,7 +475,7 @@ def _join_two_tables(first: Table, second: Table) -> Table:
 
     # Merge the stocks' histories together if necessary
     stock_hash_to_merged_stock_obj_map: Dict[StockID, StockID] = {}
-    if first_stock_col and second_stock_col:
+    if first_stock_col and second_stock_col and stock_col_type == TableColumnType.STOCK:
         for val in chain(first_stock_col.data, second_stock_col.data):
             if not val:
                 continue
@@ -479,6 +510,8 @@ def _join_two_tables(first: Table, second: Table) -> Table:
         stock_col.data = [
             stock_hash_to_merged_stock_obj_map.get(stock, stock) for stock in stock_col.data  # type: ignore
         ]
+    output_table.history = copy.deepcopy(first.history) + copy.deepcopy(second.history)
+    output_table.dedup_history()
     return output_table
 
 
@@ -487,7 +520,13 @@ def _join_two_tables(first: Table, second: Table) -> Table:
 a single table. Ideally, the tables will share a column or two that can be used
 to join (e.g. a stock column or a date column). This will create a single table
 from the multiple inputs. If you want to transform multiple tables, they must be
-merged with this first.
+merged with this first. By default, the assumption is that the tables share only
+some columns, not all of them, and we want to create a table with all the columns
+of both.
+If we are joining two tables with the same columns and just want to create a table
+which has the rows from both tables, use row_join = True, this will commonly be used
+when we are constructing a final output table for comparison of the performance
+of different stock groups/baskets.
 """,
     category=ToolCategory.TABLE,
 )
@@ -497,9 +536,12 @@ async def join_tables(args: JoinTableArgs, context: PlanRunContext) -> Table:
     if len(args.input_tables) == 1:
         raise RuntimeError("Cannot join a list of tables with one element!")
 
+    _join_table_func = _join_two_tables
+    if args.row_join:
+        _join_table_func = _join_two_tables_vertically
     joined_table = args.input_tables[0]
     for table in args.input_tables[1:]:
-        joined_table = _join_two_tables(joined_table, table)
+        joined_table = _join_table_func(joined_table, table)
 
     if joined_table.get_stock_column():
         return StockTable(columns=joined_table.columns)
