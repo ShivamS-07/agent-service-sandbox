@@ -378,22 +378,30 @@ class EventType(str, enum.Enum):
     TASK_LOG = "task_log"
 
 
-class MessageEvent(BaseModel):
+class Event(BaseModel):
+    def model_dump(self, **kwargs: Any) -> Dict[str, Any]:
+        return super().model_dump(serialize_as_any=True, **kwargs)
+
+    def model_dump_json(self, **kwargs: Any) -> str:
+        return super().model_dump_json(serialize_as_any=True, **kwargs)
+
+
+class MessageEvent(Event):
     event_type: Literal[EventType.MESSAGE] = EventType.MESSAGE
     message: Message
 
 
-class OutputEvent(BaseModel):
+class OutputEvent(Event):
     event_type: Literal[EventType.OUTPUT] = EventType.OUTPUT
     output: List[AgentOutput]
 
 
-class NewPlanEvent(BaseModel):
+class NewPlanEvent(Event):
     event_type: Literal[EventType.NEW_PLAN] = EventType.NEW_PLAN
     plan: ExecutionPlanTemplate
 
 
-class PlanStatusEvent(BaseModel):
+class PlanStatusEvent(Event):
     event_type: Literal[EventType.PLAN_STATUS] = EventType.PLAN_STATUS
     status: PlanStatus
 
@@ -406,13 +414,13 @@ class TaskStatus(BaseModel):
     logs: List[PlanRunTaskLog]
 
 
-class TaskStatusEvent(BaseModel):
+class TaskStatusEvent(Event):
     event_type: Literal[EventType.TASK_STATUS] = EventType.TASK_STATUS
     plan_run_id: str
     tasks: List[TaskStatus]
 
 
-class ExecutionStatusEvent(BaseModel):
+class ExecutionStatusEvent(Event):
     event_type: Literal[EventType.EXECUTION_STATUS] = EventType.EXECUTION_STATUS
     status: Status
     plan_run_id: str
@@ -423,7 +431,7 @@ class ExecutionStatusEvent(BaseModel):
     newly_updated_outputs: List[str] = Field(default_factory=list)
 
 
-class AgentEvent(BaseModel):
+class AgentEvent(Event):
     agent_id: str
     event: Union[
         MessageEvent,
