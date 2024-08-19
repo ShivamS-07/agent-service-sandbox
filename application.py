@@ -86,6 +86,7 @@ from agent_service.endpoints.models import (
     SetAgentSectionResponse,
     SharePlanRunRequest,
     SharePlanRunResponse,
+    TerminateAgentRequest,
     TerminateAgentResponse,
     UnsharePlanRunRequest,
     UnsharePlanRunResponse,
@@ -238,15 +239,14 @@ async def create_agent(user: User = Depends(parse_header)) -> CreateAgentRespons
     return await application.state.agent_service_impl.create_agent(user=user)
 
 
-@router.delete(
+@router.post(
     "/agent/terminate/{agent_id}",
     response_model=TerminateAgentResponse,
     status_code=status.HTTP_200_OK,
 )
 async def terminate_agent(
     agent_id: str,
-    plan_id: Optional[str] = None,
-    plan_run_id: Optional[str] = None,
+    req: TerminateAgentRequest,
     user: User = Depends(parse_header),
 ) -> TerminateAgentResponse:
     """
@@ -256,7 +256,7 @@ async def terminate_agent(
     2. Terminate a running plan by `plan_id` -> this plan won't be useable anymore. You must create
         a new plan
     """
-    if not plan_id and not plan_run_id:
+    if not req.plan_id and not req.plan_run_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Either plan_id or plan_run_id must be provided",
@@ -264,7 +264,7 @@ async def terminate_agent(
 
     validate_user_agent_access(user.user_id, agent_id)
     return await application.state.agent_service_impl.terminate_agent(
-        agent_id=agent_id, plan_id=plan_id, plan_run_id=plan_run_id
+        agent_id=agent_id, plan_id=req.plan_id, plan_run_id=req.plan_run_id
     )
 
 

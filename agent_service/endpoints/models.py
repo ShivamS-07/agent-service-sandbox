@@ -32,6 +32,11 @@ class CreateAgentResponse(BaseModel):
 ####################################################################################################
 
 
+class TerminateAgentRequest(BaseModel):
+    plan_id: Optional[str] = None
+    plan_run_id: Optional[str] = None
+
+
 class TerminateAgentResponse(BaseModel):
     success: bool
 
