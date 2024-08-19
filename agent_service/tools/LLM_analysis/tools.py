@@ -40,6 +40,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     EXTRA_DATA_PHRASE,
     FILTER_BY_PROFILE_DESCRIPTION,
     FILTER_BY_TOPIC_DESCRIPTION,
+    PER_STOCK_SUMMARIZE_DESCRIPTION,
     PROFILE_ADD_DIFF_MAIN_PROMPT,
     PROFILE_ADD_DIFF_SYS_PROMPT,
     PROFILE_FILTER_MAIN_PROMPT,
@@ -154,6 +155,73 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         HistoryEntry(title="Summary", citations=citations)  # type:ignore
     )
     return summary
+
+
+class PerStockSummarizeTextInput(ToolArgs):
+    stocks: List[StockID]
+    texts: List[StockText]
+    topic: str
+
+
+@tool(
+    description=PER_STOCK_SUMMARIZE_DESCRIPTION,
+    category=ToolCategory.LLM_ANALYSIS,
+    reads_chat=True,
+)
+async def per_stock_summarize_texts(
+    args: PerStockSummarizeTextInput, context: PlanRunContext
+) -> List[StockID]:
+
+    logger = get_prefect_logger(__name__)
+
+    text_dict: Dict[StockID, List[StockText]] = {stock: [] for stock in args.stocks}
+    for text in args.texts:
+        try:
+            if text.stock_id in text_dict:
+                text_dict[text.stock_id].append(text)
+        except AttributeError:
+            logger.warning("Non-StockText passed to per stock summarize")
+
+    tasks = []
+    summary_count = 0
+
+    for stock, texts in text_dict.items():
+        if texts:
+            tasks.append(
+                summarize_texts(
+                    SummarizeTextInput(texts=texts, topic=args.topic + f" ({stock.company_name})"),  # type: ignore
+                    context,
+                )
+            )
+            summary_count += 1
+        else:
+            tasks.append(identity(None))
+
+    await tool_log(
+        f"Writing texts for {summary_count} stocks, topic: {args.topic}", context=context
+    )
+
+    results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
+    output = []
+
+    for stock, result_text in zip(text_dict, results):
+        if result_text:
+            summary = result_text.val
+            citations = result_text.history[0].citations
+        else:
+            summary = ""
+            citations = []
+        stock = stock.inject_history_entry(
+            HistoryEntry(
+                explanation=summary,
+                title=args.topic,
+                citations=citations,  # type:ignore
+                task_id=context.task_id,
+            )
+        )
+        output.append(stock)
+
+    return output
 
 
 class CompareTextInput(ToolArgs):
