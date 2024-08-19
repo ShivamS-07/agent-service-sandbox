@@ -267,9 +267,15 @@ class AgentServiceImpl:
         valid_users = []
         # first we get all the teams that the user is a part of
         user = await get_users(user_id=user_id, user_ids=[user_id], include_user_enabled=True)
-        for team in user[0].team_memberships:
-            user_on_team = await list_team_members(team_id=team.team_id.id, user_id=user_id)
-            valid_users += user_on_team
+        coroutines = [
+            list_team_members(team_id=team.team_id.id, user_id=user_id)
+            for team in user[0].team_memberships
+        ]
+        results = await asyncio.gather(*coroutines)
+
+        # Flatten the list of results into valid_users
+        for result in results:
+            valid_users += result
         return [
             Account(
                 user_id=user.user_id.id, username=user.username, name=user.name, email=user.email

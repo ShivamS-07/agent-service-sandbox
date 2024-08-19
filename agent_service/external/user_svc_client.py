@@ -89,7 +89,7 @@ async def update_user(user_id: str, name: str, username: str, email: str) -> boo
 @grpc_retry
 @async_perf_logger
 async def list_team_members(
-    team_id: str, user_id: str, include_cognito_enabled: bool = True
+    team_id: str, user_id: str, include_cognito_enabled: bool = False
 ) -> List[User]:
     with _get_service_stub() as stub:
         team_members: ListTeamMembersResponse = await stub.ListTeamMembers(

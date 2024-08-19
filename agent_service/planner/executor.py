@@ -419,6 +419,18 @@ async def run_execution_plan(
                 ),
                 db=db,
             )
+            if get_ld_flag(
+                flag_name="agent-email-notification",
+                default=False,
+                user_context=get_user_context(user_id=context.user_id),
+            ):
+                logger.info("Generating and sending notification to notification service")
+                await send_agent_emails(
+                    pg=async_db,
+                    agent_id=context.agent_id,
+                    plan_run_id=context.plan_run_id,
+                    run_summary_short=short_diff_summary if short_diff_summary else "",
+                )
 
         await async_db.set_plan_run_metadata(
             context=context,
@@ -441,18 +453,6 @@ async def run_execution_plan(
         run_summary_short=short_diff_summary,
     )
     logger.info("Finished run!")
-    if get_ld_flag(
-        flag_name="agent-email-notification",
-        default=False,
-        user_context=get_user_context(user_id=context.user_id),
-    ):
-        await send_agent_emails(
-            pg=async_db,
-            agent_id=context.agent_id,
-            plan_run_id=context.plan_run_id,
-            updated_output_ids=updated_output_ids if updated_output_ids else [],
-            run_summary_short=short_diff_summary if short_diff_summary else "",
-        )
     return final_outputs
 
 

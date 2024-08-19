@@ -205,7 +205,7 @@ class AgentNotificationBody(BaseModel):
 class AgentNotificationData(BaseModel):
     agent_name: str
     agent_id: str
-    output_id: str
+    plan_run_id: str
     # the user id of the agent owner
     agent_owner: str
     notification_body: AgentNotificationBody
