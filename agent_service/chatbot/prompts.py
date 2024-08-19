@@ -265,8 +265,9 @@ ERROR_REPLAN_PREPLAN_SYS_PROMPT_STR = (
 )
 
 ERROR_REPLAN_PREPLAN_MAIN_PROMPT_STR = (
-    "Given the following interaction with your client, let your client know about an error that has caused your plan to fail "
+    "Given the following interaction with your client, let your client know about the reason that has caused your plan to fail "
     "and your forthcoming efforts to rewrite the plan to avoid the error. "
+    "Your response shouldn't sound like that there is an issue on your side."
     "Here is the interaction with the client thus far:\n----\n{chat_context}\n---\n"
     "Here is the plan that failed:\n---\n{old_plan}\n---\n"
     "Here is the step of the plan that failed:\n{step}\n"
