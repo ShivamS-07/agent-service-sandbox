@@ -43,6 +43,7 @@ from agent_service.utils.agent_event_utils import (
     send_chat_message,
 )
 from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.output_utils.output_diffs import OutputDiffer
@@ -60,15 +61,22 @@ from agent_service.utils.prefect import (
 
 
 async def check_cancelled(
-    db: Union[Postgres, AsyncDB], plan_id: Optional[str] = None, plan_run_id: Optional[str] = None
+    db: Union[Postgres, AsyncDB],
+    agent_id: Optional[str] = None,
+    plan_id: Optional[str] = None,
+    plan_run_id: Optional[str] = None,
 ) -> bool:
-    if not plan_id and not plan_run_id:
+    if not agent_id and not plan_id and not plan_run_id:
         return False
+
     ids = [val for val in (plan_id, plan_run_id) if val is not None]
     if isinstance(db, Postgres):
-        return db.is_cancelled(ids_to_check=ids)
+        return db.is_cancelled(ids_to_check=ids) or db.is_agent_deleted(agent_id=agent_id)
     else:
-        return await db.is_cancelled(ids_to_check=ids)
+        res = await gather_with_concurrency(
+            [db.is_cancelled(ids_to_check=ids), db.is_agent_deleted(agent_id=agent_id)]
+        )
+        return res[0] or res[1]
 
 
 @flow(name=RUN_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{context.plan_run_id}")
@@ -148,7 +156,12 @@ async def run_execution_plan(
     ###########################################
     for i, step in enumerate(plan.nodes):
         # Check both the plan_id and plan_run_id to prevent race conditions
-        if await check_cancelled(db=db, plan_id=context.plan_id, plan_run_id=context.plan_run_id):
+        if await check_cancelled(
+            db=db,
+            agent_id=context.agent_id,
+            plan_id=context.plan_id,
+            plan_run_id=context.plan_run_id,
+        ):
             await publish_agent_execution_status(
                 agent_id=context.agent_id,
                 plan_run_id=context.plan_run_id,
@@ -236,7 +249,10 @@ async def run_execution_plan(
                 )
 
                 if await check_cancelled(
-                    db=db, plan_id=context.plan_id, plan_run_id=context.plan_run_id
+                    db=db,
+                    agent_id=context.agent_id,
+                    plan_id=context.plan_id,
+                    plan_run_id=context.plan_run_id,
                 ):
                     await publish_agent_execution_status(
                         agent_id=context.agent_id,
@@ -322,7 +338,9 @@ async def run_execution_plan(
     ###########################################
     # PLAN RUN ENDS, RUN POSTPROCESSING BEGINS
     ###########################################
-    if await check_cancelled(db=db, plan_id=context.plan_id, plan_run_id=context.plan_run_id):
+    if await check_cancelled(
+        db=db, agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
+    ):
         await publish_agent_execution_status(
             agent_id=context.agent_id,
             plan_run_id=context.plan_run_id,
@@ -480,7 +498,7 @@ async def create_execution_plan(
     )
 
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
-    if await check_cancelled(db=db, plan_id=plan_id):
+    if await check_cancelled(db=db, agent_id=agent_id, plan_id=plan_id):
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
@@ -488,7 +506,7 @@ async def create_execution_plan(
     plan = await planner.create_initial_plan(
         chat_context=chat_context, use_sample_plans=use_sample_plans, plan_id=plan_id
     )
-    if await check_cancelled(db=db, plan_id=plan_id):
+    if await check_cancelled(db=db, agent_id=agent_id, plan_id=plan_id):
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
@@ -546,7 +564,7 @@ async def create_execution_plan(
 
     logger.info(f"Submitting execution plan to Prefect for {agent_id=}, {plan_id=}, {plan_run_id=}")
     # Check one more time for cancellation
-    if await check_cancelled(db=db, plan_id=plan_id):
+    if await check_cancelled(db=db, agent_id=agent_id, plan_id=plan_id):
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
@@ -752,7 +770,7 @@ async def rewrite_execution_plan(
         agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CREATING, db=db
     )
 
-    if await check_cancelled(db=db, plan_id=plan_id):
+    if await check_cancelled(db=db, agent_id=agent_id, plan_id=plan_id):
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
@@ -782,7 +800,7 @@ async def rewrite_execution_plan(
                 agent_id=agent_id, task_ids=task_ids, plan_id=old_plan_id
             )
 
-    if await check_cancelled(db=db, plan_id=plan_id):
+    if await check_cancelled(db=db, agent_id=agent_id, plan_id=plan_id):
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
@@ -841,7 +859,7 @@ async def rewrite_execution_plan(
     logger.info(
         f"Submitting new execution plan to Prefect for {agent_id=}, {plan_id=}, {plan_run_id=}"
     )
-    if await check_cancelled(db=db, plan_id=plan_id):
+    if await check_cancelled(db=db, agent_id=agent_id, plan_id=plan_id):
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )

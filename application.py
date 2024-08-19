@@ -86,6 +86,7 @@ from agent_service.endpoints.models import (
     SetAgentSectionResponse,
     SharePlanRunRequest,
     SharePlanRunResponse,
+    TerminateAgentResponse,
     UnsharePlanRunRequest,
     UnsharePlanRunResponse,
     UpdateAgentRequest,
@@ -235,6 +236,36 @@ def health() -> str:
 )
 async def create_agent(user: User = Depends(parse_header)) -> CreateAgentResponse:
     return await application.state.agent_service_impl.create_agent(user=user)
+
+
+@router.delete(
+    "/agent/terminate/{agent_id}",
+    response_model=TerminateAgentResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def terminate_agent(
+    agent_id: str,
+    plan_id: Optional[str] = None,
+    plan_run_id: Optional[str] = None,
+    user: User = Depends(parse_header),
+) -> TerminateAgentResponse:
+    """
+    Terminate a running agent, 2 ways:
+    1. Terminate a running plan by `plan_run_id` -> so `plan_id` is not required and the plan is
+        still useable
+    2. Terminate a running plan by `plan_id` -> this plan won't be useable anymore. You must create
+        a new plan
+    """
+    if not plan_id and not plan_run_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either plan_id or plan_run_id must be provided",
+        )
+
+    validate_user_agent_access(user.user_id, agent_id)
+    return await application.state.agent_service_impl.terminate_agent(
+        agent_id=agent_id, plan_id=plan_id, plan_run_id=plan_run_id
+    )
 
 
 @router.delete(

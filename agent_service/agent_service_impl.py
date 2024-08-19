@@ -60,6 +60,7 @@ from agent_service.endpoints.models import (
     SetAgentScheduleRequest,
     SetAgentScheduleResponse,
     SharePlanRunResponse,
+    TerminateAgentResponse,
     Tooltips,
     UnsharePlanRunResponse,
     UpdateAgentRequest,
@@ -165,6 +166,36 @@ class AgentServiceImpl:
         if agent_id in cost_info:
             agent_metadata.cost_info = cost_info[agent_id]
         return agent_metadata
+
+    async def terminate_agent(
+        self,
+        agent_id: str,
+        plan_id: Optional[str] = None,
+        plan_run_id: Optional[str] = None,
+    ) -> TerminateAgentResponse:
+        """
+        1. Insert `plan_id/plan_run_id` into `agent.cancelled_ids` so executor will stop when it checks
+        2. Update the task status to `CANCELLED` (will be done in executor)
+        3. Send an SSE to FE "Your agent has been cancelled successfully."
+        """
+        if not plan_id and not plan_run_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either plan_id or plan_run_id must be provided",
+            )
+
+        # it's safer to run these in sequence
+        await self.pg.cancel_agent_plan(plan_id=plan_id, plan_run_id=plan_run_id)
+        await send_chat_message(
+            message=Message(
+                agent_id=agent_id,
+                message="Agent has been cancelled successfully.",
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
+            db=self.pg,
+        )
+        return TerminateAgentResponse(success=True)
 
     async def delete_agent(self, agent_id: str) -> DeleteAgentResponse:
         await self.pg.delete_agent_by_id(agent_id)

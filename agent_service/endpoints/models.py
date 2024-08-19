@@ -32,6 +32,10 @@ class CreateAgentResponse(BaseModel):
 ####################################################################################################
 
 
+class TerminateAgentResponse(BaseModel):
+    success: bool
+
+
 class DeleteAgentResponse(BaseModel):
     success: bool
 

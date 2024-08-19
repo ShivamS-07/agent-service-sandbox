@@ -51,6 +51,14 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         self.assertEqual(all_agents.agents[0].agent_name, new_agent_name)
         self.assertFalse(all_agents.agents[0].deleted)
 
+        plan_id = str(uuid.uuid4())
+        plan_run_id = str(uuid.uuid4())
+        self.terminate_agent(agent_id=agent_id, plan_id=plan_id, plan_run_id=plan_run_id)
+        is_cancelled = self.loop.run_until_complete(
+            self.pg.is_cancelled(ids_to_check=[plan_id, plan_run_id])
+        )
+        self.assertTrue(is_cancelled)
+
         self.delete_agent(agent_id=agent_id)
 
         all_agents = self.get_all_agents(user=user)

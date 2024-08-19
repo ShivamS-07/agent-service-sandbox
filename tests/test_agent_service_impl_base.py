@@ -37,6 +37,7 @@ from agent_service.endpoints.models import (
     GetTestCaseInfoResponse,
     GetTestSuiteRunInfoResponse,
     RestoreAgentResponse,
+    TerminateAgentResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
 )
@@ -72,6 +73,15 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
     def get_agent(self, user: User, agent_id: str) -> AgentMetadata:
         return self.loop.run_until_complete(
             self.agent_service_impl.get_agent(user=user, agent_id=agent_id)
+        )
+
+    def terminate_agent(
+        self, agent_id: str, plan_id: Optional[str] = None, plan_run_id: Optional[str] = None
+    ) -> TerminateAgentResponse:
+        return self.loop.run_until_complete(
+            self.agent_service_impl.terminate_agent(
+                agent_id=agent_id, plan_id=plan_id, plan_run_id=plan_run_id
+            )
         )
 
     def delete_agent(self, agent_id: str) -> DeleteAgentResponse:

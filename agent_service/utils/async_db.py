@@ -129,6 +129,15 @@ class AsyncDB:
 
         return outputs
 
+    async def cancel_agent_plan(
+        self, plan_id: Optional[str] = None, plan_run_id: Optional[str] = None
+    ) -> None:
+        cancelled_ids = [{"cancelled_id": _id} for _id in (plan_id, plan_run_id) if _id]
+        if not cancelled_ids:
+            return
+
+        await self.pg.multi_row_insert(table_name="agent.cancelled_ids", rows=cancelled_ids)
+
     async def is_cancelled(self, ids_to_check: List[str]) -> bool:
         """
         Returns true if ANY of the input ID's have been cancelled.
@@ -435,6 +444,16 @@ class AsyncDB:
             where={"agent_id": agent_id},
             values_to_update={"deleted": True},
         )
+
+    async def is_agent_deleted(self, agent_id: Optional[str]) -> bool:
+        if agent_id is None:
+            return False
+
+        sql = "SELECT deleted FROM agent.agents WHERE agent_id = %(agent_id)s"
+        rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
+        if rows:
+            return rows[0]["deleted"]
+        return True
 
     async def restore_agent_by_id(self, agent_id: str) -> None:
         await self.pg.generic_update(

@@ -206,6 +206,16 @@ class Postgres(PostgresBase):
         rows = self.generic_read(sql, {"ids_to_check": ids_to_check})
         return len(rows) > 0
 
+    def is_agent_deleted(self, agent_id: Optional[str]) -> bool:
+        if agent_id is None:
+            return False
+
+        sql = "SELECT deleted FROM agent.agents WHERE agent_id = %(agent_id)s"
+        rows = self.generic_read(sql, {"agent_id": agent_id})
+        if rows:
+            return rows[0]["deleted"]
+        return True
+
     def get_agent_worklogs(
         self,
         agent_id: str,
