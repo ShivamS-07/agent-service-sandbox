@@ -60,6 +60,10 @@ But if the information is present in the notes, you should output it.
 Make sure to include the url of the page that the information was found on.
 Do not output any other text.
 Your key should be a dict with the validated information 'value' and 'url' source, as well as the 'justifcation'.
+Do not mention 'n/a' in the justification. You should just say what information was found.
+You should not mention that the previous value was incorrect.
+If information was not found, don't say anything.
+As well, don't justify the names like company name, product name.
 Make sure this is the case for every key in the dict including stock_id dict
 """
 
@@ -149,9 +153,8 @@ class WebScraper:
         for i in range(len(df)):
             for j, col in enumerate(product_table.columns):
                 if col.metadata.label != "stock_id":
-                    df.iat[i, j] = (
-                        results[i].get(col.metadata.label, {}).get("value", df.iloc[i, j])
-                    )
+                    gpt_value = results[i].get(col.metadata.label, {}).get("value", df.iloc[i, j])
+                    df.iat[i, j] = gpt_value if gpt_value is not None else df.iloc[i, j]
 
         # Editing column metadata to adapt to column changes we just made
         metadata = [product_table.columns[k].metadata for k in range(len(product_table.columns))]
