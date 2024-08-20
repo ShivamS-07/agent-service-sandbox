@@ -307,7 +307,6 @@ async def send_agent_emails(
         pg: Async database
         agent_id: The agent id to retrieve the owner for
         plan_run_id: The plan run id
-        updated_output_ids: List of output ids
         run_summary_short: Summary of run
 
     Returns: None this function checks at the completion of a plan and checks

@@ -228,9 +228,15 @@ class AgentServiceImpl:
 
     async def get_agent_notification_emails(self, agent_id: str) -> NotificationEmailsResponse:
         emails = await self.pg.get_agent_subscriptions(agent_id=agent_id)
-        return NotificationEmailsResponse(
-            emails=[email_notification.email for email_notification in emails]
-        )
+        # this is to ensure that even if there's a duplicates in the db we do not
+        # return the duplicates
+        emails_to_return = []
+        already_seen = set()
+        for email in emails:
+            if email.email not in already_seen:
+                already_seen.add(email.email)
+                emails_to_return.append(email.email)
+        return NotificationEmailsResponse(emails=emails_to_return)
 
     async def set_agent_notification_emails(
         self, agent_id: str, emails: List[str], user_id: str
