@@ -44,7 +44,7 @@ from agent_service.planner.planner_types import (
 from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext
 from agent_service.utils.async_utils import gather_with_concurrency, to_awaitable
-from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.gpt_logging import chatbot_context
 
 
 class Chatbot:
@@ -56,7 +56,7 @@ class Chatbot:
         tool_registry: Type[ToolRegistry] = ToolRegistry,
     ) -> None:
         self.agent_id = agent_id
-        context = create_gpt_context(GptJobType.AGENT_CHATBOT, agent_id, GptJobIdType.AGENT_ID)
+        context = chatbot_context(agent_id=agent_id)
         self.llm = GPT(context, model, gpt_service_stub=gpt_service_stub)
         self.tool_registry = tool_registry
 

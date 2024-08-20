@@ -73,6 +73,7 @@ class PlanRunContext(BaseModel):
 
     # Only populated before each task run
     task_id: Optional[str] = None
+    tool_name: Optional[str] = None
 
     # keeps track of per tool diff info when doing automatic updates
     # map from task_id to any information needed for final diff

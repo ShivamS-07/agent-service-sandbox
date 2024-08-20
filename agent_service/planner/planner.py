@@ -54,7 +54,6 @@ from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.async_utils import gather_with_concurrency, gather_with_stop
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
-from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -88,12 +87,13 @@ class Planner:
     def __init__(
         self,
         agent_id: str,
+        context: Optional[Dict[str, str]] = None,
         tool_registry: Type[ToolRegistry] = ToolRegistry,
         send_chat: bool = True,
         skip_db_commit: bool = False,
     ) -> None:
         self.agent_id = agent_id
-        self.context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
+        self.context = context
         self.smart_llm = GPT(self.context, DEFAULT_SMART_MODEL)
         self.fast_llm = GPT(self.context, GPT4_O)
         self.tool_registry = tool_registry

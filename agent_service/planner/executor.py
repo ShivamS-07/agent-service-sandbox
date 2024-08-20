@@ -6,6 +6,7 @@ from prefect import flow
 
 from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.models import Status, TaskStatus
+from agent_service.GPT.requests import set_plan_run_context
 from agent_service.io_type_utils import IOType, split_io_type_into_components
 from agent_service.planner.action_decide import (
     Action,
@@ -46,6 +47,7 @@ from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
+from agent_service.utils.gpt_logging import plan_create_context
 from agent_service.utils.output_utils.output_diffs import OutputDiffer
 from agent_service.utils.output_utils.utils import output_for_log
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
@@ -194,6 +196,9 @@ async def run_execution_plan(
 
         # Create the context
         context.task_id = step.tool_task_id
+        context.tool_name = step.tool_name
+
+        set_plan_run_context(context)
 
         # update current task to running
         tasks[i].status = Status.RUNNING
@@ -490,7 +495,10 @@ async def create_execution_plan(
         )
 
     logger = get_prefect_logger(__name__)
-    planner = Planner(agent_id=agent_id, skip_db_commit=skip_db_commit, send_chat=do_chat)
+    context = plan_create_context(agent_id, user_id, plan_id)
+    planner = Planner(
+        agent_id=agent_id, context=context, skip_db_commit=skip_db_commit, send_chat=do_chat
+    )
 
     logger.info(f"Starting creation of execution plan for {agent_id=}...")
     await publish_agent_plan_status(
@@ -745,7 +753,8 @@ async def rewrite_execution_plan(
     db: Optional[AsyncDB] = None,
 ) -> Optional[ExecutionPlan]:
     logger = get_prefect_logger(__name__)
-    planner = Planner(agent_id=agent_id)
+    context = plan_create_context(agent_id, user_id, plan_id)
+    planner = Planner(agent_id=agent_id, context=context)
     db = db or AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
     chatbot = Chatbot(agent_id=agent_id)
     override_task_output_id_lookup = None

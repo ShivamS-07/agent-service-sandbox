@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import copy
 import json
 import logging
@@ -34,6 +35,7 @@ from agent_service.GPT.constants import (
     MAX_GPT_WORKER_TIMEOUT,
     TEXT_RESPONSE_FORMAT,
 )
+from agent_service.types import PlanRunContext
 from agent_service.unit_test_util import RUNNING_IN_UNIT_TEST
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.gpt_logging import (
@@ -53,7 +55,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_PRIORITY = os.getenv("GPT_SERVICE_DEFAULT_PRIORITY", "LOW")
 STUB = None
 CHANNEL = None
-
+PLAN_RUN_CONTEXT: contextvars.ContextVar[Dict[str, Optional[str]]] = contextvars.ContextVar(
+    "PLAN_RUN_CONTEXT", default={}
+)
 # unit tests that inherit from IsolatedAsyncioTestCase broken by this stub cache because
 # IsolatedAsyncioTestCase creates a new event loop for each test case and thus we need a new
 # connection for each test case
@@ -67,6 +71,18 @@ def use_global_stub() -> bool:
 def set_use_global_stub(val: bool) -> None:
     global USE_GLOBAL_STUB
     USE_GLOBAL_STUB = val
+
+
+def set_plan_run_context(context: PlanRunContext) -> None:
+    plan_run_context = {
+        "plan_id": context.plan_id,
+        "plan_run_id": context.plan_run_id,
+        "task_id": context.task_id,
+        "user_id": context.user_id,
+        "tool_name": context.tool_name,
+        "agent_id": context.agent_id,
+    }
+    PLAN_RUN_CONTEXT.set(plan_run_context)
 
 
 def _get_gpt_service_stub(context: Optional[Dict] = None) -> Tuple[GPTServiceStub, Channel]:
@@ -166,13 +182,15 @@ async def _query_gpt_worker(
     no_cache: bool = False,
     gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> str:
-
+    plan_run_context = PLAN_RUN_CONTEXT.get()
     if not client_timestamp:
         client_timestamp = datetime.utcnow().isoformat()
     priority = DEFAULT_PRIORITY
     context_struct = Struct()
     if context is not None:
         context_struct.update(context)
+    if plan_run_context:
+        context_struct.update(plan_run_context)
     extra_params = Struct()
     env = get_environment_tag()
     is_dev = env in (DEV_TAG, LOCAL_TAG)

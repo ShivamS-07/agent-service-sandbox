@@ -31,6 +31,25 @@ def create_gpt_context(
     return {"job_type": job_type, "job_id": job_id, "job_id_type": job_id_type, "run_id": run_id}
 
 
+def plan_create_context(agent_id: str, user_id: str, plan_id: str) -> Dict[str, str]:
+    context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
+    context["user_id"] = user_id
+    context["plan_id"] = plan_id
+    context["agent_id"] = agent_id
+    return context
+
+
+def chatbot_context(agent_id: str) -> Dict[str, str]:
+    from agent_service.utils.postgres import get_psql
+
+    user_id = get_psql().get_agent_owner(agent_id=agent_id)
+    context = create_gpt_context(GptJobType.AGENT_CHATBOT, agent_id, GptJobIdType.AGENT_ID)
+    context["agent_id"] = agent_id
+    if user_id:
+        context["user_id"] = user_id
+    return context
+
+
 def get_gpt_task_type() -> str:
     stack = inspect.stack()
 

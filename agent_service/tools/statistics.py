@@ -204,7 +204,7 @@ async def get_statistic_data_for_companies(
     else:
         time_series_str = SINGLE_DATE_TEMPLATE.format(date=start_date)
     gpt_context = create_gpt_context(
-        GptJobType.AGENT_PLANNER, context.agent_id, GptJobIdType.AGENT_ID
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=GPT4_O)
     main_prompt = DECOMPOSITION_MAIN_PROMPT.format(
