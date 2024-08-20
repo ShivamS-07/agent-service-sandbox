@@ -153,8 +153,7 @@ class WebScraper:
         for i in range(len(df)):
             for j, col in enumerate(product_table.columns):
                 if col.metadata.label != "stock_id":
-                    gpt_value = results[i].get(col.metadata.label, {}).get("value", df.iloc[i, j])
-                    df.iat[i, j] = gpt_value if gpt_value is not None else df.iloc[i, j]
+                    df.iat[i, j] = results[i].get(col.metadata.label, {}).get("value", "n/a")
 
         # Editing column metadata to adapt to column changes we just made
         metadata = [product_table.columns[k].metadata for k in range(len(product_table.columns))]
