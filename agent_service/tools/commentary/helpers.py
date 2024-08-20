@@ -441,17 +441,17 @@ async def prepare_portfolio_prompt(
 
     # Prepare the portfolio prompt
     portfolio_prompt = PORTFOLIO_PROMPT.format(
-        portfolio_holdings=str(portfolio_holdings_df),
+        portfolio_holdings=portfolio_holdings_df.to_string(),
         portfolio_geography_prompt=portfolio_geography_prompt.filled_prompt,
-        portfolio_performance_by_overall=str(performance_dict["portfolio_overall"]),
-        portfolio_performance_by_monthly=str(performance_dict["portfolio_monthly"]),
-        portfolio_performance_by_daily=str(performance_dict["portfolio_daily"]),
-        portfolio_performance_by_sector=str(performance_dict["portfolio_sector"]),
-        portfolio_performance_by_security=str(performance_dict["portfolio_security"]),
-        portfolio_performance_by_stock_positive=str(performance_dict["portfolio_stock_pos"]),
-        portfolio_performance_by_stock_negative=str(performance_dict["portfolio_stock_neg"]),
-        benchmark_performance_by_stock_positive=str(performance_dict["benchmark_stock_pos"]),
-        benchmark_performance_by_stock_negative=str(performance_dict["benchmark_stock_neg"]),
+        portfolio_performance_by_overall=performance_dict["portfolio_overall"].to_string(),
+        portfolio_performance_by_monthly=performance_dict["portfolio_monthly"].to_string(),
+        portfolio_performance_by_daily=performance_dict["portfolio_daily"].to_string(),
+        portfolio_performance_by_sector=performance_dict["portfolio_sector"].to_string(),
+        portfolio_performance_by_security=performance_dict["portfolio_security"].to_string(),
+        portfolio_performance_by_stock_positive=performance_dict["portfolio_stock_pos"].to_string(),
+        portfolio_performance_by_stock_negative=performance_dict["portfolio_stock_neg"].to_string(),
+        benchmark_performance_by_stock_positive=performance_dict["benchmark_stock_pos"].to_string(),
+        benchmark_performance_by_stock_negative=performance_dict["benchmark_stock_neg"].to_string(),
     )
     return portfolio_prompt
 
@@ -498,7 +498,7 @@ async def prepare_stocks_stats_prompt(
     )
 
     stocks_stats_prompt = STOCKS_STATS_PROMPT.format(
-        stock_stats=str(stock_performance_df),
+        stock_stats=stock_performance_df.to_string(),
     )
     return stocks_stats_prompt
 

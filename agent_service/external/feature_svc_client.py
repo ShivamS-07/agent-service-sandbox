@@ -239,6 +239,7 @@ async def get_return_for_stocks(
         df_res = (
             df_long.loc[df_long["adjusted_cumulative_return"].notna(), :]
             .loc[df_long["Date"] == df_long.Date.max(), :]
+            .sort_values(by="adjusted_cumulative_return", ascending=False)
             .reset_index(drop=True)
             .rename(columns={"Row": "gbi_id", "adjusted_cumulative_return": "cum_return"})
             .drop(columns=["Date", "close_price", "dividend_amount"])

@@ -35,8 +35,8 @@ COMMENTARY_SYS_PROMPT = Prompt(
         "'affirm,' 'secure,' or similar terms in your writing. "
         "\nPlease be concise in your writing, and do not include any fluff. "
         "\nPlease double check your grammar when writing. "
-        "\nYou can use markdown to format your text and highlight important points. "
-        "\nHighlight numbers and statistics in your writing in bold for emphasis. "
+        "\nYou can use markdown to format your text and highlight important words or numbers. "
+        "\nHighlight numbers and statistics and important words in your writing in bold for emphasis. "
         f"\n {CITATION_PROMPT}"
     ),
 )

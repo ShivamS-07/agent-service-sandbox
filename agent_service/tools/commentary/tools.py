@@ -159,11 +159,6 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     watchlist_stocks = await get_stocks_for_user_all_watchlists(
         GetStocksForUserAllWatchlistsInput(), context
     )
-    await tool_log(
-        log="Retrieving watchlist stocks to keep an eye.",
-        context=context,
-        associated_data=watchlist_stocks,
-    )
 
     watchlist_prompt = WATCHLIST_PROMPT.format(
         watchlist_stocks=", ".join([await stock.to_gpt_input() for stock in watchlist_stocks])  # type: ignore
