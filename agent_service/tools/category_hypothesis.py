@@ -18,6 +18,7 @@ from agent_service.io_type_utils import (
 )
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
+    CustomDocumentSummaryText,
     StockDescriptionText,
     StockEarningsSummaryPointText,
     StockEarningsSummaryText,
@@ -308,6 +309,7 @@ class TopicGroup(TextGroup):
 
         # if there are too many news topics, we only reduce the number of news topics
         news_topics = self.get_certain_type_topics(StockNewsDevelopmentText)
+        custom_doc_summaries = self.get_certain_type_topics(CustomDocumentSummaryText)
         earnings_points = self.get_certain_type_topics(StockEarningsSummaryPointText)
         filing_sections = self.get_certain_type_topics(StockSecFilingSectionText)
 
@@ -324,7 +326,7 @@ class TopicGroup(TextGroup):
             for topics in stock_to_news_topics.values():
                 filtered_news_topics.extend(topics[: int(len(topics) * news_ratio)])
 
-            self.val = filtered_news_topics + earnings_points + filing_sections  # type: ignore
+            self.val = filtered_news_topics + custom_doc_summaries + earnings_points + filing_sections  # type: ignore
             self.sync_map_with_val()
 
             return
@@ -355,12 +357,17 @@ class TopicGroup(TextGroup):
                 this_filing_sections = topic_group.get_certain_type_topics(
                     StockSecFilingSectionText
                 )
+                this_custom_doc_summaries = topic_group.get_certain_type_topics(
+                    CustomDocumentSummaryText
+                )
 
                 num_news_to_keep = max(1, int(len(this_news_topics) * ratio))
                 num_earnings_to_keep = max(1, int(len(this_earnings_points) * ratio))
                 num_filings_to_keep = max(1, int(len(this_filing_sections) * ratio))
+                num_custom_docs_to_keep = max(1, int(len(this_custom_doc_summaries) * ratio))
                 all_topics.extend(
                     this_news_topics[:num_news_to_keep]
+                    + this_custom_doc_summaries[:num_custom_docs_to_keep]
                     + this_earnings_points[:num_earnings_to_keep]
                     + this_filing_sections[:num_filings_to_keep]
                 )
@@ -810,6 +817,7 @@ async def download_content_for_text_data(
         t for t in all_text_data if isinstance(t, StockEarningsSummaryText)
     ]
     sec_filings = [t for t in all_text_data if isinstance(t, StockSecFilingText)]
+    custom_doc_summaries = [t for t in all_text_data if isinstance(t, CustomDocumentSummaryText)]
 
     logger.info("Downloading content for company descriptions")
     gbi_ids = [t.stock_id.gbi_id for t in company_descriptions if t.stock_id]
@@ -832,7 +840,12 @@ async def download_content_for_text_data(
     )
 
     # sort the list by the timestamp for later cutting
-    text_list = news_developments + earnings_summary_points + sec_filing_sections_with_text
+    text_list = (
+        news_developments
+        + custom_doc_summaries
+        + earnings_summary_points
+        + sec_filing_sections_with_text
+    )
     text_list.sort(key=lambda x: x.timestamp, reverse=True)  # type: ignore
     topic_group = TopicGroup(val=text_list)  # type: ignore
     await Text.get_all_strs(topic_group)  # fill in `id_to_str` dict

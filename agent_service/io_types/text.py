@@ -594,7 +594,7 @@ class CustomDocumentSummaryText(StockText):
                 user, [article.id for article in articles]
             )
             for id, chunk_info in dict(article_info.file_chunk_info).items():
-                texts[id] = f"{chunk_info.headline}:\n{chunk_info.summary}"
+                texts[id] = f"{chunk_info.headline}:\n{chunk_info.long_summary}"
         return texts
 
     @classmethod
