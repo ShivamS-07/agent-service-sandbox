@@ -45,6 +45,7 @@ class TableColumnMetadata(ComplexIOBase):
     col_type: TableColumnType
     unit: Optional[str] = None
     row_descs: Optional[Dict[int, List[RowDescription]]] = None
+    data_src: List[str] = []
 
     @classmethod
     def to_gpt_schema(cls) -> Dict[str, str]:
@@ -52,6 +53,7 @@ class TableColumnMetadata(ComplexIOBase):
             "label": "Union[str, datetime.date, datetime.datetime]",
             "col_type": "str",
             "unit": "Optional[str]",
+            "data_src": "List[str]",
         }
         return schema
 

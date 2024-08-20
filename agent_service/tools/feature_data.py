@@ -533,7 +533,12 @@ async def get_statistic_data(
             data=df,
             columns=[
                 TableColumnMetadata(label=index_name, col_type=index_type),
-                TableColumnMetadata(label=statistic_label, col_type=value_coltype, unit=curr_unit),
+                TableColumnMetadata(
+                    label=statistic_label,
+                    col_type=value_coltype,
+                    unit=curr_unit,
+                    data_src=[statistic_id.stat_id],
+                ),
             ],
         )
     else:
@@ -557,7 +562,12 @@ async def get_statistic_data(
                 TableColumnMetadata(
                     label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
                 ),
-                TableColumnMetadata(label=statistic_label, col_type=value_coltype, unit=curr_unit),
+                TableColumnMetadata(
+                    label=statistic_label,
+                    col_type=value_coltype,
+                    unit=curr_unit,
+                    data_src=[statistic_id.stat_id],
+                ),
             ],
         )
     stock_table.prefer_graph_type = prefer_graph_type
