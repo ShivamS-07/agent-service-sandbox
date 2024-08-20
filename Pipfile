@@ -57,7 +57,9 @@ pa-portfolio-service-proto-v1 = {version = "==1.306.0", index = "gbi"}
 discover_service_proto_v1 = {version = "==0.19.0", index = "gbi"}
 feature-service-proto-v1 = {version = "==1.48.0", index = "gbi"}
 user-service-proto-v1 = {version = "==1.55.0", index = "gbi"}
-
+beautifulsoup4 = {version = "==4.12.3", index = "pypi"}
+griffe= {version = "==0.48.0", index = "pypi"}
+PyPDF2 = {version = "==3.0.1", index = "pypi"}
 [requires]
 python_version = "3.8"
 
