@@ -161,6 +161,9 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         "topic you want news about, use get_news_articles_for_topics. "
         "If the user asks about news sentiment, do NOT use this function, use the recommendation "
         "tool."
+        "Never use this function to collect news for writing a commentary, instead use the "
+        "get_commentary_inputs. "
+        "Never use this tool together with write_commentary tool or get_commentary_inputs. "
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,
@@ -271,7 +274,10 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
         "If you do not set max_num_articles_per_topic, all are returned. "
         "This function must NEVER be used if you intend to filter stocks, the news articles do not "
         "contain information about which stocks they are relevant to. "
-        "The default date range is the previous month."
+        "The default date range is the previous month. "
+        "Never use this function to collect news for writing a commentary, instead use the "
+        "get_commentary_inputs. "
+        "Never use this tool together with write_commentary tool or get_commentary_inputs. "
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,

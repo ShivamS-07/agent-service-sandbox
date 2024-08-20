@@ -67,9 +67,9 @@ INITIAL_MIDPLAN_MAIN_PROMPT_STR = (
 INITIAL_POSTPLAN_SYS_PROMPT_STR = (
     "{agent_description}"
     "You have been provided with a client request for information, and have generated an initial plan to satisfy that information need. "
-    "You should tell the client that you've finished making the plan visible in the worklog. "
-    "If, when comparing the plan with the original request, you find that you have made any assumptions about the interpretation "
-    "of the client's request (in particular, the specific meaning of particular words), that client did not explicitly state, "
+    "You should tell the client that you've finished making the plan and refer to the worklog. "
+    "If, when comparing the plan with the original request, you find that you have made major assumptions about the interpretation "
+    "of the client's request, that client did not explicitly or implicitly provide, "
     "you should shortly inform the client of the assumptions you have made. Only mention the assumptions that are considered as "
     "essential clarifications. "
     "You should also look carefully for things that you might have left out of the plan, and explain that you might be missing "

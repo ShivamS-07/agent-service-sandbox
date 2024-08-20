@@ -25,6 +25,7 @@ from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.tool_diff import get_prev_run_info
 
 SEPARATOR = "###"
 FILTER1_LLM = GPT4_O_MINI  # can't be GPT3.5 because it may pass the token limit
@@ -159,6 +160,29 @@ async def filter_stocks_by_product_or_service(
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)
 
+    prev_run_info = None
+    try:  # since everything associated with diffing is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context, "filter_stocks_by_profile_match")
+        if prev_run_info is not None:
+            prev_args = FilterStocksByProductOrServiceInput.model_validate_json(
+                prev_run_info.inputs_str
+            )
+
+            # only include the stocks that were in the previous run as well as in the current input
+            stock_ids_set = set(args.stock_ids)
+            prev_output: List[StockID] = [
+                stock for stock in prev_run_info.output if stock in stock_ids_set  # type:ignore
+            ]
+
+            # start by finding the differences in the input stocks
+            diff_stock_ids = stock_ids_set - set(prev_args.stock_ids)
+
+            # we are only going to run the tool on the stocks that are different
+            args.stock_ids = list(diff_stock_ids)
+
+    except Exception as e:
+        logger.warning(f"Error including stock ids from previous run: {e}")
+
     # get company/stock descriptions
     description_texts = await get_company_descriptions(
         GetStockDescriptionInput(
@@ -253,6 +277,9 @@ async def filter_stocks_by_product_or_service(
                 )
             )
         )
+    # add previous run stocks to the result
+    if prev_run_info is not None:
+        res.extend(prev_output)
 
     logger.info(
         (

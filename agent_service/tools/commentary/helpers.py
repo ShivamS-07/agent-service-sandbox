@@ -488,7 +488,7 @@ async def prepare_stocks_stats_prompt(
         data=stock_performance_df,
         columns=[
             TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-            TableColumnMetadata(label="return", col_type=TableColumnType.FLOAT),
+            TableColumnMetadata(label="return", col_type=TableColumnType.PERCENT),
         ],
     )
     await tool_log(

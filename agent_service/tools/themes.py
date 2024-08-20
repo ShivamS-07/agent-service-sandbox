@@ -457,9 +457,12 @@ class GetTopNThemesInput(ToolArgs):
         "If start date is provided use get_date_from_date_str tool to get the date. "
         "Adjust the theme_num to get the desired number of themes/topics. "
         "The tool can be used "
-        " - when user does not have a specific theme in mind and wants to know the top themes "
-        " - when user wants to know the top themes after a specific start date "
-        " - when user wants to know the top themes for a specific portfolio"
+        "\n - when user does not have a specific theme in mind and wants to know the top themes "
+        "\n - when user wants to know the top themes after a specific start date "
+        "\n - when user wants to know the top themes for a specific portfolio "
+        "\nNever use this function to collect news for writing a commentary, instead use the "
+        "get_commentary_inputs. "
+        "Never use this tool together with write_commentary tool or get_commentary_inputs. "
     ),
     category=ToolCategory.THEME,
     tool_registry=ToolRegistry,
