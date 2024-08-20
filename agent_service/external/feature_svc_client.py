@@ -235,6 +235,7 @@ async def get_return_for_stocks(
         # Convert 'Date' column to datetime
         df_long["Date"] = pd.to_datetime(df_long["Date"])
         df_long["Row"] = df_long["Row"].astype(int)
+        df_long["adjusted_cumulative_return"] = df_long["adjusted_cumulative_return"].astype(float)
         # filter out rows with NaN values, reset index, rename columns, and drop 'Date' column
         df_res = (
             df_long.loc[df_long["adjusted_cumulative_return"].notna(), :]
