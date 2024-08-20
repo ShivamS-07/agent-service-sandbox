@@ -3,6 +3,7 @@
 import datetime
 import json
 import logging
+import os
 from typing import List, Optional, Tuple
 from uuid import uuid4
 
@@ -232,9 +233,6 @@ async def create_fake_past_run(
         context.agent_id, latest_plan_run_id, tool_name="do_competitive_analysis"
     )
 
-    # update with original plan run id (even after it is deleted), only uncommented in main run
-    latest_plan_run_id = "0dd6cd8a-297f-4e32-9db6-0c9f7b71a6c9"
-
     stocks = get_tool_call_output(
         context.agent_id, latest_plan_run_id, tool_name="filter_stocks_by_product_or_service"
     )
@@ -277,10 +275,6 @@ async def create_fake_past_run(
             prompt=hypothesis, competitive_analysis=category_deepdives
         ),
         context,
-    )
-
-    categories = get_tool_call_output(
-        context.agent_id, latest_plan_run_id, tool_name="generate_summary_for_competitive_analysis"
     )
 
     # write outputs
@@ -356,13 +350,9 @@ async def main(
             plan_id=plan_id,
             task_id=task_id,
             skip_db_commit=True,  # don't want to insert weird worklogs
+            as_of_date=data_end,
+            diff_info={},
         )
-
-        # comment out this code for first run
-        if data_end == window_start:
-            data_end += datetime.timedelta(days=1)
-            continue
-        fake_run_context.diff_info = {}
 
         await create_fake_past_run(fake_run_context, latest_plan_run_id, data_start, data_end)
 
@@ -377,14 +367,15 @@ if __name__ == "__main__":
 
     from agent_service.utils.logs import init_stdout_logging
 
-    agent_id = "cd1010c0-f51d-4a3c-9ddf-4c134bd6a0f1"
+    os.environ["FORCE_LOGGING"] = "1"  # enable clickhouse logs
 
-    # Drop the unneeded local generated runs
+    agent_id = "7868d80d-1f3a-4b54-919e-ef7dca4a49d0"
+
+    # # Drop the unneeded local generated runs
     # drop_plan_run(
     #     agent_id=agent_id,
-    #     plan_run_id="0ae9e953-d732-46cc-8228-a0037ae8d8c8",
+    #     plan_run_id="4fe75fc1-5f34-4e70-a79a-10b16de55456",
     # )
-    # print(kjfdlsjf)
 
     # Explanation of how I made this work for new competitive analysis diffing
     # First, build a agent for today
@@ -396,9 +387,9 @@ if __name__ == "__main__":
 
     today = datetime.datetime.today()
     window_end = today - datetime.timedelta(days=1)
-    # window_end = datetime.datetime(2024, 7, 27)
+    # window_end = datetime.datetime(2024, 8, 2)
     window_start = today - datetime.timedelta(days=16)
-    # window_start = datetime.datetime(2024, 7, 15)
+    # window_start = datetime.datetime(2024, 8, 2)
 
     import time
 

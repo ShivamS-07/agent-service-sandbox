@@ -24,7 +24,10 @@ class PrevRunInfo:
 async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional[PrevRunInfo]:
     pg_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
     previous_run = await pg_db.get_previous_plan_run(
-        agent_id=context.agent_id, plan_id=context.plan_id, latest_plan_run_id=context.plan_run_id
+        agent_id=context.agent_id,
+        plan_id=context.plan_id,
+        latest_plan_run_id=context.plan_run_id,
+        cutoff_dt=context.as_of_date,
     )
     if previous_run is None:
         return None

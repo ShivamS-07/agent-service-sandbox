@@ -626,7 +626,6 @@ async def do_competitive_analysis(
     if prev_internal_data and "revised hypothesis" in prev_internal_data:
         logger.info("Using existing revised hypothesis")
         revised_hypothesis = prev_internal_data["revised hypothesis"]
-
     else:
         # Step: Revise hypothesis to remove company specific information
         logger.info("Revising hypothesis to remove any company specific information")
@@ -647,6 +646,8 @@ async def do_competitive_analysis(
         for topic in topic_group.val:
             if topic not in old_input_topic_set:
                 new_topics.append(topic)
+
+        debug_info["new topics"] = dump_io_type(new_topics)  # what topics appear in this run
 
         orig_topic_group = topic_group
         topic_group = TopicGroup(val=new_topics, id_to_str=topic_group.id_to_str)
@@ -689,7 +690,6 @@ async def do_competitive_analysis(
             gpt_service_stub,
         )
     else:
-
         category_to_result = await rank_and_summarize_for_each_category(
             candidate_target_stock,
             stocks,

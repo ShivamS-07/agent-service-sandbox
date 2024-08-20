@@ -9,6 +9,7 @@ from gbi_common_py_utils.utils.clickhouse_base import ClickhouseBase
 from agent_service.io_type_utils import load_io_type
 from agent_service.planner.constants import NO_CHANGE_MESSAGE
 from agent_service.planner.planner_types import ExecutionPlan, OutputWithID, RunMetadata
+from agent_service.tools.category import Category  # noqa
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.output_utils.output_diffs import OutputDiffer
@@ -90,6 +91,11 @@ async def generate_diffs(
         )
         logger.info(f"Short diff summary:\n{short_diff_summary}")
 
+        full_diff_summary = (
+            f"Long Summary:\n {full_diff_summary}\n\nShort Summary:\n {short_diff_summary}"
+        )
+        logger.info(f"Combined diff summary:\n{full_diff_summary}")
+
     async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
     await async_db.set_plan_run_metadata(
         context=context,
@@ -146,7 +152,7 @@ if __name__ == "__main__":
 
     init_stdout_logging()
 
-    agent_id = "cd1010c0-f51d-4a3c-9ddf-4c134bd6a0f1"
+    agent_id = "7868d80d-1f3a-4b54-919e-ef7dca4a49d0"
 
     asyncio.run(
         main(

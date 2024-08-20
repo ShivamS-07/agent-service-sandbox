@@ -63,22 +63,36 @@ class AsyncDB:
         return ([load_io_type(output) for output in row["outputs"]], row["prev_date"])
 
     async def get_previous_plan_run(
-        self, agent_id: str, plan_id: str, latest_plan_run_id: str
+        self,
+        agent_id: str,
+        plan_id: str,
+        latest_plan_run_id: str,
+        cutoff_dt: Optional[datetime.datetime],
     ) -> Optional[str]:
         """
         Returns the last plan run for the agent before the latest_run
         """
-        sql = """
+        date_filter = ""
+        if cutoff_dt:
+            date_filter = " AND created_at < %(cutoff_dt)s"
+
+        sql = f"""
         SELECT plan_run_id FROM agent.plan_runs
         WHERE plan_run_id != %(latest_plan_run_id)s
             AND agent_id = %(agent_id)s
-            AND plan_id = %(plan_id)s
+            AND plan_id = %(plan_id)s{date_filter}
         ORDER BY created_at DESC
         LIMIT 1
         """
+
         rows = await self.pg.generic_read(
             sql,
-            {"agent_id": agent_id, "plan_id": plan_id, "latest_plan_run_id": latest_plan_run_id},
+            {
+                "agent_id": agent_id,
+                "plan_id": plan_id,
+                "latest_plan_run_id": latest_plan_run_id,
+                "cutoff_dt": cutoff_dt,
+            },
         )
         if rows:
             return rows[0]["plan_run_id"]
