@@ -974,7 +974,7 @@ class StockEarningsTranscriptText(StockEarningsText):
         cls, earnings_texts: List[StockEarningsSummaryText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         earnings_transcript_sql = """
-            SELECT id::TEXT, transcript, fiscal_year, fiscal_quarter
+            SELECT id::TEXT AS id, transcript, fiscal_year, fiscal_quarter
             FROM company_earnings.full_earning_transcripts
             WHERE id IN %(ids)s
         """

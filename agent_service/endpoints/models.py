@@ -431,7 +431,7 @@ class ExecutionStatusEvent(Event):
     newly_updated_outputs: List[str] = Field(default_factory=list)
 
 
-class AgentEvent(Event):
+class AgentEvent(BaseModel):
     agent_id: str
     event: Union[
         MessageEvent,
