@@ -571,15 +571,22 @@ class AsyncDB:
             FROM agent.notifications n
             WHERE n.unread
                 GROUP BY n.agent_id
+          ),
+          lo AS
+          (
+            SELECT DISTINCT ON (ao.agent_id) ao.agent_id, ao.created_at
+            FROM agent.agent_outputs ao
+            ORDER BY ao.agent_id, ao.created_at DESC
           )
           SELECT a_id.agent_id::VARCHAR, a_id.user_id::VARCHAR, a_id.agent_name, a_id.created_at,
             a_id.last_updated, a_id.automation_enabled, a_id.section_id::VARCHAR, lr.created_at AS last_run,
             msg.message AS latest_agent_message, nu.num_unread AS unread_notification_count,
-            a_id.schedule, lr.run_metadata, a_id.deleted
+            a_id.schedule, lr.run_metadata, a_id.deleted, lo.created_at AS output_last_updated
           FROM a_id
           LEFT JOIN lr ON lr.agent_id = a_id.agent_id
           LEFT JOIN msg ON msg.agent_id = a_id.agent_id
           LEFT JOIN nu ON nu.agent_id = a_id.agent_id
+          LEFT JOIN lo ON lo.agent_id = a_id.agent_id
         """
         rows = await self.pg.generic_read(sql, params=params)
         output = []
@@ -611,6 +618,7 @@ class AsyncDB:
                     schedule=schedule,
                     section_id=row["section_id"],
                     deleted=row["deleted"],
+                    output_last_updated=row["output_last_updated"],
                 )
             )
         return output
