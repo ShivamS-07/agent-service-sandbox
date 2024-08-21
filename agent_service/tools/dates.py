@@ -30,12 +30,14 @@ DATE_SYS_PROMPT = Prompt(
         "You are an assistant designed to process date-like strings "
         "and convert them into a proper date format that can be used "
         "with Python's datetime package. Given a date-like string, "
-        "you should return the date in the format of YYYY-MM-DD. "
+        "you MUST return the date in the format of YYYY-MM-DD. "
         "In your response you must only return a SINGLE date in the format of YYYY-MM-DD."
-        "For example, if the input is 'last two months,' you should return "
-        "the date of 60 days ago based on today's date."
-        "If the input is 'last quarter,' you should return the date of the first day of "
-        "the last quarter based on today's date. "
+        "For example, if the input is 'last two months,' and you should compute "
+        "the date of 60 days ago based on today's date, and MUST only return the date in the format of YYYY-MM-DD "
+        "with no additional text. "
+        "If the input is 'last quarter,' you should compute the date of the first day of "
+        "the last quarter based on today's date and MUST only return the date in the format of YYYY-MM-DD "
+        "with no additional text. "
         "Definitions:"
         "- The year is divided into four quarters:"
         "  - Q1: January 1 to March 31"
@@ -90,6 +92,7 @@ async def get_date_from_date_str(
             # check if result has the format of a date
             if (len(result.split("-")) == 3) and (len(result) == 10):
                 break
+        print("result: ", result)
         val = datetime.datetime.strptime(result, "%Y-%m-%d")
         await tool_log(
             log=f"The computed date for {args.date_str} is {val.date()}",
