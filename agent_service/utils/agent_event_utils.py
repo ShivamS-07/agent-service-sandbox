@@ -158,24 +158,29 @@ async def publish_agent_output(
 async def publish_agent_execution_plan(
     plan: ExecutionPlan, context: PlanRunContext, db: Optional[Union[AsyncDB, Postgres]] = None
 ) -> None:
-    if db:
-        if isinstance(db, AsyncDB):
-            await db.write_execution_plan(
-                plan_id=context.plan_id,
-                agent_id=context.agent_id,
-                plan=plan,
-                status=PlanStatus.READY,
-            )
-        elif isinstance(db, Postgres):
-            db.write_execution_plan(
-                plan_id=context.plan_id,
-                agent_id=context.agent_id,
-                plan=plan,
-                status=PlanStatus.READY,
-            )
-    else:  # probably never hits this
-        await AsyncDB(SyncBoostedPG()).write_execution_plan(
-            plan_id=context.plan_id, agent_id=context.agent_id, plan=plan, status=PlanStatus.READY
+    if not db:
+        db = AsyncDB(SyncBoostedPG(skip_commit=context.skip_db_commit))
+
+    if isinstance(db, AsyncDB):
+        await db.write_execution_plan(
+            plan_id=context.plan_id,
+            agent_id=context.agent_id,
+            plan=plan,
+            status=PlanStatus.READY,
+        )
+        await db.insert_plan_run(
+            agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
+        )
+    elif isinstance(db, Postgres):
+        db.write_execution_plan(
+            plan_id=context.plan_id,
+            agent_id=context.agent_id,
+            plan=plan,
+            status=PlanStatus.READY,
+        )
+        # also insert the plan run to avoid weirdness with the frontend
+        db.insert_plan_run(
+            agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
         )
 
     event = AgentEvent(

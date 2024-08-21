@@ -27,7 +27,8 @@ async def main() -> List[OutputDiff]:
     plan_run_ids = [args.current_plan_run_id, args.last_plan_run_id]
     if not args.last_plan_run_id or not args.current_plan_run_id:
         print("No plan run ID's passed in, using most recent two for agent...")
-        plan_run_ids = await db.get_agent_plan_runs(agent_id=args.agent_id, limit_num=2)
+        tuples = await db.get_agent_plan_runs(agent_id=args.agent_id, limit_num=2)
+        plan_run_ids = [tup[0] for tup in tuples]
 
     if len(plan_run_ids) < 2:
         print("Fewer than 2 plan runs found! Exiting early...")

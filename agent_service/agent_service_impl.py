@@ -185,11 +185,12 @@ class AgentServiceImpl:
             )
 
         # it's safer to run these in sequence
+        LOGGER.info(f"Cancelling agent {agent_id=} with {plan_id=} and {plan_run_id=}")
         await self.pg.cancel_agent_plan(plan_id=plan_id, plan_run_id=plan_run_id)
         await send_chat_message(
             message=Message(
                 agent_id=agent_id,
-                message="Agent has been cancelled successfully.",
+                message="Analyst has been cancelled successfully.",
                 is_user_message=False,
                 visible_to_llm=False,
             ),

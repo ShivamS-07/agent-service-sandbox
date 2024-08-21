@@ -283,23 +283,39 @@ class AsyncDB:
 
     @async_perf_logger
     async def get_agent_plan_runs(
-        self, agent_id: str, limit_num: Optional[int] = None
-    ) -> List[str]:
-        limit_sql = ""
+        self,
+        agent_id: str,
+        start_date: Optional[datetime.date] = None,  # inclusive
+        end_date: Optional[datetime.date] = None,  # exclusive
+        limit_num: Optional[int] = None,
+    ) -> List[Tuple[str, str]]:
         params: Dict[str, Any] = {"agent_id": agent_id}
+
+        limit_sql = ""
         if limit_num:
             limit_sql = "LIMIT %(limit_num)s"
             params["limit_num"] = limit_num
 
+        start_date_filter = ""
+        if start_date:
+            params["start_date"] = start_date
+            start_date_filter = " AND created_at >= %(start_date)s"
+
+        end_date_filter = ""
+        if end_date:
+            params["end_date"] = end_date
+            end_date_filter = " AND created_at < %(end_date)s"
+
         sql = f"""
-        SELECT plan_run_id::VARCHAR FROM agent.plan_runs
-        WHERE agent_id = %(agent_id)s
+        SELECT plan_run_id::VARCHAR, plan_id::VARCHAR
+        FROM agent.plan_runs
+        WHERE agent_id = %(agent_id)s{start_date_filter}{end_date_filter}
         ORDER BY created_at DESC
         {limit_sql}
         """
         rows = await self.pg.generic_read(sql, params=params)
 
-        return [row["plan_run_id"] for row in rows]
+        return [(row["plan_run_id"], row["plan_id"]) for row in rows]
 
     async def get_agent_name(self, agent_id: str) -> str:
         sql = """
@@ -349,14 +365,25 @@ class AsyncDB:
         return await self.pg.generic_read(sql1, params=params)
 
     @async_perf_logger
-    async def get_execution_plans(self, plan_ids: List[str]) -> Dict[str, ExecutionPlan]:
+    async def get_execution_plans(
+        self, plan_ids: List[str]
+    ) -> Dict[str, Tuple[ExecutionPlan, PlanStatus, datetime.datetime, datetime.datetime]]:
         sql = """
-            SELECT plan_id::VARCHAR, plan
+            SELECT plan_id::VARCHAR, plan, status, created_at, last_updated
             FROM agent.execution_plans
             WHERE plan_id = ANY(%(plan_ids)s)
         """
         rows = await self.pg.generic_read(sql, params={"plan_ids": plan_ids})
-        return {row["plan_id"]: ExecutionPlan.model_validate(row["plan"]) for row in rows}
+        output = {}
+        for row in rows:
+            output[row["plan_id"]] = (
+                ExecutionPlan.model_validate(row["plan"]),
+                PlanStatus(row["status"]),
+                row["created_at"],
+                row["last_updated"],
+            )
+
+        return output
 
     async def get_chats_history_for_agent(
         self,
@@ -449,6 +476,21 @@ class AsyncDB:
                 "created_at": created_at,
                 "last_updated": last_updated,
                 "status": status.value,
+            },
+        )
+
+    async def insert_plan_run(self, agent_id: str, plan_id: str, plan_run_id: str) -> None:
+        sql = """
+        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id)
+        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s)
+        ON CONFLICT (plan_run_id) DO NOTHING
+        """
+        await self.pg.generic_write(
+            sql,
+            params={
+                "agent_id": agent_id,
+                "plan_id": plan_id,
+                "plan_run_id": plan_run_id,
             },
         )
 

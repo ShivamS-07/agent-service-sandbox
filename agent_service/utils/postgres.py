@@ -135,22 +135,40 @@ class Postgres(PostgresBase):
             [row["plan_id"] for row in rows],
         )
 
-    def get_agent_plan_runs(self, agent_id: str, limit_num: Optional[int] = None) -> List[str]:
-        limit_sql = ""
+    def get_agent_plan_runs(
+        self,
+        agent_id: str,
+        start_date: Optional[datetime.date] = None,  # inclusive
+        end_date: Optional[datetime.date] = None,  # exclusive
+        limit_num: Optional[int] = None,
+    ) -> List[Tuple[str, str]]:
         params: Dict[str, Any] = {"agent_id": agent_id}
+
+        limit_sql = ""
         if limit_num:
             limit_sql = "LIMIT %(limit_num)s"
             params["limit_num"] = limit_num
 
+        start_date_filter = ""
+        if start_date:
+            params["start_date"] = start_date
+            start_date_filter = " AND created_at >= %(start_date)s"
+
+        end_date_filter = ""
+        if end_date:
+            params["end_date"] = end_date
+            end_date_filter = " AND created_at < %(end_date)s"
+
         sql = f"""
-        SELECT plan_run_id::VARCHAR FROM agent.plan_runs
-        WHERE agent_id = %(agent_id)s
+        SELECT plan_run_id::VARCHAR, plan_id::VARCHAR
+        FROM agent.plan_runs
+        WHERE agent_id = %(agent_id)s{start_date_filter}{end_date_filter}
         ORDER BY created_at DESC
         {limit_sql}
         """
         rows = self.generic_read(sql, params=params)
 
-        return [row["plan_run_id"] for row in rows]
+        return [(row["plan_run_id"], row["plan_id"]) for row in rows]
 
     def get_plan_runs_for_plan_id(self, plan_id: str, agent_id: str) -> List[str]:
         params: Dict[str, Any] = {"plan_id": plan_id, "agent_id": agent_id}

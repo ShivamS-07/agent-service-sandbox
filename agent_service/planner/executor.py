@@ -546,6 +546,8 @@ async def create_execution_plan(
         chat=chat_context,
     )
 
+    # Write complete plan to db and let FE know the plan is ready
+    # FE cancellation button will show up after this point
     await publish_agent_execution_plan(plan, ctx, db)
 
     logger.info(f"Finished creating execution plan for {agent_id=}")
@@ -558,6 +560,12 @@ async def create_execution_plan(
     )
 
     if do_chat:
+        if await check_cancelled(db=db, agent_id=agent_id, plan_id=plan_id):
+            await publish_agent_plan_status(
+                agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
+            )
+            raise RuntimeError("Plan creation has been cancelled.")
+
         logger.info("Generating initial postplan response...")
         chatbot = Chatbot(agent_id=agent_id)
         message = await chatbot.generate_initial_postplan_response(
@@ -578,8 +586,6 @@ async def create_execution_plan(
         )
         raise RuntimeError("Plan creation has been cancelled.")
 
-    db = get_psql(skip_commit=ctx.skip_db_commit)
-    db.insert_plan_run(agent_id=ctx.agent_id, plan_id=ctx.plan_id, plan_run_id=ctx.plan_run_id)
     await prefect_run_execution_plan(plan=plan, context=ctx, do_chat=do_chat)
     return plan
 
@@ -874,8 +880,6 @@ async def rewrite_execution_plan(
         )
         raise RuntimeError("Plan rewrite has been cancelled.")
 
-    sync_db = get_psql(skip_commit=skip_db_commit)
-    sync_db.insert_plan_run(agent_id=ctx.agent_id, plan_id=ctx.plan_id, plan_run_id=ctx.plan_run_id)
     await prefect_run_execution_plan(
         plan=new_plan,
         context=ctx,
