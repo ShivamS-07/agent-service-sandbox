@@ -7,7 +7,7 @@ import os
 import traceback
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
@@ -55,8 +55,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_PRIORITY = os.getenv("GPT_SERVICE_DEFAULT_PRIORITY", "LOW")
 STUB = None
 CHANNEL = None
-PLAN_RUN_CONTEXT: contextvars.ContextVar[Dict[str, Optional[str]]] = contextvars.ContextVar(
-    "PLAN_RUN_CONTEXT", default={}
+PLAN_RUN_CONTEXT: contextvars.ContextVar[Dict[str, Union[bool, str, None]]] = (
+    contextvars.ContextVar("PLAN_RUN_CONTEXT", default={})
 )
 # unit tests that inherit from IsolatedAsyncioTestCase broken by this stub cache because
 # IsolatedAsyncioTestCase creates a new event loop for each test case and thus we need a new
@@ -73,7 +73,7 @@ def set_use_global_stub(val: bool) -> None:
     USE_GLOBAL_STUB = val
 
 
-def set_plan_run_context(context: PlanRunContext) -> None:
+def set_plan_run_context(context: PlanRunContext, scheduled_by_automation: bool) -> None:
     plan_run_context = {
         "plan_id": context.plan_id,
         "plan_run_id": context.plan_run_id,
@@ -81,6 +81,7 @@ def set_plan_run_context(context: PlanRunContext) -> None:
         "user_id": context.user_id,
         "tool_name": context.tool_name,
         "agent_id": context.agent_id,
+        "scheduled_by_automation": scheduled_by_automation,
     }
     PLAN_RUN_CONTEXT.set(plan_run_context)
 

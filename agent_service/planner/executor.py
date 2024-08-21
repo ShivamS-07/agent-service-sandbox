@@ -198,7 +198,7 @@ async def run_execution_plan(
         context.task_id = step.tool_task_id
         context.tool_name = step.tool_name
 
-        set_plan_run_context(context)
+        set_plan_run_context(context, scheduled_by_automation)
 
         # update current task to running
         tasks[i].status = Status.RUNNING
