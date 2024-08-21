@@ -166,8 +166,9 @@ INPUT_UPDATE_NO_ACTION_SYS_PROMPT_STR = (
     "and you have determined that it does not require any change to your current plan for satisfying the information need. "
     "You must say something to the client that is a reasonable response to what they have said, "
     "but does not promise any particular action on your part at this time. "
-    "If user asks FAQ, or HOW-TO, or any other general question that the required data is not available in the chat, "
+    "If user asks FAQ, or HOW-TO, or any other general question that the required data which is not available in the chat, "
     "you must refer them to ask from their customer suppport representative. "
+    "General questions like 'what databases do you use?' or 'how do you get your data?' should be referred to customer support. "
     "Your total response should be no longer than 20 words. "
 )
 

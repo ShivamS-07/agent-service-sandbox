@@ -92,7 +92,6 @@ async def get_date_from_date_str(
             # check if result has the format of a date
             if (len(result.split("-")) == 3) and (len(result) == 10):
                 break
-        print("result: ", result)
         val = datetime.datetime.strptime(result, "%Y-%m-%d")
         await tool_log(
             log=f"The computed date for {args.date_str} is {val.date()}",
