@@ -89,16 +89,16 @@ class StockIdentifierLookupInput(ToolArgs):
 STOCK_CONFIRMATION_PROMPT = Prompt(
     name="STOCK_CONFIRMATION_PROMPT",
     template="""
-Your task is to determine which company, stock, ETF or stock index the search term refers to,
+Your task is to determine which company, stock, ETF the search term refers to,
  the search term might be a common word,
  but in this case you should try really hard to associate it with a stock or etf
- If the search term does NOT refer to a company, stock, ETF or stock index,
+ If the search term does NOT refer to a company, stock, ETF,
  then return an empty json: '{{}}'
- If the search term DOES refer to a company, stock, ETF or stock index, then return
+ If the search term DOES refer to a company, stock, ETF, then return
  a json with at least the full_name field.
  Optionally, it is not required but it would be helpful if you
  can also return optional fields: ticker_symbol, isin, common_name, match_type, and country_iso3,
- match_type is 'stock', 'etf', or 'index'
+ match_type is 'stock', 'etf'
  country_iso3 is the 3 letter iso country code where it is most often traded or originated from
  common_name is a name people would typically use to refer to it,
  it would often be a substring of the full_name (dropping common suffixes for example),
@@ -106,9 +106,9 @@ Your task is to determine which company, stock, ETF or stock index the search te
  Only return each of the optional fields if you are confident they are correct,
  it is ok if you do not know some or all of them.
  you can return some and not others, the only required field is full_name.
- in the special case of a stock index, you should return the most popular ETF
+ If you think the user is looking for a stock index, you should return the most popular ETF
  that is tracking that index, instead of the index itself
- for example SP500 should return the ETF: SPY.
+ for example instead of the SP500 index SPX you should return the most related ETF: SPY.
  You should also return a confidence number between 1-10 :
  where 10 is extremely confident and 1 is a hallucinated random guess.
  You must also return a reason field to
@@ -190,8 +190,14 @@ def get_stock_identifier_lookup_cache_key(
 
 @tool(
     description=(
-        "This function takes a string (microsoft, apple, AAPL, TESLA, META, e.g.) "
-        "which refers to a stock, and converts it to an integer identifier."
+        "This function takes a string (microsoft, apple, AAPL, TESLA, META, SP 500, e.g.) "
+        "which refers to a stock or ETF, and converts it to an integer identifier."
+        " other than simple spelling fixes you should try to take the stock_name field"
+        " input directly from the original input text"
+        " You MUST let this function interpret the meaning of the input text,"
+        " the stock_name  passed to this function should"
+        " usually be copied verbatim from the client input, avoid"
+        " paraphrasing or copying from a sample plan"
     ),
     category=ToolCategory.STOCK,
     use_cache=True,
@@ -240,7 +246,7 @@ async def stock_identifier_lookup(
     if exact_rows:
         logger.info(f"found {len(exact_rows)} exact matches")
         if len(exact_rows) > 1:
-            exact_rows = await augment_stock_rows_with_volume(exact_rows)
+            exact_rows = await augment_stock_rows_with_volume(context.user_id, exact_rows)
             exact_rows = sorted(exact_rows, key=lambda x: x.get("volume", 0), reverse=True)
         stock = exact_rows[0]
         logger.info(f"found exact match {stock=}")
@@ -259,7 +265,7 @@ async def stock_identifier_lookup(
     # next we check for best matches by text similarity
     rows = await stock_lookup_by_text_similarity(args, context)
     logger.info(f"found {len(rows)} best potential matching stocks")
-    rows = await augment_stock_rows_with_volume(rows)
+    rows = await augment_stock_rows_with_volume(context.user_id, rows)
 
     orig_stocks_sorted_by_match = sorted(rows, key=lambda x: x["final_match_score"], reverse=True)
     orig_stocks_sorted_by_volume = sorted(
@@ -310,7 +316,7 @@ async def stock_identifier_lookup(
                 confirm_args, context, min_match_strength=MIN_GPT_NAME_MATCH
             )
             logger.info(f"found {len(rows)} best matching stock to the gpt answer")
-            confirm_rows = await augment_stock_rows_with_volume(confirm_rows)
+            confirm_rows = await augment_stock_rows_with_volume(context.user_id, confirm_rows)
 
     else:
         # TODO, should we assume GPT is correct that this is not a stock,
@@ -443,7 +449,9 @@ async def stock_lookup_by_isin(
     return []
 
 
-async def augment_stock_rows_with_volume(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+async def augment_stock_rows_with_volume(
+    user_id: str, rows: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
     """Returns the input row dicts augmented with a new 'volume' field
 
     Returns:
@@ -458,7 +466,7 @@ async def augment_stock_rows_with_volume(rows: List[Dict[str, Any]]) -> List[Dic
             gbiid2stocks[r["gbi_security_id"]] = r
 
     gbi_ids = list(gbiid2stocks.keys())
-    stocks_sorted_by_volume = await async_sort_stocks_by_volume(gbi_ids)
+    stocks_sorted_by_volume = await async_sort_stocks_by_volume(user_id, gbi_ids)
 
     if stocks_sorted_by_volume:
         if len(stocks_sorted_by_volume) != len(gbiid2stocks):
@@ -1797,7 +1805,7 @@ async def get_stock_universe_gbi_stock_universe(
     FROM "data".etf_universes etfs
     JOIN gbi_stock_universe gsu
     ON
-    etfs.gbi_id = (gsu.ingestion_configuration->'benchmark')::INT
+    etfs.spiq_company_id = (gsu.ingestion_configuration->'ownerObjectId')::INT
     JOIN master_security ms ON ms.gbi_security_id = etfs.gbi_id
     ) as tmp
     ORDER BY ws DESC
@@ -1849,7 +1857,7 @@ async def get_stock_universe_from_etf_stock_match(
         return rows[0]
 
     # we have multiple matches, lets use dollar trading volume to choose the most likely match
-    rows = await augment_stock_rows_with_volume(rows)
+    rows = await augment_stock_rows_with_volume(context.user_id, rows)
     orig_stocks_sorted_by_volume = sorted(
         rows, key=lambda x: (x.get("volume", 0), x.get("final_match_score", 0)), reverse=True
     )

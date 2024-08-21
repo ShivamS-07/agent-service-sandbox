@@ -30,6 +30,7 @@ from feature_service_proto_v1.feature_service_pb2 import (
     TimeAxis,
 )
 from feature_service_proto_v1.proto_cube_pb2 import ProtoCube
+from gbi_common_py_utils.numpy_common import NumpyCube
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
     LOCAL_TAG,
@@ -332,3 +333,18 @@ async def get_return_for_single_stock(
                 f"Failed to get stock return: {resp.status.code} - {resp.status.message}"
             )
     return proto_cube_to_dataframe(resp.data)
+
+
+def nc_swap_rows_fields(nc: NumpyCube) -> None:
+    # featuresvc returns nc fields x dates x gbiids
+    # pa always uses gbi x dates x fields
+
+    # swap the data
+    nc.np_data = nc.np_data.transpose(2, 1, 0)
+
+    # swap the indices
+    nc.rows, nc.fields = nc.fields, nc.rows
+    nc.row_mask, nc.field_mask = nc.field_mask, nc.row_mask
+
+    # reset some other numpycube internals based on the above
+    nc.map_rows_and_columns_and_fields()
