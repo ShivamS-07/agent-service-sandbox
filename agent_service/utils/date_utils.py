@@ -8,8 +8,11 @@ from google.protobuf.timestamp_pb2 import Timestamp
 DAYS_LOOKUP = {"D": 1, "W": 7, "M": 30, "Y": 365}
 
 
-def get_now_utc() -> datetime.datetime:
-    return datetime.datetime.now(tz=datetime.timezone.utc)
+def get_now_utc(strip_tz: bool = False) -> datetime.datetime:
+    now = datetime.datetime.now(tz=datetime.timezone.utc)
+    if strip_tz:
+        now = now.replace(tzinfo=None)
+    return now
 
 
 def get_year_quarter_for_date(date: datetime.date) -> Tuple[int, int]:
