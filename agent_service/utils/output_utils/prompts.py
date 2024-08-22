@@ -93,8 +93,8 @@ SHORT_DIFF_SUMMARY_MAIN_PROMPT = Prompt(
     template="""
 You are an analyst who is doing daily updates of a report (which may include one or more sections)
 You have already written a full list of the changes since your last report that includes all the
-differences for all the sections (in bullet format), now you are going send a brief message to your
-boss which summaries the most important findings. This should be no more than a sentence or two, your
+differences for all the sections (in bullet format), now you are going to send a brief message to your
+boss which summarizes the most important findings. This should be no more than a sentence or two, your
 boss is very busy and will be angry if you get wordy. You must not attempt to cover every section
 if there are multiple sections, just pull out the most important information.
 {custom_notifications}
@@ -102,6 +102,28 @@ Here is the full list of changes:
 {diffs}
 Now output your brief summary of the most important changes:
 """,
+)
+
+SHORT_SUMMARY_WORKLOG_MAIN_PROMPT = Prompt(
+    name="SHORT_DIFF_SUMMARY",
+    template=(
+        "You are an analyst who is doing daily updates of a report (which may include one or more sections). "
+        "now you are going to send a brief message to your boss which summarizes the most important findings. "
+        "This should be no more than a sentence or two, your boss is very busy and will be angry if you get wordy. "
+        "You must not attempt to cover every section if there are multiple sections, "
+        "just pull out the most important information. "
+        "Your language must be passive and not mention client. "
+        "If need to refer to the client, use 'You', 'Your', etc. "
+        "Here is the chat between you and the client, delimited by -----:\n"
+        "\n-----\n"
+        "{chat_context}"
+        "\n-----\n"
+        "Here is the most recent report, delimited by -----:\n"
+        "\n-----\n"
+        "{latest_report}"
+        "\n-----\n"
+        "Now write your short summary in less than 2 sentences:\n"
+    ),
 )
 
 SUMMARY_CUSTOM_NOTIFICATION_TEMPLATE = """

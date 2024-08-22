@@ -6,7 +6,8 @@ from prefect import flow
 
 from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.models import Status, TaskStatus
-from agent_service.GPT.requests import set_plan_run_context
+from agent_service.GPT.constants import GPT4_O, NO_PROMPT
+from agent_service.GPT.requests import GPT, set_plan_run_context
 from agent_service.io_type_utils import IOType, split_io_type_into_components
 from agent_service.planner.action_decide import (
     Action,
@@ -47,9 +48,15 @@ from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
-from agent_service.utils.gpt_logging import plan_create_context
+from agent_service.utils.gpt_logging import (
+    GptJobIdType,
+    GptJobType,
+    create_gpt_context,
+    plan_create_context,
+)
 from agent_service.utils.output_utils.output_diffs import OutputDiffer
-from agent_service.utils.output_utils.utils import output_for_log
+from agent_service.utils.output_utils.prompts import SHORT_SUMMARY_WORKLOG_MAIN_PROMPT
+from agent_service.utils.output_utils.utils import io_type_to_gpt_input, output_for_log
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
 from agent_service.utils.prefect import (
     FlowRunType,
@@ -362,8 +369,26 @@ async def run_execution_plan(
     short_diff_summary = None
     if not scheduled_by_automation and do_chat:
         logger.info("Generating chat message...")
+        chat_context = db.get_chats_history_for_agent(agent_id=context.agent_id)
+
+        # generate short diff summary
+        gpt_context = create_gpt_context(
+            GptJobType.AGENT_CHATBOT, context.agent_id, GptJobIdType.AGENT_ID
+        )
+        llm = GPT(gpt_context, GPT4_O)
+        latest_report_list = [await io_type_to_gpt_input(output) for output in final_outputs]
+        main_prompt = SHORT_SUMMARY_WORKLOG_MAIN_PROMPT.format(
+            chat_context=chat_context,
+            latest_report="\n".join(latest_report_list),
+        )
+        short_diff_summary = await llm.do_chat_w_sys_prompt(
+            main_prompt=main_prompt,
+            sys_prompt=NO_PROMPT,
+            output_json=True,
+        )
+
         message = await chatbot.generate_execution_complete_response(
-            chat_context=db.get_chats_history_for_agent(agent_id=context.agent_id),
+            chat_context=chat_context,
             execution_plan=plan,
             outputs=final_outputs,
         )
