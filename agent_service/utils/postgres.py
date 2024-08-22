@@ -82,7 +82,7 @@ class Postgres(PostgresBase):
             params["end"] = end
 
         sql = f"""
-            SELECT message_id::VARCHAR, message, is_user_message, message_time
+            SELECT message_id::VARCHAR, message, is_user_message, message_time, message_author
             FROM agent.chat_messages
             WHERE agent_id = %(agent_id)s{dt_filter}
             ORDER BY message_time ASC;
@@ -595,6 +595,7 @@ class Postgres(PostgresBase):
     def get_chat_contexts(self, agent_ids: List[str]) -> DefaultDict[str, ChatContext]:
         sql = """
             SELECT cm.agent_id::VARCHAR, cm.message_id::VARCHAR, cm.message, cm.is_user_message, cm.message_time,
+            cm.message_author,
               COALESCE(nf.unread, FALSE) as unread
             FROM agent.chat_messages cm
             LEFT JOIN agent.notifications nf
