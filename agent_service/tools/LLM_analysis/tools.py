@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, cast
 
 from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O, SONNET
 from agent_service.GPT.requests import GPT
@@ -14,6 +14,7 @@ from agent_service.io_types.text import (
     NewsText,
     StockText,
     Text,
+    TextCitation,
     TextGroup,
     TopicProfiles,
 )
@@ -23,10 +24,14 @@ from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_s
 from agent_service.tools.LLM_analysis.constants import (
     DEFAULT_LLM,
     LLM_FILTER_MAX_PERCENT,
+    MAX_CITATION_TRIES,
     NO_CITATIONS_DIFF,
+    NO_SUMMARY,
+    NO_SUMMARY_FOR_STOCK,
     RUBRIC_DELIMITER,
     SCORE_MAPPING,
     SCORE_OUTPUT_DELIMITER,
+    UPDATE_PLAN_DELIMITER,
 )
 from agent_service.tools.LLM_analysis.prompts import (
     ANSWER_QUESTION_DESCRIPTION,
@@ -58,6 +63,8 @@ from agent_service.tools.LLM_analysis.prompts import (
     TOPIC_FILTER_MAIN_PROMPT,
     TOPIC_FILTER_SYS_PROMPT,
     TOPIC_PHRASE,
+    UPDATE_SUMMARIZE_MAIN_PROMPT,
+    UPDATE_SUMMARIZE_SYS_PROMPT,
 )
 from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.tools.news import (
@@ -104,25 +111,16 @@ class SummarizeTextInput(ToolArgs):
     topic: Optional[str] = None
 
 
-@tool(
-    description=SUMMARIZE_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
-    reads_chat=True,
-    update_instructions=SUMMARIZE_UPDATE_INSTRUCTIONS,
-)
-async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> Text:
+async def _initial_summarize_helper(
+    args: SummarizeTextInput, context: PlanRunContext, llm: GPT
+) -> Tuple[str, List[TextCitation]]:
     logger = get_prefect_logger(__name__)
-    if context.chat is None:
-        # just for mypy, shouldn't happen
-        return Text(val="")
-    # TODO we need guardrails on this
-    gpt_context = create_gpt_context(
-        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
-    )
-    llm = GPT(context=gpt_context, model=DEFAULT_LLM)
     text_group = TextGroup(val=args.texts)
     texts_str: str = await Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)  # type: ignore
-    chat_str = context.chat.get_gpt_input()
+    if context.chat:
+        chat_str = context.chat.get_gpt_input()
+    else:
+        chat_str = ""
     topic = args.topic
     if topic:
         topic_str = TOPIC_PHRASE.format(topic=topic)
@@ -132,25 +130,179 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         texts_str,
         [SUMMARIZE_MAIN_PROMPT.template, SUMMARIZE_SYS_PROMPT.template, chat_str, topic_str],
     )
+    if not texts_str:
+        raise Exception("Input text(s) are empty")
     main_prompt = SUMMARIZE_MAIN_PROMPT.format(
         texts=texts_str,
         chat_context=chat_str,
         topic_phrase=topic_str,
-        today=datetime.date.today(),
+        today=(
+            context.as_of_date.date().isoformat()
+            if context.as_of_date
+            else datetime.date.today().isoformat()
+        ),
     )
     result = await llm.do_chat_w_sys_prompt(
         main_prompt,
         SUMMARIZE_SYS_PROMPT.format(),
     )
     text, citations = await extract_citations_from_gpt_output(result, text_group, context)
-    if texts_str and not citations:  # missing all citations, do a retry
-        logger.warning(f"Retrying after no citations after first round for {result}")
+    tries = 0
+    while citations is None and tries < MAX_CITATION_TRIES:  # failed to load citations, retry
+        logger.warning(f"Retrying after no citations after  {result}")
         result = await llm.do_chat_w_sys_prompt(
-            main_prompt, SUMMARIZE_SYS_PROMPT.format(), no_cache=True
+            main_prompt, SUMMARIZE_SYS_PROMPT.format(), no_cache=True, temperature=0.1 * (tries + 1)
         )
         text, citations = await extract_citations_from_gpt_output(result, text_group, context)
+        tries += 1
 
-    summary = Text(val=text or result)
+    return text or result, citations or []
+
+
+async def _update_summarize_helper(
+    args: SummarizeTextInput,
+    context: PlanRunContext,
+    llm: GPT,
+    new_texts: List[Text],
+    old_texts: List[Text],
+    old_summary: str,
+) -> Tuple[str, List[TextCitation]]:
+    logger = get_prefect_logger(__name__)
+    new_text_group = TextGroup(val=new_texts)
+    new_texts_str: str = await Text.get_all_strs(
+        new_text_group, include_header=True, text_group_numbering=True
+    )  # type: ignore
+    old_texts_group = TextGroup(val=old_texts, offset=len(new_texts))
+    old_texts_str: str = await Text.get_all_strs(
+        old_texts_group, include_header=True, text_group_numbering=True
+    )  # type: ignore
+
+    if context.chat:
+        chat_str = context.chat.get_gpt_input()
+    else:
+        chat_str = ""
+    topic = args.topic
+    if topic:
+        topic_str = TOPIC_PHRASE.format(topic=topic)
+    else:
+        topic_str = ""
+
+    new_texts_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
+        new_texts_str,
+        [
+            UPDATE_SUMMARIZE_MAIN_PROMPT.template,
+            UPDATE_SUMMARIZE_SYS_PROMPT.template,
+            chat_str,
+            topic_str,
+            old_texts_str,
+        ],
+    )
+
+    if not new_texts_str and not old_texts_str:
+        raise Exception("Input text(s) are empty")
+
+    main_prompt = UPDATE_SUMMARIZE_MAIN_PROMPT.format(
+        new_texts=new_texts_str,
+        old_texts=old_texts_str,
+        old_summary=old_summary,
+        chat_context=chat_str,
+        topic_phrase=topic_str,
+        today=(
+            context.as_of_date.date().isoformat()
+            if context.as_of_date
+            else datetime.date.today().isoformat()
+        ),
+    )
+
+    result = await llm.do_chat_w_sys_prompt(
+        main_prompt,
+        UPDATE_SUMMARIZE_SYS_PROMPT.format(),
+    )
+
+    result = result.split(UPDATE_PLAN_DELIMITER)[-1]  # strip planning section
+
+    combined_text_group = TextGroup.join(new_text_group, old_texts_group)
+
+    text, citations = await extract_citations_from_gpt_output(result, combined_text_group, context)
+    tries = 0
+    while citations is None and tries < MAX_CITATION_TRIES:  # missing all citations, do a retry
+        logger.warning(f"Retrying after no citations for {result}")
+        result = await llm.do_chat_w_sys_prompt(
+            main_prompt,
+            UPDATE_SUMMARIZE_SYS_PROMPT.format(plan_delimiter=UPDATE_PLAN_DELIMITER),
+            no_cache=True,
+            temperature=0.1 * (tries + 1),
+        )
+        result = result.split(UPDATE_PLAN_DELIMITER)[-1]  # strip planning section
+
+        text, citations = await extract_citations_from_gpt_output(
+            result, combined_text_group, context
+        )
+
+        tries += 1
+
+    return text or result, citations or []
+
+
+@tool(
+    description=SUMMARIZE_DESCRIPTION,
+    category=ToolCategory.LLM_ANALYSIS,
+    reads_chat=True,
+    update_instructions=SUMMARIZE_UPDATE_INSTRUCTIONS,
+)
+async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> Text:
+
+    logger = get_prefect_logger(__name__)
+    # TODO we need guardrails on this
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=DEFAULT_LLM)
+
+    if len(args.texts) == 0:
+        raise Exception("Cannot summarize when no texts provided")
+
+    text = None
+    citations = None
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context, "summarize_texts")
+        if prev_run_info is not None:
+            prev_args = SummarizeTextInput.model_validate_json(prev_run_info.inputs_str)
+            prev_texts: List[Text] = prev_args.texts
+            prev_output: Text = prev_run_info.output  # type:ignore
+            curr_input_texts = set(args.texts)
+            new_texts = list(curr_input_texts - set(prev_texts))
+            all_old_citations = cast(List[TextCitation], prev_output.history[0].citations)
+            remaining_citations = [
+                citation
+                for citation in all_old_citations
+                if citation.source_text in curr_input_texts
+            ]
+            if new_texts or (
+                remaining_citations and len(all_old_citations) > len(remaining_citations)
+            ):
+                old_texts = [citation.source_text for citation in remaining_citations]
+                text, citations = await _update_summarize_helper(
+                    args, context, llm, new_texts, old_texts, prev_output.val
+                )
+            else:
+                if remaining_citations:  # output old summary
+                    text = prev_output.val
+                    citations = remaining_citations
+                else:  # unless there's nothing left to cite
+                    text = NO_SUMMARY
+                    citations = []
+
+    except Exception as e:
+        logger.warning(
+            f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
+        )
+
+    if text is None:
+        text, citations = await _initial_summarize_helper(args, context, llm)
+
+    summary = Text(val=text)
     summary = summary.inject_history_entry(
         HistoryEntry(title="Summary", citations=citations)  # type:ignore
     )
@@ -173,6 +325,11 @@ async def per_stock_summarize_texts(
 ) -> List[StockID]:
 
     logger = get_prefect_logger(__name__)
+    # TODO we need guardrails on this
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=DEFAULT_LLM)
 
     text_dict: Dict[StockID, List[StockText]] = {stock: [] for stock in args.stocks}
     for text in args.texts:
@@ -182,17 +339,83 @@ async def per_stock_summarize_texts(
         except AttributeError:
             logger.warning("Non-StockText passed to per stock summarize")
 
+    prev_run_dict: Dict[StockID, Tuple[List[StockText], List[TextCitation], bool, str]] = (
+        defaultdict()
+    )
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context, "per_stock_summarize_texts")
+        if prev_run_info is not None:
+            prev_args = PerStockSummarizeTextInput.model_validate_json(prev_run_info.inputs_str)
+            prev_texts: List[StockText] = prev_args.texts
+            prev_output: List[StockID] = prev_run_info.output  # type:ignore
+
+            old_text_dict: Dict[StockID, List[StockText]] = defaultdict(list)
+            for text in prev_texts:
+                try:
+                    if text.stock_id in text_dict:
+                        old_text_dict[text.stock_id].append(text)
+                except AttributeError:
+                    logger.warning("Non-StockText passed to per stock summarize")
+
+            for stock in prev_output:
+                curr_input_texts = set(text_dict.get(stock, []))
+                old_input_texts = set(old_text_dict.get(stock, []))
+                new_texts = list(curr_input_texts - old_input_texts)
+                old_summary = cast(str, stock.history[-1].explanation)
+                all_old_citations = cast(List[TextCitation], stock.history[-1].citations)
+                remaining_citations = [
+                    citation
+                    for citation in all_old_citations
+                    if citation.source_text in curr_input_texts
+                ]
+                prev_run_dict[stock] = (
+                    new_texts,
+                    remaining_citations,
+                    len(all_old_citations) > len(remaining_citations),
+                    old_summary,
+                )
+
+    except Exception as e:
+        logger.warning(
+            f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
+        )
+
     tasks = []
     summary_count = 0
 
-    for stock, texts in text_dict.items():
-        if texts:
-            tasks.append(
-                summarize_texts(
-                    SummarizeTextInput(texts=texts, topic=args.topic + f" ({stock.company_name})"),  # type: ignore
-                    context,
+    for stock in args.stocks:
+        if stock in text_dict:
+            if stock in prev_run_dict:
+                new_texts, remaining_citations, has_lost_citations, old_summary = prev_run_dict[
+                    stock
+                ]
+                old_texts = [citation.source_text for citation in remaining_citations]
+                if new_texts or (remaining_citations and has_lost_citations):
+                    tasks.append(
+                        _update_summarize_helper(
+                            SummarizeTextInput(texts=new_texts, topic=args.topic),  # type: ignore
+                            context,
+                            llm,
+                            new_texts,  # type: ignore
+                            old_texts,
+                            old_summary,
+                        )
+                    )
+                else:
+                    if remaining_citations:  # no new texts, just use old summary
+                        tasks.append(identity((old_summary, remaining_citations)))
+                    else:  # unless there is nothing to cite, at which point use default
+                        tasks.append(identity((NO_SUMMARY_FOR_STOCK, [])))
+
+            else:
+                tasks.append(
+                    _initial_summarize_helper(
+                        SummarizeTextInput(texts=text_dict[stock], topic=args.topic),  # type: ignore
+                        context,
+                        llm,
+                    )
                 )
-            )
             summary_count += 1
         else:
             tasks.append(identity(None))
@@ -204,13 +427,7 @@ async def per_stock_summarize_texts(
     results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
     output = []
 
-    for stock, result_text in zip(text_dict, results):
-        if result_text:
-            summary = result_text.val
-            citations = result_text.history[0].citations
-        else:
-            summary = ""
-            citations = []
+    for stock, (summary, citations) in zip(args.stocks, results):
         stock = stock.inject_history_entry(
             HistoryEntry(
                 explanation=summary,
@@ -282,7 +499,11 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
             group2_label=args.group2_label,
             extra_data=extra_data_str,
             chat_context=chat_str,
-            today=datetime.date.today(),
+            today=(
+                context.as_of_date.date().isoformat()
+                if context.as_of_date
+                else datetime.date.today().isoformat()
+            ),
         ),
         COMPARISON_SYS_PROMPT.format(),
     )
@@ -322,7 +543,13 @@ async def answer_question_with_text_data(
 
     result = await llm.do_chat_w_sys_prompt(
         ANSWER_QUESTION_MAIN_PROMPT.format(
-            texts=texts_str, question=args.question, today=datetime.date.today()
+            texts=texts_str,
+            question=args.question,
+            today=(
+                context.as_of_date.date().isoformat()
+                if context.as_of_date
+                else datetime.date.today().isoformat()
+            ),
         ),
         ANSWER_QUESTION_SYS_PROMPT.format(),
     )
@@ -445,7 +672,11 @@ async def profile_filter_helper(
                         company_name=stock.company_name,
                         texts=text_str,
                         profile=profile,
-                        today=datetime.date.today(),
+                        today=(
+                            context.as_of_date.date().isoformat()
+                            if context.as_of_date
+                            else datetime.date.today().isoformat()
+                        ),
                     ),
                     COMPLEX_PROFILE_FILTER_SYS_PROMPT.format(topic_name=topic),
                 )
@@ -457,7 +688,11 @@ async def profile_filter_helper(
                         company_name=stock.company_name,
                         texts=text_str,
                         profile=profile,
-                        today=datetime.date.today(),
+                        today=(
+                            context.as_of_date.date().isoformat()
+                            if context.as_of_date
+                            else datetime.date.today().isoformat()
+                        ),
                     ),
                     SIMPLE_PROFILE_FILTER_SYS_PROMPT.format(),
                 )

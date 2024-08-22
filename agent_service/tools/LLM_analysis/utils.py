@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import Levenshtein
 
@@ -9,6 +9,7 @@ from agent_service.io_types.text import NewsText, TextCitation, TextGroup
 from agent_service.tools.LLM_analysis.constants import (
     ANCHOR_HEADER,
     ANCHOR_REGEX,
+    CITATION_HEADER,
     CITATION_SNIPPET_BUFFER_LEN,
     SENTENCE_REGEX,
     UNITS,
@@ -50,10 +51,15 @@ def find_best_sentence_match(snippet: str, sentences: List[str]) -> str:
     )[-1]
 
 
-def get_initial_breakdown(GPT_ouput: str) -> Tuple[str, Dict[str, List[Dict[str, Any]]]]:
+def get_initial_breakdown(GPT_ouput: str) -> Tuple[str, Optional[Dict[str, List[Dict[str, Any]]]]]:
     lines = GPT_ouput.replace("\n\n", "\n").split("\n")
-    if ANCHOR_HEADER in lines:  # GPT told not to do this, but it sometimes does anyway
-        header_index = lines.index(ANCHOR_HEADER)
+    if (
+        ANCHOR_HEADER in lines or CITATION_HEADER in lines
+    ):  # GPT told not to do this, but it sometimes does anyway
+        if ANCHOR_HEADER in lines:
+            header_index = lines.index(ANCHOR_HEADER)
+        elif CITATION_HEADER in lines:
+            header_index = lines.index(CITATION_HEADER)
         main_text = "\n".join(lines[:header_index]).strip()
         citation_dict = "\n".join(lines[header_index + 1 :])
     else:
@@ -62,12 +68,12 @@ def get_initial_breakdown(GPT_ouput: str) -> Tuple[str, Dict[str, List[Dict[str,
 
     try:
         anchor_citation_dict = json.loads(clean_to_json_if_needed(citation_dict))
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, IndexError) as e:
         logger = get_prefect_logger(__name__)
         logger.warning(
-            f"Got error `{e}` when loading `{lines[-1]}` for citations, no citations included"
+            f"Got error `{e}` when loading `{citation_dict}` for citations, no citations included"
         )
-        anchor_citation_dict = {}
+        anchor_citation_dict = None
     return main_text, anchor_citation_dict
 
 
@@ -82,13 +88,15 @@ async def extract_citations_from_gpt_output(
     GPT_ouput: str,
     text_group: TextGroup,
     context: PlanRunContext,
-) -> Tuple[str, List[TextCitation]]:
+) -> Tuple[str, Optional[List[TextCitation]]]:
     logger = get_prefect_logger(__name__)
     llm = GPT(
         model=GPT4_O_MINI,
         context=create_gpt_context(GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID),
     )
     main_text, anchor_citation_dict = get_initial_breakdown(GPT_ouput)
+    if anchor_citation_dict is None:
+        return main_text, anchor_citation_dict
     final_text_bits = []
     final_citations = []
     index_counter = -1  # point to the last character in each added string
@@ -133,6 +141,9 @@ async def extract_citations_from_gpt_output(
                         if idx == -1:  # GPT messed up, snippet is not a substring
                             if sentences is None:
                                 sentences = get_sentences(source_text_str)
+                            if len(sentences) == 0:  # No text, something is wrong, just skip
+                                continue
+
                             # get a key phrase to help find the right sentence
                             key_phrase = strip_units(
                                 await llm.do_chat_w_sys_prompt(

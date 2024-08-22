@@ -1482,6 +1482,8 @@ class GetRiskExposureForStocksInput(ToolArgs):
         "normalized, you can filter this table with the `transform_table' tool as follows: "
         "use > 1 to get 'high' scores, > 2 to get 'very high' scores "
         " < -1 to get 'low' scores, and < -2 to get 'very low' scores. "
+        " This are also known as risk factors or factor weights, you should get this table "
+        " if someone asks for numerical risk factors associated with stocks. "
         "Use this tool if the user asks to filter/rank by one of these factors specifically, "
         "but you must never use it unless what the client says corresponds exactly or almost "
         "exactly to one of the relevant factors, you must use one or more of the provided "

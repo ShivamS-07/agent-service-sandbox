@@ -123,10 +123,11 @@ DATE_RANGE_SYS_PROMPT = Prompt(
         "Your output will be a json with keys `start_date` and `end_date`. "
         "For example, if the input is 'last two months,' and today's date is 2024-07-15, you should "
         'return:\n {{"start_date":"2024-5-15", "end_date":"2024-07-15"}}'
+        "Note that today is ALWAYS included in the range in these cases, this is very important!!!"
         "Generally you should assume that weeks/months/quarters/years refer to 7/30/90/365 days "
         "respectively, and so `last week/month/quarter/year` refers to a date range beginning 7/30/90/365 "
-        "days ago and ending today and NOT the week/month/quarter/year immediately preceeding the one we "
-        "are in, though if a user asks for a range 'since the beginning of last quarter' for "
+        "days ago and ending today (inclusive) and NOT the week/month/quarter/year immediately preceeding "
+        "the one we are in, though if a user asks for a range 'since the beginning of last quarter' for "
         "the same today as above, your output would be: "
         '{{"start_date":"2024-4-1", "end_date":"2024-07-15"}} '
         "since July 15 in in Q3, and April 1st is the beginning of Q2. "
@@ -188,7 +189,11 @@ async def get_date_range(args: GetDateRangeInput, context: PlanRunContext) -> Da
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=DATE_RANGE_MAIN_PROMPT.format(
             string_date=args.date_range_str,
-            today_date=datetime.date.today().isoformat(),
+            today_date=(
+                context.as_of_date.date().isoformat()
+                if context.as_of_date
+                else datetime.date.today().isoformat()
+            ),
             chat_context=context.chat.get_gpt_input(client_only=True) if context.chat else "",
         ),
         sys_prompt=DATE_RANGE_SYS_PROMPT.format(),

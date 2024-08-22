@@ -18,10 +18,15 @@ NO_CITATIONS_DIFF = (
     "is no longer among the documents reviewed in this pass"
 )
 
+NO_SUMMARY = "No information available"
+NO_SUMMARY_FOR_STOCK = "No information available for this stock"
 
 ANCHOR_REGEX = re.compile(r" ?\[([a-z]{1,2}),\d{1,2}\]([\.\?\!]?)")
 # not worth adding NLTK for just this one case, so just use a regex
 SENTENCE_REGEX = re.compile(r"(?<=[^A-Z].[.?!]) +(?=[A-Z])")
-ANCHOR_HEADER = "### Anchor Mapping\n"
+ANCHOR_HEADER = "### Anchor Mapping"
+CITATION_HEADER = "### Citation Mapping"
 UNITS = ["thousand", "million", "billion", "trillion"]
 CITATION_SNIPPET_BUFFER_LEN = 100
+MAX_CITATION_TRIES = 5
+UPDATE_PLAN_DELIMITER = "!!!"
