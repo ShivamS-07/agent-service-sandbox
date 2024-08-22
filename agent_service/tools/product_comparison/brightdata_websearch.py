@@ -1,13 +1,19 @@
 from typing import List
 
 import requests
+from gbi_common_py_utils.utils.ssm import get_param
+
+from agent_service.tools.product_comparison.constants import (
+    BRIGHTDATA_PASSWORD,
+    BRIGHTDATA_USERNAME,
+)
 
 # should probably move these values elsewhere
 host = "brd.superproxy.io"
 port = 22225
 
-username = "brd-customer-hl_95e7d9c3-zone-serp_api_test"
-password = "b3gu741zco3u"
+username = get_param(BRIGHTDATA_USERNAME)
+password = get_param(BRIGHTDATA_PASSWORD)
 
 proxy_url = f"http://{username}:{password}@{host}:{port}"
 
