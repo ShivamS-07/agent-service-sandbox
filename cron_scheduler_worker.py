@@ -19,6 +19,7 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import get_psql
+from agent_service.utils.s3_upload import upload_string_to_s3
 from agent_service.utils.scheduling import AgentSchedule
 from agent_service.utils.sentry_utils import init_sentry
 
@@ -87,10 +88,14 @@ async def start_agent_run(agent: AgentInfo) -> None:
         "replan_execution_error": False,
         "scheduled_by_automation": True,
     }
-    message = {
+    message_contents = {
         "method": "run_execution_plan",
         "arguments": arguments,
         "send_time_utc": get_now_utc().isoformat(),
+    }
+    message = {
+        "s3_path": upload_string_to_s3(data=json.dumps(message_contents, default=json_serial)),
+        "method": "run_execution_plan",
     }
     queue = sqs.get_queue_by_name(QueueName=AGENT_AUTOMATION_WORKER_QUEUE)
     queue.send_message(MessageBody=json.dumps(message, default=json_serial))
