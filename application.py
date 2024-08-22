@@ -160,7 +160,10 @@ class AuditInfo:
 def update_audit_info_with_response_info(
     audit_info: AuditInfo, received_timestamp: datetime.datetime
 ) -> None:
-    response_timestamp = get_now_utc(strip_tz=True)
+    if received_timestamp.tzinfo:
+        response_timestamp = get_now_utc()
+    else:
+        response_timestamp = get_now_utc(strip_tz=True)
     audit_info.response_timestamp = response_timestamp
     audit_info.internal_processing_time = (response_timestamp - received_timestamp).total_seconds()
     if audit_info.client_timestamp:
