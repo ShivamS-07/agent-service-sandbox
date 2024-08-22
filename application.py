@@ -160,16 +160,21 @@ class AuditInfo:
 def update_audit_info_with_response_info(
     audit_info: AuditInfo, received_timestamp: datetime.datetime
 ) -> None:
+    response_timestamp_tz = get_now_utc()
+    response_timestamp_no_tz = response_timestamp_tz.replace(tzinfo=None)
     if received_timestamp.tzinfo:
-        response_timestamp = get_now_utc()
+        response_timestamp = response_timestamp_tz
     else:
-        response_timestamp = get_now_utc(strip_tz=True)
+        response_timestamp = response_timestamp_no_tz
     audit_info.response_timestamp = response_timestamp
     audit_info.internal_processing_time = (response_timestamp - received_timestamp).total_seconds()
     if audit_info.client_timestamp:
-        audit_info.total_processing_time = (
-            response_timestamp - datetime.datetime.fromisoformat(audit_info.client_timestamp)
-        ).total_seconds()
+        client_ts = datetime.datetime.fromisoformat(audit_info.client_timestamp)
+        if client_ts.tzinfo:
+            response_timestamp = response_timestamp_tz
+        else:
+            response_timestamp = response_timestamp_no_tz
+        audit_info.total_processing_time = (response_timestamp - client_ts).total_seconds()
 
 
 @application.middleware("http")
