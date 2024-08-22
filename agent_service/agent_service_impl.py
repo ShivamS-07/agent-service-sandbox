@@ -980,7 +980,7 @@ class AgentServiceImpl:
         sections: List[SidebarSection] = await self.pg.get_sidebar_sections(user_id=user.user_id)
         index = find_sidebar_section(sections=sections, section_id=section_id)
         sections[index].name = new_name
-        sections[index].updated_at = datetime.datetime.utcnow().isoformat()
+        sections[index].updated_at = get_now_utc().isoformat()
         await self.pg.set_sidebar_sections(user_id=user.user_id, sections=sections)
         return True
 
@@ -996,7 +996,7 @@ class AgentServiceImpl:
         sections: List[SidebarSection] = await self.pg.get_sidebar_sections(user_id=user.user_id)
         index = find_sidebar_section(sections=sections, section_id=section_id)
         rearrange_section = sections.pop(index)
-        rearrange_section.updated_at = datetime.datetime.utcnow().isoformat()
+        rearrange_section.updated_at = get_now_utc().isoformat()
         sections.insert(new_index, rearrange_section)
         await self.pg.set_sidebar_sections(user_id=user.user_id, sections=sections)
         return True

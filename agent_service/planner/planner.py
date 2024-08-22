@@ -201,7 +201,7 @@ class Planner:
         sample_plans: str = "",
     ) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
-        execution_plan_start = datetime.datetime.utcnow().isoformat()
+        execution_plan_start = get_now_utc().isoformat()
         if llm is None:
             llm = self.fast_llm
 
@@ -223,7 +223,7 @@ class Planner:
                 event_name="agent_plan_generated",
                 event_data={
                     "started_at_utc": execution_plan_start,
-                    "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                    "finished_at_utc": get_now_utc().isoformat(),
                     "error_message": traceback.format_exc(),
                     "plan_str": plan_str,
                     "agent_id": agent_id,
@@ -239,7 +239,7 @@ class Planner:
             event_name="agent_plan_generated",
             event_data={
                 "started_at_utc": execution_plan_start,
-                "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                "finished_at_utc": get_now_utc().isoformat(),
                 "execution_plan": plan_to_json(plan=plan),
                 "plan_str": plan_str,
                 "agent_id": agent_id,
@@ -256,7 +256,7 @@ class Planner:
     async def _pick_best_plan(
         self, chat_context: ChatContext, plans: List[ExecutionPlan], plan_id: str
     ) -> ExecutionPlan:
-        plan_pick_started_at = datetime.datetime.utcnow().isoformat()
+        plan_pick_started_at = get_now_utc().isoformat()
         plans_str = "\n\n".join(
             f"Plan {n}:\n{plan.get_formatted_plan()}" for n, plan in enumerate(plans)
         )
@@ -275,7 +275,7 @@ class Planner:
                 "selection_str": result,
                 "agent_id": get_agent_id_from_chat_context(context=chat_context),
                 "started_at_utc": plan_pick_started_at,
-                "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                "finished_at_utc": get_now_utc().isoformat(),
                 "plan_id": plan_id,
             },
         )
@@ -375,7 +375,7 @@ class Planner:
     ) -> Optional[ExecutionPlan]:
         # for now, just assume last step is what is new
         # TODO: multiple old plans, flexible chat cutoff
-        execution_plan_start = datetime.datetime.utcnow().isoformat()
+        execution_plan_start = get_now_utc().isoformat()
         agent_id = get_agent_id_from_chat_context(context=chat_context)
         logger = get_prefect_logger(__name__)
         main_chat_str = chat_context.get_gpt_input()
@@ -396,7 +396,7 @@ class Planner:
                 event_name="agent_plan_generated",
                 event_data={
                     "started_at_utc": execution_plan_start,
-                    "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                    "finished_at_utc": get_now_utc().isoformat(),
                     "execution_plan": plan_to_json(plan=new_plan),
                     "plan_str": plan_str,
                     "agent_id": agent_id,
@@ -412,7 +412,7 @@ class Planner:
                 event_name="agent_plan_generated",
                 event_data={
                     "started_at_utc": execution_plan_start,
-                    "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                    "finished_at_utc": get_now_utc().isoformat(),
                     "error_message": traceback.format_exc(),
                     "plan_str": plan_str,
                     "agent_id": agent_id,
@@ -488,7 +488,7 @@ class Planner:
         action: Action,
         plan_id: str,
     ) -> Optional[ExecutionPlan]:
-        execution_plan_start = datetime.datetime.utcnow().isoformat()
+        execution_plan_start = get_now_utc().isoformat()
         agent_id = get_agent_id_from_chat_context(context=chat_context)
         logger = get_prefect_logger(__name__)
         old_plan_str = last_plan.get_formatted_plan()
@@ -506,7 +506,7 @@ class Planner:
                 event_name="agent_plan_generated",
                 event_data={
                     "started_at_utc": execution_plan_start,
-                    "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                    "finished_at_utc": get_now_utc().isoformat(),
                     "execution_plan": plan_to_json(plan=new_plan),
                     "plan_str": new_plan_str,
                     "agent_id": agent_id,
@@ -522,7 +522,7 @@ class Planner:
                 event_name="agent_plan_generated",
                 event_data={
                     "started_at_utc": execution_plan_start,
-                    "finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                    "finished_at_utc": get_now_utc().isoformat(),
                     "error_message": traceback.format_exc(),
                     "plan_str": new_plan_str,
                     "agent_id": agent_id,

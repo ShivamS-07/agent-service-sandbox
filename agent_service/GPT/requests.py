@@ -6,7 +6,6 @@ import logging
 import os
 import traceback
 import uuid
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from gbi_common_py_utils.utils.environment import (
@@ -37,6 +36,7 @@ from agent_service.GPT.constants import (
 )
 from agent_service.types import PlanRunContext
 from agent_service.unit_test_util import RUNNING_IN_UNIT_TEST
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.gpt_logging import (
     GPT_TASK_TYPE,
@@ -122,7 +122,7 @@ async def query_gpt_worker(
 ) -> str:
     if not request_id:
         request_id = str(uuid.uuid4())
-    client_timestamp = datetime.utcnow().isoformat()
+    client_timestamp = get_now_utc().isoformat()
     try:
         return await _query_gpt_worker(
             model=model,
@@ -146,7 +146,7 @@ async def query_gpt_worker(
                 "send_timestamp": client_timestamp,
                 "retry_number": retry_num,
                 "request_id": request_id,
-                "give_up_timestamp": datetime.utcnow().isoformat(),
+                "give_up_timestamp": get_now_utc().isoformat(),
                 "model_id": model,
             },
         )
@@ -185,7 +185,7 @@ async def _query_gpt_worker(
 ) -> str:
     plan_run_context = PLAN_RUN_CONTEXT.get()
     if not client_timestamp:
-        client_timestamp = datetime.utcnow().isoformat()
+        client_timestamp = get_now_utc().isoformat()
     priority = DEFAULT_PRIORITY
     context_struct = Struct()
     if context is not None:
@@ -248,7 +248,7 @@ async def get_embedding(
 ) -> List[float]:
     if not request_id:
         request_id = str(uuid.uuid4())
-    client_timestamp = datetime.utcnow().isoformat()
+    client_timestamp = get_now_utc().isoformat()
     try:
         return await _get_embedding(
             model=model,
@@ -267,7 +267,7 @@ async def get_embedding(
                 "send_timestamp": client_timestamp,
                 "retry_number": retry_num,
                 "request_id": request_id,
-                "give_up_timestamp": datetime.utcnow().isoformat(),
+                "give_up_timestamp": get_now_utc().isoformat(),
                 "model_id": model,
             },
         )
@@ -296,7 +296,7 @@ async def _get_embedding(
 ) -> List[float]:
 
     if not client_timestamp:
-        client_timestamp = datetime.utcnow().isoformat()
+        client_timestamp = get_now_utc().isoformat()
 
     request = EmbedTextRequest(
         model=model,

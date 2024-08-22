@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import datetime
 import json
 import logging
 import resource
@@ -8,6 +7,7 @@ import time
 import traceback
 
 from agent_service.sqs_serve.message_handler import MessageHandler
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.s3_upload import download_json_from_s3
 
@@ -31,7 +31,7 @@ def wait_if_needed(start_time: float) -> None:
 
 async def main() -> None:
     message_string = ""
-    start_time_utc = datetime.datetime.utcnow().isoformat()
+    start_time_utc = get_now_utc().isoformat()
     start_time = time.time()
     converted_message_str = ""
     try:
@@ -64,7 +64,7 @@ async def main() -> None:
             event_name="agent_worker_message_processed",
             event_data={
                 "start_time_utc": start_time_utc,
-                "end_time_utc": datetime.datetime.utcnow().isoformat(),
+                "end_time_utc": get_now_utc().isoformat(),
                 "raw_message": message_string,
                 "message": converted_message_str,
             },
@@ -91,7 +91,7 @@ async def main() -> None:
             event_name="agent_worker_message_processed",
             event_data={
                 "start_time_utc": start_time_utc,
-                "end_time_utc": datetime.datetime.utcnow().isoformat(),
+                "end_time_utc": get_now_utc().isoformat(),
                 "raw_message": message_string,
                 "message": converted_message_str,
                 "error_msg": traceback.format_exc(),

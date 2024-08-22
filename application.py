@@ -104,6 +104,7 @@ from agent_service.io_types.citations import CitationType
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.clickhouse import Clickhouse
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.feature_flags import is_user_agent_admin
 from agent_service.utils.logs import init_stdout_logging
@@ -159,7 +160,7 @@ class AuditInfo:
 def update_audit_info_with_response_info(
     audit_info: AuditInfo, received_timestamp: datetime.datetime
 ) -> None:
-    response_timestamp = datetime.datetime.utcnow()
+    response_timestamp = get_now_utc()
     audit_info.response_timestamp = response_timestamp
     audit_info.internal_processing_time = (response_timestamp - received_timestamp).total_seconds()
     if audit_info.client_timestamp:
@@ -170,7 +171,7 @@ def update_audit_info_with_response_info(
 
 @application.middleware("http")
 async def add_process_time_header(request: Request, call_next: Callable) -> Any:
-    received_timestamp = datetime.datetime.utcnow()
+    received_timestamp = get_now_utc()
     global REQUEST_COUNTER
     REQUEST_COUNTER += 1
     client_timestamp = request.headers.get("clienttimestamp", None)

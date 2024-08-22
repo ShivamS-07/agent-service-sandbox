@@ -13,7 +13,6 @@ def my_tool(args: MyToolInput, context: PlanRunContext) -> int:
 """
 
 import contextvars
-import datetime
 import enum
 import functools
 import inspect
@@ -54,6 +53,7 @@ from agent_service.utils.cache_utils import (
     CacheBackend,
     RedisCacheBackend,
 )
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.prefect import get_task_run_name, is_inside_prefect_task
 
@@ -423,7 +423,7 @@ def tool(
             tool_name = func.__name__
 
             async def main_func(args: T, context: PlanRunContext) -> IOType:
-                start = datetime.datetime.utcnow().isoformat()
+                start = get_now_utc().isoformat()
                 event_data: Dict[str, Any] = {
                     "tool_name": tool_name,
                     "start_time_utc": start,
@@ -438,7 +438,7 @@ def tool(
                     previous_debug_info = TOOL_DEBUG_INFO.get()
                     try:
                         result = await func(args, context)
-                        event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
+                        event_data["end_time_utc"] = get_now_utc().isoformat()
                         event_data["result"] = dump_io_type(result)
                         debug_info = TOOL_DEBUG_INFO.get()
                         if debug_info:
@@ -451,7 +451,7 @@ def tool(
 
                         return result
                     except Exception as e:
-                        event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
+                        event_data["end_time_utc"] = get_now_utc().isoformat()
                         event_data["error_msg"] = traceback.format_exc()
                         debug_info = TOOL_DEBUG_INFO.get()
                         if debug_info:
@@ -474,19 +474,19 @@ def tool(
                         event_data["cache_key"] = key
                         if cached_val:
                             event_data["cache_hit"] = True
-                            event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
+                            event_data["end_time_utc"] = get_now_utc().isoformat()
                             event_data["result"] = dump_io_type(cached_val)
                             log_event(event_name="agent-service-tool-call", event_data=event_data)
                             return cached_val
 
                         new_val = await func(args, context)
                         await cache_client.set(key=key, val=new_val, ttl=cache_ttl)
-                        event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
+                        event_data["end_time_utc"] = get_now_utc().isoformat()
                         event_data["result"] = dump_io_type(new_val)
                         log_event(event_name="agent-service-tool-call", event_data=event_data)
                         return new_val
                     except Exception:
-                        event_data["end_time_utc"] = datetime.datetime.utcnow().isoformat()
+                        event_data["end_time_utc"] = get_now_utc().isoformat()
                         event_data["error_msg"] = traceback.format_exc()
                         log_event(event_name="agent-service-tool-call", event_data=event_data)
                         logger.exception(f"Cache check failed for {(tool_name, args, context)}")

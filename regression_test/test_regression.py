@@ -1,6 +1,5 @@
 # type: ignore
 import asyncio
-import datetime
 import inspect
 import json
 import os
@@ -229,7 +228,7 @@ class TestExecutionPlanner(unittest.TestCase):
             sample_plans = self.loop.run_until_complete(
                 get_similar_sample_plans(input=chat.get_gpt_input(client_only=True))
             )
-            execution_plan_start = datetime.datetime.utcnow().isoformat()
+            execution_plan_start = get_now_utc().isoformat()
             plan = self.loop.run_until_complete(
                 create_execution_plan_local(
                     agent_id=agent_id,
@@ -243,7 +242,7 @@ class TestExecutionPlanner(unittest.TestCase):
                     do_chat=do_chat,
                 )
             )
-            execution_plan_finished_at = datetime.datetime.utcnow().isoformat()
+            execution_plan_finished_at = get_now_utc().isoformat()
             regression_test_log.event_data.update(
                 {
                     "execution_plan_started_at_utc": execution_plan_start,
@@ -270,7 +269,7 @@ class TestExecutionPlanner(unittest.TestCase):
             run_tasks_without_prefect=True,
         )
         context.chat = chat
-        execution_started_at = datetime.datetime.utcnow().isoformat()
+        execution_started_at = get_now_utc().isoformat()
         execution_log = defaultdict(list)
         output = self.loop.run_until_complete(
             run_execution_plan_local(
@@ -285,7 +284,7 @@ class TestExecutionPlanner(unittest.TestCase):
         regression_test_log.event_data.update(
             {
                 "execution_start_at_utc": execution_started_at,
-                "execution_finished_at_utc": datetime.datetime.utcnow().isoformat(),
+                "execution_finished_at_utc": get_now_utc().isoformat(),
                 "output": dump_io_type(output),
             }
         )
