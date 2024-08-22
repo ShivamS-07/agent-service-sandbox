@@ -308,16 +308,15 @@ class GetEarningsCallDataInput(ToolArgs):
 
 
 @tool(
-    description=(
-        "This returns a list of all earnings call transcripts for one or more stocks "
-        "that were published within the provided date range. This should only be used when "
-        "a user explicitly asks for the full earnings transcript. Otherwise earnings data should "
-        "be retrieved through the get_earnings_call_summaries tool. "
-        "If no date range is provided, it defaults to the last quarter, containing the "
-        "the full earnings call transcript for the most recent earnings call and what the clients "
-        "are usually interested in unless they explicitly state otherwise. "
-        "You may alternatively provide a date_range created by the get_n_width_date_range_near_date tool"
-    ),
+    description="""This tool returns a list of all earnings call **transcripts** for one or more stocks \
+that were published within the provided date range. This should only be used when \
+a user explicitly asks for the full earnings transcript. Otherwise earnings data should \
+be retrieved through the `get_earnings_call_summaries` tool. \
+You should first use the tool `get_date_range` to create a DateRange object if there is a specific \
+date range mentioned in the client's messages. If no date range is provided or can be inferred from \
+the client's messages, you should set `date_range` to None, and it defaults to the last quarter under \
+the hood, which you can assume is what the clients are usually interested in unless they explicitly \
+state otherwise.""",
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,
 )
@@ -366,16 +365,16 @@ async def get_earnings_call_full_transcripts(
 
 
 @tool(
-    description=(
-        "This returns a list of all earnings call summaries for one or more stocks "
-        "that were published within the provided date range. "
-        "If the client simply mentions `earnings calls`, you will get data using this tool unless "
-        "the term `transcript` is specifically used, at which point you would use the transcript tool. "
-        "Again, this tool is the default tool for getting earnings call information! "
-        "If no date range is provided, it defaults to the last quarter, containing the "
-        "the summary for the most recent earnings call and what the clients are usually interested "
-        "in unless they explicitly state otherwise. "
-    ),
+    description="""This tool returns a list of all earnings call **summaries** for one or more stocks \
+that were published within the provided date range. \
+If the client simply mentions `earnings calls`, you will get data using this tool unless \
+the term `transcript` is specifically used, at which point you would use the transcript tool. \
+Again, this tool is the default tool for getting earnings call information!
+You should first use the tool `get_date_range` to create a DateRange object if there is a specific \
+date range mentioned in the client's messages. If no date range is provided or can be inferred from \
+the client's messages, you should set `date_range` to None, and it defaults to the last quarter under \
+the hood, containing the summary for the most recent earnings call in which the clients are \
+usually interested in unless they explicitly state otherwise.""",
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,
 )
