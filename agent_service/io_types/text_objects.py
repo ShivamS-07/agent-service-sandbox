@@ -2,12 +2,16 @@ import enum
 import json
 import re
 from collections import defaultdict
-from itertools import chain
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
+from agent_service.GPT.constants import GPT4_O_MINI, NO_PROMPT
+from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import IO_TYPE_NAME_KEY, SerializeableBase, io_type
 from agent_service.io_types.stock import StockID
+from agent_service.types import PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.prompt_utils import Prompt
 
 
 class TextObjectType(enum.StrEnum):
@@ -110,6 +114,103 @@ class TextObject(SerializeableBase):
 
         return "".join(output_buffer)
 
+    @staticmethod
+    def _extract_stock_tags_from_text(
+        original_text: str, tagged_text: str, symbol_to_stock_map: Dict[str, StockID]
+    ) -> List:
+        # It's a nightmare regex, but really it's just:
+        # match two open brackets, match any number of non-close bracket characters, match two close brackets
+        tag_regex = re.compile(r"\[\[([^\]]*)\]\]")
+        text_objects = []
+        for tag_match in re.finditer(tag_regex, tagged_text):
+            if not tag_match or not tag_match.group(1):
+                continue
+            symbol = tag_match.group(1)
+            if symbol not in symbol_to_stock_map:
+                continue
+
+            # The below code is necessary because GPT is a nightmare and keeps
+            # inserting random whitespace that messes with the indexes matching
+            # up with the original text.
+
+            # NOTE: this is likely extremely slow, but for now it works. This
+            # is done during the workflow, so probably not a huge deal.
+            # Now that we have a symbol, we want to find the place that symbol
+            # occurs in the original text, so that we can fill in the stock
+            # object.
+            original_text_stock_references = list(re.finditer(symbol, original_text))
+            tagged_text_stock_references = list(re.finditer(symbol, tagged_text))
+            if len(original_text_stock_references) != len(tagged_text_stock_references):
+                continue
+            for i, symbol_match in enumerate(tagged_text_stock_references):
+                # The symbol match matches the first group of the tag match
+                # (i.e. where the symbol starts after the brackets)
+                if symbol_match.start() == tag_match.start(1):
+                    stock = symbol_to_stock_map[symbol]
+                    original_text_location = original_text_stock_references[i]
+
+                    text_objects.append(
+                        StockTextObject(
+                            gbi_id=stock.gbi_id,
+                            symbol=stock.symbol,
+                            company_name=stock.company_name,
+                            index=original_text_location.start(),
+                            end_index=original_text_location.end() - 1,
+                        )
+                    )
+                    break
+        return text_objects
+
+    @staticmethod
+    async def find_and_tag_references_in_text(
+        text: str, context: PlanRunContext, db: Optional[BoostedPG] = None
+    ) -> List["TextObject"]:
+        if not context.stock_info:
+            return []
+        symbol_to_stock_map = {}
+        for stock in context.stock_info:
+            if stock.symbol:
+                symbol_to_stock_map[stock.symbol] = stock
+            if stock.company_name:
+                symbol_to_stock_map[stock.company_name] = stock
+
+        gpt_context = create_gpt_context(
+            GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+        )
+        llm = GPT(context=gpt_context, model=GPT4_O_MINI)
+
+        object_tagging_prompt = Prompt(
+            name="AGENT_SVC_TEXT_TAGGING_POSTPROCESSING",
+            template="""
+You are a financial analyst reading a piece of text from a report or
+summary. The text is written in markdown. Your job is to tag each stock or
+company mention with wiki link style double brackets. For example, the mention
+of "AAPL" should become "[[AAPL]]". These mentions will be highlighted for your
+clients. If the ticker of a company follows the name like "Apple Inc. (AAPL)"
+you should ONLY tag the ticker: "Apple Inc. ([[AAPL]])". Other than that, make
+NO changes to the input text AT ALL. If you do, you will be fired!
+{chat_context} Here is the text that you should perform the tagging on: {text}
+
+Your tagged output text:""",
+        )
+
+        chat_context = ""
+        if context.chat:
+            chat_context = (
+                "For context, the following is the chat exchange between"
+                f" you and your client:\n{context.chat.get_gpt_input()}"
+            )
+
+        result = await llm.do_chat_w_sys_prompt(
+            main_prompt=object_tagging_prompt.format(text=text, chat_context=chat_context),
+            sys_prompt=NO_PROMPT,
+        )
+
+        # TODO enrich stock text objects with metadata from the DB
+        return TextObject._extract_stock_tags_from_text(
+            original_text=text, tagged_text=result, symbol_to_stock_map=symbol_to_stock_map
+        )
+
 
 @io_type
 class StockTextObject(TextObject):
@@ -117,77 +218,6 @@ class StockTextObject(TextObject):
     gbi_id: int
     symbol: Optional[str]
     company_name: Optional[str]
-
-    @staticmethod
-    async def find_stock_references_in_text(
-        text: str, stocks: List[StockID], db: Optional[BoostedPG] = None
-    ) -> List["StockTextObject"]:
-        # First find any alternate names for the stocks
-        gbi_ids = [stock.gbi_id for stock in stocks]
-        if not db:
-            from agent_service.utils.postgres import SyncBoostedPG
-
-            db = SyncBoostedPG()
-
-        sql = """
-        SELECT gbi_security_id AS gbi_id, symbol, name AS company_name,
-              ARRAY_AGG(an.alt_name) AS gbi_alt_names, ARRAY_AGG(can.alt_name) AS company_alt_names
-        FROM master_security ms
-        JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
-        LEFT JOIN "data".gbi_id_alt_names an ON ms.gbi_security_id = an.gbi_id
-        LEFT JOIN "data".company_alt_names can ON ssm.spiq_company_id = can.spiq_company_id
-        WHERE an.enabled AND an.enddate >= NOW() AND can.enabled AND can.enddate >= NOW()
-        AND ms.gbi_security_id = ANY(%(gbi_ids)s)
-        GROUP BY gbi_security_id
-        """
-
-        rows = await db.generic_read(sql, params={"gbi_ids": gbi_ids})
-        if not rows:
-            return []
-
-        # Maps match name to (gbi_id, symbol, company name)
-        name_stock_matcher: Dict[str, Tuple[int, str, str]] = {}
-
-        for row in rows:
-            row_stock_data = (row["gbi_id"], row["symbol"], row["company_name"])
-            for match_name in chain(
-                [row["symbol"], row["company_name"]],  # match on symbol, company name
-                row["gbi_alt_names"],  # alt names for gbi
-                row["company_alt_names"],  # alt names for company
-            ):
-                name_stock_matcher[match_name] = row_stock_data
-
-        # Match from longest to shortest
-        matching_names_list = sorted(
-            name_stock_matcher.keys(), reverse=True, key=lambda name: len(name)
-        )
-        regex_str = "|".join((re.escape(name) for name in matching_names_list))
-        # Match any string preceded by a space and followed by space or punctuation.
-        regex = re.compile(f"\\s+({regex_str})\\W+")
-        seen_indexes = set()
-        output = []
-        for m in re.finditer(regex, text):
-            # Group 1 is the match without the spaces on either side
-            stock_data = name_stock_matcher.get(m.group(1))
-            if not stock_data:
-                continue
-
-            index = m.start(1)
-            # If we've already seen a stock reference at the same index, ignore
-            # it. We're going longest to shortest so "AAPL Inc." beats "AAPL".
-            if index not in seen_indexes:
-                seen_indexes.add(index)
-                output.append(
-                    StockTextObject(
-                        index=m.start(1),
-                        # Our indexes are inclusive
-                        end_index=m.end(1) - 1,
-                        gbi_id=stock_data[0],
-                        symbol=stock_data[1],
-                        company_name=stock_data[2],
-                    )
-                )
-        return output
 
 
 @io_type

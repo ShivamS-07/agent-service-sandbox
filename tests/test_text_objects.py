@@ -59,49 +59,81 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
     @parameterized.expand(
         [
             param(
-                text="This is a test of AAPL and MSFT, hello there!",
+                original_text=(
+                    "This is a test of AAPL and MSFT, hello there,"
+                    " also Other test should not be hit!"
+                ),
+                tagged_text=(
+                    "This is a test of [[AAPL]] and [[MSFT]],  hello there,"
+                    " also [[Other]] test should not be hit!"
+                ),
                 stocks=[
                     StockID(gbi_id=714, symbol="AAPL", isin=""),
                     StockID(gbi_id=6963, symbol="MSFT", isin=""),
                     StockID(gbi_id=7555, symbol="NVDA", isin=""),
-                ],
-                expected_objects=[
-                    StockTextObject(
-                        index=18, end_index=21, gbi_id=714, symbol="AAPL", company_name="Apple Inc."
-                    ),
-                    StockTextObject(
-                        index=27,
-                        end_index=30,
-                        gbi_id=6963,
-                        symbol="MSFT",
-                        company_name="Microsoft Corporation",
-                    ),
                 ],
             ),
             param(
-                text="This is a test of AAPL Apple Inc. and MSFT, hello there!",
+                original_text="Another test with TSLA and AAPL, but also NVDA and stuff.",
+                # Random spaces simulating GPT weirdness
+                tagged_text="Another [[test]] with [[TSLA]]    and [[AAPL]], but also [[NVDA]] and   stuff.",
                 stocks=[
                     StockID(gbi_id=714, symbol="AAPL", isin=""),
                     StockID(gbi_id=6963, symbol="MSFT", isin=""),
                     StockID(gbi_id=7555, symbol="NVDA", isin=""),
                 ],
-                expected_objects=[
-                    StockTextObject(
-                        index=18, end_index=32, gbi_id=714, symbol="AAPL", company_name="Apple Inc."
-                    ),
-                    StockTextObject(
-                        index=38,
-                        end_index=41,
-                        gbi_id=6963,
-                        symbol="MSFT",
-                        company_name="Microsoft Corporation",
-                    ),
+            ),
+            param(
+                original_text="Another test Apple Inc with TSLA and AAPL, but also NVDA and stuff.",
+                # Random spaces simulating GPT weirdness
+                tagged_text="Another [[test]] [[Apple Inc]] with [[TSLA]]    and [[AAPL]], but also [[NVDA]] and   stuff.",
+                stocks=[
+                    StockID(gbi_id=714, symbol="AAPL", isin="", company_name="Apple Inc"),
+                    StockID(gbi_id=6963, symbol="MSFT", isin=""),
+                    StockID(gbi_id=7555, symbol="NVDA", isin=""),
+                ],
+            ),
+            param(
+                original_text="Recent news on Apple (AAPL) includes several significant updates. Apple has announced a new patent for the MacBook Pro, which suggests expanding touch functionality to nearly all surfaces around the keyboard and potentially reimagining the trackpad as a dynamic display. The company has also launched a web version of its Podcasts app, allowing users to search, browse, and listen to podcasts through various web browsers. Additionally, Apple has released a firmware update for the Beats Studio Pro headphones, introducing an audio sharing feature. The Apple Watch Series 10 will feature larger screen sizes, advanced LTPO technology, and new health sensors for hypertension and sleep apnea. Apple has also extended the AppleCare+ coverage extension period from 30 to 45 days. Furthermore, the company is set to begin assembling the iPhone 16 Pro models in India soon after their launch. Lastly, Apple has announced that Matt Fischer, the vice president in charge of the App Store, will leave the company in October.\nTesla (TSLA) has also been in the news with several key developments. The company is hiring employees to help accumulate data for its Optimus humanoid robot project, which involves wearing a motion capture suit and a virtual reality headset. Tesla has launched the Powerwall 3 in Australia and New Zealand, featuring a battery capacity of 13.5 kWh and a maximum charging and discharging capacity of 5 kW. Additionally, Tesla's China Megafactory, aimed at producing Megapacks for energy storage, is reported to be 45% complete, with plans to start production in Q1 2025. The company is also expanding its GigaFactory network globally, including plans for seven new factories and a specific focus on establishing a facility in Indonesia.",  # noqa
+                tagged_text="Recent news on Apple ([[AAPL]]) includes several significant updates. Apple has announced a new patent for the MacBook Pro, which suggests expanding touch functionality to nearly all surfaces around the keyboard and potentially reimagining the trackpad as a dynamic display. The company has also launched a web version of its Podcasts app, allowing users to search, browse, and listen to podcasts through various web browsers. Additionally, Apple has released a firmware update for the Beats Studio Pro headphones, introducing an audio sharing feature. The Apple Watch Series 10 will feature larger screen sizes, advanced LTPO technology, and new health sensors for hypertension and sleep apnea. Apple has also extended the AppleCare+ coverage extension period from 30 to 45 days. Furthermore, the company is set to begin assembling the iPhone 16 Pro models in India soon after their launch. Lastly, Apple has announced that Matt Fischer, the vice president in charge of the App Store, will leave the company in October.\nTesla ([[TSLA]]) has also been in the news with several key developments. The company is hiring employees to help accumulate data for its Optimus humanoid robot project, which involves wearing a motion capture suit and a virtual reality headset. Tesla has launched the Powerwall 3 in Australia and New Zealand, featuring a battery capacity of 13.5 kWh and a maximum charging and discharging capacity of 5 kW. Additionally, Tesla's China Megafactory, aimed at producing Megapacks for energy storage, is reported to be 45% complete, with plans to start production in Q1 2025.       The company is also expanding its GigaFactory network globally, including plans for seven new factories and a specific focus on establishing a facility in Indonesia.",  # noqa
+                stocks=[
+                    StockID(gbi_id=714, symbol="AAPL", isin=""),
+                    StockID(gbi_id=1234, symbol="TSLA", isin=""),
                 ],
             ),
         ]
     )
-    async def test_find_stock_references_in_text(
-        self, text: str, stocks: List[StockID], expected_objects: List[StockTextObject]
+    async def test__extract_stock_tags_from_text(
+        self,
+        original_text,
+        tagged_text: str,
+        stocks: List[StockID],
     ):
-        actual = await StockTextObject.find_stock_references_in_text(text=text, stocks=stocks)
-        self.assertEqual(actual, expected_objects)
+        stock_map = {}
+        for stock in stocks:
+            if stock.symbol:
+                stock_map[stock.symbol] = stock
+            if stock.company_name:
+                stock_map[stock.company_name] = stock
+        stock_objects = TextObject._extract_stock_tags_from_text(
+            original_text=original_text,
+            tagged_text=tagged_text,
+            symbol_to_stock_map=stock_map,
+        )
+        # Make sure that the locations of the stock objects' tickers are the
+        # same as the are in the original text
+        for stock_obj in stock_objects:
+            company_name_matches = False
+            symbol_name_matches = False
+            if stock_obj.company_name:
+                start = original_text.index(stock_obj.company_name)
+                end = start + len(stock_obj.company_name) - 1
+                if stock_obj.index == start and stock_obj.end_index == end:
+                    company_name_matches = True
+            if stock_obj.symbol:
+                start = original_text.index(stock_obj.symbol)
+                end = start + len(stock_obj.symbol) - 1
+                if stock_obj.index == start and stock_obj.end_index == end:
+                    symbol_name_matches = True
+
+            self.assertTrue(company_name_matches or symbol_name_matches)

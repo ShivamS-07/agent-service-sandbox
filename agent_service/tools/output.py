@@ -5,7 +5,7 @@ from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import IOType, dump_io_type
 from agent_service.io_types.text import Text
-from agent_service.io_types.text_objects import StockTextObject
+from agent_service.io_types.text_objects import TextObject
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
@@ -48,13 +48,13 @@ assign this function call to a variable!!
     store_output=False,
 )
 async def prepare_output(args: OutputArgs, context: PlanRunContext) -> PreparedOutput:
-    if isinstance(args.object_to_output, Text) and context.stock_info:
+    if type(args.object_to_output) is Text and context.stock_info:
         # Handle text object resolution.
         text_val = (await args.object_to_output.get()).val
-        stock_text_objects = await StockTextObject.find_stock_references_in_text(
-            text=text_val, stocks=list(context.stock_info)
+        text_objects = await TextObject.find_and_tag_references_in_text(
+            text=text_val, context=context
         )
-        args.object_to_output.text_objects.extend(stock_text_objects)
+        args.object_to_output.text_objects.extend(text_objects)
     return PreparedOutput(title=args.title, val=args.object_to_output)
 
 
@@ -98,7 +98,6 @@ class AnalyzeOutputInputs(ToolArgs):
     category=ToolCategory.OUTPUT,
 )
 async def analyze_outputs(args: AnalyzeOutputInputs, context: PlanRunContext) -> Text:
-
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
