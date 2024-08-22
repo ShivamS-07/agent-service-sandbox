@@ -52,6 +52,7 @@ from agent_service.utils.async_utils import (
     gather_with_concurrency,
     identity,
 )
+from agent_service.utils.check_cancelled import check_cancelled_decorator
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -616,7 +617,7 @@ async def do_competitive_analysis(
     # Step: Download content for text data
     logger.info("Downloading content for text data")
     gbi_id_to_short_description, topic_group = await download_content_for_text_data(
-        args.all_text_data
+        context=context, all_text_data=args.all_text_data
     )
 
     debug_info["input_topics"] = dump_io_type(topic_group.val)
@@ -629,7 +630,9 @@ async def do_competitive_analysis(
     else:
         # Step: Revise hypothesis to remove company specific information
         logger.info("Revising hypothesis to remove any company specific information")
-        revised_hypothesis = await revise_hypothesis(args.prompt, context, gpt_service_stub)
+        revised_hypothesis = await revise_hypothesis(
+            context=context, hypothesis=args.prompt, gpt_service_stub=gpt_service_stub
+        )
         logger.info(f"Revised hypothesis: {revised_hypothesis}")  # Not visible to users
 
     debug_info["revised hypothesis"] = revised_hypothesis
@@ -656,12 +659,12 @@ async def do_competitive_analysis(
     logger.info("Classifying news, earnings, SEC topics into categories")
     categories = sorted(args.criteria, key=lambda x: x.weight, reverse=True)
     category_idx_to_topic_group = await filter_and_classify_topics_into_category(
-        revised_hypothesis,
-        categories,
-        gbi_id_to_short_description,
-        topic_group,
-        context,
-        gpt_service_stub,
+        context=context,
+        hypothesis=revised_hypothesis,
+        categories=categories,
+        gbi_id_to_description=gbi_id_to_short_description,
+        topic_group=topic_group,
+        gpt_service_stub=gpt_service_stub,
     )
 
     # Step: Rank and summarize for each category
@@ -678,27 +681,27 @@ async def do_competitive_analysis(
         ]
 
         category_to_result = await update_rank_and_summarize_for_each_category(
-            candidate_target_stock,
-            stocks,
-            revised_hypothesis,
-            categories,
-            category_idx_to_topic_group,
-            old_rankings,
-            orig_topic_group,
-            gbi_id_to_short_description,
-            context,
-            gpt_service_stub,
+            context=context,
+            target_stock=candidate_target_stock,
+            stocks=stocks,
+            hypothesis=revised_hypothesis,
+            categories=categories,
+            new_category_idx_to_topic_group=category_idx_to_topic_group,
+            old_rankings=old_rankings,
+            orig_topic_group=orig_topic_group,
+            gbi_id_to_description=gbi_id_to_short_description,
+            gpt_service_stub=gpt_service_stub,
         )
     else:
         category_to_result = await rank_and_summarize_for_each_category(
-            candidate_target_stock,
-            stocks,
-            revised_hypothesis,
-            categories,
-            category_idx_to_topic_group,
-            gbi_id_to_short_description,
-            context,
-            gpt_service_stub,
+            context=context,
+            target_stock=candidate_target_stock,
+            stocks=stocks,
+            hypothesis=revised_hypothesis,
+            categories=categories,
+            category_idx_to_topic_group=category_idx_to_topic_group,
+            gbi_id_to_description=gbi_id_to_short_description,
+            gpt_service_stub=gpt_service_stub,
         )
 
     debug_info["categories and ranks"] = dump_io_type(
@@ -800,7 +803,9 @@ async def generate_summary_for_competitive_analysis(
 ####################################################################################################
 # Utils
 ####################################################################################################
+@check_cancelled_decorator
 async def download_content_for_text_data(
+    context: PlanRunContext,
     all_text_data: List[StockText],
 ) -> Tuple[Dict[int, str], TopicGroup]:
     """
@@ -854,8 +859,9 @@ async def download_content_for_text_data(
     return gbi_id_to_short_description, topic_group
 
 
+@check_cancelled_decorator
 async def revise_hypothesis(
-    hypothesis: str, context: PlanRunContext, gpt_service_stub: Optional[GPTServiceStub] = None
+    context: PlanRunContext, hypothesis: str, gpt_service_stub: Optional[GPTServiceStub] = None
 ) -> str:
     prompt_str = """
         Given the hypothesis, revise it to make it non company-specific. \
@@ -877,12 +883,13 @@ async def revise_hypothesis(
     )
 
 
+@check_cancelled_decorator
 async def filter_and_classify_topics_into_category(
+    context: PlanRunContext,
     hypothesis: str,
     categories: List[Category],
     gbi_id_to_description: Dict[int, str],
     topic_group: TopicGroup,
-    context: PlanRunContext,
     gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> Dict[int, TopicGroup]:
     logger = get_prefect_logger(__name__)
@@ -1029,14 +1036,15 @@ Here is the text:
     return category_idx_to_topic_group
 
 
+@check_cancelled_decorator
 async def rank_and_summarize_for_each_category(
+    context: PlanRunContext,
     target_stock: Optional[StockID],
     stocks: List[StockID],
     hypothesis: str,
     categories: List[Category],
     category_idx_to_topic_group: Dict[int, TopicGroup],
     gbi_id_to_description: Dict[int, str],
-    context: PlanRunContext,
     gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> Dict[int, RankingList]:
     if target_stock is not None:
@@ -1082,7 +1090,9 @@ async def rank_and_summarize_for_each_category(
     return category_idx_to_result
 
 
+@check_cancelled_decorator
 async def update_rank_and_summarize_for_each_category(
+    context: PlanRunContext,
     target_stock: Optional[StockID],
     stocks: List[StockID],
     hypothesis: str,
@@ -1091,7 +1101,6 @@ async def update_rank_and_summarize_for_each_category(
     old_rankings: List[Tuple[int, RankingList]],
     orig_topic_group: TopicGroup,
     gbi_id_to_description: Dict[int, str],
-    context: PlanRunContext,
     gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> Dict[int, RankingList]:
     if target_stock is not None:

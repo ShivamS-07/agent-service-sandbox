@@ -46,6 +46,7 @@ from agent_service.utils.agent_event_utils import (
 )
 from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
 from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.check_cancelled import AgentCancelledError
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.gpt_logging import (
@@ -248,7 +249,16 @@ async def run_execution_plan(
                 msg = Message(agent_id=context.agent_id, message=response, is_user_message=False)
                 await send_chat_message(message=msg, db=db)
                 raise
-
+            except AgentCancelledError as ace:
+                await publish_agent_execution_status(
+                    agent_id=context.agent_id,
+                    plan_run_id=context.plan_run_id,
+                    plan_id=context.plan_id,
+                    status=Status.CANCELLED,
+                    logger=logger,
+                )
+                # NEVER replan if the plan is already cancelled.
+                raise ace
             except Exception as e:
                 logger.exception(f"Step '{step.tool_name}' failed due to {e}")
 
