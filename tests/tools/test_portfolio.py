@@ -122,7 +122,7 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         # Mock get_return_for_stocks
         mock_get_return_for_stocks.return_value = {AAPL.gbi_id: 0.23, ERGB.gbi_id: 0.04}
 
-        args = GetPortfolioHoldingsInput(portfolio_id=valid_uuid)
+        args = GetPortfolioHoldingsInput(portfolio_id=valid_uuid, fetch_default_stats=True)
         result = await get_portfolio_holdings(args, self.context)
 
         expected_portfolio_holdings = StockTable.from_df_and_cols(

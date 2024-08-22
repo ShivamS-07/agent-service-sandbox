@@ -52,11 +52,7 @@ logger = get_prefect_logger(__name__)
 class GetPortfolioHoldingsInput(ToolArgs):
     portfolio_id: PortfolioID
     expand_etfs: bool = False
-    date_range: DateRange = DateRange(
-        start_date=datetime.date.today() - datetime.timedelta(days=30),
-        end_date=datetime.date.today(),
-    )
-    fetch_stats: Optional[bool] = True
+    fetch_default_stats: bool
 
 
 async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
@@ -79,17 +75,19 @@ async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
         "Do not use this function to find portfolio names or if no portfolio Id is present. "
         "If you only need a list of stocks without weights, MAKE SURE you use the "
         "`get_stock_identifier_list_from_table` function on the table output by this function! "
-        "\n- There is a fetch_stats flag which is optional and defaults to True. "
-        "If the eventual answer is just holdings, the flag should be on. "
-        "If the holdings are being fetched and then something else is being done with them later, "
-        "the flag should be turned off to avoid automatically fetching these extra columns."
-        "\n- Output will contain these columns: 'Stock', 'Weight', and optionally 'Price' and 'Performance', "
-        "and optionally, if fetch_stats == True, 'Price' and 'Performance'."
+        "\n- There is a fetch_default_stats input which must be set to True or False. "
+        " fetch_default_stats should usually be set to True"
+        " if the holdings table returned by this function mostly answers the user's question"
+        " and is then passed to the prepare_output function,"
+        " If the question is more involved and requires more than 4 steps in your plan"
+        " then set fetch_default_stats = False"
+        " when fetch_default_stats is True  pricing and returns information will be added into the table."
+        " As this is useful default information to have when looking at the holdings."
+        "\n- Output will contain these columns: 'Stock', 'Weight' "
+        "and optionally, if fetch_default_stats == True, 'Price' and 'Performance' columns also."
         "\n- 'expand_etfs' is an optional parameter that defaults to False. "
         "If `expand_etfs` set to True, the function will expand ETFs into stock level "
         "and adjust the weights accordingly. "
-        "'date_range' is an optional parameter that defaults to the last month. "
-        "It will be used to get the performance of the stocks in the portfolio. "
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -129,14 +127,20 @@ async def get_portfolio_holdings(
         "Weight": [weights_map.get(holding.gbi_id, np.nan) for holding in stock_list],
     }
 
-    if args.fetch_stats:
+    if args.fetch_default_stats:
+
+        date_range: DateRange = DateRange(
+            start_date=datetime.date.today() - datetime.timedelta(days=30),
+            end_date=datetime.date.today(),
+        )
+
         # get latest price + stock performance data
         gbi_id2_price, stock_performance_map = await asyncio.gather(
             get_latest_price(context, stock_list),
             get_return_for_stocks(
                 gbi_ids=gbi_ids,
-                start_date=args.date_range.start_date,
-                end_date=args.date_range.end_date,
+                start_date=date_range.start_date,
+                end_date=date_range.end_date,
                 user_id=context.user_id,
             ),
         )
@@ -160,7 +164,7 @@ async def get_portfolio_holdings(
         TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
         TableColumnMetadata(label="Weight", col_type=TableColumnType.PERCENT),
     ]
-    if args.fetch_stats:
+    if args.fetch_default_stats:
         columns.extend(
             [
                 TableColumnMetadata(label="Price", col_type=TableColumnType.FLOAT),
@@ -606,7 +610,7 @@ async def get_performance_security_level(
     # get portfolio holdings
     portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
         GetPortfolioHoldingsInput(
-            portfolio_id=portfolio_id, expand_etfs=expand_etfs, fetch_stats=False
+            portfolio_id=portfolio_id, expand_etfs=expand_etfs, fetch_default_stats=False
         ),
         context,
     )
@@ -653,7 +657,9 @@ async def get_performance_sector_level(
 ) -> Table:
     # get portfolio holdings
     portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
-        GetPortfolioHoldingsInput(portfolio_id=portfolio_id, expand_etfs=True, fetch_stats=False),
+        GetPortfolioHoldingsInput(
+            portfolio_id=portfolio_id, expand_etfs=True, fetch_default_stats=False
+        ),
         context,
     )
     portfolio_holdings_df = portfolio_holdings_table.to_df()
@@ -703,7 +709,9 @@ async def get_performance_overall_level(
     # calculate total return for the given date range
     # get portfolio holdings
     portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
-        GetPortfolioHoldingsInput(portfolio_id=portfolio_id, expand_etfs=False, fetch_stats=False),
+        GetPortfolioHoldingsInput(
+            portfolio_id=portfolio_id, expand_etfs=False, fetch_default_stats=False
+        ),
         context,
     )
     portfolio_holdings_df = portfolio_holdings_table.to_df()
