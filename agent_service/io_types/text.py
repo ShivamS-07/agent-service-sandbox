@@ -935,6 +935,8 @@ class StockEarningsSummaryText(StockEarningsText):
                         # and highlight the whole thing.
                         full_context = " ".join(reference["paragraph"])
                         highlight_sentences: List[str] = reference["highlight"]
+                        if not highlight_sentences:
+                            continue
                         hl_start, _ = DocumentCitationOutput.get_offsets_from_snippets(
                             smaller_snippet=highlight_sentences[0], context=full_context
                         )
@@ -1125,6 +1127,8 @@ class StockEarningsSummaryPointText(StockEarningsText):
                         # and highlight the whole thing.
                         full_context = " ".join(reference["paragraph"])
                         highlight_sentences: List[str] = reference["highlight"]
+                        if not highlight_sentences:
+                            continue
                         hl_start, _ = DocumentCitationOutput.get_offsets_from_snippets(
                             smaller_snippet=highlight_sentences[0], context=full_context
                         )
