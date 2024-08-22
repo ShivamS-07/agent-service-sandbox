@@ -424,30 +424,25 @@ async def get_earnings_call_summaries(
 
 class GetEarningsCallDatesInput(ToolArgs):
     stock_ids: List[StockID]
-    date_range: Optional[DateRange] = None
+    date_range: DateRange
 
 
 @tool(
-    description=(
-        "This returns a stock table with stocks and dates for earnings calls that"
-        " occurred within the specified date range. "
-        " If no date range is provided, it defaults to fetching earnings calls occurring today."
-        " You may alternatively provide a date_range created by the get_n_width_date_range_near_date tool."
-        " Note that this does NOT return texts or summaries of the earnings calls, ONLY dates."
-    ),
+    description="""This tool returns a table for the dates of earnings calls for the provided stocks that \
+occurred within the specified date range. You MUST always use the tool `get_date_range` first to \
+create a DateRange object for the date range from the context of the client's messages before using \
+this tool. For the upcoming earnings calls, the date range should be from today to today + 90 days. \
+For the most recent quarter's earnings calls, the date range should be from today - 90 days to today. \
+If there is no clear indication of the date range from the client's messages, you should default to \
+the upcoming earnings calls so the date range should be from today to today + 90 days.""",
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,
 )
 async def get_earnings_call_dates(
-    args: GetEarningsCallDataInput, context: PlanRunContext
+    args: GetEarningsCallDatesInput, context: PlanRunContext
 ) -> StockTable:
-    # if a date range obj was provided, fill in any missing dates
-    if args.date_range:
-        start_date = args.date_range.start_date
-        end_date = args.date_range.end_date
-    else:
-        start_date = datetime.date.today()
-        end_date = datetime.date.today()
+    start_date = args.date_range.start_date
+    end_date = args.date_range.end_date
 
     gbi_id_stock_map = {stock.gbi_id: stock for stock in args.stock_ids}
     gbi_dates_map = await get_earnings_releases_in_range(
