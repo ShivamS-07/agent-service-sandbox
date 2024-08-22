@@ -2,9 +2,9 @@ import asyncio
 import datetime
 import json
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Union, cast
+from typing import Dict, List, Optional, Set, Tuple, Union, cast
 
-from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O, SONNET
+from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O, GPT4_O_MINI, SONNET
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import Citation, HistoryEntry, Score
@@ -646,6 +646,8 @@ async def profile_filter_helper(
     llm: GPT,
     context: PlanRunContext,
     topic: str = "",
+    do_citations: bool = True,
+    stock_whitelist: Optional[Set[StockID]] = None,
 ) -> List[Tuple[bool, str, List[Citation]]]:
     tokenizer = GPTTokenizer(GPT4_O)
     used = tokenizer.get_token_length(
@@ -662,7 +664,7 @@ async def profile_filter_helper(
     for stock in aligned_text_groups.val:
         text_str = str_lookup[stock]
         text_str = tokenizer.chop_input_to_allowed_length(text_str, used)
-        if text_str == "":  # no text, skip
+        if text_str == "" or (stock_whitelist and stock in stock_whitelist):  # no text, skip
             tasks.append(identity(""))
 
         elif is_using_complex_profile:
@@ -707,7 +709,7 @@ async def profile_filter_helper(
                 result.strip().replace("\n\n", "\n").split("\n")
             )
             is_match = answer.lower().startswith("yes")
-            if is_match:
+            if is_match and do_citations:
                 rationale, citations = await extract_citations_from_gpt_output(
                     "\n".join([rationale, citation_anchor_map]), text_group, context
                 )
@@ -950,6 +952,30 @@ async def filter_stocks_by_profile_match(
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
+    cheap_llm = GPT(context=gpt_context, model=GPT4_O_MINI)
+    stock_whitelist: Set[StockID] = set()
+    await tool_log(
+        f"Starting filtering with {len(aligned_text_groups.val.keys())} stocks", context=context
+    )
+    for stock, (is_relevant, reason, citations) in zip(
+        aligned_text_groups.val.keys(),
+        await profile_filter_helper(
+            aligned_text_groups,
+            str_lookup,
+            profile_str,
+            is_using_complex_profile,
+            llm=cheap_llm,
+            context=context,
+            do_citations=False,
+        ),
+    ):
+        if is_relevant:
+            stock_whitelist.add(stock)
+
+    await tool_log(
+        f"First round of filtering complete. {len(stock_whitelist)} stocks remaining.",
+        context=context,
+    )
     llm = GPT(context=gpt_context, model=SONNET)
     stock_reason_map: Dict[StockID, Tuple[str, List[Citation]]] = {
         stock: (reason, citations)
@@ -962,6 +988,8 @@ async def filter_stocks_by_profile_match(
                 is_using_complex_profile,
                 llm=llm,
                 context=context,
+                do_citations=True,
+                stock_whitelist=stock_whitelist,
             ),
         )
         if is_relevant
@@ -970,6 +998,11 @@ async def filter_stocks_by_profile_match(
     filtered_stocks = [
         stock for stock in aligned_text_groups.val.keys() if stock in stock_reason_map
     ]
+
+    await tool_log(
+        f"Second round of filtering complete. {len(filtered_stocks)} stocks remaining.",
+        context=context,
+    )
 
     # No need for an else since we can guarantee at this point one is not None, appeases linter
     if isinstance(args.profile, TopicProfiles):
