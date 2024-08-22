@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile, status
+from fastapi.datastructures import State
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRouter
@@ -43,6 +44,7 @@ from agent_service.endpoints.models import (
     CustomNotification,
     CustomNotificationStatusResponse,
     DeleteAgentResponse,
+    DeleteMemoryResponse,
     DeleteSectionRequest,
     DeleteSectionResponse,
     DisableAgentAutomationRequest,
@@ -120,7 +122,16 @@ SERVICE_NAME = "AgentService"
 logger = logging.getLogger(__name__)
 
 
-application = FastAPI(title="Agent Service")
+# Helper wrapper for mypy/intellisense in usage of application.state
+class AgentServiceState(State):
+    agent_service_impl: AgentServiceImpl
+
+
+class FastAPIExtended(FastAPI):
+    state: AgentServiceState
+
+
+application = FastAPIExtended(title="Agent Service")
 router = APIRouter(prefix="/api")
 application.add_middleware(
     CORSMiddleware,  # Add CORS middleware
@@ -321,7 +332,7 @@ async def get_all_agents(user: User = Depends(parse_header)) -> GetAllAgentsResp
 @router.get(
     "/agent/get-agent/{agent_id}", response_model=AgentMetadata, status_code=status.HTTP_200_OK
 )
-async def get_agent(agent_id: str, user: User = Depends(parse_header)) -> GetAllAgentsResponse:
+async def get_agent(agent_id: str, user: User = Depends(parse_header)) -> AgentMetadata:
     logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
         validate_user_agent_access(user.user_id, agent_id)
@@ -446,7 +457,7 @@ async def upload_file(
     agent_id: str,
     upload: UploadFile,
     user: User = Depends(parse_header),
-) -> ChatWithAgentResponse:
+) -> UploadFileResponse:
     validate_user_agent_access(user.user_id, agent_id)
     return await application.state.agent_service_impl.upload_file(
         upload=upload, user=user, agent_id=agent_id
@@ -762,7 +773,7 @@ async def mark_notifications_as_read(
 )
 async def mark_notifications_as_unread(
     req: MarkNotificationsAsUnreadRequest, user: User = Depends(parse_header)
-) -> MarkNotificationsAsReadResponse:
+) -> MarkNotificationsAsUnreadResponse:
     """Mark agent notifications as unread after a given timestamp
 
     Args:
@@ -905,14 +916,14 @@ async def get_memory_content(
 
 @router.delete(
     "/memory/delete-memory/{type}/{id}",
-    response_model=DeleteAgentResponse,
+    response_model=DeleteMemoryResponse,
     status_code=status.HTTP_200_OK,
 )
 async def delete_memory(
     type: str,
     id: str,
     user: User = Depends(parse_header),
-) -> DeleteAgentResponse:
+) -> DeleteMemoryResponse:
     """
     Delete memory item
     """
@@ -962,14 +973,14 @@ async def get_info_for_test_run(
     response_model=GetTestSuiteRunsResponse,
     status_code=status.HTTP_200_OK,
 )
-def get_test_suite_runs(user: User = Depends(parse_header)) -> GetTestSuiteRunsResponse:
+async def get_test_suite_runs(user: User = Depends(parse_header)) -> GetTestSuiteRunsResponse:
     if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
     if not user.is_super_admin and not is_user_agent_admin(user.user_id):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
-    return application.state.agent_service_impl.get_test_suite_runs()
+    return await application.state.agent_service_impl.get_test_suite_runs()
 
 
 @router.get(
@@ -977,14 +988,14 @@ def get_test_suite_runs(user: User = Depends(parse_header)) -> GetTestSuiteRunsR
     response_model=GetTestCasesResponse,
     status_code=status.HTTP_200_OK,
 )
-def get_test_cases(user: User = Depends(parse_header)) -> GetTestCasesResponse:
+async def get_test_cases(user: User = Depends(parse_header)) -> GetTestCasesResponse:
     if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
     if not user.is_super_admin and not is_user_agent_admin(user.user_id):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
-    return application.state.agent_service_impl.get_test_cases()
+    return await application.state.agent_service_impl.get_test_cases()
 
 
 @router.get(
