@@ -462,14 +462,14 @@ async def run_execution_plan(
                     run_summary_short=short_diff_summary if short_diff_summary else "",
                 )
 
-        await async_db.set_plan_run_metadata(
-            context=context,
-            metadata=RunMetadata(
-                run_summary_long=full_diff_summary,
-                run_summary_short=short_diff_summary,
-                updated_output_ids=updated_output_ids,
-            ),
-        )
+    await async_db.set_plan_run_metadata(
+        context=context,
+        metadata=RunMetadata(
+            run_summary_long=full_diff_summary,
+            run_summary_short=short_diff_summary,
+            updated_output_ids=updated_output_ids,
+        ),
+    )
 
     # publish finish plan run task execution
     await publish_agent_execution_status(
