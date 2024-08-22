@@ -43,7 +43,7 @@ PrimitiveType = Union[
 IO_TYPE_NAME_KEY = "_type"
 
 
-class TableColumnType(str, enum.Enum):
+class TableColumnType(enum.StrEnum):
     # Raw values
     INTEGER = "integer"
     STRING = "string"
@@ -463,7 +463,7 @@ IOTypeDict = Union[  # type: ignore
 
 # A type adapter is a pydantic object used to dump and load objects that are not
 # necessarily basemodels.
-IOTypeAdapter = TypeAdapter(IOTypeBase)
+IOTypeAdapter: TypeAdapter = TypeAdapter(IOTypeBase)
 
 
 def _dump_io_type_helper(val: IOTypeBase) -> Any:

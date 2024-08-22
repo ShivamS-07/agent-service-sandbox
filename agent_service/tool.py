@@ -154,7 +154,7 @@ class Tool:
         return f"def {self.name}({args_str}) -> {get_clean_type_name(self.return_type)}"
 
 
-class ToolCategory(str, enum.Enum):
+class ToolCategory(enum.StrEnum):
     MISC = "misc"
     NEWS = "news"
     STOCK = "stocks"

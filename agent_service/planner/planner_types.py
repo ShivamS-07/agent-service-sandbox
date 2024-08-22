@@ -72,7 +72,7 @@ class ToolExecutionNode(BaseModel):
         return f"{self.output_variable_name} = {self.tool_name}({self.convert_args()})  # {self.description}"
 
 
-class PlanStatus(str, enum.Enum):
+class PlanStatus(enum.StrEnum):
     CREATING = "CREATING"
     READY = "READY"
     FAILED = "FAILED"

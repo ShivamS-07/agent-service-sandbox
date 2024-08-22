@@ -39,8 +39,8 @@ def testfast(c):
 
 @task
 def test(c):
-    testfast(c)
-    testregression(c)
+    testslow(c)
+    testregressionslow(c)
 
 
 @task
@@ -49,6 +49,11 @@ def testregression(c):
         "RUN_IN_CI=true unittest-parallel -v --level class --disable-process-pooling --jobs 3  "
         "-t . -s regression_test"
     )
+
+
+@task
+def testregressionslow(c):
+    c.run("RUN_IN_CI=true python -W ignore -m unittest discover -v -s regression_test")
 
 
 @task

@@ -1,6 +1,5 @@
 import datetime
 import enum
-from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
@@ -246,7 +245,7 @@ class GetChatHistoryResponse(BaseModel):
 ####################################################################################################
 # GetAgentWorklogBoard
 ####################################################################################################
-class Status(str, Enum):
+class Status(enum.StrEnum):
     NOT_STARTED = "NOT_STARTED"
     RUNNING = "RUNNING"
     COMPLETE = "COMPLETE"
@@ -369,7 +368,7 @@ class GetCitationDetailsResponse(BaseModel):
 ####################################################################################################
 # AgentEvents
 ####################################################################################################
-class EventType(str, enum.Enum):
+class EventType(enum.StrEnum):
     MESSAGE = "message"
     OUTPUT = "output"
     NEW_PLAN = "new_plan"
@@ -487,7 +486,7 @@ class MarkNotificationsAsUnreadResponse(BaseModel):
     success: bool
 
 
-class NotificationEventType(str, enum.Enum):
+class NotificationEventType(enum.StrEnum):
     NOTIFY_MESSAGE = "notify_message"
 
 
@@ -649,7 +648,7 @@ class GetCannedPromptsResponse(BaseModel):
 ####################################################################################################
 # Document conversion
 ####################################################################################################
-class MediaType(str, enum.Enum):
+class MediaType(enum.StrEnum):
     DOCX = "docx"
     TXT = "txt"
 

@@ -1,13 +1,14 @@
-FROM 374053208103.dkr.ecr.us-west-2.amazonaws.com/boosted-python-base:latest
+FROM python:3.12-slim
 # add security updates
 RUN apt-get update
 RUN apt-get -s dist-upgrade | grep "^Inst" | grep -i securi | awk -F " " {'print $2'} | xargs apt-get install
 # install pandoc for document conversion
 RUN apt-get install -y pandoc
-RUN pip install pipenv==2022.3.28
+RUN apt-get install -y libpq-dev
+RUN pip install pipenv
 WORKDIR /service
-COPY Pipfile.lock Pipfile ./
-RUN pipenv install
+COPY Pipfile ./
+RUN pipenv install --verbose
 COPY agent_service/ ./agent_service
 COPY application.py .
 COPY no_auth_endpoints.py .

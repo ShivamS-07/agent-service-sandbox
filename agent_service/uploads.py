@@ -29,7 +29,7 @@ from agent_service.utils.logs import async_perf_logger
 logger = logging.getLogger(__name__)
 
 
-class UploadType(str, enum.Enum):
+class UploadType(enum.StrEnum):
     PORTFOLIO = "portfolio"
     WATCHLIST = "watchlist"
 

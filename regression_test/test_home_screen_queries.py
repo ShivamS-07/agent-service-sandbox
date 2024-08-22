@@ -37,7 +37,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
         max_runs = 3
         for idx in range(max_runs):
-            print(f"Run {idx+1} of {max_runs}\nprompt={prompt}")
+            print(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
                 prompt=prompt,
                 validate_output=validate_output,
@@ -64,7 +64,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
         max_runs = 3
         for idx in range(max_runs):
-            print(f"Run {idx+1} of {max_runs}\nprompt={prompt}")
+            print(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
                 prompt=prompt,
                 validate_output=validate_output,
@@ -119,7 +119,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
         max_runs = 3
         for idx in range(max_runs):
-            print(f"Run {idx+1} of {max_runs}\nprompt={prompt}")
+            print(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
                 prompt=prompt,
                 validate_output=validate_output,
@@ -169,7 +169,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
         max_runs = 3
         for idx in range(max_runs):
-            print(f"Run {idx+1} of {max_runs}\nprompt={prompt}")
+            print(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
                 prompt=prompt,
                 validate_output=validate_output,
@@ -197,7 +197,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
         max_runs = 1
         for idx in range(max_runs):
-            print(f"Run {idx+1} of {max_runs}\nprompt={prompt}")
+            print(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
                 prompt=prompt,
                 validate_output=validate_output,
@@ -253,7 +253,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
         max_runs = 3
         for idx in range(max_runs):
-            print(f"Run {idx+1} of {max_runs}\nprompt={prompt}")
+            print(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
                 prompt=prompt,
                 validate_output=validate_output,

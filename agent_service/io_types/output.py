@@ -17,7 +17,7 @@ from agent_service.io_types.citations import (
 )
 
 
-class OutputType(str, enum.Enum):
+class OutputType(enum.StrEnum):
     TABLE = "table"
     TEXT = "text"
     GRAPH = "graph"

@@ -34,7 +34,7 @@ def output_for_log(output: Any) -> str:
                     ",\n".join([pformat(x) for x in begin]),
                     "]",
                     "... End first 250...",
-                    f"...skipping: {len(output)-500}...",
+                    f"...skipping: {len(output) - 500}...",
                     "...Begin last 250:...",
                     "[",
                     ",\n".join([pformat(x) for x in end]),

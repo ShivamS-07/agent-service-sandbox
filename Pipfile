@@ -25,15 +25,13 @@ backoff-stubs = {version = "==1.11.1.post1", index = "pypi"}
 [packages]
 fastapi = {version = "==0.111.0", index = "pypi"}
 sse-starlette = {version = "==2.1.0", index = "pypi"}
-pydantic = {version = "==2.7.1", index = "pypi"}
+pydantic = {version = "==2.8.2", index = "pypi"}
 sentry-sdk = {extras = ["fastapi"], version =  "*", index = "pypi"}
 prefect = {version = "==2.19.3", index = "pypi"}
-pandas = {version = "==1.5.3", index = "pypi"}
-gbi_common_py_utils = {version = "==1.0.113", index = "gbi"}
+pandas = {version = "==2.1.4", index = "pypi"}
 openai = { version = "==0.27.10", index = "pypi"}
 tiktoken = { version = "==0.7.0", index = "pypi"}
 PyJWT = {version = "==2.5.0", index = "pypi"}
-boosted-data-access-layer = {version = "==0.0.286", index = "gbi"}
 dateparser = {version = "==1.2.0", index = "pypi"}
 async-lru = {version = "==2.0.4", index = "pypi"}
 pandoc = {version = "==2.4", index = "pypi"}
@@ -42,7 +40,7 @@ async-cache = {version = "==1.1.1", index = "pypi"}
 mdutils = {version = "==1.6.0", index = "pypi"}
 sec-api = {version = "==1.0.16", index = "pypi"}
 json-repair = {version = "==0.16.3", index = "pypi"}
-scipy = {version = "==1.10.1", index = "pypi"}
+scipy = {version = "==1.11.3", index = "pypi"}
 devtools  = {version = "==0.12.2", index = "pypi"}
 psycopg-pool  = {version = "~=3.2.0", index = "pypi"}
 country_converter = {version = "*", index = "pypi"}
@@ -51,6 +49,11 @@ apscheduler = {version = "==3.10.4", index = "pypi", extras = ["sqlalchemy"]}
 Levenshtein = {version = "==0.25.1", index = "pypi"}
 # External services
 gpt-service-proto-v1 = {version = "==1.4.0", index = "gbi"}
+gbi-common-proto-v1 = {version = "==1.13.0", index = "gbi"}
+proto-cube-flat-proto-v1 = {version = "==1.2.0", index = "gbi"}
+
+gbi_common_py_utils = {version='==1.0.115', index="gbi"}
+boosted-data-access-layer = {version='==0.0.0+c8975f441c8e3804afc822c9bb8a19224af9c15b', index="gbi"}
 nlp_service_proto_v1 = {version = "==1.139.0", index = "gbi"}
 stock-universe-service-proto-v1 = {version = "==0.43.0", index = "gbi"}
 pa-portfolio-service-proto-v1 = {version = "==1.306.0", index = "gbi"}
@@ -58,10 +61,12 @@ discover_service_proto_v1 = {version = "==0.19.0", index = "gbi"}
 feature-service-proto-v1 = {version = "==1.48.0", index = "gbi"}
 user-service-proto-v1 = {version = "==1.55.0", index = "gbi"}
 beautifulsoup4 = {version = "==4.12.3", index = "pypi"}
-griffe= {version = "==0.48.0", index = "pypi"}
 PyPDF2 = {version = "==3.0.1", index = "pypi"}
+griffe= {version = "==0.48.0", index = "pypi"}
+
 [requires]
-python_version = "3.8"
+python_version = "3.12"
 
 [pipenv]
 allow_prereleases = false
+install_search_all_sources = true

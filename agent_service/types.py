@@ -114,11 +114,11 @@ class PlanRunContext(BaseModel):
         self.stock_info.update(stocks)
 
 
-class MemoryType(str, enum.Enum):
+class MemoryType(enum.StrEnum):
     PORTFOLIO = "portfolio"
     WATCHLIST = "watchlist"
 
 
-class ActionType(str, enum.Enum):
+class ActionType(enum.StrEnum):
     BUY = "BUY"
     SELL = "SELL"

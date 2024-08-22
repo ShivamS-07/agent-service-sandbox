@@ -21,7 +21,7 @@ from agent_service.utils.output_utils.utils import io_type_to_gpt_input
 MAX_DATAPOINTS_FOR_GPT = 10
 
 
-class GraphType(str, enum.Enum):
+class GraphType(enum.StrEnum):
     LINE = "line"
     PIE = "pie"
     BAR = "bar"

@@ -692,7 +692,7 @@ async def _combine_summaries(agent_id: str, summaries: List[str]) -> str:
         " the essence of all the summaries and make sure to preserve all the evidence from all the summaries. "
         "I will say it again, DO NOT miss any points or evidence.\n{summaries_str}"
     )
-    summaries_str = "\n".join([f"Summary {i+1}: {s}" for i, s in enumerate(summaries)])
+    summaries_str = "\n".join([f"Summary {i + 1}: {s}" for i, s in enumerate(summaries)])
 
     gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
     gpt = GPT(model=GPT4_O, context=gpt_context)

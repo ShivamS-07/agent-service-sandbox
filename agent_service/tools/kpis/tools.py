@@ -349,11 +349,11 @@ async def get_company_data_and_kpis(
         if len(kpi_insts):
             kpi_inst = kpi_insts[0]
             if kpi_inst.long_unit == LONG_UNIT_FOR_CURRENCY:
-                kpi_str_list.append(f"({i+1}) {kpi.name}: ${kpi_inst.value:.2f}")
+                kpi_str_list.append(f"({i + 1}) {kpi.name}: ${kpi_inst.value:.2f}")
             elif kpi_inst.long_unit == LONG_UNIT_FOR_NUM:
-                kpi_str_list.append(f"({i+1}) {kpi.name}: {kpi_inst.value:3f}")
+                kpi_str_list.append(f"({i + 1}) {kpi.name}: {kpi_inst.value:3f}")
             else:
-                kpi_str_list.append(f"({i+1}) {kpi.name}: {kpi_inst.value:.2f} {kpi_inst.unit}")
+                kpi_str_list.append(f"({i + 1}) {kpi.name}: {kpi_inst.value:.2f} {kpi_inst.unit}")
             index_to_pid_mapping[i + 1] = kpi.pid
 
     kpi_lookup = {kpi.pid: kpi for kpi in kpis}
@@ -461,12 +461,12 @@ async def get_company_data_and_kpis_for_stocks(
                 if len(kpi_insts):
                     kpi_inst = kpi_insts[0]
                     if kpi_inst.long_unit == LONG_UNIT_FOR_CURRENCY:
-                        kpi_str_list.append(f"({i+1}) {kpi.name}: ${kpi_inst.value:.2f}")
+                        kpi_str_list.append(f"({i + 1}) {kpi.name}: ${kpi_inst.value:.2f}")
                     elif kpi_inst.long_unit == LONG_UNIT_FOR_NUM:
-                        kpi_str_list.append(f"({i+1}) {kpi.name}: {kpi_inst.value:3f}")
+                        kpi_str_list.append(f"({i + 1}) {kpi.name}: {kpi_inst.value:3f}")
                     else:
                         kpi_str_list.append(
-                            f"({i+1}) {kpi.name}: {kpi_inst.value:.2f} {kpi_inst.unit}"
+                            f"({i + 1}) {kpi.name}: {kpi_inst.value:.2f} {kpi_inst.unit}"
                         )
                     index_to_pid_mapping[i + 1] = kpi.pid
 
@@ -627,7 +627,7 @@ async def get_general_kpis_for_specific_stock(
         except KeyError:
             logger.warning(
                 f"Failed to get pid due to faulty GPT response for gpt response: '{result}', "
-                f"had {len((company_info.kpi_index_to_pid_mapping.keys()))+1}"
+                f"had {len((company_info.kpi_index_to_pid_mapping.keys())) + 1}"
             )
 
     return general_kpi_list
@@ -732,13 +732,13 @@ async def get_specific_kpi_data_for_stock_id(
             logger.warning(
                 f"Failed to get pid for stock {stock_id.company_name} {stock_id.gbi_id} "
                 f"due to faulty GPT response for gpt response: '{result}', "
-                f"had {len((company_info.kpi_index_to_pid_mapping.keys()))+1}"
+                f"had {len((company_info.kpi_index_to_pid_mapping.keys())) + 1}"
             )
         if specific_kpi_list == []:
             await tool_log(
                 f"Failed to KPIs for stock {stock_id.company_name} {stock_id.gbi_id} "
                 f"due to faulty GPT response for gpt response: '{result}', "
-                f"had {len((company_info.kpi_index_to_pid_mapping.keys()))+1}",
+                f"had {len((company_info.kpi_index_to_pid_mapping.keys())) + 1}",
                 context=context,
             )
 

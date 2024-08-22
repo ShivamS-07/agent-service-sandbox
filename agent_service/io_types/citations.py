@@ -11,7 +11,7 @@ from agent_service.utils.clickhouse import AsyncClickhouseBase
 from agent_service.utils.sec.sec_api import SecFiling
 
 
-class CitationType(str, enum.Enum):
+class CitationType(enum.StrEnum):
     CUSTOM_DOC = "custom_doc"
     THEME = "theme"
     NEWS_DEVELOPMENT = "news_development"

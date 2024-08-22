@@ -1,6 +1,6 @@
 import datetime
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, Dict, List, Optional, Tuple
 
 from typing_extensions import Self
@@ -80,7 +80,7 @@ class CustomDocTopicInfo(CompanyTopicInfo):
         return self.topic_impacts[-1][0] if self.topic_impacts else default
 
 
-class EarningsSummaryType(str, Enum):
+class EarningsSummaryType(StrEnum):
     REMARKS = "Remarks"
     QUESTIONS = "Questions"
     HIGHLIGHTS = "highlights"

@@ -10,7 +10,7 @@ from agent_service.io_types.stock import StockID
 from agent_service.utils.boosted_pg import BoostedPG
 
 
-class TextObjectType(str, enum.Enum):
+class TextObjectType(enum.StrEnum):
     STOCK = "stock"
     CITATION = "citation"
 

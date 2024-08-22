@@ -1,5 +1,5 @@
 import re
-from enum import Enum
+from enum import StrEnum
 
 ASSIGNMENT_RE = re.compile(r"^([^=]+) = ([^\(]+)\(([^)]*)\)  \# (.+)$")
 ARGUMENT_RE = re.compile(r", [^=,]+=")
@@ -14,7 +14,7 @@ MIN_SUCCESSFUL_FOR_STOP = 2
 WORKLOG_INTERVAL = 0.5  # every X seconds send a worklog event to FE
 
 
-class Action(str, Enum):
+class Action(StrEnum):
     NONE = "NONE"
     RERUN = "RERUN"
     APPEND = "APPEND"
