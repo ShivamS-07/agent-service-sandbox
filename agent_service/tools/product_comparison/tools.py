@@ -42,6 +42,7 @@ class ProductSpecs:
     "This should be called when user wants to compare product specifications between different companies",
     category=ToolCategory.KPI,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_product_comparison_table(args: ProductCompareInput, context: PlanRunContext) -> Table:
     llm = GPT(context=None, model=GPT4_O)
@@ -112,6 +113,7 @@ class ProductSummaryInput(ToolArgs):
     "string describing each product, how they compare, and the company's status in the product's field",
     category=ToolCategory.KPI,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_product_compare_summary(args: ProductSummaryInput, context: PlanRunContext) -> Text:
     llm = GPT(context=None, model=GPT4_O)
