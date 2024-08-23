@@ -1,11 +1,12 @@
 from collections import Counter
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from agent_service.GPT.constants import GPT4_O, GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import HistoryEntry, dump_io_type
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
+from agent_service.io_types.table import StockTable
 from agent_service.io_types.text import Text
 from agent_service.planner.errors import NonRetriableError
 from agent_service.tool import (
@@ -15,9 +16,19 @@ from agent_service.tool import (
     ToolRegistry,
     tool,
 )
+from agent_service.tools.statistics import (
+    GetStatisticDataForCompaniesInput,
+    get_statistic_data_for_companies,
+)
 from agent_service.tools.stock_metadata import (
     GetStockDescriptionInput,
     get_company_descriptions,
+)
+from agent_service.tools.tables import (
+    GetStockListFromTableArgs,
+    TransformTableArgs,
+    get_stock_identifier_list_from_table,
+    transform_table,
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -104,6 +115,7 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
     texts: List[Text]  # we are including this to help the planner not be stupid, not used!
     product_str: str
     must_include_stocks: Optional[List[StockID]] = None
+    max_results: Optional[int] = None
 
 
 @tool(
@@ -138,9 +150,18 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "\n Again, 'product_str' is a string representing the product or service the filtered companies provide. "
         "For example, 'electric vehicles' (Tesla), 'cloud computing' (Amazon), 'solar panels' (First Solar), "
         " 'smartphones' (Apple), 'AI chips' (Nvidia), 'online retail' (Amazon), etc. "
+        "If the client does not mention a specific product/service but does mention a specific company and "
+        "is looking for peers/competitors to that company, call the `get_core_company_product` tool and pass "
+        "the result as product_str to this tool. You must only pass a product_str that either is exactly what the "
+        "client said, or which come from that helper tool."
+        "Do NOT pass in broad sectors or industries such as 'financial services', use the sector_filter tool for that."
         "\n must_include_stocks is a list of companies that the output of tool must have, for instance if the "
         "\n client asks 'Which of QCOM, IRDM, FBIN, FAST are the leader in industrial IoT', then those companies "
         "should be passed in a must_include_stocks and the output will include all of them. "
+        "max_results will limit the numbers of results returned. If additional filtering is required, it is "
+        "carried out based on market cap. the must_include_stocks are always included in the output. "
+        "If you are doing competitive analysis and so want to limit the number of competitors, you should set "
+        "this argument to no higher than 10. Set this argument rather than manually filtering by market cap."
         "If the user has not specified any specific universe of stocks, the S&P500 is a good default "
         "to pass to this tool. If the user has mentioned a specific stock whose main market is domestic, "
         "you should pass an region-specific index which contains that stock. "
@@ -159,6 +180,19 @@ async def filter_stocks_by_product_or_service(
 ) -> List[StockID]:
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)
+
+    if (
+        args.must_include_stocks
+        and args.max_results
+        and len(args.must_include_stocks) >= args.max_results
+    ):
+        await tool_log(
+            log=(
+                f"Returning {len(args.must_include_stocks)} user-specified stocks without filtering"
+            ),
+            context=context,
+        )
+        return args.must_include_stocks
 
     prev_run_info = None
     try:  # since everything associated with diffing is optional, put in try/except
@@ -259,6 +293,57 @@ async def filter_stocks_by_product_or_service(
         log=(f"Number of stocks after second round of filtering: {len(filtered_stocks2)}"),
         context=context,
     )
+
+    if args.max_results:
+        non_must_stocks = list(
+            [
+                stock
+                for stock in filtered_stocks2_dict
+                if not args.must_include_stocks or stock not in args.must_include_stocks
+            ]
+        )
+        non_must_quota = args.max_results - (
+            len(args.must_include_stocks) if args.must_include_stocks else 0
+        )
+
+        if len(non_must_stocks) > non_must_quota:
+            logger.info("Too many stocks, filtering by market cap")
+            market_cap_table = cast(
+                StockTable,
+                await get_statistic_data_for_companies(
+                    GetStatisticDataForCompaniesInput(
+                        statistic_reference="market cap", stock_ids=non_must_stocks
+                    ),
+                    context,
+                ),
+            )
+            filtered_table = cast(
+                StockTable,
+                await transform_table(
+                    TransformTableArgs(
+                        input_table=market_cap_table,
+                        transformation_description=f"filter to top {non_must_quota} by market cap",
+                    ),
+                    context,
+                ),
+            )
+            filtered_stocks_set = set(
+                cast(
+                    List[StockID],
+                    await get_stock_identifier_list_from_table(
+                        GetStockListFromTableArgs(input_table=filtered_table), context
+                    ),
+                )
+            )
+            for stock in filtered_stocks2:
+                if stock not in filtered_stocks_set:
+                    del filtered_stocks2_dict[stock]
+
+            await tool_log(
+                log=(f"Number of stocks after market cap filtering: {len(filtered_stocks2_dict)}"),
+                context=context,
+            )
+
     # add must_include_stocks to the result
     if args.must_include_stocks:
         for stock in args.must_include_stocks:
@@ -286,8 +371,8 @@ async def filter_stocks_by_product_or_service(
             f"args.product_str: {args.product_str}"
             f"\nfiltered stocks in first round: {len((filtered_stocks1))}"
             f"\n{[stock.company_name for stock in filtered_stocks1]}"
-            f"\nfiltered stocks in second round: {len(filtered_stocks2)}"
-            f"\n{[stock.company_name for stock in filtered_stocks2]}"
+            f"\nfiltered stocks in second round: {len(filtered_stocks2_dict)}"
+            f"\n{[stock.company_name for stock in filtered_stocks2_dict.keys()]}"
         )
     )
     if len(res) == 0:
@@ -427,3 +512,79 @@ async def filter_stocks_round2(
                 break
 
     return res
+
+
+GET_COMPANY_PRODUCT_PROMPT_STR = """
+You are a financial analyst who is reviewing the description of a company to identify its core product or
+service for the purposes of doing a competitive analysis. By core product, we mean the specific aproduct or
+service that:
+1. The company is generally most associated with
+2. Provides the largest share of their revenues
+3. Other providers of this product or service are most likely to be considered direct competitors of this company
+4. This product or service narrows down the list of competitors to a relatively small set of companies
+For example, a good core product for Tesla is 'electric cars'.
+You can only pick one core product for each company for the purpose of your competitive analysis. If a company
+makes multiple well-known products, you must select the type that is most important for their business. Unless
+a company's business is extremely broad, you must avoid selecting an entire industry or sector, instead you should
+select the product or service that falls within that sector that is most fundamental to the companies business.
+For example "financial services" is far too broad to be a specific "core" service, since there are literally
+hundreds of listed companies that could be considered providers of financial services, but something like "commercial
+loan provider" is acceptable, if that is the speciality of the company in question.
+It is generally better to pick a specific product or service that partially covers the company's business than
+a very general product or service that covers all of it.
+However, the product/service should not be a brand name, or otherwise so specific that there are no other companies
+that provide that 'same' product/service.
+Your output should be a single short phrase of no more than 5 words. Do not explain your answer.
+Here is the description of the company, delimited by ---:
+---
+{description}
+---
+Now output the core product of the company:
+"""
+
+GET_COMPANY_PROMPT = Prompt(GET_COMPANY_PRODUCT_PROMPT_STR, "GET_COMPANY_PRODUCT_PROMPT")
+
+
+class GetCoreCompanyProduct(ToolArgs):
+    stock_id: StockID
+
+
+@tool(
+    description=(
+        "This tool will provide the key product or service of a company for use in the "
+        "filter_stocks_by_product_or_service_filter tool. It must be used when the client "
+        "expresses interest in comparing a company with its competitors or peers but does not "
+        "mention a specific product of interest. The return value is a string that should be "
+        "passed as product_str to that filter function."
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def get_core_company_product(args: GetCoreCompanyProduct, context: PlanRunContext) -> str:
+    text = (
+        cast(
+            List[Text],
+            await get_company_descriptions(
+                GetStockDescriptionInput(
+                    stock_ids=[args.stock_id],
+                ),
+                context,
+            ),
+        )
+    )[0]
+
+    description_text = await Text.get_all_strs(text)
+    # filter out those with no data
+    # first round of filtering
+    # initiate GPT llm models
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(model=GPT4_O, context=gpt_context)
+    main_prompt = GET_COMPANY_PROMPT.format(description=description_text)
+    result = await llm.do_chat_w_sys_prompt(main_prompt, NO_PROMPT)
+    await tool_log(
+        f"Selected '{result}' as core product for '{args.stock_id.company_name}", context
+    )
+    return result
