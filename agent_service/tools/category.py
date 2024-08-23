@@ -115,7 +115,7 @@ class Category(ComplexIOBase):
         # convert the category to a rich text format
         from agent_service.io_types.text import Text
 
-        text = Text(val=self.to_markdown_string())
+        text: Text = Text(val=self.to_markdown_string())
         return await text.to_rich_output(pg=pg)
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:

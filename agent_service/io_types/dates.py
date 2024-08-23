@@ -12,5 +12,7 @@ class DateRange(ComplexIOBase):
     end_date: datetime.date
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
-        t = Text(val=f"Date range: ({self.start_date.isoformat()}, {self.end_date.isoformat()})")
+        t: Text = Text(
+            val=f"Date range: ({self.start_date.isoformat()}, {self.end_date.isoformat()})"
+        )
         return await t.to_rich_output(pg=pg, title=title)

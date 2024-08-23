@@ -61,7 +61,7 @@ class StatisticId(ComplexIOBase):
     stat_name: str
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
-        t = Text(val=f"Statistic: {self.stat_name}")
+        t: Text = Text(val=f"Statistic: {self.stat_name}")
         return await t.to_rich_output(pg=pg, title=title)
 
 

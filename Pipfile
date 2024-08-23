@@ -13,7 +13,7 @@ black = {version = "==24.4.2", index = "pypi"}
 flake8 = {version = "==7.0.0", index = "pypi"}
 invoke = {version = "==2.2.0", index = "pypi"}
 isort = {version = "==5.13.2", index="pypi"}
-mypy = {version = "==1.10.0", index="pypi"}
+mypy = {version = "==1.11.1", index="pypi"}
 unittest-parallel = {version = "==1.6.1", index="pypi"}
 parameterized = {version = "==0.9.0", index="pypi"}
 # Types

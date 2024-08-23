@@ -67,7 +67,7 @@ class StockID(ComplexIOBase):
             else:
                 strings.append(f"- {entry.explanation}")
         string_val = "\n".join(strings)
-        text = Text(val=string_val)
+        text: Text = Text(val=string_val)
         return await text.to_rich_output(pg=pg)
 
     def to_hashable(self) -> str:

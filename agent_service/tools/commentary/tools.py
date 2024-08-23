@@ -228,7 +228,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         logger.info(f"Size of citations: {len(citations)}")  # type:ignore
 
     # create commentary object
-    commentary = Text(val=commentary_text or result)
+    commentary: Text = Text(val=commentary_text or result)
     commentary = commentary.inject_history_entry(
         HistoryEntry(title="Commentary", citations=citations)  # type:ignore
     )

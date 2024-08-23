@@ -302,7 +302,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     if text is None:
         text, citations = await _initial_summarize_helper(args, context, llm)
 
-    summary = Text(val=text)
+    summary: Text = Text(val=text)
     summary = summary.inject_history_entry(
         HistoryEntry(title="Summary", citations=citations)  # type:ignore
     )
@@ -510,7 +510,7 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
 
     merged_group = TextGroup.join(text_group1, text_group2)
     main_text, citations = await extract_citations_from_gpt_output(result, merged_group, context)
-    comparison = Text(val=main_text)
+    comparison: Text = Text(val=main_text)
     comparison = comparison.inject_history_entry(
         HistoryEntry(title="Text Comparison", citations=citations)  # type:ignore
     )
@@ -555,7 +555,7 @@ async def answer_question_with_text_data(
     )
 
     text, citations = await extract_citations_from_gpt_output(result, text_group, context)
-    answer = Text(val=text)
+    answer: Text = Text(val=text)
     answer = answer.inject_history_entry(
         HistoryEntry(title="Summary", citations=citations)  # type:ignore
     )

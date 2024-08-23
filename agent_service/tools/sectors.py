@@ -37,7 +37,7 @@ class SectorID(ComplexIOBase):
     sec_name: str
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
-        t = Text(val=f"Sector: {self.sec_name}")
+        t: Text = Text(val=f"Sector: {self.sec_name}")
         return await t.to_rich_output(pg=pg, title=title)
 
 

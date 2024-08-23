@@ -8,11 +8,13 @@ from typing import (
     Any,
     ClassVar,
     Dict,
+    Generic,
     List,
     Literal,
     Optional,
-    Sequence,
     Type,
+    TypeAliasType,
+    TypeVar,
     Union,
     cast,
 )
@@ -55,12 +57,15 @@ from agent_service.utils.sec.sec_api import SecFiling
 
 logger = logging.getLogger(__name__)
 
-TextIDType = Union[str, int]
+TextIDType = TypeAliasType("TextIDType", Union[int, str])
+
+TID = TypeVar("TID", bound=TextIDType)
+CO = TypeVar("CO", bound=CitationOutput)
 
 
 @io_type
-class Text(ComplexIOBase):
-    id: TextIDType = Field(default_factory=lambda: str(uuid4()))
+class Text(ComplexIOBase, Generic[TID, CO]):
+    id: TID = Field(default_factory=lambda: str(uuid4()))
     val: str = ""
     text_type: ClassVar[str] = "Misc"
     stock_id: Optional[StockID] = None
@@ -145,9 +150,8 @@ class Text(ComplexIOBase):
                 CitationTextObject(index=cit.inline_offset, citation_id=cit.id)
             )
 
-        output_val.render_text_objects(
-            text_objects=(self.text_objects or []) + citation_text_objects  # type: ignore
-        )
+        text_objs = cast(List[TextObject], (self.text_objects or []) + citation_text_objects)
+        output_val.render_text_objects(text_objects=text_objs)
         return output_val
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
@@ -159,7 +163,7 @@ class Text(ComplexIOBase):
             return f"<Text Score(s) (0 - 1 scale): {score.to_gpt_input()}, Text: {text.val}>"
 
     @staticmethod
-    def _to_string_recursive(val: IOType) -> IOType:
+    def _to_string_recursive(val: IOType) -> Any:
         if isinstance(val, list):
             return [Text._to_string_recursive(v) for v in val]
         elif isinstance(val, dict):
@@ -208,7 +212,7 @@ class Text(ComplexIOBase):
         def convert_to_ids_and_categorize(
             text: Union[Text, TextGroup, List[Any], Dict[Any, Any]],
             categories: Dict[Type[Text], List[Text]],
-        ) -> Union[TextIDType, TextGroup, List[Any], Dict[Any, Any]]:
+        ) -> Union[TID, TextGroup, List[Any], Dict[Any, Any]]:
             """
             Convert a structure of texts (e.g. nested lists, dicts, etc.) into an
             identical structure of text ID's, while also keeping track of all
@@ -276,26 +280,27 @@ class Text(ComplexIOBase):
     async def get_strs_lookup(
         cls,
         texts: List[Self],
-        timestamp_lookup: Optional[Dict[TextIDType, Optional[datetime.datetime]]] = None,
-    ) -> Dict[TextIDType, str]:
+        timestamp_lookup: Optional[Dict[TID, Optional[datetime.datetime]]] = None,
+    ) -> Dict[TID, str]:
         strs_lookup = await cls._get_strs_lookup(texts)
         if timestamp_lookup is not None:
             for id, val in strs_lookup.items():
                 if id in timestamp_lookup and timestamp_lookup[id] is not None:
-                    date_str = f"Date: {timestamp_lookup[id].date()}\n"  # type: ignore
+                    timestamp = cast(datetime.datetime, timestamp_lookup[id])
+                    date_str = f"Date: {timestamp.date()}\n"
                 else:
                     date_str = ""
                 strs_lookup[id] = f"Text type: {cls.text_type}\n{date_str}Text:\n{val}"
         return strs_lookup
 
     @classmethod
-    async def _get_strs_lookup(cls, texts: List[Self]) -> Dict[TextIDType, str]:
+    async def _get_strs_lookup(cls, texts: List[Self]) -> Dict[TID, str]:
         return {text.id: text.val for text in texts}
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[CO]]:
         """
         Given a list of text citations of this type, return a mapping from the
         input citation to a list of output citations.
@@ -318,18 +323,18 @@ class Text(ComplexIOBase):
 
 
 @io_type
-class ProfileText(Text):
+class ProfileText(Text[TID, CO]):
     # val will store the profile string
     importance_score: float
 
 
 @io_type
-class NewsText(Text):
+class NewsText(Text[str, CO]):
     pass
 
 
 @io_type
-class StockText(Text):
+class StockText(Text[TID, CO]):
     # stock_id is mandatory, or else no output will be yielded.
     stock_id: Optional[StockID] = None
 
@@ -344,7 +349,6 @@ class StockText(Text):
 
 @io_type
 class StatisticsText(Text):
-    id: str
     text_type: ClassVar[str] = "STATISTICS"
 
 
@@ -357,7 +361,6 @@ class EarningsPeersText(StockText):
 
 @io_type
 class StockNewsDevelopmentText(NewsText, StockText):
-    id: str
     text_type: ClassVar[str] = "News Development Summary"
 
     # If this is non-null, don't show the topic sumamry to GPT, just show
@@ -370,14 +373,14 @@ class StockNewsDevelopmentText(NewsText, StockText):
     @classmethod
     async def _get_strs_lookup(
         cls,
-        news_topics: List[StockNewsDevelopmentText],
-    ) -> Dict[TextIDType, str]:  # type: ignore
+        texts: List[StockNewsDevelopmentText],
+    ) -> Dict[str, str]:
         news_topics_articles_only = {
             topic.id: (topic.only_get_articles_start, topic.only_get_articles_end)
-            for topic in news_topics
+            for topic in texts
             if topic.only_get_articles_start and topic.only_get_articles_end
         }
-        news_topics = [topic for topic in news_topics if not topic.only_get_articles_start]
+        texts = [topic for topic in texts if not topic.only_get_articles_start]
         article_sql = """
         SELECT snt.topic_id::TEXT, (topic_descriptions->-1->>0)::TEXT AS description,
                snt.topic_label,
@@ -400,7 +403,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
         from agent_service.utils.postgres import get_psql
 
         db = get_psql()
-        rows = db.generic_read(sql, {"topic_ids": [topic.id for topic in news_topics]})
+        rows = db.generic_read(sql, {"topic_ids": [topic.id for topic in texts]})
         rows_with_articles = []
         if news_topics_articles_only:
             rows_with_articles = db.generic_read(
@@ -435,8 +438,8 @@ class StockNewsDevelopmentText(NewsText, StockText):
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[NewsDevelopmentCitationOutput]]:
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT snt.topic_id::TEXT, topic_label, (topic_descriptions->-1->>0)::TEXT AS summary,
@@ -478,13 +481,12 @@ class StockHypothesisNewsDevelopmentText(StockNewsDevelopmentText):
 
 @io_type
 class StockNewsDevelopmentArticlesText(NewsText, StockText):
-    id: str
     text_type: ClassVar[str] = "News Article Summary"
 
     @classmethod
     async def _get_strs_lookup(
-        cls, news_topics: List[StockNewsDevelopmentArticlesText]  # type: ignore
-    ) -> Dict[TextIDType, str]:
+        cls, texts: List[StockNewsDevelopmentArticlesText]
+    ) -> Dict[str, str]:
         from agent_service.utils.postgres import get_psql
 
         sql = """
@@ -492,13 +494,13 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
             FROM nlp_service.stock_news
             WHERE news_id = ANY(%(news_ids)s)
         """
-        rows = get_psql().generic_read(sql, {"news_ids": [topic.id for topic in news_topics]})
+        rows = get_psql().generic_read(sql, {"news_ids": [topic.id for topic in texts]})
         return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[NewsArticleCitationOutput]]:
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT news_id::TEXT, url, domain_url, headline, published_at
@@ -525,11 +527,10 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
 
 @io_type
 class NewsPoolArticleText(NewsText):
-    id: str
     text_type: ClassVar[str] = "News Article Summary"
 
     @classmethod
-    async def _get_strs_lookup(cls, news_pool: List[NewsPoolArticleText]) -> Dict[str, str]:  # type: ignore
+    async def _get_strs_lookup(cls, texts: List[NewsPoolArticleText]) -> Dict[str, str]:
         sql = """
         SELECT news_id::TEXT, headline::TEXT, summary::TEXT
         FROM nlp_service.news_pool
@@ -538,13 +539,13 @@ class NewsPoolArticleText(NewsText):
         from agent_service.utils.postgres import get_psql
 
         db = get_psql()
-        rows = db.generic_read(sql, {"news_ids": [topic.id for topic in news_pool]})
+        rows = db.generic_read(sql, {"news_ids": [topic.id for topic in texts]})
         return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[NewsArticleCitationOutput]]:
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT news_id::TEXT, url, domain_url, headline, published_at
@@ -570,8 +571,7 @@ class NewsPoolArticleText(NewsText):
 
 
 @io_type
-class CustomDocumentSummaryText(StockText):
-    id: str
+class CustomDocumentSummaryText(StockText[str, CustomDocumentCitationOutput]):
     requesting_user: str
     text_type: ClassVar[str] = "User Document Summary"
 
@@ -581,34 +581,34 @@ class CustomDocumentSummaryText(StockText):
         return ""
 
     @classmethod
-    async def _get_strs_lookup(cls, articles_text: List[CustomDocumentSummaryText]) -> Dict[str, str]:  # type: ignore
+    async def _get_strs_lookup(cls, texts: List[CustomDocumentSummaryText]) -> Dict[str, str]:
         # group by user id - we are assuming that anyone who is authed for the agent
         # has priv to see any documents utilized by the agent.
         articles_text_by_user: Dict[str, List[CustomDocumentSummaryText]] = defaultdict(list)
-        for doc in articles_text:
+        for doc in texts:
             articles_text_by_user[doc.requesting_user].append(doc)
 
-        texts: Dict[str, str] = {}
+        text_dict: Dict[str, str] = {}
         for user, articles in articles_text_by_user.items():
             article_info = await get_custom_doc_articles_info(
                 user, [article.id for article in articles]
             )
             for id, chunk_info in dict(article_info.file_chunk_info).items():
-                texts[id] = f"{chunk_info.headline}:\n{chunk_info.long_summary}"
-        return texts
+                text_dict[id] = f"{chunk_info.headline}:\n{chunk_info.long_summary}"
+        return text_dict
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[CustomDocumentCitationOutput]]:
         # group by user id - we are assuming that anyone who is authed for the agent
         # has priv to see any documents utilized by the agent.
         text_citation_by_user: Dict[str, List[TextCitation]] = defaultdict(list)
         text_id_map = {text.source_text.id: text for text in texts}
         for cit in texts:
-            text_citation_by_user[cit.source_text.requesting_user].append(cit)  # type: ignore
+            text_citation_by_user[cit.source_text.requesting_user].append(cit)
 
-        output_citations: Dict[TextCitation, List[CitationOutput]] = defaultdict(list)
+        output_citations = defaultdict(list)
         # TODO this will need to change once custom docs have better citation
         # support. Currently we just cite ALL chunks in the file.
         for user, citations in text_citation_by_user.items():
@@ -635,7 +635,7 @@ class CustomDocumentSummaryText(StockText):
                         inline_offset=chunk_cit.citation_text_offset,
                     )
                 )
-        return output_citations  # type: ignore
+        return output_citations
 
 
 @io_type
@@ -656,12 +656,11 @@ class StockHypothesisCustomDocumentText(CustomDocumentSummaryText):
 
 
 @io_type
-class ThemeText(Text):
-    id: str
+class ThemeText(Text[str, ThemeCitationOutput]):
     text_type: ClassVar[str] = "Theme Description"
 
     @classmethod
-    async def _get_strs_lookup(cls, themes: List[ThemeText]) -> Dict[str, str]:  # type: ignore
+    async def _get_strs_lookup(cls, texts: List[ThemeText]) -> Dict[str, str]:
         sql = """
         SELECT theme_id::TEXT, theme_description::TEXT AS description
         FROM nlp_service.themes
@@ -670,13 +669,13 @@ class ThemeText(Text):
         from agent_service.utils.postgres import get_psql
 
         db = get_psql()
-        rows = db.generic_read(sql, {"theme_id": [topic.id for topic in themes]})
+        rows = db.generic_read(sql, {"theme_id": [topic.id for topic in texts]})
         return {row["theme_id"]: row["description"] for row in rows}
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[ThemeCitationOutput]]:
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT theme_id::TEXT, theme_name::TEXT AS name, theme_description, last_modified
@@ -700,11 +699,10 @@ class ThemeText(Text):
 
 @io_type
 class ThemeNewsDevelopmentText(NewsText):
-    id: str
     text_type: ClassVar[str] = "News Development Summary"
 
     @classmethod
-    async def _get_strs_lookup(cls, themes: List[ThemeNewsDevelopmentText]) -> Dict[str, str]:  # type: ignore
+    async def _get_strs_lookup(cls, texts: List[ThemeNewsDevelopmentText]) -> Dict[str, str]:
         sql = """
         SELECT development_id::TEXT, label::TEXT, description::TEXT
         FROM nlp_service.theme_developments
@@ -713,13 +711,13 @@ class ThemeNewsDevelopmentText(NewsText):
         from agent_service.utils.postgres import get_psql
 
         db = get_psql()
-        rows = db.generic_read(sql, {"development_id": [topic.id for topic in themes]})
+        rows = db.generic_read(sql, {"development_id": [topic.id for topic in texts]})
         return {row["development_id"]: f"{row['label']}:\n{row['description']}" for row in rows}
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[NewsDevelopmentCitationOutput]]:
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT development_id::TEXT, label::TEXT, description, development_time
@@ -745,13 +743,12 @@ class ThemeNewsDevelopmentText(NewsText):
 
 @io_type
 class ThemeNewsDevelopmentArticlesText(NewsText):
-    id: str
     text_type: ClassVar[str] = "News Article Summary"
 
     @classmethod
     async def _get_strs_lookup(
-        cls, developments: List[ThemeNewsDevelopmentArticlesText]
-    ) -> Dict[Union[int, str], str]:
+        cls, texts: List[ThemeNewsDevelopmentArticlesText]
+    ) -> Dict[str, str]:
         sql = """
         SELECT news_id::TEXT, headline::TEXT, summary::TEXT
         FROM nlp_service.theme_news
@@ -760,13 +757,13 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
         from agent_service.utils.postgres import get_psql
 
         db = get_psql()
-        rows = db.generic_read(sql, {"news_id": [topic.id for topic in developments]})
+        rows = db.generic_read(sql, {"news_id": [topic.id for topic in texts]})
         return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[NewsArticleCitationOutput]]:
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT news_id::TEXT, url, domain_url, headline, published_at
@@ -793,7 +790,7 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
 
 # Parent class that is not intended to be used on its own, should always use one of the child classes
 @io_type
-class StockEarningsText(StockText):
+class StockEarningsText(StockText[TID, CO]):
     year: Optional[int] = None
     quarter: Optional[int] = None
 
@@ -819,13 +816,11 @@ class StockEarningsText(StockText):
 
 
 @io_type
-class StockEarningsSummaryText(StockEarningsText):
+class StockEarningsSummaryText(StockEarningsText[str, Any]):
     text_type: ClassVar[str] = "Earnings Call"
 
     @classmethod
-    async def _get_strs_lookup(
-        cls, earnings_texts: List[StockEarningsSummaryText]  # type: ignore
-    ) -> Dict[TextIDType, str]:
+    async def _get_strs_lookup(cls, texts: List[StockEarningsSummaryText]) -> Dict[str, str]:
         sql = """
         SELECT summary_id::TEXT, summary
         FROM nlp_service.earnings_call_summaries
@@ -834,7 +829,7 @@ class StockEarningsSummaryText(StockEarningsText):
         from agent_service.utils.postgres import get_psql
 
         db = get_psql()
-        rows = db.generic_read(sql, {"earnings_ids": [summary.id for summary in earnings_texts]})
+        rows = db.generic_read(sql, {"earnings_ids": [summary.id for summary in texts]})
         str_lookup = {}
         for row in rows:
             output = []
@@ -850,8 +845,8 @@ class StockEarningsSummaryText(StockEarningsText):
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[CitationOutput]]:
         """
         We do something different here: Originally each object is a point in the summary, with the
         content of '<header>: <details>'. And we show the full text, and highlight the sentences GPT
@@ -863,7 +858,7 @@ class StockEarningsSummaryText(StockEarningsText):
 
         summary_id_to_text: Dict[str, List[TextCitation]] = defaultdict(list)
         for text_obj in texts:
-            summary_id_to_text[text_obj.source_text.id].append(text_obj)  # type: ignore
+            summary_id_to_text[text_obj.source_text.id].append(text_obj)
 
         sql = """
             SELECT summary_id::TEXT, gbi_id, summary, year, quarter, created_timestamp
@@ -880,7 +875,7 @@ class StockEarningsSummaryText(StockEarningsText):
                 last_updated_at = row["created_timestamp"]
                 summary_dict: Dict = row["summary"]
 
-                text: Self = text_citation.source_text  # type: ignore
+                text: Self = text_citation.source_text
 
                 stock = text.stock_id
                 if not stock:
@@ -959,11 +954,11 @@ class StockEarningsSummaryText(StockEarningsText):
                 if not found_references:
                     outputs[text_citation].append(fallback_citation)
 
-        return outputs  # type: ignore
+        return outputs
 
 
 @io_type
-class StockEarningsTranscriptText(StockEarningsText):
+class StockEarningsTranscriptText(StockEarningsText[str, EarningsTranscriptCitationOutput]):
     text_type: ClassVar[str] = "Earnings Call"
 
     @field_serializer("val")
@@ -972,9 +967,7 @@ class StockEarningsTranscriptText(StockEarningsText):
         return ""
 
     @classmethod
-    async def _get_strs_lookup(
-        cls, earnings_texts: List[StockEarningsSummaryText]  # type: ignore
-    ) -> Dict[TextIDType, str]:
+    async def _get_strs_lookup(cls, texts: List[Self]) -> Dict[str, str]:
         earnings_transcript_sql = """
             SELECT id::TEXT AS id, transcript, fiscal_year, fiscal_quarter
             FROM company_earnings.full_earning_transcripts
@@ -984,7 +977,7 @@ class StockEarningsTranscriptText(StockEarningsText):
         transcript_query_result = await ch.generic_read(
             earnings_transcript_sql,
             params={
-                "ids": [earnings_text.id for earnings_text in earnings_texts],
+                "ids": [earnings_text.id for earnings_text in texts],
             },
         )
         str_lookup = {row["id"]: row["transcript"] for row in transcript_query_result}
@@ -992,9 +985,9 @@ class StockEarningsTranscriptText(StockEarningsText):
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
-        output: Dict[TextCitation, List[CitationOutput]] = defaultdict(list)
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[EarningsTranscriptCitationOutput]]:
+        output: Dict[TextCitation, List[EarningsTranscriptCitationOutput]] = defaultdict(list)
         for text in texts:
             hl_start, hl_end = None, None
             if text.citation_snippet_context and text.citation_snippet:
@@ -1013,16 +1006,16 @@ class StockEarningsTranscriptText(StockEarningsText):
                 )
             )
 
-        return output  # type: ignore
+        return output
 
 
 @io_type
-class StockEarningsSummaryPointText(StockEarningsText):
+class StockEarningsSummaryPointText(StockEarningsText[int, Any]):
     """
     A subclass from `StockEarningsSummaryText` that only stores a point in the summary
+    id = hash((summary_id, summary_type, summary_idx))
     """
 
-    id: int  # hash((summary_id, summary_type, summary_idx))
     text_type: ClassVar[str] = "Earnings Call Summary Point"
 
     summary_id: str  # UUID in DB
@@ -1033,7 +1026,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
         self.id = hash(((self.summary_id, self.summary_type, self.summary_idx)))
 
     @classmethod
-    async def _get_strs_lookup(cls, earnings_summary_points: List[Self]) -> Dict[TextIDType, str]:
+    async def _get_strs_lookup(cls, texts: List[Self]) -> Dict[int, str]:
         sql = """
             SELECT summary_id::TEXT, summary
             FROM nlp_service.earnings_call_summaries
@@ -1042,23 +1035,23 @@ class StockEarningsSummaryPointText(StockEarningsText):
         from agent_service.utils.postgres import get_psql
 
         db = get_psql()
-        summary_ids = list({point.summary_id for point in earnings_summary_points})
+        summary_ids = list({point.summary_id for point in texts})
         rows = db.generic_read(sql, {"summary_ids": summary_ids})
         summary_id_to_summary = {row["summary_id"]: row["summary"] for row in rows}
 
         str_lookup = {}
-        for point in earnings_summary_points:
+        for point in texts:
             summary_per_type = summary_id_to_summary[point.summary_id][point.summary_type]
             if point.summary_idx < len(summary_per_type):
                 text = summary_per_type[point.summary_idx]
                 str_lookup[point.id] = f"{text['header']}: {text['detail']}"
 
-        return str_lookup  # type: ignore
+        return str_lookup
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[CitationOutput]]:
         """
         We do something different here: Originally each object is a point in the summary, with the
         content of '<header>: <details>'. And we show the full text, and highlight the sentences GPT
@@ -1070,7 +1063,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
 
         summary_id_to_texts: Dict[str, List[TextCitation]] = defaultdict(list)
         for text_obj in texts:
-            summary_id_to_texts[text_obj.source_text.summary_id].append(text_obj)  # type: ignore
+            summary_id_to_texts[text_obj.source_text.summary_id].append(text_obj)
 
         sql = """
             SELECT summary_id::TEXT, gbi_id, summary, year, quarter, created_timestamp
@@ -1087,14 +1080,14 @@ class StockEarningsSummaryPointText(StockEarningsText):
             summary_dict: Dict = row["summary"]
 
             for text_citation in text_citations:
-                text: Self = text_citation.source_text  # type: ignore
+                text: Self = text_citation.source_text
 
                 stock = text.stock_id
                 if not stock:
                     continue
                 # e.g. "NVDA Earnings Call - Q1 2024"
-                text_citation.source_text.year = row["year"]  # type: ignore
-                text_citation.source_text.quarter = row["quarter"]  # type: ignore
+                text_citation.source_text.year = row["year"]
+                text_citation.source_text.quarter = row["quarter"]
                 citation_name = text_citation.source_text.to_citation_title()
 
                 summary_point: Dict = summary_dict[text.summary_type][text.summary_idx]
@@ -1104,8 +1097,8 @@ class StockEarningsSummaryPointText(StockEarningsText):
                     or not summary_point["references"]["reference"]
                 ):
                     # we don't have transcript references filled in. Use the snippet in the object
-                    full_context: str = text_citation.citation_snippet_context  # type: ignore
-                    snippet: str = text_citation.citation_snippet  # type: ignore
+                    full_context = text_citation.citation_snippet_context
+                    snippet = text_citation.citation_snippet
                     hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
                         smaller_snippet=snippet, context=full_context
                     )
@@ -1149,7 +1142,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
                             )
                         )
 
-        return outputs  # type: ignore
+        return outputs
 
     @classmethod
     async def init_from_earnings_texts(
@@ -1232,15 +1225,18 @@ class StockHypothesisEarningsSummaryPointText(StockEarningsSummaryPointText):
     reason: str
 
     @classmethod
-    async def _get_strs_lookup(
-        cls, earnings_summary_points: List[StockHypothesisEarningsSummaryPointText]  # type: ignore
-    ) -> Dict[TextIDType, str]:
-        return await StockEarningsSummaryPointText._get_strs_lookup(earnings_summary_points)  # type: ignore  #noqa
+    async def _get_strs_lookup(cls, texts: List[Self]) -> Dict[int, str]:
+        return await StockEarningsSummaryPointText._get_strs_lookup(
+            cast(List[StockEarningsSummaryPointText], texts)
+        )
 
 
 @io_type
-class StockDescriptionText(StockText):
-    id: int  # gbi_id
+class StockDescriptionText(StockText[int, DocumentCitationOutput]):
+    """
+    id = gbi_id (int)
+    """
+
     text_type: ClassVar[str] = "Company Description"
 
     @field_serializer("val")
@@ -1249,9 +1245,7 @@ class StockDescriptionText(StockText):
         return ""
 
     @classmethod
-    async def _get_strs_lookup(
-        cls, company_descriptions: List[StockDescriptionText]  # type: ignore
-    ) -> Dict[TextIDType, str]:
+    async def _get_strs_lookup(cls, texts: List[StockDescriptionText]) -> Dict[int, str]:
         sql = """
         SELECT ssm.gbi_id, cds.company_description_short
         FROM spiq_security_mapping ssm
@@ -1261,7 +1255,7 @@ class StockDescriptionText(StockText):
         """
         from agent_service.utils.postgres import get_psql
 
-        stocks = [desc.id for desc in company_descriptions]
+        stocks = [desc.id for desc in texts]
 
         # get short first since we always have that
 
@@ -1288,8 +1282,8 @@ class StockDescriptionText(StockText):
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[DocumentCitationOutput]]:
         output = defaultdict(list)
         for text in texts:
             hl_start, hl_end = None, None
@@ -1308,11 +1302,11 @@ class StockDescriptionText(StockText):
                 )
             )
 
-        return output  # type: ignore
+        return output
 
 
 @io_type
-class StockSecFilingText(StockText):
+class StockSecFilingText(StockText[str, CompanyFilingCitationOutput]):
     """
     The ID field is a serialized JSON object containing the SEC filing information.
     After deserialization, it will be a dictionary like below:
@@ -1334,7 +1328,6 @@ class StockSecFilingText(StockText):
     }
     """
 
-    id: str
     text_type: ClassVar[str] = "SEC Filing"
     db_id: Optional[str] = None
     form_type: Optional[str] = None
@@ -1345,31 +1338,31 @@ class StockSecFilingText(StockText):
         return ""
 
     @classmethod
-    async def _get_strs_lookup(
-        cls, sec_filing_list: List[StockSecFilingText]  # type: ignore
-    ) -> Dict[TextIDType, str]:
+    async def _get_strs_lookup(cls, texts: List[StockSecFilingText]) -> Dict[str, str]:
         # Get the available content from DB first
-        output: Dict[TextIDType, str] = {}
+        output: Dict[str, str] = {}
 
-        db_id_to_text_id = {filing.db_id: filing.id for filing in sec_filing_list if filing.db_id}
-        output.update(await SecFiling.get_concat_10k_10q_sections_from_db(db_id_to_text_id))  # type: ignore
+        db_id_to_text_id = {filing.db_id: filing.id for filing in texts if filing.db_id}
+        output.update(await SecFiling.get_concat_10k_10q_sections_from_db(db_id_to_text_id))
 
         # Get the rest from SEC API directly
         filing_gbi_pairs = [
             (filing.id, filing.stock_id.gbi_id)
-            for filing in sec_filing_list
+            for filing in texts
             if not filing.db_id and filing.stock_id
         ]
         output.update(
-            await SecFiling.get_concat_10k_10q_sections_from_api(filing_gbi_pairs, insert_to_db=True)  # type: ignore
+            await SecFiling.get_concat_10k_10q_sections_from_api(
+                filing_gbi_pairs, insert_to_db=True
+            )
         )
 
         return output
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[CompanyFilingCitationOutput]]:
         output = defaultdict(list)
         for text in texts:
             hl_start, hl_end = None, None
@@ -1377,10 +1370,10 @@ class StockSecFilingText(StockText):
                 hl_start, hl_end = CompanyFilingCitationOutput.get_offsets_from_snippets(
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
-            form_type = f" ({text.source_text.form_type})" if text.source_text.form_type else ""  # type: ignore
+            form_type = f" ({text.source_text.form_type})" if text.source_text.form_type else ""
             output[text].append(
                 CompanyFilingCitationOutput(
-                    internal_id=str(text.source_text.db_id or text.source_text.id),  # type: ignore
+                    internal_id=str(text.source_text.db_id or text.source_text.id),
                     name=text.source_text.to_citation_title() + form_type,
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
@@ -1389,17 +1382,17 @@ class StockSecFilingText(StockText):
                     last_updated_at=text.source_text.timestamp,
                 )
             )
-        return output  # type: ignore
+        return output
 
 
 @io_type
-class StockSecFilingSectionText(StockText):
+class StockSecFilingSectionText(StockText[int, CompanyFilingCitationOutput]):
     """
     This class is actually a "section" of `StockSecFilingText`. Basically we will split the 2 sections
     (management, risk_factors) into even smaller sections and store them in this class.
-    """
 
-    id: Union[int, str]  # hash((self.filing_id, self.header))  (str for backwards compatibility)
+    id = hash((self.filing_id, self.header))
+    """
 
     text_type: ClassVar[str] = "SEC Filing Section"
 
@@ -1445,13 +1438,11 @@ class StockSecFilingSectionText(StockText):
         return sections
 
     @classmethod
-    async def _get_strs_lookup(
-        cls, sections: List[StockSecFilingSectionText]  # type: ignore
-    ) -> Dict[TextIDType, str]:
+    async def _get_strs_lookup(cls, texts: List[StockSecFilingSectionText]) -> Dict[int, str]:
         # In the DB we only store `header`, not `content` to save space
         filing_text_objs = {}
         header_to_sections: Dict[str, List[StockSecFilingSectionText]] = defaultdict(list)
-        for section in sections:
+        for section in texts:
             if section.filing_id not in filing_text_objs:
                 filing_text_objs[section.filing_id] = StockSecFilingText(
                     id=section.filing_id,
@@ -1474,17 +1465,16 @@ class StockSecFilingSectionText(StockText):
                     if section.filing_id == filing_id:
                         outputs[section.id] = text_str
 
-        return outputs  # type: ignore
+        return outputs
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[CompanyFilingCitationOutput]]:
         output = defaultdict(list)
         filing_id_set = set()
         for cit in texts:
             source_text = cit.source_text
-            source_text = cast(Self, cit.source_text)
             if source_text.filing_id in filing_id_set:
                 continue
             filing_id_set.add(source_text.filing_id)
@@ -1493,10 +1483,10 @@ class StockSecFilingSectionText(StockText):
                 hl_start, hl_end = CompanyFilingCitationOutput.get_offsets_from_snippets(
                     smaller_snippet=cit.citation_snippet, context=cit.citation_snippet_context
                 )
-            form_type = f" ({cit.source_text.form_type})" if cit.source_text.form_type else ""  # type: ignore
+            form_type = f" ({cit.source_text.form_type})" if cit.source_text.form_type else ""
             output[cit].append(
                 CompanyFilingCitationOutput(
-                    internal_id=str(cit.source_text.db_id or cit.source_text.id),  # type: ignore
+                    internal_id=str(cit.source_text.db_id or cit.source_text.id),
                     name=cit.source_text.to_citation_title() + form_type,
                     summary=cit.citation_snippet_context,
                     snippet_highlight_start=hl_start,
@@ -1505,23 +1495,24 @@ class StockSecFilingSectionText(StockText):
                 )
             )
 
-        return output  # type: ignore
+        return output
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         return f"{self.header}: {self.val}"
 
 
 @io_type
-class StockOtherSecFilingText(StockText):
+class StockOtherSecFilingText(StockText[str, CompanyFilingCitationOutput]):
     """
     Unlike `SecFilingText`, this class is used to get other types of SEC filings and the helper
     method `get_strs_lookup` is used to download the full content of the filing instead of only
     extracting a few sections.
     TODO: We may later merge this class with `SecFilingText` (and also extract certain sections
     for other types)
+
+    id = SEC filing info
     """
 
-    id: str  # SEC filing info
     text_type: ClassVar[str] = "SEC Filing"
     db_id: Optional[str] = None
     form_type: Optional[str] = None
@@ -1532,23 +1523,21 @@ class StockOtherSecFilingText(StockText):
         return ""
 
     @classmethod
-    async def _get_strs_lookup(
-        cls, sec_filing_list: List[StockOtherSecFilingText]  # type: ignore
-    ) -> Dict[TextIDType, str]:
+    async def _get_strs_lookup(cls, texts: List[StockOtherSecFilingText]) -> Dict[str, str]:
         # Get the available content from DB first
-        output: Dict[TextIDType, str] = {}
+        output: Dict[str, str] = {}
 
-        db_id_to_text_id = {filing.db_id: filing.id for filing in sec_filing_list if filing.db_id}
-        output.update(await SecFiling.get_filings_content_from_db(db_id_to_text_id))  # type: ignore
+        db_id_to_text_id = {filing.db_id: filing.id for filing in texts if filing.db_id}
+        output.update(await SecFiling.get_filings_content_from_db(db_id_to_text_id))
 
         # Get the rest from SEC API directly
         filing_gbi_pairs = [
             (filing.id, filing.stock_id.gbi_id)
-            for filing in sec_filing_list
+            for filing in texts
             if not filing.db_id and filing.stock_id
         ]
         output.update(
-            await SecFiling.get_filings_content_from_api(filing_gbi_pairs, insert_to_db=True)  # type: ignore
+            await SecFiling.get_filings_content_from_api(filing_gbi_pairs, insert_to_db=True)
         )
 
         return output
@@ -1570,8 +1559,8 @@ class StockOtherSecFilingText(StockText):
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[CompanyFilingCitationOutput]]:
         output = defaultdict(list)
         for text in texts:
             hl_start, hl_end = None, None
@@ -1579,10 +1568,10 @@ class StockOtherSecFilingText(StockText):
                 hl_start, hl_end = CompanyFilingCitationOutput.get_offsets_from_snippets(
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
-            form_type = f" ({text.source_text.form_type})" if text.source_text.form_type else ""  # type: ignore
+            form_type = f" ({text.source_text.form_type})" if text.source_text.form_type else ""
             output[text].append(
                 CompanyFilingCitationOutput(
-                    internal_id=str(text.source_text.db_id or text.source_text.id),  # type: ignore
+                    internal_id=str(text.source_text.db_id or text.source_text.id),
                     name=text.source_text.to_citation_title() + form_type,
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
@@ -1590,22 +1579,22 @@ class StockOtherSecFilingText(StockText):
                     inline_offset=text.citation_text_offset,
                 )
             )
-        return output  # type: ignore
+        return output
 
 
 @io_type
-class KPIText(Text):
+class KPIText(Text[str, TextCitationOutput]):
     pid: Optional[int] = None
     explanation: Optional[str] = None  # To be used as a way to store why a KPI has been selected
     text_type: ClassVar[str] = "KPI"
 
     @classmethod
     async def get_citations_for_output(
-        cls, texts: List[TextCitation], db: BoostedPG
-    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
-        output = defaultdict(list)
+        cls, texts: List[TextCitation[Self]], db: BoostedPG
+    ) -> Dict[TextCitation[Self], List[TextCitationOutput]]:
+        output: Dict[TextCitation[Self], List[TextCitationOutput]] = defaultdict(list)
         for cit in texts:
-            text = cast(Self, cit.source_text)
+            text = cit.source_text
             output[cit].append(
                 TextCitationOutput(
                     internal_id=str(text.id),
@@ -1613,15 +1602,16 @@ class KPIText(Text):
                     summary=text.explanation,
                 )
             )
-        return output  # type: ignore
+        return output
 
 
+T = TypeVar("T", bound=Text)
 # These are not actual Text types, but build on top of them
 
 
 @io_type
-class TextGroup(ComplexIOBase):
-    val: List[Text]
+class TextGroup(Generic[T], ComplexIOBase):
+    val: List[T]
     id_to_str: Optional[Dict[TextIDType, str]] = None
     offset: int = 0  # for starting the numbering of a TextGroup from something other than 0
 
@@ -1660,8 +1650,10 @@ class TextGroup(ComplexIOBase):
             return None
 
     def get_str_for_text(self, text_id: TextIDType) -> Optional[str]:
+        if self.id_to_str is None:
+            return None
         try:
-            return self.id_to_str[text_id]  # type: ignore
+            return self.id_to_str[text_id]
         except (TypeError, KeyError):
             # can't log this due to circular import
             logger.exception("Could not convert text ID to text")
@@ -1688,13 +1680,13 @@ class TextGroup(ComplexIOBase):
 
 @io_type
 class EquivalentKPITexts(TextGroup):
-    val: List[KPIText]  # type: ignore
+    val: List[KPIText]
     general_kpi_name: str
 
 
 @io_type
 class TopicProfiles(TextGroup):
-    val: List[ProfileText]  # type: ignore
+    val: List[ProfileText]
     topic: str
 
 
@@ -1729,8 +1721,8 @@ class TextOutput(Output):
 
 
 @io_type
-class TextCitation(Citation):
-    source_text: Text
+class TextCitation(Generic[T], Citation):
+    source_text: T
     # Offset into the parent text for where this citation applies and should be inserted
     citation_text_offset: Optional[int] = None
     citation_snippet: Optional[str] = None
@@ -1764,15 +1756,15 @@ class TextCitation(Citation):
 
     @classmethod
     async def resolve_citations(
-        cls, citations: List[Self], db: BoostedPG
-    ) -> Dict[Self, List[CitationOutput]]:
+        cls, citations: List[TextCitation[T]], db: BoostedPG
+    ) -> Dict[TextCitation[Any], List[CitationOutput]]:
         # First group citations based on type of the source text.
         text_type_map = defaultdict(list)
         for cit in citations:
             text_type_map[type(cit.source_text)].append(cit)
 
         tasks = [
-            typ.get_citations_for_output(text_list, db) for typ, text_list in text_type_map.items()  # type: ignore
+            typ.get_citations_for_output(text_list, db) for typ, text_list in text_type_map.items()
         ]
         outputs = defaultdict(list)
         # List of lists, where each nested list has outputs for each type
@@ -1784,4 +1776,4 @@ class TextCitation(Citation):
             for citation, output_cits in output_dict.items():
                 outputs[citation].extend(output_cits)
 
-        return outputs  # type: ignore
+        return outputs
