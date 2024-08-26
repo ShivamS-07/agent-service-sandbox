@@ -877,7 +877,6 @@ class StockEarningsSummaryText(StockEarningsText):
         for summary_id, text_citation_list in summary_id_to_text.items():
             row = summary_id_to_row[summary_id]
             for text_citation in text_citation_list:
-                last_updated_at = row["created_timestamp"]
                 summary_dict: Dict = row["summary"]
 
                 text: Self = text_citation.source_text  # type: ignore
@@ -896,7 +895,7 @@ class StockEarningsSummaryText(StockEarningsText):
                 # At any point, if we fail, just append the reference to the
                 fallback_citation = EarningsSummaryCitationOutput(
                     name=citation_name,
-                    last_updated_at=last_updated_at,
+                    last_updated_at=text_citation.source_text.timestamp,
                     inline_offset=text_citation.citation_text_offset,
                     summary=full_context,
                     snippet_highlight_start=hl_start,
@@ -949,7 +948,7 @@ class StockEarningsSummaryText(StockEarningsText):
                                 internal_id=EarningsTranscriptCitationOutput.get_citation_internal_id(
                                     gbi_id=row["gbi_id"], year=row["year"], quarter=row["quarter"]
                                 ),
-                                last_updated_at=last_updated_at,
+                                last_updated_at=text_citation.source_text.timestamp,
                                 inline_offset=text_citation.citation_text_offset,
                                 summary=full_context,
                                 snippet_highlight_start=hl_start,
@@ -1083,7 +1082,6 @@ class StockEarningsSummaryPointText(StockEarningsText):
         outputs: Dict[TextCitation, List[CitationOutput]] = defaultdict(list)
         for summary_id, text_citations in summary_id_to_texts.items():
             row = summary_id_to_row[summary_id]
-            last_updated_at = row["created_timestamp"]
             summary_dict: Dict = row["summary"]
 
             for text_citation in text_citations:
@@ -1112,7 +1110,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
                     outputs[text_citation].append(
                         EarningsSummaryCitationOutput(
                             name=citation_name,
-                            last_updated_at=last_updated_at,
+                            last_updated_at=text_citation.source_text.timestamp,
                             inline_offset=text_citation.citation_text_offset,
                             summary=full_context,
                             snippet_highlight_start=hl_start,
@@ -1141,7 +1139,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
                                     gbi_id=row["gbi_id"], year=row["year"], quarter=row["quarter"]
                                 ),
                                 name=citation_name,
-                                last_updated_at=last_updated_at,
+                                last_updated_at=text_citation.source_text.timestamp,
                                 inline_offset=text_citation.citation_text_offset,
                                 summary=full_context,
                                 snippet_highlight_start=hl_start,
@@ -1378,9 +1376,17 @@ class StockSecFilingText(StockText):
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
             form_type = f" ({text.source_text.form_type})" if text.source_text.form_type else ""  # type: ignore
+            if text.source_text.stock_id and text.source_text.timestamp:
+                internal_id = CompanyFilingCitationOutput.get_citation_internal_id(
+                    gbi_id=text.source_text.stock_id.gbi_id,
+                    form_type=text.source_text.form_type,  # type: ignore
+                    filing_date=text.source_text.timestamp.date(),
+                )
+            else:
+                internal_id = str(text.source_text.db_id or text.source_text.id)  # type: ignore
             output[text].append(
                 CompanyFilingCitationOutput(
-                    internal_id=str(text.source_text.db_id or text.source_text.id),  # type: ignore
+                    internal_id=internal_id,
                     name=text.source_text.to_citation_title() + form_type,
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
@@ -1439,6 +1445,7 @@ class StockSecFilingSectionText(StockText):
                         stock_id=filing.stock_id,
                         db_id=filing.db_id,
                         timestamp=filing.timestamp,
+                        form_type=filing.form_type,
                     )
                 )
 
@@ -1458,6 +1465,7 @@ class StockSecFilingSectionText(StockText):
                     stock_id=section.stock_id,
                     db_id=section.db_id,
                     timestamp=section.timestamp,
+                    form_type=section.form_type,
                 )
 
             # same header, multiple sections (across stocks)
@@ -1482,26 +1490,35 @@ class StockSecFilingSectionText(StockText):
     ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         output = defaultdict(list)
         filing_id_set = set()
-        for cit in texts:
-            source_text = cit.source_text
-            source_text = cast(Self, cit.source_text)
+        for text in texts:
+            source_text = text.source_text
+            source_text = cast(Self, text.source_text)
             if source_text.filing_id in filing_id_set:
                 continue
             filing_id_set.add(source_text.filing_id)
             hl_start, hl_end = None, None
-            if cit.citation_snippet_context and cit.citation_snippet:
+            if text.citation_snippet_context and text.citation_snippet:
                 hl_start, hl_end = CompanyFilingCitationOutput.get_offsets_from_snippets(
-                    smaller_snippet=cit.citation_snippet, context=cit.citation_snippet_context
+                    smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
-            form_type = f" ({cit.source_text.form_type})" if cit.source_text.form_type else ""  # type: ignore
-            output[cit].append(
+            form_type = f" ({text.source_text.form_type})" if text.source_text.form_type else ""  # type: ignore
+            if text.source_text.stock_id and text.source_text.timestamp:
+                internal_id = CompanyFilingCitationOutput.get_citation_internal_id(
+                    gbi_id=text.source_text.stock_id.gbi_id,
+                    form_type=text.source_text.form_type,  # type: ignore
+                    filing_date=text.source_text.timestamp.date(),
+                )
+            else:
+                internal_id = str(text.source_text.db_id or text.source_text.id)  # type: ignore
+            output[text].append(
                 CompanyFilingCitationOutput(
-                    internal_id=str(cit.source_text.db_id or cit.source_text.id),  # type: ignore
-                    name=cit.source_text.to_citation_title() + form_type,
-                    summary=cit.citation_snippet_context,
+                    internal_id=internal_id,
+                    name=text.source_text.to_citation_title() + form_type,
+                    summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
-                    inline_offset=cit.citation_text_offset,
+                    inline_offset=text.citation_text_offset,
+                    last_updated_at=text.source_text.timestamp,
                 )
             )
 
@@ -1580,14 +1597,23 @@ class StockOtherSecFilingText(StockText):
                     smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
                 )
             form_type = f" ({text.source_text.form_type})" if text.source_text.form_type else ""  # type: ignore
+            if text.source_text.stock_id and text.source_text.timestamp:
+                internal_id = CompanyFilingCitationOutput.get_citation_internal_id(
+                    gbi_id=text.source_text.stock_id.gbi_id,
+                    form_type=text.source_text.form_type,  # type: ignore
+                    filing_date=text.source_text.timestamp.date(),
+                )
+            else:
+                internal_id = str(text.source_text.db_id or text.source_text.id)  # type: ignore
             output[text].append(
                 CompanyFilingCitationOutput(
-                    internal_id=str(text.source_text.db_id or text.source_text.id),  # type: ignore
+                    internal_id=internal_id,
                     name=text.source_text.to_citation_title() + form_type,
                     summary=text.citation_snippet_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
                     inline_offset=text.citation_text_offset,
+                    last_updated_at=text.source_text.timestamp,
                 )
             )
         return output  # type: ignore

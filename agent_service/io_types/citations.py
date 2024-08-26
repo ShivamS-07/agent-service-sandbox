@@ -133,15 +133,51 @@ class CompanyFilingCitationOutput(DocumentCitationOutput):
     citation_type: CitationType = CitationType.COMPANY_FILING
 
     @classmethod
+    def get_citation_internal_id(
+        cls, gbi_id: int, form_type: str, filing_date: datetime.date
+    ) -> str:
+        date_str = filing_date.strftime("%Y_%m_%d")
+        # For backwards compatibility, if the form type doesn't exist
+        return f"{gbi_id}_{form_type}_{date_str}"
+
+    @classmethod
+    def parse_id(cls, citation_id: str) -> Union[Tuple[int, str, datetime.date], str]:
+        """
+        Earnings transcripts may be identifier EITHER by their gbi id, year,
+        quarter OR by the transcript ID for the record in clickhouse. This
+        function parses the identifier and returns one of those options.
+        """
+        parts = citation_id.split("_")
+        if len(parts) == 5:
+            # gbi id, form type, year, month, date
+            gbi_id = int(parts[0])
+            form_type = parts[1]
+            date = datetime.date(int(parts[2]), int(parts[3]), int(parts[4]))
+            return (gbi_id, form_type, date)
+        else:
+            # It's just a UUID, use as is
+            return citation_id
+
+    @classmethod
     async def get_citation_details(
         cls, citation_id: str, db: BoostedPG, user_id: str
     ) -> Optional[RawTextCitationDetails]:
+        parsed_id = CompanyFilingCitationOutput.parse_id(citation_id)
+
         from agent_service.io_types.stock import StockID
 
-        result = await SecFiling.get_filing_data_async(db_ids=[citation_id])
-        if not result:
-            return None
-        sec_data = result[citation_id]
+        if isinstance(parsed_id, tuple):
+            sec_data = await SecFiling.get_filing_data_by_type_date_async(
+                gbi_id=parsed_id[0], filing_type=parsed_id[1], date=parsed_id[2]
+            )
+            if not sec_data:
+                return None
+        else:
+            # It's a UUID
+            result = await SecFiling.get_filing_data_async(db_ids=[citation_id])
+            if not result:
+                return None
+            sec_data = result[citation_id]
         stock = (await StockID.from_gbi_id_list([sec_data.gbi_id]))[0]
         filed_at_str = sec_data.filed_at.strftime("%Y-%m-%d")
         title = f"{stock.company_name} - {sec_data.form_type} ({filed_at_str})"

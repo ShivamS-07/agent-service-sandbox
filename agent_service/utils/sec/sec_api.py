@@ -580,12 +580,49 @@ class SecFiling:
             management_section = row.pop("managementSection")
             risk_factor_section = row.pop("riskFactors")
             row["content"] = (
-                f"Management Section:\n\n{management_section}\n\n"
-                f"Risk Factors Section:\n\n{risk_factor_section}"
+                (
+                    f"Management Section:\n\n{management_section}\n\n"
+                    f"Risk Factors Section:\n\n{risk_factor_section}"
+                )
+                if management_section and risk_factor_section
+                else row["content"]
             )
             output[filing_id] = SecFilingData(**row)
 
         return output
+
+    @classmethod
+    async def get_filing_data_by_type_date_async(
+        cls, gbi_id: int, filing_type: str, date: datetime.date
+    ) -> Optional[SecFilingData]:
+        sql = """
+            SELECT id::TEXT AS db_id, riskFactors, managementSection, gbi_id,
+                   formType AS form_type, filedAt AS filed_at
+            FROM sec.sec_filings
+            WHERE gbi_id = %(gbi_id)s AND filedAt::DATE = %(filed_at)s
+                  AND formType = %(filing_type)s
+        """
+        params = {"gbi_id": gbi_id, "filed_at": date, "filing_type": filing_type}
+        ch = AsyncClickhouseBase()
+        result = await ch.generic_read(
+            sql,
+            params=params,
+        )
+
+        if len(result) == 0:
+            return None
+        row = result[0]
+        management_section = row.pop("managementSection")
+        risk_factor_section = row.pop("riskFactors")
+        row["content"] = (
+            (
+                f"Management Section:\n\n{management_section}\n\n"
+                f"Risk Factors Section:\n\n{risk_factor_section}"
+            )
+            if management_section and risk_factor_section
+            else row["content"]
+        )
+        return SecFilingData(**row)
 
     @classmethod
     async def get_filings_content_from_api(
