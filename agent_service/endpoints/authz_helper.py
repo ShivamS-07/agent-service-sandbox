@@ -37,6 +37,7 @@ class User:
     is_admin: bool = False
     groups: List[str] = field(default_factory=list)
     real_user_id: str = ""
+    fullstory_link: str = ""
 
     def is_boosted(self) -> bool:
         return "boosted" in self.groups
@@ -72,7 +73,9 @@ def get_keyid_to_key_map() -> Dict[Any, jwt.PyJWK]:
     return key_id_map
 
 
-def extract_user_from_jwt(auth_token: str, real_user_id: str) -> Optional[User]:
+def extract_user_from_jwt(
+    auth_token: str, real_user_id: str, fullstory_link: str
+) -> Optional[User]:
     try:
         header = jwt.get_unverified_header(auth_token)
         key_id = header.get(KEY_ID, None)
@@ -104,6 +107,7 @@ def extract_user_from_jwt(auth_token: str, real_user_id: str) -> Optional[User]:
             is_admin=is_admin,
             groups=groups,
             real_user_id=real_user_id,
+            fullstory_link=fullstory_link,
         )
     except Exception as e:
         logger.exception(f"Failed to parse auth_token with exception: {e}")
@@ -123,12 +127,11 @@ def parse_header(
 
     if auth_token.startswith(COGNITO_PREFIX):
         auth_token = auth_token[len(COGNITO_PREFIX) :]
-    real_user_id = ""
-    for header_key_raw, header_value_raw in request.headers.raw:
-        header_key = header_key_raw.decode("utf-8")
-        if header_key == "realuserid":
-            real_user_id = header_value_raw.decode("utf-8")
-    user = extract_user_from_jwt(auth_token, real_user_id)
+    real_user_id = request.headers.get("realuserid", "")
+    fullstory_link = request.headers.get("fullstorylink", "")
+    user = extract_user_from_jwt(
+        auth_token, real_user_id=real_user_id, fullstory_link=fullstory_link
+    )
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user")
     return user

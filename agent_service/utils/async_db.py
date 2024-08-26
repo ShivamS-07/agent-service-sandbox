@@ -1006,7 +1006,7 @@ class AsyncDB:
 
     async def get_user_info(self, user_id: str) -> Dict[str, Any]:
         sql = """
-        select name, id::varchar, cognito_username, email
+        select name, id::varchar, cognito_username
         from user_service.users where id::varchar = %(user_id)s
         """
         rows = await self.pg.generic_read(sql, {"user_id": user_id})

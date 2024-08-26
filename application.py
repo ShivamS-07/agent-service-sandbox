@@ -166,6 +166,7 @@ class AuditInfo:
     real_user_id: Optional[str] = None
     request_number: int = -1
     frontend_version: Optional[str] = None
+    fullstory_link: Optional[str] = None
 
     def to_json_dict(self) -> Dict[str, Any]:
         data = dataclasses.asdict(self)
@@ -211,7 +212,8 @@ async def add_process_time_header(request: Request, call_next: Callable) -> Any:
         client_timestamp=client_timestamp,
         client_request_id=request.headers.get("clientrequestid", None),
         request_number=REQUEST_COUNTER,
-        frontend_version=request.headers.get("version", None),
+        frontend_version=request.headers.get("clientversion", None),
+        fullstory_link=request.headers.get("fullstorylink", None),
     )
     try:
         authorization = request.headers.get("Authorization", None)

@@ -421,11 +421,13 @@ class AgentServiceImpl:
                     user_info_slack_string = ""
                     for key, value in user_info.items():
                         user_info_slack_string += f"\n{key}: {value}"
+                    if user.fullstory_link:
+                        user_info_slack_string += f"\nfullstory_link: {user.fullstory_link}"
                     six_hours_from_now = int(time.time() + (60 * 60 * 6))
                     self.slack_sender.send_message_at(
-                        message_text=f"Link: {self.base_url}/chat/{agent_id}\n"
-                        f"Initial prompt text: {req.prompt}\n"
-                        f"canned_prompt_id: {req.canned_prompt_id}\n"
+                        message_text=f"{req.prompt}\n"
+                        f"Link: {self.base_url}/chat/{agent_id}\n"
+                        f"canned_prompt_id: {req.canned_prompt_id}"
                         f"{user_info_slack_string}",
                         send_at=six_hours_from_now,
                     )
