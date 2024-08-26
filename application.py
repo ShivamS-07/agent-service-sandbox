@@ -107,6 +107,7 @@ from agent_service.endpoints.models import (
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.GPT.requests import _get_gpt_service_stub
 from agent_service.io_types.citations import CitationType
+from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.clickhouse import Clickhouse
@@ -1236,10 +1237,15 @@ if __name__ == "__main__":
     get_keyid_to_key_map()
 
     logger.info("Starting server...")
+    env = get_environment_tag()
+    base_url = "https://alfa.boosted.ai" if env == "ALPHA" else "https://agent-dev.boosted.ai"
+    channel = "alfa-client-queries" if env == "ALPHA" else "alfa-client-queries-dev"
     application.state.agent_service_impl = AgentServiceImpl(
         task_executor=PrefectTaskExecutor(),
         gpt_service_stub=_get_gpt_service_stub()[0],
         async_db=AsyncDB(pg=AsyncPostgresBase()),
         clickhouse_db=Clickhouse(),
+        slack_sender=SlackSender(channel=channel),
+        base_url=base_url,
     )
     uvicorn.run(application, host=args.address, port=args.port)

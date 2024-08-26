@@ -3,6 +3,7 @@ import datetime
 import json
 import logging
 import re
+import time
 import traceback
 from collections import defaultdict
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
@@ -80,6 +81,7 @@ from agent_service.external.user_svc_client import (
 )
 from agent_service.io_type_utils import load_io_type
 from agent_service.io_types.citations import CitationDetailsType, CitationType
+from agent_service.slack.slack_sender import SlackSender
 from agent_service.types import ChatContext, MemoryType, Message
 from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import send_chat_message
@@ -122,11 +124,15 @@ class AgentServiceImpl:
         gpt_service_stub: GPTServiceStub,
         async_db: AsyncDB,
         clickhouse_db: Clickhouse,
+        slack_sender: SlackSender,
+        base_url: str,
     ):
         self.pg = async_db
         self.ch = clickhouse_db
         self.task_executor = task_executor
         self.gpt_service_stub = gpt_service_stub
+        self.slack_sender = slack_sender
+        self.base_url = base_url
 
     async def create_agent(self, user: User) -> CreateAgentResponse:
         """Create an agent entry in the DB and return ID immediately"""
@@ -409,6 +415,23 @@ class AgentServiceImpl:
             except Exception:
                 LOGGER.exception("Failed to kick off execution plan creation")
                 return ChatWithAgentResponse(success=False, allow_retry=False)
+            if not user.is_boosted() and user.real_user_id == user.user_id:
+                try:
+                    user_info = await self.pg.get_user_info(user_id=user.user_id)
+                    user_info_slack_string = ""
+                    for key, value in user_info.items():
+                        user_info_slack_string += f"\n{key}: {value}"
+                    six_hours_from_now = int(time.time() + (60 * 60 * 6))
+                    self.slack_sender.send_message_at(
+                        message_text=f"Link: {self.base_url}/chat/{agent_id}\n"
+                        f"Initial prompt text: {req.prompt}\n"
+                        f"canned_prompt_id: {req.canned_prompt_id}\n"
+                        f"{user_info_slack_string}",
+                        send_at=six_hours_from_now,
+                    )
+                except Exception:
+                    LOGGER.warning(f"Unable to send slack message for {user.user_id=}")
+                    LOGGER.warning(traceback.format_exc())
 
         return ChatWithAgentResponse(success=True, allow_retry=False, name=name)
 
