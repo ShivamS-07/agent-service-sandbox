@@ -93,6 +93,10 @@ async def prefect_run_execution_plan(
     message = {
         "s3_path": upload_string_to_s3(data=json.dumps(message_contents, default=json_serial)),
         "method": "run_execution_plan",
+        "agent_id": context.agent_id,
+        "plan_id": context.plan_id,
+        "plan_run_id": context.plan_run_id,
+        "user_id": context.user_id,
     }
     queue_name = (
         BOOSTED_DAG_QUEUE if use_boosted_dag_for_run_execution_plan() else AGENT_WORKER_QUEUE

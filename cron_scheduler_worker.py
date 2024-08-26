@@ -96,6 +96,10 @@ async def start_agent_run(agent: AgentInfo) -> None:
     message = {
         "s3_path": upload_string_to_s3(data=json.dumps(message_contents, default=json_serial)),
         "method": "run_execution_plan",
+        "agent_id": agent.context.agent_id,
+        "plan_id": agent.context.plan_id,
+        "plan_run_id": agent.context.plan_run_id,
+        "user_id": agent.context.user_id,
     }
     queue = sqs.get_queue_by_name(QueueName=AGENT_AUTOMATION_WORKER_QUEUE)
     queue.send_message(MessageBody=json.dumps(message, default=json_serial))
