@@ -490,6 +490,8 @@ async def make_bar_graph(args: MakeBarGraphArgs, context: PlanRunContext) -> Bar
     data: List[BarData] = []
     data_col, data_df_col = data_col
     x_axis_col, x_axis_df_col = x_axis_col
+    label_type = TableColumnType.STRING
+    index_type = x_axis_col.metadata.col_type
     if dataset_col is None:
         # In this case, we only have a single dataset so we don't need to do any
         # fancy grouping. The dataset name is simply the name of the graphed
@@ -518,11 +520,14 @@ async def make_bar_graph(args: MakeBarGraphArgs, context: PlanRunContext) -> Bar
             for index_val, record in zip(pivoted_df.index, records)
             if not pd.isna(index_val)
         ]
+        label_type = ds_col.metadata.col_type
 
     return BarGraph(
         data_type=data_col.metadata.col_type,
         data_unit=data_col.metadata.unit,
         data=data,
+        index_type=index_type,
+        label_type=label_type,
     )
 
 

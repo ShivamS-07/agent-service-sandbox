@@ -179,6 +179,8 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
                 MakeBarGraphArgs(input_table=TIMESERIES_TABLE),
                 BarGraph(
                     data_type=TableColumnType.FLOAT,
+                    index_type=TableColumnType.DATE,
+                    label_type=TableColumnType.STOCK,
                     data=[
                         BarData(
                             index=datetime.date(2024, 1, 1),
@@ -203,6 +205,7 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
                 MakeBarGraphArgs(input_table=TIMESERIES_TABLE_NO_DATASET),
                 BarGraph(
                     data_type=TableColumnType.FLOAT,
+                    index_type=TableColumnType.QUARTER,
                     data=[
                         BarData(
                             index="2023Q1",

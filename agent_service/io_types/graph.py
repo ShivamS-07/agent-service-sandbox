@@ -17,6 +17,7 @@ from agent_service.io_types.stock import StockID
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.output_utils.utils import io_type_to_gpt_input
+from agent_service.utils.stock_metadata import StockMetadata, get_stock_metadata
 
 MAX_DATAPOINTS_FOR_GPT = 10
 
@@ -43,7 +44,7 @@ class DataPoint(ComplexIOBase):
 
 @io_type
 class GraphDataset(ComplexIOBase):
-    dataset_id: Union[PrimitiveType, StockID]
+    dataset_id: Union[PrimitiveType, StockID, StockMetadata]
     dataset_id_type: TableColumnType
     points: List[DataPoint]
 
@@ -55,7 +56,11 @@ class GraphDataset(ComplexIOBase):
                 MAX_DATAPOINTS_FOR_GPT,
             )
         )
-        dataset_name = await io_type_to_gpt_input(self.dataset_id)
+        dataset_name = await io_type_to_gpt_input(
+            self.dataset_id.symbol or self.dataset_id.company_name
+            if isinstance(self.dataset_id, StockMetadata)
+            else self.dataset_id
+        )
         datapoints = await gather_with_concurrency(
             [point.to_gpt_input() for point in latest_N_datapoints]
         )
@@ -72,9 +77,19 @@ class LineGraph(Graph):
     data: List[GraphDataset]
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        gbi_ids = [
+            dataset.dataset_id.gbi_id
+            for dataset in self.data
+            if isinstance(dataset.dataset_id, StockID)
+        ]
+        metadata = await get_stock_metadata(gbi_ids=gbi_ids, pg=pg)
         for dataset in self.data:
             if isinstance(dataset.dataset_id, StockID):
-                dataset.dataset_id = dataset.dataset_id.symbol or dataset.dataset_id.isin
+                dataset.dataset_id = (
+                    metadata.get(dataset.dataset_id.gbi_id)
+                    or dataset.dataset_id.symbol
+                    or dataset.dataset_id.isin
+                )
         return GraphOutput(
             graph=LineGraph(
                 x_axis_type=self.x_axis_type,
@@ -102,7 +117,7 @@ class LineGraph(Graph):
 
 @io_type
 class PieSection(ComplexIOBase):
-    label: Union[PrimitiveType, StockID]
+    label: Union[PrimitiveType, StockID, StockMetadata]
     value: PrimitiveType
     citation_refs: List[str] = []
 
@@ -124,9 +139,15 @@ class PieGraph(Graph):
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         if not self.label_type == TableColumnType.STOCK:
             return GraphOutput(graph=self)
+        gbi_ids = [
+            section.label.gbi_id for section in self.data if isinstance(section.label, StockID)
+        ]
+        metadata = await get_stock_metadata(gbi_ids=gbi_ids, pg=pg)
         for section in self.data:
             if isinstance(section.label, StockID):
-                section.label = section.label.symbol or section.label.isin
+                section.label = (
+                    metadata.get(section.label.gbi_id) or section.label.symbol or section.label.isin
+                )
         citations = await Citation.resolve_all_citations(self.get_all_citations(), db=pg)
         return GraphOutput(
             graph=PieGraph(
@@ -149,13 +170,13 @@ class PieGraph(Graph):
 
 @io_type
 class BarDataPoint(ComplexIOBase):
-    label: Optional[Union[PrimitiveType, StockID]]
+    label: Optional[Union[PrimitiveType, StockID, StockMetadata]]
     value: Optional[PrimitiveType]
 
 
 @io_type
 class BarData(ComplexIOBase):
-    index: Union[PrimitiveType, StockID]
+    index: Union[PrimitiveType, StockID, StockMetadata]
     # values are a list of tuples (dataset_id, value)
     values: List[BarDataPoint]
 
@@ -166,16 +187,43 @@ class BarGraph(Graph):
     data_type: TableColumnType  # values type
     data_unit: Optional[str] = None  # currency valued unit data
     data: List[BarData]
+    # For backwards compatibility
+    index_type: TableColumnType = TableColumnType.STRING
+    label_type: TableColumnType = TableColumnType.STRING
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        gbi_ids = [bar.index.gbi_id for bar in self.data if isinstance(bar.index, StockID)]
+        gbi_ids.extend(
+            [
+                point.label.gbi_id
+                for bar in self.data
+                for point in bar.values
+                if isinstance(point.label, StockID)
+            ]
+        )
+        metadata = await get_stock_metadata(gbi_ids=gbi_ids, pg=pg)
         for bar in self.data:
             if isinstance(bar.index, StockID):
-                bar.index = bar.index.symbol or bar.index.isin
+                # Make sure this is set, for backwards compat
+                self.index_type = TableColumnType.STOCK
+                bar.index = metadata.get(bar.index.gbi_id) or bar.index.symbol or bar.index.isin
             for bar_point in bar.values:
                 if isinstance(bar_point.label, StockID):
-                    bar_point.label = bar_point.label.symbol or bar_point.label.isin
+                    # Make sure this is set, for backwards compat
+                    self.label_type = TableColumnType.STOCK
+                    bar_point.label = (
+                        metadata.get(bar_point.label.gbi_id)
+                        or bar_point.label.symbol
+                        or bar_point.label.isin
+                    )
         return GraphOutput(
-            graph=BarGraph(data_type=self.data_type, data_unit=self.data_unit, data=self.data),
+            graph=BarGraph(
+                data_type=self.data_type,
+                data_unit=self.data_unit,
+                data=self.data,
+                index_type=self.index_type,
+                label_type=self.label_type,
+            ),
             title=title,
         )
 

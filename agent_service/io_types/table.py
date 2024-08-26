@@ -25,7 +25,7 @@ from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import Text, TextOutput
 from agent_service.utils.async_utils import gather_with_concurrency, to_awaitable
 from agent_service.utils.boosted_pg import BoostedPG
-from agent_service.utils.stock_metadata import StockMetadata
+from agent_service.utils.stock_metadata import StockMetadata, get_stock_metadata
 
 STOCK_ID_COL_NAME_DEFAULT = "Security"
 SCORE_COL_NAME_DEFAULT = "Criteria Match"
@@ -342,24 +342,20 @@ class Table(ComplexIOBase):
         # other. Create a table from fixed_cols so that we can easily convert to
         # a row-based schema.
         fixed_table = Table(columns=final_cols)
+        all_gbi_ids = {
+            stock.gbi_id
+            for col in fixed_table.columns
+            for stock in col.data
+            if isinstance(stock, StockID)
+        }
+        metadata_map = await get_stock_metadata(gbi_ids=list(all_gbi_ids), pg=pg)
         df = fixed_table.to_df()
         df = df.replace(np.nan, None)
         # Make sure we sort before creating output (if necessary)
         score_col = fixed_table.get_score_column()
         if score_col:
             df = df.sort_values(by=str(score_col.metadata.label), ascending=False)
-        df = df.applymap(
-            lambda val: (
-                StockMetadata(
-                    gbi_id=val.gbi_id,
-                    symbol=val.symbol,
-                    isin=val.isin,
-                    company_name=val.company_name,
-                )
-                if isinstance(val, StockID)
-                else val
-            )
-        )
+        df = df.applymap(lambda val: metadata_map[val.gbi_id] if isinstance(val, StockID) else val)
         rows = df.values.tolist()
 
         return TableOutput(title=title, columns=output_cols, rows=rows, citations=table_citations)

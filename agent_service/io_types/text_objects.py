@@ -12,6 +12,7 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.stock_metadata import StockMetadata, get_stock_metadata
 
 
 class TextObjectType(enum.StrEnum):
@@ -115,13 +116,13 @@ class TextObject(SerializeableBase):
         return "".join(output_buffer)
 
     @staticmethod
-    def _extract_stock_tags_from_text(
-        original_text: str, tagged_text: str, symbol_to_stock_map: Dict[str, StockID]
+    async def _extract_stock_tags_from_text(
+        original_text: str, tagged_text: str, symbol_to_stock_map: Dict[str, StockID], db: BoostedPG
     ) -> List:
         # It's a nightmare regex, but really it's just:
         # match two open brackets, match any number of non-close bracket characters, match two close brackets
         tag_regex = re.compile(r"\[\[([^\]]*)\]\]")
-        text_objects = []
+        text_objects: List[StockTextObject] = []
         for tag_match in re.finditer(tag_regex, tagged_text):
             if not tag_match or not tag_match.group(1):
                 continue
@@ -156,9 +157,21 @@ class TextObject(SerializeableBase):
                             company_name=stock.company_name,
                             index=original_text_location.start(),
                             end_index=original_text_location.end() - 1,
+                            isin="",
                         )
                     )
                     break
+
+        stock_metadata = await get_stock_metadata(gbi_ids=[to.gbi_id for to in text_objects], pg=db)
+        # Enrich with other data
+        for text_object in text_objects:
+            metadata = stock_metadata.get(text_object.gbi_id)
+            if not metadata:
+                continue
+            text_object.isin = metadata.isin
+            text_object.sector = metadata.sector
+            text_object.subindustry = metadata.subindustry
+            text_object.exchange = metadata.exchange
         return text_objects
 
     @staticmethod
@@ -167,6 +180,10 @@ class TextObject(SerializeableBase):
     ) -> List["TextObject"]:
         if not context.stock_info:
             return []
+        if not db:
+            from agent_service.utils.postgres import SyncBoostedPG
+
+            db = SyncBoostedPG()
         symbol_to_stock_map = {}
         for stock in context.stock_info:
             if stock.symbol:
@@ -206,18 +223,14 @@ Your tagged output text:""",
             sys_prompt=NO_PROMPT,
         )
 
-        # TODO enrich stock text objects with metadata from the DB
-        return TextObject._extract_stock_tags_from_text(
-            original_text=text, tagged_text=result, symbol_to_stock_map=symbol_to_stock_map
+        return await TextObject._extract_stock_tags_from_text(
+            original_text=text, tagged_text=result, symbol_to_stock_map=symbol_to_stock_map, db=db
         )
 
 
 @io_type
-class StockTextObject(TextObject):
+class StockTextObject(TextObject, StockMetadata):
     type: TextObjectType = TextObjectType.STOCK
-    gbi_id: int
-    symbol: Optional[str]
-    company_name: Optional[str]
 
 
 @io_type

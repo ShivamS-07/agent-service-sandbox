@@ -10,6 +10,7 @@ from agent_service.io_types.text_objects import (
     StockTextObject,
     TextObject,
 )
+from agent_service.utils.postgres import SyncBoostedPG
 
 
 class TestTextObjects(unittest.IsolatedAsyncioTestCase):
@@ -44,9 +45,11 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
                 text="This week AAPL increased",
                 text_objects=[
                     CitationTextObject(citation_id="cit1", index=3),
-                    StockTextObject(index=10, end_index=13, gbi_id=714, symbol="", company_name=""),
+                    StockTextObject(
+                        index=10, end_index=13, gbi_id=714, symbol="", company_name="", isin=""
+                    ),
                 ],
-                expected_result='This ```{"type": "citation", "citation_id": "cit1"}```  week  ```{"type": "stock", "gbi_id": 714, "symbol": "", "company_name": "", "text": "AAPL"}```  increased',
+                expected_result='This ```{"type": "citation", "citation_id": "cit1"}```  week  ```{"gbi_id": 714, "symbol": "", "company_name": "", "isin": "", "sector": null, "subindustry": null, "exchange": null, "type": "stock", "text": "AAPL"}```  increased',  # noqa
             ),
         ]
     )
@@ -115,10 +118,11 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
                 stock_map[stock.symbol] = stock
             if stock.company_name:
                 stock_map[stock.company_name] = stock
-        stock_objects = TextObject._extract_stock_tags_from_text(
+        stock_objects = await TextObject._extract_stock_tags_from_text(
             original_text=original_text,
             tagged_text=tagged_text,
             symbol_to_stock_map=stock_map,
+            db=SyncBoostedPG(),
         )
         # Make sure that the locations of the stock objects' tickers are the
         # same as the are in the original text

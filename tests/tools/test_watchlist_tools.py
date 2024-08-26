@@ -53,11 +53,13 @@ class TestWatchlistTools(IsolatedAsyncioTestCase):
         args = GetUserWatchlistStocksInput(watchlist_name="Helo")
         result = await get_user_watchlist_stocks(args, self.context)
         self.assertEqual(
-            result,
-            [
-                StockID(gbi_id=714, symbol="AAPL", isin="US0378331005", company_name=""),
-                StockID(gbi_id=6963, symbol="MSFT", isin="US5949181045", company_name=""),
-            ],
+            sorted(result),
+            sorted(
+                [
+                    StockID(gbi_id=714, symbol="AAPL", isin="US0378331005", company_name=""),
+                    StockID(gbi_id=6963, symbol="MSFT", isin="US5949181045", company_name=""),
+                ]
+            ),
         )
 
     def create_dummy_watchlists_for_user(self, user_id: str):

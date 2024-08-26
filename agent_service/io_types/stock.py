@@ -12,8 +12,8 @@ from agent_service.utils.stock_metadata import get_stock_metadata
 class StockID(ComplexIOBase):
     gbi_id: int
     symbol: Optional[str]
-    isin: str
     # Default for backwards compat
+    isin: str = ""
     company_name: str = ""
 
     def __hash__(self) -> int:
