@@ -22,6 +22,9 @@ START_HEADER = "__START__"
 
 
 def clean_to_json_if_needed(json: str, repair: bool = True) -> str:
+    if not json:
+        return json
+
     # removes any text before or after a json object/array
     # if repair is true, tries to repair any errors inside the json
     if json[0] in JSON_START_CHARS and json[-1] in JSON_END_CHARS:

@@ -24,10 +24,12 @@ from agent_service.endpoints.models import (
     TaskStatus,
     TaskStatusEvent,
 )
-from agent_service.io_type_utils import IOType, load_io_type
-from agent_service.planner.planner_types import ExecutionPlan, PlanStatus
+from agent_service.io_type_utils import load_io_type
+from agent_service.planner.planner_types import ExecutionPlan, OutputWithID, PlanStatus
 from agent_service.types import Message, Notification, PlanRunContext
 from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_postgres_base import AsyncPostgresBase
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.constants import NOTIFICATION_SERVICE_QUEUE
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
@@ -116,22 +118,26 @@ async def send_chat_message(
 
 
 async def publish_agent_output(
-    outputs: List[IOType],
+    outputs_with_ids: List[OutputWithID],
     context: PlanRunContext,
-    output_ids: List[str],
     live_plan_output: bool = False,
     is_intermediate: bool = False,
     db: Optional[Postgres] = None,
 ) -> None:
     if not db:
         db = get_psql()
-    rich_outputs = []
-    for output, output_id in zip(outputs, output_ids):
-        db.write_agent_output(
-            output=output, output_id=output_id, context=context, live_plan_output=live_plan_output
-        )
-        rich_output = await get_output_from_io_type(output, pg=SyncBoostedPG())
-        rich_outputs.append((rich_output, output_id))
+
+    db.write_agent_multi_outputs(
+        outputs_with_ids=outputs_with_ids,
+        context=context,
+        is_intermediate=is_intermediate,
+        live_plan_output=live_plan_output,
+    )
+
+    async_pg = AsyncPostgresBase()
+    coros = [get_output_from_io_type(o.output, pg=async_pg) for o in outputs_with_ids]
+    results = await gather_with_concurrency(coros, n=len(coros))
+
     now = get_now_utc()
     event = AgentEvent(
         agent_id=context.agent_id,
@@ -139,7 +145,7 @@ async def publish_agent_output(
             output=[
                 AgentOutput(
                     agent_id=context.agent_id,
-                    output_id=output_id,
+                    output_id=o.output_id,
                     plan_id=context.plan_id,
                     plan_run_id=context.plan_run_id,
                     output=rich_output,  # type: ignore
@@ -148,7 +154,7 @@ async def publish_agent_output(
                     shared=False,
                     live_plan_output=live_plan_output,
                 )
-                for (rich_output, output_id) in rich_outputs
+                for (rich_output, o) in zip(results, outputs_with_ids)
             ]
         ),
     )

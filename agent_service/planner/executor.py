@@ -123,7 +123,7 @@ async def run_execution_plan(
     db.insert_plan_run(
         agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
     )
-    # publish start plan run execution
+    # publish start plan run execution to FE
     await publish_agent_execution_status(
         agent_id=context.agent_id,
         plan_run_id=context.plan_run_id,
@@ -233,6 +233,7 @@ async def run_execution_plan(
             except NonRetriableError as nre:
                 logger.exception(f"Step '{step.tool_name}' failed due to {nre}")
 
+                # Publish task error status to FE
                 tasks[i].status = Status.ERROR
                 await publish_agent_task_status(
                     agent_id=context.agent_id,
@@ -240,6 +241,7 @@ async def run_execution_plan(
                     tasks=tasks,
                     logger=logger,
                 )
+
                 response = await chatbot.generate_non_retriable_error_response(
                     chat_context=db.get_chats_history_for_agent(agent_id=context.agent_id),
                     plan=plan,
@@ -262,6 +264,7 @@ async def run_execution_plan(
             except Exception as e:
                 logger.exception(f"Step '{step.tool_name}' failed due to {e}")
 
+                # Publish task error status to FE
                 tasks[i].status = Status.ERROR
                 await publish_agent_task_status(
                     agent_id=context.agent_id,
@@ -283,11 +286,9 @@ async def run_execution_plan(
                         status=Status.CANCELLED,
                         logger=logger,
                     )
+
                     # NEVER replan if the plan is already cancelled.
                     raise Exception("Execution plan has been cancelled")
-                retrying = False
-                if replan_execution_error:
-                    retrying = await handle_error_in_execution(context, e, step, do_chat)
 
                 await publish_agent_execution_status(
                     agent_id=context.agent_id,
@@ -297,6 +298,10 @@ async def run_execution_plan(
                     logger=logger,
                 )
 
+                retrying = False
+                if replan_execution_error:
+                    retrying = await handle_error_in_execution(context, e, step, do_chat)
+
                 if retrying:
                     raise RuntimeError("Plan run attempt failed, retrying")
 
@@ -304,12 +309,13 @@ async def run_execution_plan(
 
         split_outputs = await split_io_type_into_components(tool_output)
         # This will only be used if the step is an output node
-        output_ids = [str(uuid4()) for _ in split_outputs]
+        outputs_with_ids = [
+            OutputWithID(output=output, output_id=str(uuid4())) for output in split_outputs
+        ]
 
         if not step.is_output_node:
             if step.store_output:
-                for obj in split_outputs:
-                    db.write_tool_output(output=obj, context=context)
+                db.write_tool_split_outputs(split_outputs=split_outputs, context=context)
         else:
             # We have an output node
             live_plan_output = False
@@ -317,13 +323,15 @@ async def run_execution_plan(
                 override_task_output_lookup and step.tool_task_id in override_task_output_lookup
             ):
                 live_plan_output = True
+
+            # Publish the output
             await publish_agent_output(
-                outputs=split_outputs,
-                output_ids=output_ids,
+                outputs_with_ids=outputs_with_ids,
                 live_plan_output=live_plan_output,
                 context=context,
                 db=db,
             )
+
         if log_all_outputs:
             logger.info(f"Output of step '{step.tool_name}': {output_for_log(tool_output)}")
 
@@ -336,10 +344,7 @@ async def run_execution_plan(
             context.chat = db.get_chats_history_for_agent(agent_id=context.agent_id)
         if step.is_output_node:
             final_outputs.extend(split_outputs)
-            final_outputs_with_ids.extend(
-                OutputWithID(output=output, output_id=output_id)
-                for output, output_id in zip(split_outputs, output_ids)
-            )
+            final_outputs_with_ids.extend(outputs_with_ids)
 
         current_task_logs = await get_agent_task_logs(
             agent_id=context.agent_id, task_id=context.task_id, db=db
@@ -933,6 +938,8 @@ async def handle_error_in_execution(
     Handles an error, and returns a boolean. Returns True if the plan is being
     retried, and false if not.
     """
+    logger = get_prefect_logger(__name__)
+
     db = get_psql(skip_commit=context.skip_db_commit)
     plans, plan_times, _ = db.get_all_execution_plans(context.agent_id)
     chat_context = db.get_chats_history_for_agent(context.agent_id)
@@ -943,10 +950,16 @@ async def handle_error_in_execution(
     )
 
     if sum([last_user_message_time < plan_time for plan_time in plan_times]) >= EXECUTION_TRIES:
+        logger.info("Too many retries, giving up. Set action to None")
         action = Action.NONE
     else:
+        logger.info("Deciding on action after error...")
         decider = ErrorActionDecider(context.agent_id)
         action, change = await decider.decide_action(error, step, plans, chat_context)
+        logger.info(
+            f"Decided on action after error: {action} for {context.agent_id=}, {context.plan_id=}"
+        )
+
     if action == Action.NONE:
         if do_chat:
             chatbot = Chatbot(agent_id=context.agent_id)
@@ -963,6 +976,7 @@ async def handle_error_in_execution(
     error_info = ErrorInfo(error=str(error), step=step, change=change)
 
     if do_chat:
+        logger.info("Generating error response...")
         chatbot = Chatbot(agent_id=context.agent_id)
         message = await chatbot.generate_error_replan_preplan_response(
             chat_context=chat_context, last_plan=plans[-1], error_info=error_info
@@ -1019,6 +1033,7 @@ async def handle_error_in_execution(
             return False
 
     else:
+        logger.info("Submitting a new creation job to Prefect through SQS")
         await prefect_create_execution_plan(
             agent_id=context.agent_id,
             user_id=context.user_id,

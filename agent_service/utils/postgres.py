@@ -7,7 +7,12 @@ from gbi_common_py_utils.utils.postgres import PostgresBase
 
 from agent_service.endpoints.models import AgentMetadata
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
-from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, SamplePlan
+from agent_service.planner.planner_types import (
+    ExecutionPlan,
+    OutputWithID,
+    PlanStatus,
+    SamplePlan,
+)
 from agent_service.types import ChatContext, Message, Notification, PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.date_utils import get_now_utc
@@ -345,6 +350,25 @@ class Postgres(PostgresBase):
             },
         )
 
+    def write_tool_split_outputs(
+        self, split_outputs: List[IOType], context: PlanRunContext
+    ) -> None:
+        now = get_now_utc()
+        time_delta = datetime.timedelta(seconds=0.01)
+        rows = [
+            {
+                "agent_id": context.agent_id,
+                "plan_id": context.plan_id,
+                "plan_run_id": context.plan_run_id,
+                "task_id": context.task_id,
+                "log_data": dump_io_type(output),
+                "is_task_output": True,
+                "created_at": now + idx * time_delta,  # preserve order
+            }
+            for idx, output in enumerate(split_outputs)
+        ]
+        self.multi_row_insert(table_name="agent.work_logs", rows=rows)
+
     def write_agent_output(
         self,
         output: IOType,
@@ -374,6 +398,30 @@ class Postgres(PostgresBase):
                 "live_plan_output": live_plan_output,
             },
         )
+
+    def write_agent_multi_outputs(
+        self,
+        outputs_with_ids: List[OutputWithID],
+        context: PlanRunContext,
+        is_intermediate: bool = False,
+        live_plan_output: bool = False,
+    ) -> None:
+        now = get_now_utc()
+        time_delta = datetime.timedelta(seconds=0.01)
+        rows = [
+            {
+                "output_id": output_with_id.output_id,
+                "agent_id": context.agent_id,
+                "plan_id": context.plan_id,
+                "plan_run_id": context.plan_run_id,
+                "output": dump_io_type(output_with_id.output),
+                "is_intermediate": is_intermediate,
+                "live_plan_output": live_plan_output,
+                "created_at": now + idx * time_delta,  # preserve order
+            }
+            for idx, output_with_id in enumerate(outputs_with_ids)
+        ]
+        self.multi_row_insert(table_name="agent.agent_outputs", rows=rows)
 
     def get_sec_metadata_from_gbi(self, gbi_ids: List[int]) -> Dict[int, SecurityMetadata]:
         sql = """
