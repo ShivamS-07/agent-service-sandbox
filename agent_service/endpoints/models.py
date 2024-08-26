@@ -218,6 +218,46 @@ class AgentSubscriptionMessage(BaseModel):
 
 
 ####################################################################################################
+# Agent Feedback
+####################################################################################################
+class SetAgentFeedBackRequest(BaseModel):
+    agent_id: str
+    plan_id: str
+    plan_run_id: str
+    output_id: str
+    widget_title: str
+    rating: float
+    feedback_comment: str
+
+
+class SetAgentFeedBackResponse(BaseModel):
+    success: bool
+
+
+class AgentFeedback(BaseModel):
+    agent_id: str
+    plan_id: str
+    plan_run_id: str
+    output_id: str
+    widget_title: str
+    rating: float
+    feedback_comment: str
+    feedback_user_id: str
+
+
+class GetAgentFeedBackRequest(BaseModel):
+    agent_id: str
+    plan_id: str
+    plan_run_id: str
+    output_id: str
+
+
+class GetAgentFeedBackResponse(BaseModel):
+    agent_feedback: AgentFeedback
+    success: bool
+
+
+####################################################################################################
 # ChatWithAgent
 ####################################################################################################
 class ChatWithAgentRequest(BaseModel):

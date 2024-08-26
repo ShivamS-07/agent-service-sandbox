@@ -4,12 +4,15 @@ from unittest.mock import MagicMock, patch
 
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
+    AgentFeedback,
     AgentNotificationEmail,
     ChatWithAgentRequest,
     MediaType,
     NotificationUser,
+    SetAgentFeedBackRequest,
     UpdateAgentRequest,
 )
+from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import Notification
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
 from tests.test_agent_service_impl_base import TestAgentServiceImplBase
@@ -417,3 +420,82 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         self.assertEqual(
             find_item(response.agents, "agent_id", agent_id_2).section_id, section_id_1
         )
+
+    def test_agent_feedback(self):
+        test_user_id = str(uuid.uuid4())
+        test_user = User(user_id=test_user_id, is_admin=False, is_super_admin=False, auth_token="")
+        agent = self.create_agent(user=test_user)
+        plan_id = str(uuid.uuid4())
+        plan_run_id = str(uuid.uuid4())
+        output_id = str(uuid.uuid4())
+        widget_title = str(uuid.uuid4())
+        rating = -1
+        feedback_comment = ""
+        # Create a plan
+        self.loop.run_until_complete(
+            self.pg.write_execution_plan(
+                plan_id=plan_id, agent_id=agent.agent_id, plan=ExecutionPlan(nodes=[])
+            )
+        )
+        self.loop.run_until_complete(
+            self.pg.insert_plan_run(
+                plan_run_id=plan_run_id, plan_id=plan_id, agent_id=agent.agent_id
+            )
+        )
+        req = SetAgentFeedBackRequest(
+            agent_id=agent.agent_id,
+            plan_id=plan_id,
+            plan_run_id=plan_run_id,
+            output_id=output_id,
+            widget_title=widget_title,
+            rating=rating,
+            feedback_comment=feedback_comment,
+        )
+        self.loop.run_until_complete(
+            self.pg.set_agent_feedback(feedback_data=req, user_id=test_user_id)
+        )
+
+        # get the feedback
+        feedback: List[AgentFeedback] = self.loop.run_until_complete(
+            self.pg.get_agent_feedback(
+                agent_id=agent.agent_id,
+                plan_id=plan_id,
+                plan_run_id=plan_run_id,
+                output_id=output_id,
+                feedback_user_id=test_user_id,
+            )
+        )
+
+        self.assertEqual(feedback[0].feedback_comment, feedback_comment)
+        self.assertEqual(feedback[0].agent_id, agent.agent_id)
+        self.assertEqual(feedback[0].plan_id, plan_id)
+        self.assertEqual(feedback[0].widget_title, widget_title)
+
+        feedback_comment = "new feedback"
+        req = SetAgentFeedBackRequest(
+            agent_id=agent.agent_id,
+            plan_id=plan_id,
+            plan_run_id=plan_run_id,
+            output_id=output_id,
+            widget_title=widget_title,
+            rating=rating,
+            feedback_comment=feedback_comment,
+        )
+        self.loop.run_until_complete(
+            self.pg.set_agent_feedback(feedback_data=req, user_id=test_user_id)
+        )
+
+        # get the feedback
+        feedback: List[AgentFeedback] = self.loop.run_until_complete(
+            self.pg.get_agent_feedback(
+                agent_id=agent.agent_id,
+                plan_id=plan_id,
+                plan_run_id=plan_run_id,
+                output_id=output_id,
+                feedback_user_id=test_user_id,
+            )
+        )
+        self.assertEqual(feedback[0].feedback_comment, feedback_comment)
+        self.assertEqual(feedback[0].agent_id, agent.agent_id)
+        self.assertEqual(feedback[0].plan_id, plan_id)
+        self.assertEqual(feedback[0].widget_title, widget_title)

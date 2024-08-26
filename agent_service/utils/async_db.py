@@ -4,11 +4,13 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import (
     Account,
+    AgentFeedback,
     AgentMetadata,
     AgentNotificationEmail,
     AgentOutput,
     AgentSchedule,
     CustomNotification,
+    SetAgentFeedBackRequest,
 )
 from agent_service.io_type_utils import IOType, load_io_type
 
@@ -903,6 +905,104 @@ class AsyncDB:
                 ),
             },
         )
+
+    async def delete_agent_feedback(
+        self, agent_id: str, plan_id: str, plan_run_id: str, output_id: str, feedback_user_id: str
+    ) -> None:
+        sql = """
+        DELETE FROM agent.feedback
+        WHERE agent_id = %(agent_id)s
+          AND plan_id = %(plan_id)s
+          AND plan_run_id = %(plan_run_id)s
+          AND output_id = %(output_id)s
+          AND feedback_user_id = %(feedback_user_id)s
+          """
+        # Prepare the parameters
+        params = {
+            "agent_id": agent_id,
+            "plan_id": plan_id,
+            "plan_run_id": plan_run_id,
+            "output_id": output_id,
+            "feedback_user_id": feedback_user_id,
+        }
+
+        await self.pg.generic_write(
+            sql,
+            params=params,
+        )
+
+    async def set_agent_feedback(
+        self, feedback_data: SetAgentFeedBackRequest, user_id: str
+    ) -> None:
+        # to avoid duplicates
+        await self.delete_agent_feedback(
+            agent_id=feedback_data.agent_id,
+            plan_id=feedback_data.plan_id,
+            plan_run_id=feedback_data.plan_run_id,
+            feedback_user_id=user_id,
+            output_id=feedback_data.output_id,
+        )
+        sql = """
+        INSERT INTO agent.feedback (
+            agent_id, plan_id, plan_run_id, output_id, widget_title, rating, feedback_comment, feedback_user_id
+        ) VALUES (
+            %(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(output_id)s, %(widget_title)s, %(rating)s,
+            %(feedback_comment)s, %(feedback_user_id)s
+        )
+        """
+
+        # Prepare the parameters
+        params = {
+            "agent_id": feedback_data.agent_id,
+            "plan_id": feedback_data.plan_id,
+            "plan_run_id": feedback_data.plan_run_id,
+            "output_id": feedback_data.output_id,
+            "widget_title": feedback_data.widget_title,
+            "rating": feedback_data.rating,
+            "feedback_comment": feedback_data.feedback_comment,
+            "feedback_user_id": user_id,
+        }
+
+        await self.pg.generic_write(
+            sql,
+            params=params,
+        )
+
+    async def get_agent_feedback(
+        self, agent_id: str, plan_id: str, plan_run_id: str, output_id: str, feedback_user_id: str
+    ) -> List[AgentFeedback]:
+        sql = """
+            SELECT
+                agent_id::TEXT,
+                plan_id::TEXT,
+                plan_run_id::TEXT,
+                output_id,
+                created_at,
+                last_updated,
+                widget_title,
+                rating,
+                feedback_comment,
+                feedback_user_id
+            FROM
+                agent.feedback
+            WHERE
+                agent_id = %(agent_id)s
+                AND plan_id = %(plan_id)s
+                AND plan_run_id = %(plan_run_id)s
+                AND output_id = %(output_id)s
+                AND feedback_user_id = %(feedback_user_id)s
+            """
+        rows = await self.pg.generic_read(
+            sql,
+            {
+                "agent_id": agent_id,
+                "plan_id": plan_id,
+                "plan_run_id": plan_run_id,
+                "output_id": output_id,
+                "feedback_user_id": feedback_user_id,
+            },
+        )
+        return [AgentFeedback(**row) for row in rows]
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:

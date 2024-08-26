@@ -53,6 +53,8 @@ from agent_service.endpoints.models import (
     EnableAgentAutomationResponse,
     GetAccountInfoResponse,
     GetAgentDebugInfoResponse,
+    GetAgentFeedBackRequest,
+    GetAgentFeedBackResponse,
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
@@ -82,6 +84,8 @@ from agent_service.endpoints.models import (
     RenameSectionRequest,
     RenameSectionResponse,
     RestoreAgentResponse,
+    SetAgentFeedBackRequest,
+    SetAgentFeedBackResponse,
     SetAgentScheduleRequest,
     SetAgentScheduleResponse,
     SetAgentSectionRequest,
@@ -426,6 +430,40 @@ async def update_agent_notification_emails(
     except Exception as e:
         logger.warning(f"error in updating agent:{req.agent_id} emails:{req.emails}, error: {e}")
         return UpdateNotificationEmailsResponse(success=False, bad_emails=[])
+
+
+router.post(
+    "/agent/set-agent-feedback",
+    response_model=SetAgentFeedBackResponse,
+    status_code=status.HTTP_200_OK,
+)
+
+
+async def set_agent_feedback(
+    req: SetAgentFeedBackRequest, user: User = Depends(parse_header)
+) -> SetAgentFeedBackResponse:
+    return await application.state.agent_service_impl.set_agent_feedback(
+        feedback_data=req, user_id=user.user_id
+    )
+
+
+router.get(
+    "/agent/get-agent-feedback",
+    response_model=GetAgentFeedBackResponse,
+    status_code=status.HTTP_200_OK,
+)
+
+
+async def get_agent_feedback(
+    req: GetAgentFeedBackRequest, user: User = Depends(parse_header)
+) -> GetAgentFeedBackResponse:
+    return await application.state.agent_service_impl.get_agent_feedback(
+        agent_id=req.agent_id,
+        plan_id=req.plan_id,
+        plan_run_id=req.plan_run_id,
+        output_id=req.output_id,
+        user_id=user.user_id,
+    )
 
 
 @router.post(

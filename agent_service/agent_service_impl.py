@@ -33,6 +33,7 @@ from agent_service.endpoints.models import (
     ExecutionPlanTemplate,
     GetAccountInfoResponse,
     GetAgentDebugInfoResponse,
+    GetAgentFeedBackResponse,
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
@@ -57,6 +58,8 @@ from agent_service.endpoints.models import (
     PlanTemplateTask,
     RenameMemoryResponse,
     RestoreAgentResponse,
+    SetAgentFeedBackRequest,
+    SetAgentFeedBackResponse,
     SetAgentScheduleRequest,
     SetAgentScheduleResponse,
     SharePlanRunResponse,
@@ -1000,3 +1003,21 @@ class AgentServiceImpl:
         sections.insert(new_index, rearrange_section)
         await self.pg.set_sidebar_sections(user_id=user.user_id, sections=sections)
         return True
+
+    async def set_agent_feedback(
+        self, feedback_data: SetAgentFeedBackRequest, user_id: str
+    ) -> SetAgentFeedBackResponse:
+        await self.pg.set_agent_feedback(feedback_data=feedback_data, user_id=user_id)
+        return SetAgentFeedBackResponse(success=True)
+
+    async def get_agent_feedback(
+        self, agent_id: str, plan_id: str, plan_run_id: str, output_id: str, user_id: str
+    ) -> GetAgentFeedBackResponse:
+        feedback = await self.pg.get_agent_feedback(
+            agent_id=agent_id,
+            plan_id=plan_id,
+            plan_run_id=plan_run_id,
+            output_id=output_id,
+            feedback_user_id=user_id,
+        )
+        return GetAgentFeedBackResponse(agent_feedback=feedback[0], success=True)
