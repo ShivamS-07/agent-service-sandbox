@@ -350,12 +350,12 @@ class Table(ComplexIOBase):
         }
         metadata_map = await get_stock_metadata(gbi_ids=list(all_gbi_ids), pg=pg)
         df = fixed_table.to_df()
-        df = df.replace(np.nan, None)
         # Make sure we sort before creating output (if necessary)
         score_col = fixed_table.get_score_column()
         if score_col:
             df = df.sort_values(by=str(score_col.metadata.label), ascending=False)
         df = df.applymap(lambda val: metadata_map[val.gbi_id] if isinstance(val, StockID) else val)
+        df = df.replace({np.nan: None})
         rows = df.values.tolist()
 
         return TableOutput(title=title, columns=output_cols, rows=rows, citations=table_citations)
