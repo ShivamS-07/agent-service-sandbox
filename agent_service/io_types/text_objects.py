@@ -47,7 +47,7 @@ class TextObject(SerializeableBase):
         if replaced_text:
             json_dict["text"] = replaced_text
         json_str = json.dumps(json_dict)
-        return f" ```{json_str}``` "
+        return f"```{json_str}```"
 
     @staticmethod
     def render_text_objects(text: str, objects: List["TextObject"]) -> str:

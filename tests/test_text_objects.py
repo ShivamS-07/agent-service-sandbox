@@ -21,7 +21,7 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
             param(
                 text="This is some test text\nHello!",
                 text_objects=[CitationTextObject(citation_id="cit1", index=3)],
-                expected_result='This ```{"type": "citation", "citation_id": "cit1"}```  is some test text\nHello!',
+                expected_result='This```{"type": "citation", "citation_id": "cit1"}``` is some test text\nHello!',
             ),
             # Two citations in the same place
             param(
@@ -30,7 +30,7 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
                     CitationTextObject(citation_id="cit1", index=3),
                     CitationTextObject(citation_id="cit2", index=3),
                 ],
-                expected_result='This ```{"type": "citation", "citation_id": "cit1"}```  ```{"type": "citation", "citation_id": "cit2"}```  is some test text\nHello!',
+                expected_result='This```{"type": "citation", "citation_id": "cit1"}``````{"type": "citation", "citation_id": "cit2"}``` is some test text\nHello!',
             ),
             param(
                 text="This is some test text\nHello!",
@@ -38,7 +38,7 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
                     CitationTextObject(citation_id="cit1", index=3),
                     CitationTextObject(citation_id="cit2", index=28),
                 ],
-                expected_result='This ```{"type": "citation", "citation_id": "cit1"}```  is some test text\nHello! ```{"type": "citation", "citation_id": "cit2"}``` ',
+                expected_result='This```{"type": "citation", "citation_id": "cit1"}``` is some test text\nHello!```{"type": "citation", "citation_id": "cit2"}```',
             ),
             # Citation and a stock object
             param(
@@ -49,7 +49,7 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
                         index=10, end_index=13, gbi_id=714, symbol="", company_name="", isin=""
                     ),
                 ],
-                expected_result='This ```{"type": "citation", "citation_id": "cit1"}```  week  ```{"gbi_id": 714, "symbol": "", "company_name": "", "isin": "", "sector": null, "subindustry": null, "exchange": null, "type": "stock", "text": "AAPL"}```  increased',  # noqa
+                expected_result='This```{"type": "citation", "citation_id": "cit1"}``` week ```{"gbi_id": 714, "symbol": "", "company_name": "", "isin": "", "sector": null, "subindustry": null, "exchange": null, "type": "stock", "text": "AAPL"}``` increased',  # noqa
             ),
         ]
     )
