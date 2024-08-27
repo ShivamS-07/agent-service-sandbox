@@ -227,7 +227,7 @@ class SetAgentFeedBackRequest(BaseModel):
     output_id: str
     widget_title: str
     rating: float
-    feedback_comment: str
+    feedback_comment: Optional[str]
 
 
 class SetAgentFeedBackResponse(BaseModel):
@@ -241,7 +241,7 @@ class AgentFeedback(BaseModel):
     output_id: str
     widget_title: str
     rating: float
-    feedback_comment: str
+    feedback_comment: Optional[str]
     feedback_user_id: str
 
 
@@ -253,7 +253,7 @@ class GetAgentFeedBackRequest(BaseModel):
 
 
 class GetAgentFeedBackResponse(BaseModel):
-    agent_feedback: AgentFeedback
+    agent_feedback: Optional[AgentFeedback]
     success: bool
 
 

@@ -1058,4 +1058,8 @@ class AgentServiceImpl:
             output_id=output_id,
             feedback_user_id=user_id,
         )
+
+        if len(feedback) != 1:
+            return GetAgentFeedBackResponse(agent_feedback=None, success=True)
+
         return GetAgentFeedBackResponse(agent_feedback=feedback[0], success=True)

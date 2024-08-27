@@ -906,51 +906,9 @@ class AsyncDB:
             },
         )
 
-    async def delete_agent_feedback(
-        self, agent_id: str, plan_id: str, plan_run_id: str, output_id: str, feedback_user_id: str
-    ) -> None:
-        sql = """
-        DELETE FROM agent.feedback
-        WHERE agent_id = %(agent_id)s
-          AND plan_id = %(plan_id)s
-          AND plan_run_id = %(plan_run_id)s
-          AND output_id = %(output_id)s
-          AND feedback_user_id = %(feedback_user_id)s
-          """
-        # Prepare the parameters
-        params = {
-            "agent_id": agent_id,
-            "plan_id": plan_id,
-            "plan_run_id": plan_run_id,
-            "output_id": output_id,
-            "feedback_user_id": feedback_user_id,
-        }
-
-        await self.pg.generic_write(
-            sql,
-            params=params,
-        )
-
     async def set_agent_feedback(
         self, feedback_data: SetAgentFeedBackRequest, user_id: str
     ) -> None:
-        # to avoid duplicates
-        await self.delete_agent_feedback(
-            agent_id=feedback_data.agent_id,
-            plan_id=feedback_data.plan_id,
-            plan_run_id=feedback_data.plan_run_id,
-            feedback_user_id=user_id,
-            output_id=feedback_data.output_id,
-        )
-        sql = """
-        INSERT INTO agent.feedback (
-            agent_id, plan_id, plan_run_id, output_id, widget_title, rating, feedback_comment, feedback_user_id
-        ) VALUES (
-            %(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(output_id)s, %(widget_title)s, %(rating)s,
-            %(feedback_comment)s, %(feedback_user_id)s
-        )
-        """
-
         # Prepare the parameters
         params = {
             "agent_id": feedback_data.agent_id,
@@ -962,6 +920,25 @@ class AsyncDB:
             "feedback_comment": feedback_data.feedback_comment,
             "feedback_user_id": user_id,
         }
+
+        # Do not overwrite comment if None
+        feedback_comment_clause = ""
+        if feedback_data.feedback_comment is not None:
+            feedback_comment_clause = "feedback_comment = EXCLUDED.feedback_comment,"
+
+        sql = f"""
+        INSERT INTO agent.feedback (
+            agent_id, plan_id, plan_run_id, output_id, widget_title, rating, feedback_comment, feedback_user_id
+        )
+        VALUES (
+            %(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(output_id)s, %(widget_title)s, %(rating)s,
+            %(feedback_comment)s, %(feedback_user_id)s
+        )
+        ON CONFLICT (agent_id, plan_id, plan_run_id, output_id, feedback_user_id) DO UPDATE SET
+          last_updated = NOW(),
+          {feedback_comment_clause}
+          rating = EXCLUDED.rating
+        """
 
         await self.pg.generic_write(
             sql,

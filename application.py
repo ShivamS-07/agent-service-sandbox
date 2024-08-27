@@ -53,7 +53,6 @@ from agent_service.endpoints.models import (
     EnableAgentAutomationResponse,
     GetAccountInfoResponse,
     GetAgentDebugInfoResponse,
-    GetAgentFeedBackRequest,
     GetAgentFeedBackResponse,
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
@@ -437,13 +436,11 @@ async def update_agent_notification_emails(
         return UpdateNotificationEmailsResponse(success=False, bad_emails=[])
 
 
-router.post(
+@router.post(
     "/agent/set-agent-feedback",
     response_model=SetAgentFeedBackResponse,
     status_code=status.HTTP_200_OK,
 )
-
-
 async def set_agent_feedback(
     req: SetAgentFeedBackRequest, user: User = Depends(parse_header)
 ) -> SetAgentFeedBackResponse:
@@ -452,21 +449,23 @@ async def set_agent_feedback(
     )
 
 
-router.get(
-    "/agent/get-agent-feedback",
+@router.get(
+    "/agent/get-agent-feedback/{agent_id}/{plan_id}/{plan_run_id}/{output_id}",
     response_model=GetAgentFeedBackResponse,
     status_code=status.HTTP_200_OK,
 )
-
-
 async def get_agent_feedback(
-    req: GetAgentFeedBackRequest, user: User = Depends(parse_header)
+    agent_id: str,
+    plan_id: str,
+    plan_run_id: str,
+    output_id: str,
+    user: User = Depends(parse_header),
 ) -> GetAgentFeedBackResponse:
     return await application.state.agent_service_impl.get_agent_feedback(
-        agent_id=req.agent_id,
-        plan_id=req.plan_id,
-        plan_run_id=req.plan_run_id,
-        output_id=req.output_id,
+        agent_id=agent_id,
+        plan_id=plan_id,
+        plan_run_id=plan_run_id,
+        output_id=output_id,
         user_id=user.user_id,
     )
 
