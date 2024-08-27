@@ -1,11 +1,9 @@
 import json
 import random
-import re
 from collections import defaultdict
 from datetime import date
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Union
 
-import numpy as np
 import pandas as pd
 from data_access_layer.core.dao.securities import SecuritiesMetadataDAO
 from feature_service_proto_v1.feature_metadata_service_pb2 import (
@@ -16,20 +14,12 @@ from gbi_common_py_utils.numpy_common import NumpySheet
 from agent_service.external.feature_svc_client import (
     get_all_features_metadata,
     get_feature_data,
-    get_return_for_stocks,
 )
-from agent_service.GPT.constants import (
-    FILTER_CONCURRENCY,
-    GPT4_O,
-    GPT4_O_MINI,
-    MAX_TOKENS,
-    NO_PROMPT,
-)
+from agent_service.GPT.constants import GPT4_O, MAX_TOKENS, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_types.dates import DateRange
-from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT, StockTable, Table
+from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT, Table
 from agent_service.io_types.text import StatisticsText, Text, TextGroup, ThemeText
 from agent_service.tools.commentary.constants import (
     COMMENTARY_LLM,
@@ -41,26 +31,25 @@ from agent_service.tools.commentary.prompts import (
     CHOOSE_STATISTICS_PROMPT,
     COMMENTARY_PROMPT_MAIN,
     COMMENTARY_SYS_PROMPT,
-    FILTER_CITATIONS_PROMPT,
     GEOGRAPHY_PROMPT,
     PORTFOLIO_PROMPT,
-    STOCKS_STATS_PROMPT,
-    SUMMARIZE_TEXT_PROMPT,
+    UNIVERSE_PERFORMANCE_PROMPT,
 )
 from agent_service.tools.news import (
     GetNewsArticlesForTopicsInput,
     get_news_articles_for_topics,
 )
 from agent_service.tools.portfolio import (
-    GetPortfolioBenchmarkHoldingsInput,
-    GetPortfolioHoldingsInput,
-    GetPortfolioPerformanceInput,
-    PortfolioID,
-    get_portfolio_benchmark_holdings,
-    get_portfolio_holdings,
-    get_portfolio_performance,
+    BENCHMARK_HOLDING_TABLE_NAME_EXPANDED,
+    BENCHMARK_HOLDING_TABLE_NAME_NOT_EXPANDED,
+    BENCHMARK_PERFORMANCE_LEVELS,
+    BENCHMARK_PERFORMANCE_TABLE_BASE_NAME,
+    PORTFOLIO_HOLDING_TABLE_NAME_EXPANDED,
+    PORTFOLIO_HOLDING_TABLE_NAME_NOT_EXPANDED,
+    PORTFOLIO_PERFORMANCE_LEVELS,
+    PORTFOLIO_PERFORMANCE_TABLE_BASE_NAME,
 )
-from agent_service.tools.tables import TableColumnMetadata, TableColumnType
+from agent_service.tools.stocks import get_metedata_for_stocks
 from agent_service.tools.themes import (
     GetMacroeconomicThemeInput,
     GetThemeDevelopmentNewsArticlesInput,
@@ -70,8 +59,12 @@ from agent_service.tools.themes import (
     get_news_developments_about_theme,
 )
 from agent_service.tools.tool_log import tool_log
+from agent_service.tools.universe import (
+    UNIVERSE_HOLDINGS_TABLE_NAME,
+    UNIVERSE_PERFORMANCE_LEVELS,
+    UNIVERSE_PERFORMANCE_TABLE_BASE_NAME,
+)
 from agent_service.types import PlanRunContext
-from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -79,7 +72,6 @@ from agent_service.utils.prompt_utils import FilledPrompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
 
 logger = get_prefect_logger(__name__)
-PERFORMANCE_LEVELS = ["sector", "security", "stock", "overall", "monthly", "daily"]
 
 
 async def get_sec_metadata_dao() -> SecuritiesMetadataDAO:
@@ -117,48 +109,35 @@ async def get_theme_related_texts(
     return res
 
 
-async def organize_commentary_texts(texts: List[Text]) -> Dict[str, List[Text]]:
+async def organize_commentary_inputs(
+    inputs: List[Union[Text, Table]]
+) -> Dict[str, List[Union[Text, Table]]]:
     """
-    This function organizes the commentary texts into a dictionary with the text descriptions
+    This function organizes the commentary inputs into a dictionary with the input desctription or title
     as the key.
     """
+    input_ids = set()
+    deduplicated_inputs: List[Union[Text, Table]] = []
+    for input in inputs:
+        if isinstance(input, Text):
+            if input.id not in input_ids:
+                input_ids.add(input.id)
+                deduplicated_inputs.append(input)
+        else:
+            # append all tables
+            deduplicated_inputs.append(input)
+
     res = defaultdict(list)
-    for text in texts:
-        res[text.text_type].append(text)
+    for input in inputs:
+        if isinstance(input, Text):
+            res[input.text_type].append(input)  # type: ignore
+        elif isinstance(input, Table):
+            res["Tables"].append(input)  # type: ignore
     # shuffle the texts order in each key so when removing the texts, the order is random
     for key in res:
         random.shuffle(res[key])
-    return res
 
-
-async def get_portfolio_geography_str(regions_to_weight: List[Tuple[str, float]]) -> str:
-    # convert weights to int percentages
-    portfolio_geography = "\n".join([f"{tup[0]}: {int(tup[1])}%" for tup in regions_to_weight])
-    return portfolio_geography
-
-
-async def get_region_weights_from_portfolio_holdings(
-    portfolio_holdings_df: pd.DataFrame,
-) -> List[Tuple[str, float]]:
-    """
-    Given a mapping from GBI ID to a weight, return a list of ranked (region,
-    weight) tuples sorted in descending order by weight.
-    """
-    # convert DF to dict[int, float]
-    weighted_holdings = {}
-    for i in range(len(portfolio_holdings_df[STOCK_ID_COL_NAME_DEFAULT])):
-        gbi_id = portfolio_holdings_df[STOCK_ID_COL_NAME_DEFAULT][i].gbi_id
-        weight = portfolio_holdings_df["Weight"][i]
-        weighted_holdings[gbi_id] = weight
-
-    dao = await get_sec_metadata_dao()
-    sec_meta_map = dao.get_security_metadata(list(weighted_holdings.keys())).get()
-    region_weight_map: Dict[str, float] = defaultdict(float)
-    for meta in sec_meta_map.values():
-        region_weight_map[meta.country] += weighted_holdings[meta.gbi_id]
-
-    output = list(region_weight_map.items())
-    return sorted(output, reverse=True, key=lambda tup: tup[1])
+    return res  # type: ignore
 
 
 async def get_previous_commentary_results(context: PlanRunContext) -> List[Text]:
@@ -208,25 +187,6 @@ async def match_daterange_to_timedelta(date_range: DateRange) -> str:
     closest_match = min(INTERVALS, key=lambda x: abs(INTERVALS[x] - duration))
 
     return closest_match
-
-
-async def filter_most_important_citations(
-    citations: List[int], texts: str, commentary_result: str
-) -> List[int]:
-    """this function filters the most important citations from the given list of citations, texts and
-    commentary result.
-    """
-    llm = GPT(model=GPT4_O)
-
-    result = await llm.do_chat_w_sys_prompt(
-        main_prompt=FILTER_CITATIONS_PROMPT.format(
-            texts=texts, citations=citations, commentary_result=commentary_result
-        ),
-        sys_prompt=NO_PROMPT,
-    )
-    cleaned_result = re.sub(r"[^\d,]", "", result)
-    filtered_citations = list(map(int, cleaned_result.strip("[]").split(",")))
-    return filtered_citations
 
 
 async def get_statistics_for_theme(
@@ -352,188 +312,173 @@ async def get_texts_for_topics(
     return texts
 
 
+async def prepare_geography_prompt(
+    portfolio_holdings_expanded_df: pd.DataFrame, context: PlanRunContext
+) -> FilledPrompt:
+    """
+    This function prepares the geography prompt for the commentary.
+    """
+    stock_ids = portfolio_holdings_expanded_df[STOCK_ID_COL_NAME_DEFAULT].to_list()
+    stock_weights = portfolio_holdings_expanded_df["Weight"].to_list()
+    df = await get_metedata_for_stocks(stock_ids, context)
+
+    # we might not have found metadata for all the gbi_ids (rare)
+    # so lets select the ones we found and keep them for history
+    orig_stock_ids = {s.gbi_id: s for s in stock_ids}
+    orig_stock_weights = {s.gbi_id: w for s, w in zip(stock_ids, stock_weights)}
+    new_stock_ids = [orig_stock_ids.get(id) for id in list(df["gbi_id"])]
+    new_stock_weights = [orig_stock_weights.get(id) for id in list(df["gbi_id"])]
+    df["Security"] = new_stock_ids
+    df["Weight"] = new_stock_weights
+
+    # group by Country and sum the weights
+    df = df.groupby("Country").agg({"Weight": "sum"}).reset_index()
+
+    portfolio_geography_prompt = GEOGRAPHY_PROMPT.format(
+        portfolio_geography_df=df.to_string(index=False)
+    )
+    return portfolio_geography_prompt
+
+
 async def prepare_portfolio_prompt(
-    portfolio_id: PortfolioID, date_range: DateRange, context: PlanRunContext
+    portfolio_related_tables: List[Table],
+    context: PlanRunContext,
 ) -> FilledPrompt:
     """
     This function prepares the portfolio prompt for the commentary.
     """
-    portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
-        GetPortfolioHoldingsInput(
-            portfolio_id=portfolio_id,
-            fetch_default_stats=False,
-        ),
-        context,
-    )
-    portfolio_holdings_df = portfolio_holdings_table.to_df()
+    table_mapping: Dict[str, pd.DataFrame] = {}
+    for table in portfolio_related_tables:
+        if table.title == PORTFOLIO_HOLDING_TABLE_NAME_EXPANDED:
+            portfolio_holdings_expanded_df = table.to_df()
+            table_mapping["portfolio_holdings_expanded"] = portfolio_holdings_expanded_df
+        elif table.title == PORTFOLIO_HOLDING_TABLE_NAME_NOT_EXPANDED:
+            portfolio_holdings_df = table.to_df()
+            table_mapping["portfolio_holdings"] = portfolio_holdings_df
+        elif table.title == BENCHMARK_HOLDING_TABLE_NAME_EXPANDED:
+            benchmark_holdings_expanded_df = table.to_df()
+            table_mapping["benchmark_holdings_expanded"] = benchmark_holdings_expanded_df
+        elif table.title == BENCHMARK_HOLDING_TABLE_NAME_NOT_EXPANDED:
+            benchmark_holdings_df = table.to_df()
+            table_mapping["benchmark_holdings"] = benchmark_holdings_df
 
-    portfolio_holdings_expanded_table: StockTable = await get_portfolio_holdings(  # type: ignore
-        GetPortfolioHoldingsInput(
-            portfolio_id=portfolio_id,
-            expand_etfs=True,
-            fetch_default_stats=False,
-        ),
-        context,
-    )
-    portfolio_holdings_expanded_df = portfolio_holdings_expanded_table.to_df()
+        # get the portfolio performance on levels in PORTFOLIO_PERFORMANCE_LEVELS
+        for performance_level in PORTFOLIO_PERFORMANCE_LEVELS:
+            if table.title == PORTFOLIO_PERFORMANCE_TABLE_BASE_NAME + performance_level:
+                table_mapping[f"portfolio_perf_{performance_level}"] = table.to_df()
 
-    # Get the region weights from the portfolio holdings
-    regions_to_weight = await get_region_weights_from_portfolio_holdings(
-        portfolio_holdings_expanded_df
-    )
-    portfolio_geography = await get_portfolio_geography_str(regions_to_weight)
+        # get the benchmark performance on levels in BENCHMARK_PERFORMANCE_LEVELS
+        for performance_level in BENCHMARK_PERFORMANCE_LEVELS:
+            if table.title == BENCHMARK_PERFORMANCE_TABLE_BASE_NAME + performance_level:
+                table_mapping[f"benchmark_perf_{performance_level}"] = table.to_df()
+
     # Prepare the geography prompt
-    await tool_log(
-        log="Retrieved region weights from the portfolio holdings.",
-        context=context,
-        associated_data=regions_to_weight,
+    portfolio_geography_prompt = await prepare_geography_prompt(
+        portfolio_holdings_expanded_df, context
     )
-    portfolio_geography_prompt = GEOGRAPHY_PROMPT.format(portfolio_geography=portfolio_geography)
-    performance_dict: Dict[str, pd.DataFrame] = {}
-
-    # get the portfolio performance on levels in PERFORMANCE_LEVELS
-    # TODO: This can be parallelized
-    for performance_level in PERFORMANCE_LEVELS:
-        performance_table: Table = await get_portfolio_performance(  # type: ignore
-            GetPortfolioPerformanceInput(
-                portfolio_id=portfolio_id,
-                performance_level=performance_level,
-                date_range=date_range,
-            ),
-            context,
-        )
-        performance_dict[f"portfolio_{performance_level}"] = performance_table.to_df()
-
-    # get benchmark performance on stock level
-    benchmark_holdings = await get_portfolio_benchmark_holdings(
-        GetPortfolioBenchmarkHoldingsInput(portfolio_id=portfolio_id, expand_etfs=True), context
-    )
-    benchmark_holdings_df = benchmark_holdings.to_df()  # type: ignore
-    gbi_ids = [stock.gbi_id for stock in benchmark_holdings_df[STOCK_ID_COL_NAME_DEFAULT]]
-    benchmark_stock_performance_map = await get_return_for_stocks(
-        gbi_ids=gbi_ids,
-        start_date=date_range.start_date,
-        end_date=date_range.end_date,
-        user_id=context.user_id,
-    )
-    returns = [benchmark_stock_performance_map.get(gbi_id, np.nan) for gbi_id in gbi_ids]
-    data = {
-        STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(gbi_ids),
-        "return": returns,
-        "benchmark-weight": benchmark_holdings_df["Weight"].values,
-    }
-    benchmark_stock_performance_df = pd.DataFrame(data)
-    benchmark_stock_performance_df["weighted-return"] = (
-        benchmark_stock_performance_df["return"].astype(float)
-        * benchmark_stock_performance_df["benchmark-weight"].astype(float)
-    ).values
-    benchmark_stock_performance_df = benchmark_stock_performance_df.sort_values(
-        by="weighted-return", ascending=False
-    )
-
-    performance_dict["benchmark_stock"] = benchmark_stock_performance_df
+    # convert StockID column to company name to aviod commentary using tickers
+    for df in table_mapping:
+        if STOCK_ID_COL_NAME_DEFAULT in table_mapping[df].columns:
+            table_mapping[df][STOCK_ID_COL_NAME_DEFAULT] = table_mapping[df][
+                STOCK_ID_COL_NAME_DEFAULT
+            ].apply(lambda x: x.company_name)
 
     # extract top contributing stocks
-    performance_dict["portfolio_stock_pos"] = performance_dict["portfolio_stock"].head(5)
-    performance_dict["portfolio_stock_neg"] = performance_dict["portfolio_stock"].tail(5)
-    performance_dict["benchmark_stock_pos"] = performance_dict["benchmark_stock"].head(5)
-    performance_dict["benchmark_stock_neg"] = performance_dict["benchmark_stock"].tail(5)
+    table_mapping["portfolio_stock_pos"] = table_mapping["portfolio_perf_stock"].head(5)
+    table_mapping["portfolio_stock_neg"] = table_mapping["portfolio_perf_stock"].tail(5)
+    table_mapping["benchmark_holdings_pos"] = table_mapping["benchmark_perf_stock"].head(5)
+    table_mapping["benchmark_holdings_neg"] = table_mapping["benchmark_perf_stock"].tail(5)
 
     # Prepare the portfolio prompt
     portfolio_prompt = PORTFOLIO_PROMPT.format(
-        portfolio_holdings=portfolio_holdings_df.to_string(),
+        portfolio_holdings=table_mapping["portfolio_holdings"].to_string(index=False),
         portfolio_geography_prompt=portfolio_geography_prompt.filled_prompt,
-        portfolio_performance_by_overall=performance_dict["portfolio_overall"].to_string(),
-        portfolio_performance_by_monthly=performance_dict["portfolio_monthly"].to_string(),
-        portfolio_performance_by_daily=performance_dict["portfolio_daily"].to_string(),
-        portfolio_performance_by_sector=performance_dict["portfolio_sector"].to_string(),
-        portfolio_performance_by_security=performance_dict["portfolio_security"].to_string(),
-        portfolio_performance_by_stock_positive=performance_dict["portfolio_stock_pos"].to_string(),
-        portfolio_performance_by_stock_negative=performance_dict["portfolio_stock_neg"].to_string(),
-        benchmark_performance_by_stock_positive=performance_dict["benchmark_stock_pos"].to_string(),
-        benchmark_performance_by_stock_negative=performance_dict["benchmark_stock_neg"].to_string(),
+        portfolio_performance_by_overall=table_mapping["portfolio_perf_overall"].to_string(
+            index=False
+        ),
+        portfolio_performance_by_daily=table_mapping["portfolio_perf_daily"].to_string(index=False),
+        portfolio_performance_by_sector=table_mapping["portfolio_perf_sector"].to_string(
+            index=False
+        ),
+        portfolio_performance_by_security=table_mapping["portfolio_perf_security"].to_string(
+            index=False
+        ),
+        portfolio_performance_by_stock_positive=table_mapping["portfolio_stock_pos"].to_string(
+            index=False
+        ),
+        portfolio_performance_by_stock_negative=table_mapping["portfolio_stock_neg"].to_string(
+            index=False
+        ),
+        benchmark_performance_by_stock_positive=table_mapping["benchmark_holdings_pos"].to_string(
+            index=False
+        ),
+        benchmark_performance_by_stock_negative=table_mapping["benchmark_holdings_neg"].to_string(
+            index=False
+        ),
     )
     return portfolio_prompt
 
 
-async def prepare_stocks_stats_prompt(
-    stock_ids: List[StockID], date_range: DateRange, context: PlanRunContext
+async def prepare_universe_prompt(
+    universe_related_tables: List[Table],
+    context: PlanRunContext,
 ) -> FilledPrompt:
     """
-    This function prepares the stock stats prompt for the commentary.
-
+    This function prepares the universe prompt for the commentary.
     """
+    table_mapping: Dict[str, pd.DataFrame] = {}
+    for table in universe_related_tables:
+        if table.title == UNIVERSE_HOLDINGS_TABLE_NAME:
+            universe_holdings_df = table.to_df()
+            table_mapping["universe_holdings"] = universe_holdings_df
 
-    gbi_ids = [stock.gbi_id for stock in stock_ids]
-    # from_gbi_id_list doesn't return the stocks in the same order as the input list
-    stocks = await StockID.from_gbi_id_list(gbi_ids)
-    # get the gbi_ids of the stocks in same order as stocks
-    gbi_ids = [stock.gbi_id for stock in stocks]
-    stock_performance_map = await get_return_for_stocks(
-        gbi_ids=gbi_ids,
-        start_date=date_range.start_date,
-        end_date=date_range.end_date,
-        user_id=context.user_id,
+        for performance_level in UNIVERSE_PERFORMANCE_LEVELS:
+            if table.title == UNIVERSE_PERFORMANCE_TABLE_BASE_NAME + performance_level:
+                table_mapping[f"universe_perf_{performance_level}"] = table.to_df()
+
+    # convert StockID column to company name to aviod commentary using tickers
+    for df in table_mapping:
+        if STOCK_ID_COL_NAME_DEFAULT in table_mapping[df].columns:
+            table_mapping[df][STOCK_ID_COL_NAME_DEFAULT] = table_mapping[df][
+                STOCK_ID_COL_NAME_DEFAULT
+            ].apply(lambda x: x.company_name)
+
+    # extract top contributing stocks
+    table_mapping["universe_best_contributers"] = (
+        table_mapping["universe_perf_security"]
+        .sort_values(by="weighted-return", ascending=False)
+        .head(5)
+    )
+    table_mapping["universe_worst_contributers"] = (
+        table_mapping["universe_perf_security"]
+        .sort_values(by="weighted-return", ascending=True)
+        .head(5)
+    )
+    table_mapping["universe_best_performers"] = (
+        table_mapping["universe_perf_security"].sort_values(by="return", ascending=False).head(5)
+    )
+    table_mapping["universe_worst_performers"] = (
+        table_mapping["universe_perf_security"].sort_values(by="return", ascending=True).head(5)
     )
 
-    returns = [stock_performance_map.get(gbi_id, np.nan) for gbi_id in gbi_ids]
-    # Create a DataFrame/Table for the stock performance
-    stock_performance_df = pd.DataFrame(
-        {
-            STOCK_ID_COL_NAME_DEFAULT: stocks,
-            "return": returns,
-        }
-    )
-    stock_performance_table = StockTable.from_df_and_cols(
-        data=stock_performance_df,
-        columns=[
-            TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-            TableColumnMetadata(label="return", col_type=TableColumnType.PERCENT),
-        ],
-    )
-    await tool_log(
-        log=f"Retrieved performances for the stock ids for {date_range.start_date} to {date_range.end_date}.",
-        context=context,
-        associated_data=stock_performance_table,
+    # Prepare the portfolio prompt
+    universe_prompt = UNIVERSE_PERFORMANCE_PROMPT.format(
+        overall_performance=table_mapping["universe_perf_overall"].to_string(index=False),
+        sector_performance=table_mapping["universe_perf_sector"].to_string(index=False),
+        daily_performance=table_mapping["universe_perf_daily"].to_string(index=False),
+        best_contributors=table_mapping["universe_best_contributers"].to_string(index=False),
+        worst_contributors=table_mapping["universe_worst_contributers"].to_string(index=False),
+        best_performers=table_mapping["universe_best_performers"].to_string(index=False),
+        worst_performers=table_mapping["universe_worst_performers"].to_string(index=False),
     )
 
-    stocks_stats_prompt = STOCKS_STATS_PROMPT.format(
-        stock_stats=stock_performance_df.to_string(),
-    )
-    return stocks_stats_prompt
-
-
-async def summarize_text_mapping(
-    text_mapping: Dict[str, List[Text]], agent_id: str
-) -> Dict[str, List[Text]]:
-    """
-    This function summarizes some texts in the text mapping.
-    """
-    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
-    llm = GPT(context=gpt_context, model=GPT4_O_MINI)
-    for text_type in text_mapping:
-        if text_type in ("SEC filing", "Company Description", "Earnings Call Summary"):
-            tasks = []
-            texts_str_list = await Text.get_all_strs(text_mapping[text_type], include_header=True)
-            for text in texts_str_list:
-                tasks.append(
-                    llm.do_chat_w_sys_prompt(
-                        SUMMARIZE_TEXT_PROMPT.format(text=text),
-                        sys_prompt=NO_PROMPT,
-                    )
-                )
-            results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
-            for i, result in enumerate(results):
-                text_mapping[text_type][i] = Text(
-                    val=result,
-                )
-
-    return text_mapping
+    return universe_prompt
 
 
 async def prepare_main_prompt(
     previous_commentary_prompt: FilledPrompt,
     portfolio_prompt: FilledPrompt,
+    universe_performance_prompt: FilledPrompt,
     stocks_stats_prompt: FilledPrompt,
     watchlist_prompt: FilledPrompt,
     client_type_prompt: FilledPrompt,
@@ -557,6 +502,7 @@ async def prepare_main_prompt(
     main_prompt = COMMENTARY_PROMPT_MAIN.format(
         previous_commentary_prompt=previous_commentary_prompt.filled_prompt,
         portfolio_prompt=portfolio_prompt.filled_prompt,
+        universe_performance_prompt=universe_performance_prompt.filled_prompt,
         stocks_stats_prompt=stocks_stats_prompt.filled_prompt,
         watchlist_prompt=watchlist_prompt.filled_prompt,
         client_type_prompt=client_type_prompt.filled_prompt,
@@ -589,6 +535,7 @@ async def prepare_main_prompt(
         main_prompt = COMMENTARY_PROMPT_MAIN.format(
             previous_commentary_prompt=previous_commentary_prompt.filled_prompt,
             portfolio_prompt=portfolio_prompt.filled_prompt,
+            universe_performance_prompt=universe_performance_prompt.filled_prompt,
             stocks_stats_prompt=stocks_stats_prompt.filled_prompt,
             watchlist_prompt=watchlist_prompt.filled_prompt,
             client_type_prompt=client_type_prompt.filled_prompt,
@@ -603,7 +550,7 @@ async def prepare_main_prompt(
         logger.info(
             f"Length of tokens in main prompt (after truncations): {main_prompt_token_length}"
         )
-        # show the length of tokens in text_mapping
+        # show the length of tokens in input_mapping
         for text_type, text_list in text_mapping.items():
             text_list_str: str = await Text.get_all_strs(TextGroup(val=text_list), include_header=True)  # type: ignore
             logger.info(

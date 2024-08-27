@@ -30,6 +30,11 @@ from agent_service.tools.stocks import (
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 
+UNIVERSE_PERFORMANCE_LEVELS = ["overall", "security", "sector", "daily"]
+UNIVERSE_PERFORMANCE_TABLE_BASE_NAME = "Universe Performance - "
+UNIVERSE_HOLDINGS_TABLE_NAME = "Universe Holdings"
+STOCK_PERFORMANCE_TABLE_NAME = "Stock Performance"
+
 
 class GetUniversePerformanceInput(ToolArgs):
     universe_name: str
@@ -45,10 +50,8 @@ class GetUniversePerformanceInput(ToolArgs):
         if not isinstance(value, str):
             raise ValueError("performance level must be a string")
 
-        if value not in ["overall", "security", "sector", "daily"]:
-            raise ValueError(
-                "performance level must be one of ('overall', 'security', 'sector', 'daily')"
-            )
+        if value not in UNIVERSE_PERFORMANCE_LEVELS:
+            raise ValueError(f"performance level must be one of {UNIVERSE_PERFORMANCE_LEVELS}")
         return value
 
 
@@ -56,7 +59,7 @@ class GetUniversePerformanceInput(ToolArgs):
     description=(
         "This function returns the performance of a universe/benchmark given universe name, "
         "performance level, and date range. "
-        "\nThe performance level MUST be one of ('overall', 'security', 'sector', 'daily')."
+        f"\nThe performance level MUST be one of {UNIVERSE_PERFORMANCE_LEVELS}."
         "\nThe date range is optional and defaults to the last month."
         "\nWhen the performance level is 'overall', it returns the total performance of the universe "
         "as a single stock during the date range. "
@@ -75,20 +78,14 @@ class GetUniversePerformanceInput(ToolArgs):
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
-    is_visible=False,
+    enabled=False,
 )
 async def get_universe_performance(
     args: GetUniversePerformanceInput, context: PlanRunContext
 ) -> Table:
-    # get the universe id from the universe name
-    etf_stock = await get_stock_info_for_universe(
-        GetStockUniverseInput(universe_name=args.universe_name), context
-    )
-    universe_spiq_company_id = etf_stock["spiq_company_id"]
-
     # get the universe stocks and weight as table
-    universe_holdings_table = await get_stock_universe_table_from_universe_company_id(
-        universe_spiq_company_id, context
+    universe_holdings_table: Table = await get_universe_holdings(  # type: ignore
+        GetUniverseHoldingsInput(universe_name=args.universe_name), context
     )
 
     universe_holdings_df = universe_holdings_table.to_df()
@@ -130,6 +127,8 @@ async def get_universe_performance(
     await tool_log(
         log="Universe performance table retrieved.", context=context, associated_data=table
     )
+
+    table.title = UNIVERSE_PERFORMANCE_TABLE_BASE_NAME + args.performance_level
 
     return table
 
@@ -273,3 +272,86 @@ async def get_performance_daily_level(
         ],
     )
     return table
+
+
+class GetUniverseHoldingsInput(ToolArgs):
+    universe_name: str
+
+
+@tool(
+    description=(
+        "This function returns the holdings of a universe given the universe name. "
+        "Table schema: "
+        "Security: StockID, weight: float"
+    ),
+    category=ToolCategory.STATISTICS,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_universe_holdings(args: GetUniverseHoldingsInput, context: PlanRunContext) -> Table:
+
+    # get the universe stocks
+    etf_stock = await get_stock_info_for_universe(
+        GetStockUniverseInput(universe_name=args.universe_name), context
+    )
+    universe_spiq_company_id = etf_stock["spiq_company_id"]
+
+    # get the universe stocks and weight as table
+    universe_holdings_table = await get_stock_universe_table_from_universe_company_id(
+        universe_spiq_company_id, context
+    )
+    universe_holdings_table.title = UNIVERSE_HOLDINGS_TABLE_NAME
+    return universe_holdings_table
+
+
+class GetStocksPerformanceInput(ToolArgs):
+    stock_ids: List[StockID]
+    date_range: DateRange = DateRange(
+        start_date=datetime.date.today() - datetime.timedelta(days=30),
+        end_date=datetime.date.today(),
+    )
+
+
+@tool(
+    description=(
+        "This function returns the performance of a list of stocks given the stock ids and date range. "
+    ),
+    category=ToolCategory.STATISTICS,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_stocks_performance(args: GetStocksPerformanceInput, context: PlanRunContext) -> Table:
+    gbi_ids = [stock.gbi_id for stock in args.stock_ids]
+    # from_gbi_id_list doesn't return the stocks in the same order as the input list
+    stocks = await StockID.from_gbi_id_list(gbi_ids)
+    # get the gbi_ids of the stocks in same order as stocks
+    gbi_ids = [stock.gbi_id for stock in stocks]
+    stock_performance_map = await get_return_for_stocks(
+        gbi_ids=gbi_ids,
+        start_date=args.date_range.start_date,
+        end_date=args.date_range.end_date,
+        user_id=context.user_id,
+    )
+
+    returns = [stock_performance_map.get(gbi_id, np.nan) for gbi_id in gbi_ids]
+    # Create a DataFrame/Table for the stock performance
+    stock_performance_df = pd.DataFrame(
+        {
+            STOCK_ID_COL_NAME_DEFAULT: stocks,
+            "return": returns,
+        }
+    )
+    stock_performance_table = StockTable.from_df_and_cols(
+        data=stock_performance_df,
+        columns=[
+            TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="return", col_type=TableColumnType.PERCENT),
+        ],
+    )
+    await tool_log(
+        log=f"Retrieved performances for the stock ids for {args.date_range.start_date} to {args.date_range.end_date}.",
+        context=context,
+        associated_data=stock_performance_table,
+    )
+    stock_performance_table.title = STOCK_PERFORMANCE_TABLE_NAME
+    return stock_performance_table

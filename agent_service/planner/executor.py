@@ -381,7 +381,7 @@ async def run_execution_plan(
 
     updated_output_ids = []
     full_diff_summary = None
-    short_diff_summary = None
+    short_diff_summary = "Summary generation in progress..."
     if not scheduled_by_automation and do_chat:
         logger.info("Generating chat message...")
         chat_context = db.get_chats_history_for_agent(agent_id=context.agent_id)

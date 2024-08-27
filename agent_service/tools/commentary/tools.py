@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 
 from agent_service.GPT.constants import NO_PROMPT
 from agent_service.GPT.requests import GPT
@@ -7,10 +7,13 @@ from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
+from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT, StockTable, Table
 from agent_service.io_types.text import (
     StockNewsDevelopmentText,
     Text,
     TextGroup,
+    ThemeNewsDevelopmentArticlesText,
+    ThemeNewsDevelopmentText,
     ThemeText,
 )
 from agent_service.tool import ToolArgs, ToolCategory, tool
@@ -25,10 +28,10 @@ from agent_service.tools.commentary.helpers import (
     get_previous_commentary_results,
     get_texts_for_topics,
     get_theme_related_texts,
-    organize_commentary_texts,
+    organize_commentary_inputs,
     prepare_main_prompt,
     prepare_portfolio_prompt,
-    prepare_stocks_stats_prompt,
+    prepare_universe_prompt,
 )
 from agent_service.tools.commentary.prompts import (
     CLIENTELE_TEXT_DICT,
@@ -38,6 +41,7 @@ from agent_service.tools.commentary.prompts import (
     LONG_WRITING_STYLE,
     PREVIOUS_COMMENTARY_PROMPT,
     SIMPLE_CLIENTELE,
+    STOCKS_STATS_PROMPT,
     UPDATE_COMMENTARY_INSTRUCTIONS,
     WATCHLIST_PROMPT,
     WRITE_COMMENTARY_DESCRIPTION,
@@ -51,12 +55,33 @@ from agent_service.tools.news import (
     get_all_news_developments_about_companies,
     get_news_articles_for_stock_developments,
 )
-from agent_service.tools.portfolio import PortfolioID
+from agent_service.tools.portfolio import (
+    BENCHMARK_PERFORMANCE_LEVELS,
+    PORTFOLIO_PERFORMANCE_LEVELS,
+    GetPortfolioBenchmarkHoldingsInput,
+    GetPortfolioBenchmarkPerformanceInput,
+    GetPortfolioHoldingsInput,
+    GetPortfolioPerformanceInput,
+    get_portfolio_benchmark_holdings,
+    get_portfolio_benchmark_performance,
+    get_portfolio_holdings,
+    get_portfolio_performance,
+)
 from agent_service.tools.themes import (
     GetTopNThemesInput,
     get_top_N_macroeconomic_themes,
 )
 from agent_service.tools.tool_log import tool_log
+from agent_service.tools.universe import (
+    STOCK_PERFORMANCE_TABLE_NAME,
+    UNIVERSE_PERFORMANCE_LEVELS,
+    GetStocksPerformanceInput,
+    GetUniverseHoldingsInput,
+    GetUniversePerformanceInput,
+    get_stocks_performance,
+    get_universe_holdings,
+    get_universe_performance,
+)
 from agent_service.tools.watchlist import (
     GetStocksForUserAllWatchlistsInput,
     get_stocks_for_user_all_watchlists,
@@ -67,15 +92,9 @@ from agent_service.utils.prefect import get_prefect_logger
 
 
 class WriteCommentaryInput(ToolArgs):
-    stock_ids: List[StockID] = []
-    date_range: DateRange = DateRange(
-        start_date=date.today() - timedelta(days=30),
-        end_date=date.today(),
-    )
-    inputs: List[Text]
+    inputs: List[Union[Text, Table]]
     client_type: Optional[str] = "Simple"
     writing_format: Optional[str] = "Long"
-    portfolio_id: Optional[PortfolioID] = None
 
 
 @tool(
@@ -97,45 +116,65 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
             associated_data=previous_commentary,
         )
 
+    # Prepare previous commentary prompt
+    previous_commentary_prompt = (
+        PREVIOUS_COMMENTARY_PROMPT.format(
+            previous_commentary=await Text.get_all_strs(previous_commentary)
+        )
+        if previous_commentary is not None
+        else NO_PROMPT
+    )
+
     # Prepare the portfolio prompt
     portfolio_prompt = NO_PROMPT
-    if args.portfolio_id:
+    portfolio_related_tables: List[Table] = []
+    for input in args.inputs:
+        if isinstance(input, Table):
+            if input.title:
+                if ("portfolio" in input.title.lower()) or ("benchmark" in input.title.lower()):
+                    portfolio_related_tables.append(input)
+    if portfolio_related_tables:
         try:
             portfolio_prompt = await prepare_portfolio_prompt(
-                args.portfolio_id, args.date_range, context  # type: ignore
+                portfolio_related_tables, context=context
             )
         except Exception as e:
-            logger.info(f"Failed to prepare portfolio prompt: {e}, {args.portfolio_id}")
+            logger.info(f"Failed to prepare portfolio prompt: {e}")
 
-    # Prepare the stock performance prompt
-    stocks_stats_prompt = NO_PROMPT
-    if args.stock_ids:
-        stocks_stats_prompt = await prepare_stocks_stats_prompt(
-            args.stock_ids, args.date_range, context
-        )
-
+    # Prepare the universe performance prompt
+    universe_performance_prompt = NO_PROMPT
+    universe_related_tables: List[Table] = []
+    for input in args.inputs:
+        if isinstance(input, Table) and input.title:
+            if "universe" in input.title.lower():
+                universe_related_tables.append(input)
+    if universe_related_tables:
+        try:
+            universe_performance_prompt = await prepare_universe_prompt(
+                universe_related_tables, context=context
+            )
+        except Exception as e:
+            logger.info(f"Failed to prepare universe performance prompt: {e}")
     # Dedupluate the texts and organize the commentary texts into themes, developments and articles
-    text_ids = set()
-    deduplicated_texts = []
-    for text in args.inputs:
-        if isinstance(text, Text):
-            if text.id not in text_ids:
-                text_ids.add(text.id)
-                deduplicated_texts.append(text)
-    text_mapping = await organize_commentary_texts(deduplicated_texts)
+    input_mapping = await organize_commentary_inputs(args.inputs)
+
+    # seperate text_mapping from input_mapping
+    text_mapping: Dict[str, List[Text]] = {
+        key: value for key, value in input_mapping.items() if key != "Tables"  # type: ignore
+    }
     # check the max number of texts in each type
-    if len(text_mapping["Theme Description"]) > MAX_THEMES_PER_COMMENTARY:
-        text_mapping["Theme Description"] = text_mapping["Theme Description"][
-            :MAX_THEMES_PER_COMMENTARY
-        ]
-    if len(text_mapping["News Development Summary"]) > MAX_DEVELOPMENTS_PER_COMMENTARY:
-        text_mapping["News Development Summary"] = text_mapping["News Development Summary"][
-            :MAX_DEVELOPMENTS_PER_COMMENTARY
-        ]
-    if len(text_mapping["News Article Summary"]) > MAX_TOTAL_ARTICLES_PER_COMMENTARY:
-        text_mapping["News Article Summary"] = text_mapping["News Article Summary"][
-            :MAX_TOTAL_ARTICLES_PER_COMMENTARY
-        ]
+    if ThemeText.text_type in text_mapping:
+        text_type = ThemeText.text_type
+        if len(text_mapping[text_type]) > MAX_THEMES_PER_COMMENTARY:
+            text_mapping[text_type] = text_mapping[text_type][:MAX_THEMES_PER_COMMENTARY]
+    if ThemeNewsDevelopmentText.text_type in text_mapping:
+        text_type = ThemeNewsDevelopmentText.text_type
+        if len(text_mapping[text_type]) > MAX_DEVELOPMENTS_PER_COMMENTARY:
+            text_mapping[text_type] = text_mapping[text_type][:MAX_DEVELOPMENTS_PER_COMMENTARY]
+    if ThemeNewsDevelopmentArticlesText.text_type in text_mapping:
+        text_type = ThemeNewsDevelopmentArticlesText.text_type
+        if len(text_mapping[text_type]) > MAX_TOTAL_ARTICLES_PER_COMMENTARY:
+            text_mapping[text_type] = text_mapping[text_type][:MAX_TOTAL_ARTICLES_PER_COMMENTARY]
     # show number of texts of each type
     await tool_log(
         log=f"Texts used for commentary: {', '.join([f'{k}: {len(v)}' for k, v in text_mapping.items()])}",
@@ -146,22 +185,26 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         val=[text for text_list in text_mapping.values() for text in text_list]
     )
 
-    # Prepare previous commentary prompt
-    previous_commentary_prompt = (
-        PREVIOUS_COMMENTARY_PROMPT.format(
-            previous_commentary=await Text.get_all_strs(previous_commentary)
-        )
-        if previous_commentary is not None
-        else NO_PROMPT
-    )
+    # Prepare the stock performance prompt
+    stocks_stats_prompt = NO_PROMPT
+    for table in input_mapping.get("Tables", []):
+        if isinstance(table, Table) and STOCK_PERFORMANCE_TABLE_NAME == table.title:
+            stocks_stats_df = table.to_df()[STOCK_ID_COL_NAME_DEFAULT].apply(
+                lambda x: x.company_name
+            )
+            stocks_stats_prompt = STOCKS_STATS_PROMPT.format(
+                stock_stats=stocks_stats_df.to_string(index=False)
+            )
+
     # Prepare watchlist prompt
     watchlist_prompt = NO_PROMPT
-    watchlist_stocks = await get_stocks_for_user_all_watchlists(
+    watchlist_stocks: List[StockID] = await get_stocks_for_user_all_watchlists(  # type: ignore
         GetStocksForUserAllWatchlistsInput(), context
     )
+    watchlist_stock_names = [stock.company_name for stock in watchlist_stocks]
 
     watchlist_prompt = WATCHLIST_PROMPT.format(
-        watchlist_stocks=", ".join([await stock.to_gpt_input() for stock in watchlist_stocks])  # type: ignore
+        watchlist_stocks=", ".join([stock for stock in watchlist_stock_names])  # type: ignore
     )
 
     # Prepare client type prompt
@@ -183,15 +226,16 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
     # Prepare the main prompt using the above prompts
     main_prompt = await prepare_main_prompt(
-        portfolio_prompt,
-        stocks_stats_prompt,
-        previous_commentary_prompt,
-        watchlist_prompt,
-        client_type_prompt,
-        writing_style_prompt,
-        texts_str,
-        text_mapping,
-        context,
+        previous_commentary_prompt=previous_commentary_prompt,
+        portfolio_prompt=portfolio_prompt,
+        universe_performance_prompt=universe_performance_prompt,
+        stocks_stats_prompt=stocks_stats_prompt,
+        watchlist_prompt=watchlist_prompt,
+        client_type_prompt=client_type_prompt,
+        writing_style_prompt=writing_style_prompt,
+        texts=texts_str,
+        text_mapping=text_mapping,
+        context=context,
     )
     main_prompt_token_length = GPTTokenizer(COMMENTARY_LLM).get_token_length(
         main_prompt.filled_prompt
@@ -199,8 +243,8 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     logger.info(f"Length of tokens in main prompt: {main_prompt_token_length}")
 
     # save main prompt as text file for debugging
-    # with open("main_prompt.txt", "w") as f:
-    #     f.write(main_prompt.filled_prompt)
+    with open("main_prompt.txt", "w") as f:
+        f.write(main_prompt.filled_prompt)
 
     # Write the commentary
     await tool_log(
@@ -239,6 +283,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 class GetCommentaryInputsInput(ToolArgs):
     stock_ids: List[StockID] = []
     topics: Optional[List[str]] = None
+    universe_name: Optional[str] = None
     date_range: DateRange = DateRange(
         start_date=date.today() - timedelta(days=30),
         end_date=date.today(),
@@ -254,10 +299,11 @@ class GetCommentaryInputsInput(ToolArgs):
 )
 async def get_commentary_inputs(
     args: GetCommentaryInputsInput, context: PlanRunContext
-) -> List[Text]:
+) -> List[Union[Text, Table]]:
 
     logger = get_prefect_logger(__name__)
     texts: List[Text] = []
+    tables: List[Table] = []
 
     # If market_trend is True, get the top themes and related texts
     if args.market_trend:
@@ -311,6 +357,7 @@ async def get_commentary_inputs(
 
     # If topics are provided, get the texts for the topics
     if args.topics:
+        args.topics = args.topics + [args.universe_name] if args.universe_name else args.topics
         try:
             topic_texts = await get_texts_for_topics(args.topics, args.date_range, context)
             await tool_log(
@@ -321,6 +368,164 @@ async def get_commentary_inputs(
             texts.extend(topic_texts)
         except Exception as e:
             logger.exception(f"Failed to get texts for topics: {e}")
+
+    # if universe_name is provided, find top contributers/performers and performance tables
+    if args.universe_name:
+        try:
+            # get universe holdings table
+            universe_stocks: Table = await get_universe_holdings(  # type: ignore
+                GetUniverseHoldingsInput(universe_name=args.universe_name), context
+            )
+            tables.append(universe_stocks)
+            # get universe performance in all levels
+            for performance_level in UNIVERSE_PERFORMANCE_LEVELS:
+                universe_performance_table: Table = await get_universe_performance(  # type: ignore
+                    GetUniversePerformanceInput(
+                        universe_name=args.universe_name,
+                        date_range=args.date_range,
+                        performance_level=performance_level,
+                    ),
+                    context,
+                )
+                # add universe performance table to tables
+                tables.append(universe_performance_table)
+                if performance_level == "security":
+                    # this will be used to get top and bottom 3 contributers
+                    uni_perf_df = universe_performance_table.to_df()
+            # get top and bottom 3 contributers and performers
+            top_contributers = (
+                uni_perf_df.sort_values("weighted-return", ascending=False)
+                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .tolist()
+            )
+            bottom_contributers = (
+                uni_perf_df.sort_values("weighted-return", ascending=True)
+                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .tolist()
+            )
+            top_performers = (
+                uni_perf_df.sort_values("return", ascending=False)
+                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .tolist()
+            )
+            bottom_performers = (
+                uni_perf_df.sort_values("return", ascending=True)
+                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .tolist()
+            )
+
+            # deduplicate top/bottom contributers and performers and stock_ids
+            args.stock_ids = list(
+                set(
+                    top_contributers
+                    + bottom_contributers
+                    + top_performers
+                    + bottom_performers
+                    + args.stock_ids
+                )
+            )
+
+            await tool_log(
+                log=f"Retrieved top 3 and bottom 3 contributers and performers in {args.universe_name}.",
+                context=context,
+            )
+
+        except Exception as e:
+            logger.exception(
+                f"Failed to get stocks/performances for universe {args.universe_name}: {e}"
+            )
+
+    # if portfolio_id is provided, get the portfolio top performers/contributers and performance tables
+    if args.portfolio_id:
+        try:
+            # get portfolio/ benchamrk holdings tables - default and expanded
+            for expand_etfs in [False, True]:
+                portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
+                    GetPortfolioHoldingsInput(
+                        portfolio_id=args.portfolio_id,
+                        expand_etfs=expand_etfs,
+                        fetch_default_stats=False,
+                    ),
+                    context,
+                )
+                tables.append(portfolio_holdings_table)
+                benchmark_holdings_table: Table = await get_portfolio_benchmark_holdings(  # type: ignore
+                    GetPortfolioBenchmarkHoldingsInput(
+                        portfolio_id=args.portfolio_id, expand_etfs=expand_etfs
+                    ),
+                    context,
+                )
+                tables.append(benchmark_holdings_table)
+
+            # get portfolio benchmark performance in all levels
+            for performance_level in BENCHMARK_PERFORMANCE_LEVELS:
+                portfolio_benchmark_perf_table: Table = await get_portfolio_benchmark_performance(  # type: ignore
+                    GetPortfolioBenchmarkPerformanceInput(
+                        portfolio_id=args.portfolio_id,
+                        date_range=args.date_range,
+                        performance_level=performance_level,
+                    ),
+                    context,
+                )
+                # add portfolio benchmark performance table to tables
+                tables.append(portfolio_benchmark_perf_table)
+
+            # get portfolio performance in all levels
+            for performance_level in PORTFOLIO_PERFORMANCE_LEVELS:
+                portfolio_performance_table: Table = await get_portfolio_performance(  # type: ignore
+                    GetPortfolioPerformanceInput(
+                        portfolio_id=args.portfolio_id,
+                        date_range=args.date_range,
+                        performance_level=performance_level,
+                    ),
+                    context,
+                )
+                # add portfolio performance table to tables
+                tables.append(portfolio_performance_table)
+                if performance_level == "security":
+                    # this will be used to get top and bottom 3 contributers
+                    port_perf_df = portfolio_performance_table.to_df()
+            # get top and bottom 3 contributers and performers
+            top_contributers = (
+                port_perf_df.sort_values("weighted-return", ascending=False)
+                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .tolist()
+            )
+            bottom_contributers = (
+                port_perf_df.sort_values("weighted-return", ascending=True)
+                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .tolist()
+            )
+            top_performers = (
+                port_perf_df.sort_values("return", ascending=False)
+                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .tolist()
+            )
+            bottom_performers = (
+                port_perf_df.sort_values("return", ascending=True)
+                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .tolist()
+            )
+
+            # deduplicate top/bottom contributers and performers and stock_ids
+            args.stock_ids = list(
+                set(
+                    top_contributers
+                    + bottom_contributers
+                    + top_performers
+                    + bottom_performers
+                    + args.stock_ids
+                )
+            )
+
+            await tool_log(
+                log=f"Retrieved top 3 and bottom 3 contributers and performers in {args.portfolio_id}.",
+                context=context,
+            )
+        except Exception as e:
+            logger.exception(
+                f"Failed to get stocks/performances for portfolio {args.portfolio_id}: {e}"
+            )
 
     # If stock_ids are provided, get the texts for the stock_ids
     if args.stock_ids:
@@ -334,6 +539,13 @@ async def get_commentary_inputs(
             )
             args.stock_ids = args.stock_ids[:MAX_STOCKS_PER_COMMENTARY]
         try:
+            # get stock performance tables
+            stock_performance_table: Table = await get_stocks_performance(  # type: ignore
+                GetStocksPerformanceInput(stock_ids=args.stock_ids, date_range=args.date_range),
+                context,
+            )
+            tables.append(stock_performance_table)
+            # get news developments and articles for stock ids
             stock_devs: List[StockNewsDevelopmentText] = (
                 await get_all_news_developments_about_companies(  # type: ignore
                     GetNewsDevelopmentsAboutCompaniesInput(
@@ -358,4 +570,4 @@ async def get_commentary_inputs(
         except Exception as e:
             logger.exception(f"Failed to get texts for stock ids: {e}")
 
-    return texts
+    return texts + tables

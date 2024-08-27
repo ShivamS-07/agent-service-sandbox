@@ -42,6 +42,15 @@ from agent_service.utils.tool_diff import (
 
 PORTFOLIO_ADD_STOCK_DIFF = "{company} was added to the portfolio: {portfolio}"
 PORTFOLIO_REMOVE_STOCK_DIFF = "{company} was removed from the portfolio: {portfolio}"
+PORTFOLIO_PERFORMANCE_LEVELS = ["overall", "stock", "sector", "daily", "security"]
+PORTFOLIO_HOLDING_TABLE_NAME_EXPANDED = "Portfolio Holdings - ETFs Expanded"
+PORTFOLIO_HOLDING_TABLE_NAME_NOT_EXPANDED = "Portfolio Holdings - ETFs Not Expanded"
+PORTFOLIO_PERFORMANCE_TABLE_BASE_NAME = "Portfolio Performance - "
+
+BENCHMARK_PERFORMANCE_LEVELS = ["stock", "security"]
+BENCHMARK_PERFORMANCE_TABLE_BASE_NAME = "Benchmark Performance - "
+BENCHMARK_HOLDING_TABLE_NAME_EXPANDED = "Benchmark Holdings - ETFs Expanded"
+BENCHMARK_HOLDING_TABLE_NAME_NOT_EXPANDED = "Benchmark Holdings - ETFs Not Expanded"
 
 PortfolioID = str
 # Get the postgres connection
@@ -157,9 +166,7 @@ async def get_portfolio_holdings(
         )
 
     df = pd.DataFrame(data)
-    # normalize weights
-    df["Weight"] = df["Weight"] / df["Weight"].sum()
-    df = df.sort_values(by="Weight", ascending=False)
+
     columns = [
         TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
         TableColumnMetadata(label="Weight", col_type=TableColumnType.PERCENT),
@@ -209,7 +216,11 @@ async def get_portfolio_holdings(
 
     except Exception as e:
         logger.warning(f"Error creating diff info from previous run: {e}")
-
+    table.title = (
+        PORTFOLIO_HOLDING_TABLE_NAME_EXPANDED
+        if args.expand_etfs
+        else PORTFOLIO_HOLDING_TABLE_NAME_NOT_EXPANDED
+    )
     return table
 
 
@@ -299,10 +310,8 @@ class GetPortfolioPerformanceInput(ToolArgs):
         if not isinstance(value, str):
             raise ValueError("performance level must be a string")
 
-        if value not in ["overall", "stock", "sector", "daily", "security"]:
-            raise ValueError(
-                "performance level must be one of ('overall', 'stock', 'security', 'sector', 'daily')"
-            )
+        if value not in PORTFOLIO_PERFORMANCE_LEVELS:
+            raise ValueError(f"performance level must be one of {PORTFOLIO_PERFORMANCE_LEVELS}")
         return value
 
 
@@ -310,7 +319,7 @@ class GetPortfolioPerformanceInput(ToolArgs):
     description=(
         "This function returns the performance of a portfolio given a portfolio id "
         "and a performance level and date range. "
-        "\nThe performance level MUST one of  ('overall', 'stock', 'sector', 'daily', 'security'). "
+        f"\nThe performance level MUST one of {PORTFOLIO_PERFORMANCE_LEVELS}. "
         "The default performance level is 'security'. "
         "\nThe date range is optional and defaults to the last month."
         "\nWhen the performance level is 'overall', it returns the overall performance of the portfolio, "
@@ -336,7 +345,7 @@ class GetPortfolioPerformanceInput(ToolArgs):
     ),
     category=ToolCategory.PORTFOLIO,
     tool_registry=ToolRegistry,
-    is_visible=True,
+    enabled=False,
 )
 async def get_portfolio_performance(
     args: GetPortfolioPerformanceInput, context: PlanRunContext
@@ -384,6 +393,8 @@ async def get_portfolio_performance(
         log="Universe performance table retrieved.", context=context, associated_data=table
     )
 
+    table.title = PORTFOLIO_PERFORMANCE_TABLE_BASE_NAME + args.performance_level
+
     return table
 
 
@@ -404,7 +415,7 @@ class GetPortfolioBenchmarkHoldingsInput(ToolArgs):
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
-    is_visible=True,
+    enabled=False,
 )
 async def get_portfolio_benchmark_holdings(
     args: GetPortfolioBenchmarkHoldingsInput, context: PlanRunContext
@@ -450,6 +461,101 @@ async def get_portfolio_benchmark_holdings(
     )
     await tool_log(
         f"Found {len(gbi_ids)} holdings in benchmark", context=context, associated_data=table
+    )
+    table.title = (
+        BENCHMARK_HOLDING_TABLE_NAME_EXPANDED
+        if args.expand_etfs
+        else BENCHMARK_HOLDING_TABLE_NAME_NOT_EXPANDED
+    )
+    return table
+
+
+class GetPortfolioBenchmarkPerformanceInput(ToolArgs):
+    portfolio_id: PortfolioID
+    date_range: DateRange = DateRange(
+        start_date=datetime.date.today() - datetime.timedelta(days=30),
+        end_date=datetime.date.today(),
+    )
+    performance_level: str = "stock"
+
+    @field_validator("performance_level", mode="before")
+    @classmethod
+    def validate_performance_level(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            raise ValueError("performance level must be a string")
+
+        if value not in BENCHMARK_PERFORMANCE_LEVELS:
+            raise ValueError(f"performance level must be one of {PORTFOLIO_PERFORMANCE_LEVELS}")
+        return value
+
+
+@tool(
+    description=(
+        "This function returns the performance of the benchmark related to a specific portfolio given a portfolio Id. "
+        f"The performance level MUST be one of {BENCHMARK_PERFORMANCE_LEVELS}. "
+        "\nWhen the performance level is 'stock', it returns the performance of all stocks in the benchmark. "
+        "this will expand all ETFs into stock level. "
+        "Only use 'stock' if you want to expand ETFs into stock level and see the performance of each stock. "
+        "Table schema for stock performance level: "
+        "Security: StockID, return: float, benchmark-weight: float, weighted-return: float"
+        "\nWhen the performance level is 'security', it returns the performance of all securitys in the benchmark. "
+        "Use 'security' if you want to see the performance of each security in the benchmark. If they are ETFs, "
+        "they will not be expanded into stock level. "
+        "Table schema for security performance level: "
+        "Security: StockID, return: float, benchmark-weight: float, weighted-return: float"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    enabled=False,
+)
+async def get_portfolio_benchmark_performance(
+    args: GetPortfolioBenchmarkPerformanceInput, context: PlanRunContext
+) -> StockTable:
+    if args.performance_level == "stock":
+        expand_etfs = True
+    else:
+        expand_etfs = False
+
+    benchmark_holdings_table = await get_portfolio_benchmark_holdings(
+        GetPortfolioBenchmarkHoldingsInput(portfolio_id=args.portfolio_id, expand_etfs=expand_etfs),
+        context,
+    )
+    benchmark_holdings_df = benchmark_holdings_table.to_df()  # type: ignore
+    gbi_ids = [stock.gbi_id for stock in benchmark_holdings_df[STOCK_ID_COL_NAME_DEFAULT]]
+    benchmark_stock_performance_map = await get_return_for_stocks(
+        gbi_ids=gbi_ids,
+        start_date=args.date_range.start_date,
+        end_date=args.date_range.end_date,
+        user_id=context.user_id,
+    )
+    returns = [benchmark_stock_performance_map.get(gbi_id, np.nan) for gbi_id in gbi_ids]
+    data = {
+        STOCK_ID_COL_NAME_DEFAULT: await StockID.from_gbi_id_list(gbi_ids),
+        "return": returns,
+        "benchmark-weight": benchmark_holdings_df["Weight"].values,
+    }
+    benchmark_stock_performance_df = pd.DataFrame(data)
+    benchmark_stock_performance_df["weighted-return"] = (
+        benchmark_stock_performance_df["return"].astype(float)
+        * benchmark_stock_performance_df["benchmark-weight"].astype(float)
+    ).values
+    benchmark_stock_performance_df = benchmark_stock_performance_df.sort_values(
+        by="weighted-return", ascending=False
+    )
+    table = StockTable.from_df_and_cols(
+        data=benchmark_stock_performance_df,
+        columns=[
+            TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="return", col_type=TableColumnType.PERCENT),
+            TableColumnMetadata(label="benchmark-weight", col_type=TableColumnType.PERCENT),
+            TableColumnMetadata(label="weighted-return", col_type=TableColumnType.PERCENT),
+        ],
+    )
+    table.title = BENCHMARK_PERFORMANCE_TABLE_BASE_NAME + args.performance_level
+    await tool_log(
+        f"Found {len(gbi_ids)} benchmark holdings performance.",
+        context=context,
+        associated_data=table,
     )
     return table
 

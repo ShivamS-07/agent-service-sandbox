@@ -12,7 +12,7 @@ COMMENTARY_SYS_PROMPT = Prompt(
         "to the portfolio (eg. they have a large stake, they are highly exposed). "
         "This should be done in a storytelling manner as opposed to rambling off facts. "
         "\n- The writing should be backed by factoids (statistics, quotes, "
-        "numbers) so that the information is factual."
+        "numbers) so that the information is factual. "
         "\n- Try your best to support your arguments with data and statistics and facts. "
         "\n- The writing must sound personal, like it came from the advisor, and not a "
         "regurgitation of facts like information they would get from their bank’s overall "
@@ -37,6 +37,9 @@ COMMENTARY_SYS_PROMPT = Prompt(
         "\nPlease double check your grammar when writing. "
         "\nYou can use markdown to format your text and highlight important words or numbers. "
         "\nHighlight numbers and statistics and important words in your writing in bold for emphasis. "
+        "\nYou MUST ONLY cite texts in the texts section, and DO NOT cite tables in other sections. "
+        "\nDO NOT just mention the trends (such as gains/loss in some sectors/stocks) without numbers "
+        "and some justifications backed by the texts. "
         f"\n {CITATION_PROMPT}"
     ),
 )
@@ -51,21 +54,21 @@ COMMENTARY_PROMPT_MAIN = Prompt(
         "you. Use the following information to generate this text. \n"
         "{previous_commentary_prompt}"
         "{portfolio_prompt}"
+        "{universe_performance_prompt}"
         "{stocks_stats_prompt}"
         "{watchlist_prompt}"
         "{client_type_prompt}"
         "{writing_style_prompt}"
-        "Here are, all texts for your analysis, delimited by #####:\n"
+        "\n### Texts Section"
+        "Remember that if you want to report a performance or return data in your commentary, "
+        "you MUST use the numbers from the tables provided in the other sections, "
+        "not the numbers from these texts or news, "
+        "as they might be outdated. Use these texts only for justifying trends. "
+        "I REPEAT, DO NOT mention the exact numbers/stats/price changes/returns/performance/gains/losses/etc. "
+        "from the following texts in your commentary, otherwise you will be penalized. "
+        "\nHere are, the texts for writing your commentary , delimited by #####:\n"
         "\n#####\n"
         "{texts}"
-        "\n#####\n"
-        "Use this data to back up the commentary that is written."
-        "You can reference the data in the commentary"
-        "Just make sure that it is relevant to what you are writing about"
-        "DO NOT just include the data with out purpose"
-        "DO NOT mention any statistics that is not there"
-        "ONLY reference statistics that have data for, and use the statistic to strengthen your commentary"
-        "The following is time series data for statistics"
         "\n#####\n"
         "You must consider the client's requests and preferences, based on what they have said in the chat, "
         "in your writing and deciding which text, or information to focus on and include in your commentary. "
@@ -82,6 +85,7 @@ COMMENTARY_PROMPT_MAIN = Prompt(
 PREVIOUS_COMMENTARY_PROMPT = Prompt(
     name="PREVIOUS_COMMENTARY_PROMPT",
     template=(
+        "\n### Previous Commentary Section"
         "\nHere is the most recent commentary you wrote for the client, delimited by ******. "
         "The more recent ones are at the top.\n"
         "\n******\n"
@@ -111,40 +115,55 @@ GEOGRAPHY_PROMPT = Prompt(
         "Note that negative numbers indicate a short position, meaning that the sector "
         "going down in value is good for the portfolio."
         "\n### Geographic areas\n"
-        "{portfolio_geography}"
+        "{portfolio_geography_df}"
     ),
 )
 
 PORTFOLIO_PROMPT = Prompt(
     name="PORTFOLIO_PROMPT",
     template=(
+        "\n### Portfolio Data Section"
         "\nThe following are some info related to client's portfolio and its benchmark. "
         "You can use these to decide what to talk about, and filter out factoids "
-        "that likely would not impact the portfolio's markets. You may include the weights, "
-        "and performance values themselves unless the client is non-technical. "
+        "that likely would not impact the portfolio's markets. You may include the"
+        "performance values themselves in your commentary. "
+        "Do not mention weights if the client is non-technical. "
         "\nNote that all performance and weight values are in 0-1 scale, where 1 means 100%. "
-        "\n### Portfolio Holdings and Weights \n"
+        "Convert these values to percentage when you mention them in your commentary. "
+        "\nDO NOT just mention the trends (such as gains/loss in some sectors/stocks) without numbers "
+        "and some justifications backed by the texts. "
+        "\nWhen the client wants a commentary about their portfolio performance, you MUST focus on "
+        "the performance of the top contributors, detractors, performers, and underperformers "
+        "in the portfolio and the benchmark. "
+        "Also you should discuss why they performed well or poorly in comparison during the "
+        "given time period. "
+        "\n# Portfolio Holdings and Weights \n"
         "{portfolio_holdings}"
+        "\nNote that those holdings with negative weights are short positions. "
+        "Their effect on the portfolio is opposite to the effect of the long positions, meaning "
+        "that the holding going down in value is good for the portfolio. "
         "\n### Portfolio Geography Info\n"
         "{portfolio_geography_prompt}"
         "\n### Portfolio Performance\n"
-        "\nPortfolio performance overall:\n"
+        "\nPortfolio overall return:\n"
         "{portfolio_performance_by_overall}"
+        "'return' value is in 0-1 scale, where 1 means 100%. "
         "\nPortfolio performance by sector:\n"
         "{portfolio_performance_by_sector}"
-        "\nPortfolio performance monthly vs Benchmark:\n"
-        "{portfolio_performance_by_monthly}"
         "\nPortfolio performance daily vs Benchmark:\n"
         "{portfolio_performance_by_daily}"
         "\nPortfolio performance by security:\n"
         "{portfolio_performance_by_security}"
-        "\n### Portfolio vs Benchmark performance on stock level\n"
-        "\nIf client wants a commentary on the portfolio performance, you should focus on "
-        "the performance and news realted to top contributors and detractors in the "
-        "portfolio and the benchmark. "
+        "\n# Portfolio vs Benchmark performance on stock level\n"
+        "\nIf client wants a commentary on the portfolio performance, you MUST focus on "
+        "the performance and news related to top contributors and performers/underperformers in the "
+        "portfolio and the benchmark, and discuss why they performed well or poorly in comparison. "
         "Top contributors and detractors are the stocks that have the highest and lowest "
         "weighted returns in the portfolio and the benchmark, which can be found in the following "
         "tables. "
+        "Top performers and underperformers are the stocks that have the highest and lowest "
+        "individual returns in the portfolio and the benchmark. "
+        "If top performers/underperformers are not in the top contributors, you can mention both in your commentary. "
         "\nPerformance of top 5 positive contributors in the portfolio:\n"
         "{portfolio_performance_by_stock_positive}"
         "\nPerformance of top 5 negative contributors in the portfolio:\n"
@@ -156,12 +175,59 @@ PORTFOLIO_PROMPT = Prompt(
     ),
 )
 
+UNIVERSE_PERFORMANCE_PROMPT = Prompt(
+    name="UNIVERSE_PERFORMANCE_PROMPT",
+    template=(
+        "\n### Universe/Index Data Section"
+        "When the client wants a commentary about market or a given index performance, you MUST focus on "
+        "the performance of the top contributors, detractors, performers, and underperformers. "
+        "Also you should discuss why they performed well or poorly in comparison during the "
+        "given time period based on the provided themes/developments/news. "
+        "\nBelow is the performance of the index/universe that is relevant to the client's request. "
+        "You can mention this data in your commentary if it is relevant to the topics you are discussing, "
+        "such as market performance commentary, or if the client wants to know how the universe/index is performing. "
+        "DO NOT just mention the trends (such as gains/loss in some sectors/stocks) without numbers "
+        "and some justifications backed by the texts. "
+        "\n# Universe/Index Performance\n"
+        "\nNote that all performance and weight values are in 0-1 scale, where 1 means 100%. "
+        "Convert these values to percentage when you mention them in your commentary. "
+        "\nIf you want to mention any universe/index performance/return number in your commentary, "
+        "you MUST use these numbers, not the numbers from the texts or news. "
+        "\nUniverse performance overall:\n"
+        "{overall_performance}"
+        "\nUniverse performance by sector:\n"
+        "{sector_performance}"
+        "\nUniverse performance daily:\n"
+        "{daily_performance}"
+        "\n# Universe performance by security:\n"
+        "The following are the performance of the top 5 positive and negative contributors in the universe and "
+        "the top 5 performers and bottom 5 performers in the universe. "
+        "Contributors are the stocks that have the highest and lowest weighted returns in the universe, "
+        "and performers are the stocks that have the highest and lowest individual returns in the universe. "
+        "You MUST briefly discuss these performances in your commentary if client wants to know about market "
+        " or index performance. In your discussion, also mention why these stocks performed well or poorly "
+        "based on the provided themes/developments/news. "
+        "\nPerformance of top 5 positive contributors in the universe/index (based in weighted-return):\n"
+        "{best_contributors}"
+        "\nPerformance of top 5 negative contributors in the universe/index (based in weighted-return):\n"
+        "{worst_contributors}"
+        "\nPerformance of top 5 performers in the universe/index (based in individual return):\n"
+        "{best_performers}"
+        "\nPerformance of bottom 5 performers in the universe/index (based in individual return):\n"
+        "{worst_performers}"
+    ),
+)
+
+
 STOCKS_STATS_PROMPT = Prompt(
     name="STOCKS_STATS_PROMPT",
     template=(
+        "\n### Stock Statistics Section"
         "\nBelow is a list of the stocks that client mentioned in the request, along with "
-        "their statistics in the given time period. You can mention these performances in your "
+        "their performances in the given time period. You can mention these performances in your "
         "commentary if they are relevant to the topics you are discussing. "
+        "\nNote that all performance and weight values are in 0-1 scale, where 1 means 100%. "
+        "Convert these values to percentage when you mention them in your commentary. "
         "\n### Stock Statistics\n"
         "{stock_stats}"
     ),
@@ -171,6 +237,7 @@ STOCKS_STATS_PROMPT = Prompt(
 WATCHLIST_PROMPT = Prompt(
     name="WATCHLIST_PROMPT",
     template=(
+        "\n### Watchlist Stocks Section"
         "\nThe following are a set of stocks that are on client's watchlist, as well as some "
         "metadata. Please reference these stocks ONLY when they "
         "are explicitly mentioned in a topic. DO NOT MENTION THESE SPECIFIC COMPANIES "
@@ -185,6 +252,7 @@ WATCHLIST_PROMPT = Prompt(
 CLIENTELE_TYPE_PROMPT = Prompt(
     name="CLIENTELE_TYPE_PROMPT",
     template=(
+        "\n### Client Type Section\n"
         "\nBelow is a short description of who your clients are. Please don't mention this "
         "specifically, just use it to guide your language and tone, and to decide how "
         "topics relate to your portfolio. Also take very special note of any requests to "
@@ -235,6 +303,7 @@ CLIENTELE_TEXT_DICT = {
 WRITING_STYLE_PROMPT = Prompt(
     name="WRITING_STYLE_PROMPT",
     template=(
+        "\n### Writing Style Section\n"
         "\nBelow is a short description of how the commentary should be formatted. Do not "
         "mention this specifically, just use it to guide in how the commentary is formatted. "
         "\n### Writing Style\n"
@@ -242,26 +311,6 @@ WRITING_STYLE_PROMPT = Prompt(
     ),
 )
 
-FILTER_CITATIONS_PROMPT = Prompt(
-    name="FILTER_CITATIONS_PROMPT",
-    template=(
-        "Your task is to return the most important citations from a given inital list of citations, "
-        "specifically those used directly to write a given commentary. "
-        "Individual texts in your collection are delimited by ***, "
-        "and each one starts with a Text Number."
-        "Analyze the provided texts and the commentary result to identify these key citations. "
-        "You MUST be VERY SELECTIVE, only including sources directly referenced in the commentary. "
-        "Here is the initial list of citations: {citations}. "
-        "Here is the commentary result: {commentary_result}. "
-        "Below are the texts for your analysis, delimited by #####:\n"
-        "\n#####\n"
-        "{texts}"
-        "\n#####\n"
-        "Your response MUST ONLY be a list of integers with size less than 50. "
-        "Please provide the list of integers corresponding to the Text Numbers of the sources "
-        "used in the commentary. "
-    ),
-)
 
 CHOOSE_STATISTICS_PROMPT = Prompt(
     name="CHOOSE_STATISTICS_PROMPT",
@@ -322,28 +371,26 @@ WRITING_FORMAT_TEXT_DICT = {
 
 GET_COMMENTARY_INPUTS_DESCRIPTION = (
     "This function can be used when a client wants to write a commentary, article or summary of "
-    "market trends and/or specific topics."
+    "market trends and/or specific topics. "
     "This function collects and prepares all texts to be used by the write_commentary tool "
-    "for writing a commentary or short articles and market summaries. "
+    "for writing a commentary or short articles or market summaries. "
     "This function MUST only be used for write commentary tool and NO WHERE ELSE. "
-    "\nAdjust 'start_date' to get the text from that date based on client request. "
-    "If no 'start_date' is provided, the function will only get text in last month. "
+    "\n- 'date_range' is the date range for the commentary to be written. "
     "\n- 'market_trend' ONLY MUST be set to True when a client wants to know about "
     "general market updates, trends, news, or to collect macroeconomic themes. "
     "When client doesn't mention any thing related to general market updates, "
     "'market_trend' MUST be set to False. "
     "\n- 'topics' is a list of topics client mentioned in the request. "
     "\n- 'stock_ids' is a list of stock ids that need to get texts related to them. "
-    "YOU must always provide 'stock_ids' based on client request. "
     "If client explicitly mentioned any stocks, they MUST be provided as a list of StockIds. "
-    "If client want a commentary on market performance, 'stock_ids' MUST be top positive and negative "
-    "contributors in a stock universe like the S&P 500 as defualt universe. "
-    "If client wants a commentary on market impact on a portfolio performance, "
-    "'stock_ids' MUST be the top positive and negative contributors in the portfolio. "
     "DO NOT use 'stock_ids' directly from get_stock_universe without any filtering top contributors."
-    "\n- 'theme_num' is the number of top themes to be retrieved for the commentary."
-    "\n- 'theme_num' can be changed based on client request."
+    "\n- 'theme_num' is the number of top themes to be retrieved for the commentary. "
+    "It can be changed based on client request. "
     "\n- 'portfolio_id' can be provided if client wants a commentary based on a specific portfolio."
+    "\n- 'universe_name' is the name of the universe that is used write a commentary. "
+    "If client wants a commentary on market performance, 'universe_name' MUST be the name of the "
+    "stock universe like the S&P 500 as defualt universe. "
+    "If client wants a commentary on specific index or ETF, 'universe_name' MUST be the name of the index or ETF. "
 )
 
 WRITE_COMMENTARY_DESCRIPTION = (
@@ -351,31 +398,17 @@ WRITE_COMMENTARY_DESCRIPTION = (
     "market trends or specific market topics."
     "The function creates a concise summary based on a comprehensive analysis of the provided texts. "
     "It should not be used for writing other kinds of documents, if you are unsure, you should use "
-    "the summary tool, not this tool."
-    "The commentary will be written in a professional tone, "
-    "incorporating any specific instructions or preferences mentioned by the client during their interaction. "
+    "the summary tool, not this tool. "
     "The input to this function MUST be prepared by the get_commentary_inputs tool."
     "This function MUST NOT be used if get_commentary_inputs tool is not used. "
     "Additionally, only this tool MUST be used when user use phrases like 'tell me about', "
     "'write a commentary on', 'Share your thoughts', 'Give me the details on', "
     "'Provide some insight into', 'Describe', 'Give me an overview of', 'what do you think about', "
     "or any other similar phrases."
-    "\n- 'date_range' is the date range for the commentary. if date_range is provided for "
-    "get_commentary_inputs tool then it MUST be provided here as well. "
-    "The default date range is the last month."
     "\n- 'inputs' is the output of get_commentary_inputs function and MUST be provided. "
-    "It contains all the texts needed to write the commentary. "
-    "\n- 'stock_ids' is a list of stock ids that need to get texts related to them. "
-    "YOU must always provide 'stock_ids' based on client request. "
-    "If client explicitly mentioned any stocks, they MUST be provided as a list of StockIds. "
-    "If client want a commentary on market performance, 'stock_ids' MUST be top positive and negative "
-    "contributors in a stock universe like the S&P 500 as defualt universe. "
-    "If client wants a commentary on market impact on a portfolio performance, "
-    "'stock_ids' MUST be the top positive and negative contributors in the portfolio. "
-    "DO NOT use 'stock_ids' directly from get_stock_universe without any filtering top contributors."
+    "It contains all the texts and tables needed to write the commentary. "
     "\n- 'client_type' MUST be either 'Technical' or 'Simple'. Choose based on client's request. "
     "\n- 'writing_format' MUST be either 'Long', 'Short' or 'Bullets'. Choose based on client's request."
-    "\n- 'portfolio_id' can be provided if user wants a commentary based on a specific portfolio."
 )
 
 UPDATE_COMMENTARY_INSTRUCTIONS = (
@@ -390,25 +423,4 @@ UPDATE_COMMENTARY_INSTRUCTIONS = (
     "You must never, ever use the Append action for plans involving modifications of commentaries, "
     " even if the user is talking about `adding` to the commentary`. "
     "I repeat: Do not use the Append action for requests involving any kind of modification of commentaries."
-)
-
-
-SUMMARIZE_TEXT_PROMPT = Prompt(
-    name="SUMMARIZE_TEXT_PROMPT",
-    template=(
-        "As a professional summarizer, create a concise and comprehensive summary of the provided text "
-        "while adhering to these guidelines: "
-        "\nCraft a summary that is detailed, thorough, in-depth, while maintaining clarity and conciseness. "
-        "\nIncorporate main ideas and essential information, eliminating extraneous language and "
-        "focusing on critical aspects. "
-        "\nRely strictly on the provided text, without including external information. "
-        "\nFormat the summary in paragraph form for easy understanding. "
-        "\nEnsure that the summary is well-structured, coherent, and logically organized. "
-        "\nThe length of the summary MUST be less than 500 words in bullet point format. "
-        "\nSummary must start with a title showing type and main topic of the text. "
-        "\n###Text\n"
-        "Here is the text to be summarized: \n"
-        "{text}"
-        "\nNow, please create a summary of the provided text."
-    ),
 )
