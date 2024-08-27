@@ -29,6 +29,14 @@ async def generate_initial_preplan_response(chat_context):
     return "Hi this is Warren AI, how can I help you today?"
 
 
+async def check_first_prompt(chat_context):
+    return "yes"
+
+
+async def generate_input_update_no_action_response(chat_context):
+    return "I'm sorry, I don't understand. Can you please rephrase?"
+
+
 async def generate_name_for_agent(agent_id, chat_context, existing_names, gpt_service_stub):
     return "Macroeconomic News"
 
@@ -100,6 +108,10 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         mock_chatbot = MockChatBot.return_value
         mock_chatbot.generate_initial_preplan_response.side_effect = (
             generate_initial_preplan_response
+        )
+        mock_chatbot.check_first_prompt.side_effect = check_first_prompt
+        mock_chatbot.generate_input_update_no_action_response.side_effect = (
+            generate_input_update_no_action_response
         )
 
         mock_generate_name_for_agent.side_effect = generate_name_for_agent

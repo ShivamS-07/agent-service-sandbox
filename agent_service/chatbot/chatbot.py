@@ -4,6 +4,7 @@ from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
 from agent_service.chatbot.prompts import (
     AGENT_DESCRIPTION,
+    CHECK_FIRST_MAIN_PROMPT,
     COMPLETE_EXECUTION_MAIN_PROMPT,
     COMPLETE_EXECUTION_SYS_PROMPT,
     ERROR_REPLAN_POSTPLAN_MAIN_PROMPT,
@@ -33,7 +34,7 @@ from agent_service.chatbot.prompts import (
     NOTIFICATION_UPDATE_MAIN_PROMPT,
     NOTIFICATION_UPDATE_SYS_PROMPT,
 )
-from agent_service.GPT.constants import DEFAULT_SMART_MODEL
+from agent_service.GPT.constants import DEFAULT_SMART_MODEL, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.planner.planner_types import (
@@ -216,4 +217,10 @@ class Chatbot:
         )
         main_prompt = NON_RETRIABLE_ERROR_MAIN_PROMPT.format(agent_description=AGENT_DESCRIPTION)
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=120)
+        return result
+
+    async def check_first_prompt(self, chat_context: ChatContext) -> str:
+        main_prompt = CHECK_FIRST_MAIN_PROMPT.format(chat_context=chat_context.get_gpt_input())
+        sys_prompt = NO_PROMPT
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=60)
         return result

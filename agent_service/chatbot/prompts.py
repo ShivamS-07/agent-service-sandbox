@@ -13,6 +13,22 @@ AGENT_DESCRIPTION = (
     "Respond in personal tone, and do not sound like a robot. "
 )
 
+### Initial checking prompt
+CHECK_FIRST_MAIN_PROMPT_STR = (
+    "You are a financial analyst who has received a client message. "
+    "Your responsibility is to check the client message and determine if it is a FAQ-like request or not. "
+    "A FAQ-like request is a general question related to services, pricing, etc. "
+    "For example, general questions like 'what databases do you use?' or 'how do you get your data?' "
+    "How to use X, etc. "
+    "Other requests like the ones that client asks for specific analysis, report, etc. "
+    "are not considered as FAQ-like requests. "
+    "If the client message is a FAQ request, you should return 'no'. "
+    "If the client message is not a FAQ request, you should return 'yes'. "
+    "Here is the client message: {chat_context}"
+    "Now write your one-word response (yes/no): "
+)
+
+
 ### Initial Preplan Response
 
 INITIAL_PREPLAN_SYS_PROMPT_STR = (
@@ -167,7 +183,7 @@ INPUT_UPDATE_NO_ACTION_SYS_PROMPT_STR = (
     "You must say something to the client that is a reasonable response to what they have said, "
     "but does not promise any particular action on your part at this time. "
     "If user asks FAQ, or HOW-TO, or any other general question that the required data which is not available in the chat, "
-    "you must refer them to ask from their customer suppport representative. "
+    "you must refer them to ask from their customer suppport representative and ask if they have any other questions. "
     "General questions like 'what databases do you use?' or 'how do you get your data?' should be referred to customer support. "
     "Your total response should be no longer than 20 words. "
 )
@@ -362,6 +378,7 @@ NON_RETRIABLE_ERROR_SYS_PROMPT_STR = (
 )
 
 ### Dataclasses
+CHECK_FIRST_MAIN_PROMPT = Prompt(CHECK_FIRST_MAIN_PROMPT_STR, "CHECK_FIRST_MAIN_PROMPT")
 
 INITIAL_PREPLAN_SYS_PROMPT = Prompt(INITIAL_PREPLAN_SYS_PROMPT_STR, "INITIAL_PREPLAN_SYS_PROMPT")
 INITIAL_PREPLAN_MAIN_PROMPT = Prompt(INITIAL_PREPLAN_MAIN_PROMPT_STR, "INITIAL_PREPLAN_MAIN_PROMPT")

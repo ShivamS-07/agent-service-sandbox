@@ -361,11 +361,28 @@ class AgentServiceImpl:
                 return ChatWithAgentResponse(success=False, allow_retry=False)
         else:
             try:
+                # check if the first prompt is a analysis or general request that need to be refered to reps
                 LOGGER.info("Generating initial response from GPT (first prompt)")
                 chatbot = Chatbot(agent_id, gpt_service_stub=self.gpt_service_stub)
-                gpt_resp = await chatbot.generate_initial_preplan_response(
-                    chat_context=ChatContext(messages=[user_msg])
+                chat_context = ChatContext(messages=[user_msg])
+                # gather all the responses in parallel
+                check_first_prompt_resp, initial_preplan_resp, no_action_resp = (
+                    await gather_with_concurrency(
+                        [
+                            chatbot.check_first_prompt(chat_context=chat_context),
+                            chatbot.generate_initial_preplan_response(chat_context=chat_context),
+                            chatbot.generate_input_update_no_action_response(
+                                chat_context=chat_context
+                            ),
+                        ]
+                    )
                 )
+
+                if "yes" in check_first_prompt_resp.lower():
+                    gpt_resp = initial_preplan_resp
+
+                else:
+                    gpt_resp = no_action_resp
 
                 LOGGER.info("Inserting user's and GPT's messages to DB")
                 gpt_msg = Message(agent_id=agent_id, message=gpt_resp, is_user_message=False)
