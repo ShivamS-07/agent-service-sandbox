@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM 374053208103.dkr.ecr.us-west-2.amazonaws.com/boosted-python-base:0.0.19
 # add security updates
 RUN apt-get update
 RUN apt-get -s dist-upgrade | grep "^Inst" | grep -i securi | awk -F " " {'print $2'} | xargs apt-get install
