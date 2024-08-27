@@ -187,5 +187,7 @@ async def extract_citations_from_gpt_output(
             logger.warning(f"anchor {anchor} in text did not have corresponding citations")
 
         last_end = match.end()
+    if last_end != len(main_text):
+        final_text_bits.append(main_text[last_end:])
     final_text = "".join(final_text_bits)
     return final_text, final_citations
