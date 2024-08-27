@@ -42,6 +42,8 @@ from agent_service.endpoints.models import (
     GetAutocompleteItemsResponse,
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
+    GetDebugToolArgsResponse,
+    GetDebugToolResultResponse,
     GetMemoryContentResponse,
     GetPlanRunOutputResponse,
     GetSecureUserResponse,
@@ -788,23 +790,26 @@ class AgentServiceImpl:
         return GetPlanRunOutputResponse(outputs=outputs, agent_name=agent_name)
 
     async def get_agent_debug_info(self, agent_id: str) -> GetAgentDebugInfoResponse:
-        agent_owner_id: Optional[str] = await self.pg.get_agent_owner(agent_id)
-        plan_selections: List[Dict[str, Any]] = await self.ch.get_agent_debug_plan_selections(
-            agent_id=agent_id
-        )
-        all_generated_plans: List[Dict[str, Any]] = await self.ch.get_agent_debug_plans(
-            agent_id=agent_id
-        )
-        worker_sqs_log: Dict[str, Any] = await self.ch.get_agent_debug_worker_sqs_log(
-            agent_id=agent_id
-        )
-        tool_calls: Dict[str, Any] = await self.ch.get_agent_debug_tool_calls(agent_id=agent_id)
-        cost_info: Dict[str, Any] = await self.ch.get_agent_debug_cost_info(agent_id=agent_id)
-        gpt_service_info = {}
-        try:
-            gpt_service_info = await self.ch.get_agent_debug_gpt_service_info(agent_id=agent_id)
-        except Exception:
-            LOGGER.info(f"Unable to get gpt_service_info for {agent_id=}: {traceback.format_exc()}")
+        tasks = [
+            self.pg.get_agent_owner(agent_id),
+            self.ch.get_agent_debug_plan_selections(agent_id=agent_id),
+            self.ch.get_agent_debug_plans(agent_id=agent_id),
+            self.ch.get_agent_debug_worker_sqs_log(agent_id=agent_id),
+            self.ch.get_agent_debug_tool_calls(agent_id=agent_id),
+            self.ch.get_agent_debug_cost_info(agent_id=agent_id),
+            self.ch.get_agent_debug_gpt_service_info(agent_id=agent_id),
+        ]
+
+        results = await gather_with_concurrency(tasks)
+        (
+            agent_owner_id,
+            plan_selections,
+            all_generated_plans,
+            worker_sqs_log,
+            tool_calls,
+            cost_info,
+            gpt_service_info,
+        ) = results
         tool_tips = Tooltips(
             create_execution_plans="Contains one entry for every 'create_execution_plan' SQS "
             "message processed, grouped by plan_id. Each entry will include "
@@ -876,6 +881,14 @@ class AgentServiceImpl:
             gpt_service_info=gpt_service_info,
         )
         return GetAgentDebugInfoResponse(tooltips=tool_tips, debug=debug)
+
+    async def get_debug_tool_args(self, replay_id: str) -> GetDebugToolArgsResponse:
+        args = await self.ch.get_debug_tool_args(replay_id=replay_id)
+        return GetDebugToolArgsResponse(args=json.loads(args))
+
+    async def get_debug_tool_result(self, replay_id: str) -> GetDebugToolResultResponse:
+        result = await self.ch.get_debug_tool_result(replay_id=replay_id)
+        return GetDebugToolResultResponse(result=json.loads(result))
 
     async def get_info_for_test_suite_run(
         self, service_version: str

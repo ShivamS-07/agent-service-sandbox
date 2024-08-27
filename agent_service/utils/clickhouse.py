@@ -689,25 +689,48 @@ class Clickhouse(AsyncClickhouseBase):
     async def get_agent_debug_gpt_service_info(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         select count(*) as num_queries, min(client_timestamp_utc) as first_request_sent_utc,
-max(client_timestamp_utc) as last_request_sent_utc,
-max(response_timestamp_utc) as last_request_completed_utc,
-round(median(duration_seconds), 2) as median_duration_seconds,
-round(median(wait_time_seconds), 2) as median_wait_time_seconds,
-round(max(wait_time_seconds), 2) as max_wait_time_seconds,
-round(max(duration_seconds), 2) as max_duration_seconds,
-model_id,
-main_prompt_name
-
-from llm.gpt_service_requests gsr
-where agent_id =  %(agent_id)s
-group by main_prompt_name, model_id
-order by num_queries desc"""
-        rows = await self.generic_read(sql=sql, params={"agent_id": agent_id})
+        max(client_timestamp_utc) as last_request_sent_utc,
+        max(response_timestamp_utc) as last_request_completed_utc,
+        round(median(duration_seconds), 2) as median_duration_seconds,
+        round(median(wait_time_seconds), 2) as median_wait_time_seconds,
+        round(max(wait_time_seconds), 2) as max_wait_time_seconds,
+        round(max(duration_seconds), 2) as max_duration_seconds,
+        model_id,
+        main_prompt_name
+        from llm.gpt_service_requests gsr
+        where agent_id =  %(agent_id)s
+        group by main_prompt_name, model_id
+        order by num_queries desc
+        """
         result = {}
-        for row in rows:
-            result[f"prompt_id={row['main_prompt_name']}"] = row
-            del row["main_prompt_name"]
+        try:
+            rows = await self.generic_read(sql=sql, params={"agent_id": agent_id})
+            for row in rows:
+                result[f"prompt_id={row['main_prompt_name']}"] = row
+                del row["main_prompt_name"]
+        except Exception:
+            logger.info(f"Unable to get gpt_service_info for {agent_id=}: {traceback.format_exc()}")
         return result
+
+    async def get_debug_tool_args(self, replay_id: str) -> str:
+        sql = """
+        select args from agent.tool_calls
+        where replay_id =  %(replay_id)s
+        """
+        res = await self.generic_read(sql, {"replay_id": replay_id})
+        if not res:
+            return ""
+        return res[0]["args"]
+
+    async def get_debug_tool_result(self, replay_id: str) -> str:
+        sql = """
+        select result from agent.tool_calls
+        where replay_id =  %(replay_id)s
+        """
+        res = await self.generic_read(sql, {"replay_id": replay_id})
+        if not res:
+            return ""
+        return res[0]["result"]
 
     async def get_agent_debug_worker_sqs_log(self, agent_id: str) -> Dict[str, Any]:
         sql = """

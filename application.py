@@ -64,6 +64,8 @@ from agent_service.endpoints.models import (
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
     GetCitationDetailsResponse,
+    GetDebugToolArgsResponse,
+    GetDebugToolResultResponse,
     GetMemoryContentResponse,
     GetSecureUserResponse,
     GetTeamAccountsResponse,
@@ -903,6 +905,36 @@ async def get_agent_debug_info(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
     return await application.state.agent_service_impl.get_agent_debug_info(agent_id=agent_id)
+
+
+@router.get(
+    "/debug/args/{replay_id}",
+    response_model=GetDebugToolArgsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_agent_debug_args(
+    replay_id: str, user: User = Depends(parse_header)
+) -> GetDebugToolArgsResponse:
+    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
+        )
+    return await application.state.agent_service_impl.get_debug_tool_args(replay_id=replay_id)
+
+
+@router.get(
+    "/debug/result/{replay_id}",
+    response_model=GetDebugToolResultResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_agent_debug_result(
+    replay_id: str, user: User = Depends(parse_header)
+) -> GetDebugToolResultResponse:
+    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
+        )
+    return await application.state.agent_service_impl.get_debug_tool_result(replay_id=replay_id)
 
 
 @router.get(

@@ -180,6 +180,16 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         self.assertIsNotNone(debug_info.debug.run_execution_plans)
         self.assertIsNotNone(debug_info.debug.create_execution_plans)
 
+    def test_get_agent_debug_args(self):
+        replay_id = "aa35ccf6-594a-4b34-8255-ca0dfd821131"
+        debug_args = self.get_debug_tool_args(replay_id=replay_id)
+        self.assertIsNotNone(debug_args)
+
+    def test_get_agent_debug_result(self):
+        replay_id = "aa35ccf6-594a-4b34-8255-ca0dfd821131"
+        debug_result = self.get_debug_tool_result(replay_id=replay_id)
+        self.assertIsNotNone(debug_result)
+
     def test_get_test_run_info(self):
         service_version = "0.0.544"
         test_run_info = self.get_info_for_test_suite_run(

@@ -581,6 +581,14 @@ class GetAgentDebugInfoResponse(BaseModel):
     tooltips: Tooltips
 
 
+class GetDebugToolArgsResponse(BaseModel):
+    args: Dict[str, Any]
+
+
+class GetDebugToolResultResponse(BaseModel):
+    result: Dict[str, Any]
+
+
 ####################################################################################################
 # Memory Item
 ####################################################################################################
