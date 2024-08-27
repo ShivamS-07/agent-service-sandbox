@@ -18,6 +18,8 @@ from nlp_service_proto_v1.commentary_pb2 import (
 )
 from nlp_service_proto_v1.earnings_impacts_pb2 import (
     EventInfo,
+    GenerateEarningsCallFromEventsRequest,
+    GenerateEarningsCallFromEventsResponse,
     GetEarningsCallEventsRequest,
     GetEarningsCallEventsResponse,
     GetEarningsCallTranscriptsRequest,
@@ -233,6 +235,23 @@ async def get_earnings_call_transcripts(
         request = GetEarningsCallTranscriptsRequest(earnings_event_info=events)
         response: GetEarningsCallTranscriptsResponse = await stub.GetEarningCallTranscripts(
             request, metadata=get_default_grpc_metadata(user_id=user_id)
+        )
+        if response.status.code != 0:
+            raise ValueError(f"Failed to get Earning Transcripts: {response.status.message}")
+        return response
+
+
+@grpc_retry
+@async_perf_logger
+async def get_earnings_call_summaries_with_real_time_gen(
+    user_id: str, events: List[EventInfo]
+) -> GenerateEarningsCallFromEventsResponse:
+    with _get_service_stub() as stub:
+        request = GenerateEarningsCallFromEventsRequest(earnings_event_info=events)
+        response: GenerateEarningsCallFromEventsResponse = (
+            await stub.GenerateEarningsCallFromEvents(
+                request, metadata=get_default_grpc_metadata(user_id=user_id)
+            )
         )
         if response.status.code != 0:
             raise ValueError(f"Failed to get Earning Transcripts: {response.status.message}")

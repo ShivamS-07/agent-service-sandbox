@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import uuid
 from collections import defaultdict
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 from nlp_service_proto_v1.earnings_impacts_pb2 import EventInfo
@@ -10,6 +11,7 @@ from agent_service.external.feature_svc_client import get_earnings_releases_in_r
 from agent_service.external.grpc_utils import timestamp_to_datetime
 from agent_service.external.nlp_svc_client import (
     get_earnings_call_events,
+    get_earnings_call_summaries_with_real_time_gen,
     get_earnings_call_transcripts,
     get_latest_earnings_call_events,
 )
@@ -36,6 +38,8 @@ from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc, parse_date_str_in_utc
 from agent_service.utils.postgres import get_psql
+
+MAX_ALLOWED_EARNINGS_FOR_REAL_TIME_GEN = 30
 
 
 class GetImpactingStocksInput(ToolArgs):
@@ -79,18 +83,20 @@ async def get_impacting_stocks(
 
 
 async def _get_earnings_summary_helper(
-    user_id: str,
+    context: PlanRunContext,
     stock_ids: List[StockID],
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
     allow_simple_generated_earnings: bool = False,
 ) -> Dict[StockID, List[StockEarningsText]]:
+    user_id = context.user_id
     db = get_psql()
     if allow_simple_generated_earnings:
         simple_generation_clause = ""
     else:
         simple_generation_clause = "AND fully_generated = TRUE"
 
+    no_empty_summary_clause = "AND summary != '{}'"
     earning_summary_sql = f"""SELECT DISTINCT ON (gbi_id, year, quarter)
     summary_id::TEXT,
     summary,
@@ -103,7 +109,7 @@ async def _get_earnings_summary_helper(
         nlp_service.earnings_call_summaries
     WHERE
         gbi_id = ANY(%(gbi_ids)s)
-        AND (status_msg = 'COMPLETE' OR status_msg IS NULL)
+        AND (status_msg = 'COMPLETE' OR status_msg IS NULL) {no_empty_summary_clause}
         {simple_generation_clause}
     ORDER BY
         gbi_id,
@@ -194,14 +200,56 @@ async def _get_earnings_summary_helper(
             events_without_summaries.append(event)
 
     # Get the transcripts for the events without summaries
-    if len(events_without_summaries) > 0:
+    if len(events_without_summaries) == 0:
+        finalized_output = output
+    elif len(events_without_summaries) < MAX_ALLOWED_EARNINGS_FOR_REAL_TIME_GEN:
+        await tool_log(
+            log=(
+                f"Earning summaries not available for {len(events_without_summaries)} earning calls, "
+                "generating them now, this may take a couple minutes..."
+            ),
+            context=context,
+        )
+        finalized_output = await generate_missing_summaries(
+            user_id, events_without_summaries, gbi_id_stock_id_lookup, output
+        )
+    else:
+        await tool_log(
+            log=(
+                f"Too many unavailable earning summaries ({len(events_without_summaries)}), "
+                "using earning call transcripts inplace of the missing summaries for now..."
+            ),
+            context=context,
+        )
         finalized_output = await get_earnings_full_transcripts(
             user_id, stock_ids, events_without_summaries, event_id_to_stock_id_lookup, output
         )
-    else:
-        finalized_output = output
-
     return finalized_output
+
+
+async def generate_missing_summaries(
+    user_id: str,
+    events: List[EventInfo],
+    gbi_id_stock_id_lookup: Dict[int, StockID],
+    initial_stock_earnings_text_dict: Optional[Dict[StockID, List[StockEarningsText]]] = None,
+) -> Dict[StockID, List[StockEarningsText]]:
+    if initial_stock_earnings_text_dict is None:
+        stock_earnings_text_dict: Dict[StockID, List[StockEarningsText]] = defaultdict(list)
+    else:
+        stock_earnings_text_dict = deepcopy(initial_stock_earnings_text_dict)
+
+    resp = await get_earnings_call_summaries_with_real_time_gen(user_id, events)
+    for summary_event in resp.earnings_summaries:
+        stock_id = gbi_id_stock_id_lookup[summary_event.gbi_id]
+        stock_text = StockEarningsSummaryText(
+            id=summary_event.summary_id,
+            stock_id=stock_id,
+            timestamp=timestamp_to_datetime(summary_event.earnings_date),
+            year=summary_event.year,
+            quarter=summary_event.quarter,
+        )
+        stock_earnings_text_dict[stock_id].append(stock_text)
+    return stock_earnings_text_dict
 
 
 async def get_earnings_full_transcripts(
@@ -227,7 +275,7 @@ async def get_earnings_full_transcripts(
     if initial_stock_earnings_text_dict is None:
         stock_earnings_text_dict: Dict[StockID, List[StockEarningsText]] = defaultdict(list)
     else:
-        stock_earnings_text_dict = initial_stock_earnings_text_dict
+        stock_earnings_text_dict = deepcopy(initial_stock_earnings_text_dict)
 
     ch = Clickhouse()
     transcript_query_result = await ch.generic_read(
@@ -256,49 +304,50 @@ async def get_earnings_full_transcripts(
             # Not in database, need to grab from nlp_service endpoint
             missing_events_in_db.append(event)
 
-    # Hit an nlp_service endpoint to grab earnings that were not stored in the db
-    transcripts_response = await get_earnings_call_transcripts(user_id, missing_events_in_db)
+    if len(missing_events_in_db) > 0:
+        # Hit an nlp_service endpoint to grab earnings that were not stored in the db
+        transcripts_response = await get_earnings_call_transcripts(user_id, missing_events_in_db)
 
-    # Create an event_id lookup for year, quarter (these are fiscal as they are taken direct from aiera)
-    event_year_quarter_lookup = {
-        event.event_id: {"year": event.year, "quarter": event.quarter}
-        for event in missing_events_in_db
-    }
+        # Create an event_id lookup for year, quarter (these are fiscal as they are taken direct from aiera)
+        event_year_quarter_lookup = {
+            event.event_id: {"year": event.year, "quarter": event.quarter}
+            for event in missing_events_in_db
+        }
 
-    # Insert the missing entries and create StockEarningsText entries to map to them
-    records_to_upload_to_db = []
-    for transcript_data in transcripts_response.transcripts_data:
-        stock_id = event_id_to_stock_id_lookup[transcript_data.event_id]
-        event_id = transcript_data.event_id
-        publish_time = timestamp_to_datetime(transcript_data.earnings_date)
+        # Insert the missing entries and create StockEarningsText entries to map to them
+        records_to_upload_to_db = []
+        for transcript_data in transcripts_response.transcripts_data:
+            stock_id = event_id_to_stock_id_lookup[transcript_data.event_id]
+            event_id = transcript_data.event_id
+            publish_time = timestamp_to_datetime(transcript_data.earnings_date)
 
-        year = event_year_quarter_lookup[event_id]["year"]
-        quarter = event_year_quarter_lookup[event_id]["quarter"]
+            year = event_year_quarter_lookup[event_id]["year"]
+            quarter = event_year_quarter_lookup[event_id]["quarter"]
 
-        transcript_entry_id = uuid.uuid4()
-        records_to_upload_to_db.append(
-            {
-                "id": transcript_entry_id,
-                "gbi_id": stock_id.gbi_id,
-                "event_id": event_id,
-                "earnings_date": publish_time,
-                "fiscal_year": year,
-                "fiscal_quarter": quarter,
-                "transcript": transcript_data.transcript,
-            }
-        )
-        stock_earnings_text_dict[stock_id].append(
-            StockEarningsTranscriptText(
-                id=str(transcript_entry_id),
-                stock_id=stock_id,
-                timestamp=publish_time,
+            transcript_entry_id = uuid.uuid4()
+            records_to_upload_to_db.append(
+                {
+                    "id": transcript_entry_id,
+                    "gbi_id": stock_id.gbi_id,
+                    "event_id": event_id,
+                    "earnings_date": publish_time,
+                    "fiscal_year": year,
+                    "fiscal_quarter": quarter,
+                    "transcript": transcript_data.transcript,
+                }
             )
-        )
+            stock_earnings_text_dict[stock_id].append(
+                StockEarningsTranscriptText(
+                    id=str(transcript_entry_id),
+                    stock_id=stock_id,
+                    timestamp=publish_time,
+                )
+            )
 
-    if records_to_upload_to_db:
-        await ch.multi_row_insert(
-            table_name="company_earnings.full_earning_transcripts", rows=records_to_upload_to_db
-        )
+        if records_to_upload_to_db:
+            await ch.multi_row_insert(
+                table_name="company_earnings.full_earning_transcripts", rows=records_to_upload_to_db
+            )
     return stock_earnings_text_dict
 
 
@@ -390,7 +439,11 @@ async def get_earnings_call_summaries(
         end_date = None
 
     topic_lookup = await _get_earnings_summary_helper(
-        context.user_id, args.stock_ids, start_date, end_date, True
+        context,
+        args.stock_ids,
+        start_date,
+        end_date,
+        True,
     )
     output: List[StockEarningsText] = []
     for topic_list in topic_lookup.values():
@@ -410,13 +463,14 @@ async def get_earnings_call_summaries(
     await tool_log(
         log=f"Found {num_earning_call_summaries} earnings call summaries", context=context
     )
-    await tool_log(
-        log=(
-            f"Summaries unavailable for some companies, found {num_earning_call_transcripts} "
-            "earning call transcripts instead"
-        ),
-        context=context,
-    )
+    if num_earning_call_transcripts > 0:
+        await tool_log(
+            log=(
+                f"Summaries unavailable for some companies, found {num_earning_call_transcripts} "
+                "earning call transcripts instead"
+            ),
+            context=context,
+        )
 
     return output
 
