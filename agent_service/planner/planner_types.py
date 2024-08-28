@@ -10,9 +10,18 @@ from agent_service.io_type_utils import ComplexIOBase, IOType, io_type
 from agent_service.io_types.text import Text
 
 
-@dataclass(frozen=True, eq=True)
-class Variable:
+class Variable(BaseModel):
     var_name: str
+    # For variables that are lists, allow a constant index
+    index: Optional[int] = None
+
+    # Just used for type checking, otherwise not important
+    var_type: Optional[Any] = Field(exclude=True, default=None)
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, Variable):
+            return False
+        return (self.var_name, self.index) == (value.var_name, value.index)
 
 
 # Represents a tool's arguments that have had the literals resolved. Variable
@@ -61,16 +70,44 @@ class ToolExecutionNode(BaseModel):
         # Make sure to load variables into their proper class
         for key, val in args.items():
             if isinstance(val, dict) and "var_name" in val:
-                args[key] = Variable(var_name=val["var_name"])
+                args[key] = Variable(var_name=val["var_name"], index=val.get("index"))
             elif isinstance(val, list):
                 for i, elem in enumerate(val):
                     if isinstance(elem, dict) and "var_name" in elem:
-                        args[key][i] = Variable(var_name=elem["var_name"])
+                        args[key][i] = Variable(var_name=elem["var_name"], index=elem.get("index"))
 
         return args
 
     def get_plan_step_str(self) -> str:
         return f"{self.output_variable_name} = {self.tool_name}({self.convert_args()})  # {self.description}"
+
+    @staticmethod
+    def _resolve_single_arg(
+        val: Union[Variable, IOType], variable_lookup: Dict[str, IOType]
+    ) -> IOType:
+        if isinstance(val, Variable):
+            output_val = variable_lookup[val.var_name]
+            if val.index is not None and isinstance(output_val, list):
+                # Handle the case of indexing into a variable
+                output_val = output_val[val.index]
+        else:
+            output_val = val
+        return output_val
+
+    def resolve_arguments(self, variable_lookup: Dict[str, IOType]) -> Dict[str, IOType]:
+        resolved_args: Dict[str, IOType] = {}
+        for arg, val in self.args.items():
+            if isinstance(val, Variable):
+                resolved_args[arg] = self._resolve_single_arg(val, variable_lookup)
+            elif isinstance(val, list):
+                actual_list = []
+                for item in val:
+                    actual_list.append(self._resolve_single_arg(item, variable_lookup))
+                resolved_args[arg] = actual_list
+            else:
+                resolved_args[arg] = val
+
+        return resolved_args
 
 
 class PlanStatus(enum.StrEnum):

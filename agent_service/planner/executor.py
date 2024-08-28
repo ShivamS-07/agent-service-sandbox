@@ -31,7 +31,6 @@ from agent_service.planner.planner_types import (
     PlanStatus,
     RunMetadata,
     ToolExecutionNode,
-    Variable,
 )
 from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext, Message, PlanRunContext
@@ -189,22 +188,7 @@ async def run_execution_plan(
 
         tool = ToolRegistry.get_tool(step.tool_name)
         # First, resolve the variables
-        resolved_args = {}
-        for arg, val in step.args.items():
-            if isinstance(val, Variable):
-                variable_value = variable_lookup[val.var_name]
-                resolved_args[arg] = variable_value
-            elif isinstance(val, list):
-                actual_list = []
-                for item in val:
-                    if isinstance(item, Variable):
-                        variable_value = variable_lookup[item.var_name]
-                        actual_list.append(variable_value)
-                    else:
-                        actual_list.append(item)
-                resolved_args[arg] = actual_list
-            else:
-                resolved_args[arg] = val
+        resolved_args = step.resolve_arguments(variable_lookup=variable_lookup)
 
         # Create the context
         context.task_id = step.tool_task_id

@@ -205,6 +205,19 @@ def get_test_registry() -> Type[ToolRegistry]:
 
     # profit margin example
 
+    class GetNamesOfSingleStockInput(ToolArgs):
+        stock_id: int
+
+    @tool(
+        description="Gets the name of the stock indicated by the stock_id",
+        category=ToolCategory.STOCK,
+        tool_registry=TestRegistry,
+    )
+    async def get_name_of_single_stock(
+        args: GetNamesOfSingleStockInput, context: PlanRunContext
+    ) -> str:
+        return ""
+
     class GetNamesOfStocksInput(ToolArgs):
         stock_ids: List[int]
 
@@ -545,6 +558,25 @@ class TestPlans(IsolatedAsyncioTestCase):
                     is_output_node=False,
                 ),
                 ToolExecutionNode(
+                    tool_name="get_news_developments_about_companies",
+                    args={
+                        "stock_ids": [Variable(var_name="stock_ids", index=0)],
+                        "start_date": Variable(var_name="start_date"),
+                    },
+                    description="Get news developments for only the first stock",
+                    output_variable_name="unused",
+                    is_output_node=False,
+                ),
+                ToolExecutionNode(
+                    tool_name="get_name_of_single_stock",
+                    args={
+                        "stock_id": Variable(var_name="stock_ids", index=0),
+                    },
+                    description="Gets the name of the stock indicated by the stock_id",
+                    output_variable_name="unused2",
+                    is_output_node=False,
+                ),
+                ToolExecutionNode(
                     tool_name="prepare_output",
                     args={"object_to_output": [Variable(var_name="summary")], "title": "test"},
                     description="Output the result",
@@ -710,6 +742,18 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
                 description="Summarize the news descriptions into a single summary text",
             ),
             ParsedStep(
+                output_var="unused",
+                function="get_news_developments_about_companies",
+                arguments={"stock_ids": "[stock_ids[0]]", "start_date": "start_date"},
+                description="Get news developments for only the first stock",
+            ),
+            ParsedStep(
+                output_var="unused2",
+                function="get_name_of_single_stock",
+                arguments={"stock_id": "stock_ids[0]"},
+                description="Gets the name of the stock indicated by the stock_id",
+            ),
+            ParsedStep(
                 output_var="result",
                 function="prepare_output",
                 arguments={"object_to_output": "summary", "title": '"test"'},
@@ -765,6 +809,25 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
                 args={"texts": Variable(var_name="filtered_news")},
                 description="Summarize the news descriptions into a single summary text",
                 output_variable_name="summary",
+                is_output_node=False,
+            ),
+            ToolExecutionNode(
+                tool_name="get_news_developments_about_companies",
+                args={
+                    "stock_ids": [Variable(var_name="stock_ids", index=0)],
+                    "start_date": Variable(var_name="start_date"),
+                },
+                description="Get news developments for only the first stock",
+                output_variable_name="unused",
+                is_output_node=False,
+            ),
+            ToolExecutionNode(
+                tool_name="get_name_of_single_stock",
+                args={
+                    "stock_id": Variable(var_name="stock_ids", index=0),
+                },
+                description="Gets the name of the stock indicated by the stock_id",
+                output_variable_name="unused2",
                 is_output_node=False,
             ),
             ToolExecutionNode(

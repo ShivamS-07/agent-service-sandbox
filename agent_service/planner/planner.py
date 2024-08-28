@@ -3,7 +3,7 @@ import asyncio
 import datetime
 import json
 import traceback
-from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
 from uuid import uuid4
 
 from agent_service.chatbot.chatbot import Chatbot
@@ -646,10 +646,49 @@ class Planner:
         except ValueError:
             return None
 
+    def _try_parse_indexer(
+        self, var_name: str, variable_lookup: Dict[str, Type[IOType]]
+    ) -> Optional[Variable]:
+        components = var_name.split("[")
+        if len(components) != 2:
+            return None
+        list_var_name = components[0]
+        index_constant = components[1]
+        if not index_constant.endswith("]"):
+            return None
+        if list_var_name not in variable_lookup:
+            return None
+        list_type = variable_lookup[list_var_name]
+        if not get_origin(list_type) in (List, list):
+            raise ExecutionPlanParsingError(
+                f"Variable '{list_var_name}' is not a list so cannot be indexed!"
+            )
+
+        # This gets the generic type out of the list (e.g. List[int] -> int).
+        # This is the type of the value that is indexed, so it is the type we want to return.
+        inner_type = get_args(list_type)[0]
+        index_constant = index_constant.removesuffix("]")
+        # At this point, the list variable is stored in `list_var_name`, and the
+        # index is stored in `index_constant`
+        index_int = self._try_parse_int_literal(index_constant)
+        if index_int is None:
+            raise ExecutionPlanParsingError(
+                (
+                    f"List variable '{list_var_name}' has invalid indexer "
+                    f"'{index_constant}', must be integer constant!"
+                )
+            )
+        return Variable(var_name=list_var_name, var_type=inner_type, index=index_int)
+
     def _try_parse_variable(
         self, var_name: str, variable_lookup: Dict[str, Type[IOType]]
-    ) -> Optional[Type[IOType]]:
-        return variable_lookup.get(var_name)
+    ) -> Optional[Variable]:
+        if "[" in var_name:
+            return self._try_parse_indexer(var_name=var_name, variable_lookup=variable_lookup)
+        var_type = variable_lookup.get(var_name)
+        if not var_type:
+            return None
+        return Variable(var_name=var_name, var_type=var_type)
 
     def _try_parse_primitive_literal(
         self, val: str, expected_type: Optional[Type]
@@ -684,16 +723,16 @@ class Planner:
         # First try to parse as a literal
         output = self._try_parse_primitive_literal(val=val_or_name, expected_type=expected_type)
         if output is None:
-            var_type = self._try_parse_variable(
+            variable = self._try_parse_variable(
                 var_name=val_or_name, variable_lookup=variable_lookup
             )
-            if var_type is None:
+            if variable is None:
                 return None
-            if not check_type_is_valid(var_type, expected_type):
+            if not check_type_is_valid(variable.var_type, expected_type):
                 raise ExecutionPlanParsingError(
-                    f"Variable {val_or_name} is invalid type, got {var_type}, expecting {expected_type}."
+                    f"Variable {val_or_name} is invalid type, got {variable.var_type}, expecting {expected_type}."
                 )
-            output = Variable(var_name=val_or_name)
+            output = variable
 
         return output
 
@@ -718,6 +757,12 @@ class Planner:
                         output.append(str(val))
                 elif isinstance(item, ast.Name):
                     output.append(item.id)
+                elif isinstance(item, ast.Subscript):
+                    # We're going to parse this later
+                    output.append(f"{item.value.id}[{item.slice.value}]")  # type: ignore
+                elif isinstance(item, ast.Attribute):
+                    # We're going to parse this later (TODO)
+                    output.append(f"{item.value.id}.{item.attr}")  # type: ignore
                 else:
                     raise ExecutionPlanParsingError(
                         f"Value '{val}' has list with non supported syntax"
@@ -811,9 +856,9 @@ class Planner:
                 parsed_args[arg] = parsed_val
                 continue
 
-            parsed_variable_type = self._try_parse_variable(val, variable_lookup=variable_lookup)
+            variable = self._try_parse_variable(val, variable_lookup=variable_lookup)
             # First check for an undefined variable
-            if not parsed_variable_type:
+            if not variable:
                 logger.warning(
                     f"{tool.name}' has undefined variable argument '{val}]' for arg '{arg}"
                     f", {variable_lookup=}"
@@ -822,14 +867,14 @@ class Planner:
                     f"Tool '{tool.name}' has undefined variable argument '{val}' for arg '{arg}'."
                 )
             # Next, check if the variable's type matches the expected type for the argument
-            if not check_type_is_valid(actual=parsed_variable_type, expected=arg_info.annotation):
+            if not check_type_is_valid(actual=variable.var_type, expected=arg_info.annotation):
                 raise ExecutionPlanParsingError(
                     (
                         f"Tool '{tool.name}' has a type mismatch for arg '{str(arg)}',"
-                        f" expected '{arg_info.annotation}' but found '{val}: {parsed_variable_type}'"
+                        f" expected '{arg_info.annotation}' but found '{val}: {variable.var_type}'"
                     )
                 )
-            parsed_args[arg] = Variable(var_name=val)
+            parsed_args[arg] = variable
 
         return parsed_args
 
