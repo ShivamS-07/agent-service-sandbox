@@ -981,14 +981,6 @@ class AsyncDB:
         )
         return [AgentFeedback(**row) for row in rows]
 
-    async def get_user_info(self, user_id: str) -> Dict[str, Any]:
-        sql = """
-        select name, id::varchar, cognito_username, email
-        from user_service.users where id::varchar = %(user_id)s
-        """
-        rows = await self.pg.generic_read(sql, {"user_id": user_id})
-        return rows[0]
-
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:
     if isinstance(db, Postgres):

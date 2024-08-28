@@ -77,6 +77,7 @@ from agent_service.endpoints.models import (
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
 from agent_service.external.user_svc_client import (
+    get_org,
     get_users,
     list_team_members,
     update_user,
@@ -436,17 +437,25 @@ class AgentServiceImpl:
                     LOGGER.exception("Failed to kick off execution plan creation")
                     return ChatWithAgentResponse(success=False, allow_retry=False)
             try:
-                user_info = await self.pg.get_user_info(user_id=user.user_id)
-                user_email = user_info.get("email", "")
+                user_info = (
+                    await get_users(
+                        user_id=user.user_id, user_ids=[user.user_id], include_user_enabled=False
+                    )
+                )[0]
+                org_id = user_info.organization_membership.organization_id.id
+                org_info = await get_org(user_id=user.user_id, org_id=org_id)
+                user_email = user_info.email
                 if (
                     not user_email.endswith("@boosted.ai")
                     and not user_email.endswith("@gradientboostedinvestments.com")
                     and user.real_user_id == user.user_id
                 ):
-                    del user_info["email"]  # we don't need to include this
                     user_info_slack_string = ""
-                    for key, value in user_info.items():
-                        user_info_slack_string += f"\n{key}: {value}"
+                    user_info_slack_string += f"\ncognito_username: {user_info.cognito_username}"
+                    user_info_slack_string += f"\nname: {user_info.name}"
+                    user_info_slack_string += f"\nuser_id: {user.user_id}"
+                    user_info_slack_string += f"\norganization_name: {org_info.organization.name}"
+                    user_info_slack_string += f"\norganization_id: {org_id}"
                     if user.fullstory_link:
                         user_info_slack_string += f"\nfullstory_link: {user.fullstory_link}"
                     six_hours_from_now = int(time.time() + (60 * 60 * 6))
