@@ -175,11 +175,12 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         text_type = ThemeNewsDevelopmentArticlesText.text_type
         if len(text_mapping[text_type]) > MAX_TOTAL_ARTICLES_PER_COMMENTARY:
             text_mapping[text_type] = text_mapping[text_type][:MAX_TOTAL_ARTICLES_PER_COMMENTARY]
-    # show number of texts of each type
-    await tool_log(
-        log=f"Texts used for commentary: {', '.join([f'{k}: {len(v)}' for k, v in text_mapping.items()])}",
-        context=context,
-    )
+    # show number of texts of each type if there are values in text_mapping
+    if text_mapping:
+        await tool_log(
+            log=f"Texts used for commentary: {', '.join([f'{k}: {len(v)}' for k, v in text_mapping.items()])}",
+            context=context,
+        )
     # convert text_mapping to list of texts
     all_text_group = TextGroup(
         val=[text for text_list in text_mapping.values() for text in text_list]
@@ -482,7 +483,7 @@ async def get_commentary_inputs(
                 )
                 # add portfolio performance table to tables
                 tables.append(portfolio_performance_table)
-                if performance_level == "security":
+                if performance_level == "stock":
                     # this will be used to get top and bottom 3 contributers
                     port_perf_df = portfolio_performance_table.to_df()
             # get top and bottom 3 contributers and performers
@@ -519,7 +520,7 @@ async def get_commentary_inputs(
             )
 
             await tool_log(
-                log=f"Retrieved top 3 and bottom 3 contributers and performers in {args.portfolio_id}.",
+                log="Retrieved top 3 and bottom 3 contributers and performers in portfolio.",
                 context=context,
             )
         except Exception as e:

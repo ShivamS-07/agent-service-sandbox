@@ -125,7 +125,9 @@ async def get_universe_performance(
         raise ValueError(f"Invalid performance level: {args.performance_level}")
 
     await tool_log(
-        log="Universe performance table retrieved.", context=context, associated_data=table
+        log=f"Universe performance on {args.performance_level}-level retrieved.",
+        context=context,
+        associated_data=table,
     )
 
     table.title = UNIVERSE_PERFORMANCE_TABLE_BASE_NAME + args.performance_level

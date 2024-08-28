@@ -117,7 +117,6 @@ async def get_portfolio_holdings(
     weights = [holding.weight for holding in workspace.holdings]
     weights_map = {holding.gbi_id: holding.weight for holding in workspace.holdings}
     if args.expand_etfs:
-        await tool_log("Expanding ETFs in portfolio holdings", context=context)
         # get all the stocks in the portfolio ETFs
         weighted_securities: List[StockAndWeight] = [
             StockAndWeight(gbi_id=gbi_id, weight=weight) for gbi_id, weight in zip(gbi_ids, weights)
@@ -179,9 +178,6 @@ async def get_portfolio_holdings(
             ]
         )
     table = StockTable.from_df_and_cols(data=df, columns=columns)
-    await tool_log(
-        f"Found {len(gbi_ids)} holdings in portfolio", context=context, associated_data=table
-    )
 
     try:  # since everything associated with diffing is optional, put in try/except
         # we need to add the task id to all runs, including the first one, so we can track changes
@@ -390,7 +386,9 @@ async def get_portfolio_performance(
         raise ValueError(f"Invalid performance level: {args.performance_level}")
 
     await tool_log(
-        log="Universe performance table retrieved.", context=context, associated_data=table
+        log=f"Portfolio performance on {args.performance_level}-level retrieved.",
+        context=context,
+        associated_data=table,
     )
 
     table.title = PORTFOLIO_PERFORMANCE_TABLE_BASE_NAME + args.performance_level
@@ -432,7 +430,6 @@ async def get_portfolio_benchmark_holdings(
     weights_map = {holding.gbi_id: holding.weight / 100 for holding in benchmark_holdings}
 
     if args.expand_etfs:
-        await tool_log("Expanding ETFs in benchmark holdings", context=context)
         # get all the stocks in the benchmark ETFs
         weighted_securities: List[StockAndWeight] = [
             StockAndWeight(gbi_id=gbi_id, weight=weight) for gbi_id, weight in zip(gbi_ids, weights)
@@ -458,9 +455,6 @@ async def get_portfolio_benchmark_holdings(
             TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
             TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
         ],
-    )
-    await tool_log(
-        f"Found {len(gbi_ids)} holdings in benchmark", context=context, associated_data=table
     )
     table.title = (
         BENCHMARK_HOLDING_TABLE_NAME_EXPANDED
