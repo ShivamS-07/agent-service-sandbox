@@ -261,6 +261,18 @@ class SectorFilterInput(ToolArgs):
 
 @tool(
     description="""
+This function was renamed to gics_sector_industry_filter
+""",
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    enabled=False,
+)
+async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> List[StockID]:
+    return await gics_sector_industry_filter(args, context)  # type:ignore
+
+
+@tool(
+    description="""
 This function takes a sector id integer and an optional list of stocks
 and filters the list to only those stocks whose sector matches the sector_id
 If no stocks are passed in, a suitable default list such as S&P500 will be used
