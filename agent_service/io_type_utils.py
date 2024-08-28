@@ -14,6 +14,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
     get_args,
     get_origin,
 )
@@ -328,15 +329,31 @@ class ComplexIOBase(SerializeableBase, ABC):
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         return str(self.__class__)
 
-    def history_to_str(self) -> str:
+    def history_to_str_with_text_objects(self) -> str:
         """
         Returns a string (markdown) representation of the history entries in this object.
         """
-        strs = [
-            f"- **{entry.title}**: {entry.explanation}"
-            for entry in self.history
-            if entry.title and entry.explanation
-        ]
+        from agent_service.io_types.text_objects import BasicTextObject
+
+        strs = []
+        for entry in self.history:
+            entry_repr = entry.explanation
+            if not entry.title or not entry.explanation:
+                continue
+
+            if entry.entry_type != TableColumnType.STRING and isinstance(
+                entry.explanation, get_args(PrimitiveType)
+            ):
+                entry.explanation = cast(PrimitiveType, entry.explanation)
+                # In this case, create a text object to represent tye type so
+                # that it can be nicely displayed on the frontend.
+                obj = BasicTextObject(
+                    type=entry.entry_type, value=entry.explanation, index=0, unit=entry.unit
+                )
+                entry_repr = BasicTextObject.render_object_to_json(obj)
+
+            strs.append(f"- **{entry.title}**: {entry_repr}")
+
         return "\n".join(strs)
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:

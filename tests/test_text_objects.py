@@ -1,10 +1,13 @@
 # flake8: noqa
+import datetime
 import unittest
 from typing import List
 
 from parameterized import param, parameterized
 
+from agent_service.io_type_utils import HistoryEntry, TableColumnType
 from agent_service.io_types.stock import StockID
+from agent_service.io_types.text import Text
 from agent_service.io_types.text_objects import (
     CitationTextObject,
     StockTextObject,
@@ -141,3 +144,76 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
                     symbol_name_matches = True
 
             self.assertTrue(company_name_matches or symbol_name_matches)
+
+    async def test_generic_text_objects_in_history(self):
+        t = Text(
+            history=[
+                HistoryEntry(
+                    title=TableColumnType.BOOLEAN,
+                    entry_type=TableColumnType.BOOLEAN,
+                    explanation=True,
+                ),
+                HistoryEntry(
+                    title=TableColumnType.STRING,
+                    entry_type=TableColumnType.STRING,
+                    explanation="hello",
+                ),
+                HistoryEntry(
+                    title=TableColumnType.FLOAT,
+                    entry_type=TableColumnType.FLOAT,
+                    explanation=123.5363059602538608436,
+                ),
+                HistoryEntry(
+                    title=TableColumnType.INTEGER,
+                    entry_type=TableColumnType.INTEGER,
+                    explanation=123,
+                ),
+                HistoryEntry(
+                    title=TableColumnType.CURRENCY,
+                    entry_type=TableColumnType.CURRENCY,
+                    explanation=123.0,
+                    unit="USD",
+                ),
+                HistoryEntry(
+                    title=TableColumnType.DATE,
+                    entry_type=TableColumnType.DATE,
+                    explanation=datetime.date(2024, 1, 1),
+                ),
+                HistoryEntry(
+                    title=TableColumnType.DATETIME,
+                    entry_type=TableColumnType.DATETIME,
+                    explanation=datetime.datetime(2024, 1, 1),
+                ),
+                HistoryEntry(
+                    title=TableColumnType.QUARTER,
+                    entry_type=TableColumnType.QUARTER,
+                    explanation="2024Q2",
+                ),
+                HistoryEntry(
+                    title=TableColumnType.PERCENT,
+                    entry_type=TableColumnType.PERCENT,
+                    explanation=0.35,
+                ),
+                HistoryEntry(
+                    title=TableColumnType.DELTA, entry_type=TableColumnType.DELTA, explanation=43.35
+                ),
+                HistoryEntry(
+                    title=TableColumnType.PCT_DELTA,
+                    entry_type=TableColumnType.PCT_DELTA,
+                    explanation=0.35,
+                ),
+            ]
+        )
+        result = t.history_to_str_with_text_objects()
+        expected = """- **boolean**: ```{"type": "boolean", "value": true, "unit": null}```
+- **string**: hello
+- **float**: ```{"type": "float", "value": 123.53630596025386, "unit": null}```
+- **integer**: ```{"type": "integer", "value": 123, "unit": null}```
+- **currency**: ```{"type": "currency", "value": 123.0, "unit": "USD"}```
+- **date**: ```{"type": "date", "value": "2024-01-01", "unit": null}```
+- **datetime**: ```{"type": "datetime", "value": "2024-01-01T00:00:00", "unit": null}```
+- **quarter**: ```{"type": "quarter", "value": "2024Q2", "unit": null}```
+- **percent**: ```{"type": "percent", "value": 0.35, "unit": null}```
+- **delta**: ```{"type": "delta", "value": 43.35, "unit": null}```
+- **pct_delta**: ```{"type": "pct_delta", "value": 0.35, "unit": null}```"""
+        self.assertEqual(result, expected)

@@ -72,7 +72,7 @@ async def prepare_list_of_stock_texts(texts: List[StockText]) -> Text:
     # Now for each stock, construct a text and stick it in a list
     stock_texts = []
     for stock, text_list in stock_text_map.items():
-        prefix = f"{stock.to_markdown_string()}\n{stock.history_to_str()}\n"
+        prefix = f"{stock.to_markdown_string()}\n{stock.history_to_str_with_text_objects()}\n"
         combined_text = combine_text_list(text_list, overall_prefix=prefix)
         stock_texts.append(combined_text)
 

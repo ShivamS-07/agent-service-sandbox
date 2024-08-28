@@ -6,7 +6,14 @@ from typing import Dict, List, Optional
 
 from agent_service.GPT.constants import GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import IO_TYPE_NAME_KEY, SerializeableBase, io_type
+from agent_service.io_type_utils import (
+    IO_TYPE_NAME_KEY,
+    PrimitiveType,
+    ScoreOutput,
+    SerializeableBase,
+    TableColumnType,
+    io_type,
+)
 from agent_service.io_types.stock import StockID
 from agent_service.types import PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
@@ -26,7 +33,7 @@ class TextObject(SerializeableBase):
     Represents an 'object' in a text.
     """
 
-    type: TextObjectType
+    type: TextObjectType | TableColumnType
 
     # Index into the text
     index: int
@@ -38,7 +45,7 @@ class TextObject(SerializeableBase):
     end_index: Optional[int] = None
 
     @staticmethod
-    def _render(obj: "TextObject", replaced_text: Optional[str] = None) -> str:
+    def render_object_to_json(obj: "TextObject", replaced_text: Optional[str] = None) -> str:
         json_dict = obj.model_dump(mode="json")
         # Get rid of keys we don't need in the output
         json_dict.pop("index")
@@ -60,7 +67,7 @@ class TextObject(SerializeableBase):
         E.g.
 
         Input text: 'this is a text'
-        Input objects: CitationTextObject(idnex=3)
+        Input objects: CitationTextObject(index=3)
 
         Output text: 'this```{"type": "citation", "citation_id": "..."}``` is a text
         """
@@ -101,7 +108,7 @@ class TextObject(SerializeableBase):
                 text_objects = index_object_map[i]
                 output_buffer.append(text[i])
                 for obj in text_objects:
-                    output_buffer.append(TextObject._render(obj))
+                    output_buffer.append(TextObject.render_object_to_json(obj))
                 i += 1
 
             elif i in index_replacement_object_map:
@@ -110,7 +117,9 @@ class TextObject(SerializeableBase):
                 assert obj.end_index is not None
                 # Output the text as a replacement for the regular text, and skip ahead
                 replaced_text = text[i : obj.end_index + 1]
-                output_buffer.append(TextObject._render(obj, replaced_text=replaced_text))
+                output_buffer.append(
+                    TextObject.render_object_to_json(obj, replaced_text=replaced_text)
+                )
                 i = obj.end_index + 1
 
         return "".join(output_buffer)
@@ -230,10 +239,22 @@ Your tagged output text:""",
 
 @io_type
 class StockTextObject(TextObject, StockMetadata):
-    type: TextObjectType = TextObjectType.STOCK
+    type: TextObjectType | TableColumnType = TextObjectType.STOCK
 
 
 @io_type
 class CitationTextObject(TextObject):
-    type: TextObjectType = TextObjectType.CITATION
+    type: TextObjectType | TableColumnType = TextObjectType.CITATION
     citation_id: str
+
+
+@io_type
+class BasicTextObject(TextObject):
+    """
+    Represents a text object for types that are created on the fly and handled on
+    the frontend. E.g. floats, percents, etc.
+    """
+
+    type: TextObjectType | TableColumnType
+    value: PrimitiveType | ScoreOutput
+    unit: Optional[str] = None
