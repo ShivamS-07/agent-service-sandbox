@@ -217,7 +217,7 @@ class OutputDiffer:
                     citation = citation_group.convert_citation_num_to_citation(citation_num)
                     if citation:
                         citation = copy.deepcopy(citation)
-                        citation.citation_text_offset = offset
+                        citation.citation_text_offset = offset - 1
                         citations.append(citation)
 
         diff_text = "".join(diff_text_bits)
