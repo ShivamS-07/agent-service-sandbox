@@ -176,10 +176,14 @@ This function supports the following GICS classifications:
 
 {get_all_gics_str()}
 
-You must ONLY use this look up and the corresponding sector filter tool if the user specifically
-asks for one of these classifications directly. If the user asks for something more specific than this,
-you must use the filter_product_or_service tool (for simple requests involving
-a clear class of product or services) or filter_by_profile_tool (for more complex stock filtering).
+You must ONLY use this look up and the corresponding sector filter tool if the client specifically
+asks for one of these classifications directly. Sometimes the client may use the word `sector` to
+refer to things which do not correspond to GICS sectors, in such a case you will NOT use this tool.
+For example, if someone mentions 'high bond yield sector', 'high bond yield' does not correspond to
+anything in the above list of sectors and you must NOT use this sector tool under any circumstances!
+If the client asks to filter stocks by something more specific than an industry/sector, you must use the
+filter_product_or_service tool (for simple requests involving a clear class of product or services)
+or filter_by_profile_tool (for more complex stock filtering).
 """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
