@@ -219,8 +219,12 @@ class Chatbot:
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=120)
         return result
 
-    async def check_first_prompt(self, chat_context: ChatContext) -> str:
+    async def check_first_prompt(self, chat_context: ChatContext) -> bool:
+        """
+        Returns True if the the user prompt is analysis request and False otherwise (FAQ like)
+
+        """
         main_prompt = CHECK_FIRST_MAIN_PROMPT.format(chat_context=chat_context.get_gpt_input())
         sys_prompt = NO_PROMPT
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=60)
-        return result
+        return "yes" in result.lower()

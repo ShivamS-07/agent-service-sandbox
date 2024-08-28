@@ -378,10 +378,10 @@ class AgentServiceImpl:
                         ]
                     )
                 )
-
-                if "yes" in check_first_prompt_resp.lower():
+                # if first prompt is analysis
+                if check_first_prompt_resp:
                     gpt_resp = initial_preplan_resp
-
+                # if first prompt is general request/FAQ
                 else:
                     gpt_resp = no_action_resp
 
@@ -422,19 +422,19 @@ class AgentServiceImpl:
             except Exception as e:
                 LOGGER.exception(f"Failed to publish GPT response to Redis: {e}")
                 return ChatWithAgentResponse(success=False, allow_retry=False)
-
-            plan_id = str(uuid4())
-            LOGGER.info(f"Creating execution plan {plan_id} for {agent_id=}")
-            try:
-                await self.task_executor.create_execution_plan(
-                    agent_id=agent_id,
-                    plan_id=plan_id,
-                    user_id=user.user_id,
-                    run_plan_in_prefect_immediately=True,
-                )
-            except Exception:
-                LOGGER.exception("Failed to kick off execution plan creation")
-                return ChatWithAgentResponse(success=False, allow_retry=False)
+            if check_first_prompt_resp:
+                plan_id = str(uuid4())
+                LOGGER.info(f"Creating execution plan {plan_id} for {agent_id=}")
+                try:
+                    await self.task_executor.create_execution_plan(
+                        agent_id=agent_id,
+                        plan_id=plan_id,
+                        user_id=user.user_id,
+                        run_plan_in_prefect_immediately=True,
+                    )
+                except Exception:
+                    LOGGER.exception("Failed to kick off execution plan creation")
+                    return ChatWithAgentResponse(success=False, allow_retry=False)
             try:
                 user_info = await self.pg.get_user_info(user_id=user.user_id)
                 user_email = user_info.get("email", "")
