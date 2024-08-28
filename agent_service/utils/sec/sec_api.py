@@ -567,7 +567,7 @@ class SecFiling:
     async def get_filing_data_async(cls, db_ids: List[str]) -> Dict[str, SecFilingData]:
         sql = """
             SELECT id::TEXT AS db_id, riskFactors, managementSection, gbi_id,
-                   formType AS form_type, filedAt AS filed_at
+                   formType AS form_type, filedAt AS filed_at, content
             FROM sec.sec_filings
             WHERE id IN %(db_ids)s
         """
@@ -597,7 +597,7 @@ class SecFiling:
     ) -> Optional[SecFilingData]:
         sql = """
             SELECT id::TEXT AS db_id, riskFactors, managementSection, gbi_id,
-                   formType AS form_type, filedAt AS filed_at
+                   formType AS form_type, filedAt AS filed_at, content
             FROM sec.sec_filings
             WHERE gbi_id = %(gbi_id)s AND filedAt::DATE = %(filed_at)s
                   AND formType = %(filing_type)s
