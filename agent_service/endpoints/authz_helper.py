@@ -39,9 +39,6 @@ class User:
     real_user_id: str = ""
     fullstory_link: str = ""
 
-    def is_boosted(self) -> bool:
-        return "boosted" in self.groups
-
     def __str__(self) -> str:
         admin_str = " (is super admin)" if self.is_super_admin else ""
         return f"{self.user_id}{admin_str}"

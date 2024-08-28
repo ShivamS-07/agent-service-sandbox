@@ -435,9 +435,15 @@ class AgentServiceImpl:
             except Exception:
                 LOGGER.exception("Failed to kick off execution plan creation")
                 return ChatWithAgentResponse(success=False, allow_retry=False)
-            if not user.is_boosted() and user.real_user_id == user.user_id:
-                try:
-                    user_info = await self.pg.get_user_info(user_id=user.user_id)
+            try:
+                user_info = await self.pg.get_user_info(user_id=user.user_id)
+                user_email = user_info.get("email", "")
+                if (
+                    not user_email.endswith("@boosted.ai")
+                    and not user_email.endswith("@gradientboostedinvestments.com")
+                    and user.real_user_id == user.user_id
+                ):
+                    del user_info["email"]  # we don't need to include this
                     user_info_slack_string = ""
                     for key, value in user_info.items():
                         user_info_slack_string += f"\n{key}: {value}"
@@ -451,9 +457,9 @@ class AgentServiceImpl:
                         f"{user_info_slack_string}",
                         send_at=six_hours_from_now,
                     )
-                except Exception:
-                    LOGGER.warning(f"Unable to send slack message for {user.user_id=}")
-                    LOGGER.warning(traceback.format_exc())
+            except Exception:
+                LOGGER.warning(f"Unable to send slack message for {user.user_id=}")
+                LOGGER.warning(traceback.format_exc())
 
         return ChatWithAgentResponse(success=True, allow_retry=False, name=name)
 
