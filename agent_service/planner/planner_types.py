@@ -6,7 +6,8 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 from pydantic.functional_validators import field_validator
 
-from agent_service.io_type_utils import IOType
+from agent_service.io_type_utils import ComplexIOBase, IOType, io_type
+from agent_service.io_types.text import Text
 
 
 @dataclass(frozen=True, eq=True)
@@ -125,8 +126,9 @@ class SamplePlan(BaseModel):
         return f"Input: {self.input}\nPlan:\n{self.plan}"
 
 
-class RunMetadata(BaseModel):
-    run_summary_long: Optional[str] = None
+@io_type
+class RunMetadata(ComplexIOBase):
+    run_summary_long: Optional[Union[str, Text]] = None
     run_summary_short: Optional[str] = None
     updated_output_ids: Optional[List[str]] = None
 

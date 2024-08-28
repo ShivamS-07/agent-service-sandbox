@@ -9,6 +9,7 @@ from agent_service.endpoints.models import Status, TaskStatus
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT, set_plan_run_context
 from agent_service.io_type_utils import IOType, split_io_type_into_components
+from agent_service.io_types.text import Text
 from agent_service.planner.action_decide import (
     Action,
     ErrorActionDecider,
@@ -55,7 +56,10 @@ from agent_service.utils.gpt_logging import (
     create_gpt_context,
     plan_create_context,
 )
-from agent_service.utils.output_utils.output_diffs import OutputDiffer
+from agent_service.utils.output_utils.output_diffs import (
+    OutputDiffer,
+    generate_full_diff_summary,
+)
 from agent_service.utils.output_utils.prompts import SHORT_SUMMARY_WORKLOG_MAIN_PROMPT
 from agent_service.utils.output_utils.utils import io_type_to_gpt_input, output_for_log
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
@@ -381,6 +385,7 @@ async def run_execution_plan(
 
     updated_output_ids = []
     full_diff_summary = None
+    full_diff_summary_output = None
     short_diff_summary = "Summary generation in progress..."
     if not scheduled_by_automation and do_chat:
         logger.info("Generating chat message...")
@@ -428,6 +433,14 @@ async def run_execution_plan(
         updated_output_ids = [
             diff.output_id for diff in output_diffs if diff.should_notify and diff.output_id
         ]
+
+        full_diff_summary = generate_full_diff_summary(output_diffs)
+        full_diff_summary_output = (
+            (await full_diff_summary.get()).val if full_diff_summary else None
+        )
+        if isinstance(full_diff_summary, Text):
+            full_diff_summary_output = await full_diff_summary.to_rich_output(pg=async_db.pg)  # type: ignore
+
         if not should_notify:
             logger.info("No notification necessary")
             short_diff_summary = NO_CHANGE_MESSAGE
@@ -442,7 +455,7 @@ async def run_execution_plan(
                 send_notification=False,
             )
         else:
-            full_diff_summary = "\n".join(
+            filtered_diff_summary = "\n".join(
                 (
                     f"- {diff.title}: {diff.diff_summary_message}"
                     if diff.title
@@ -453,7 +466,7 @@ async def run_execution_plan(
             )
             logger.info("Generating and sending notification")
             short_diff_summary = await output_differ.generate_short_diff_summary(
-                full_diff_summary, custom_notification_str
+                filtered_diff_summary, custom_notification_str
             )
             await send_chat_message(
                 message=Message(
@@ -494,7 +507,7 @@ async def run_execution_plan(
         status=Status.COMPLETE,
         logger=logger,
         updated_output_ids=updated_output_ids,
-        run_summary_long=full_diff_summary,
+        run_summary_long=full_diff_summary_output,
         run_summary_short=short_diff_summary,
     )
     logger.info("Finished run!")

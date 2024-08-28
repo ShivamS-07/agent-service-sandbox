@@ -1,16 +1,18 @@
+import copy
 import datetime
 import logging
-from typing import List, Optional
+from collections import defaultdict
+from typing import Dict, List, Optional
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 from pydantic.main import BaseModel
 
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import IOType
+from agent_service.io_type_utils import Citation, HistoryEntry, IOType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTable
-from agent_service.io_types.text import Text, TextCitation, TextGroup
+from agent_service.io_types.text import Text, TextCitation, TextCitationGroup
 from agent_service.planner.planner_types import ExecutionPlan, OutputWithID
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
@@ -25,9 +27,11 @@ from agent_service.utils.output_utils.prompts import (
     DECIDE_NOTIFICATION_MAIN_PROMPT,
     GENERATE_DIFF_MAIN_PROMPT,
     GENERATE_DIFF_SYS_PROMPT,
-    NEW_TEXT_TEMPLATE,
     SHORT_DIFF_SUMMARY_MAIN_PROMPT,
     SUMMARY_CUSTOM_NOTIFICATION_TEMPLATE,
+    TEXT_GENERATE_BASIC_DIFF_PROMPT,
+    TEXT_GENERATE_CITE_DIFF_PROMPT,
+    TEXT_GENERATE_FINAL_DIFF_PROMPT,
 )
 from agent_service.utils.output_utils.utils import io_type_to_gpt_input
 from agent_service.utils.string_utils import clean_to_json_if_needed
@@ -35,13 +39,52 @@ from agent_service.utils.string_utils import clean_to_json_if_needed
 logger = logging.getLogger(__name__)
 
 NO_CHANGE_STOCK_LIST_DIFF = "Nothing added or removed from the stock list."
+NO_UPDATE_MESSAGE = "No new updates."
 
 
 class OutputDiff(BaseModel):
     diff_summary_message: str
     output_id: Optional[str] = None
+    citations: Optional[List[TextCitation]] = None
     should_notify: bool = True
     title: Optional[str] = None
+
+
+def generate_full_diff_summary(diffs: List[OutputDiff]) -> Optional[Text]:
+    output_strs = []
+
+    def get_output_len(output_strs: List[str]) -> int:
+        return sum([len(S) for S in output_strs])
+
+    all_citations: List[Citation] = []
+
+    for diff in diffs:
+        if not diff.diff_summary_message.strip() or diff.diff_summary_message == NO_UPDATE_MESSAGE:
+            continue
+        output_strs.append("- ")
+        if diff.title:
+            output_strs.append(diff.title)
+            output_strs.append(": ")
+        curr_offset = get_output_len(output_strs)
+        if diff.citations:
+            for citation in diff.citations:
+                if citation.citation_text_offset is not None:
+                    citation.citation_text_offset += curr_offset
+                    all_citations.append(citation)
+        output_strs.append(diff.diff_summary_message)
+        output_strs.append("\n")
+    if not output_strs:
+        return None
+    text = Text(val="".join(output_strs))
+    return text.inject_history_entry(HistoryEntry(citations=all_citations))
+
+
+def get_citable_changes(result: str) -> Dict[str, List[int]]:
+    return {
+        triple.split(";")[0]: eval(triple.split(";")[2])
+        for triple in result.split("\n")
+        if ";" in triple and "yes" in triple.split(";")[1].lower()
+    }
 
 
 class OutputDiffer:
@@ -64,22 +107,29 @@ class OutputDiffer:
     async def _compute_diff_for_texts(
         self, latest_output: Text, prev_output: Text, prev_run_time: datetime.datetime
     ) -> OutputDiff:
-        # FIXME: we should not do this using time which could be unreliable, but instead input texts to task
-        new_cited_texts = [
+        old_citation_texts = [
             citation.source_text
+            for citation in prev_output.get_all_citations()
+            if isinstance(citation, TextCitation)
+        ]
+        for old_text in old_citation_texts:
+            old_text.reset_id()
+        old_citation_text_set = set(old_citation_texts)
+        recent_citations = [
+            citation
             for citation in latest_output.get_all_citations()
             if isinstance(citation, TextCitation)
+            and citation.source_text not in old_citation_text_set
             and citation.source_text.timestamp
-            and timezoneify(citation.source_text.timestamp) > timezoneify(prev_run_time)
-        ]
+            and timezoneify(citation.source_text.timestamp)
+            > timezoneify(prev_run_time) - datetime.timedelta(days=1)
+        ]  # add an extra day here in case there's lag between publication and availability in db
 
-        if not new_cited_texts:
-            return OutputDiff(diff_summary_message="No new updates.", should_notify=False)
+        if not recent_citations:
+            return OutputDiff(diff_summary_message=NO_UPDATE_MESSAGE, should_notify=False)
 
-        text_group = TextGroup(val=new_cited_texts)
-        new_texts_str: str = await Text.get_all_strs(
-            text_group, include_header=True, text_group_numbering=False
-        )  # type: ignore
+        citation_group = TextCitationGroup(val=recent_citations)
+        citation_str = await citation_group.convert_to_str()
 
         if self.custom_notifications:
             notification_instructions_str = CUSTOM_NOTIFICATION_TEMPLATE.format(
@@ -88,19 +138,95 @@ class OutputDiffer:
         else:
             notification_instructions_str = BASIC_NOTIFICATION_TEMPLATE
 
-        main_prompt = GENERATE_DIFF_MAIN_PROMPT.format(
-            output_schema=OutputDiff.model_json_schema(),
+        latest_output_text = (await latest_output.get()).val
+        prev_output_text = (await prev_output.get()).val
+
+        basic_prompt = TEXT_GENERATE_BASIC_DIFF_PROMPT.format(
+            latest_output=latest_output_text, prev_output=prev_output_text
+        )
+        result = await self.llm.do_chat_w_sys_prompt(
+            main_prompt=basic_prompt,
+            sys_prompt=NO_PROMPT,
+        )
+
+        try:
+            changes = [
+                pair.split(":")[0]
+                for pair in result.split("\n")
+                if "no" in pair.split(":")[-1].lower()
+            ]
+        except IndexError:
+            result = await self.llm.do_chat_w_sys_prompt(
+                main_prompt=basic_prompt,
+                sys_prompt=NO_PROMPT,
+            )
+            changes = [
+                pair.split(":")[0]
+                for pair in result.split("\n")
+                if "no" in pair.split(":")[-1].lower()
+            ]
+
+        if not changes:
+            return OutputDiff(diff_summary_message=NO_UPDATE_MESSAGE, should_notify=False)
+
+        cite_prompt = TEXT_GENERATE_CITE_DIFF_PROMPT.format(
+            output=latest_output_text, citations=citation_str, topics="\n".join(changes)
+        )
+        result = await self.llm.do_chat_w_sys_prompt(
+            main_prompt=cite_prompt,
+            sys_prompt=NO_PROMPT,
+        )
+
+        try:
+            citable_changes = get_citable_changes(result)
+        except (IndexError, SyntaxError):
+            result = await self.llm.do_chat_w_sys_prompt(
+                main_prompt=cite_prompt,
+                sys_prompt=NO_PROMPT,
+            )
+            citable_changes = get_citable_changes(result)
+
+        if not citable_changes:
+            return OutputDiff(diff_summary_message=NO_UPDATE_MESSAGE, should_notify=False)
+
+        final_prompt = TEXT_GENERATE_FINAL_DIFF_PROMPT.format(
+            changes="\n".join(citable_changes.keys()),
             latest_output=(await latest_output.get()).val,
-            special_instructions=NEW_TEXT_TEMPLATE.format(new_texts=new_texts_str),
             prev_output=(await prev_output.get()).val,
             notification_instructions=notification_instructions_str,
         )
+
         result = await self.llm.do_chat_w_sys_prompt(
-            main_prompt=main_prompt,
-            sys_prompt=GENERATE_DIFF_SYS_PROMPT,
-            output_json=True,
+            main_prompt=final_prompt,
+            sys_prompt=NO_PROMPT,
         )
-        return OutputDiff.model_validate_json(clean_to_json_if_needed(result))
+
+        diff_sents, notify = result.split("!!!")
+
+        diff_text_bits = []
+        citations = []
+        for topic_and_sentence in diff_sents.split("\n"):
+            if not topic_and_sentence.strip() or topic_and_sentence.count(": ") != 1:
+                continue
+            topic, sentence = topic_and_sentence.split(": ")
+            if topic in citable_changes:
+                diff_text_bits.append("\n    - ")
+                diff_text_bits.append(sentence)
+                offset = sum([len(S) for S in diff_text_bits])
+                for citation_num in citable_changes[topic]:
+                    citation = citation_group.convert_citation_num_to_citation(citation_num)
+                    if citation:
+                        citation = copy.deepcopy(citation)
+                        citation.citation_text_offset = offset
+                        citations.append(citation)
+
+        diff_text = "".join(diff_text_bits)
+
+        return OutputDiff(
+            diff_summary_message=diff_text,
+            should_notify="yes" in notify.lower(),
+            citations=citations,
+        )
 
     async def _compute_diff_for_io_types(
         self, latest_output: IOType, prev_output: IOType, prev_run_time: datetime.datetime
@@ -144,6 +270,7 @@ class OutputDiffer:
                 output_schema=OutputDiff.model_json_schema(),
                 latest_output=latest_output_str,
                 special_instructions="",
+                no_update_message=NO_UPDATE_MESSAGE,
                 prev_output=prev_output_str,
                 notification_instructions=notification_instructions_str,
             ),
@@ -290,20 +417,23 @@ class OutputDiffer:
                 )
             ]
 
-        prev_output_values = [
-            output.val if isinstance(output, PreparedOutput) else output for output in prev_outputs
-        ]
-        latest_output_values = [
-            output.val if isinstance(output, PreparedOutput) else output
-            for output in latest_outputs
-        ]
+        output_pairs = defaultdict(list)
+
+        for output_lists in [latest_outputs, prev_outputs]:
+            for output in output_lists:
+                if isinstance(output, PreparedOutput):  # only allow PreparedOutput with titles
+                    output_pairs[output.title].append(output.val)
+
+        for title in list(output_pairs.keys()):  # remove anything that isn't pairs
+            if len(output_pairs[title]) != 2:
+                del output_pairs[title]
 
         diffs: List[OutputDiff] = await gather_with_concurrency(
             [
                 self._compute_diff_for_io_types(
                     latest_output=latest, prev_output=prev, prev_run_time=prev_run_time
                 )
-                for latest, prev in zip(latest_output_values, prev_output_values)
+                for latest, prev in output_pairs.values()
             ]
         )
 
@@ -311,6 +441,7 @@ class OutputDiffer:
             OutputDiff(
                 diff_summary_message=diff.diff_summary_message,
                 should_notify=diff.should_notify,
+                citations=diff.citations,
                 title=output.output.title if isinstance(output.output, PreparedOutput) else None,
                 output_id=output.output_id,
             )

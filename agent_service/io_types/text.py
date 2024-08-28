@@ -1811,3 +1811,43 @@ class TextCitation(Citation):
                 outputs[citation].extend(output_cits)
 
         return outputs  # type: ignore
+
+
+@io_type
+class TextCitationGroup(ComplexIOBase):
+    val: List[TextCitation]
+
+    def _sort_citations(self) -> None:
+        self.val = sorted(self.val, key=lambda x: 0 if x.citation_snippet is None else 1)
+
+    def _get_snippet_start(self) -> int:
+        try:
+            return self.val.index(next(x for x in self.val if x.citation_snippet is not None))
+        except StopIteration:
+            return len(self.val)
+
+    async def convert_to_str(self) -> str:
+        self._sort_citations()
+        snippet_start = self._get_snippet_start()
+        no_snippet_str = cast(
+            str,
+            await Text.get_all_strs(
+                TextGroup(val=[citation.source_text for citation in self.val[:snippet_start]]),
+                text_group_numbering=True,
+            ),
+        )
+        full_str = "\n***\n".join(
+            [no_snippet_str]
+            + [
+                f"Text Number: {i + snippet_start}\n{citation.citation_snippet}"
+                for i, citation in enumerate(self.val[snippet_start:])
+            ]
+        )
+        return full_str
+
+    def convert_citation_num_to_citation(self, citation_id: int) -> Optional[TextCitation]:
+        try:
+            return self.val[int(citation_id)]
+        except (ValueError, IndexError):
+            logger.exception("Could not convert citation num to citation")
+            return None

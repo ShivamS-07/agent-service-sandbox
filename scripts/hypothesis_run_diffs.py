@@ -12,7 +12,10 @@ from agent_service.planner.planner_types import ExecutionPlan, OutputWithID, Run
 from agent_service.tools.category import Category  # noqa
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
-from agent_service.utils.output_utils.output_diffs import OutputDiffer
+from agent_service.utils.output_utils.output_diffs import (
+    OutputDiffer,
+    generate_full_diff_summary,
+)
 from agent_service.utils.postgres import Postgres, SyncBoostedPG
 
 logger = logging.getLogger(__name__)
@@ -52,12 +55,18 @@ async def generate_diffs(
 ):
     plan = build_plan_object(context.agent_id, context.plan_id)
 
+    async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
+
     # get outputs
     past_run_outputs = get_run_outputs(context.agent_id, past_plan_run_id)
     curr_run_outputs = get_run_outputs(context.agent_id, curr_plan_run_id)
 
     # generate diffs
-    output_differ = OutputDiffer(plan=plan, context=context, custom_notifications="")
+    custom_notifications = await async_db.get_all_agent_custom_notifications(context.agent_id)
+    custom_notification_str = "\n".join((cn.notification_prompt for cn in custom_notifications))
+    output_differ = OutputDiffer(
+        plan=plan, context=context, custom_notifications=custom_notification_str
+    )
     output_diffs = await output_differ.diff_outputs(
         latest_outputs_with_ids=curr_run_outputs,
         db=SyncBoostedPG(skip_commit=context.skip_db_commit),
@@ -70,12 +79,20 @@ async def generate_diffs(
     updated_output_ids = [
         diff.output_id for diff in output_diffs if diff.should_notify and diff.output_id
     ]
+
+    full_diff_summary = generate_full_diff_summary(output_diffs)
+
+    if full_diff_summary:
+        logger.info(
+            f"Full diff summary:\n{full_diff_summary.val}\ncitations:{len(full_diff_summary.history[0].citations)}"
+        )
+    else:
+        logger.info("No changes")
     if not should_notify:
         logger.info("No notification necessary")
         short_diff_summary = NO_CHANGE_MESSAGE
-        full_diff_summary = None
     else:
-        full_diff_summary = "\n".join(
+        filtered_diff_summary = "\n".join(
             (
                 f"- {diff.title}: {diff.diff_summary_message}"
                 if diff.title
@@ -84,19 +101,12 @@ async def generate_diffs(
             for diff in output_diffs
             if diff.should_notify
         )
-        logger.info(f"Full diff summary:\n{full_diff_summary}")
 
         short_diff_summary = await output_differ.generate_short_diff_summary(
-            full_diff_summary, notification_criteria=""
+            filtered_diff_summary, notification_criteria=custom_notification_str
         )
         logger.info(f"Short diff summary:\n{short_diff_summary}")
 
-        full_diff_summary = (
-            f"Long Summary:\n {full_diff_summary}\n\nShort Summary:\n {short_diff_summary}"
-        )
-        logger.info(f"Combined diff summary:\n{full_diff_summary}")
-
-    async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
     await async_db.set_plan_run_metadata(
         context=context,
         metadata=RunMetadata(
@@ -152,7 +162,8 @@ if __name__ == "__main__":
 
     init_stdout_logging()
 
-    agent_id = "7868d80d-1f3a-4b54-919e-ef7dca4a49d0"
+    # agent_id = "cd1010c0-f51d-4a3c-9ddf-4c134bd6a0f1"
+    agent_id = "76a9a703-d76e-4b06-9810-a9e48158b2e8"
 
     asyncio.run(
         main(

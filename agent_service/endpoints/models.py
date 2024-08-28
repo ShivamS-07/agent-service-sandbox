@@ -388,7 +388,7 @@ class AgentOutput(BaseModel):
 class GetAgentOutputResponse(BaseModel):
     # it'll be only intermediate outputs OR the final outputs, sorted by time ASC
     outputs: List[AgentOutput]
-    run_summary_long: Optional[str] = None
+    run_summary_long: Optional[str | TextOutput] = None
     run_summary_short: Optional[str] = None
     newly_updated_outputs: List[str] = Field(default_factory=list)
 
@@ -466,7 +466,7 @@ class ExecutionStatusEvent(Event):
     plan_run_id: str
     plan_id: str
     # Only populated if the plan is finished
-    run_summary_long: Optional[str] = None
+    run_summary_long: Optional[str | TextOutput] = None
     run_summary_short: Optional[str] = None
     newly_updated_outputs: List[str] = Field(default_factory=list)
 

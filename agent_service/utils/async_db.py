@@ -12,7 +12,7 @@ from agent_service.endpoints.models import (
     CustomNotification,
     SetAgentFeedBackRequest,
 )
-from agent_service.io_type_utils import IOType, load_io_type
+from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 
 # Make sure all io_types are registered
 from agent_service.io_types import *  # noqa
@@ -810,7 +810,7 @@ class AsyncDB:
         await self.pg.generic_write(
             sql=sql,
             params={
-                "metadata": metadata.model_dump_json(),
+                "metadata": dump_io_type(metadata),
                 "agent_id": context.agent_id,
                 "plan_run_id": context.plan_run_id,
             },

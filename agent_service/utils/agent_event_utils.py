@@ -25,6 +25,7 @@ from agent_service.endpoints.models import (
     TaskStatusEvent,
 )
 from agent_service.io_type_utils import load_io_type
+from agent_service.io_types.text import TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, OutputWithID, PlanStatus
 from agent_service.types import Message, Notification, PlanRunContext
 from agent_service.utils.async_db import AsyncDB
@@ -231,7 +232,7 @@ async def publish_agent_execution_status(
     logger: Optional[Union[logging.Logger, logging.LoggerAdapter]] = None,
     # Only populated if the plan is finished
     updated_output_ids: Optional[List[str]] = None,
-    run_summary_long: Optional[str] = None,
+    run_summary_long: Optional[str | TextOutput] = None,
     run_summary_short: Optional[str] = None,
 ) -> None:
     try:

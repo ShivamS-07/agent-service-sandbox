@@ -6,7 +6,7 @@ import re
 import time
 import traceback
 from collections import defaultdict
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, cast
 from uuid import uuid4
 
 import pandoc
@@ -83,6 +83,7 @@ from agent_service.external.user_svc_client import (
 )
 from agent_service.io_type_utils import load_io_type
 from agent_service.io_types.citations import CitationDetailsType, CitationType
+from agent_service.io_types.text import Text, TextOutput
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.types import ChatContext, MemoryType, Message
 from agent_service.uploads import UploadHandler
@@ -544,9 +545,13 @@ class AgentServiceImpl:
         if outputs:
             # Will be the same for all of these outputs
             metadata = outputs[0].run_metadata
+            run_summary_long: Any = metadata.run_summary_long if metadata else None
+            if isinstance(run_summary_long, Text):
+                run_summary_long = await run_summary_long.to_rich_output(pg=self.pg.pg)
+                run_summary_long = cast(TextOutput, run_summary_long)
             return GetAgentOutputResponse(
                 outputs=outputs,
-                run_summary_long=metadata.run_summary_long if metadata else None,
+                run_summary_long=run_summary_long,
                 run_summary_short=metadata.run_summary_short if metadata else None,
                 newly_updated_outputs=(metadata.updated_output_ids or []) if metadata else [],
             )
@@ -563,7 +568,10 @@ class AgentServiceImpl:
             )
 
         run_metadata = outputs[0].run_metadata
-        run_summary_long = run_metadata.run_summary_long if run_metadata else None
+        run_summary_long: Any = run_metadata.run_summary_long if run_metadata else None
+        if isinstance(run_summary_long, Text):
+            run_summary_long = await run_summary_long.to_rich_output(pg=self.pg.pg)
+            run_summary_long = cast(TextOutput, run_summary_long)
         run_summary_short = run_metadata.run_summary_short if run_metadata else None
 
         final_outputs = [output for output in outputs if not output.is_intermediate]
