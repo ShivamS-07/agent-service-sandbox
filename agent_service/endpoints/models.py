@@ -586,7 +586,7 @@ class GetDebugToolArgsResponse(BaseModel):
 
 
 class GetDebugToolResultResponse(BaseModel):
-    result: Dict[str, Any]
+    result: Any
 
 
 ####################################################################################################

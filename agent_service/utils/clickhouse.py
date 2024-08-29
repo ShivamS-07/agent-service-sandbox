@@ -626,7 +626,7 @@ class Clickhouse(AsyncClickhouseBase):
 
     async def get_agent_debug_tool_calls(self, agent_id: str) -> Dict[str, Any]:
         sql = """
-        SELECT  plan_id, plan_run_id, task_id, tool_name, args, result, start_time_utc,
+        SELECT  plan_id, plan_run_id, task_id, tool_name, start_time_utc,
         end_time_utc, service_version, duration_seconds, error_msg, replay_id, debug_info
         FROM agent.tool_calls
         WHERE agent_id = %(agent_id)s
@@ -647,10 +647,8 @@ class Clickhouse(AsyncClickhouseBase):
                 f"ENVIRONMENT={env_upper} pipenv run python run_plan_task.py "
                 f"--env {env_upper} --replay-id {row['replay_id']}"
             )
-            if row["args"]:
-                row["args"] = json.loads(row["args"])
-            if row["result"]:
-                row["result"] = json.loads(row["result"])
+            row[f"args_{row['replay_id']}"] = {}
+            row[f"result_{row['replay_id']}"] = {}
             if row["debug_info"]:
                 row["debug_info"] = json.loads(row["debug_info"])
             res[plan_run_id][f"{tool_name}_{row['task_id']}"] = row
