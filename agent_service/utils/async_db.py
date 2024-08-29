@@ -425,6 +425,12 @@ class AsyncDB:
             table_name="agent.agents", rows=[agent_metadata.to_agent_row()]
         )
 
+    async def update_agent_draft_status(self, agent_id: str, is_draft: bool) -> None:
+        sql = """
+        UPDATE agent.agents SET is_draft = %(is_draft)s WHERE agent_id = %(agent_id)s
+        """
+        await self.pg.generic_write(sql, params={"agent_id": agent_id, "is_draft": is_draft})
+
     async def update_execution_plan_status(
         self, plan_id: str, agent_id: str, status: PlanStatus = PlanStatus.READY
     ) -> None:
@@ -514,6 +520,16 @@ class AsyncDB:
             return rows[0]["deleted"]
         return True
 
+    async def is_agent_draft(self, agent_id: Optional[str]) -> bool:
+        if agent_id is None:
+            return False
+
+        sql = "SELECT is_draft FROM agent.agents WHERE agent_id = %(agent_id)s"
+        rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
+        if rows:
+            return rows[0]["is_draft"]
+        return True
+
     async def restore_agent_by_id(self, agent_id: str) -> None:
         await self.pg.generic_update(
             table_name="agent.agents",
@@ -552,7 +568,7 @@ class AsyncDB:
         WITH a_id AS
           (
             SELECT a.agent_id, a.user_id, agent_name, a.created_at,
-              a.last_updated, a.automation_enabled, a.schedule, a.section_id, a.deleted
+              a.last_updated, a.automation_enabled, a.schedule, a.section_id, a.deleted, a.is_draft
              FROM agent.agents a
              {agent_where_clause}
           ),
@@ -584,7 +600,7 @@ class AsyncDB:
           SELECT a_id.agent_id::VARCHAR, a_id.user_id::VARCHAR, a_id.agent_name, a_id.created_at,
             a_id.last_updated, a_id.automation_enabled, a_id.section_id::VARCHAR, lr.created_at AS last_run,
             msg.message AS latest_agent_message, nu.num_unread AS unread_notification_count,
-            a_id.schedule, lr.run_metadata, a_id.deleted, lo.created_at AS output_last_updated
+            a_id.schedule, lr.run_metadata, a_id.deleted, a_id.is_draft, lo.created_at AS output_last_updated
           FROM a_id
           LEFT JOIN lr ON lr.agent_id = a_id.agent_id
           LEFT JOIN msg ON msg.agent_id = a_id.agent_id
@@ -612,6 +628,7 @@ class AsyncDB:
                     user_id=row["user_id"],
                     agent_name=row["agent_name"],
                     created_at=row["created_at"],
+                    is_draft=row["is_draft"],
                     last_updated=row["last_updated"],
                     last_run=row["last_run"],
                     next_run=(schedule.get_next_run() if schedule else None),

@@ -92,6 +92,16 @@ async def check_cancelled(
         return res[0] or res[1]
 
 
+async def check_draft(db: Union[Postgres, AsyncDB], agent_id: Optional[str] = None) -> bool:
+    if not agent_id:
+        return False
+
+    if isinstance(db, Postgres):
+        return db.is_agent_draft(agent_id=agent_id)
+    else:
+        return await db.is_agent_draft(agent_id=agent_id)
+
+
 @flow(name=RUN_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{context.plan_run_id}")
 async def run_execution_plan(
     plan: ExecutionPlan,
@@ -461,10 +471,15 @@ async def run_execution_plan(
                 ),
                 db=db,
             )
-            if get_ld_flag(
-                flag_name="agent-email-notification",
-                default=False,
-                user_context=get_user_context(user_id=context.user_id),
+            # Don't send email if agent is draft
+            is_agent_draft = check_draft(db=db, agent_id=context.agent_id)
+            if (
+                get_ld_flag(
+                    flag_name="agent-email-notification",
+                    default=False,
+                    user_context=get_user_context(user_id=context.user_id),
+                )
+                and not is_agent_draft
             ):
                 logger.info("Generating and sending notification to notification service")
                 await send_agent_emails(

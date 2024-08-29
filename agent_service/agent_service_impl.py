@@ -69,6 +69,7 @@ from agent_service.endpoints.models import (
     TerminateAgentResponse,
     Tooltips,
     UnsharePlanRunResponse,
+    UpdateAgentDraftStatusResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
     UpdateUserResponse,
@@ -138,7 +139,7 @@ class AgentServiceImpl:
         self.slack_sender = slack_sender
         self.base_url = base_url
 
-    async def create_agent(self, user: User) -> CreateAgentResponse:
+    async def create_agent(self, user: User, is_draft: bool = False) -> CreateAgentResponse:
         """Create an agent entry in the DB and return ID immediately"""
 
         now = get_now_utc()
@@ -149,9 +150,18 @@ class AgentServiceImpl:
             created_at=now,
             last_updated=now,
             deleted=False,
+            is_draft=is_draft,
         )
         await self.pg.create_agent(agent)
         return CreateAgentResponse(success=True, allow_retry=False, agent_id=agent.agent_id)
+
+    async def update_agent_draft_status(
+        self, agent_id: str, is_draft: bool = False
+    ) -> UpdateAgentDraftStatusResponse:
+        """Updates is_draft status of agent"""
+
+        await self.pg.update_agent_draft_status(agent_id=agent_id, is_draft=is_draft)
+        return UpdateAgentDraftStatusResponse(success=True)
 
     async def get_all_agents(self, user: User) -> GetAllAgentsResponse:
         agents, sections = await gather_with_concurrency(

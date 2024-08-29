@@ -20,10 +20,22 @@ from agent_service.utils.sidebar_sections import SidebarSection
 ####################################################################################################
 # CreateAgent
 ####################################################################################################
+class CreateAgentRequest(BaseModel):
+    is_draft: bool = False
+
+
 class CreateAgentResponse(BaseModel):
     success: bool
     allow_retry: bool
     agent_id: Optional[str] = None  # only set if success is True
+
+
+class UpdateAgentDraftStatusRequest(BaseModel):
+    is_draft: bool = False
+
+
+class UpdateAgentDraftStatusResponse(BaseModel):
+    success: bool
 
 
 ####################################################################################################
@@ -117,6 +129,8 @@ class AgentMetadata(BaseModel):
     cost_info: Optional[List[Dict[str, Any]]] = None
     section_id: Optional[str] = None
 
+    is_draft: Optional[bool] = False
+
     def to_agent_row(self) -> Dict[str, Any]:
         return {
             "agent_id": self.agent_id,
@@ -124,6 +138,7 @@ class AgentMetadata(BaseModel):
             "agent_name": self.agent_name,
             "created_at": self.created_at,
             "last_updated": self.last_updated,
+            "is_draft": self.is_draft,
         }
 
 

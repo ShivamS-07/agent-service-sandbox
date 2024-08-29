@@ -37,6 +37,7 @@ from agent_service.endpoints.models import (
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     ConvertMarkdownRequest,
+    CreateAgentRequest,
     CreateAgentResponse,
     CreateCustomNotificationRequest,
     CreateSectionRequest,
@@ -97,6 +98,8 @@ from agent_service.endpoints.models import (
     TerminateAgentResponse,
     UnsharePlanRunRequest,
     UnsharePlanRunResponse,
+    UpdateAgentDraftStatusRequest,
+    UpdateAgentDraftStatusResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
     UpdateNotificationEmailsRequest,
@@ -263,8 +266,24 @@ def health() -> str:
 @router.post(
     "/agent/create-agent", response_model=CreateAgentResponse, status_code=status.HTTP_201_CREATED
 )
-async def create_agent(user: User = Depends(parse_header)) -> CreateAgentResponse:
-    return await application.state.agent_service_impl.create_agent(user=user)
+async def create_agent(
+    req: CreateAgentRequest, user: User = Depends(parse_header)
+) -> CreateAgentResponse:
+    return await application.state.agent_service_impl.create_agent(user=user, is_draft=req.is_draft)
+
+
+@router.post(
+    "/agent/update-draft-status/{agent_id}",
+    response_model=UpdateAgentDraftStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def update_agent_draft_status(
+    agent_id: str, req: UpdateAgentDraftStatusRequest, user: User = Depends(parse_header)
+) -> UpdateAgentDraftStatusResponse:
+    validate_user_agent_access(user.user_id, agent_id)
+    return await application.state.agent_service_impl.update_agent_draft_status(
+        agent_id=agent_id, is_draft=req.is_draft
+    )
 
 
 @router.post(

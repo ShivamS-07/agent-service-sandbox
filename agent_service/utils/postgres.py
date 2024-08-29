@@ -239,6 +239,16 @@ class Postgres(PostgresBase):
             return rows[0]["deleted"]
         return True
 
+    def is_agent_draft(self, agent_id: Optional[str]) -> bool:
+        if agent_id is None:
+            return False
+
+        sql = "SELECT is_draft FROM agent.agents WHERE agent_id = %(agent_id)s"
+        rows = self.generic_read(sql, {"agent_id": agent_id})
+        if rows:
+            return rows[0]["is_draft"]
+        return True
+
     def get_agent_worklogs(
         self,
         agent_id: str,
