@@ -107,8 +107,10 @@ class TextObject(SerializeableBase):
                 # Simple case, just keep outputting the objects one after the other
                 text_objects = index_object_map[i]
                 output_buffer.append(text[i])
+                object_list = []
                 for obj in text_objects:
-                    output_buffer.append(TextObject.render_object_to_json(obj))
+                    object_list.append(TextObject.render_object_to_json(obj))
+                output_buffer.append(" ".join(object_list))
                 i += 1
 
             elif i in index_replacement_object_map:

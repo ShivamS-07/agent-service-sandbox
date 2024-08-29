@@ -33,7 +33,7 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
                     CitationTextObject(citation_id="cit1", index=3),
                     CitationTextObject(citation_id="cit2", index=3),
                 ],
-                expected_result='This```{"type": "citation", "citation_id": "cit1"}``````{"type": "citation", "citation_id": "cit2"}``` is some test text\nHello!',
+                expected_result='This```{"type": "citation", "citation_id": "cit1"}``` ```{"type": "citation", "citation_id": "cit2"}``` is some test text\nHello!',
             ),
             param(
                 text="This is some test text\nHello!",
