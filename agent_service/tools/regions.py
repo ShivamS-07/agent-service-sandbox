@@ -4,7 +4,7 @@ import country_converter as coco
 from gbi_common_py_utils.utils.util import memoize_one
 
 from agent_service.io_types.stock import StockID
-from agent_service.planner.errors import NonRetriableError
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -232,7 +232,7 @@ async def filter_stocks_by_region(
         )
     stock_list = [stock for stock in args.stock_ids if stock.gbi_id in stocks_to_include]
     if not stock_list:
-        raise NonRetriableError(message="Stock filter resulted in an empty list of stocks")
+        raise EmptyOutputError(message="Stock filter resulted in an empty list of stocks")
 
     try:  # since everything associated with diffing is optional, put in try/except
         # we need to add the task id to all runs, including the first one, so we can track changes

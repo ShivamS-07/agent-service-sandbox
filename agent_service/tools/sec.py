@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockOtherSecFilingText, StockSecFilingText
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.date_utils import parse_date_str_in_utc, timezoneify
@@ -86,7 +87,7 @@ async def get_10k_10q_sec_filings(
         all_filings.extend(filings)
 
     if len(all_filings) == 0:
-        raise Exception("No filings were retrieved for these stocks over this time period")
+        raise EmptyOutputError("No filings were retrieved for these stocks over this time period")
     return all_filings
 
 
@@ -121,7 +122,7 @@ async def get_other_sec_filings_helper(
         )
 
     if not stock_filing_map:
-        raise Exception("No filings were found.")
+        raise EmptyOutputError("No filings were found.")
 
     return stock_filing_map
 
@@ -166,5 +167,5 @@ async def get_non_10k_10q_sec_filings(
         all_filings.extend(filings)
 
     if len(all_filings) == 0:
-        raise Exception("No filings were retrieved for these stocks over this time period")
+        raise EmptyOutputError("No filings were retrieved for these stocks over this time period")
     return all_filings

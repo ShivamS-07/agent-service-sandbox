@@ -31,6 +31,7 @@ from agent_service.io_types.text import (
     TextCitation,
     TextGroup,
 )
+from agent_service.planner.errors import EmptyInputError
 from agent_service.tool import (
     TOOL_DEBUG_INFO,
     ToolArgs,
@@ -298,7 +299,7 @@ class TopicGroup(TextGroup):
         # we don't care about the args here, just for mypy
 
         if not self.id_to_str:  # TopicGroups must have their id_to_str set separately
-            raise Exception("tried to Topic Group to string before deriving id_to_str")
+            raise RuntimeError("tried to Topic Group to string before deriving id_to_str")
         self._cut_input_topics(target_num=200)
         return super().convert_to_str(self.id_to_str, numbering=True, symbols=True)
 
@@ -594,11 +595,11 @@ async def do_competitive_analysis(
     TOOL_DEBUG_INFO.set(debug_info)
 
     if not args.stocks:
-        raise ValueError("At least one stock must be provided")
+        raise EmptyInputError("At least one stock must be provided to do competative analysis")
     elif not args.criteria:
-        raise ValueError("At least one criterion must be provided")
+        raise EmptyInputError("At least one criterion must be provided to do competative analysis")
     elif not args.all_text_data:
-        raise ValueError("At least one text data must be provided")
+        raise EmptyInputError("At least one text data must be provided to do competative analysis")
 
     prev_run_info = None
     prev_internal_data = None

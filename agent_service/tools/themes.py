@@ -30,6 +30,7 @@ from agent_service.io_types.text import (
     ThemeNewsDevelopmentText,
     ThemeText,
 )
+from agent_service.planner.errors import EmptyInputError, EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.portfolio import PortfolioID
 from agent_service.types import ChatContext, Message, PlanRunContext
@@ -190,7 +191,7 @@ async def get_macroeconomic_themes(
         ThemeText(id=theme_id_lookup[theme]) for theme in matched_themes if theme in theme_id_lookup
     ]
     if not themes:
-        raise Exception("was not able to find any relevant themes matching the input")
+        raise EmptyOutputError("was not able to find any relevant themes matching the input")
     return themes
 
 
@@ -241,7 +242,7 @@ async def get_stocks_affected_by_theme(
             if polarity == args.positive:  # matches the desired polarity
                 final_stocks_reason[stock].append((reason, score))
     if len(final_stocks_reason) == 0:
-        raise Exception("Found no stocks affected by this theme/polarity combination")
+        raise EmptyOutputError("Found no stocks affected by this theme/polarity combination")
     stock_ids = await StockID.from_gbi_id_list(list(final_stocks_reason.keys()))
     final_stock_ids = []
     for stock_id in stock_ids:
@@ -317,6 +318,8 @@ class GetMacroeconomicThemeOutlookInput(ToolArgs):
 async def get_macroeconomic_theme_outlook(
     args: GetMacroeconomicThemeOutlookInput, context: PlanRunContext
 ) -> List[Text]:
+    if len(args.themes) == 0:
+        raise EmptyInputError("Cannot get macroeconomic theme outlook with an empty list of themes")
     resp = await get_all_themes_for_user(user_id=context.user_id)
     theme_outlook_lookup = {}
     for theme in resp.themes:
@@ -340,7 +343,7 @@ async def get_macroeconomic_theme_outlook(
             output.append(Text())
 
     if success_count == 0:
-        raise Exception("No outlooks for these themes")
+        raise EmptyOutputError("No outlooks for these themes")
 
     return output
 
@@ -381,6 +384,8 @@ async def get_news_developments_about_theme(
     Returns:
         List[ThemeNewsDevelopmentText]: List of news development for the themes.
     """
+    if len(args.themes) == 0:
+        raise EmptyInputError("Cannot get news developments from an empty list of themes")
     res = []
     for theme in args.themes:
         id_pairs = db.get_news_dev_about_theme(theme.id, args.date_range.start_date)
@@ -438,7 +443,7 @@ async def get_news_articles_for_theme_developments(
         )
 
     if len(res) == 0:
-        raise Exception("No articles relevant to theme found")
+        raise EmptyOutputError("No articles relevant to theme found")
 
     return res
 

@@ -29,6 +29,7 @@ from agent_service.io_types.text import (
     StockEarningsText,
     StockEarningsTranscriptText,
 )
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.dates import GetDateRangeInput, get_date_range
 from agent_service.tools.LLM_analysis.tools import SummarizeTextInput, summarize_texts
@@ -78,7 +79,7 @@ async def get_impacting_stocks(
             else []
         )
     if len(output) == 0:
-        raise Exception("Did not get any impacting stocks for these stocks")
+        raise EmptyOutputError("Did not get any impacting stocks for these stocks")
     return list(output)
 
 
@@ -406,7 +407,7 @@ async def get_earnings_call_full_transcripts(
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
     if not output:
-        raise Exception(
+        raise EmptyOutputError(
             "Did not get any earnings call transcripts for these stocks over the specified time period"
         )
     await tool_log(log=f"Found {len(output)} earnings call transcripts", context=context)
@@ -449,7 +450,7 @@ async def get_earnings_call_summaries(
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
     if not output:
-        raise Exception(
+        raise EmptyOutputError(
             "Did not get any earnings call summaries for these stocks over the specified time period"
         )
 

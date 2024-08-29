@@ -18,7 +18,7 @@ from agent_service.io_types.text import (
     TextGroup,
     TopicProfiles,
 )
-from agent_service.planner.errors import NonRetriableError
+from agent_service.planner.errors import EmptyInputError, EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.LLM_analysis.constants import (
@@ -131,7 +131,7 @@ async def _initial_summarize_helper(
         [SUMMARIZE_MAIN_PROMPT.template, SUMMARIZE_SYS_PROMPT.template, chat_str, topic_str],
     )
     if not texts_str:
-        raise Exception("Input text(s) are empty")
+        raise EmptyInputError("Input text(s) are empty")
     main_prompt = SUMMARIZE_MAIN_PROMPT.format(
         texts=texts_str,
         chat_context=chat_str,
@@ -199,7 +199,7 @@ async def _update_summarize_helper(
     )
 
     if not new_texts_str and not old_texts_str:
-        raise Exception("Input text(s) are empty")
+        raise EmptyInputError("Input text(s) are empty")
 
     main_prompt = UPDATE_SUMMARIZE_MAIN_PROMPT.format(
         new_texts=new_texts_str,
@@ -260,7 +260,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     llm = GPT(context=gpt_context, model=DEFAULT_LLM)
 
     if len(args.texts) == 0:
-        raise Exception("Cannot summarize when no texts provided")
+        raise EmptyInputError("Cannot summarize when no texts provided")
 
     text = None
     citations = None
@@ -529,6 +529,8 @@ class AnswerQuestionInput(ToolArgs):
 async def answer_question_with_text_data(
     args: AnswerQuestionInput, context: PlanRunContext
 ) -> Text:
+    if len(args.texts) == 0:
+        raise EmptyInputError(message="Cannot answer question with an empty list of texts")
     # TODO we need guardrails on this
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
@@ -622,6 +624,8 @@ class FilterNewsByTopicInput(ToolArgs):
 async def filter_news_by_topic(
     args: FilterNewsByTopicInput, context: PlanRunContext
 ) -> List[NewsText]:
+    if len(args.news_texts) == 0:
+        raise EmptyInputError("Cannot filter empty list of texts")
     # not currently returning rationale, but will probably want it
     texts: List[str] = await Text.get_all_strs(args.news_texts, include_header=True)  # type: ignore
     return [
@@ -894,6 +898,11 @@ class FilterStocksByProfileMatch(ToolArgs):
 async def filter_stocks_by_profile_match(
     args: FilterStocksByProfileMatch, context: PlanRunContext
 ) -> List[StockID]:
+    if len(args.stocks) == 0:
+        raise EmptyInputError("Cannot filter empty list of stocks")
+    if len(args.texts) == 0:
+        raise EmptyInputError("Cannot filter stocks with empty list of texts")
+
     logger = get_prefect_logger(__name__)
     if context.task_id is None:
         return []  # for mypy
@@ -1111,7 +1120,7 @@ async def filter_stocks_by_profile_match(
         )
 
     if not filtered_stocks_with_scores:
-        raise NonRetriableError(message="Stock profile filter resulted in an empty list of stocks")
+        raise EmptyOutputError(message="Stock profile filter resulted in an empty list of stocks")
     # dedup stocks
     company_names = set()
     dedup_res = []

@@ -23,7 +23,7 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
     TableColumnType,
 )
-from agent_service.planner.errors import NonRetriableError
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import TOOL_DEBUG_INFO, ToolArgs, ToolCategory, tool
 from agent_service.tools.table_utils.prompts import (
     DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT,
@@ -357,7 +357,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
     )
 
     if output_table.get_num_rows() == 0:
-        raise NonRetriableError(message="Table transformation resulted in an empty table")
+        raise EmptyOutputError(message="Table transformation resulted in an empty table")
 
     if output_table.get_stock_column():
         output_table = StockTable(columns=output_table.columns)

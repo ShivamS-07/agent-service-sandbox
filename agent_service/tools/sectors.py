@@ -11,7 +11,7 @@ from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import Text
-from agent_service.planner.errors import NonRetriableError
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -332,7 +332,7 @@ async def gics_sector_industry_filter(
     included_gbi_ids = {row["gbi_security_id"] for row in rows}
     stock_list = [stock for stock in stock_ids if stock.gbi_id in included_gbi_ids]
     if not stock_list:
-        raise NonRetriableError(message="Stock Sector filter resulted in an empty list of stocks")
+        raise EmptyOutputError(message="Stock Sector filter resulted in an empty list of stocks")
     await tool_log(
         log=f"Filtered {len(stock_ids)} stocks by sector down to {len(stock_list)}", context=context
     )

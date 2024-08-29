@@ -234,7 +234,7 @@ async def run_execution_plan(
                     chat_context=db.get_chats_history_for_agent(agent_id=context.agent_id),
                     plan=plan,
                     step=step,
-                    error=nre.message,
+                    error=nre.get_message_for_llm(),
                 )
                 msg = Message(agent_id=context.agent_id, message=response, is_user_message=False)
                 await send_chat_message(message=msg, db=db)

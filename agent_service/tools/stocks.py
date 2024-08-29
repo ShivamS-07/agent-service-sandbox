@@ -20,6 +20,7 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
     TableColumnType,
 )
+from agent_service.planner.errors import EmptyInputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -1504,6 +1505,9 @@ async def get_risk_exposure_for_stocks(
     args: GetRiskExposureForStocksInput, context: PlanRunContext
 ) -> Table:
 
+    if len(args.stock_list) == 0:
+        raise EmptyInputError("Cannot get risk exposure for empty list of stocks")
+
     # logger = get_prefect_logger(__name__)
 
     def format_column_name(col_name: str) -> str:
@@ -1632,7 +1636,7 @@ async def growth_filter(args: GrowthFilterInput, context: PlanRunContext) -> Lis
         stock_uni_args = GetStockUniverseInput(universe_name="S&P 500")
         stock_ids = await get_stock_universe(stock_uni_args, context)  # type: ignore
         if not stock_ids:
-            raise Exception("could not retrieve default stock list")
+            raise RuntimeError("could not retrieve default stock list")
 
     if stock_ids is None:
         logger = get_prefect_logger(__name__)
@@ -1727,7 +1731,7 @@ async def value_filter(args: ValueFilterInput, context: PlanRunContext) -> List[
         stock_uni_args = GetStockUniverseInput(universe_name="S&P 500")
         stock_ids = await get_stock_universe(stock_uni_args, context)  # type: ignore
         if not stock_ids:
-            raise Exception("could not retrieve default stock list")
+            raise RuntimeError("could not retrieve default stock list")
 
     if stock_ids is None:
         logger = get_prefect_logger(__name__)

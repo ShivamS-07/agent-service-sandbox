@@ -30,6 +30,7 @@ from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
 from agent_service.io_types.text import StockText, Text
+from agent_service.planner.errors import EmptyInputError, EmptyOutputError
 from agent_service.tool import (
     TOOL_DEBUG_INFO,
     ToolArgs,
@@ -671,7 +672,9 @@ async def get_stock_recommendations(
         stock_ids = args.stock_ids
     else:
         if not args.filter:
-            raise Exception("Get recommended stocks called in non-filter mode but no stocks passed")
+            raise EmptyInputError(
+                "Get recommended stocks called in non-filter mode but no stocks passed"
+            )
         # we perhaps can store the SP500 stocks as a log output but not for now as they are GBI IDs
         await tool_log(log="No stock IDs provided. Using S&P 500 stocks.", context=context)
         stock_ids: List[StockID] = await get_stock_universe(  # type: ignore
@@ -728,7 +731,7 @@ async def get_stock_recommendations(
     logger.info(f"Got scores for {len(rows)} stocks")
 
     if len(rows) == 0:
-        raise Exception("Could not get ratings for any of the stocks provided")
+        raise EmptyOutputError("Could not get ratings for any of the stocks provided")
 
     gbi_id_to_stock = {stock.gbi_id: stock for stock in stock_ids}
     score_dict: Dict[StockID, RecommendationScores] = {}

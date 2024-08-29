@@ -12,6 +12,7 @@ from agent_service.io_types.text import (
     StockNewsDevelopmentArticlesText,
     StockNewsDevelopmentText,
 )
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -183,7 +184,9 @@ async def get_all_news_developments_about_companies(
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
     if len(output) == 0:
-        raise Exception("Did not get any news developments for these stocks over the time period")
+        raise EmptyOutputError(
+            "Did not get any news developments for these stocks over the time period"
+        )
 
     await tool_log(
         log=f"Found {len(output)} news developments for the provided stocks.", context=context
@@ -223,7 +226,9 @@ async def get_news_articles_for_stock_developments(
         text.stock_id.gbi_id: text.stock_id for text in args.developments_list if text.stock_id
     }
     if not rows:
-        raise Exception("No articles for these news developments over the specified time period")
+        raise EmptyOutputError(
+            "No articles for these news developments over the specified time period"
+        )
     return [
         StockNewsDevelopmentArticlesText(
             id=row["news_id"],
@@ -341,7 +346,7 @@ async def get_news_articles_for_topics(
         news_articles.extend(relevant_news)
 
     if len(news) == 0:
-        raise Exception("Found no news articles for provided topic(s)")
+        raise EmptyOutputError("Found no news articles for provided topic(s)")
     return news_articles
 
 

@@ -8,7 +8,7 @@ from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
 from agent_service.io_types.table import StockTable
 from agent_service.io_types.text import Text
-from agent_service.planner.errors import NonRetriableError
+from agent_service.planner.errors import EmptyInputError, EmptyOutputError
 from agent_service.tool import (
     TOOL_DEBUG_INFO,
     ToolArgs,
@@ -178,6 +178,9 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
 async def filter_stocks_by_product_or_service(
     args: FilterStocksByProductOrServiceInput, context: PlanRunContext
 ) -> List[StockID]:
+    if len(args.stock_ids) == 0:
+        raise EmptyInputError("Cannot filter stocks by product/service with empty stock list")
+
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)
 
@@ -267,7 +270,7 @@ async def filter_stocks_by_product_or_service(
     filtered_stocks1 = list(filtered_stocks1_dict.keys())
 
     if not filtered_stocks1_dict:
-        raise ValueError(
+        raise EmptyOutputError(
             f"No stocks are a good match for the given product/service: '{args.product_str}'"
         )
     debug_info["filtered_stocks1"] = filtered_stocks1
@@ -376,7 +379,7 @@ async def filter_stocks_by_product_or_service(
         )
     )
     if len(res) == 0:
-        raise NonRetriableError(
+        raise EmptyOutputError(
             message="Stock product/service filter resulted in an empty list of stocks"
         )
     return res

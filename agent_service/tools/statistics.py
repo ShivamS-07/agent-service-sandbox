@@ -9,6 +9,7 @@ from agent_service.GPT.requests import GPT
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTable, Table
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.feature_data import (
     StatisticId,
@@ -217,8 +218,11 @@ async def get_statistic_data_for_companies(
     output_json = json.loads(clean_to_json_if_needed(result))
     stat_list = output_json["components"]
     if len(stat_list) == 0:
-        raise Exception(
-            "No decomposition found for client statistic using supported component statistics"
+        raise EmptyOutputError(
+            (
+                "No decomposition found for client statistic using supported component statistics,"
+                " cannot figure out how to calculate the requested value!"
+            )
         )
     calculation = output_json["calculation"]
     added_timespan = output_json["extra_timespan"]
