@@ -320,7 +320,7 @@ class GetStocksPerformanceInput(ToolArgs):
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
-    is_visible=False,
+    enabled=False,
 )
 async def get_stocks_performance(args: GetStocksPerformanceInput, context: PlanRunContext) -> Table:
     gbi_ids = [stock.gbi_id for stock in args.stock_ids]

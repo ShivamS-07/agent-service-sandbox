@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import sys
 from pprint import pprint
 from typing import Optional
 from uuid import uuid4
@@ -218,5 +219,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     init_stdout_logging()
     asyncio.run(main())
