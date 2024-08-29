@@ -680,6 +680,7 @@ class AgentServiceImpl:
                     user_id=user_id, username=user[0].username, name=user[0].name, email=email
                 )
             },
+            delete_previous_emails=False,
         )
         return EnableAgentAutomationResponse(success=True, next_run=next_run)
 

@@ -308,10 +308,7 @@ async def get_agent_task_logs(
 
 
 async def send_agent_emails(
-    pg: AsyncDB,
-    agent_id: str,
-    plan_run_id: str,
-    run_summary_short: str,
+    pg: AsyncDB, agent_id: str, plan_run_id: str, run_summary_short: str, run_summary_long: str
 ) -> None:
     """
 
@@ -320,6 +317,7 @@ async def send_agent_emails(
         agent_id: The agent id to retrieve the owner for
         plan_run_id: The plan run id
         run_summary_short: Summary of run
+        run_summary_long: Long Summary of run
 
     Returns: None this function checks at the completion of a plan and checks
     if the agent has email subscriptions and sends a message to the notification service
@@ -348,8 +346,8 @@ async def send_agent_emails(
                     plan_run_id=plan_run_id,
                     agent_owner=agent_owner if agent_owner else "",
                     notification_body=AgentNotificationBody(
-                        summary_title=f"Update for {agent_name}",
-                        summary_body=run_summary_short if run_summary_short else "",
+                        summary_title=run_summary_short if run_summary_short else "",
+                        summary_body=run_summary_long if run_summary_long else "",
                     ),
                 )
             ],

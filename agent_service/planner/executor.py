@@ -472,6 +472,7 @@ async def run_execution_plan(
                     agent_id=context.agent_id,
                     plan_run_id=context.plan_run_id,
                     run_summary_short=short_diff_summary if short_diff_summary else "",
+                    run_summary_long=filtered_diff_summary if filtered_diff_summary else "",
                 )
 
     await async_db.set_plan_run_metadata(

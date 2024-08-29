@@ -817,13 +817,15 @@ class AsyncDB:
         )
 
     async def set_agent_subscriptions(
-        self, agent_id: str, emails_to_user: Dict[str, Account]
+        self, agent_id: str, emails_to_user: Dict[str, Account], delete_previous_emails: bool = True
     ) -> None:
         records_to_upload = []
         already_seen = set()
         # remove all the subs before adding new ones to avoid
-        # duplicates
-        await self.delete_all_email_subscriptions_for_agent(agent_id)
+        # duplicates, when calling from enable_agent_automation
+        # need to make sure we do not remove all the emails
+        if delete_previous_emails:
+            await self.delete_all_email_subscriptions_for_agent(agent_id)
         for email, user in emails_to_user.items():
             if email not in already_seen:
                 already_seen.add(email)
