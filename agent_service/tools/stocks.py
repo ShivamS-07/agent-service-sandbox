@@ -13,6 +13,7 @@ from agent_service.external.pa_backtest_svc_client import (
 from agent_service.external.stock_search_dao import async_sort_stocks_by_volume
 from agent_service.GPT.constants import GPT35_TURBO, NO_PROMPT
 from agent_service.GPT.requests import GPT
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     StockTable,
@@ -1244,11 +1245,12 @@ async def get_metedata_for_stocks(
 class GetStockUniverseInput(ToolArgs):
     # name of the universe to lookup
     universe_name: str
+    date_range: Optional[DateRange] = None
 
 
 @tool(
     description=(
-        "This function takes a string"
+        "This function takes a string and an optional date range"
         " which refers to a stock universe, and converts it to a string identifier "
         " and then returns the list of stock identifiers in the universe."
         " Stock universes are generally major market indexes like the S&P 500 or the"
@@ -1281,7 +1283,9 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
     etf_stock = await get_stock_info_for_universe(args, context)
     universe_spiq_company_id = etf_stock["spiq_company_id"]
     stock_universe_table = await get_stock_universe_table_from_universe_company_id(
-        universe_spiq_company_id, context
+        universe_spiq_company_id=universe_spiq_company_id,
+        date_range=args.date_range,
+        context=context,
     )
     stock_universe_list = stock_universe_table.to_df()[STOCK_ID_COL_NAME_DEFAULT].tolist()
 
@@ -1371,12 +1375,13 @@ async def get_stock_info_for_universe(args: GetStockUniverseInput, context: Plan
 
 
 async def get_stock_universe_table_from_universe_company_id(
-    universe_spiq_company_id: int, context: PlanRunContext
+    universe_spiq_company_id: int, date_range: Optional[DateRange], context: PlanRunContext
 ) -> StockTable:
     """Returns the list of stock identifiers given a stock universe's company id.
 
     Args:
         universe_spiq_company_id: int
+        date_range: DateRange
         context (PlanRunContext): The context of the plan run.
 
     Returns:
@@ -1384,18 +1389,43 @@ async def get_stock_universe_table_from_universe_company_id(
     """
     # logger = get_prefect_logger(__name__)
     db = get_psql()
+    gbi_ids = []
+    rows = []
+    if date_range:
+        start_date = date_range.start_date
+        end_date = date_range.end_date
 
-    # Find the stocks in the universe
-    sql = """
-    SELECT DISTINCT ON (gbi_id)
-    gbi_id, symbol, ms.isin, name, weight
-    FROM "data".etf_universe_holdings euh
-    JOIN master_security ms ON ms.gbi_security_id = euh.gbi_id
-    WHERE spiq_company_id = %s AND ms.is_public
-    AND euh.to_z > NOW()
-    """
-    rows = db.generic_read(sql, [universe_spiq_company_id])
-    gbi_ids = [row["gbi_id"] for row in rows]
+        # Find the stocks in the universe
+        sql = """
+        SELECT DISTINCT ON (gbi_id)
+        gbi_id, symbol, ms.isin, name, weight
+        FROM "data".etf_universe_holdings euh
+        JOIN master_security ms ON ms.gbi_security_id = euh.gbi_id
+        WHERE spiq_company_id = %s AND ms.is_public
+        And euh.from_z <= %(start_date)s
+        AND euh.to_z >= %(end_date)
+        """
+        rows = db.generic_read(
+            sql,
+            params={
+                "start_date": start_date,
+                "end_date": end_date,
+                "gbi_id": universe_spiq_company_id,
+            },
+        )
+        gbi_ids = [row["gbi_id"] for row in rows]
+    elif not date_range:
+        # Find the stocks in the universe
+        sql = """
+        SELECT DISTINCT ON (gbi_id)
+        gbi_id, symbol, ms.isin, name, weight
+        FROM "data".etf_universe_holdings euh
+        JOIN master_security ms ON ms.gbi_security_id = euh.gbi_id
+        WHERE spiq_company_id = %s AND ms.is_public
+        AND euh.to_z > NOW()
+        """
+        rows = db.generic_read(sql, [universe_spiq_company_id])
+        gbi_ids = [row["gbi_id"] for row in rows]
     stock_ids = await StockID.from_gbi_id_list(gbi_ids)
     data = {
         STOCK_ID_COL_NAME_DEFAULT: stock_ids,
@@ -1552,6 +1582,7 @@ async def get_risk_exposure_for_stocks(
     df = df.loc[:, cols]
     df[STOCK_ID_COL_NAME_DEFAULT] = df[STOCK_ID_COL_NAME_DEFAULT].map(gbi_id_map)
     df.columns = pd.Index([format_column_name(col) for col in df.columns])
+    df = df.drop("Idiosyncratic", axis=1)
 
     table = Table.from_df_and_cols(
         data=df,
@@ -1562,10 +1593,6 @@ async def get_risk_exposure_for_stocks(
             ),
             TableColumnMetadata(
                 label="Trading Activity",
-                col_type=TableColumnType.FLOAT,
-            ),
-            TableColumnMetadata(
-                label="Idiosyncratic",
                 col_type=TableColumnType.FLOAT,
             ),
             TableColumnMetadata(

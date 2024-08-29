@@ -297,10 +297,14 @@ async def get_universe_holdings(args: GetUniverseHoldingsInput, context: PlanRun
         GetStockUniverseInput(universe_name=args.universe_name), context
     )
     universe_spiq_company_id = etf_stock["spiq_company_id"]
+    # For this tool we want to get the holdings for today
+    start_date = datetime.date.today()
 
     # get the universe stocks and weight as table
     universe_holdings_table = await get_stock_universe_table_from_universe_company_id(
-        universe_spiq_company_id, context
+        universe_spiq_company_id,
+        DateRange(start_date=start_date, end_date=start_date),
+        context,
     )
     universe_holdings_table.title = UNIVERSE_HOLDINGS_TABLE_NAME
     return universe_holdings_table
