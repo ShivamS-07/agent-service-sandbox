@@ -559,31 +559,13 @@ class AgentServiceImpl:
             output=await get_output_from_io_type(log_output, pg=self.pg.pg) if log_output else None  # type: ignore
         )
 
-    async def get_agent_output(self, agent_id: str) -> GetAgentOutputResponse:
-        outputs = await self.pg.get_agent_outputs(agent_id=agent_id)
-        if not outputs:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=f"No output found for {agent_id=}"
-            )
-
-        if outputs:
-            # Will be the same for all of these outputs
-            metadata = outputs[0].run_metadata
-            run_summary_long: Any = metadata.run_summary_long if metadata else None
-            if isinstance(run_summary_long, Text):
-                run_summary_long = await run_summary_long.to_rich_output(pg=self.pg.pg)
-                run_summary_long = cast(TextOutput, run_summary_long)
-            return GetAgentOutputResponse(
-                outputs=outputs,
-                run_summary_long=run_summary_long,
-                run_summary_short=metadata.run_summary_short if metadata else None,
-                newly_updated_outputs=(metadata.updated_output_ids or []) if metadata else [],
-            )
-        return GetAgentOutputResponse(outputs=outputs)
-
     async def get_agent_plan_output(
-        self, agent_id: str, plan_run_id: str
+        self, agent_id: str, plan_run_id: Optional[str] = None
     ) -> GetAgentOutputResponse:
+        """
+        If `plan_run_id` is None, default to get the outputs of the latest run
+        """
+
         outputs = await self.pg.get_agent_outputs(agent_id=agent_id, plan_run_id=plan_run_id)
         if not outputs:
             raise HTTPException(
@@ -592,11 +574,14 @@ class AgentServiceImpl:
             )
 
         run_metadata = outputs[0].run_metadata
+
+        newly_updated_outputs = (run_metadata.updated_output_ids or []) if run_metadata else []
+        run_summary_short = run_metadata.run_summary_short if run_metadata else None
+
         run_summary_long: Any = run_metadata.run_summary_long if run_metadata else None
         if isinstance(run_summary_long, Text):
             run_summary_long = await run_summary_long.to_rich_output(pg=self.pg.pg)
             run_summary_long = cast(TextOutput, run_summary_long)
-        run_summary_short = run_metadata.run_summary_short if run_metadata else None
 
         final_outputs = [output for output in outputs if not output.is_intermediate]
         if final_outputs:
@@ -604,10 +589,14 @@ class AgentServiceImpl:
                 outputs=final_outputs,
                 run_summary_long=run_summary_long,
                 run_summary_short=run_summary_short,
+                newly_updated_outputs=newly_updated_outputs,
             )
 
         return GetAgentOutputResponse(
-            outputs=outputs, run_summary_long=run_summary_long, run_summary_short=run_summary_short
+            outputs=outputs,
+            run_summary_long=run_summary_long,
+            run_summary_short=run_summary_short,
+            newly_updated_outputs=newly_updated_outputs,
         )
 
     async def get_citation_details(

@@ -126,9 +126,9 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-    def get_agent_output(self, agent_id: str) -> GetAgentOutputResponse:
+    def get_agent_plan_output(self, agent_id: str) -> GetAgentOutputResponse:
         return self.loop.run_until_complete(
-            self.agent_service_impl.get_agent_output(agent_id=agent_id)
+            self.agent_service_impl.get_agent_plan_output(agent_id=agent_id)
         )
 
     def get_agent_debug_info(self, agent_id: str) -> GetAgentDebugInfoResponse:

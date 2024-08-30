@@ -102,7 +102,8 @@ async def get_output_from_io_type(val: IOType, pg: BoostedPG, title: str = "") -
         elif isinstance(val[0], Text):
             val = await prepare_list_of_texts(texts=val)
         else:
-            val = await gather_with_concurrency([get_output_from_io_type(v, pg=pg) for v in val])
+            coros = [get_output_from_io_type(v, pg=pg) for v in val]
+            val = await gather_with_concurrency(coros, n=len(coros))
     elif isinstance(val, dict):
         # Ideally we shouldn't ever hit this, tools should not output raw dicts.
         val = {key: await get_output_from_io_type(v, pg=pg) for key, v in val.items()}

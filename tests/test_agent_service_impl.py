@@ -141,9 +141,9 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         res = self.get_chat_history(agent_id=agent_id)
         self.assertEqual(len(res.messages), 3)
 
-    def test_agent_output(self):
+    def test_agent_plan_output(self):
         agent_id = "6a69d259-8d4c-4056-8f60-712f42f7546f"
-        res = self.get_agent_output(agent_id=agent_id)
+        res = self.get_agent_plan_output(agent_id=agent_id)
         self.assertGreater(len(res.outputs), 0)
 
     def test_agent_task_output(self):

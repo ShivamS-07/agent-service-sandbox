@@ -18,6 +18,7 @@ from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 from agent_service.io_types import *  # noqa
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
 from agent_service.types import ChatContext, Message, Notification, PlanRunContext
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
@@ -104,22 +105,26 @@ class AsyncDB:
     async def get_agent_outputs(
         self, agent_id: str, plan_run_id: Optional[str] = None
     ) -> List[AgentOutput]:
-        where_clause = """
-            ao.plan_run_id IN (
-                    SELECT plan_run_id FROM agent.agent_outputs
-                    WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
-                    ORDER BY created_at DESC LIMIT 1
-                )
+        """
+        if `plan_run_id` is None, get the latest run's outputs
         """
 
-        params: Dict[str, Any] = {"agent_id": agent_id}
         if plan_run_id:
-            where_clause = "ao.plan_run_id = %(plan_run_id)s AND ao.output NOTNULL AND ao.is_intermediate = false"
-            params["plan_run_id"] = plan_run_id
+            where_clause = "ao.plan_run_id = %(plan_run_id)s AND ao.output NOTNULL AND ao.is_intermediate = FALSE"
+            params = {"plan_run_id": plan_run_id}
+        else:
+            where_clause = """
+                ao.plan_run_id IN (
+                        SELECT plan_run_id FROM agent.agent_outputs
+                        WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
+                        ORDER BY created_at DESC LIMIT 1
+                    )
+            """
+            params = {"agent_id": agent_id}
 
         sql = f"""
                 SELECT ao.plan_id::VARCHAR, ao.output_id::VARCHAR, ao.plan_run_id::VARCHAR,
-                    ao.output_id::VARCHAR, ao.is_intermediate, ao.live_plan_output,
+                    ao.is_intermediate, ao.live_plan_output,
                     ao.output, ao.created_at, pr.shared, pr.run_metadata
                 FROM agent.agent_outputs ao
                 LEFT JOIN agent.plan_runs pr
@@ -131,11 +136,14 @@ class AsyncDB:
         if not rows:
             return []
 
+        io_outputs = [
+            load_io_type(row["output"]) if row["output"] else row["output"] for row in rows
+        ]
+        tasks = [get_output_from_io_type(output, pg=self.pg) for output in io_outputs]
+        output_values = await gather_with_concurrency(tasks, n=len(tasks))
+
         outputs = []
-        for row in rows:
-            output = row["output"]
-            output_value = load_io_type(output) if output else output
-            output_value = await get_output_from_io_type(output_value, pg=self.pg)
+        for row, output_value in zip(rows, output_values):
             row["output"] = output_value
             row["shared"] = row["shared"] or False
             row["run_metadata"] = (
