@@ -444,7 +444,6 @@ class SecFiling:
         ch = Clickhouse()
 
         output = {}
-        records_to_upload_to_db: List[Dict] = []
         for filing_info_str, gbi_id in filing_gbi_pairs:
             filing_info = json.loads(filing_info_str)
 
@@ -475,29 +474,31 @@ class SecFiling:
                 time.sleep(0.25)
 
                 if insert_to_db:
-                    records_to_upload_to_db.append(
-                        {
-                            "gbi_id": gbi_id,
-                            CIK: filing_info[CIK],
-                            FORM_TYPE: filing_info[FORM_TYPE],  # '10-Q' or '10-K
-                            FILED_TIMESTAMP: parse_date_str_in_utc(filing_info[FILED_TIMESTAMP]),
-                            "filing": filing_info_str,
-                            "content": processed_full_content,
-                            MANAGEMENT_SECTION: management_section,
-                            RISK_FACTORS: risk_factor_section,
-                        }
-                    )
-                    if len(records_to_upload_to_db) >= 3:
+                    try:
                         await ch.multi_row_insert(
-                            table_name="sec.sec_filings", rows=records_to_upload_to_db
+                            table_name="sec.sec_filings",
+                            rows=[
+                                {
+                                    "gbi_id": gbi_id,
+                                    CIK: filing_info[CIK],
+                                    FORM_TYPE: filing_info[FORM_TYPE],  # '10-Q' or '10-K
+                                    FILED_TIMESTAMP: parse_date_str_in_utc(
+                                        filing_info[FILED_TIMESTAMP]
+                                    ),
+                                    "filing": filing_info_str,
+                                    "content": processed_full_content,
+                                    MANAGEMENT_SECTION: management_section,
+                                    RISK_FACTORS: risk_factor_section,
+                                }
+                            ],
                         )
-                        records_to_upload_to_db = []
+                    except Exception as e:
+                        # FIXME: there seems to be some size-limitation issue (2MB), right now just
+                        # log the error and skip the insertion
+                        logger.exception(f"Failed to insert filing content for {gbi_id=}: {e}")
             except Exception as e:
                 logger.exception(f"Failed to get 10K/10Q filing sections for {gbi_id=}: {e}")
                 time.sleep(10)
-
-        if insert_to_db and records_to_upload_to_db:
-            await ch.multi_row_insert(table_name="sec.sec_filings", rows=records_to_upload_to_db)
 
         return output
 
@@ -631,7 +632,6 @@ class SecFiling:
         ch = Clickhouse()
 
         output = {}
-        records_to_upload_to_db: List[Dict] = []
         for filing_info_str, gbi_id in filing_gbi_pairs:
             filing_info = json.loads(filing_info_str)
 
@@ -643,29 +643,31 @@ class SecFiling:
                 output[filing_info_str] = processed_text
 
                 if insert_to_db:
-                    records_to_upload_to_db.append(
-                        {
-                            "gbi_id": gbi_id,
-                            CIK: filing_info[CIK],
-                            FORM_TYPE: filing_info[FORM_TYPE],
-                            FILED_TIMESTAMP: parse_date_str_in_utc(filing_info[FILED_TIMESTAMP]),
-                            "filing": filing_info_str,
-                            "content": processed_text,
-                        }
-                    )
-                    if len(records_to_upload_to_db) >= 3:
+                    try:
                         await ch.multi_row_insert(
-                            table_name="sec.sec_filings", rows=records_to_upload_to_db
+                            table_name="sec.sec_filings",
+                            rows=[
+                                {
+                                    "gbi_id": gbi_id,
+                                    CIK: filing_info[CIK],
+                                    FORM_TYPE: filing_info[FORM_TYPE],
+                                    FILED_TIMESTAMP: parse_date_str_in_utc(
+                                        filing_info[FILED_TIMESTAMP]
+                                    ),
+                                    "filing": filing_info_str,
+                                    "content": processed_text,
+                                }
+                            ],
                         )
-                        records_to_upload_to_db = []
+                    except Exception as e:
+                        # FIXME: there seems to be some size-limitation issue (2MB), right now just
+                        # log the error and skip the insertion
+                        logger.exception(f"Failed to insert filing content for {gbi_id=}: {e}")
 
                 time.sleep(0.5)  # avoid rate limit
             except Exception as e:
                 logger.exception(f"Failed to get filing content for {gbi_id=}: {e}")
                 time.sleep(10)
-
-        if insert_to_db and records_to_upload_to_db:
-            await ch.multi_row_insert(table_name="sec.sec_filings", rows=records_to_upload_to_db)
 
         return output
 
