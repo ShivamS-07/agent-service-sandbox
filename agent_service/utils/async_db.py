@@ -1000,6 +1000,14 @@ class AsyncDB:
         )
         return [AgentFeedback(**row) for row in rows]
 
+    async def get_org_name(self, org_id: str) -> str:
+        sql = """
+        select name from user_service.organizations
+        where id = %(org_id)s
+        """
+        rows = await self.pg.generic_read(sql=sql, params={"org_id": org_id})
+        return rows[0]["name"]
+
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:
     if isinstance(db, Postgres):

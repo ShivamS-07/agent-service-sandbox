@@ -78,7 +78,6 @@ from agent_service.endpoints.models import (
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
 from agent_service.external.user_svc_client import (
-    get_org,
     get_users,
     list_team_members,
     update_user,
@@ -453,7 +452,7 @@ class AgentServiceImpl:
                     )
                 )[0]
                 org_id = user_info.organization_membership.organization_id.id
-                org_info = await get_org(user_id=user.user_id, org_id=org_id)
+                org_name = await self.pg.get_org_name(org_id=org_id)
                 user_email = user_info.email
                 if (
                     not user_email.endswith("@boosted.ai")
@@ -464,11 +463,11 @@ class AgentServiceImpl:
                     user_info_slack_string += f"\ncognito_username: {user_info.cognito_username}"
                     user_info_slack_string += f"\nname: {user_info.name}"
                     user_info_slack_string += f"\nuser_id: {user.user_id}"
-                    user_info_slack_string += f"\norganization_name: {org_info.organization.name}"
+                    user_info_slack_string += f"\norganization_name: {org_name}"
                     user_info_slack_string += f"\norganization_id: {org_id}"
                     if user.fullstory_link:
                         user_info_slack_string += f"\nfullstory_link: {user.fullstory_link}"
-                    six_hours_from_now = int(time.time() + (60 * 60 * 6))
+                    six_hours_from_now = int(time.time() + (60 * 60 * 2))
                     self.slack_sender.send_message_at(
                         message_text=f"{req.prompt}\n"
                         f"Link: {self.base_url}/chat/{agent_id}\n"

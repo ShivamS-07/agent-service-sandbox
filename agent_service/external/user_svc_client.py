@@ -13,8 +13,6 @@ from gbi_common_py_utils.utils.environment import (
 from grpclib.client import Channel
 from user_service_proto_v1.user_service_grpc import UserServiceStub
 from user_service_proto_v1.user_service_pb2 import (
-    GetOrganizationRequest,
-    GetOrganizationResponse,
     GetUsersRequest,
     ListTeamMembersRequest,
     ListTeamMembersResponse,
@@ -73,17 +71,6 @@ async def get_users(user_id: str, user_ids: List[str], include_user_enabled: boo
             metadata=get_default_grpc_metadata(user_id=user_id),
         )
         return [u for u in res.user]
-
-
-@grpc_retry
-@async_perf_logger
-async def get_org(user_id: str, org_id: str) -> GetOrganizationResponse:
-    with _get_service_stub() as stub:
-        res = await stub.GetOrganization(
-            GetOrganizationRequest(organization_id=UUID(id=org_id)),
-            metadata=get_default_grpc_metadata(user_id=user_id),
-        )
-        return res
 
 
 @grpc_retry
