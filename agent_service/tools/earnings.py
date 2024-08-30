@@ -207,13 +207,11 @@ async def _get_earnings_summary_helper(
         await tool_log(
             log=(
                 f"Earning summaries not available for {len(events_without_summaries)} earning calls, "
-                "generating them now, this may take a couple minutes..."
+                "excluding them from the output..."
             ),
             context=context,
         )
-        finalized_output = await generate_missing_summaries(
-            user_id, events_without_summaries, gbi_id_stock_id_lookup, output
-        )
+        finalized_output = output
     else:
         await tool_log(
             log=(
