@@ -86,6 +86,7 @@ MIN_GPT_NAME_MATCH = 0.7
 class StockIdentifierLookupInput(ToolArgs):
     # name or symbol of the stock to lookup
     stock_name: str
+    prefer_etfs: Optional[bool] = False
 
 
 STOCK_CONFIRMATION_PROMPT = Prompt(
@@ -185,6 +186,7 @@ def get_stock_identifier_lookup_cache_key(
             tool_name,
             "ARGS",
             args.stock_name.lower(),
+            str(args.prefer_etfs),
         ]
     )
     return key
@@ -199,7 +201,9 @@ def get_stock_identifier_lookup_cache_key(
         " You MUST let this function interpret the meaning of the input text,"
         " the stock_name  passed to this function should"
         " usually be copied verbatim from the client input, avoid"
-        " paraphrasing or copying from a sample plan"
+        " paraphrasing or copying from a sample plan."
+        " If the user intent is to find an ETF, you may set prefer_etfs = True"
+        " to enable some etf specific matching logic"
     ),
     category=ToolCategory.STOCK,
     use_cache=True,
@@ -317,8 +321,11 @@ async def stock_identifier_lookup(
             confirm_rows = await stock_lookup_by_text_similarity(
                 confirm_args, context, min_match_strength=MIN_GPT_NAME_MATCH
             )
-            logger.info(f"found {len(rows)} best matching stock to the gpt answer")
-            confirm_rows = await augment_stock_rows_with_volume(context.user_id, confirm_rows)
+            logger.info(f"found {len(confirm_rows)} best matching stock to the gpt answer")
+            if len(confirm_rows) != 1:
+                confirm_rows = await augment_stock_rows_with_volume(context.user_id, confirm_rows)
+            else:
+                logger.info(f"confirmed by gpt: {confirm_rows}")
 
     else:
         # TODO, should we assume GPT is correct that this is not a stock,
@@ -517,6 +524,33 @@ async def stock_lookup_by_text_similarity(
     # often the most important word in a company name is the first word,
     # Samsung electronics, co. ltd, Samsung is important everything after is not
     logger.info(f"checking for text similarity of {args.stock_name=} and {prefix=}")
+
+    # normally we wont include this logic in the giant union below
+    etf_union_sql = ""
+
+    etf_match_str = args.stock_name
+    if args.prefer_etfs or "etf" in args.stock_name.lower().split():
+        # GNR ETF
+        etf_match_str = etf_match_str.upper().replace(" ETF", "").replace("ETF ", "").strip()
+        etf_union_sql = f"""
+        UNION
+
+        -- ETF ticker symbol (exact match only)
+        SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
+        ms.asset_type,
+        ms.name, 'ticker symbol' as match_col, ms.symbol as match_text,
+        {PERFECT_TEXT_MATCH} AS text_sim_score
+        FROM master_security ms
+        WHERE
+        ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
+        AND ms.is_public
+        AND ms.is_primary_trading_item = true
+        AND ms.to_z is null
+        AND ms.symbol = upper(%(etf_match_str)s)
+        -- double pct sign for python x sql special chars
+        AND (ms.security_type like '%%ETF%%'  OR ms.security_type like '%%Fund%%')
+        """
+
     # Word similarity name match
 
     # should we also allow 'Depositary Receipt (Common Stock)') ?
@@ -551,6 +585,8 @@ async def stock_lookup_by_text_similarity(
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
     AND ms.symbol = upper(%(search_term)s)
+
+{etf_union_sql}
 
     UNION
 
@@ -640,7 +676,10 @@ async def stock_lookup_by_text_similarity(
     ORDER BY final_match_score DESC
     LIMIT 100
     """
-    rows = db.generic_read(sql, {"search_term": args.stock_name, "prefix": prefix})
+    rows = db.generic_read(
+        sql,
+        params={"search_term": args.stock_name, "prefix": prefix, "etf_match_str": etf_match_str},
+    )
 
     # this shouldn't matter but at least once on dev the volume lookup silently failed
     # this will break ties in favor of Common stock and against Depositary Receipts
@@ -1260,6 +1299,8 @@ class GetStockUniverseInput(ToolArgs):
         " You can also use this tool to get the holdings of an ETF or stock."
         " But not the holdings of a user's portfolio, "
         " if you do need portfolio holdings then use get_portfolio_holdings tool instead."
+        " \n - Some example phrases that imply you should use this function are:"
+        " 'stocks in', 'companies in', 'holdings of'"
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -1863,9 +1904,23 @@ async def get_stock_universe_from_etf_stock_match(
 
     # Find the universe id/name by reusing the stock lookup, and then filter by ETF
     logger.info(f"Attempting to map '{args.universe_name}' to a stock universe")
-    stock_args = StockIdentifierLookupInput(stock_name=args.universe_name)
+    stock_args = StockIdentifierLookupInput(stock_name=args.universe_name, prefer_etfs=True)
+    stock_rows = []
+    try:
+        stock_id = await stock_identifier_lookup(stock_args, context)
+        stock_id = cast(StockID, stock_id)
 
-    stock_rows = await raw_stock_identifier_lookup(stock_args, context)
+        # make this look like a sql row
+        stock_row = {
+            "gbi_security_id": stock_id.gbi_id,
+            "symbol": stock_id.symbol,
+            "isin": stock_id.isin,
+            "name": stock_id.company_name,
+        }
+        stock_rows.append(stock_row)
+    except ValueError as e:
+        logger.info(e)
+
     if not stock_rows:
         return None
 
@@ -1878,8 +1933,17 @@ async def get_stock_universe_from_etf_stock_match(
     """
     potential_etf_gbi_ids = [r["gbi_security_id"] for r in stock_rows]
     etf_rows = db.generic_read(sql, [potential_etf_gbi_ids])
-    gbiid2companyid = {r["gbi_id"]: r["spiq_company_id"] for r in etf_rows}
 
+    if not etf_rows:
+        # fall back to the old logic
+        raw_stock_rows = await raw_stock_identifier_lookup(stock_args, context)
+        stock_rows.extend(raw_stock_rows)
+        potential_etf_gbi_ids = [r["gbi_security_id"] for r in stock_rows]
+        etf_rows = db.generic_read(sql, [potential_etf_gbi_ids])
+        if not etf_rows:
+            return None
+
+    gbiid2companyid = {r["gbi_id"]: r["spiq_company_id"] for r in etf_rows}
     rows = [r for r in stock_rows if r["gbi_security_id"] in gbiid2companyid]
 
     if not rows:
