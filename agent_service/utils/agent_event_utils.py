@@ -346,8 +346,8 @@ async def send_agent_emails(
                     plan_run_id=plan_run_id,
                     agent_owner=agent_owner if agent_owner else "",
                     notification_body=AgentNotificationBody(
-                        summary_title=run_summary_short if run_summary_short else "",
-                        summary_body=run_summary_long if run_summary_long else "",
+                        summary_title=f"Update for {agent_name}",
+                        summary_body=run_summary_short if run_summary_short else "",
                     ),
                 )
             ],
