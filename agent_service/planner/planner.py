@@ -611,7 +611,7 @@ class Planner:
             sample_plans_str = "\n\n".join(
                 [sample_plan.get_formatted_plan() for sample_plan in sample_plans]
             )
-            logger.info(f"Found relevant sample plan(s): {sample_plans_str}")
+            logger.info(f"Found relevant sample plan(s):\n{sample_plans_str}")
             sample_plans_str = PLAN_SAMPLE_TEMPLATE.format(sample_plans=sample_plans_str)
         else:
             logger.info("No relevant sample plan(s) found")

@@ -118,6 +118,7 @@ class PeersForStockInput(ToolArgs):
     """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_affected_peers(
     args: PeersForStockInput, context: PlanRunContext
@@ -192,6 +193,7 @@ async def get_affected_peers(
     """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_affecting_peers(
     args: PeersForStockInput, context: PlanRunContext
@@ -267,6 +269,7 @@ class PeersConnections(ToolArgs):
     """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_earnings_peers_table(args: PeersConnections, context: PlanRunContext) -> Table:
     columns: List[TableColumnMetadata] = []

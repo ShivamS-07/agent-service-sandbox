@@ -1663,6 +1663,8 @@ class TextGroup(ComplexIOBase):
     def convert_to_str(
         self, id_to_str: Dict[TextIDType, str], numbering: bool = False, symbols: bool = False
     ) -> str:
+        # sort texts by timestamp so any truncations cuts off older texts
+        self.val.sort(key=lambda x: x.timestamp.timestamp() if x.timestamp else 0, reverse=True)
         self.id_to_str = id_to_str
         return "\n***\n".join(
             [

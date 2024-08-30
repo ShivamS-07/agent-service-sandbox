@@ -54,6 +54,7 @@ class GetImpactingStocksInput(ToolArgs):
     ),
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,
+    enabled=False,
 )
 async def get_impacting_stocks(
     args: GetImpactingStocksInput, context: PlanRunContext

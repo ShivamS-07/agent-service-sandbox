@@ -56,6 +56,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     RUBRIC_EVALUATION_MAIN_OBJ,
     RUBRIC_EVALUATION_SYS_OBJ,
     SIMPLE_PROFILE_FILTER_SYS_PROMPT,
+    STOCK_PHRASE,
     SUMMARIZE_DESCRIPTION,
     SUMMARIZE_MAIN_PROMPT,
     SUMMARIZE_SYS_PROMPT,
@@ -109,6 +110,7 @@ def split_text_and_citation_ids(GPT_ouput: str) -> Tuple[str, List[int]]:
 class SummarizeTextInput(ToolArgs):
     texts: List[Text]
     topic: Optional[str] = None
+    stock: Optional[StockID] = None
 
 
 async def _initial_summarize_helper(
@@ -126,16 +128,28 @@ async def _initial_summarize_helper(
         topic_str = TOPIC_PHRASE.format(topic=topic)
     else:
         topic_str = ""
+    stock = args.stock
+    if stock:
+        stock_str = STOCK_PHRASE.format(stock=stock.company_name)
+    else:
+        stock_str = ""
+
     texts_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
         texts_str,
-        [SUMMARIZE_MAIN_PROMPT.template, SUMMARIZE_SYS_PROMPT.template, chat_str, topic_str],
+        [
+            SUMMARIZE_MAIN_PROMPT.template,
+            SUMMARIZE_SYS_PROMPT.template,
+            chat_str,
+            topic_str,
+            stock_str,
+        ],
     )
-    if not texts_str:
-        raise EmptyInputError("Input text(s) are empty")
+
     main_prompt = SUMMARIZE_MAIN_PROMPT.format(
         texts=texts_str,
         chat_context=chat_str,
         topic_phrase=topic_str,
+        stock_phrase=stock_str,
         today=(
             context.as_of_date.date().isoformat()
             if context.as_of_date
@@ -187,6 +201,12 @@ async def _update_summarize_helper(
     else:
         topic_str = ""
 
+    stock = args.stock
+    if stock:
+        stock_str = STOCK_PHRASE.format(stock=stock.company_name)
+    else:
+        stock_str = ""
+
     new_texts_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
         new_texts_str,
         [
@@ -194,6 +214,7 @@ async def _update_summarize_helper(
             UPDATE_SUMMARIZE_SYS_PROMPT.template,
             chat_str,
             topic_str,
+            stock_str,
             old_texts_str,
         ],
     )
@@ -207,6 +228,7 @@ async def _update_summarize_helper(
         old_summary=old_summary,
         chat_context=chat_str,
         topic_phrase=topic_str,
+        stock_phrase=stock_str,
         today=(
             context.as_of_date.date().isoformat()
             if context.as_of_date
@@ -394,7 +416,7 @@ async def per_stock_summarize_texts(
                 if new_texts or (remaining_citations and has_lost_citations):
                     tasks.append(
                         _update_summarize_helper(
-                            SummarizeTextInput(texts=new_texts, topic=args.topic),  # type: ignore
+                            SummarizeTextInput(texts=new_texts, topic=args.topic, stock=stock),  # type: ignore
                             context,
                             llm,
                             new_texts,  # type: ignore
@@ -409,13 +431,16 @@ async def per_stock_summarize_texts(
                         tasks.append(identity((NO_SUMMARY_FOR_STOCK, [])))
 
             else:
-                tasks.append(
-                    _initial_summarize_helper(
-                        SummarizeTextInput(texts=text_dict[stock], topic=args.topic),  # type: ignore
-                        context,
-                        llm,
+                if text_dict[stock]:
+                    tasks.append(
+                        _initial_summarize_helper(
+                            SummarizeTextInput(texts=text_dict[stock], topic=args.topic, stock=stock),  # type: ignore
+                            context,
+                            llm,
+                        )
                     )
-                )
+                else:
+                    tasks.append(identity((NO_SUMMARY_FOR_STOCK, [])))
             summary_count += 1
         else:
             tasks.append(identity(None))
