@@ -202,6 +202,10 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         debug_result = self.get_debug_tool_result(replay_id=replay_id)
         self.assertIsNotNone(debug_result)
 
+    def test_get_tool_library(self):
+        resp = self.get_tool_library()
+        self.assertIsNotNone(resp)
+
     def test_get_test_run_info(self):
         service_version = "0.0.544"
         test_run_info = self.get_info_for_test_suite_run(

@@ -39,6 +39,7 @@ from agent_service.endpoints.models import (
     GetDebugToolResultResponse,
     GetTestCaseInfoResponse,
     GetTestSuiteRunInfoResponse,
+    GetToolLibraryResponse,
     RestoreAgentResponse,
     TerminateAgentResponse,
     UpdateAgentRequest,
@@ -145,6 +146,9 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
         return self.loop.run_until_complete(
             self.agent_service_impl.get_debug_tool_result(replay_id=replay_id)
         )
+
+    def get_tool_library(self) -> GetToolLibraryResponse:
+        return self.loop.run_until_complete(self.agent_service_impl.get_tool_library())
 
     def get_info_for_test_suite_run(self, service_version: str) -> GetTestSuiteRunInfoResponse:
         return self.loop.run_until_complete(

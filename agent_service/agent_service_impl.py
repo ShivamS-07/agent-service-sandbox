@@ -51,6 +51,7 @@ from agent_service.endpoints.models import (
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
+    GetToolLibraryResponse,
     ListMemoryItemsResponse,
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadResponse,
@@ -67,6 +68,7 @@ from agent_service.endpoints.models import (
     SetAgentScheduleResponse,
     SharePlanRunResponse,
     TerminateAgentResponse,
+    ToolMetadata,
     Tooltips,
     UnsharePlanRunResponse,
     UpdateAgentDraftStatusResponse,
@@ -86,6 +88,7 @@ from agent_service.io_type_utils import load_io_type
 from agent_service.io_types.citations import CitationDetailsType, CitationType
 from agent_service.io_types.text import Text, TextOutput
 from agent_service.slack.slack_sender import SlackSender
+from agent_service.tool import ToolCategory, ToolRegistry
 from agent_service.types import ChatContext, MemoryType, Message
 from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import send_chat_message
@@ -928,6 +931,27 @@ class AgentServiceImpl:
     async def get_debug_tool_result(self, replay_id: str) -> GetDebugToolResultResponse:
         result = await self.ch.get_debug_tool_result(replay_id=replay_id)
         return GetDebugToolResultResponse(result=json.loads(result))
+
+    async def get_tool_library(self) -> GetToolLibraryResponse:
+        tools = []
+        for tool_name, tool in ToolRegistry._REGISTRY_ALL_TOOLS_MAP.items():
+            if not tool.enabled:
+                continue
+
+            category = ToolRegistry._TOOL_NAME_TO_CATEGORY[tool_name]
+
+            tools.append(
+                ToolMetadata(
+                    tool_name=tool_name,
+                    tool_description=tool.description,
+                    tool_header=tool.to_function_header(),
+                    category=category.value.title(),
+                )
+            )
+
+        tool_category_map = {category.name: category.get_description() for category in ToolCategory}
+
+        return GetToolLibraryResponse(tools=tools, tool_category_map=tool_category_map)
 
     async def get_info_for_test_suite_run(
         self, service_version: str

@@ -604,6 +604,18 @@ class GetDebugToolResultResponse(BaseModel):
     result: Any
 
 
+class ToolMetadata(BaseModel):
+    tool_name: str  # python function name
+    tool_description: str  # the prompt to GPT for what this tool does
+    tool_header: str  # function header, e.g. `def my_tool(x: int) -> int:`
+    category: str  # `ToolCategory`
+
+
+class GetToolLibraryResponse(BaseModel):
+    tool_category_map: Dict[str, str]  # name to description
+    tools: List[ToolMetadata]
+
+
 ####################################################################################################
 # Memory Item
 ####################################################################################################

@@ -259,11 +259,13 @@ class ToolRegistry:
 
     _REGISTRY_CATEGORY_MAP: Dict[ToolCategory, Dict[str, Tool]] = defaultdict(dict)
     _REGISTRY_ALL_TOOLS_MAP: Dict[str, Tool] = {}
+    _TOOL_NAME_TO_CATEGORY: Dict[str, ToolCategory] = {}
 
     @classmethod
     def register_tool(cls, tool: Tool, category: ToolCategory = ToolCategory.MISC) -> None:
         cls._REGISTRY_CATEGORY_MAP[category][tool.name] = tool
         cls._REGISTRY_ALL_TOOLS_MAP[tool.name] = tool
+        cls._TOOL_NAME_TO_CATEGORY[tool.name] = category
 
     @classmethod
     def get_tool_in_category(

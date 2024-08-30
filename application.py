@@ -73,6 +73,7 @@ from agent_service.endpoints.models import (
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
+    GetToolLibraryResponse,
     ListMemoryItemsResponse,
     MarkNotificationsAsReadRequest,
     MarkNotificationsAsReadResponse,
@@ -953,6 +954,15 @@ async def get_agent_debug_result(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
     return await application.state.agent_service_impl.get_debug_tool_result(replay_id=replay_id)
+
+
+@router.get(
+    "/debug/tool/get-tool-library",
+    response_model=GetToolLibraryResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_tool_library(user: User = Depends(parse_header)) -> GetToolLibraryResponse:
+    return await application.state.agent_service_impl.get_tool_library()
 
 
 @router.get(

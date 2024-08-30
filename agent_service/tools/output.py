@@ -6,7 +6,7 @@ from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import IOType, dump_io_type
 from agent_service.io_types.text import Text
 from agent_service.io_types.text_objects import TextObject
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.output_utils.output_construction import PreparedOutput
@@ -123,12 +123,3 @@ async def analyze_outputs(args: AnalyzeOutputInputs, context: PlanRunContext) ->
     )
     result = await llm.do_chat_w_sys_prompt(main_prompt, ANALYZE_OUTPUT_SYS_PROMPT.format())
     return Text(val=result)
-
-
-# Hack for backwards compatibility
-ToolRegistry._REGISTRY_CATEGORY_MAP[ToolCategory.OUTPUT]["output"] = (
-    ToolRegistry._REGISTRY_CATEGORY_MAP[ToolCategory.OUTPUT]["prepare_output"]
-)
-ToolRegistry._REGISTRY_ALL_TOOLS_MAP["output"] = ToolRegistry._REGISTRY_CATEGORY_MAP[
-    ToolCategory.OUTPUT
-]["prepare_output"]
