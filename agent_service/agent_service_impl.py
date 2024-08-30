@@ -45,6 +45,7 @@ from agent_service.endpoints.models import (
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
     GetMemoryContentResponse,
+    GetPlanRunDebugInfoResponse,
     GetPlanRunOutputResponse,
     GetSecureUserResponse,
     GetTestCaseInfoResponse,
@@ -59,6 +60,7 @@ from agent_service.endpoints.models import (
     MemoryItem,
     NotificationEmailsResponse,
     NotificationEvent,
+    PlanRunToolDebugInfo,
     PlanTemplateTask,
     RenameMemoryResponse,
     RestoreAgentResponse,
@@ -831,6 +833,50 @@ class AgentServiceImpl:
 
         return GetPlanRunOutputResponse(outputs=outputs, agent_name=agent_name)
 
+    async def get_plan_run_debug_info(
+        self, agent_id: str, plan_run_id: str
+    ) -> GetPlanRunDebugInfoResponse:
+        """
+        Get plan nodes from Postgres, `agent.execution_plans` table
+        Get input and output from Clickhouse, `agent.tool_calls` table
+        """
+        execution_plan, tool_calls = await asyncio.gather(
+            self.pg.get_execution_plan_for_run(plan_run_id),
+            self.ch.get_plan_run_debug_tool_calls(plan_run_id),
+        )
+        task_id_to_tool_call = {tool_call["task_id"]: tool_call for tool_call in tool_calls}
+
+        resp = GetPlanRunDebugInfoResponse(plan_run_tools=[])
+        for node in execution_plan.nodes:
+            task_id = node.tool_task_id
+
+            tool_name = node.tool_name
+            tool = ToolRegistry.get_tool(tool_name)
+
+            # if the tool hasn't been run yet, there won't be `tool_call``
+            tool_call = task_id_to_tool_call.get(task_id)
+            args = json.loads(tool_call["args"]) if tool_call else None
+            start_time_utc = tool_call["start_time_utc"] if tool_call else None
+            end_time_utc = tool_call["end_time_utc"] if tool_call else None
+            duration_seconds = tool_call["duration_seconds"] if tool_call else None
+
+            resp.plan_run_tools.append(
+                PlanRunToolDebugInfo(
+                    tool_id=task_id,
+                    tool_name=tool_name,
+                    tool_description=tool.description,
+                    tool_comment=node.description,
+                    output_variable_name=node.output_variable_name,
+                    args=args,
+                    # output=json.loads(tool_call["result"]),
+                    start_time_utc=start_time_utc,
+                    end_time_utc=end_time_utc,
+                    duration_seconds=duration_seconds,
+                )
+            )
+
+        return resp
+
     async def get_agent_debug_info(self, agent_id: str) -> GetAgentDebugInfoResponse:
         tasks = [
             self.pg.get_agent_owner(agent_id),
@@ -949,7 +995,9 @@ class AgentServiceImpl:
                 )
             )
 
-        tool_category_map = {category.name: category.get_description() for category in ToolCategory}
+        tool_category_map = {
+            category.value.title(): category.get_description() for category in ToolCategory
+        }
 
         return GetToolLibraryResponse(tools=tools, tool_category_map=tool_category_map)
 

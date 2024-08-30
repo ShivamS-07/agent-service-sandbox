@@ -67,6 +67,7 @@ from agent_service.endpoints.models import (
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
     GetMemoryContentResponse,
+    GetPlanRunDebugInfoResponse,
     GetSecureUserResponse,
     GetTeamAccountsResponse,
     GetTestCaseInfoResponse,
@@ -924,6 +925,27 @@ async def get_agent_debug_info(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
     return await application.state.agent_service_impl.get_agent_debug_info(agent_id=agent_id)
+
+
+@router.get(
+    "/debug/get-plan-run-debug-info/{agent_id}/{plan_run_id}",
+    response_model=GetPlanRunDebugInfoResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_plan_run_debug_info(
+    agent_id: str, plan_run_id: str, user: User = Depends(parse_header)
+) -> GetPlanRunDebugInfoResponse:
+    """Return detailed information about a plan run for debugging purposes,
+    include the list of tools, inputs, outputs
+    """
+    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
+        )
+
+    return await application.state.agent_service_impl.get_plan_run_debug_info(
+        agent_id=agent_id, plan_run_id=plan_run_id
+    )
 
 
 @router.get(

@@ -596,6 +596,23 @@ class GetAgentDebugInfoResponse(BaseModel):
     tooltips: Tooltips
 
 
+class PlanRunToolDebugInfo(BaseModel):
+    tool_id: str  # task_id internally
+    tool_name: str  # python function name
+    tool_description: str  # the prompt to GPT for what this tool does
+    tool_comment: str  # the short comment from GPT for what this tool does
+    args: Optional[Dict[str, Any]]  # `ToolArgs` type but in JSON format, None when not started
+    output_variable_name: str
+    # output: Any  # `IOType` type but in JSON format
+    start_time_utc: Optional[datetime.datetime]  # None if not started/ended
+    end_time_utc: Optional[datetime.datetime]
+    duration_seconds: Optional[float]
+
+
+class GetPlanRunDebugInfoResponse(BaseModel):
+    plan_run_tools: List[PlanRunToolDebugInfo]
+
+
 class GetDebugToolArgsResponse(BaseModel):
     args: Dict[str, Any]
 

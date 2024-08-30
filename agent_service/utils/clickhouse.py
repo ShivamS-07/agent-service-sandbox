@@ -654,6 +654,15 @@ class Clickhouse(AsyncClickhouseBase):
             res[plan_run_id][f"{tool_name}_{row['task_id']}"] = row
         return res
 
+    async def get_plan_run_debug_tool_calls(self, plan_run_id: str) -> List[Dict]:
+        sql = """
+        SELECT task_id, tool_name, args, start_time_utc, end_time_utc, duration_seconds
+        FROM agent.tool_calls
+        WHERE plan_run_id = %(plan_run_id)s
+        ORDER BY end_time_utc ASC
+        """
+        return await self.generic_read(sql, {"plan_run_id": plan_run_id})
+
     async def get_agent_debug_cost_info(self, agent_id: str) -> Dict[str, Any]:
         total_cost_sql = """select round(sum(cost_usd), 2) as total_cost_usd from llm.queries q
         where agent_id =  %(agent_id)s"""
