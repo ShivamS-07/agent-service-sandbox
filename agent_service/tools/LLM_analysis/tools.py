@@ -693,7 +693,7 @@ async def profile_filter_helper(
     for stock in aligned_text_groups.val:
         text_str = str_lookup[stock]
         text_str = tokenizer.chop_input_to_allowed_length(text_str, used)
-        if text_str == "" or (stock_whitelist and stock in stock_whitelist):  # no text, skip
+        if text_str == "" or (stock_whitelist is not None and stock not in stock_whitelist):
             tasks.append(identity(""))
 
         elif is_using_complex_profile:
@@ -957,6 +957,10 @@ async def filter_stocks_by_profile_match(
 
             # we are only going to do main pass for stocks that have some text difference
             # relative to previous run
+            await tool_log(
+                f"No new information for {len(same_text_stocks)} stocks, skipping filtering for these stocks",
+                context=context,
+            )
             args.stocks = diff_text_stocks
 
     except Exception as e:
@@ -1117,6 +1121,7 @@ async def filter_stocks_by_profile_match(
     try:  # we do this part separately because we don't want to accidently lose the same_text_stocks
         if prev_run_info is not None:
             if same_text_stocks:  # add in results where no change in text
+                old_pass_count = 0
                 for new_stock in same_text_stocks:
                     found_stock = False
                     for old_stock in prev_output:
@@ -1128,19 +1133,26 @@ async def filter_stocks_by_profile_match(
                             new_stock, old_stock, context.task_id
                         )
                         if stock_with_old_history:
+                            old_pass_count += 1
                             filtered_stocks_with_scores.append(stock_with_old_history)
+
+                if old_pass_count > 0:
+                    await tool_log(
+                        f"Including {old_pass_count} stocks that have no update and passed filter previously",
+                        context=context,
+                    )
 
     except Exception as e:
         logger.warning(f"Error duplicating output for stocks with no text changes: {e}")
 
     if isinstance(args.profile, TopicProfiles):
         await tool_log(
-            f"Filtered {len(filtered_stocks_with_scores)} stocks for profile: {args.profile.topic}",
+            f"{len(filtered_stocks_with_scores)} stocks passed filter for profile: {args.profile.topic}",
             context=context,
         )
     elif isinstance(args.profile, str):
         await tool_log(
-            f"Filtered {len(filtered_stocks_with_scores)} stocks for profile: {profile_str}",
+            f"Found {len(filtered_stocks_with_scores)} stock passed filter stocks for profile: {profile_str}",
             context=context,
         )
 
