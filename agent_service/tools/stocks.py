@@ -1442,16 +1442,16 @@ async def get_stock_universe_table_from_universe_company_id(
         gbi_id, symbol, ms.isin, name, weight
         FROM "data".etf_universe_holdings euh
         JOIN master_security ms ON ms.gbi_security_id = euh.gbi_id
-        WHERE spiq_company_id = %s AND ms.is_public
+        WHERE spiq_company_id = %(spiq_company_id)s AND ms.is_public
         And euh.from_z <= %(start_date)s
-        AND euh.to_z >= %(end_date)
+        AND euh.to_z >= %(end_date)s
         """
         rows = db.generic_read(
             sql,
             params={
+                "spiq_company_id": universe_spiq_company_id,
                 "start_date": start_date,
                 "end_date": end_date,
-                "gbi_id": universe_spiq_company_id,
             },
         )
         gbi_ids = [row["gbi_id"] for row in rows]
