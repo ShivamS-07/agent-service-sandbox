@@ -68,6 +68,7 @@ from agent_service.endpoints.models import (
     GetDebugToolResultResponse,
     GetMemoryContentResponse,
     GetPlanRunDebugInfoResponse,
+    GetPromptTemplatesResponse,
     GetSecureUserResponse,
     GetTeamAccountsResponse,
     GetTestCaseInfoResponse,
@@ -1283,6 +1284,16 @@ async def rearrange_section(
         section_id=req.section_id, new_index=req.new_index, user=user
     )
     return RearrangeSectionResponse(success=True)
+
+
+@router.get(
+    "/template/prompt-templates",
+    response_model=GetPromptTemplatesResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_prompt_tempaltes() -> GetPromptTemplatesResponse:
+    templates = await application.state.agent_service_impl.get_prompt_tempaltes()
+    return GetPromptTemplatesResponse(prompt_templates=templates)
 
 
 initialize_unauthed_endpoints(application)

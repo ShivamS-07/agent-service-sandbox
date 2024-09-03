@@ -110,6 +110,7 @@ from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.memory_handler import MemoryHandler, get_handler
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
+from agent_service.utils.prompt_template import PromptTemplate
 from agent_service.utils.redis_queue import (
     get_agent_event_channel,
     get_notification_event_channel,
@@ -1174,3 +1175,6 @@ class AgentServiceImpl:
             return GetAgentFeedBackResponse(agent_feedback=None, success=True)
 
         return GetAgentFeedBackResponse(agent_feedback=feedback[0], success=True)
+
+    async def get_prompt_tempaltes(self) -> List[PromptTemplate]:
+        return await self.pg.get_prompt_templates()

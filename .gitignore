@@ -9,3 +9,4 @@ build/
 tmp/*
 .jython_cache/*
 .idea/
+backups/*

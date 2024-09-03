@@ -13,6 +13,7 @@ from agent_service.io_types.text import TextOutput
 from agent_service.planner.planner_types import PlanStatus, RunMetadata
 from agent_service.types import Message
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.prompt_template import PromptTemplate
 from agent_service.utils.scheduling import AgentSchedule
 from agent_service.utils.sidebar_sections import SidebarSection
 
@@ -796,3 +797,10 @@ class RearrangeSectionRequest(BaseModel):
 
 class RearrangeSectionResponse(BaseModel):
     success: bool
+
+
+####################################################################################################
+# Prompt Templates
+####################################################################################################
+class GetPromptTemplatesResponse(BaseModel):
+    prompt_templates: List[PromptTemplate]

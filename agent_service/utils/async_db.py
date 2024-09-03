@@ -24,6 +24,7 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres
+from agent_service.utils.prompt_template import PromptTemplate
 from agent_service.utils.sidebar_sections import SidebarSection
 
 
@@ -1017,6 +1018,17 @@ class AsyncDB:
             },
         )
         return [AgentFeedback(**row) for row in rows]
+
+    async def get_prompt_templates(self) -> List[PromptTemplate]:
+        sql = """
+        SELECT template_id::TEXT, name, description, prompt, category, created_at
+        FROM agent.prompt_templates
+        ORDER BY name ASC
+        """
+        rows = await self.pg.generic_read(sql=sql)
+        if not rows:
+            return []
+        return [PromptTemplate(**row) for row in rows]
 
     async def get_org_name(self, org_id: str) -> str:
         sql = """
