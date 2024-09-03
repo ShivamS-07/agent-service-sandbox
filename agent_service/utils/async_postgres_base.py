@@ -4,8 +4,9 @@
 import asyncio
 import logging
 import traceback
+from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 import backoff
 import psycopg
@@ -121,6 +122,12 @@ class AsyncPostgresBase(BoostedPG):
         async with (await self.pool()).connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute(sql, params)
+
+    @asynccontextmanager
+    async def cursor(self) -> AsyncIterator[psycopg.AsyncCursor]:
+        async with (await self.pool()).connection() as conn:
+            async with conn.cursor() as cursor:
+                yield cursor
 
     async def delete_from_table_where(self, table_name: str, **kwargs: Any) -> None:
         """

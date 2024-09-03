@@ -1,9 +1,11 @@
 import datetime
 from collections import defaultdict
+from contextlib import contextmanager
 from functools import lru_cache
-from typing import Any, DefaultDict, Dict, List, Optional, Tuple
+from typing import Any, DefaultDict, Dict, Iterator, List, Optional, Tuple
 
 from gbi_common_py_utils.utils.postgres import PostgresBase
+from psycopg import Cursor
 
 from agent_service.endpoints.models import AgentMetadata
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
@@ -723,6 +725,11 @@ class SyncBoostedPG(BoostedPG):
         self.db.multi_row_insert(
             table_name=table_name, rows=rows, ignore_conflicts=ignore_conflicts
         )
+
+    @contextmanager
+    def cursor(self) -> Iterator[Cursor]:
+        with self.db.transaction_cursor() as cursor:
+            yield cursor
 
     async def insert_atomic(self, to_insert: List[InsertToTableArgs]) -> None:
         with self.db.transaction_cursor() as cursor:

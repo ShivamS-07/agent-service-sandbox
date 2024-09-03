@@ -143,6 +143,7 @@ async def run_execution_plan(
         plan_id=context.plan_id,
         status=Status.RUNNING,
         logger=logger,
+        db=async_db,
     )
 
     if scheduled_by_automation:
@@ -191,6 +192,7 @@ async def run_execution_plan(
                 plan_id=context.plan_id,
                 status=Status.CANCELLED,
                 logger=logger,
+                db=async_db,
             )
             raise Exception("Execution plan has been cancelled")
 
@@ -215,6 +217,7 @@ async def run_execution_plan(
             plan_run_id=context.plan_run_id,
             tasks=tasks,
             logger=logger,
+            db=async_db,
         )
 
         # if the tool output already exists in the map, just use that
@@ -238,6 +241,7 @@ async def run_execution_plan(
                     plan_run_id=context.plan_run_id,
                     tasks=tasks,
                     logger=logger,
+                    db=async_db,
                 )
 
                 response = await chatbot.generate_non_retriable_error_response(
@@ -256,6 +260,7 @@ async def run_execution_plan(
                     plan_id=context.plan_id,
                     status=Status.CANCELLED,
                     logger=logger,
+                    db=async_db,
                 )
                 # NEVER replan if the plan is already cancelled.
                 raise ace
@@ -269,6 +274,7 @@ async def run_execution_plan(
                     plan_run_id=context.plan_run_id,
                     tasks=tasks,
                     logger=logger,
+                    db=async_db,
                 )
 
                 if await check_cancelled(
@@ -283,6 +289,7 @@ async def run_execution_plan(
                         plan_id=context.plan_id,
                         status=Status.CANCELLED,
                         logger=logger,
+                        db=async_db,
                     )
 
                     # NEVER replan if the plan is already cancelled.
@@ -294,6 +301,7 @@ async def run_execution_plan(
                     plan_id=context.plan_id,
                     status=Status.ERROR,
                     logger=logger,
+                    db=async_db,
                 )
 
                 retrying = False
@@ -357,6 +365,7 @@ async def run_execution_plan(
             plan_run_id=context.plan_run_id,
             tasks=tasks,
             logger=logger,
+            db=async_db,
         )
         logger.info(f"Finished step '{step.tool_name}'")
 
@@ -372,6 +381,7 @@ async def run_execution_plan(
             plan_id=context.plan_id,
             status=Status.CANCELLED,
             logger=logger,
+            db=async_db,
         )
         raise Exception("Execution plan has been cancelled")
 
@@ -512,6 +522,7 @@ async def run_execution_plan(
         updated_output_ids=updated_output_ids,
         run_summary_long=full_diff_summary_output,
         run_summary_short=short_diff_summary,
+        db=async_db,
     )
     logger.info("Finished run!")
     return final_outputs

@@ -464,7 +464,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
             )
         )
         self.loop.run_until_complete(
-            self.pg.insert_plan_run(
+            self.pg.update_plan_run(
                 plan_run_id=plan_run_id, plan_id=plan_id, agent_id=agent.agent_id
             )
         )

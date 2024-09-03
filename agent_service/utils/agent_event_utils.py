@@ -163,32 +163,20 @@ async def publish_agent_output(
 
 
 async def publish_agent_execution_plan(
-    plan: ExecutionPlan, context: PlanRunContext, db: Optional[Union[AsyncDB, Postgres]] = None
+    plan: ExecutionPlan, context: PlanRunContext, db: Optional[AsyncDB] = None
 ) -> None:
     if not db:
         db = AsyncDB(SyncBoostedPG(skip_commit=context.skip_db_commit))
 
-    if isinstance(db, AsyncDB):
-        await db.write_execution_plan(
-            plan_id=context.plan_id,
-            agent_id=context.agent_id,
-            plan=plan,
-            status=PlanStatus.READY,
-        )
-        await db.insert_plan_run(
-            agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
-        )
-    elif isinstance(db, Postgres):
-        db.write_execution_plan(
-            plan_id=context.plan_id,
-            agent_id=context.agent_id,
-            plan=plan,
-            status=PlanStatus.READY,
-        )
-        # also insert the plan run to avoid weirdness with the frontend
-        db.insert_plan_run(
-            agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
-        )
+    await db.write_execution_plan(
+        plan_id=context.plan_id,
+        agent_id=context.agent_id,
+        plan=plan,
+        status=PlanStatus.READY,
+    )
+    await db.update_plan_run(
+        agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
+    )
 
     event = AgentEvent(
         agent_id=context.agent_id,
@@ -234,7 +222,9 @@ async def publish_agent_execution_status(
     updated_output_ids: Optional[List[str]] = None,
     run_summary_long: Optional[str | TextOutput] = None,
     run_summary_short: Optional[str] = None,
+    db: Optional[AsyncDB] = None,
 ) -> None:
+    db = db or AsyncDB(pg=SyncBoostedPG())
     try:
         await publish_agent_event(
             agent_id=agent_id,
@@ -250,6 +240,9 @@ async def publish_agent_execution_status(
                 ),
             ).model_dump_json(),
         )
+        await db.update_plan_run(
+            agent_id=agent_id, plan_id=plan_id, plan_run_id=plan_run_id, status=status
+        )
     except Exception as e:
         if logger:
             logger.exception(
@@ -262,7 +255,9 @@ async def publish_agent_task_status(
     tasks: List[TaskStatus],
     plan_run_id: str,
     logger: Optional[Union[logging.Logger, logging.LoggerAdapter]] = None,
+    db: Optional[AsyncDB] = None,
 ) -> None:
+    db = db or AsyncDB(SyncBoostedPG())
     try:
         await publish_agent_event(
             agent_id=agent_id,
@@ -271,6 +266,7 @@ async def publish_agent_task_status(
                 event=TaskStatusEvent(tasks=tasks, plan_run_id=plan_run_id),
             ).model_dump_json(),
         )
+        await db.update_task_statuses(agent_id=agent_id, tasks=tasks, plan_run_id=plan_run_id)
     except Exception as e:
         if logger:
             logger.exception(f"Failed to publish task statuses for {agent_id=}: {e}")

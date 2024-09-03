@@ -11,6 +11,8 @@ from agent_service.endpoints.models import (
     AgentSchedule,
     CustomNotification,
     SetAgentFeedBackRequest,
+    Status,
+    TaskStatus,
 )
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 
@@ -18,12 +20,13 @@ from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 from agent_service.io_types import *  # noqa
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
 from agent_service.types import ChatContext, Message, Notification, PlanRunContext
+from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
-from agent_service.utils.postgres import Postgres
+from agent_service.utils.postgres import Postgres, SyncBoostedPG
 from agent_service.utils.prompt_template import PromptTemplate
 from agent_service.utils.sidebar_sections import SidebarSection
 
@@ -507,11 +510,17 @@ class AsyncDB:
             },
         )
 
-    async def insert_plan_run(self, agent_id: str, plan_id: str, plan_run_id: str) -> None:
+    async def update_plan_run(
+        self, agent_id: str, plan_id: str, plan_run_id: str, status: Status = Status.NOT_STARTED
+    ) -> None:
         sql = """
-        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id)
-        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s)
-        ON CONFLICT (plan_run_id) DO NOTHING
+        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id, status)
+        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(status)s)
+        ON CONFLICT (plan_run_id) DO UPDATE SET
+          agent_id = EXCLUDED.agent_id,
+          plan_id = EXCLUDED.plan_id,
+          status = EXCLUDED.status,
+          last_updated = NOW()
         """
         await self.pg.generic_write(
             sql,
@@ -519,8 +528,40 @@ class AsyncDB:
                 "agent_id": agent_id,
                 "plan_id": plan_id,
                 "plan_run_id": plan_run_id,
+                "status": status.value,
             },
         )
+
+    async def update_task_statuses(
+        self,
+        agent_id: str,
+        tasks: List[TaskStatus],
+        plan_run_id: str,
+    ) -> None:
+        sql = """
+        INSERT INTO agent.task_runs AS tr (task_id, agent_id, plan_run_id, status)
+        VALUES (%(task_id)s, %(agent_id)s, %(plan_run_id)s, %(status)s)
+        ON CONFLICT (plan_run_id, task_id) DO UPDATE SET
+          agent_id = EXCLUDED.agent_id,
+          status = EXCLUDED.status,
+          last_updated = NOW() WHERE tr.status != EXCLUDED.status
+        """
+        params = [
+            {
+                "agent_id": agent_id,
+                "task_id": task.task_id,
+                "plan_run_id": plan_run_id,
+                "status": task.status.value,
+            }
+            for task in tasks
+        ]
+        # TODO probably should have a better way of doing this...
+        if isinstance(self.pg, AsyncPostgresBase):
+            async with self.pg.cursor() as cursor:
+                await cursor.executemany(sql, params)
+        elif isinstance(self.pg, SyncBoostedPG):
+            with self.pg.cursor() as cursor:
+                cursor.executemany(sql, params)
 
     async def delete_agent_by_id(self, agent_id: str) -> None:
         await self.pg.generic_update(
