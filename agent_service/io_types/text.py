@@ -1346,13 +1346,48 @@ class StockSecFilingText(StockText):
     async def _get_strs_lookup(
         cls, sec_filing_list: List[StockSecFilingText]  # type: ignore
     ) -> Dict[TextIDType, str]:
-        # Get the available content from DB first
+        """
+        Complex logic to get the SEC filing text
+        We're doing an on-demand caching for these SEC filings, meaning some of the filings can be
+        found in the DB directly (db_id not None), and the rest will be fetched from the API.
+        However, given the fact that we're separating the processes of getting the text ID and the
+        text value, it's possible that some of the filings are already cached in the DB by other
+        running agents before we actually download from API. With this context, do the following 3 steps:
+        1. Get the filings that we know we can get from the DB first
+        2. Using the remaining filing jsons (not db_id) to query DB and see if we can find cache
+            This db query may not be optimal because we're using a large JSON as filters, but it should
+            be better than hitting API anyway
+        3. Download the rest from the API
+        """
+
+        filing_json_to_text_obj = {filing.id: filing for filing in sec_filing_list}
+
         output: Dict[TextIDType, str] = {}
 
+        # determine which filings we know we definitely can get from the DB
+        logger.info("Getting SEC filing text from DB")
         db_id_to_text_id = {filing.db_id: filing.id for filing in sec_filing_list if filing.db_id}
         output.update(await SecFiling.get_concat_10k_10q_sections_from_db(db_id_to_text_id))  # type: ignore
+        logger.info(f"Found {len(output)} SEC filings in DB")
 
-        # Get the rest from SEC API directly
+        logger.info("Check one more time if we have the SEC filing text in DB")
+        filing_list = [f.id for f in sec_filing_list if not f.db_id]
+        filing_json_to_row = await SecFiling.get_concat_10k_10q_sections_from_db_by_filing_jsons(
+            filing_list
+        )
+        for filing_json, (db_id, val) in filing_json_to_row.items():
+            output[filing_json] = val
+
+            if filing_json in filing_json_to_text_obj:
+                text_obj = filing_json_to_text_obj[filing_json]
+                text_obj.db_id = db_id  # set db_id
+
+        logger.info(
+            f"Found another {len(filing_json_to_row)} SEC filings in DB after second check. "
+            "Maybe they were cached by other agents during the time we checked"
+        )
+
+        logger.info("Getting SEC filing text from API")
         filing_gbi_pairs = [
             (filing.id, filing.stock_id.gbi_id)
             for filing in sec_filing_list
@@ -1552,18 +1587,54 @@ class StockOtherSecFilingText(StockText):
     async def _get_strs_lookup(
         cls, sec_filing_list: List[StockOtherSecFilingText]  # type: ignore
     ) -> Dict[TextIDType, str]:
+        """
+        Complex logic to get the SEC filing text
+        We're doing an on-demand caching for these SEC filings, meaning some of the filings can be
+        found in the DB directly (db_id not None), and the rest will be fetched from the API.
+        However, given the fact that we're separating the processes of getting the text ID and the
+        text value, it's possible that some of the filings are already cached in the DB by other
+        running agents before we actually download from API. With this context, do the following 3 steps:
+        1. Get the filings that we know we can get from the DB first
+        2. Using the remaining filing jsons (not db_id) to query DB and see if we can find cache
+            This db query may not be optimal because we're using a large JSON as filters, but it should
+            be better than hitting API anyway
+        3. Download the rest from the API
+        """
+
+        filing_json_to_text_obj = {filing.id: filing for filing in sec_filing_list}
+
         # Get the available content from DB first
         output: Dict[TextIDType, str] = {}
 
+        # determine which filings we know we definitely can get from the DB
+        logger.info("Getting SEC filing text from DB")
         db_id_to_text_id = {filing.db_id: filing.id for filing in sec_filing_list if filing.db_id}
         output.update(await SecFiling.get_filings_content_from_db(db_id_to_text_id))  # type: ignore
+        logger.info(f"Found {len(output)} SEC filings in DB")
 
-        # Get the rest from SEC API directly
+        logger.info("Check one more time if we have the SEC filing text in DB")
+        filing_jsons = [f.id for f in sec_filing_list if not f.db_id]
+        filing_json_to_row = await SecFiling.get_filings_content_from_db_by_filing_jsons(
+            filing_jsons
+        )
+        for filing_json, (db_id, val) in filing_json_to_row.items():
+            output[filing_json] = val
+
+            if filing_json in filing_json_to_text_obj:
+                text_obj = filing_json_to_text_obj[filing_json]
+                text_obj.db_id = db_id  # set db_id
+
+        logger.info(
+            f"Found another {len(filing_json_to_row)} SEC filings in DB after second check. "
+            "Maybe they were cached by other agents during the time we checked"
+        )
+
         filing_gbi_pairs = [
             (filing.id, filing.stock_id.gbi_id)
             for filing in sec_filing_list
             if not filing.db_id and filing.stock_id
         ]
+        logger.info(f"Getting the rest of {len(filing_gbi_pairs)} SEC filing text from API")
         output.update(
             await SecFiling.get_filings_content_from_api(filing_gbi_pairs, insert_to_db=True)  # type: ignore
         )

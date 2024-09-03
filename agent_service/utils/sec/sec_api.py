@@ -438,6 +438,30 @@ class SecFiling:
         return output
 
     @classmethod
+    async def get_concat_10k_10q_sections_from_db_by_filing_jsons(
+        cls, filing_jsons: List[str]
+    ) -> Dict[str, Tuple[str, str]]:
+        sql = """
+            SELECT id::TEXT AS id, filing, riskFactors, managementSection
+            FROM sec.sec_filings
+            WHERE formType in ('10-K', '10-Q') AND filing IN %(filing_jsons)s
+        """
+        ch = Clickhouse()
+        result = await ch.generic_read(sql, params={"filing_jsons": filing_jsons})
+
+        output = {}
+        for row in result:
+            risk_factor_section = row["riskFactors"]
+            management_section = row["managementSection"]
+            text = (
+                f"Management Section:\n\n{management_section}\n\n"
+                f"Risk Factors Section:\n\n{risk_factor_section}"
+            )
+            output[row["filing"]] = (row["id"], text)
+
+        return output
+
+    @classmethod
     async def get_concat_10k_10q_sections_from_api(
         cls, filing_gbi_pairs: List[Tuple[str, int]], insert_to_db: bool = True
     ) -> Dict[str, str]:
@@ -565,6 +589,27 @@ class SecFiling:
         return output
 
     @classmethod
+    async def get_filings_content_from_db_by_filing_jsons(
+        cls, filing_jsons: List[str]
+    ) -> Dict[str, Tuple[str, str]]:
+        if not filing_jsons:
+            return {}
+
+        sql = """
+            SELECT id::TEXT AS id, filing, content
+            FROM sec.sec_filings
+            WHERE filing IN %(filing_jsons)s
+        """
+        ch = Clickhouse()
+        result = await ch.generic_read(sql, params={"filing_jsons": filing_jsons})
+
+        output = {}
+        for row in result:
+            output[row["filing"]] = (row["id"], row["content"])
+
+        return output
+
+    @classmethod
     async def get_filing_data_async(cls, db_ids: List[str]) -> Dict[str, SecFilingData]:
         sql = """
             SELECT id::TEXT AS db_id, riskFactors, managementSection, gbi_id,
@@ -629,6 +674,9 @@ class SecFiling:
     async def get_filings_content_from_api(
         cls, filing_gbi_pairs: List[Tuple[str, int]], insert_to_db: bool = True
     ) -> Dict[str, str]:
+        if not filing_gbi_pairs:
+            return {}
+
         ch = Clickhouse()
 
         output = {}
