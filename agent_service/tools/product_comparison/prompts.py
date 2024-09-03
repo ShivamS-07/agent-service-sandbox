@@ -1,3 +1,4 @@
+from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT, CITATION_REMINDER
 from agent_service.utils.prompt_utils import Prompt
 
 GET_PRODUCT_COMPARE_MAIN_PROMPT_STR = (
@@ -38,6 +39,7 @@ GET_PRODUCT_SUMMARY_MAIN_PROMPT_STR = (
     "I'm only interested in the comparisons for the output, no need to restate "
     "numerical specifications or measurements from the table. "
     "No formatting symbols should be returned, only text."
+    "You will also be provided with a list of citations {citations}"
 )
 
 GET_PRODUCT_COMPARE_SYS_PROMPT_STR = (
@@ -57,5 +59,6 @@ GET_PRODUCT_COMPARE_MAIN_PROMPT = Prompt(
 )
 
 GET_PRODUCT_SUMMARY_MAIN_PROMPT = Prompt(
-    name="GET_PRODUCT_SUMMARY_MAIN_PROMPT", template=GET_PRODUCT_SUMMARY_MAIN_PROMPT_STR
+    name="GET_PRODUCT_SUMMARY_MAIN_PROMPT",
+    template=GET_PRODUCT_SUMMARY_MAIN_PROMPT_STR + CITATION_PROMPT + CITATION_REMINDER,
 )

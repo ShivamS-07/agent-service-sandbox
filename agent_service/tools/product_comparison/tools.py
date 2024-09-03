@@ -1,15 +1,17 @@
 import asyncio
 import json
-from typing import Any, Dict, List, Text
+from typing import Any, Dict, List
 
 import pandas as pd
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import TableColumnType
+from agent_service.io_type_utils import HistoryEntry, TableColumnType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table, TableColumnMetadata
+from agent_service.io_types.text import Text, TextGroup
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.tools.product_comparison.prompts import (
     GET_PRODUCT_COMPARE_MAIN_PROMPT,
     GET_PRODUCT_COMPARE_SYS_PROMPT,
@@ -117,11 +119,15 @@ class ProductSummaryInput(ToolArgs):
 )
 async def get_product_compare_summary(args: ProductSummaryInput, context: PlanRunContext) -> Text:
     llm = GPT(context=None, model=GPT4_O)
-    result = await get_llm_product_summary(args.product_comparison_table, args.category, llm)
+    result = await get_llm_product_summary(
+        args.product_comparison_table, args.category, llm, context
+    )
     return result
 
 
-async def get_llm_product_summary(product_comparison_table: Table, category: str, llm: GPT) -> Text:
+async def get_llm_product_summary(
+    product_comparison_table: Table, category: str, llm: GPT, context: PlanRunContext
+) -> Text:
     table_df = product_comparison_table.to_df()
     table_str_list = [
         ", ".join(f"{col}: {val}" for col, val in zip(table_df.columns, row))
@@ -129,15 +135,31 @@ async def get_llm_product_summary(product_comparison_table: Table, category: str
     ]
     table_contents = "\n".join(table_str_list)
 
+    all_text_group = TextGroup(
+        val=[
+            citation.source_text  # type: ignore
+            for history_entry in product_comparison_table.history
+            for citation in history_entry.citations
+        ]
+    )
+
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=GET_PRODUCT_SUMMARY_MAIN_PROMPT.format(
-            table_contents=table_contents,
-            product=category,
+            table_contents=table_contents, product=category, citations=all_text_group
         ),
         sys_prompt=GET_PRODUCT_COMPARE_SYS_PROMPT.format(),
     )
 
-    return result
+    summary_text, citations = await extract_citations_from_gpt_output(
+        result, all_text_group, context
+    )
+
+    summary = Text(val=summary_text or result)
+    summary = summary.inject_history_entry(
+        HistoryEntry(title="Product Comparison Summary", citations=citations)  # type: ignore
+    )
+
+    return summary
 
 
 async def main() -> None:
@@ -175,14 +197,12 @@ async def main() -> None:
     print(rich_output)
 
     # product comparison summary
-    """
     summary_result: Text = await get_product_compare_summary(  # type: ignore
-        ProductSummaryInput(table=table_result, category=search_category),
+        ProductSummaryInput(product_comparison_table=table_result, category=search_category),
         plan_context,
     )
 
     print(summary_result)
-    """
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
 
 WEB_SCRAPE_PRODUCT_MAIN_PROMPT = """
-Given part of a company's product page '{html}' from {url}.,
+Given part of a company's product page '{html}' from {url} with title {title}.,
 extract product names, and respective product features from the page.
 You will be provided with a dict of product names and specs that your colleage has compiled {product_specs}.
 Your task is to validate that the product information can be found on the page information you are given.
@@ -37,6 +37,7 @@ For example, if the unit of measurement is not precisely accurate, you should co
 If the information is not present, you should not output it.
 Then move on to the next key pair in the dictionary.
 You must also include the url in your output
+You must also include the website title in your output. Title: {title}
 You should output all of this information that you have gathered
 """
 
@@ -50,7 +51,7 @@ You must also include the url source in your output
 """
 
 FINAL_VALIDATION_MAIN_PROMPT = """
-You have been given a list of validation notes from your colleages {validations}.
+You have been given a list of validation notes from your colleage's {validations}.
 The same information may differ between the notes.
 You must go through the justification and determine the correct information.
 Output the validated information as a dictionary.
@@ -59,7 +60,8 @@ Do not output information that is not present in the notes.
 But if the information is present in the notes, you should output it.
 Make sure to include the url of the page that the information was found on.
 Do not output any other text.
-Your key should be a dict with the validated information 'value' and 'url' source, as well as the 'justifcation'.
+Your key should be a dict with the validated information 'value', 'url' source, website 'title',
+as well as the 'justification'.
 Do not mention 'n/a' in the justification. You should just say what information was found.
 You should not mention that the previous value was incorrect.
 If information was not found, don't say anything.
@@ -129,22 +131,28 @@ class WebScraper:
         row_descs: List[HistoryEntry] = []
         for i in range(len(df)):
             url_justifications = [
-                (results[i].get(key, {}).get("url"), results[i].get(key, {}).get("justification"))
+                (
+                    results[i].get(key, {}).get("title"),
+                    results[i].get(key, {}).get("url"),
+                    results[i].get(key, {}).get("justification"),
+                )
                 for key in results[i].keys()
             ]
             urls_to_justifications = defaultdict(list)
 
-            for url, justification in url_justifications:
+            for title, url, justification in url_justifications:
                 if url is not None and justification:
-                    urls_to_justifications[url].append(justification)
+                    urls_to_justifications[(title, url)].append(justification)
 
             row_descs.append(
                 HistoryEntry(
                     citations=[
                         TextCitation(
-                            source_text=KPIText(val=str(url), explanation=" ".join(justifications))
+                            source_text=KPIText(
+                                val=str(title), explanation=" ".join(justifications), url=str(url)
+                            )
                         )
-                        for url, justifications in urls_to_justifications.items()
+                        for (title, url), justifications in urls_to_justifications.items()
                         if url is not None
                     ],
                 )
@@ -188,6 +196,7 @@ class WebScraper:
                     html_content = response.read().decode("utf-8")
                     soup = BeautifulSoup(html_content, "html.parser")
                     text = soup.get_text()
+                    title = soup.title.string if soup.title else url
                 else:
                     logger.info(f"Unsupported content type: {content_type}")
                     continue
@@ -219,7 +228,7 @@ class WebScraper:
                     self.llm.do_chat_w_sys_prompt(
                         WEB_SCRAPE_PRODUCT_SYS_PROMPT_OBJ.format(),
                         WEB_SCRAPE_PRODUCT_MAIN_PROMPT_OBJ.format(
-                            html=chunk, product_specs=product_specs, url=url
+                            html=chunk, product_specs=product_specs, url=url, title=title
                         ),
                     )
                 )

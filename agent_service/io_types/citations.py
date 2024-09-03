@@ -19,6 +19,7 @@ class CitationType(enum.StrEnum):
     COMPANY_FILING = "company_filing"
     EARNINGS_SUMMARY = "earnings_summary"
     EARNINGS_TRANSCRIPT = "earnings_transcript"
+    KPI = "kpi"
 
     # Generic, should no longer be used
     LINK = "link"
@@ -39,6 +40,8 @@ class CitationType(enum.StrEnum):
             return EarningsSummaryCitationOutput
         elif self == CitationType.EARNINGS_TRANSCRIPT:
             return EarningsTranscriptCitationOutput
+        elif self == CitationType.KPI:
+            return KPICitationOutput
 
         return CitationOutput
 
@@ -325,6 +328,11 @@ class EarningsTranscriptCitationOutput(DocumentCitationOutput):
             title=title,
             raw_text=row["transcript"],
         )
+
+
+class KPICitationOutput(CitationOutput):
+    citation_type: CitationType = CitationType.KPI
+    link: Optional[str] = None
 
 
 # Deprecated

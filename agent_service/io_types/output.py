@@ -9,6 +9,7 @@ from agent_service.io_types.citations import (
     CompanyFilingCitationOutput,
     CustomDocumentCitationOutput,
     DocumentCitationOutput,
+    KPICitationOutput,
     LinkCitationOutput,
     NewsArticleCitationOutput,
     NewsDevelopmentCitationOutput,
@@ -34,6 +35,7 @@ OutputCitationTypes = Union[
     TextCitationOutput,
     LinkCitationOutput,
     CitationOutput,
+    KPICitationOutput,
 ]
 
 
