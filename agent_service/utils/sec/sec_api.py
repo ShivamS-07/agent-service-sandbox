@@ -484,7 +484,6 @@ class SecFiling:
                     f"Management Section:\n\n{management_section}\n\n"
                     f"Risk Factors Section:\n\n{risk_factor_section}"
                 )
-                output[filing_info_str] = text
 
                 # LINK_TO_HTML is ok for extracting sections, but LINK_TO_FILING_DETAILS is needed for full content
                 # See examples here:
@@ -496,6 +495,12 @@ class SecFiling:
                 )
                 processed_full_content = html.unescape(full_content)
                 time.sleep(0.25)
+
+                if management_section or risk_factor_section:
+                    # if there's at least 1 non-empty section, use the concatenated text
+                    output[filing_info_str] = text
+                else:
+                    output[filing_info_str] = processed_full_content
 
                 if insert_to_db:
                     try:
