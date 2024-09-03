@@ -144,7 +144,7 @@ async def get_agent_hierarchical_worklogs(
         # determine the status of the plan run
         prefect_flow_run = plan_run_id_to_status.get(plan_run_id, None)
         if prefect_flow_run is None:
-            plan_run_status = Status.NOT_STARTED
+            plan_run_status = Status.COMPLETE
             plan_run_start = None
             plan_run_end = None
         else:
@@ -204,7 +204,7 @@ def get_plan_run_task_list(
         task_key = (plan_run_id, task_id)
         prefect_task_run = run_task_pair_to_status.get((plan_run_id, task_id), None)
         if prefect_task_run is None:
-            task_status = Status.NOT_STARTED
+            task_status = Status.COMPLETE
             task_start = None
             task_end = None
         else:
