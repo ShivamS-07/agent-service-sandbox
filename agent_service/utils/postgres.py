@@ -109,7 +109,7 @@ class Postgres(PostgresBase):
             LEFT JOIN agent.plan_runs pr
             ON ep.plan_id = pr.plan_id
             WHERE ep.agent_id = %(agent_id)s
-            ORDER BY last_updated DESC
+            ORDER BY ep.last_updated DESC
             LIMIT 1;
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
@@ -129,9 +129,9 @@ class Postgres(PostgresBase):
     ) -> Tuple[List[ExecutionPlan], List[datetime.datetime], List[str]]:
         sql = """
             SELECT plan, created_at, plan_id::TEXT
-            FROM agent.execution_plans
+            FROM agent.execution_plans ep
             WHERE agent_id = %(agent_id)s
-            ORDER BY last_updated ASC
+            ORDER BY ep.last_updated ASC
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
         return (
