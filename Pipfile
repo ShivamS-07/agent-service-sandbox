@@ -51,7 +51,6 @@ Levenshtein = {version = "==0.25.1", index = "pypi"}
 gpt-service-proto-v1 = {version = "==1.4.0", index = "gbi"}
 gbi-common-proto-v1 = {version = "==1.13.0", index = "gbi"}
 proto-cube-flat-proto-v1 = {version = "==1.2.0", index = "gbi"}
-
 gbi_common_py_utils = {version='==1.0.115', index="gbi"}
 boosted-data-access-layer = {version='==0.0.0+c8975f441c8e3804afc822c9bb8a19224af9c15b', index="gbi"}
 nlp_service_proto_v1 = {version = "==1.140.0", index = "gbi"}
@@ -63,6 +62,7 @@ user-service-proto-v1 = {version = "==1.55.0", index = "gbi"}
 beautifulsoup4 = {version = "==4.12.3", index = "pypi"}
 PyPDF2 = {version = "==3.0.1", index = "pypi"}
 griffe= {version = "==0.48.0", index = "pypi"}
+rapidfuzz = {version = "==3.9.7", index = "pypi"}
 
 [requires]
 python_version = "3.12"

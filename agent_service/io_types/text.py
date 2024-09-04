@@ -1575,7 +1575,7 @@ class StockSecFilingSectionText(StockText):
 
 
 @io_type
-class StockOtherSecFilingText(StockText):
+class StockOtherSecFilingText(StockSecFilingText):
     """
     Unlike `SecFilingText`, this class is used to get other types of SEC filings and the helper
     method `get_strs_lookup` is used to download the full content of the filing instead of only
