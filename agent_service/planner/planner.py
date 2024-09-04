@@ -15,7 +15,7 @@ from agent_service.planner.constants import (
     ASSIGNMENT_RE,
     INITIAL_PLAN_TRIES,
     MIN_SUCCESSFUL_FOR_STOP,
-    Action,
+    FollowupAction,
 )
 from agent_service.planner.planner_types import (
     ErrorInfo,
@@ -229,7 +229,7 @@ class Planner:
                     "agent_id": agent_id,
                     "model_id": llm.model,
                     "prompt": prompt,
-                    "action": Action.CREATE,
+                    "action": FollowupAction.CREATE,
                     "sample_plans": sample_plans,
                     "plan_id": plan_id,
                 },
@@ -245,7 +245,7 @@ class Planner:
                 "agent_id": agent_id,
                 "model_id": llm.model,
                 "prompt": prompt,
-                "action": Action.CREATE,
+                "action": FollowupAction.CREATE,
                 "sample_plans": sample_plans,
                 "plan_id": plan_id,
             },
@@ -305,7 +305,7 @@ class Planner:
         chat_context: ChatContext,
         last_plan: ExecutionPlan,
         last_plan_timestamp: datetime.datetime,
-        action: Action,
+        action: FollowupAction,
         plan_id: str,
         use_sample_plans: bool = True,
     ) -> Optional[ExecutionPlan]:
@@ -370,7 +370,7 @@ class Planner:
         last_plan: ExecutionPlan,
         latest_messages: List[Message],
         sample_plans_str: str,
-        action: Action,
+        action: FollowupAction,
         plan_id: str,
     ) -> Optional[ExecutionPlan]:
         # for now, just assume last step is what is new
@@ -384,7 +384,7 @@ class Planner:
         new_plan_str = await self._query_GPT_for_new_plan_after_input(
             new_messages, main_chat_str, old_plan_str, sample_plans_str, action=action
         )
-        append = action == Action.APPEND
+        append = action == FollowupAction.APPEND
         if append:
             plan_str = old_plan_str + "\n" + new_plan_str
         else:
@@ -437,7 +437,7 @@ class Planner:
         error_info: ErrorInfo,
         chat_context: ChatContext,
         last_plan: ExecutionPlan,
-        action: Action,
+        action: FollowupAction,
         plan_id: str,
         use_sample_plans: bool = True,
     ) -> Optional[ExecutionPlan]:
@@ -485,7 +485,7 @@ class Planner:
         chat_context: ChatContext,
         last_plan: ExecutionPlan,
         sample_plans_str: str,
-        action: Action,
+        action: FollowupAction,
         plan_id: str,
     ) -> Optional[ExecutionPlan]:
         execution_plan_start = get_now_utc().isoformat()
@@ -559,9 +559,9 @@ class Planner:
         existing_context: str,
         old_plan: str,
         sample_plans_str: str,
-        action: Action,
+        action: FollowupAction,
     ) -> str:
-        if action == Action.APPEND:
+        if action == FollowupAction.APPEND:
             sys_prompt_template = USER_INPUT_APPEND_SYS_PROMPT
             main_prompt_template = USER_INPUT_APPEND_MAIN_PROMPT
         else:

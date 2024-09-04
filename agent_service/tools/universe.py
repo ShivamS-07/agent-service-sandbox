@@ -288,7 +288,7 @@ class GetUniverseHoldingsInput(ToolArgs):
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
-    is_visible=False,
+    enabled=False,
 )
 async def get_universe_holdings(args: GetUniverseHoldingsInput, context: PlanRunContext) -> Table:
 

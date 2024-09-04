@@ -89,6 +89,8 @@ from agent_service.external.user_svc_client import (
 from agent_service.io_type_utils import load_io_type
 from agent_service.io_types.citations import CitationDetailsType, CitationType
 from agent_service.io_types.text import Text, TextOutput
+from agent_service.planner.action_decide import FirstActionDecider
+from agent_service.planner.constants import FirstAction
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.tool import ToolCategory, ToolRegistry
 from agent_service.types import ChatContext, MemoryType, Message
@@ -378,28 +380,30 @@ class AgentServiceImpl:
                 return ChatWithAgentResponse(success=False, allow_retry=False)
         else:
             try:
-                # check if the first prompt is a analysis or general request that need to be refered to reps
+                # decide the first action
                 LOGGER.info("Generating initial response from GPT (first prompt)")
                 chatbot = Chatbot(agent_id, gpt_service_stub=self.gpt_service_stub)
                 chat_context = ChatContext(messages=[user_msg])
+                action_decider = FirstActionDecider(agent_id=agent_id, skip_db_commit=True)
                 # gather all the responses in parallel
-                check_first_prompt_resp, initial_preplan_resp, no_action_resp = (
-                    await gather_with_concurrency(
-                        [
-                            chatbot.check_first_prompt(chat_context=chat_context),
-                            chatbot.generate_initial_preplan_response(chat_context=chat_context),
-                            chatbot.generate_input_update_no_action_response(
-                                chat_context=chat_context
-                            ),
-                        ]
-                    )
+                action, refer, none, notification, preplan = await gather_with_concurrency(
+                    [
+                        action_decider.decide_action(chat_context=chat_context),
+                        chatbot.generate_first_response_refer(chat_context=chat_context),
+                        chatbot.generate_first_response_none(chat_context=chat_context),
+                        chatbot.generate_first_response_notification(chat_context=chat_context),
+                        chatbot.generate_initial_preplan_response(chat_context=chat_context),
+                    ]
                 )
-                # if first prompt is analysis
-                if check_first_prompt_resp:
-                    gpt_resp = initial_preplan_resp
-                # if first prompt is general request/FAQ
-                else:
-                    gpt_resp = no_action_resp
+
+                if action == FirstAction.REFER:
+                    gpt_resp = refer
+                elif action == FirstAction.NOTIFICATION:
+                    gpt_resp = notification
+                elif action == FirstAction.PLAN:
+                    gpt_resp = preplan
+                else:  # action == FirstAction.NONE
+                    gpt_resp = none
 
                 LOGGER.info("Inserting user's and GPT's messages to DB")
                 gpt_msg = Message(agent_id=agent_id, message=gpt_resp, is_user_message=False)
@@ -438,7 +442,7 @@ class AgentServiceImpl:
             except Exception as e:
                 LOGGER.exception(f"Failed to publish GPT response to Redis: {e}")
                 return ChatWithAgentResponse(success=False, allow_retry=False)
-            if check_first_prompt_resp:
+            if action == FirstAction.PLAN:
                 plan_id = str(uuid4())
                 LOGGER.info(f"Creating execution plan {plan_id} for {agent_id=}")
                 try:

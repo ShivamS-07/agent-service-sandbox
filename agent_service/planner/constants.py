@@ -14,7 +14,7 @@ MIN_SUCCESSFUL_FOR_STOP = 2
 WORKLOG_INTERVAL = 0.5  # every X seconds send a worklog event to FE
 
 
-class Action(StrEnum):
+class FollowupAction(StrEnum):
     NONE = "NONE"
     RERUN = "RERUN"
     APPEND = "APPEND"
@@ -22,6 +22,17 @@ class Action(StrEnum):
     CREATE = "CREATE"
     LAYOUT = "LAYOUT"
     NOTIFICATION = "NOTIFICATION"
+
+
+class FirstAction(StrEnum):
+    # user asks for setting a notification
+    NOTIFICATION = "NOTIFICATION"
+    # user asks sth that should be refered to CS
+    REFER = "REFER"
+    # user asks for a task to be planned
+    PLAN = "PLAN"
+    # user asks irrelevant questions
+    NONE = "NONE"
 
 
 NO_CHANGE_MESSAGE = "Report updated, but no important differences found."

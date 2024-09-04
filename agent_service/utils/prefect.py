@@ -25,7 +25,7 @@ from prefect.context import TaskRunContext, get_run_context
 from prefect.logging.loggers import get_run_logger
 
 from agent_service.endpoints.models import Status
-from agent_service.planner.constants import Action
+from agent_service.planner.constants import FollowupAction
 from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan
 from agent_service.types import PlanRunContext
 from agent_service.utils.constants import AGENT_WORKER_QUEUE, BOOSTED_DAG_QUEUE
@@ -43,7 +43,7 @@ async def prefect_create_execution_plan(
     agent_id: str,
     plan_id: str,
     user_id: str,
-    action: Action = Action.CREATE,
+    action: FollowupAction = FollowupAction.CREATE,
     error_info: Optional[ErrorInfo] = None,
     skip_db_commit: bool = False,
     skip_task_cache: bool = False,

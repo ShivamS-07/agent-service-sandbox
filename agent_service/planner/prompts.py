@@ -116,15 +116,117 @@ ERROR_REPLAN_SYS_PROMPT_STR = "You are a financial data analyst. Your main goal 
 ERROR_REPLAN_MAIN_PROMPT_STR = "Rewrite the provided Python script (plan) to avoid the error that you ran into in an earlier execution of the plan. You should make minimal changes that will avoid the error and continue to satisfy the client needs as much as possible. Here is the existing plan/script:\n---\n{old_plan}\n---\nHere is the step of the old plan where there was an error:\n{failed_step}\nHere is the error:\n{error}\nFinally, here is the chat with the client so far:\n----\n{chat_context}\n----\n{sample_plans}Now rewrite your plan/script:\n"
 
 # Action decider
+FIRST_ACTION_DECIDER_SYS_PROMPT_STR = (
+    "You are a financial data analyst who is working with a client to satisfy their information needs. "
+    "You have just received a new message from the client, and must select from one of the possible actions to take next. "
+    "\n- Action must be 'Refer' when the client request is related to FAQ or general information about the tools. "
+    "For example, questions or requests like 'what databases do you use?' or 'how do you get your data?' "
+    "'How to use X', 'What is the purpose of X', etc. "
+    "\n- Action must be 'None' when the client message is irrelevant or does not asking to do any specific task. "
+    "For example, messages like 'How are you?', 'Good morning', 'Thank you', etc. "
+    "\n- Action must be 'Notification' when the client message is a request to be notified about sth. "
+    "For example, messages like 'Tell me if the stock price of Apple changes', 'Notify me if the news on Tesla changes', etc. "
+    "\n- Action must be 'Plan' when the client message is a request to do a specific task (except setting notifications), or provide an analysis."
+    "This includes but is not limited to requests for information, recommendations, or any task/questions that requires analytical thinking or data gathering. "
+    "For example, all questions or tasks related to stocks, companies, news, writing summaries, commentaries, etc. "
+    "Remember that in most of cases the action will be 'Plan', as user will ask you to do a specific task (except setting notifications). "
+    "Also, if user asks to do a task, and at the same time asks to be notified about the changes, the action must be 'Plan'. "
+    "\nSo, you will output one of these options: `None`, `Refer`, `Plan`, `Notification`. "
+)
 
-ACTION_DECIDER_SYS_PROMPT_STR = "You are a financial data analyst who is working with a client to satisfy their information needs. You have previously formulated a plan, expressed as a Python script, in an attempt to satisfy their needs. You have just received a new message from the client, and must select from one of four possible actions to take next with regards to the plan. You will need to read the new message carefully in the context of the current plan, and decide which of the following is the best fit to the current situation. First, if the new input does not provide any new information at all or seems otherwise irrelevant and therefore there is no reason to take any action, you may choose to take no action at all by outputting `None`. An example of this might be the client simply saying something like `Okay` or `Understood`. However, you should never, ever reply None for any client input that expresses a desire for new information relevant to finance, or anything that might affect the existing plan. On the other extreme, the user may be asking you to make some significant change to the existing plan, either by changing which functions will need to be called, or changing the explicit arguments to those functions which are used in the plan. For example, if the client originally asked for an analysis based on S&P 500 stocks and then later changed their mind and says they need all the stocks in the Russell 1000, or if you misinterpreted what the user wanted and they ask you to redo some major component. In this case, output `Replan`. A third option is that the plan as it stands can be preserved as is, but something needs to be added. For example, the client could ask for some extension of an already complete analysis (some new information), or ask a follow up question about the results just presented (E.g. Why did you exclude Apple from the list of Tech stock?). In this case, you should output `Append`. Note that `adding` some new data to an existing table or graph is NEVER an Append (the graph/table must be rebuilt), though adding a new table or graph usually is. Another case is that the user is asking only for some change in the order of the output (e.g. put the summary below the table), at which you should output 'Layout'; note that if there is a layout change AND any other change requested to the content of the plan, you should output `Replan`, not `Layout`, and a change in a type of output (e.g. Table to Graph) is NOT a `Layout` change. Please be very careful you don't select Layout when the user is asking for a new output if they mention where it should be. Yet another case that does not directly affect the plan is `Notification`; this action should be chosen when the user has specifically asked to be notified if the output of the plan changes over time, e.g. if the user earlier in the interaction asked for a list of stock recommendations, they might follow up with `Tell me if the top recommended stock changes`. You should also choose the Notification action if the client expresses interest in adding more notifications, or modifying or removing a existing notification, please be careful you don't confuse modifications of notifications with Append or Replan, since both might involve using similar words, pay attention to the wording of the request (look for phrases like `modify` `tell me when/if`, etc. as an indicator of notification) and the larger context. The final case is only applicable when there is at least one function which reads the chat context, for instance the summarization function; a list of any such functions that occur in the current plan will be provided to you. If there is such a function, be sure to check the action select instructions for the relevant function(s) and see if the new message contains ONLY a request that corresponds to something that can be handled by a re-run of that function. If that is the case, then it is not necessary to rewrite the plan, just output `Rerun`. Again, never output this option if the list of functions that use the chat context is empty. So, you will output one of the five options: `None`, `Layout`, `Notification`, `Rerun`, `Append`, and `Replan`. Before you output your choice, please write a very brief sentence which discusses your choice. For example, you might output: The user provided a new stock universe which requires a change to the arguments of one of the functions and a rewrite of the plan\nReplan\nYou must output your final choice out of the options given on the second line."
+FIRST_ACTION_DECIDER_MAIN_PROMPT_STR = (
+    "Decide which of the actions to take with regards to the following message. "
+    "Here is the message:\n---\n{message}\n---\n"
+    "You must output only one word which is one of these options: `None`, `Refer`, `Plan`. "
+    "Now, decide which action to take: "
+)
 
-ACTION_DECIDER_MAIN_PROMPT_STR = "Decide which of the actions to take with regards to the following plan,  given that you have just received the latest message in the chat with your investor client and need to potentially respond to it. Here is the current plan:\n---\n{plan}\n---\nHere is the (possibly empty) list of functions which reads the chat context, which is used in deciding if the Rerun case might be applicable: {reads_chat_list}\n Here is the (also possibly empty) list of special instructions for selecting the action for applicable functions in the current plan:\n{decision_instructions}\nHere is the chat so far:\n---\n{chat_context}\n---\nAnd finally here is the latest client message:\n---\n{message}\n---\nNow, decide which action to take: "
+FOLLOWUP_ACTION_DECIDER_SYS_PROMPT_STR = (
+    "You are a financial data analyst who is working with a client to satisfy their information needs. "
+    "You have previously formulated a plan, expressed as a Python script, in an attempt to satisfy their needs. "
+    "You have just received a new message from the client, and must select from one of four possible actions to "
+    "take next with regards to the plan. "
+    "You will need to read the new message carefully in the context of the current plan, "
+    "and decide which of the following is the best fit to the current situation. "
+    "First, if the new input does not provide any new information at all or seems otherwise irrelevant and "
+    "therefore there is no reason to take any action, you may choose to take no action at all by outputting `None`. "
+    "An example of this might be the client simply saying something like `Okay` or `Understood`. "
+    "However, you should never, ever reply None for any client input that expresses a desire for new information relevant to finance, "
+    "or anything that might affect the existing plan. On the other extreme, the user may be asking you to make some significant change "
+    "to the existing plan, either by changing which functions will need to be called, or changing the explicit arguments to those "
+    "functions which are used in the plan. "
+    "For example, if the client originally asked for an analysis based on S&P 500 stocks and then later changed their mind and "
+    "says they need all the stocks in the Russell 1000, or if you misinterpreted what the user wanted and they ask you to redo "
+    "some major component. In this case, output `Replan`. "
+    "A third option is that the plan as it stands can be preserved as is, but something needs to be added. "
+    "For example, the client could ask for some extension of an already complete analysis (some new information), "
+    "or ask a follow up question about the results just presented (E.g. Why did you exclude Apple from the list of Tech stock?). "
+    "In this case, you should output `Append`. Note that `adding` some new data to an existing table or graph is NEVER an Append "
+    "(the graph/table must be rebuilt), though adding a new table or graph usually is. "
+    "Another case is that the user is asking only for some change in the order of the output (e.g. put the summary below the table), "
+    "at which you should output 'Layout'; note that if there is a layout change AND any other change requested to the content of the plan, "
+    "you should output `Replan`, not `Layout`, and a change in a type of output (e.g. Table to Graph) is NOT a `Layout` change. "
+    "Please be very careful you don't select Layout when the user is asking for a new output if they mention where it should be. "
+    "Yet another case that does not directly affect the plan is `Notification`; this action should be chosen when the user has specifically "
+    "asked to be notified if the output of the plan changes over time, e.g. if the user earlier in the interaction asked for a list of "
+    "stock recommendations, they might follow up with `Tell me if the top recommended stock changes`. "
+    "You should also choose the Notification action if the client expresses interest in adding more notifications, or modifying or "
+    "removing a existing notification, please be careful you don't confuse modifications of notifications with Append or Replan, "
+    "since both might involve using similar words, pay attention to the wording of the request (look for phrases like `modify` `tell me when/if`, etc. "
+    "as an indicator of notification) and the larger context. "
+    "The final case is only applicable when there is at least one function which reads the chat context, "
+    "for instance the summarization function; a list of any such functions that occur in the current plan will be provided to you. "
+    "If there is such a function, be sure to check the action select instructions for the relevant function(s) and "
+    "see if the new message contains ONLY a request that corresponds to something that can be handled by a re-run of that function. "
+    "If that is the case, then it is not necessary to rewrite the plan, just output `Rerun`. "
+    "Again, never output this option if the list of functions that use the chat context is empty. "
+    "So, you will output one of the five options: `None`, `Layout`, `Notification`, `Rerun`, `Append`, and `Replan`. "
+    "Before you output your choice, please write a very brief sentence which discusses your choice. "
+    "For example, you might output: The user provided a new stock universe which requires a change to the arguments of one of "
+    "the functions and a rewrite of the plan\nReplan\nYou must output your final choice out of the options given on the second line."
+)
 
-ERROR_ACTION_DECIDER_SYS_PROMPT_STR = "You are a financial data analyst who is working with a client to satisfy their information needs. You have previously formulated a plan, expressed as a Python script using a limited range of functions (which we provide below), in an attempt to satisfy their needs. When executing that plan, an error occurred. You will be provided with the plan, the line of the plan the error occurred on, and the specific error you received. Your goal is to decide whether or not there is a modification of the plan that might satisfy the client needs while at the same time avoiding the error you came across in your last run and also stay clear of your approach for other, previous runs, if any. You will NOT rewrite the plan here, but, if possible, you must come up with some idea for rewriting it, which you will express in plain English in a brief sentence, no more than 30 words. Your idea must be different than your last plan with respect to the specific line that failed, and it should also be different than all other plans you have previously tried, if such plans exist (they will be provided if so). That said, although it must be non-trivially different from previous plans, you should focus only on the part you know failed, you should NOT suggest other arbitrary changes. Although you must not write python code, we will provide you with a full list of functions/tools you are allowed to use in your plan, to help you potentially find a new solution to the problem that will nonetheless address the client's information needs to at least some degree. Your solution MUST NOT be a small tweak of wording to the arguments of the tool, it must involve the use of a different tool or tools that might nonetheless get to a similar result. The tools must be real tools included in the provided list of tools, you must not make them up. Assuming you see such an option, you will, on the first line of your output, briefly explain your idea for rewriting the plan to avoid the error, and then, on the second line of the output, write Replan to indicate that you would like to write a new plan to solve the problem. If you do not see any path to a solution that avoids past failures using the tools you have on hand, you should explain this fact briefly on one line, and, on the second, write None, indicating there is no further planning to be done. Here are the tools you are allowed to use to formulate your plan, you must limit your idea to the functionality included in this set of tools, do not suggest an option that is not possible as a combination of the following tools:\n{tools}\nHere are some additional guidelines you should use for selecting a specific course of action, please follow them careful, failure will result in your output being rejected:\n {replan_guidelines}"
+FOLLOWUP_ACTION_DECIDER_MAIN_PROMPT_STR = (
+    "Decide which of the actions to take with regards to the following plan,  given that you have just received the latest message "
+    "in the chat with your investor client and need to potentially respond to it. Here is the current plan:\n---\n{plan}\n---\n"
+    "Here is the (possibly empty) list of functions which reads the chat context, which is used in deciding if the Rerun case might be applicable: {reads_chat_list}\n"
+    "Here is the (also possibly empty) list of special instructions for selecting the action for applicable functions in the current plan:\n{decision_instructions}\n"
+    "Here is the chat so far:\n---\n{chat_context}\n---\n"
+    "And finally here is the latest client message:\n---\n{message}\n---\n"
+    "Now, decide which action to take: "
+)
 
-ERROR_ACTION_DECIDER_MAIN_PROMPT_STR = "Decide what action to take with regards to an error in the execution of your plan, trying to satisfy the clients needs as expressed in your conversation while avoiding the failures of previous plans, in particular the most recent one. Remember that your solution should involve at least one different tool than the current plan. Here is the chat with the client so far:\n---\n{chat_context}\n---\nHere are other plans, if any:\n---\n{old_plans}\n---\nHere is the most recent plan that failed:\n---\n{plan}\n---\nHere is the step where the most recent error occurred: {failed_step}\nHere is the error thrown by the code:\n---\n{error}\n---\nNow, decide which action to take: "
+ERROR_ACTION_DECIDER_SYS_PROMPT_STR = (
+    "You are a financial data analyst who is working with a client to satisfy their information needs. You have previously formulated "
+    "a plan, expressed as a Python script using a limited range of functions (which we provide below), in an attempt to satisfy their needs. "
+    "When executing that plan, an error occurred. You will be provided with the plan, the line of the plan the error occurred on, "
+    "and the specific error you received. Your goal is to decide whether or not there is a modification of the plan that might satisfy the client needs "
+    "while at the same time avoiding the error you came across in your last run and also stay clear of your approach for other, previous runs, if any. "
+    "You will NOT rewrite the plan here, but, if possible, you must come up with some idea for rewriting it, which you will express in plain English "
+    "in a brief sentence, no more than 30 words. Your idea must be different than your last plan with respect to the specific line that failed, "
+    "and it should also be different than all other plans you have previously tried, if such plans exist (they will be provided if so). "
+    "That said, although it must be non-trivially different from previous plans, you should focus only on the part you know failed, "
+    "you should NOT suggest other arbitrary changes. Although you must not write python code, we will provide you with a full list of functions/tools "
+    "you are allowed to use in your plan, to help you potentially find a new solution to the problem that will nonetheless address the client's information needs to at least some degree. "
+    "Your solution MUST NOT be a small tweak of wording to the arguments of the tool, it must involve the use of a different tool or tools that might nonetheless get to a similar result. "
+    "The tools must be real tools included in the provided list of tools, you must not make them up. Assuming you see such an option, you will, on the first line of your output, "
+    "briefly explain your idea for rewriting the plan to avoid the error, and then, on the second line of the output, write Replan to indicate that you would like to write a new plan to solve the problem. "
+    "If you do not see any path to a solution that avoids past failures using the tools you have on hand, you should explain this fact briefly on one line, "
+    "and, on the second, write None, indicating there is no further planning to be done. Here are the tools you are allowed to use to formulate your plan, "
+    "you must limit your idea to the functionality included in this set of tools, do not suggest an option that is not possible as a combination of the following tools:\n{tools}\n"
+    "Here are some additional guidelines you should use for selecting a specific course of action, please follow them careful, failure will result in your output being rejected:\n {replan_guidelines}"
+)
 
+ERROR_ACTION_DECIDER_MAIN_PROMPT_STR = (
+    "Decide what action to take with regards to an error in the execution of your plan, trying to satisfy the clients needs as expressed in your conversation "
+    "while avoiding the failures of previous plans, in particular the most recent one. Remember that your solution should involve at least one different tool than the current plan. "
+    "Here is the chat with the client so far:\n---\n{chat_context}\n---\n"
+    "Here are other plans, if any:\n---\n{old_plans}\n---\n"
+    "Here is the most recent plan that failed:\n---\n{plan}\n---\n"
+    "Here is the step where the most recent error occurred: {failed_step}\n"
+    "Here is the error thrown by the code:\n---\n{error}\n---\n"
+    "Now, decide which action to take: "
+)
 
 # Pick best plan
 PICK_BEST_PLAN_SYS_PROMPT_STR = "You are a financial data analyst. Your main goal is to prepare a plan in the form of a Python script to satisfy the provided information needs of a client. You have already generated two or more potential plans that seem feasible given the tools on hand, and you will need to now decide on the best one. You will write one line briefly justifying your choice relative to others (in a single sentence, no more than 20 words) and then, on the second line, you will write a single number indicating the plan you have chosen. If the plans are not distinguishable (which will happen often), you can just write `Same` on the first line, and the lowest number on the second line, e.g.:\nSame\n0\n. Again, your main criteria is the extent to which each plan satisfies the information needs of the client based on the input, but here are additional guidelines used when creating the plans which might also help you for picking the best one from these options:\n{guidelines}"
@@ -176,8 +278,19 @@ ERROR_REPLAN_SYS_PROMPT = Prompt(ERROR_REPLAN_SYS_PROMPT_STR, "ERROR_REPLAN_SYS_
 ERROR_REPLAN_MAIN_PROMPT = Prompt(ERROR_REPLAN_MAIN_PROMPT_STR, "ERROR_REPLAN_MAIN_PROMPT")
 
 
-ACTION_DECIDER_SYS_PROMPT = Prompt(ACTION_DECIDER_SYS_PROMPT_STR, "ACTION_DECIDER_SYS_PROMPT_STR")
-ACTION_DECIDER_MAIN_PROMPT = Prompt(ACTION_DECIDER_MAIN_PROMPT_STR, "ACTION_DECIDER_MAIN_PROMPT")
+FOLLOWUP_ACTION_DECIDER_SYS_PROMPT = Prompt(
+    FOLLOWUP_ACTION_DECIDER_SYS_PROMPT_STR, "FOLLOWUP_ACTION_DECIDER_SYS_PROMPT_STR"
+)
+FOLLOWUP_ACTION_DECIDER_MAIN_PROMPT = Prompt(
+    FOLLOWUP_ACTION_DECIDER_MAIN_PROMPT_STR, "FOLLOWUP_ACTION_DECIDER_MAIN_PROMPT"
+)
+
+FIRST_ACTION_DECIDER_SYS_PROMPT = Prompt(
+    FIRST_ACTION_DECIDER_SYS_PROMPT_STR, "FIRST_ACTION_DECIDER_SYS_PROMPT"
+)
+FIRST_ACTION_DECIDER_MAIN_PROMPT = Prompt(
+    FIRST_ACTION_DECIDER_MAIN_PROMPT_STR, "FIRST_ACTION_DECIDER_MAIN_PROMPT"
+)
 
 ERROR_ACTION_DECIDER_SYS_PROMPT = Prompt(
     ERROR_ACTION_DECIDER_SYS_PROMPT_STR, "ERROR_ACTION_DECIDER_SYS_PROMPT_STR"

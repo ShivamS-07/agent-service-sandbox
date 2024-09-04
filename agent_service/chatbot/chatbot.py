@@ -4,13 +4,16 @@ from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
 from agent_service.chatbot.prompts import (
     AGENT_DESCRIPTION,
-    CHECK_FIRST_MAIN_PROMPT,
     COMPLETE_EXECUTION_MAIN_PROMPT,
     COMPLETE_EXECUTION_SYS_PROMPT,
     ERROR_REPLAN_POSTPLAN_MAIN_PROMPT,
     ERROR_REPLAN_POSTPLAN_SYS_PROMPT,
     ERROR_REPLAN_PREPLAN_MAIN_PROMPT,
     ERROR_REPLAN_PREPLAN_SYS_PROMPT,
+    FIRST_RESPONSE_NONE_MAIN_PROMPT,
+    FIRST_RESPONSE_NONE_SYS_PROMPT,
+    FIRST_RESPONSE_REFER_MAIN_PROMPT,
+    FIRST_RESPONSE_REFER_SYS_PROMPT,
     INITIAL_MIDPLAN_MAIN_PROMPT,
     INITIAL_MIDPLAN_SYS_PROMPT,
     INITIAL_PLAN_FAILED_MAIN_PROMPT,
@@ -34,7 +37,7 @@ from agent_service.chatbot.prompts import (
     NOTIFICATION_UPDATE_MAIN_PROMPT,
     NOTIFICATION_UPDATE_SYS_PROMPT,
 )
-from agent_service.GPT.constants import DEFAULT_SMART_MODEL, NO_PROMPT
+from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.planner.planner_types import (
@@ -60,6 +63,26 @@ class Chatbot:
         context = chatbot_context(agent_id=agent_id)
         self.llm = GPT(context, model, gpt_service_stub=gpt_service_stub)
         self.tool_registry = tool_registry
+
+    async def generate_first_response_refer(self, chat_context: ChatContext) -> str:
+        main_prompt = FIRST_RESPONSE_REFER_MAIN_PROMPT.format(
+            chat_context=chat_context.get_gpt_input()
+        )
+        sys_prompt = FIRST_RESPONSE_REFER_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=50)
+        return result
+
+    async def generate_first_response_none(self, chat_context: ChatContext) -> str:
+        main_prompt = FIRST_RESPONSE_NONE_MAIN_PROMPT.format(
+            chat_context=chat_context.get_gpt_input()
+        )
+        sys_prompt = FIRST_RESPONSE_NONE_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=50)
+        return result
+
+    async def generate_first_response_notification(self, chat_context: ChatContext) -> str:
+        result = "To update my notification settings, please visit the Settings tab."
+        return result
 
     async def generate_initial_preplan_response(self, chat_context: ChatContext) -> str:
         main_prompt = INITIAL_PREPLAN_MAIN_PROMPT.format(chat_context=chat_context.get_gpt_input())
@@ -218,13 +241,3 @@ class Chatbot:
         main_prompt = NON_RETRIABLE_ERROR_MAIN_PROMPT.format(agent_description=AGENT_DESCRIPTION)
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=120)
         return result
-
-    async def check_first_prompt(self, chat_context: ChatContext) -> bool:
-        """
-        Returns True if the the user prompt is analysis request and False otherwise (FAQ like)
-
-        """
-        main_prompt = CHECK_FIRST_MAIN_PROMPT.format(chat_context=chat_context.get_gpt_input())
-        sys_prompt = NO_PROMPT
-        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=60)
-        return "yes" in result.lower()

@@ -11,21 +11,38 @@ AGENT_DESCRIPTION = (
     "keep your responses as short as possible. "
     "Refer to work log if needed to avoid a long message. "
     "Respond in personal tone, and do not sound like a robot. "
+    "You do not need to greet the client. "
 )
 
-### Initial checking prompt
-CHECK_FIRST_MAIN_PROMPT_STR = (
-    "You are a financial analyst who has received a client message. "
-    "Your responsibility is to check the client message and determine if it is a FAQ-like request or not. "
-    "A FAQ-like request is a general question related to services, pricing, etc. "
-    "For example, general questions like 'what databases do you use?' or 'how do you get your data?' "
-    "How to use X, etc. "
-    "Other requests like the ones that client asks for specific analysis, report, etc. "
-    "are not considered as FAQ-like requests. "
-    "If the client message is a FAQ request, you should return 'no'. "
-    "If the client message is not a FAQ request, you should return 'yes'. "
-    "Here is the client message: {chat_context}"
-    "Now write your one-word response (yes/no): "
+### First responses
+FIRST_RESPONSE_REFER_SYS_STR = (
+    "{agent_description}"
+    "The client has asked a question that should be directed to customer support. "
+    "You should inform the client that you are not able to help with this question "
+    "and suggest they contact customer support. "
+    "You should also ask if they have any other tasks for you. "
+    "Keep it as brief as possible: your total response should be no more than 30 words. "
+)
+FIRST_RESPONSE_REFER_MAIN_STR = (
+    "Given the following query from a client, inform the client that you are not able to help with this question "
+    "and suggest they contact customer support. "
+    "Here is the client request: {chat_context}"
+    "\nNow write your short and concise response to the client: "
+)
+
+
+FIRST_RESPONSE_NONE_SYS_STR = (
+    "{agent_description}"
+    "The client has asked a question that is not a request for information or a task to be planned. "
+    "Try to answer the question if you can, but if you can't, you should inform the client that you are not able to help with this question. "
+    "You should also ask if they have any other tasks for you. "
+    "Keep it as brief as possible: your total response should be no more than 30 words. "
+)
+FIRST_RESPONSE_NONE_MAIN_STR = (
+    "Given the following query from a client, try to answer the question if you can, "
+    "but if you can't, inform the client that you are not able to help with this question. "
+    "Here is the client request: {chat_context}"
+    "\nNow write your short and concise response to the client: "
 )
 
 
@@ -49,6 +66,8 @@ INITIAL_PREPLAN_SYS_PROMPT_STR = (
     "plan regardless of how the client responds. "
     "Keep it as brief as possible: your total response including any follow-up question should be no more than 40 words. "
     "Do not mention the term `information need` or `plan` in your response. "
+    "If the user asked for a task, and also asked for setting up a notification, you should briefly mention that "
+    "the user can set up the notification themselves, from 'settings'. "
 )
 
 INITIAL_PREPLAN_MAIN_PROMPT_STR = (
@@ -378,7 +397,19 @@ NON_RETRIABLE_ERROR_SYS_PROMPT_STR = (
 )
 
 ### Dataclasses
-CHECK_FIRST_MAIN_PROMPT = Prompt(CHECK_FIRST_MAIN_PROMPT_STR, "CHECK_FIRST_MAIN_PROMPT")
+FIRST_RESPONSE_REFER_SYS_PROMPT = Prompt(
+    FIRST_RESPONSE_REFER_SYS_STR, "FIRST_RESPONSE_REFER_SYS_PROMPT"
+)
+FIRST_RESPONSE_REFER_MAIN_PROMPT = Prompt(
+    FIRST_RESPONSE_REFER_MAIN_STR, "FIRST_RESPONSE_REFER_MAIN_PROMPT"
+)
+
+FIRST_RESPONSE_NONE_MAIN_PROMPT = Prompt(
+    FIRST_RESPONSE_NONE_MAIN_STR, "FIRST_RESPONSE_NONE_MAIN_PROMPT"
+)
+FIRST_RESPONSE_NONE_SYS_PROMPT = Prompt(
+    FIRST_RESPONSE_NONE_SYS_STR, "FIRST_RESPONSE_NONE_SYS_PROMPT"
+)
 
 INITIAL_PREPLAN_SYS_PROMPT = Prompt(INITIAL_PREPLAN_SYS_PROMPT_STR, "INITIAL_PREPLAN_SYS_PROMPT")
 INITIAL_PREPLAN_MAIN_PROMPT = Prompt(INITIAL_PREPLAN_MAIN_PROMPT_STR, "INITIAL_PREPLAN_MAIN_PROMPT")

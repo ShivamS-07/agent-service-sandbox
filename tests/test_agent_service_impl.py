@@ -12,6 +12,7 @@ from agent_service.endpoints.models import (
     SetAgentFeedBackRequest,
     UpdateAgentRequest,
 )
+from agent_service.planner.constants import FirstAction
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import Notification
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
@@ -25,16 +26,24 @@ def find_item(lst, field, value):
     return None
 
 
+async def decide_action(chat_context):
+    return FirstAction.NONE
+
+
+async def generate_first_response_refer(chat_context):
+    return "I can help you with that. Please contact the support team. "
+
+
+async def generate_first_response_none(chat_context):
+    return "I'm sorry, I don't understand. Can you please rephrase?"
+
+
+async def generate_first_response_notification(chat_context):
+    return "I can set up a notification for you. Please provide me with the details."
+
+
 async def generate_initial_preplan_response(chat_context):
     return "Hi this is Warren AI, how can I help you today?"
-
-
-async def check_first_prompt(chat_context):
-    return "yes"
-
-
-async def generate_input_update_no_action_response(chat_context):
-    return "I'm sorry, I don't understand. Can you please rephrase?"
 
 
 async def generate_name_for_agent(agent_id, chat_context, existing_names, gpt_service_stub):
@@ -97,24 +106,30 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         self.assertGreater(cost_info_val["val"], 0)
 
     @patch("agent_service.agent_service_impl.Chatbot")
+    @patch("agent_service.agent_service_impl.FirstActionDecider")
     @patch("agent_service.agent_service_impl.send_chat_message")
     @patch("agent_service.agent_service_impl.generate_name_for_agent")
     def test_chat_with_agent(
         self,
         mock_generate_name_for_agent: MagicMock,
         mock_send_chat_message: MagicMock,
+        MockFirstActionDecider: MagicMock,
         MockChatBot: MagicMock,
     ):
+
+        mock_generate_name_for_agent.side_effect = generate_name_for_agent
+        mock_firstactiondecider = MockFirstActionDecider.return_value
+        mock_firstactiondecider.decide_action = decide_action
+
         mock_chatbot = MockChatBot.return_value
         mock_chatbot.generate_initial_preplan_response.side_effect = (
             generate_initial_preplan_response
         )
-        mock_chatbot.check_first_prompt.side_effect = check_first_prompt
-        mock_chatbot.generate_input_update_no_action_response.side_effect = (
-            generate_input_update_no_action_response
+        mock_chatbot.generate_first_response_refer.side_effect = generate_first_response_refer
+        mock_chatbot.generate_first_response_none.side_effect = generate_first_response_none
+        mock_chatbot.generate_first_response_notification.side_effect = (
+            generate_first_response_notification
         )
-
-        mock_generate_name_for_agent.side_effect = generate_name_for_agent
 
         mock_send_chat_message.side_effect = send_chat_message
 

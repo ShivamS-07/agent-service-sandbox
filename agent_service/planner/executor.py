@@ -11,9 +11,11 @@ from agent_service.GPT.requests import GPT, set_plan_run_context
 from agent_service.io_type_utils import IOType, split_io_type_into_components
 from agent_service.io_types.text import Text
 from agent_service.planner.action_decide import (
-    Action,
     ErrorActionDecider,
-    InputActionDecider,
+    FirstAction,
+    FirstActionDecider,
+    FollowupAction,
+    FollowupActionDecider,
 )
 from agent_service.planner.constants import (
     CHAT_DIFF_TEMPLATE,
@@ -533,7 +535,7 @@ async def create_execution_plan(
     agent_id: str,
     plan_id: str,
     user_id: str,
-    action: Action = Action.CREATE,
+    action: FollowupAction = FollowupAction.CREATE,
     error_info: Optional[ErrorInfo] = None,
     skip_db_commit: bool = False,
     skip_task_cache: bool = False,
@@ -544,7 +546,7 @@ async def create_execution_plan(
     use_sample_plans: bool = True,
 ) -> Optional[ExecutionPlan]:
     db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
-    if action != Action.CREATE:
+    if action != FollowupAction.CREATE:
         return await rewrite_execution_plan(
             agent_id=agent_id,
             user_id=user_id,
@@ -676,9 +678,9 @@ async def update_execution_after_input(
     do_chat: bool = True,
     chat_context: Optional[ChatContext] = None,
     use_sample_plans: bool = True,
-) -> Optional[Tuple[str, ExecutionPlan, Action]]:
+) -> Optional[Tuple[str, ExecutionPlan, FollowupAction]]:
     logger = get_prefect_logger(__name__)
-    decider = InputActionDecider(agent_id=agent_id, skip_db_commit=skip_db_commit)
+
     db = get_psql(skip_commit=skip_db_commit)
 
     flow_run = await prefect_pause_current_agent_flow(agent_id=agent_id)
@@ -688,103 +690,87 @@ async def update_execution_after_input(
     chatbot = Chatbot(agent_id=agent_id)
 
     latest_plan_id, latest_plan, _, _, _ = db.get_latest_execution_plan(agent_id)
-
-    if latest_plan is None or latest_plan_id is None:
-        # we must still be creating the first plan, let's just redo it
-        # with this latest info
-        action = Action.CREATE
+    # decider will be either FirstActionDecider or FollowupActionDecider depending on whether plan exists
+    action: Union[FirstAction, FollowupAction]
+    if latest_plan and latest_plan_id:
+        followupdecider = FollowupActionDecider(agent_id=agent_id, skip_db_commit=skip_db_commit)
+        action = await followupdecider.decide_action(chat_context, latest_plan)
+    else:
+        firstdecider = FirstActionDecider(agent_id=agent_id, skip_db_commit=skip_db_commit)
+        action = await firstdecider.decide_action(chat_context)
         # for mypy
         latest_plan = ExecutionPlan(nodes=[])
         latest_plan_id = ""
-    else:
-        # for now we are assuming that the last message in the chat context is the relevant message
-        action = await decider.decide_action(chat_context, latest_plan)
 
     logger.info(f"Decided on action: {action} for {agent_id=}, {latest_plan_id=}")
+
     # For now, no layout metatool
-    if action == Action.LAYOUT:
-        action = Action.NONE
+    if action == FollowupAction.LAYOUT:
+        action = FollowupAction.NONE
 
-    if action == Action.NONE or (
-        action == Action.RERUN
-        and (flow_run and flow_run.flow_run_type == FlowRunType.PLAN_CREATION)
-    ):
-        if do_chat:
-            message = await chatbot.generate_input_update_no_action_response(chat_context)
-            await send_chat_message(
-                message=Message(agent_id=agent_id, message=message, is_user_message=False),
-                db=db,
-                send_notification=False,
-            )
-        if flow_run:
-            await prefect_resume_agent_flow(flow_run)
-        return None
+    if isinstance(action, FirstAction):
+        if action == FirstAction.NONE:
+            if do_chat:
+                message = await chatbot.generate_first_response_none(chat_context)
+                await send_chat_message(
+                    message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                    db=db,
+                    send_notification=False,
+                )
+            if flow_run:
+                await prefect_resume_agent_flow(flow_run)
+            return None
+        elif action == FirstAction.NOTIFICATION:
+            if do_chat:
+                message = await chatbot.generate_first_response_notification(chat_context)
+                await send_chat_message(
+                    message=Message(
+                        agent_id=agent_id,
+                        message=message,
+                        is_user_message=False,
+                        visible_to_llm=False,
+                    ),
+                    db=db,
+                    send_notification=False,
+                )
+            if flow_run:
+                await prefect_resume_agent_flow(flow_run)
+            return None
+        elif action == FirstAction.REFER:
+            if do_chat:
+                message = await chatbot.generate_first_response_refer(chat_context)
+                await send_chat_message(
+                    message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                    db=db,
+                    send_notification=False,
+                )
+            if flow_run:
+                await prefect_resume_agent_flow(flow_run)
+            return None
+        elif action == FirstAction.PLAN:
+            # set the action to CREATE so that we can create a plan
+            action = FollowupAction.CREATE
 
-    elif action == action.NOTIFICATION:
-        if do_chat:
-            message = "To update my notification settings, please visit the Settings tab."
-            await send_chat_message(
-                message=Message(
-                    agent_id=agent_id, message=message, is_user_message=False, visible_to_llm=False
-                ),
-                db=db,
-                send_notification=False,
-            )
-
-    elif action == Action.RERUN:
-        # In this case, we know that the flow_run_type is PLAN_EXECUTION (or there no flow_run),
-        # otherwise we'd have run the above block instead.
-        if do_chat:
-            message = await chatbot.generate_input_update_rerun_response(
-                chat_context,
-                latest_plan,
-                str(
-                    [
-                        node.tool_name
-                        for node in latest_plan.nodes
-                        if ToolRegistry.get_tool(node.tool_name).reads_chat
-                    ]
-                ),
-            )
-            await send_chat_message(
-                message=Message(agent_id=agent_id, message=message, is_user_message=False),
-                db=db,
-            )
-
-        if run_tasks_without_prefect:
-            return latest_plan_id, latest_plan, action
-
-        if flow_run:
-            await prefect_cancel_agent_flow(flow_run, db=db)
-        plan_run_id = str(uuid4())
-        ctx = PlanRunContext(
-            agent_id=agent_id,
-            plan_id=latest_plan_id,
-            user_id=user_id,
-            plan_run_id=plan_run_id,
-            skip_db_commit=skip_db_commit,
-            skip_task_cache=skip_task_cache,
-            run_tasks_without_prefect=run_tasks_without_prefect,
-            chat=chat_context,
-        )
-
-        logger.info(f"Rerunning execution plan for {agent_id=}, {latest_plan_id=}, {plan_run_id=}")
-        db = get_psql(skip_commit=ctx.skip_db_commit)
-        db.insert_plan_run(agent_id=ctx.agent_id, plan_id=ctx.plan_id, plan_run_id=ctx.plan_run_id)
-        await prefect_run_execution_plan(plan=latest_plan, context=ctx, do_chat=do_chat)
-
-    else:
-        # This handles the cases for REPLAN, APPEND, and CREATE
-        if do_chat:
-            message = await chatbot.generate_input_update_replan_preplan_response(chat_context)
-            await send_chat_message(
-                message=Message(agent_id=agent_id, message=message, is_user_message=False), db=db
-            )
-        if flow_run:
-            await prefect_cancel_agent_flow(flow_run, db=db)
-        new_plan_id = str(uuid4())
-        if run_tasks_without_prefect:
-            plan = await create_execution_plan_local(
+    if isinstance(action, FollowupAction):
+        if action == FollowupAction.CREATE:
+            if flow_run:
+                await prefect_cancel_agent_flow(flow_run, db=db)
+            new_plan_id = str(uuid4())
+            if run_tasks_without_prefect:
+                plan = await create_execution_plan_local(
+                    agent_id=agent_id,
+                    user_id=user_id,
+                    plan_id=new_plan_id,
+                    action=action,
+                    skip_db_commit=skip_db_commit,
+                    skip_task_cache=skip_task_cache,
+                    run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
+                    run_tasks_without_prefect=run_tasks_without_prefect,
+                    use_sample_plans=use_sample_plans,
+                )
+                if plan:
+                    return new_plan_id, plan, action
+            await prefect_create_execution_plan(
                 agent_id=agent_id,
                 user_id=user_id,
                 plan_id=new_plan_id,
@@ -792,20 +778,121 @@ async def update_execution_after_input(
                 skip_db_commit=skip_db_commit,
                 skip_task_cache=skip_task_cache,
                 run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
-                run_tasks_without_prefect=run_tasks_without_prefect,
-                use_sample_plans=use_sample_plans,
             )
-            if plan:
-                return new_plan_id, plan, action
-        await prefect_create_execution_plan(
-            agent_id=agent_id,
-            user_id=user_id,
-            plan_id=new_plan_id,
-            action=action,
-            skip_db_commit=skip_db_commit,
-            skip_task_cache=skip_task_cache,
-            run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
-        )
+
+        elif action == FollowupAction.NONE or (
+            action == FollowupAction.RERUN
+            and (flow_run and flow_run.flow_run_type == FlowRunType.PLAN_CREATION)
+        ):
+            if do_chat:
+                message = await chatbot.generate_input_update_no_action_response(chat_context)
+                await send_chat_message(
+                    message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                    db=db,
+                    send_notification=False,
+                )
+            if flow_run:
+                await prefect_resume_agent_flow(flow_run)
+            return None
+
+        elif action == action.NOTIFICATION:
+            if do_chat:
+                message = await chatbot.generate_first_response_notification(chat_context)
+                await send_chat_message(
+                    message=Message(
+                        agent_id=agent_id,
+                        message=message,
+                        is_user_message=False,
+                        visible_to_llm=False,
+                    ),
+                    db=db,
+                    send_notification=False,
+                )
+            if flow_run:
+                await prefect_resume_agent_flow(flow_run)
+            return None
+
+        elif action == FollowupAction.RERUN:
+            # In this case, we know that the flow_run_type is PLAN_EXECUTION (or there no flow_run),
+            # otherwise we'd have run the above block instead.
+            if do_chat:
+                message = await chatbot.generate_input_update_rerun_response(
+                    chat_context,
+                    latest_plan,
+                    str(
+                        [
+                            node.tool_name
+                            for node in latest_plan.nodes
+                            if ToolRegistry.get_tool(node.tool_name).reads_chat
+                        ]
+                    ),
+                )
+                await send_chat_message(
+                    message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                    db=db,
+                )
+
+            if run_tasks_without_prefect:
+                return latest_plan_id, latest_plan, action
+
+            if flow_run:
+                await prefect_cancel_agent_flow(flow_run, db=db)
+            plan_run_id = str(uuid4())
+            ctx = PlanRunContext(
+                agent_id=agent_id,
+                plan_id=latest_plan_id,
+                user_id=user_id,
+                plan_run_id=plan_run_id,
+                skip_db_commit=skip_db_commit,
+                skip_task_cache=skip_task_cache,
+                run_tasks_without_prefect=run_tasks_without_prefect,
+                chat=chat_context,
+            )
+
+            logger.info(
+                f"Rerunning execution plan for {agent_id=}, {latest_plan_id=}, {plan_run_id=}"
+            )
+            db = get_psql(skip_commit=ctx.skip_db_commit)
+            db.insert_plan_run(
+                agent_id=ctx.agent_id, plan_id=ctx.plan_id, plan_run_id=ctx.plan_run_id
+            )
+            await prefect_run_execution_plan(plan=latest_plan, context=ctx, do_chat=do_chat)
+
+        else:
+            # This handles the cases for REPLAN, APPEND, and CREATE
+            if do_chat:
+                message = await chatbot.generate_input_update_replan_preplan_response(chat_context)
+                await send_chat_message(
+                    message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                    db=db,
+                )
+            if flow_run:
+                await prefect_cancel_agent_flow(flow_run, db=db)
+            new_plan_id = str(uuid4())
+            if run_tasks_without_prefect:
+                plan = await create_execution_plan_local(
+                    agent_id=agent_id,
+                    user_id=user_id,
+                    plan_id=new_plan_id,
+                    action=action,
+                    skip_db_commit=skip_db_commit,
+                    skip_task_cache=skip_task_cache,
+                    run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
+                    run_tasks_without_prefect=run_tasks_without_prefect,
+                    use_sample_plans=use_sample_plans,
+                )
+                if plan:
+                    print("plan created: ", new_plan_id, plan)
+                    return new_plan_id, plan, action
+            await prefect_create_execution_plan(
+                agent_id=agent_id,
+                user_id=user_id,
+                plan_id=new_plan_id,
+                action=action,
+                skip_db_commit=skip_db_commit,
+                skip_task_cache=skip_task_cache,
+                run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
+            )
 
     return None
 
@@ -814,7 +901,7 @@ async def rewrite_execution_plan(
     agent_id: str,
     user_id: str,
     plan_id: str,
-    action: Action,
+    action: FollowupAction,
     error_info: Optional[ErrorInfo] = None,
     skip_db_commit: bool = False,
     skip_task_cache: bool = False,
@@ -836,7 +923,7 @@ async def rewrite_execution_plan(
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
     automation_enabled = await db.get_agent_automation_enabled(agent_id=agent_id)
     old_plan_id, old_plan, plan_timestamp, _, _ = await db.get_latest_execution_plan(agent_id)
-    if automation_enabled and action == Action.APPEND:
+    if automation_enabled and action == FollowupAction.APPEND:
         pg = get_psql()
         old_plan_id, live_plan = pg.get_agent_live_execution_plan(agent_id=agent_id)
         if live_plan:
@@ -876,7 +963,7 @@ async def rewrite_execution_plan(
             plan_id=plan_id,
         )
 
-        if automation_enabled and action == Action.APPEND and new_plan:
+        if automation_enabled and action == FollowupAction.APPEND and new_plan:
             task_ids = planner.replicate_plan_set_for_automated_run(old_plan, new_plan)
             override_task_output_id_lookup = await Clickhouse().get_task_replay_ids(
                 agent_id=agent_id, task_ids=task_ids, plan_id=old_plan_id
@@ -978,16 +1065,16 @@ async def handle_error_in_execution(
 
     if sum([last_user_message_time < plan_time for plan_time in plan_times]) >= EXECUTION_TRIES:
         logger.info("Too many retries, giving up. Set action to None")
-        action = Action.NONE
+        action = FollowupAction.NONE
     else:
         logger.info("Deciding on action after error...")
-        decider = ErrorActionDecider(context.agent_id)
-        action, change = await decider.decide_action(error, step, plans, chat_context)
+        followup_decider = ErrorActionDecider(context.agent_id)
+        action, change = await followup_decider.decide_action(error, step, plans, chat_context)
         logger.info(
             f"Decided on action after error: {action} for {context.agent_id=}, {context.plan_id=}"
         )
 
-    if action == Action.NONE:
+    if action == FollowupAction.NONE:
         if do_chat:
             chatbot = Chatbot(agent_id=context.agent_id)
             message = await chatbot.generate_initial_plan_failed_response_suggestions(
@@ -1103,7 +1190,7 @@ async def create_execution_plan_local(
     agent_id: str,
     plan_id: str,
     user_id: str,
-    action: Action = Action.CREATE,
+    action: FollowupAction = FollowupAction.CREATE,
     error_info: Optional[ErrorInfo] = None,
     skip_db_commit: bool = False,
     skip_task_cache: bool = False,

@@ -4,15 +4,17 @@ from uuid import uuid4
 
 from agent_service.GPT.constants import GPT4_O, GPT4_TURBO, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.planner.constants import Action
+from agent_service.planner.constants import FirstAction, FollowupAction
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import ExecutionPlan, ToolExecutionNode
 from agent_service.planner.prompts import (
-    ACTION_DECIDER_MAIN_PROMPT,
-    ACTION_DECIDER_SYS_PROMPT,
     ERROR_ACTION_DECIDER_MAIN_PROMPT,
     ERROR_ACTION_DECIDER_SYS_PROMPT,
     ERROR_REPLAN_GUIDELINES,
+    FIRST_ACTION_DECIDER_MAIN_PROMPT,
+    FIRST_ACTION_DECIDER_SYS_PROMPT,
+    FOLLOWUP_ACTION_DECIDER_MAIN_PROMPT,
+    FOLLOWUP_ACTION_DECIDER_SYS_PROMPT,
     NOTIFICATION_CREATE_MAIN_PROMPT,
     NOTIFICATION_DEFAULT_MAIN_PROMPT,
     NOTIFICATION_EXAMPLE,
@@ -26,7 +28,7 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 from agent_service.utils.postgres import SyncBoostedPG
 
 
-class InputActionDecider:
+class FirstActionDecider:
     def __init__(
         self,
         agent_id: str,
@@ -40,7 +42,32 @@ class InputActionDecider:
         self.tool_registry = tool_registry
         self.db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
 
-    async def decide_action(self, chat_context: ChatContext, current_plan: ExecutionPlan) -> Action:
+    async def decide_action(self, chat_context: ChatContext) -> FirstAction:
+        main_prompt = FIRST_ACTION_DECIDER_MAIN_PROMPT.format(message=chat_context.get_gpt_input())
+        result = await self.llm.do_chat_w_sys_prompt(
+            main_prompt, FIRST_ACTION_DECIDER_SYS_PROMPT.format()
+        )
+        action = FirstAction[result.split()[-1].strip().upper()]
+        return action
+
+
+class FollowupActionDecider:
+    def __init__(
+        self,
+        agent_id: str,
+        skip_db_commit: bool = False,
+        model: str = GPT4_O,
+        tool_registry: Type[ToolRegistry] = ToolRegistry,
+    ) -> None:
+        self.agent_id = agent_id
+        context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
+        self.llm = GPT(context, model)
+        self.tool_registry = tool_registry
+        self.db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
+
+    async def decide_action(
+        self, chat_context: ChatContext, current_plan: ExecutionPlan
+    ) -> FollowupAction:
         reads_chat_list = []
         instruction_list = []
         for step in current_plan.nodes:
@@ -51,7 +78,7 @@ class InputActionDecider:
                 instruction_list.append(f"{step.tool_name}: {tool.update_instructions}")
 
         latest_message = chat_context.messages.pop()
-        main_prompt = ACTION_DECIDER_MAIN_PROMPT.format(
+        main_prompt = FOLLOWUP_ACTION_DECIDER_MAIN_PROMPT.format(
             plan=current_plan.get_formatted_plan(),
             reads_chat_list=reads_chat_list,
             decision_instructions="\n".join(instruction_list),
@@ -59,15 +86,15 @@ class InputActionDecider:
             message=latest_message.get_gpt_input(),
         )
         result = await self.llm.do_chat_w_sys_prompt(
-            main_prompt, ACTION_DECIDER_SYS_PROMPT.format()
+            main_prompt, FOLLOWUP_ACTION_DECIDER_SYS_PROMPT.format()
         )
         chat_context.messages.append(latest_message)
-        action = Action[result.split()[-1].strip().upper()]
-        if len(reads_chat_list) == 0 and action == Action.RERUN:  # GPT shouldn't do this
-            action = Action.REPLAN
+        action = FollowupAction[result.split()[-1].strip().upper()]
+        if len(reads_chat_list) == 0 and action == FollowupAction.RERUN:  # GPT shouldn't do this
+            action = FollowupAction.REPLAN
         automation_enabled = await self.db.get_agent_automation_enabled(agent_id=self.agent_id)
-        if automation_enabled and action in [Action.RERUN, Action.REPLAN]:
-            return Action.APPEND
+        if automation_enabled and action in [FollowupAction.RERUN, FollowupAction.REPLAN]:
+            return FollowupAction.APPEND
         return action
 
     async def create_custom_notifications(self, chat_context: ChatContext) -> str:
@@ -115,7 +142,7 @@ class ErrorActionDecider:
         failed_step: ToolExecutionNode,
         plans: List[ExecutionPlan],
         chat_context: ChatContext,
-    ) -> Tuple[Action, str]:
+    ) -> Tuple[FollowupAction, str]:
         latest_plan = plans[-1]
 
         sys_prompt = ERROR_ACTION_DECIDER_SYS_PROMPT.format(
@@ -133,7 +160,7 @@ class ErrorActionDecider:
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt)
 
         lines = result.split("\n")
-        return Action[lines[-1].strip().upper()], lines[0]
+        return FollowupAction[lines[-1].strip().upper()], lines[0]
 
 
 async def main() -> None:
@@ -153,7 +180,7 @@ async def main() -> None:
         "Move the text down below the graph please",
     ]
 
-    action_decider = InputActionDecider("123")
+    action_decider = FollowupActionDecider("123")
     for new_input in new_user_inputs:
         new_message = Message(message=new_input, is_user_message=True, message_time=get_now_utc())
         print(new_message)
