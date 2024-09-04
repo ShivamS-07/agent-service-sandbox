@@ -645,6 +645,16 @@ class CustomDocumentSummaryText(StockText):
                             snippet_highlight_end=hl_end,
                         )
                     )
+                if not output_citations:
+                    output_citations[chunk_cit].append(
+                        CustomDocumentCitationOutput(
+                            internal_id=chunk_id,
+                            name=f"User Document: {citation_name}",
+                            last_updated_at=chunk_info.upload_time.ToDatetime(),
+                            custom_doc_id=chunk_info.file_id,
+                            inline_offset=chunk_cit.citation_text_offset,
+                        )
+                    )
         return output_citations  # type: ignore
 
 
