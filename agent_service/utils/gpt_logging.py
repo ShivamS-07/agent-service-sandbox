@@ -39,10 +39,12 @@ def plan_create_context(agent_id: str, user_id: str, plan_id: str) -> Dict[str, 
     return context
 
 
-def chatbot_context(agent_id: str) -> Dict[str, str]:
-    from agent_service.utils.postgres import get_psql
+def chatbot_context(agent_id: str, user_id: Optional[str] = None) -> Dict[str, str]:
+    if not user_id:
+        from agent_service.utils.postgres import get_psql
 
-    user_id = get_psql().get_agent_owner(agent_id=agent_id)
+        user_id = get_psql().get_agent_owner(agent_id=agent_id)
+
     context = create_gpt_context(GptJobType.AGENT_CHATBOT, agent_id, GptJobIdType.AGENT_ID)
     context["agent_id"] = agent_id
     if user_id:

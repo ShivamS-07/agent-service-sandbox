@@ -181,7 +181,7 @@ async def identity(x: Any) -> Any:
     return x
 
 
-def run_async_background(coro: Coroutine[Any, Any, T]) -> asyncio.Task:
+def run_async_background(coro: Coroutine[Any, Any, T]) -> asyncio.Task[T]:
     """Run an async function in the background without waiting for it to complete.
     Be careful! If the coroutine doesn't finish before the program exits, it will be terminated
 

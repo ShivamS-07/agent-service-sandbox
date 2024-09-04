@@ -58,6 +58,7 @@ from agent_service.utils.gpt_logging import (
     create_gpt_context,
     plan_create_context,
 )
+from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.output_diffs import (
     OutputDiffer,
     generate_full_diff_summary,
@@ -669,6 +670,7 @@ async def create_execution_plan(
 # if append or replan, update the plan and rerun
 
 
+@async_perf_logger
 async def update_execution_after_input(
     agent_id: str,
     user_id: str,

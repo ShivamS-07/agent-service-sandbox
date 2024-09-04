@@ -101,7 +101,11 @@ from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.agent_name import generate_name_for_agent
 from agent_service.utils.async_db import AsyncDB
-from agent_service.utils.async_utils import async_wrap, gather_with_concurrency
+from agent_service.utils.async_utils import (
+    async_wrap,
+    gather_with_concurrency,
+    run_async_background,
+)
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
 from agent_service.utils.date_utils import get_now_utc
@@ -323,6 +327,7 @@ class AgentServiceImpl:
             for user in valid_users
         ]
 
+    @async_perf_logger
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
         agent_id = req.agent_id
         user_msg = Message(
@@ -331,7 +336,7 @@ class AgentServiceImpl:
             is_user_message=True,
             message_author=user.real_user_id,
         )
-        name = None
+        name: Optional[str] = None
 
         # TODO should clean this up to prevent duplication
         if req.skip_agent_response:
@@ -367,6 +372,9 @@ class AgentServiceImpl:
             return ChatWithAgentResponse(success=True, allow_retry=False, name=name)
 
         if not req.is_first_prompt:
+            LOGGER.info("Creating a future to send slack message")
+            slack_future_task = run_async_background(self._slack_chat_msg(req, user))
+
             try:
                 LOGGER.info(f"Inserting user's new message to DB for {agent_id=}")
                 await self.pg.insert_chat_messages(messages=[user_msg])
@@ -375,28 +383,39 @@ class AgentServiceImpl:
                 return ChatWithAgentResponse(success=False, allow_retry=True)
             try:
                 LOGGER.info(f"Updating execution plan after user's new message for {req.agent_id=}")
-                await self.task_executor.update_execution_after_input(
+                await self.task_executor.update_execution_after_input(  # >3s
                     agent_id=req.agent_id, user_id=user.user_id, chat_context=None
                 )
             except Exception as e:
                 LOGGER.exception((f"Failed to update {agent_id=} execution plan: {e}"))
                 return ChatWithAgentResponse(success=False, allow_retry=False)
+
+            LOGGER.info("Waiting for slack message (future) to be sent")
+            await slack_future_task
         else:
             try:
+                # SLOW: let it run in the background and await later
+                LOGGER.info("Creating a future to generate agent name and run in the background")
+                gen_name_future_task = run_async_background(
+                    self._generate_agent_name_and_store(user.user_id, agent_id, user_msg)  # 2s
+                )
+
                 # decide the first action
                 LOGGER.info("Generating initial response from GPT (first prompt)")
                 chatbot = Chatbot(agent_id, gpt_service_stub=self.gpt_service_stub)
                 chat_context = ChatContext(messages=[user_msg])
                 action_decider = FirstActionDecider(agent_id=agent_id, skip_db_commit=True)
+
                 # gather all the responses in parallel
                 action, refer, none, notification, preplan = await gather_with_concurrency(
                     [
-                        action_decider.decide_action(chat_context=chat_context),
-                        chatbot.generate_first_response_refer(chat_context=chat_context),
-                        chatbot.generate_first_response_none(chat_context=chat_context),
+                        action_decider.decide_action(chat_context=chat_context),  # 0.3s
+                        chatbot.generate_first_response_refer(chat_context=chat_context),  # >1s
+                        chatbot.generate_first_response_none(chat_context=chat_context),  # >1s
                         chatbot.generate_first_response_notification(chat_context=chat_context),
-                        chatbot.generate_initial_preplan_response(chat_context=chat_context),
-                    ]
+                        chatbot.generate_initial_preplan_response(chat_context=chat_context),  # >1s
+                    ],
+                    n=5,  # default is 4
                 )
 
                 if action == FirstAction.REFER:
@@ -408,27 +427,28 @@ class AgentServiceImpl:
                 else:  # action == FirstAction.NONE
                     gpt_resp = none
 
-                LOGGER.info("Inserting user's and GPT's messages to DB")
+                LOGGER.info(
+                    "Waiting for name generation (future) to complete while inserting user's and "
+                    "GPT's messages to DB, updating agent's name "
+                    "and publishing GPT response"
+                )
                 gpt_msg = Message(agent_id=agent_id, message=gpt_resp, is_user_message=False)
-                await self.pg.insert_chat_messages(messages=[user_msg, gpt_msg])
+
+                name, _, _, _ = await gather_with_concurrency(
+                    [
+                        gen_name_future_task,
+                        self.pg.insert_chat_messages(messages=[user_msg, gpt_msg]),
+                        send_chat_message(gpt_msg, self.pg, insert_message_into_db=False),
+                        self._slack_chat_msg(req, user),  # 0.1s
+                    ]
+                )
             except Exception as e:
                 # FE should retry if this fails
                 LOGGER.exception(
                     f"Failed to generate initial response from GPT with exception: {e}"
                 )
-                return ChatWithAgentResponse(success=False, allow_retry=True)
-            try:
-                LOGGER.info("Generating name for agent")
-                existing_agents = await self.pg.get_existing_agents_names(user.user_id)
-                name = await generate_name_for_agent(
-                    agent_id=agent_id,
-                    chat_context=ChatContext(messages=[user_msg]),
-                    existing_names=existing_agents,
-                    gpt_service_stub=self.gpt_service_stub,
-                )
-                await self.pg.update_agent_name(agent_id=agent_id, agent_name=name)
-            except Exception as e:
-                LOGGER.exception(f"Failed to generate name for agent from GPT with exception: {e}")
+                return ChatWithAgentResponse(success=False, allow_retry=False)
+
             if req.canned_prompt_id:
                 log_event(
                     event_name="agent-canned-prompt",
@@ -439,17 +459,12 @@ class AgentServiceImpl:
                         "user_id": user.user_id,
                     },
                 )
-            try:
-                LOGGER.info("Publishing GPT response to Redis")
-                await send_chat_message(gpt_msg, self.pg, insert_message_into_db=False)
-            except Exception as e:
-                LOGGER.exception(f"Failed to publish GPT response to Redis: {e}")
-                return ChatWithAgentResponse(success=False, allow_retry=False)
+
             if action == FirstAction.PLAN:
                 plan_id = str(uuid4())
                 LOGGER.info(f"Creating execution plan {plan_id} for {agent_id=}")
                 try:
-                    await self.task_executor.create_execution_plan(
+                    await self.task_executor.create_execution_plan(  # this isn't async
                         agent_id=agent_id,
                         plan_id=plan_id,
                         user_id=user.user_id,
@@ -458,41 +473,65 @@ class AgentServiceImpl:
                 except Exception:
                     LOGGER.exception("Failed to kick off execution plan creation")
                     return ChatWithAgentResponse(success=False, allow_retry=False)
-            try:
-                user_info = (
-                    await get_users(
-                        user_id=user.user_id, user_ids=[user.user_id], include_user_enabled=False
-                    )
-                )[0]
-                org_id = user_info.organization_membership.organization_id.id
-                org_name = await self.pg.get_org_name(org_id=org_id)
-                user_email = user_info.email
-                if (
-                    not user_email.endswith("@boosted.ai")
-                    and not user_email.endswith("@gradientboostedinvestments.com")
-                    and user.real_user_id == user.user_id
-                ):
-                    user_info_slack_string = ""
-                    user_info_slack_string += f"\ncognito_username: {user_info.cognito_username}"
-                    user_info_slack_string += f"\nname: {user_info.name}"
-                    user_info_slack_string += f"\nuser_id: {user.user_id}"
-                    user_info_slack_string += f"\norganization_name: {org_name}"
-                    user_info_slack_string += f"\norganization_id: {org_id}"
-                    if user.fullstory_link:
-                        user_info_slack_string += f"\nfullstory_link: {user.fullstory_link}"
-                    six_hours_from_now = int(time.time() + (60 * 60 * 2))
-                    self.slack_sender.send_message_at(
-                        message_text=f"{req.prompt}\n"
-                        f"Link: {self.base_url}/chat/{agent_id}\n"
-                        f"canned_prompt_id: {req.canned_prompt_id}"
-                        f"{user_info_slack_string}",
-                        send_at=six_hours_from_now,
-                    )
-            except Exception:
-                LOGGER.warning(f"Unable to send slack message for {user.user_id=}")
-                LOGGER.warning(traceback.format_exc())
 
         return ChatWithAgentResponse(success=True, allow_retry=False, name=name)
+
+    @async_perf_logger
+    async def _generate_agent_name_and_store(
+        self, user_id: str, agent_id: str, user_msg: Message
+    ) -> str:
+        LOGGER.info("Getting existing agents' names")
+        existing_agents = await self.pg.get_existing_agents_names(user_id)
+
+        LOGGER.info("Calling GPT to generate agent name")
+        name = await generate_name_for_agent(
+            agent_id=agent_id,
+            chat_context=ChatContext(messages=[user_msg]),
+            existing_names=existing_agents,
+            gpt_service_stub=self.gpt_service_stub,
+            user_id=user_id,
+        )
+
+        LOGGER.info(f"Updating agent name to {name} in DB")
+        await self.pg.update_agent_name(agent_id=agent_id, agent_name=name)
+        return name
+
+    @async_perf_logger
+    async def _slack_chat_msg(self, req: ChatWithAgentRequest, user: User) -> None:
+        try:
+            user_info = (
+                await get_users(  # TODO: maybe we should cache it in memory?
+                    user_id=user.user_id, user_ids=[user.user_id], include_user_enabled=False
+                )
+            )[0]
+            user_email = user_info.email
+            if (
+                not user_email.endswith("@boosted.ai")
+                and not user_email.endswith("@gradientboostedinvestments.com")
+                and user.real_user_id == user.user_id
+            ):
+                org_id = user_info.organization_membership.organization_id.id
+                org_name = await self.pg.get_org_name(org_id=org_id)
+
+                user_info_slack_string = ""
+                user_info_slack_string += f"\ncognito_username: {user_info.cognito_username}"
+                user_info_slack_string += f"\nname: {user_info.name}"
+                user_info_slack_string += f"\nuser_id: {user.user_id}"
+                user_info_slack_string += f"\norganization_name: {org_name}"
+                user_info_slack_string += f"\norganization_id: {org_id}"
+                if user.fullstory_link:
+                    user_info_slack_string += f"\nfullstory_link: {user.fullstory_link}"
+                six_hours_from_now = int(time.time() + (60 * 60 * 2))
+                self.slack_sender.send_message_at(
+                    message_text=f"{req.prompt}\n"
+                    f"Link: {self.base_url}/chat/{req.agent_id}\n"
+                    f"canned_prompt_id: {req.canned_prompt_id}"
+                    f"{user_info_slack_string}",
+                    send_at=six_hours_from_now,
+                )
+        except Exception:
+            LOGGER.warning(f"Unable to send slack message for {user.user_id=}")
+            LOGGER.warning(traceback.format_exc())
 
     async def get_chat_history(
         self, agent_id: str, start: Optional[datetime.datetime], end: Optional[datetime.datetime]

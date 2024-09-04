@@ -46,7 +46,9 @@ async def generate_initial_preplan_response(chat_context):
     return "Hi this is Warren AI, how can I help you today?"
 
 
-async def generate_name_for_agent(agent_id, chat_context, existing_names, gpt_service_stub):
+async def generate_name_for_agent(
+    agent_id, chat_context, existing_names, gpt_service_stub, user_id
+):
     return "Macroeconomic News"
 
 

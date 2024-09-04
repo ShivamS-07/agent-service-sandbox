@@ -25,6 +25,7 @@ from agent_service.types import ChatContext, Message
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import SyncBoostedPG
 
 
@@ -42,6 +43,7 @@ class FirstActionDecider:
         self.tool_registry = tool_registry
         self.db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
 
+    @async_perf_logger
     async def decide_action(self, chat_context: ChatContext) -> FirstAction:
         main_prompt = FIRST_ACTION_DECIDER_MAIN_PROMPT.format(message=chat_context.get_gpt_input())
         result = await self.llm.do_chat_w_sys_prompt(
