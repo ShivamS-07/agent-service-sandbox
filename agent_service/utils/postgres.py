@@ -561,6 +561,16 @@ class Postgres(PostgresBase):
         sql = "DELETE FROM agent.sample_plans WHERE sample_plan_id=%(id)s"
         self.generic_write(sql, {"id": id})
 
+    def get_execution_plan_for_run(self, plan_run_id: str) -> ExecutionPlan:
+        sql = """
+            SELECT plan
+            FROM agent.execution_plans ep
+            JOIN agent.plan_runs pr ON ep.plan_id = pr.plan_id
+            WHERE pr.plan_run_id = %(plan_run_id)s
+        """
+        rows = self.generic_read(sql, params={"plan_run_id": plan_run_id})
+        return ExecutionPlan.model_validate(rows[0]["plan"])
+
     ################################################################################################
     # Notifications
     ################################################################################################

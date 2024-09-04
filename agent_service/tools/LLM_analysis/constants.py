@@ -29,4 +29,4 @@ CITATION_HEADER = "### Citation Mapping"
 UNITS = ["thousand", "million", "billion", "trillion"]
 CITATION_SNIPPET_BUFFER_LEN = 100
 MAX_CITATION_TRIES = 5
-UPDATE_PLAN_DELIMITER = "!!!"
+BRAINSTORM_DELIMITER = "!!!"

@@ -22,6 +22,7 @@ from agent_service.planner.errors import EmptyInputError, EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.LLM_analysis.constants import (
+    BRAINSTORM_DELIMITER,
     DEFAULT_LLM,
     LLM_FILTER_MAX_PERCENT,
     MAX_CITATION_TRIES,
@@ -31,12 +32,12 @@ from agent_service.tools.LLM_analysis.constants import (
     RUBRIC_DELIMITER,
     SCORE_MAPPING,
     SCORE_OUTPUT_DELIMITER,
-    UPDATE_PLAN_DELIMITER,
 )
 from agent_service.tools.LLM_analysis.prompts import (
     ANSWER_QUESTION_DESCRIPTION,
     ANSWER_QUESTION_MAIN_PROMPT,
     ANSWER_QUESTION_SYS_PROMPT,
+    BRAINSTORM_REMINDER,
     COMPARISON_DESCRIPTION,
     COMPARISON_MAIN_PROMPT,
     COMPARISON_SYS_PROMPT,
@@ -57,6 +58,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     RUBRIC_EVALUATION_SYS_OBJ,
     SIMPLE_PROFILE_FILTER_SYS_PROMPT,
     STOCK_PHRASE,
+    SUMMARIZE_BRAINSTORM_INSTRUCTIONS,
     SUMMARIZE_DESCRIPTION,
     SUMMARIZE_MAIN_PROMPT,
     SUMMARIZE_SYS_PROMPT,
@@ -81,6 +83,7 @@ from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.string_utils import clean_to_json_if_needed
 from agent_service.utils.tool_diff import (
@@ -125,9 +128,20 @@ async def _initial_summarize_helper(
         chat_str = ""
     topic = args.topic
     if topic:
-        topic_str = TOPIC_PHRASE.format(topic=topic)
+        plan_str = (
+            get_psql(skip_commit=context.skip_db_commit)
+            .get_execution_plan_for_run(context.plan_run_id)
+            .get_formatted_plan(numbered=True)
+        )
+        topic_str = TOPIC_PHRASE.format(
+            topic=topic, plan_str=plan_str, brainstorm_reminder=BRAINSTORM_REMINDER
+        )
+        brainstorm_str = SUMMARIZE_BRAINSTORM_INSTRUCTIONS.format(
+            brainstorm_delimiter=BRAINSTORM_DELIMITER
+        )
     else:
         topic_str = ""
+        brainstorm_str = ""
     stock = args.stock
     if stock:
         stock_str = STOCK_PHRASE.format(stock=stock.company_name)
@@ -156,17 +170,26 @@ async def _initial_summarize_helper(
             else datetime.date.today().isoformat()
         ),
     )
+
+    sys_prompt = SUMMARIZE_SYS_PROMPT.format(brainstorm_instructions=brainstorm_str)
+
     result = await llm.do_chat_w_sys_prompt(
         main_prompt,
-        SUMMARIZE_SYS_PROMPT.format(),
+        sys_prompt,
     )
+
+    if BRAINSTORM_DELIMITER in result:
+        result = result.split(BRAINSTORM_DELIMITER)[-1]
+
     text, citations = await extract_citations_from_gpt_output(result, text_group, context)
     tries = 0
     while citations is None and tries < MAX_CITATION_TRIES:  # failed to load citations, retry
         logger.warning(f"Retrying after no citations after  {result}")
         result = await llm.do_chat_w_sys_prompt(
-            main_prompt, SUMMARIZE_SYS_PROMPT.format(), no_cache=True, temperature=0.1 * (tries + 1)
+            main_prompt, sys_prompt, no_cache=True, temperature=0.1 * (tries + 1)
         )
+        if BRAINSTORM_DELIMITER in result:
+            result = result.split(BRAINSTORM_DELIMITER)[-1]
         text, citations = await extract_citations_from_gpt_output(result, text_group, context)
         tries += 1
 
@@ -197,7 +220,12 @@ async def _update_summarize_helper(
         chat_str = ""
     topic = args.topic
     if topic:
-        topic_str = TOPIC_PHRASE.format(topic=topic)
+        plan_str = (
+            get_psql(skip_commit=context.skip_db_commit)
+            .get_execution_plan_for_run(context.plan_run_id)
+            .get_formatted_plan(numbered=True)
+        )
+        topic_str = TOPIC_PHRASE.format(topic=topic, plan_str=plan_str, brainstorm_reminder="")
     else:
         topic_str = ""
 
@@ -236,12 +264,16 @@ async def _update_summarize_helper(
         ),
     )
 
-    result = await llm.do_chat_w_sys_prompt(
-        main_prompt,
-        UPDATE_SUMMARIZE_SYS_PROMPT.format(),
+    sys_prompt = UPDATE_SUMMARIZE_SYS_PROMPT.format(
+        plan_delimiter=BRAINSTORM_DELIMITER, brainstorm_instructions=""
     )
 
-    result = result.split(UPDATE_PLAN_DELIMITER)[-1]  # strip planning section
+    result = await llm.do_chat_w_sys_prompt(
+        main_prompt,
+        sys_prompt,
+    )
+
+    result = result.split(BRAINSTORM_DELIMITER)[-1]  # strip planning section
 
     combined_text_group = TextGroup.join(new_text_group, old_texts_group)
 
@@ -251,11 +283,11 @@ async def _update_summarize_helper(
         logger.warning(f"Retrying after no citations for {result}")
         result = await llm.do_chat_w_sys_prompt(
             main_prompt,
-            UPDATE_SUMMARIZE_SYS_PROMPT.format(plan_delimiter=UPDATE_PLAN_DELIMITER),
+            sys_prompt,
             no_cache=True,
             temperature=0.1 * (tries + 1),
         )
-        result = result.split(UPDATE_PLAN_DELIMITER)[-1]  # strip planning section
+        result = result.split(BRAINSTORM_DELIMITER)[-1]  # strip planning section
 
         text, citations = await extract_citations_from_gpt_output(
             result, combined_text_group, context
