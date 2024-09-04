@@ -382,8 +382,8 @@ class SecFiling:
         cls,
         gbi_ids: List[int],
         form_types: List[str],
-        start_date: datetime.date,
-        end_date: datetime.date,
+        start_date: datetime.date,  # inclusive
+        end_date: datetime.date,  # inclusive
     ) -> Dict[str, str]:
         """
         Given a list of SEC filings, return a list of database table IDs for the available filings
@@ -412,37 +412,11 @@ class SecFiling:
     # Get sections for 10K/10Q filings
     ################################################################################################
     @classmethod
-    async def get_concat_10k_10q_sections_from_db(
-        cls, db_id_to_text_id: Dict[str, str]
-    ) -> Dict[str, str]:
-        sql = """
-            SELECT id::TEXT AS id, riskFactors, managementSection
-            FROM sec.sec_filings
-            WHERE formType in ('10-K', '10-Q') AND id IN %(db_ids)s
-        """
-        ch = Clickhouse()
-        result = await ch.generic_read(sql, params={"db_ids": list(db_id_to_text_id.keys())})
-
-        output = {}
-        for row in result:
-            risk_factor_section = row["riskFactors"]
-            management_section = row["managementSection"]
-            text = (
-                f"Management Section:\n\n{management_section}\n\n"
-                f"Risk Factors Section:\n\n{risk_factor_section}"
-            )
-
-            filing_id = db_id_to_text_id[row["id"]]
-            output[filing_id] = text
-
-        return output
-
-    @classmethod
     async def get_concat_10k_10q_sections_from_db_by_filing_jsons(
         cls, filing_jsons: List[str]
     ) -> Dict[str, Tuple[str, str]]:
         sql = """
-            SELECT id::TEXT AS id, filing, riskFactors, managementSection
+            SELECT id::TEXT AS id, filing, content, riskFactors, managementSection
             FROM sec.sec_filings
             WHERE formType in ('10-K', '10-Q') AND filing IN %(filing_jsons)s
         """
@@ -453,10 +427,15 @@ class SecFiling:
         for row in result:
             risk_factor_section = row["riskFactors"]
             management_section = row["managementSection"]
-            text = (
-                f"Management Section:\n\n{management_section}\n\n"
-                f"Risk Factors Section:\n\n{risk_factor_section}"
-            )
+
+            if risk_factor_section or management_section:
+                text = (
+                    f"Management Section:\n\n{management_section}\n\n"
+                    f"Risk Factors Section:\n\n{risk_factor_section}"
+                )
+            else:
+                text = row["content"]
+
             output[row["filing"]] = (row["id"], text)
 
         return output

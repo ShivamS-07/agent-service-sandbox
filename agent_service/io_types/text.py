@@ -1374,16 +1374,10 @@ class StockSecFilingText(StockText):
 
         output: Dict[TextIDType, str] = {}
 
-        # determine which filings we know we definitely can get from the DB
         logger.info("Getting SEC filing text from DB")
-        db_id_to_text_id = {filing.db_id: filing.id for filing in sec_filing_list if filing.db_id}
-        output.update(await SecFiling.get_concat_10k_10q_sections_from_db(db_id_to_text_id))  # type: ignore
-        logger.info(f"Found {len(output)} SEC filings in DB")
-
-        logger.info("Check one more time if we have the SEC filing text in DB")
-        filing_list = [f.id for f in sec_filing_list if not f.db_id]
+        filing_jsons = [f.id for f in sec_filing_list]
         filing_json_to_row = await SecFiling.get_concat_10k_10q_sections_from_db_by_filing_jsons(
-            filing_list
+            filing_jsons
         )
         for filing_json, (db_id, val) in filing_json_to_row.items():
             output[filing_json] = val
@@ -1392,10 +1386,7 @@ class StockSecFilingText(StockText):
                 text_obj = filing_json_to_text_obj[filing_json]
                 text_obj.db_id = db_id  # set db_id
 
-        logger.info(
-            f"Found another {len(filing_json_to_row)} SEC filings in DB after second check. "
-            "Maybe they were cached by other agents during the time we checked"
-        )
+        logger.info(f"Found {len(filing_json_to_row)} SEC filings in DB")
 
         logger.info("Getting SEC filing text from API")
         filing_gbi_pairs = [
@@ -1618,12 +1609,7 @@ class StockOtherSecFilingText(StockText):
 
         # determine which filings we know we definitely can get from the DB
         logger.info("Getting SEC filing text from DB")
-        db_id_to_text_id = {filing.db_id: filing.id for filing in sec_filing_list if filing.db_id}
-        output.update(await SecFiling.get_filings_content_from_db(db_id_to_text_id))  # type: ignore
-        logger.info(f"Found {len(output)} SEC filings in DB")
-
-        logger.info("Check one more time if we have the SEC filing text in DB")
-        filing_jsons = [f.id for f in sec_filing_list if not f.db_id]
+        filing_jsons = [f.id for f in sec_filing_list]
         filing_json_to_row = await SecFiling.get_filings_content_from_db_by_filing_jsons(
             filing_jsons
         )
@@ -1634,10 +1620,7 @@ class StockOtherSecFilingText(StockText):
                 text_obj = filing_json_to_text_obj[filing_json]
                 text_obj.db_id = db_id  # set db_id
 
-        logger.info(
-            f"Found another {len(filing_json_to_row)} SEC filings in DB after second check. "
-            "Maybe they were cached by other agents during the time we checked"
-        )
+        logger.info(f"Found {len(filing_json_to_row)} SEC filings in DB")
 
         filing_gbi_pairs = [
             (filing.id, filing.stock_id.gbi_id)
