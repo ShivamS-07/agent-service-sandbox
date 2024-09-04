@@ -485,7 +485,7 @@ async def run_execution_plan(
             )
 
             # Don't send email if agent is draft
-            is_agent_draft = check_draft(db=db, agent_id=context.agent_id)
+            is_agent_draft = await check_draft(db=db, agent_id=context.agent_id)
             if (
                 get_ld_flag(
                     flag_name="agent-email-notification",
