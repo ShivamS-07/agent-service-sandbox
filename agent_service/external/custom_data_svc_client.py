@@ -79,7 +79,7 @@ async def get_custom_docs_by_security(
             limit=limit,
             from_publication_time=date_to_timestamp(publish_date_start),
             to_publication_time=date_to_timestamp(publish_date_end),
-            version="v2",
+            version="v1",
         )
         resp: GetDocsBySecurityResponse = await stub.GetDocsBySecurity(
             req,
@@ -103,7 +103,7 @@ async def get_custom_docs_by_topic(
             limit=limit,
             from_publication_time=date_to_timestamp(publish_date_start),
             to_publication_time=date_to_timestamp(publish_date_end),
-            version="v2",
+            version="v1",
         )
         resp: SemanticSearchDocsResponse = await stub.SemanticSearchDocs(
             req,
@@ -121,7 +121,7 @@ async def get_custom_doc_articles_info(
     with _get_service_stub() as stub:
         req = GetFileChunkInfoRequest(
             file_chunk_ids=article_ids,
-            version="v2",
+            version="v1",
         )
         resp: GetFileChunkInfoResponse = await stub.GetFileChunkInfo(
             req,
