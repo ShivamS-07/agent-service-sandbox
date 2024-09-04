@@ -60,6 +60,14 @@ class TestRegions(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(stock.symbol == "F" for stock in stocks))
         self.assertTrue(any(stock.symbol == "RY" for stock in stocks))
 
+        # Test NORTHERN_AMERICA region
+        args = FilterStockRegionInput(region_name="NORTH AMERICA", stock_ids=stock_ids)
+        stocks = await filter_stocks_by_region(args=args, context=self.context)
+        self.assertEqual(3, len(stocks))
+        self.assertTrue(any(stock.symbol == "MSFT" for stock in stocks))
+        self.assertTrue(any(stock.symbol == "F" for stock in stocks))
+        self.assertTrue(any(stock.symbol == "RY" for stock in stocks))
+
         # Test ASIA region
         args = FilterStockRegionInput(region_name="ASIA", stock_ids=stock_ids)
         stocks = await filter_stocks_by_region(args=args, context=self.context)

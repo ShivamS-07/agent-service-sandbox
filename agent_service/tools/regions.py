@@ -39,6 +39,14 @@ def get_country_iso3s(search: str) -> List[str]:
         countries = REGION_COUNTRY_MAP[region_or_country]
         return countries
 
+    # Sometimes this fails because of the '_' in the region_or_country
+    new_region_or_country = region_or_country.replace(" ", "_")
+
+    # now check to see if we have any more regions
+    if new_region_or_country in REGION_COUNTRY_MAP:
+        countries = REGION_COUNTRY_MAP[new_region_or_country]
+        return countries
+
     countries = country_converter().convert(names=search, to="ISO3", not_found="UNKNOWN_REGION")
     if isinstance(countries, list):
         return countries
