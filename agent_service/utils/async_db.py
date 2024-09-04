@@ -10,8 +10,10 @@ from agent_service.endpoints.models import (
     AgentOutput,
     AgentSchedule,
     CustomNotification,
+    PlanRunStatusInfo,
     SetAgentFeedBackRequest,
     Status,
+    TaskRunStatusInfo,
     TaskStatus,
 )
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
@@ -531,6 +533,30 @@ class AsyncDB:
                 "status": status.value,
             },
         )
+
+    async def get_plan_run_statuses(self, plan_run_ids: List[str]) -> Dict[str, PlanRunStatusInfo]:
+        sql = """
+        SELECT plan_run_id::TEXT, created_at AS start_time, last_updated AS end_time, status
+        FROM agent.plan_runs
+        WHERE plan_run_id = ANY(%(plan_run_ids)s)
+        """
+        rows = await self.pg.generic_read(sql, {"plan_run_ids": plan_run_ids})
+        return {row["plan_run_id"]: PlanRunStatusInfo(**row) for row in rows}
+
+    async def get_task_run_statuses(
+        self, plan_run_ids: List[str]
+    ) -> Dict[Tuple[str, str], TaskRunStatusInfo]:
+        """
+        Returns a mapping from (plan_run_id, task_id) to task info
+        """
+        sql = """
+        SELECT task_id::TEXT, plan_run_id::TEXT,
+          created_at AS start_time, last_updated AS end_time, status
+        FROM agent.task_runs
+        WHERE plan_run_id = ANY(%(plan_run_ids)s)
+        """
+        rows = await self.pg.generic_read(sql, {"plan_run_ids": plan_run_ids})
+        return {(row["plan_run_id"], row["task_id"]): TaskRunStatusInfo(**row) for row in rows}
 
     async def update_task_statuses(
         self,

@@ -322,6 +322,23 @@ class Status(enum.StrEnum):
             return cls.NOT_STARTED
 
 
+class PlanRunStatusInfo(BaseModel):
+    # Used internally only
+    plan_run_id: str
+    start_time: datetime.datetime
+    end_time: datetime.datetime
+    status: Optional[Status]
+
+
+class TaskRunStatusInfo(BaseModel):
+    # Used internally only
+    task_id: str
+    plan_run_id: str
+    start_time: datetime.datetime
+    end_time: datetime.datetime
+    status: Optional[Status]
+
+
 class PlanRunTaskLog(BaseModel):
     """Referring to a single log item under a task. A task can have multiple logs."""
 
