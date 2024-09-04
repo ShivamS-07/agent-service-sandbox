@@ -1,5 +1,6 @@
 import enum
 from abc import ABC
+from copy import deepcopy
 from itertools import islice
 from typing import List, Literal, Optional, Union
 
@@ -77,13 +78,14 @@ class LineGraph(Graph):
     data: List[GraphDataset]
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        output_graph = deepcopy(self)
         gbi_ids = [
             dataset.dataset_id.gbi_id
-            for dataset in self.data
+            for dataset in output_graph.data
             if isinstance(dataset.dataset_id, StockID)
         ]
         metadata = await get_stock_metadata(gbi_ids=gbi_ids, pg=pg)
-        for dataset in self.data:
+        for dataset in output_graph.data:
             if isinstance(dataset.dataset_id, StockID):
                 dataset.dataset_id = (
                     metadata.get(dataset.dataset_id.gbi_id)
@@ -92,11 +94,11 @@ class LineGraph(Graph):
                 )
         return GraphOutput(
             graph=LineGraph(
-                x_axis_type=self.x_axis_type,
-                x_unit=self.x_unit,
-                y_axis_type=self.y_axis_type,
-                y_unit=self.y_unit,
-                data=self.data,
+                x_axis_type=output_graph.x_axis_type,
+                x_unit=output_graph.x_unit,
+                y_axis_type=output_graph.y_axis_type,
+                y_unit=output_graph.y_unit,
+                data=output_graph.data,
             ),
             title=title,
         )
@@ -139,19 +141,25 @@ class PieGraph(Graph):
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         if not self.label_type == TableColumnType.STOCK:
             return GraphOutput(graph=self)
+        output_graph = deepcopy(self)
         gbi_ids = [
-            section.label.gbi_id for section in self.data if isinstance(section.label, StockID)
+            section.label.gbi_id
+            for section in output_graph.data
+            if isinstance(section.label, StockID)
         ]
         metadata = await get_stock_metadata(gbi_ids=gbi_ids, pg=pg)
-        for section in self.data:
+        for section in output_graph.data:
             if isinstance(section.label, StockID):
                 section.label = (
                     metadata.get(section.label.gbi_id) or section.label.symbol or section.label.isin
                 )
-        citations = await Citation.resolve_all_citations(self.get_all_citations(), db=pg)
+        citations = await Citation.resolve_all_citations(output_graph.get_all_citations(), db=pg)
         return GraphOutput(
             graph=PieGraph(
-                label_type=self.label_type, data_type=self.data_type, unit=self.unit, data=self.data
+                label_type=output_graph.label_type,
+                data_type=output_graph.data_type,
+                unit=output_graph.unit,
+                data=output_graph.data,
             ),
             title=title,
             citations=citations,
@@ -202,15 +210,16 @@ class BarGraph(Graph):
             ]
         )
         metadata = await get_stock_metadata(gbi_ids=gbi_ids, pg=pg)
-        for bar in self.data:
+        output_graph = deepcopy(self)
+        for bar in output_graph.data:
             if isinstance(bar.index, StockID):
                 # Make sure this is set, for backwards compat
-                self.index_type = TableColumnType.STOCK
+                output_graph.index_type = TableColumnType.STOCK
                 bar.index = metadata.get(bar.index.gbi_id) or bar.index.symbol or bar.index.isin
             for bar_point in bar.values:
                 if isinstance(bar_point.label, StockID):
                     # Make sure this is set, for backwards compat
-                    self.label_type = TableColumnType.STOCK
+                    output_graph.label_type = TableColumnType.STOCK
                     bar_point.label = (
                         metadata.get(bar_point.label.gbi_id)
                         or bar_point.label.symbol
@@ -218,11 +227,11 @@ class BarGraph(Graph):
                     )
         return GraphOutput(
             graph=BarGraph(
-                data_type=self.data_type,
-                data_unit=self.data_unit,
-                data=self.data,
-                index_type=self.index_type,
-                label_type=self.label_type,
+                data_type=output_graph.data_type,
+                data_unit=output_graph.data_unit,
+                data=output_graph.data,
+                index_type=output_graph.index_type,
+                label_type=output_graph.label_type,
             ),
             title=title,
         )
