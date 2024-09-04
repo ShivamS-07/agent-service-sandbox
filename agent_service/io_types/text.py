@@ -626,15 +626,25 @@ class CustomDocumentSummaryText(StockText):
                 chunk_cit = text_id_map.get(chunk_info.chunk_id)
                 if not chunk_cit:
                     continue
-                output_citations[chunk_cit].append(
-                    CustomDocumentCitationOutput(
-                        internal_id=chunk_id,
-                        name=f"User Document: {citation_name}",
-                        last_updated_at=chunk_info.upload_time.ToDatetime(),
-                        custom_doc_id=chunk_info.file_id,
-                        inline_offset=chunk_cit.citation_text_offset,
+                for citation in chunk_info.citations:
+                    hl_start, hl_end = None, None
+                    if citation.citation_snippet and citation.citation_context:
+                        hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
+                            smaller_snippet=citation.citation_snippet,
+                            context=citation.citation_context,
+                        )
+                    output_citations[chunk_cit].append(
+                        CustomDocumentCitationOutput(
+                            internal_id=chunk_id,
+                            name=f"User Document: {citation_name}",
+                            last_updated_at=chunk_info.upload_time.ToDatetime(),
+                            custom_doc_id=chunk_info.file_id,
+                            inline_offset=chunk_cit.citation_text_offset,
+                            summary=citation.citation_context,
+                            snippet_highlight_start=hl_start,
+                            snippet_highlight_end=hl_end,
+                        )
                     )
-                )
         return output_citations  # type: ignore
 
 
