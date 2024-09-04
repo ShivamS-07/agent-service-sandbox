@@ -2,7 +2,7 @@ import datetime
 import json
 import logging
 import traceback
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -662,6 +662,33 @@ class Clickhouse(AsyncClickhouseBase):
         ORDER BY end_time_utc ASC
         """
         return await self.generic_read(sql, {"plan_run_id": plan_run_id})
+
+    async def get_plan_run_debug_prompt_infos(self, plan_run_id: str) -> Dict[str, List[Dict]]:
+        # `argMax(args, val)` is a ClickHouse function that returns the value of `args` where `val`
+        # is the maximum value in the group.
+
+        sql = """
+            SELECT task_id, main_prompt_name,
+                argMax(sys_prompt_name, num_output_tokens) AS sys_prompt_name,
+                argMax(model_id, num_output_tokens) AS gpt_model,
+                argMax(main_prompt, num_output_tokens) AS main_prompt_example,
+                argMax(sys_prompt, num_output_tokens) AS sys_prompt_example,
+                argMax(`result`, num_output_tokens) AS gpt_response_example,
+                count(*) AS num_calls,
+                sum(num_input_tokens) AS total_num_input_tokens,
+                sum(num_output_tokens) AS total_num_output_tokens,
+                round(sum(cost_usd), 2) AS total_cost_usd,
+                max(`timestamp`) - min(`timestamp`) AS duration_seconds
+            FROM llm.queries q
+            WHERE plan_run_id = %(plan_run_id)s
+            GROUP BY task_id, main_prompt_name
+            ORDER BY total_cost_usd DESC
+        """
+        rows = await self.generic_read(sql, {"plan_run_id": plan_run_id})
+        output: Dict[str, List[Dict]] = defaultdict(list)
+        for row in rows:
+            output[row["task_id"]].append(row)
+        return output
 
     async def get_agent_debug_cost_info(self, agent_id: str) -> Dict[str, Any]:
         total_cost_sql = """select round(sum(cost_usd), 2) as total_cost_usd from llm.queries q

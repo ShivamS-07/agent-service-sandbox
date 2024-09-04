@@ -597,17 +597,49 @@ class GetAgentDebugInfoResponse(BaseModel):
     tooltips: Tooltips
 
 
+class ToolPromptInfo(BaseModel):
+    gpt_model: str
+
+    main_prompt_name: str
+    # the example prompt to GPT (if there are multiple calls, choose the most expensive one)
+    main_prompt_example: str
+
+    sys_prompt_name: str  # empty str when it's not set
+    sys_prompt_example: str
+
+    gpt_response_example: str
+
+    num_calls: int
+    total_num_input_tokens: int
+    total_num_output_tokens: int
+    total_cost_usd: float
+    duration_seconds: float  # end time of last call - start time of first call
+
+
 class PlanRunToolDebugInfo(BaseModel):
     tool_id: str  # task_id internally
     tool_name: str  # python function name
     tool_description: str  # the prompt to GPT for what this tool does
     tool_comment: str  # the short comment from GPT for what this tool does
-    args: Optional[Dict[str, Any]]  # `ToolArgs` type but in JSON format, None when not started
+
+    """
+    - `arg_names`: the `args` inside execution plans that tells you the names of the arguments so
+        you can know the dependencies of the tools inside the plan
+    - `args`: the actual values of arguments (in serialized format) that are passed to the tool, if
+        None but `arg_names` is not None then the tool hasn't been run yet
+    - `output_variable_name`: the name of the output variable that the tool produces, which can
+        potentially be the input to another tool
+    """
+    arg_names: Dict[str, Any]
+    args: Optional[Dict[str, Any]]
     output_variable_name: str
+
     # output: Any  # `IOType` type but in JSON format
     start_time_utc: Optional[datetime.datetime]  # None if not started/ended
     end_time_utc: Optional[datetime.datetime]
     duration_seconds: Optional[float]
+
+    prompt_infos: List[ToolPromptInfo]  # empty if no gpt calls made
 
 
 class GetPlanRunDebugInfoResponse(BaseModel):

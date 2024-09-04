@@ -6,6 +6,7 @@ import re
 import time
 import traceback
 from collections import defaultdict
+from copy import deepcopy
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, cast
 from uuid import uuid4
 
@@ -71,6 +72,7 @@ from agent_service.endpoints.models import (
     SharePlanRunResponse,
     TerminateAgentResponse,
     ToolMetadata,
+    ToolPromptInfo,
     Tooltips,
     UnsharePlanRunResponse,
     UpdateAgentDraftStatusResponse,
@@ -91,6 +93,7 @@ from agent_service.io_types.citations import CitationDetailsType, CitationType
 from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.action_decide import FirstActionDecider
 from agent_service.planner.constants import FirstAction
+from agent_service.planner.planner_types import Variable
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.tool import ToolCategory, ToolRegistry
 from agent_service.types import ChatContext, MemoryType, Message
@@ -845,9 +848,10 @@ class AgentServiceImpl:
         Get plan nodes from Postgres, `agent.execution_plans` table
         Get input and output from Clickhouse, `agent.tool_calls` table
         """
-        execution_plan, tool_calls = await asyncio.gather(
+        execution_plan, tool_calls, tool_prompt_infos = await asyncio.gather(
             self.pg.get_execution_plan_for_run(plan_run_id),
             self.ch.get_plan_run_debug_tool_calls(plan_run_id),
+            self.ch.get_plan_run_debug_prompt_infos(plan_run_id),
         )
         task_id_to_tool_call = {tool_call["task_id"]: tool_call for tool_call in tool_calls}
 
@@ -858,12 +862,29 @@ class AgentServiceImpl:
             tool_name = node.tool_name
             tool = ToolRegistry.get_tool(tool_name)
 
-            # if the tool hasn't been run yet, there won't be `tool_call``
+            # if the tool hasn't been run yet, there won't be `tool_call`
             tool_call = task_id_to_tool_call.get(task_id)
-            args = json.loads(tool_call["args"]) if tool_call else None
+            arg_values = json.loads(tool_call["args"]) if tool_call else None
             start_time_utc = tool_call["start_time_utc"] if tool_call else None
             end_time_utc = tool_call["end_time_utc"] if tool_call else None
             duration_seconds = tool_call["duration_seconds"] if tool_call else None
+
+            # remove the constant args from `node.args` to avoid duplicates with `arg_values`
+            # keep consistent with `ToolExecutionNode.resolve_arguments`
+            arg_names = deepcopy(node.args)
+            for arg in list(arg_names.keys()):
+                val = arg_names[arg]
+                if not isinstance(val, Variable | list):
+                    del arg_names[arg]
+                elif isinstance(val, list):
+                    var_val = [v for v in val if isinstance(v, Variable)]
+                    if var_val:
+                        arg_names[arg] = var_val
+                    else:
+                        del arg_names[arg]
+
+            tool_prompts = tool_prompt_infos.get(task_id, [])
+            tool_prompt_objs = [ToolPromptInfo(**prompt) for prompt in tool_prompts]
 
             resp.plan_run_tools.append(
                 PlanRunToolDebugInfo(
@@ -871,12 +892,13 @@ class AgentServiceImpl:
                     tool_name=tool_name,
                     tool_description=tool.description,
                     tool_comment=node.description,
+                    arg_names=arg_names,
+                    args=arg_values,
                     output_variable_name=node.output_variable_name,
-                    args=args,
-                    # output=json.loads(tool_call["result"]),
                     start_time_utc=start_time_utc,
                     end_time_utc=end_time_utc,
                     duration_seconds=duration_seconds,
+                    prompt_infos=tool_prompt_objs,
                 )
             )
 
