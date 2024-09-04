@@ -50,6 +50,7 @@ from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.check_cancelled import AgentCancelledError
 from agent_service.utils.clickhouse import Clickhouse
+from agent_service.utils.do_not_error_exception import DoNotErrorException
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.gpt_logging import (
     GptJobIdType,
@@ -196,7 +197,7 @@ async def run_execution_plan(
                 logger=logger,
                 db=async_db,
             )
-            raise Exception("Execution plan has been cancelled")
+            raise DoNotErrorException("Execution plan has been cancelled")
 
         logger.info(f"Running step '{step.tool_name}' (Task ID: {step.tool_task_id})")
 

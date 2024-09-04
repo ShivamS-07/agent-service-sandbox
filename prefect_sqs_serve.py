@@ -10,6 +10,7 @@ import boto3
 from agent_service.sqs_serve.message_handler import MessageHandler
 from agent_service.utils.constants import AGENT_WORKER_QUEUE
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.do_not_error_exception import DoNotErrorException
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.s3_upload import download_json_from_s3
 
@@ -77,6 +78,18 @@ async def poll_sqs_forever() -> None:
                         "message": converted_message_str,
                     },
                 )
+            except DoNotErrorException:
+                log_event(
+                    event_name="agent_worker_message_processed",
+                    event_data={
+                        "start_time_utc": start_time_utc,
+                        "end_time_utc": get_now_utc().isoformat(),
+                        "raw_message": sqs_message,
+                        "message": converted_message_str,
+                        "error_msg": traceback.format_exc(),
+                    },
+                )
+
             except Exception:
                 log_event(
                     event_name="agent_worker_message_processed",
