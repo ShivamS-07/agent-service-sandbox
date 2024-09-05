@@ -372,9 +372,6 @@ class AgentServiceImpl:
             return ChatWithAgentResponse(success=True, allow_retry=False, name=name)
 
         if not req.is_first_prompt:
-            LOGGER.info("Creating a future to send slack message")
-            slack_future_task = run_async_background(self._slack_chat_msg(req, user))
-
             try:
                 LOGGER.info(f"Inserting user's new message to DB for {agent_id=}")
                 await self.pg.insert_chat_messages(messages=[user_msg])
@@ -389,9 +386,6 @@ class AgentServiceImpl:
             except Exception as e:
                 LOGGER.exception((f"Failed to update {agent_id=} execution plan: {e}"))
                 return ChatWithAgentResponse(success=False, allow_retry=False)
-
-            LOGGER.info("Waiting for slack message (future) to be sent")
-            await slack_future_task
         else:
             try:
                 # SLOW: let it run in the background and await later
