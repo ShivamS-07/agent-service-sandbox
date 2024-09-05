@@ -666,8 +666,12 @@ async def get_stock_recommendations(
     if args.stock_ids:
         if args.filter and args.num_stocks_to_return:
             if len(args.stock_ids) < args.num_stocks_to_return:
-                raise ValueError(
-                    "The number of stocks to return is greater than the number of stocks provided."
+                await tool_log(
+                    (
+                        f"Tried to find {args.num_stocks_to_return} stocks, "
+                        f"but only {len(args.stock_ids)} stocks passed in."
+                    ),
+                    context=context,
                 )
         stock_ids = args.stock_ids
     else:

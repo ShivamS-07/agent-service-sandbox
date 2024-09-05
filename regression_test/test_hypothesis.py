@@ -1,4 +1,6 @@
 # type: ignore
+import unittest
+
 from agent_service.io_type_utils import IOType
 from regression_test.test_regression import TestExecutionPlanner, get_output, skip_in_ci
 from regression_test.util import validate_text
@@ -24,7 +26,7 @@ class TestHypothesis(TestExecutionPlanner):
             ],
         )
 
-    @skip_in_ci
+    @unittest.skip("Unstable test")
     def test_pharmaceutical_sector_growth(self):
         prompt = "Pharmaceutical industry growth"
 

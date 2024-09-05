@@ -7,7 +7,7 @@ from regression_test.util import validate_table_and_get_columns, validate_text
 class TestKPI(TestExecutionPlanner):
     @skip_in_ci
     def test_exploration_expense(self):
-        prompt = "Show Exploration Expense for XOM"
+        prompt = "Show Phone Sales for AAPL"
 
         def validate_output(prompt: str, output: IOType):
             output_stock_table = get_output(output=output)

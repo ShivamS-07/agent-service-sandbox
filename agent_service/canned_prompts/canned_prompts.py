@@ -14,7 +14,7 @@ CANNED_PROMPTS = [
     },
     {
         "id": "summarize_netflix",
-        "prompt": "Give me all information available about NFLX that will affect its upcoming earnings call, use only top news sources, refer to past earnings transcripts. Show answer in bullet points.",
+        "prompt": "Give me all information available about AAPL that will affect its upcoming earnings call, use only top news sources, refer to past earnings transcripts. Show answer in bullet points.",
     },
     {
         "id": "spy_pe_news_filter",
