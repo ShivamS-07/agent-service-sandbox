@@ -40,7 +40,7 @@ from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc, parse_date_str_in_utc
 from agent_service.utils.postgres import get_psql
 
-MAX_ALLOWED_EARNINGS_FOR_REAL_TIME_GEN = 30
+MAX_ALLOWED_EARNINGS_FOR_REAL_TIME_GEN = 20
 
 
 class GetImpactingStocksInput(ToolArgs):
@@ -208,11 +208,13 @@ async def _get_earnings_summary_helper(
         await tool_log(
             log=(
                 f"Earning summaries not available for {len(events_without_summaries)} earning calls, "
-                "excluding them from the output..."
+                "generating them now, this may take a couple minutes..."
             ),
             context=context,
         )
-        finalized_output = output
+        finalized_output = await generate_missing_summaries(
+            user_id, events_without_summaries, gbi_id_stock_id_lookup, output
+        )
     else:
         await tool_log(
             log=(

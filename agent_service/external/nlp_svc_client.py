@@ -254,5 +254,5 @@ async def get_earnings_call_summaries_with_real_time_gen(
             )
         )
         if response.status.code != 0:
-            raise ValueError(f"Failed to get Earning Transcripts: {response.status.message}")
+            raise ValueError(f"Failed to get Earning Summaries: {response.status.message}")
         return response
