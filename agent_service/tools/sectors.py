@@ -172,10 +172,8 @@ Return in this format: {{"correct_sector_id":"", "reason":""}}
     description=f"""
 This function takes a string like 'Healthcare' which
 refers to a GICS industry classification and converts it to an identifier.
-This function supports the following GICS classifications:
-
-{get_all_gics_str()}
-
+You should make the input string specific to what the customer is looking for.
+For example, if the client asks for `car companies`, the input string should be `Automobiles`
 You must ONLY use this look up and the corresponding sector filter tool if the client specifically
 asks for one of these classifications directly. Sometimes the client may use the word `sector` to
 refer to things which do not correspond to GICS sectors, in such a case you will NOT use this tool.
@@ -184,6 +182,9 @@ anything in the above list of sectors and you must NOT use this sector tool unde
 If the client asks to filter stocks by something more specific than an industry/sector, you must use the
 filter_product_or_service tool (for simple requests involving a clear class of product or services)
 or filter_by_profile_tool (for more complex stock filtering).
+This function supports the following GICS classifications:
+
+{get_all_gics_str()}
 """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
