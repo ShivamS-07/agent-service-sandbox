@@ -35,6 +35,8 @@ from agent_service.utils.sec.sec_api import SecFiling
 from agent_service.utils.sec.supported_types import SUPPORTED_TYPE_MAPPING
 from agent_service.utils.string_utils import repair_json_if_needed
 
+MATCH_RATIO = 70  # minimum ratio for fuzzy matching to map filing type (higher is more strict)
+
 
 async def get_sec_filings_helper(
     stock_ids: List[StockID], start_date: Optional[datetime.date], end_date: Optional[datetime.date]
@@ -99,18 +101,18 @@ async def get_10k_10q_sec_filings(
         start_date = None
         end_date = None
 
-    await tool_log(
-        "Retrieving 10-K, 10-Q SEC filings for"
-        + (
-            f" {args.stock_ids[0].symbol}"
-            if len(args.stock_ids) == 1
-            else f" {len(args.stock_ids)} stocks"
+    stocks_str = f"{len(args.stock_ids)} stocks"
+    if len(args.stock_ids) == 1:
+        stocks_str = (
+            args.stock_ids[0].symbol if args.stock_ids[0].symbol else args.stock_ids[0].company_name
         )
-        + (
-            f" from {start_date.isoformat()} to {end_date.isoformat()}"
-            if start_date and end_date
-            else " in the last 100 days"
-        ),
+
+    daterange_str = "in the last 100 days"
+    if start_date and end_date:
+        daterange_str = f"from {start_date.isoformat()} to {end_date.isoformat()}"
+
+    await tool_log(
+        f"Retrieving 10-K, 10-Q SEC filings for {stocks_str} {daterange_str}.",
         context=context,
     )
     stock_filing_map = await get_sec_filings_helper(args.stock_ids, start_date, end_date)
@@ -279,7 +281,9 @@ async def sec_filings_type_lookup(
                     ratios_heap,
                     (-1 * ratio(form_type.upper(), supported_type.upper()), supported_type),
                 )
-            sec_filing_types.add(heappop(ratios_heap)[1])
+            best_match = heappop(ratios_heap)
+            if best_match[0] <= -1 * MATCH_RATIO:
+                sec_filing_types.add(best_match[1])
 
     if args.search_term and args.search_term != "":
         llm = GPT(context=None, model=GPT4_O_MINI)
@@ -297,11 +301,24 @@ async def sec_filings_type_lookup(
         for sec_filing_type in sec_filing_types_dict:
             sec_filing_types.add(sec_filing_type["sec_filing_name"])
 
-    return (
-        [SecFilingType(name=filing_type) for filing_type in sec_filing_types]
-        if len(sec_filing_types) > 0
-        else [SecFilingType(name=FILE_10K), SecFilingType(name=FILE_10K)]
+    if len(sec_filing_types) > 0:
+        output_types = [SecFilingType(name=filing_type) for filing_type in sec_filing_types]
+        sec_types_str = ", ".join(sec_type.name for sec_type in output_types[0:3])
+        if len(output_types) > 3:
+            sec_types_str += f" and {len(output_types) - 3} other"
+        await tool_log(
+            log=f"Using {sec_types_str} filing type(s).",
+            context=context,
+            associated_data=output_types,
+        )
+        return output_types
+
+    await tool_log(
+        log="Using 10-K and 10-Q SEC filings.",
+        context=context,
+        associated_data=[SecFilingType(name=FILE_10K), SecFilingType(name=FILE_10K)],
     )
+    return [SecFilingType(name=FILE_10K), SecFilingType(name=FILE_10K)]
 
 
 class GetSecFilingsWithTypeInput(ToolArgs):
@@ -352,23 +369,24 @@ async def get_sec_filings_with_type(
                 context=context,
             )  # type: ignore
 
-        form_types_str = ", ".join(form_types)
+        form_types_str = f"{len(form_types)} types of"
+        if len(form_types) < 5:
+            form_types_str = ", ".join(form_types)
+
+        stocks_str = f"{len(args.stock_ids)} stocks"
+        if len(args.stock_ids) == 1:
+            stocks_str = (
+                args.stock_ids[0].symbol
+                if args.stock_ids[0].symbol
+                else args.stock_ids[0].company_name
+            )
+
+        daterange_str = "in the last 100 days"
+        if start_date and end_date:
+            daterange_str = f"from {start_date.isoformat()} to {end_date.isoformat()}"
+
         await tool_log(
-            (
-                "Retrieving" f" {form_types_str}"
-                if len(form_types) < 5
-                else f"{len(form_types)} types of"
-            )
-            + (
-                " SEC filings for" f" {args.stock_ids[0].symbol}"
-                if len(args.stock_ids) == 1
-                else f" {len(args.stock_ids)} stocks"
-            )
-            + (
-                f" from {start_date.isoformat()} to {end_date.isoformat()}"
-                if start_date and end_date
-                else " in the last 100 days"
-            ),
+            f"Retrieving {form_types_str} SEC filing(s) for {stocks_str} {daterange_str}.",
             context=context,
         )
         stock_filing_map = await get_other_sec_filings_helper(

@@ -200,7 +200,7 @@ async def get_date_range(args: GetDateRangeInput, context: PlanRunContext) -> Da
     )
     date_range_json = json.loads(clean_to_json_if_needed(result))
     await tool_log(
-        log=f"interpreting '{args.date_range_str}' as a start date of {date_range_json[START_DATE]}"
+        log=f"Interpreting '{args.date_range_str}' as a start date of {date_range_json[START_DATE]}"
         f" and an end date of {date_range_json[END_DATE]}",
         context=context,
     )

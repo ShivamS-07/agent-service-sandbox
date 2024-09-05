@@ -52,23 +52,34 @@ class TestSecFilings(IsolatedAsyncioTestCase):
                     "8-K",
                     "S-4",
                     # fuzzy matching
+                    "10K",
+                    "10Q",
+                    "8K",
                     "10K405",
                     "8K15-D5",
                     "APP-ORDR",
                     "NRSRO UPD",
+                    "Real Estate Supplement",
+                    "property portfolio",
+                    "Form DEF 14A",
+                    "Debt and financing documents",
                 ],
             ),
             context=self.context,
         )
         filing_types = [filing_type.name for filing_type in sec_filing_types]
-        self.assertTrue(len(filing_types) > 7)
+        self.assertTrue(len(filing_types) > 9)
+        self.assertTrue(len(filing_types) < 17)
         self.assertTrue("8-K" in filing_types)
+        self.assertTrue("10-K" in filing_types)
+        self.assertTrue("10-Q" in filing_types)
         self.assertTrue("S-4" in filing_types)
         self.assertTrue("S-1" in filing_types)  # from search term
         self.assertTrue("10-K405" in filing_types)
         self.assertTrue("8-K15D5" in filing_types)
         self.assertTrue("APP ORDR" in filing_types)
         self.assertTrue("NRSRO-UPD" in filing_types)
+        self.assertTrue("DEF 14A" in filing_types)
 
     async def test_get_sec_filings_with_type(self):
         stock = StockID(gbi_id=714, symbol="", isin="", company_name="")
