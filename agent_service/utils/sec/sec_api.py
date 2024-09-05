@@ -248,6 +248,7 @@ class SecFiling:
     file_type_10kq = {FILE_10K, FILE_10Q}
 
     MAX_SEC_QUERY_SIZE = 50
+    MAX_DB_QUERY_SIZE = 10
 
     ################################################################################################
     # Get Filings (metadata)
@@ -412,31 +413,73 @@ class SecFiling:
     # Get sections for 10K/10Q filings
     ################################################################################################
     @classmethod
+    async def get_concat_10k_10q_sections_from_db(
+        cls, db_id_to_text_id: Dict[str, str]
+    ) -> Dict[str, str]:
+        if not db_id_to_text_id:
+            return {}
+
+        sql = """
+            SELECT id::TEXT AS id, content, riskFactors, managementSection
+            FROM sec.sec_filings
+            WHERE formType in ('10-K', '10-Q') AND id IN %(db_ids)s
+        """
+        ch = Clickhouse()
+
+        output = {}
+
+        db_ids = list(db_id_to_text_id.keys())
+        for idx in range(0, len(db_ids), cls.MAX_DB_QUERY_SIZE):
+            batch_db_ids = db_ids[idx : idx + cls.MAX_DB_QUERY_SIZE]
+            result = await ch.generic_read(sql, params={"db_ids": batch_db_ids})
+
+            for row in result:
+                risk_factor_section = row["riskFactors"]
+                management_section = row["managementSection"]
+                if risk_factor_section or management_section:
+                    text = (
+                        f"Management Section:\n\n{management_section}\n\n"
+                        f"Risk Factors Section:\n\n{risk_factor_section}"
+                    )
+                else:
+                    text = row["content"]
+
+                filing_id = db_id_to_text_id[row["id"]]
+                output[filing_id] = text
+
+        return output
+
+    @classmethod
     async def get_concat_10k_10q_sections_from_db_by_filing_jsons(
         cls, filing_jsons: List[str]
     ) -> Dict[str, Tuple[str, str]]:
+        if not filing_jsons:
+            return {}
+
         sql = """
             SELECT id::TEXT AS id, filing, content, riskFactors, managementSection
             FROM sec.sec_filings
             WHERE formType in ('10-K', '10-Q') AND filing IN %(filing_jsons)s
         """
         ch = Clickhouse()
-        result = await ch.generic_read(sql, params={"filing_jsons": filing_jsons})
 
         output = {}
-        for row in result:
-            risk_factor_section = row["riskFactors"]
-            management_section = row["managementSection"]
+        for idx in range(0, len(filing_jsons), cls.MAX_DB_QUERY_SIZE):
+            batch_filing_jsons = filing_jsons[idx : idx + cls.MAX_DB_QUERY_SIZE]
+            result = await ch.generic_read(sql, params={"filing_jsons": batch_filing_jsons})
+            for row in result:
+                risk_factor_section = row["riskFactors"]
+                management_section = row["managementSection"]
 
-            if risk_factor_section or management_section:
-                text = (
-                    f"Management Section:\n\n{management_section}\n\n"
-                    f"Risk Factors Section:\n\n{risk_factor_section}"
-                )
-            else:
-                text = row["content"]
+                if risk_factor_section or management_section:
+                    text = (
+                        f"Management Section:\n\n{management_section}\n\n"
+                        f"Risk Factors Section:\n\n{risk_factor_section}"
+                    )
+                else:
+                    text = row["content"]
 
-            output[row["filing"]] = (row["id"], text)
+                output[row["filing"]] = (row["id"], text)
 
         return output
 
@@ -444,6 +487,9 @@ class SecFiling:
     async def get_concat_10k_10q_sections_from_api(
         cls, filing_gbi_pairs: List[Tuple[str, int]], insert_to_db: bool = True
     ) -> Dict[str, str]:
+        if not filing_gbi_pairs:
+            return {}
+
         ch = Clickhouse()
 
         output = {}
@@ -557,18 +603,25 @@ class SecFiling:
     ################################################################################################
     @classmethod
     async def get_filings_content_from_db(cls, db_id_to_text_id: Dict[str, str]) -> Dict[str, str]:
+        if not db_id_to_text_id:
+            return {}
+
         sql = """
             SELECT id::TEXT AS id, content
             FROM sec.sec_filings
             WHERE id IN %(db_ids)s
         """
         ch = Clickhouse()
-        result = await ch.generic_read(sql, params={"db_ids": list(db_id_to_text_id.keys())})
 
         output = {}
-        for row in result:
-            filing_id = db_id_to_text_id[row["id"]]
-            output[filing_id] = row["content"]
+        db_ids = list(db_id_to_text_id.keys())
+        for idx in range(0, len(db_ids), cls.MAX_DB_QUERY_SIZE):
+            batch_db_ids = db_ids[idx : idx + cls.MAX_DB_QUERY_SIZE]
+            result = await ch.generic_read(sql, params={"db_ids": batch_db_ids})
+
+            for row in result:
+                filing_id = db_id_to_text_id[row["id"]]
+                output[filing_id] = row["content"]
 
         return output
 
@@ -585,11 +638,14 @@ class SecFiling:
             WHERE filing IN %(filing_jsons)s
         """
         ch = Clickhouse()
-        result = await ch.generic_read(sql, params={"filing_jsons": filing_jsons})
 
         output = {}
-        for row in result:
-            output[row["filing"]] = (row["id"], row["content"])
+        for idx in range(0, len(filing_jsons), cls.MAX_DB_QUERY_SIZE):
+            batch_filing_jsons = filing_jsons[idx : idx + cls.MAX_DB_QUERY_SIZE]
+            result = await ch.generic_read(sql, params={"filing_jsons": batch_filing_jsons})
+
+            for row in result:
+                output[row["filing"]] = (row["id"], row["content"])
 
         return output
 
@@ -709,6 +765,9 @@ class SecFiling:
     @classmethod
     def split_10k_10q_into_smaller_sections(cls, filing_text: str) -> Dict[str, str]:
         two_sections = filing_text.split("\n\nRisk Factors Section:\n\n")
+        if len(two_sections) != 2:
+            # if the report doesn't have the risk factors section
+            return {}
 
         management_section = two_sections[0]
         management_section = management_section[len("Management Section:\n\n") :]

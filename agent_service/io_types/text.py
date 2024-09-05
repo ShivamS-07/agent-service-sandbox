@@ -1384,8 +1384,14 @@ class StockSecFilingText(StockText):
 
         output: Dict[TextIDType, str] = {}
 
-        logger.info("Getting SEC filing text from DB")
-        filing_jsons = [f.id for f in sec_filing_list]
+        logger.info("Getting SEC filing text from DB using `db_id`")
+        db_id_to_filing_json = {f.db_id: f.id for f in sec_filing_list if f.db_id}
+        output.update(await SecFiling.get_concat_10k_10q_sections_from_db(db_id_to_filing_json))  # type: ignore
+        logger.info(f"Found {len(output)} SEC filings in DB")
+
+        logger.info("Getting SEC filing text from DB using filing json")
+        # some db_id may be lost after clickhouse merges duplicates
+        filing_jsons = [f.id for f in sec_filing_list if f.id not in output]
         filing_json_to_row = await SecFiling.get_concat_10k_10q_sections_from_db_by_filing_jsons(
             filing_jsons
         )
@@ -1396,7 +1402,7 @@ class StockSecFilingText(StockText):
                 text_obj = filing_json_to_text_obj[filing_json]
                 text_obj.db_id = db_id  # set db_id
 
-        logger.info(f"Found {len(filing_json_to_row)} SEC filings in DB")
+        logger.info(f"Found {len(filing_json_to_row)} SEC filings in DB using filing json")
 
         logger.info("Getting SEC filing text from API")
         filing_gbi_pairs = [
@@ -1618,8 +1624,14 @@ class StockOtherSecFilingText(StockSecFilingText):
         output: Dict[TextIDType, str] = {}
 
         # determine which filings we know we definitely can get from the DB
-        logger.info("Getting SEC filing text from DB")
-        filing_jsons = [f.id for f in sec_filing_list]
+        logger.info("Getting SEC filing text from DB using `db_id`")
+        db_id_to_filing_json = {f.db_id: f.id for f in sec_filing_list if f.db_id}
+        output.update(await SecFiling.get_filings_content_from_db(db_id_to_filing_json))  # type: ignore
+        logger.info(f"Found {len(output)} SEC filings in DB")
+
+        logger.info("Getting SEC filing text from DB using filing json")
+        # some db_id may be lost after clickhouse merges duplicates
+        filing_jsons = [f.id for f in sec_filing_list if f.id not in output]
         filing_json_to_row = await SecFiling.get_filings_content_from_db_by_filing_jsons(
             filing_jsons
         )
@@ -1630,7 +1642,7 @@ class StockOtherSecFilingText(StockSecFilingText):
                 text_obj = filing_json_to_text_obj[filing_json]
                 text_obj.db_id = db_id  # set db_id
 
-        logger.info(f"Found {len(filing_json_to_row)} SEC filings in DB")
+        logger.info(f"Found another {len(filing_json_to_row)} SEC filings in DB using filing json")
 
         filing_gbi_pairs = [
             (filing.id, filing.stock_id.gbi_id)

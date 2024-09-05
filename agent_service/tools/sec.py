@@ -360,7 +360,7 @@ async def get_sec_filings_with_type(
             + (
                 " SEC filings for" f" {args.stock_ids[0].symbol}"
                 if len(args.stock_ids) == 1
-                else f"{len(args.stock_ids)} stocks"
+                else f" {len(args.stock_ids)} stocks"
             )
             + (
                 f" from {start_date.isoformat()} to {end_date.isoformat()}"
