@@ -307,6 +307,7 @@ class Status(enum.StrEnum):
     COMPLETE = "COMPLETE"
     CANCELLED = "CANCELLED"
     ERROR = "ERROR"
+    NO_RESULTS_FOUND = "NO_RESULTS_FOUND"
 
     @classmethod
     def from_prefect_state(cls, prefect_state: Optional[StateType]) -> "Status":

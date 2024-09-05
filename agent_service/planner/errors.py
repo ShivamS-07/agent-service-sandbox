@@ -1,10 +1,17 @@
-class NonRetriableError(Exception):
-    def get_message_for_llm(self) -> str:
-        return f"{self.__class__.__name__}: {self.message}"
+from agent_service.endpoints.models import Status
 
+
+class AgentExecutionError(Exception):
+    result_status = Status.ERROR
+
+
+class NonRetriableError(AgentExecutionError):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
+
+    def get_message_for_llm(self) -> str:
+        return f"{self.__class__.__name__}: {self.message}"
 
 
 class EmptyInputError(NonRetriableError):
@@ -17,7 +24,7 @@ class EmptyInputError(NonRetriableError):
     outputs were empty.
     """
 
-    pass
+    result_status = Status.NO_RESULTS_FOUND
 
 
 class EmptyOutputError(NonRetriableError):
@@ -31,4 +38,4 @@ class EmptyOutputError(NonRetriableError):
     which case a single output being empty is acceptable.
     """
 
-    pass
+    result_status = Status.NO_RESULTS_FOUND

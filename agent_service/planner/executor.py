@@ -239,7 +239,7 @@ async def run_execution_plan(
                 logger.exception(f"Step '{step.tool_name}' failed due to {nre}")
 
                 # Publish task error status to FE
-                tasks[i].status = Status.ERROR
+                tasks[i].status = nre.result_status
                 await publish_agent_task_status(
                     agent_id=context.agent_id,
                     plan_run_id=context.plan_run_id,

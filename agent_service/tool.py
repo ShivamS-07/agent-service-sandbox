@@ -40,6 +40,7 @@ from prefect.tasks import Task
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
+from agent_service.endpoints.models import Status
 from agent_service.io_type_utils import (
     IOType,
     check_type_is_io_type,
@@ -47,6 +48,7 @@ from agent_service.io_type_utils import (
     get_clean_type_name,
 )
 from agent_service.io_types.stock import StockID
+from agent_service.planner.errors import AgentExecutionError
 from agent_service.types import PlanRunContext
 from agent_service.utils.cache_utils import (
     DEFAULT_CACHE_TTL,
@@ -455,6 +457,11 @@ def tool(
                     except Exception as e:
                         event_data["end_time_utc"] = get_now_utc().isoformat()
                         event_data["error_msg"] = traceback.format_exc()
+                        event_data["status"] = (
+                            e.result_status.value
+                            if isinstance(e, AgentExecutionError)
+                            else Status.ERROR.value
+                        )
                         debug_info = TOOL_DEBUG_INFO.get()
                         if debug_info:
                             event_data["debug_info"] = dump_io_type(debug_info)
@@ -487,9 +494,14 @@ def tool(
                         event_data["result"] = dump_io_type(new_val)
                         log_event(event_name="agent-service-tool-call", event_data=event_data)
                         return new_val
-                    except Exception:
+                    except Exception as e:
                         event_data["end_time_utc"] = get_now_utc().isoformat()
                         event_data["error_msg"] = traceback.format_exc()
+                        event_data["status"] = (
+                            e.result_status.value
+                            if isinstance(e, AgentExecutionError)
+                            else Status.ERROR.value
+                        )
                         log_event(event_name="agent-service-tool-call", event_data=event_data)
                         logger.exception(f"Cache check failed for {(tool_name, args, context)}")
                         if new_val is not None:
