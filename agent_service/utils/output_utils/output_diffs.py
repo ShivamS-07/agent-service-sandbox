@@ -1,5 +1,6 @@
 import copy
 import datetime
+import json
 import logging
 from collections import defaultdict
 from typing import Dict, List, Optional
@@ -267,7 +268,6 @@ class OutputDiffer:
 
         result = await self.llm.do_chat_w_sys_prompt(
             main_prompt=GENERATE_DIFF_MAIN_PROMPT.format(
-                output_schema=OutputDiff.model_json_schema(),
                 latest_output=latest_output_str,
                 special_instructions="",
                 no_update_message=NO_UPDATE_MESSAGE,
@@ -278,7 +278,11 @@ class OutputDiffer:
             output_json=True,
         )
         # TODO handle retries, errors, etc.
-        return OutputDiff.model_validate_json(clean_to_json_if_needed(result))
+        result_json = json.loads(clean_to_json_if_needed(result))
+        return OutputDiff(
+            diff_summary_message=result_json["diff_summary_message"],
+            should_notify=result_json["should_notify"],
+        )
 
     async def _compute_diff_for_stock_lists(
         self, curr_stock_list: List[StockID], prev_stock_list: List[StockID]

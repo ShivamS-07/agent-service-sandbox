@@ -1,9 +1,12 @@
 import argparse
 import asyncio
+import sys
 from typing import List
 
 from agent_service.io_type_utils import load_io_type
+from agent_service.io_types import *  # noqa
 from agent_service.planner.planner_types import ExecutionPlan, OutputWithID
+from agent_service.tools.category import Category  # noqa
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
@@ -103,6 +106,8 @@ async def main() -> List[OutputDiff]:
 
 
 if __name__ == "__main__":
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     result = asyncio.run(main())
     print("GOT RESULT DIFFS:")
     print(result)

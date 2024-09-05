@@ -50,8 +50,9 @@ Keep in mind that when you see a percentage, it is represented as a decimal. So
 0.02 is equivalent to 2%. It is extremely important you take note of this. When
 outputing text, make sure this is converted correctly to percentages.
 
-You will output ONLY a json object of the following json schema:
-{output_schema}
+You will output ONLY a json object with the the following two fields, please output in this order:
+diff_summary_message: The message to your boss detailing the changes
+should_notify: a boolean indicating whether or not you will notify your boss
 
 Today's output is:
 ---
