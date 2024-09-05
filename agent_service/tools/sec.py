@@ -316,6 +316,8 @@ class GetSecFilingsWithTypeInput(ToolArgs):
     " we need to retrieve. This tool should never be called by itself."
     " This tool should not be called if we only want to retrieve general information from SEC filings,"
     " instead the `get_10k_10q_sec_filings` tool should be used."
+    " If a client asks for specific filings other than 10-k/q, you MUST use this tool, the SEC filings "
+    " that this tool accesses are NOT included in the output of the get_all_text_data_for_stocks!"
     " Any documents published between start_date and end_date will be included, if the end_date is"
     " excluded it is assumed to include documents up to today, if start_date is not"
     " included, the start date is a quarter ago, which includes only the latest SEC filing.",

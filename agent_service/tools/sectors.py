@@ -282,6 +282,10 @@ This function takes a sector id integer and an optional list of stocks
 and filters the list to only those stocks whose sector matches the sector_id
 If no stocks are passed in, a suitable default list such as S&P500 will be used
 Returns a list of stock_ids filtered by sector
+You must call the sector_identifier_lookup tool as a separate step before this tool to
+get a correct sector identifier You must use this tool (after calling sector_identifier_lookup
+as a separate step!) if the client asks for filtering by specific sector, NEVER use the
+get_sector_for_stocks tool for filtering.
 """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
