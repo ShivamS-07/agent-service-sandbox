@@ -366,9 +366,8 @@ async def get_agent(agent_id: str, user: User = Depends(parse_header)) -> AgentM
     logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
         validate_user_agent_access(user.user_id, agent_id)
-        return await application.state.agent_service_impl.get_agent(user=user, agent_id=agent_id)
-    else:
-        return await application.state.agent_service_impl.get_agent(user=None, agent_id=agent_id)
+
+    return await application.state.agent_service_impl.get_agent(agent_id=agent_id)
 
 
 @router.get(

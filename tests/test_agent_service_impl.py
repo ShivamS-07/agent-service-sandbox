@@ -94,13 +94,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
 
     def test_get_agent(self):
         agent_id = "4bc82c91-3946-4ae7-b05b-942a59701d49"
-        user = User(
-            user_id="ac7c96d7-3e57-40e7-a1a5-8e2ce5e23639",
-            is_admin=False,
-            is_super_admin=False,
-            auth_token="",
-        )
-        agent_metadata = self.get_agent(user=user, agent_id=agent_id)
+        agent_metadata = self.get_agent(agent_id=agent_id)
         self.assertIsNotNone(agent_metadata.cost_info)
         cost_info_val = agent_metadata.cost_info[0]
         self.assertTrue("label" in cost_info_val)

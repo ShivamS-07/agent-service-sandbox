@@ -190,18 +190,20 @@ class AgentServiceImpl:
                 agent_metadata.cost_info = cost_infos[agent_metadata.agent_id]
         return GetAllAgentsResponse(agents=agents, sections=sections)
 
-    async def get_agent(self, user: Optional[User], agent_id: str) -> AgentMetadata:
-        agents = await self.pg.get_user_all_agents(
-            user_id=user.user_id if user else None, agent_ids=[agent_id]
+    async def get_agent(self, agent_id: str) -> AgentMetadata:
+        agents, cost_info = await asyncio.gather(
+            self.pg.get_user_all_agents(agent_ids=[agent_id]),
+            self.ch.get_agents_cost_info(agent_ids=[agent_id]),
         )
+
         if not agents:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=f"No agent found for {agent_id=}"
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Agent {agent_id} not found"
             )
-        cost_info = await self.ch.get_agents_cost_info(agent_ids=[agent_id])
+
         agent_metadata = agents[0]
-        if agent_id in cost_info:
-            agent_metadata.cost_info = cost_info[agent_id]
+        agent_metadata.cost_info = cost_info.get(agent_id)
+
         return agent_metadata
 
     async def terminate_agent(
@@ -948,7 +950,6 @@ class AgentServiceImpl:
             self.ch.get_agent_debug_gpt_service_info(agent_id=agent_id),
         ]
 
-        results = await gather_with_concurrency(tasks)
         (
             agent_owner_id,
             plan_selections,
@@ -957,7 +958,8 @@ class AgentServiceImpl:
             tool_calls,
             cost_info,
             gpt_service_info,
-        ) = results
+        ) = await gather_with_concurrency(tasks, n=len(tasks))
+
         tool_tips = Tooltips(
             create_execution_plans="Contains one entry for every 'create_execution_plan' SQS "
             "message processed, grouped by plan_id. Each entry will include "
