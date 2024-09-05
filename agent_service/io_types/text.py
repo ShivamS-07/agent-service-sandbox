@@ -645,7 +645,7 @@ class CustomDocumentSummaryText(StockText):
                             snippet_highlight_end=hl_end,
                         )
                     )
-                if not output_citations:
+                if not chunk_info.citations:
                     output_citations[chunk_cit].append(
                         CustomDocumentCitationOutput(
                             internal_id=chunk_id,
