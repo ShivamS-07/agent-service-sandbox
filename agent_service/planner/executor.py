@@ -248,6 +248,15 @@ async def run_execution_plan(
                     db=async_db,
                 )
 
+                await publish_agent_execution_status(
+                    agent_id=context.agent_id,
+                    plan_run_id=context.plan_run_id,
+                    plan_id=context.plan_id,
+                    status=nre.result_status,
+                    logger=logger,
+                    db=async_db,
+                )
+
                 response = await chatbot.generate_non_retriable_error_response(
                     chat_context=db.get_chats_history_for_agent(agent_id=context.agent_id),
                     plan=plan,
