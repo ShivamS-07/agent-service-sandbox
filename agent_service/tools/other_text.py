@@ -24,7 +24,6 @@ from agent_service.tools.stock_metadata import (  # get_company_descriptions_sto
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
-from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.prefect import get_prefect_logger
 
 
@@ -68,9 +67,10 @@ async def get_all_text_data_for_stocks(
 
     logger = get_prefect_logger(__name__)
     if not args.date_range:
-        start_date = (get_now_utc() - datetime.timedelta(days=90)).date()
+        today = context.as_of_date.date() if context.as_of_date else datetime.date.today()
+        start_date = today - datetime.timedelta(days=90)
         # Add an extra day to be sure we don't miss anything with timezone weirdness
-        end_date = get_now_utc().date() + datetime.timedelta(days=1)
+        end_date = today + datetime.timedelta(days=1)
         args.date_range = DateRange(start_date=start_date, end_date=end_date)
 
     all_data: List[StockText] = []

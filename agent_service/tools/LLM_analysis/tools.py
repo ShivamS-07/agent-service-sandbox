@@ -897,9 +897,9 @@ async def profile_filter_added_diff_info(
 
     results = await gather_with_concurrency(tasks)
     return {
-        stock: explanation
+        stock: explanation.split("\n")[0]
         for stock, explanation in zip(added_stocks, results)
-        if not explanation.startswith("No clear evidence")
+        if "Yes, " in explanation
     }
 
 
@@ -936,9 +936,9 @@ async def profile_filter_removed_diff_info(
 
     results = await gather_with_concurrency(tasks)
     return {
-        stock: explanation
+        stock: explanation.split("\n")[0]
         for stock, explanation in zip(removed_stocks, results)
-        if not explanation.startswith("No clear evidence")
+        if "Agreed, " in explanation
     }
 
 
@@ -1105,7 +1105,9 @@ async def filter_stocks_by_profile_match(
 
                 # get rid of output where we didn't get a good diff
                 filtered_stocks_with_scores = [
-                    stock for stock in filtered_stocks_with_scores if stock in added_diff_info
+                    stock
+                    for stock in filtered_stocks_with_scores
+                    if stock not in added_stocks or stock in added_diff_info
                 ]
 
                 current_input_set = set(args.stocks)
@@ -1129,7 +1131,7 @@ async def filter_stocks_by_profile_match(
                 for old_stock in removed_stocks:
                     if old_stock not in removed_diff_info:
                         for new_stock in current_input_set:
-                            if new_stock == stock:
+                            if new_stock == old_stock:
                                 break
                         stock_with_old_history = add_old_history(
                             new_stock,
@@ -1140,7 +1142,7 @@ async def filter_stocks_by_profile_match(
                         if stock_with_old_history:  # successful added old history
                             filtered_stocks_with_scores.append(stock_with_old_history)
                         else:  # lost citations
-                            removed_diff_info[stock] = NO_CITATIONS_DIFF
+                            removed_diff_info[old_stock] = NO_CITATIONS_DIFF
 
                 context.diff_info[context.task_id] = {
                     "added": added_diff_info,
@@ -1184,7 +1186,7 @@ async def filter_stocks_by_profile_match(
         )
     elif isinstance(args.profile, str):
         await tool_log(
-            f"Found {len(filtered_stocks_with_scores)} stock passed filter stocks for profile: {profile_str}",
+            f"{len(filtered_stocks_with_scores)} stocks passed filter stocks for profile: {profile_str}",
             context=context,
         )
 
