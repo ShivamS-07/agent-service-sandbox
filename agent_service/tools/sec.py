@@ -114,12 +114,24 @@ async def get_10k_10q_sec_filings(
         context=context,
     )
     stock_filing_map = await get_sec_filings_helper(args.stock_ids, start_date, end_date)
-    all_filings = []
+    all_filings: List[StockSecFilingText] = []
     for filings in stock_filing_map.values():
         all_filings.extend(filings)
 
     if len(all_filings) == 0:
         raise EmptyOutputError("No filings were retrieved for these stocks over this time period")
+
+    filing_list = [
+        f"{filing.to_citation_title()} ({filing.form_type}) "
+        + (f"- {filing.timestamp.strftime('%Y-%m-%d')}" if filing.timestamp else "")
+        for filing in all_filings
+    ]
+    await tool_log(
+        log=f"Found {len(all_filings)} filing(s).",
+        context=context,
+        associated_data=filing_list,
+    )
+
     return all_filings
 
 
@@ -369,6 +381,17 @@ async def get_sec_filings_with_type(
                 "No filings were retrieved for these stocks over this time period"
             )
         sec_filings.extend(sec_10k_10q_filings)
+
+        filing_list = [
+            f"{filing.to_citation_title()} ({filing.form_type}) "
+            + (f"- {filing.timestamp.strftime('%Y-%m-%d')}" if filing.timestamp else "")
+            for filing in sec_filings
+        ]
+        await tool_log(
+            log=f"Found {len(sec_filings)} filing(s).",
+            context=context,
+            associated_data=filing_list,
+        )
 
         return sec_filings
 
