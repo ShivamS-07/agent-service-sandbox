@@ -5,6 +5,10 @@ class AgentExecutionError(Exception):
     result_status = Status.ERROR
 
 
+class AgentRetryError(Exception):
+    pass
+
+
 class NonRetriableError(AgentExecutionError):
     def __init__(self, message: str) -> None:
         super().__init__(message)

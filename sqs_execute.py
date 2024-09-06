@@ -6,7 +6,7 @@ import resource
 import time
 import traceback
 
-from agent_service.planner.errors import NonRetriableError
+from agent_service.planner.errors import AgentRetryError, NonRetriableError
 from agent_service.sqs_serve.message_handler import MessageHandler
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.do_not_error_exception import DoNotErrorException
@@ -113,7 +113,7 @@ async def main() -> None:
             },
         )
         wait_if_needed(start_time=start_time)
-        if not isinstance(e, NonRetriableError):
+        if not isinstance(e, NonRetriableError) and not isinstance(e, AgentRetryError):
             raise e
 
 

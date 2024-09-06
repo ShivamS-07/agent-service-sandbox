@@ -24,7 +24,7 @@ from agent_service.planner.constants import (
     NO_CHANGE_MESSAGE,
     RUN_EXECUTION_PLAN_FLOW_NAME,
 )
-from agent_service.planner.errors import NonRetriableError
+from agent_service.planner.errors import AgentRetryError, NonRetriableError
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import (
     ErrorInfo,
@@ -322,7 +322,7 @@ async def run_execution_plan(
                     retrying = await handle_error_in_execution(context, e, step, do_chat)
 
                 if retrying:
-                    raise RuntimeError("Plan run attempt failed, retrying")
+                    raise AgentRetryError("Plan run attempt failed, retrying")
 
                 raise RuntimeError("All retry attempts failed")
 
