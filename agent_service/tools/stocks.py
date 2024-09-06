@@ -1284,7 +1284,7 @@ async def get_metedata_for_stocks(
     FROM (
     SELECT gbi_security_id AS gbi_id,
     security_region AS country,
-    region AS country_of_domicile
+    region AS country_of_domicile,
     ms.isin AS isin,
     ms.currency AS currency,
     ms.gics AS gics4_sub_industry,
