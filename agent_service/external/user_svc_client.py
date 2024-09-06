@@ -17,9 +17,8 @@ from user_service_proto_v1.user_service_pb2 import (
     ListTeamMembersRequest,
     ListTeamMembersResponse,
     UpdateUserRequest,
+    User,
 )
-from user_service_proto_v1.user_service_pb2 import User
-from user_service_proto_v1.user_service_pb2 import User as Account
 from user_service_proto_v1.well_known_types_pb2 import UUID
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
@@ -61,7 +60,7 @@ def _get_service_stub() -> Generator[UserServiceStub, None, None]:
 
 @grpc_retry
 @async_perf_logger
-async def get_users(user_id: str, user_ids: List[str], include_user_enabled: bool) -> List[Account]:
+async def get_users(user_id: str, user_ids: List[str], include_user_enabled: bool) -> List[User]:
     with _get_service_stub() as stub:
         res = await stub.GetUsers(
             GetUsersRequest(

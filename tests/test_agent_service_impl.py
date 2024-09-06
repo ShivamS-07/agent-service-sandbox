@@ -18,6 +18,8 @@ from agent_service.types import Notification
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
 from tests.test_agent_service_impl_base import TestAgentServiceImplBase
 
+AGENT_NAME = "Macroeconomic News"
+
 
 def find_item(lst, field, value):
     for item in lst:
@@ -49,7 +51,7 @@ async def generate_initial_preplan_response(chat_context):
 async def generate_name_for_agent(
     agent_id, chat_context, existing_names, gpt_service_stub, user_id
 ):
-    return "Macroeconomic News"
+    return AGENT_NAME
 
 
 async def send_chat_message(*args, **kwargs):
@@ -140,7 +142,6 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
             ),
             user=user,
         )
-        self.assertTrue(res.name)
         self.assertTrue(res.success)
 
         res = self.chat_with_agent(
@@ -151,6 +152,10 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         # it will only have 3 messages because the second prompt has no response in the test
         res = self.get_chat_history(agent_id=agent_id)
         self.assertEqual(len(res.messages), 3)
+
+        # name generation is running in the background now
+        res2 = self.get_agent(agent_id=agent_id)
+        self.assertEqual(res2.agent_name, AGENT_NAME)
 
     def test_agent_plan_output(self):
         agent_id = "6a69d259-8d4c-4056-8f60-712f42f7546f"

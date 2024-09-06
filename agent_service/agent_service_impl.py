@@ -98,7 +98,7 @@ from agent_service.slack.slack_sender import SlackSender
 from agent_service.tool import ToolCategory, ToolRegistry
 from agent_service.types import ChatContext, MemoryType, Message
 from agent_service.uploads import UploadHandler
-from agent_service.utils.agent_event_utils import send_chat_message
+from agent_service.utils.agent_event_utils import publish_agent_name, send_chat_message
 from agent_service.utils.agent_name import generate_name_for_agent
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import (
@@ -332,118 +332,34 @@ class AgentServiceImpl:
     @async_perf_logger
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
         agent_id = req.agent_id
-        user_msg = Message(
-            agent_id=agent_id,
-            message=req.prompt,
-            is_user_message=True,
-            message_author=user.real_user_id,
-        )
-        name: Optional[str] = None
 
-        # TODO should clean this up to prevent duplication
-        if req.skip_agent_response:
-            LOGGER.info(f"Inserting user's new message to DB for {agent_id=} WITHOUT A RESPONSE")
+        try:
+            LOGGER.info(f"Inserting user's new message to DB for {agent_id=}")
+            user_msg = Message(
+                agent_id=agent_id,
+                message=req.prompt,
+                is_user_message=True,
+                message_author=user.real_user_id,
+            )
             await self.pg.insert_chat_messages(messages=[user_msg])
+        except Exception as e:
+            LOGGER.exception(f"Failed to insert user message into DB with exception: {e}")
+            return ChatWithAgentResponse(success=False, allow_retry=True)
 
-            if req.is_first_prompt:
-                try:
-                    LOGGER.info("Generating name for agent")
-                    existing_agents = await self.pg.get_existing_agents_names(user.user_id)
-                    name = await generate_name_for_agent(
-                        agent_id=agent_id,
-                        chat_context=ChatContext(messages=[user_msg]),
-                        existing_names=existing_agents,
-                        gpt_service_stub=self.gpt_service_stub,
-                    )
-                    await self.pg.update_agent_name(agent_id=agent_id, agent_name=name)
-                except Exception as e:
-                    LOGGER.exception(
-                        f"Failed to generate name for agent from GPT with exception: {e}"
-                    )
-                if req.canned_prompt_id:
-                    log_event(
-                        event_name="agent-canned-prompt",
-                        event_data={
-                            "agent_id": req.agent_id,
-                            "canned_prompt_id": req.canned_prompt_id,
-                            "canned_prompt_text": req.prompt,
-                            "user_id": user.user_id,
-                        },
-                    )
+        if req.is_first_prompt:
+            LOGGER.info("Creating future task to generate agent name and store in DB")
+            run_async_background(
+                self._generate_agent_name_and_store(user.user_id, agent_id, user_msg)  # 2s
+            )
 
-            return ChatWithAgentResponse(success=True, allow_retry=False, name=name)
-
-        if not req.is_first_prompt:
-            try:
-                LOGGER.info(f"Inserting user's new message to DB for {agent_id=}")
-                await self.pg.insert_chat_messages(messages=[user_msg])
-            except Exception as e:
-                LOGGER.exception(f"Failed to insert user message into DB with exception: {e}")
-                return ChatWithAgentResponse(success=False, allow_retry=True)
-            try:
-                LOGGER.info(f"Updating execution plan after user's new message for {req.agent_id=}")
-                await self.task_executor.update_execution_after_input(  # >3s
-                    agent_id=req.agent_id, user_id=user.user_id, chat_context=None
-                )
-            except Exception as e:
-                LOGGER.exception((f"Failed to update {agent_id=} execution plan: {e}"))
-                return ChatWithAgentResponse(success=False, allow_retry=False)
-        else:
-            try:
-                # SLOW: let it run in the background and await later
-                LOGGER.info("Creating a future to generate agent name and run in the background")
-                gen_name_future_task = run_async_background(
-                    self._generate_agent_name_and_store(user.user_id, agent_id, user_msg)  # 2s
-                )
-
-                # decide the first action
-                LOGGER.info("Generating initial response from GPT (first prompt)")
-                chatbot = Chatbot(agent_id, gpt_service_stub=self.gpt_service_stub)
-                chat_context = ChatContext(messages=[user_msg])
-                action_decider = FirstActionDecider(agent_id=agent_id, skip_db_commit=True)
-
-                # gather all the responses in parallel
-                action, refer, none, notification, preplan = await gather_with_concurrency(
-                    [
-                        action_decider.decide_action(chat_context=chat_context),  # 0.3s
-                        chatbot.generate_first_response_refer(chat_context=chat_context),  # >1s
-                        chatbot.generate_first_response_none(chat_context=chat_context),  # >1s
-                        chatbot.generate_first_response_notification(chat_context=chat_context),
-                        chatbot.generate_initial_preplan_response(chat_context=chat_context),  # >1s
-                    ],
-                    n=5,  # default is 4
-                )
-
-                if action == FirstAction.REFER:
-                    gpt_resp = refer
-                elif action == FirstAction.NOTIFICATION:
-                    gpt_resp = notification
-                elif action == FirstAction.PLAN:
-                    gpt_resp = preplan
-                else:  # action == FirstAction.NONE
-                    gpt_resp = none
-
+            if not req.skip_agent_response:
                 LOGGER.info(
-                    "Waiting for name generation (future) to complete while inserting user's and "
-                    "GPT's messages to DB, updating agent's name "
-                    "and publishing GPT response"
+                    "Creating future tasks to generate initial response and send slack message"
                 )
-                gpt_msg = Message(agent_id=agent_id, message=gpt_resp, is_user_message=False)
-
-                name, _, _, _ = await gather_with_concurrency(
-                    [
-                        gen_name_future_task,
-                        self.pg.insert_chat_messages(messages=[user_msg, gpt_msg]),
-                        send_chat_message(gpt_msg, self.pg, insert_message_into_db=False),
-                        self._slack_chat_msg(req, user),  # 0.1s
-                    ]
+                run_async_background(
+                    self._create_initial_response(user.user_id, agent_id, user_msg)  # 2s
                 )
-            except Exception as e:
-                # FE should retry if this fails
-                LOGGER.exception(
-                    f"Failed to generate initial response from GPT with exception: {e}"
-                )
-                return ChatWithAgentResponse(success=False, allow_retry=False)
+                run_async_background(self._slack_chat_msg(req, user))  # 0.1s
 
             if req.canned_prompt_id:
                 log_event(
@@ -455,22 +371,17 @@ class AgentServiceImpl:
                         "user_id": user.user_id,
                     },
                 )
+        else:
+            try:
+                LOGGER.info(f"Updating execution plan after user's new message for {req.agent_id=}")
+                await self.task_executor.update_execution_after_input(  # >3s
+                    agent_id=req.agent_id, user_id=user.user_id, chat_context=None
+                )
+            except Exception as e:
+                LOGGER.exception((f"Failed to update {agent_id=} execution plan: {e}"))
+                return ChatWithAgentResponse(success=False, allow_retry=False)
 
-            if action == FirstAction.PLAN:
-                plan_id = str(uuid4())
-                LOGGER.info(f"Creating execution plan {plan_id} for {agent_id=}")
-                try:
-                    await self.task_executor.create_execution_plan(  # this isn't async
-                        agent_id=agent_id,
-                        plan_id=plan_id,
-                        user_id=user.user_id,
-                        run_plan_in_prefect_immediately=True,
-                    )
-                except Exception:
-                    LOGGER.exception("Failed to kick off execution plan creation")
-                    return ChatWithAgentResponse(success=False, allow_retry=False)
-
-        return ChatWithAgentResponse(success=True, allow_retry=False, name=name)
+        return ChatWithAgentResponse(success=True, allow_retry=False)
 
     @async_perf_logger
     async def _generate_agent_name_and_store(
@@ -489,8 +400,56 @@ class AgentServiceImpl:
         )
 
         LOGGER.info(f"Updating agent name to {name} in DB")
-        await self.pg.update_agent_name(agent_id=agent_id, agent_name=name)
+
+        await asyncio.gather(
+            self.pg.update_agent_name(agent_id=agent_id, agent_name=name),
+            publish_agent_name(agent_id=agent_id, agent_name=name),
+        )
         return name
+
+    @async_perf_logger
+    async def _create_initial_response(
+        self, user_id: str, agent_id: str, user_msg: Message
+    ) -> None:
+        LOGGER.info("Generating initial response from GPT (first prompt)")
+        chatbot = Chatbot(agent_id, gpt_service_stub=self.gpt_service_stub)
+        chat_context = ChatContext(messages=[user_msg])
+        action_decider = FirstActionDecider(agent_id=agent_id, skip_db_commit=True)
+
+        LOGGER.info("Deciding action")
+        action = await action_decider.decide_action(chat_context=chat_context)
+
+        LOGGER.info(f"Action decided: {action}. Now generating response")
+        if action == FirstAction.REFER:
+            gpt_resp = await chatbot.generate_first_response_refer(chat_context=chat_context)
+        elif action == FirstAction.NOTIFICATION:
+            gpt_resp = await chatbot.generate_first_response_notification(chat_context=chat_context)
+        elif action == FirstAction.PLAN:
+            gpt_resp = await chatbot.generate_initial_preplan_response(chat_context=chat_context)
+        else:  # action == FirstAction.NONE
+            gpt_resp = await chatbot.generate_first_response_none(chat_context=chat_context)
+
+        gpt_msg = Message(agent_id=agent_id, message=gpt_resp, is_user_message=False)
+
+        LOGGER.info("Inserting GPT's response to DB and publishing GPT response")
+        tasks = [
+            self.pg.insert_chat_messages(messages=[gpt_msg]),
+            send_chat_message(gpt_msg, self.pg, insert_message_into_db=False),
+        ]
+
+        if action == FirstAction.PLAN:
+            plan_id = str(uuid4())
+            LOGGER.info(f"Creating execution plan {plan_id} for {agent_id=}")
+            tasks.append(
+                self.task_executor.create_execution_plan(  # this isn't async
+                    agent_id=agent_id,
+                    plan_id=plan_id,
+                    user_id=user_id,
+                    run_plan_in_prefect_immediately=True,
+                )
+            )
+
+        await asyncio.gather(*tasks)
 
     @async_perf_logger
     async def _slack_chat_msg(self, req: ChatWithAgentRequest, user: User) -> None:
@@ -535,6 +494,7 @@ class AgentServiceImpl:
         chat_context = await self.pg.get_chats_history_for_agent(agent_id, start, end)
         return GetChatHistoryResponse(messages=chat_context.messages)
 
+    @async_perf_logger
     async def get_agent_worklog_board(
         self,
         agent_id: str,
@@ -554,19 +514,24 @@ class AgentServiceImpl:
             end (Optional[datetime.date]): end DATE to filter work log, inclusive
             most_recent_num_run (Optional[int]): number of most recent plan runs to return
         """
+        LOGGER.info("Creating a future to get latest execution plan")
+        # TODO: For now just get the latest plan. Later we can switch to LIVE plan
+        future_task = run_async_background(self.pg.get_latest_execution_plan(agent_id))
 
+        LOGGER.info("Getting agent worklogs")
         run_history = await get_agent_hierarchical_worklogs(
             agent_id, self.pg, start_date, end_date, most_recent_num_run
         )
 
-        # TODO: For now just get the latest plan. Later we can switch to LIVE plan
+        LOGGER.info("Waiting for getting latest execution plan (future) to complete")
         (
             plan_id,
             execution_plan,
             _,
             status,
             upcoming_plan_run_id,
-        ) = await self.pg.get_latest_execution_plan(agent_id)
+        ) = await future_task
+
         if plan_id is None or execution_plan is None:
             execution_plan_template = None
         else:

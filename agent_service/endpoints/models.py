@@ -450,6 +450,7 @@ class EventType(enum.StrEnum):
     EXECUTION_STATUS = "execution_status"
     TASK_STATUS = "task_status"
     TASK_LOG = "task_log"
+    AGENT_NAME = "agent_name"
 
 
 class Event(BaseModel):
@@ -463,6 +464,11 @@ class Event(BaseModel):
 class MessageEvent(Event):
     event_type: Literal[EventType.MESSAGE] = EventType.MESSAGE
     message: Message
+
+
+class AgentNameEvent(Event):
+    event_type: Literal[EventType.AGENT_NAME] = EventType.AGENT_NAME
+    agent_name: str
 
 
 class OutputEvent(Event):
@@ -514,6 +520,7 @@ class AgentEvent(BaseModel):
         PlanStatusEvent,
         TaskStatusEvent,
         ExecutionStatusEvent,
+        AgentNameEvent,
     ] = Field(discriminator="event_type")
     timestamp: datetime.datetime = Field(default_factory=get_now_utc)
 

@@ -5,6 +5,7 @@ import boto3
 
 from agent_service.endpoints.models import (
     AgentEvent,
+    AgentNameEvent,
     AgentNotificationBody,
     AgentNotificationData,
     AgentOutput,
@@ -116,6 +117,15 @@ async def send_chat_message(
         await publish_agent_event(
             agent_id=message.agent_id, serialized_event=event.model_dump_json()
         )
+
+
+async def publish_agent_name(agent_id: str, agent_name: str) -> None:
+    """
+    Sends a chat message from GPT to the user. Updates the redis queue as well
+    as the DB. If no DB instance is passed in, uses a SYNCHRONOUS DB instead.
+    """
+    event = AgentEvent(agent_id=agent_id, event=AgentNameEvent(agent_name=agent_name))
+    await publish_agent_event(agent_id=agent_id, serialized_event=event.model_dump_json())
 
 
 async def publish_agent_output(
