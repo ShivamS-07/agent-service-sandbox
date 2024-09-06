@@ -294,8 +294,10 @@ async def get_news_articles_for_topics(
     # start_date is optional, if not provided, use 30 days ago
     if args.date_range:
         start_date = args.date_range.start_date
+        end_date = args.date_range.end_date
     else:
         start_date = (get_now_utc() - datetime.timedelta(days=30)).date()
+        end_date = datetime.date.today() + datetime.timedelta(days=2)
 
     # prepare embedding
     llm = GPT(model=DEFAULT_EMBEDDING_MODEL)
@@ -307,7 +309,11 @@ async def get_news_articles_for_topics(
     for topic, embedding in zip(args.topics, embeddings):
         relevant_news: List[NewsPoolArticleText] = []
         for news_batch in _get_similar_news_to_embedding(
-            db, start_date, embedding, batch_size=EMBEDDING_POOL_BATCH_SIZE
+            db,
+            start_date,
+            end_date,
+            embedding,
+            batch_size=EMBEDDING_POOL_BATCH_SIZE,
         ):
             # check most relevant news with gpt
             gpt = GPT(model=DEFAULT_CHEAP_MODEL)
@@ -345,25 +351,34 @@ async def get_news_articles_for_topics(
             relevant_news = relevant_news[: args.max_num_articles_per_topic]
         news_articles.extend(relevant_news)
 
-    if len(news) == 0:
-        raise EmptyOutputError("Found no news articles for provided topic(s)")
+    if len(news_articles) == 0:
+        if args.date_range:
+            raise EmptyOutputError(
+                "Found no news articles for provided topic(s) within specified date range"
+            )
+        else:
+            raise EmptyOutputError("Found no news articles for provided topic(s)")
     return news_articles
 
 
 def _get_similar_news_to_embedding(
-    db: Postgres, start_date: datetime.date, embedding: List[float], batch_size: int = 100
+    db: Postgres,
+    start_date: datetime.date,
+    end_date: datetime.date,
+    embedding: List[float],
+    batch_size: int = 100,
 ) -> Generator[List[Tuple[str, str, datetime.datetime]], None, None]:
     sql = """
             SELECT
             news_id::TEXT, headline::TEXT, summary::TEXT, published_at,
             1 - (%s::VECTOR <=> embedding) AS similarity
             FROM nlp_service.news_pool
-            WHERE published_at >= %s
+            WHERE published_at >= %s AND published_at <= %s
             ORDER BY similarity DESC, published_at DESC
             """
 
     with db.connection.cursor() as cursor:
-        cursor.execute(sql, [str(embedding), start_date])
+        cursor.execute(sql, [str(embedding), start_date, end_date])
         rows = cursor.fetchmany(batch_size)
         while rows:
             yield [
