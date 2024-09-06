@@ -1,5 +1,6 @@
 import datetime
 import json
+import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import (
@@ -24,7 +25,7 @@ from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMe
 from agent_service.types import ChatContext, Message, Notification, PlanRunContext
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import gather_with_concurrency
-from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
@@ -1103,6 +1104,107 @@ class AsyncDB:
         """
         rows = await self.pg.generic_read(sql=sql, params={"org_id": org_id})
         return rows[0]["name"]
+
+    async def copy_agent(self, src_agent_id: str, dst_agent_id: str, dst_user_id: str) -> None:
+        get_agent_sql = """
+        select * from agent.agents where agent_id = %(agent_id)s
+        """
+        agent_info = (await self.pg.generic_read(get_agent_sql, {"agent_id": src_agent_id}))[0]
+        agent_info["agent_id"] = dst_agent_id
+        agent_info["user_id"] = dst_user_id
+        agent_info["created_at"] = datetime.datetime.utcnow()
+        agent_info["last_updated"] = datetime.datetime.utcnow()
+        agent_info["section_id"] = None
+        if agent_info["schedule"]:
+            agent_info["schedule"] = json.dumps(agent_info["schedule"])
+        to_insert = []
+        to_insert.append(InsertToTableArgs(table_name="agent.agents", rows=[agent_info]))
+
+        execution_plan_sql = """
+        select * from agent.execution_plans ep where agent_id = %(agent_id)s
+        """
+        execution_plans = await self.pg.generic_read(
+            execution_plan_sql, params={"agent_id": src_agent_id}
+        )
+        execution_plan_id_map = {}
+        for execution_plan in execution_plans:
+            new_plan_id = str(uuid.uuid4())
+            old_plan_id = execution_plan["plan_id"]
+            execution_plan_id_map[old_plan_id] = new_plan_id
+            execution_plan["plan_id"] = new_plan_id
+            execution_plan["agent_id"] = dst_agent_id
+            execution_plan["plan"] = json.dumps(execution_plan["plan"])
+
+        to_insert.append(
+            InsertToTableArgs(table_name="agent.execution_plans", rows=execution_plans)
+        )
+
+        plan_run_sql = """
+                        select * from agent.plan_runs where agent_id = %(agent_id)s
+                        """
+        plan_runs = await self.pg.generic_read(plan_run_sql, params={"agent_id": src_agent_id})
+        plan_run_id_map = {}
+        for plan_run in plan_runs:
+            new_plan_run_id = str(uuid.uuid4())
+            old_plan_run_id = plan_run["plan_run_id"]
+            plan_run["plan_id"] = execution_plan_id_map[plan_run["plan_id"]]
+            plan_run_id_map[old_plan_run_id] = new_plan_run_id
+            plan_run["plan_run_id"] = new_plan_run_id
+            plan_run["agent_id"] = dst_agent_id
+            plan_run["run_metadata"] = json.dumps(plan_run["run_metadata"])
+
+        to_insert.append(InsertToTableArgs(table_name="agent.plan_runs", rows=plan_runs))
+
+        get_chat_messages_sql = """
+            select * from agent.chat_messages where agent_id = %(agent_id)s
+        """
+        chat_messages = await self.pg.generic_read(
+            get_chat_messages_sql, {"agent_id": src_agent_id}
+        )
+        for chat_message_data in chat_messages:
+            chat_message_data["agent_id"] = dst_agent_id
+            chat_message_data["message_id"] = str(uuid.uuid4())
+        to_insert.append(InsertToTableArgs(table_name="agent.chat_messages", rows=chat_messages))
+
+        worklog_sql = """
+        select * from agent.work_logs where agent_id = %(agent_id)s
+        """
+
+        work_log_entries = await self.pg.generic_read(worklog_sql, {"agent_id": src_agent_id})
+        null_log_data_entries = []
+        null_log_message_entries = []
+        regular_entries = []
+        for work_log_entry in work_log_entries:
+            work_log_entry["agent_id"] = dst_agent_id
+            work_log_entry["log_id"] = str(uuid.uuid4())
+            work_log_entry["plan_id"] = execution_plan_id_map[work_log_entry["plan_id"]]
+            work_log_entry["plan_run_id"] = plan_run_id_map[work_log_entry["plan_run_id"]]
+            if not work_log_entry["log_data"]:
+                null_log_data_entries.append(work_log_entry)
+            elif not work_log_entry["log_message"]:
+                null_log_message_entries.append(work_log_entry)
+            else:
+                regular_entries.append(work_log_entry)
+        if regular_entries:
+            to_insert.append(InsertToTableArgs(table_name="agent.work_logs", rows=regular_entries))
+        if null_log_data_entries:
+            to_insert.append(
+                InsertToTableArgs(table_name="agent.work_logs", rows=null_log_data_entries)
+            )
+        if null_log_message_entries:
+            to_insert.append(
+                InsertToTableArgs(table_name="agent.work_logs", rows=null_log_message_entries)
+            )
+
+        outputs_sql = """select * from agent.agent_outputs where agent_id = %(agent_id)s"""
+        agent_outputs = await self.pg.generic_read(outputs_sql, {"agent_id": src_agent_id})
+        for agent_output in agent_outputs:
+            agent_output["output_id"] = str(uuid.uuid4())
+            agent_output["agent_id"] = dst_agent_id
+            agent_output["plan_id"] = execution_plan_id_map[agent_output["plan_id"]]
+            agent_output["plan_run_id"] = plan_run_id_map[agent_output["plan_run_id"]]
+        to_insert.append(InsertToTableArgs(table_name="agent.agent_outputs", rows=agent_outputs))
+        await self.pg.insert_atomic(to_insert=to_insert)
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:

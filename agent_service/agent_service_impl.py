@@ -5,6 +5,7 @@ import logging
 import re
 import time
 import traceback
+import uuid
 from collections import defaultdict
 from copy import deepcopy
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, cast
@@ -1204,3 +1205,13 @@ class AgentServiceImpl:
 
     async def get_prompt_tempaltes(self) -> List[PromptTemplate]:
         return await self.pg.get_prompt_templates()
+
+    async def copy_agent(self, src_agent_id: str, dst_user_ids: List[str]) -> Dict[str, str]:
+        res = {}
+        for user_id in dst_user_ids:
+            new_agent_id = str(uuid.uuid4())
+            await self.pg.copy_agent(
+                src_agent_id=src_agent_id, dst_agent_id=new_agent_id, dst_user_id=user_id
+            )
+            res[user_id] = new_agent_id
+        return res

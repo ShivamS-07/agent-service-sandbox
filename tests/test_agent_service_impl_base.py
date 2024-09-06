@@ -1,7 +1,7 @@
 # flake8: noqa
 import datetime
 import logging
-from typing import Optional
+from typing import Dict, List, Optional
 
 from fastapi import UploadFile
 
@@ -160,3 +160,10 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
 
     def get_canned_prompts(self) -> GetCannedPromptsResponse:
         return self.agent_service_impl.get_canned_prompts()
+
+    def duplicate_agent(self, src_agent_id: str, dest_user_ids: List[str]) -> Dict[str, str]:
+        return self.loop.run_until_complete(
+            self.agent_service_impl.copy_agent(
+                src_agent_id=src_agent_id, dst_user_ids=dest_user_ids
+            )
+        )

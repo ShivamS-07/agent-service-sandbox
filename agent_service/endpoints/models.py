@@ -861,3 +861,12 @@ class RearrangeSectionResponse(BaseModel):
 ####################################################################################################
 class GetPromptTemplatesResponse(BaseModel):
     prompt_templates: List[PromptTemplate]
+
+
+class CopyAgentToUsersRequest(BaseModel):
+    src_agent_id: str
+    dst_user_ids: List[str]
+
+
+class CopyAgentToUsersResponse(BaseModel):
+    user_id_to_new_agent_id_map: Dict[str, str]

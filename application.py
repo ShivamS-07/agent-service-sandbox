@@ -37,6 +37,8 @@ from agent_service.endpoints.models import (
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     ConvertMarkdownRequest,
+    CopyAgentToUsersRequest,
+    CopyAgentToUsersResponse,
     CreateAgentRequest,
     CreateAgentResponse,
     CreateCustomNotificationRequest,
@@ -1293,6 +1295,26 @@ async def rearrange_section(
 async def get_prompt_tempaltes() -> GetPromptTemplatesResponse:
     templates = await application.state.agent_service_impl.get_prompt_tempaltes()
     return GetPromptTemplatesResponse(prompt_templates=templates)
+
+
+@router.post(
+    "/copy-agent",
+    response_model=CopyAgentToUsersResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def copy_agent(
+    req: CopyAgentToUsersRequest, user: User = Depends(parse_header)
+) -> CopyAgentToUsersResponse:
+    response_dict = await application.state.agent_service_impl.copy_agent(
+        src_agent_id=req.src_agent_id,
+        dst_user_ids=req.dst_user_ids,
+    )
+    if not is_user_agent_admin(user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
+        )
+
+    return CopyAgentToUsersResponse(user_id_to_new_agent_id_map=response_dict)
 
 
 initialize_unauthed_endpoints(application)

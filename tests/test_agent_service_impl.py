@@ -541,3 +541,11 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         self.assertEqual(feedback[0].agent_id, agent.agent_id)
         self.assertEqual(feedback[0].plan_id, plan_id)
         self.assertEqual(feedback[0].widget_title, widget_title)
+
+    def test_duplicate_agent(self):
+        agent_to_duplicate = "ebc63574-4cb0-409c-9965-2a0b5a9a5037"
+        user_id_to_send_to = "ac7c96d7-3e57-40e7-a1a5-8e2ce5e23639"  # tommy
+        res = self.duplicate_agent(
+            src_agent_id=agent_to_duplicate, dest_user_ids=[user_id_to_send_to]
+        )
+        print(res)
