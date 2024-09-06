@@ -209,6 +209,19 @@ class Table(ComplexIOBase):
     def get_score_column(self) -> Optional[TableColumn]:
         return self.get_first_col_of_type(TableColumnType.SCORE)
 
+    def dedup_columns(self) -> None:
+        col_name_data_map: Dict[PrimitiveType, List[Optional[IOType]]] = {}
+        new_cols = []
+        for col in self.columns:
+            if (
+                col.metadata.label in col_name_data_map
+                and col.data == col_name_data_map[col.metadata.label]
+            ):
+                continue
+            col_name_data_map[col.metadata.label] = col.data
+            new_cols.append(col)
+        self.columns = new_cols
+
     def to_df(
         self, stocks_as_tickers_only: bool = False, stocks_as_hashables: bool = False
     ) -> pd.DataFrame:

@@ -503,6 +503,10 @@ def _join_two_tables(first: Table, second: Table) -> Table:
     output_df = output_df.groupby(by=[col.label for col in key_cols]).first().reset_index()  # type: ignore
     output_col_metas = key_cols + other_cols  # type: ignore
     output_table = Table.from_df_and_cols(columns=output_col_metas, data=output_df)
+    if len(output_col_metas) > len(output_df.columns):
+        # If the dataframe has fewer columns than the output table, we have a
+        # duplicate column probably. We should remove it.
+        output_table.dedup_columns()
 
     # Make sure we use the objects' full histories
     stock_col = output_table.get_stock_column()
