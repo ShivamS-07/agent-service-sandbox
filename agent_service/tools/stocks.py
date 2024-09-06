@@ -961,6 +961,49 @@ async def get_country_for_stocks(args: GetCountryInput, context: PlanRunContext)
     return table
 
 
+@tool(
+    description=(
+        "This function takes a list of StockIds"
+        " and returns a table with columns named: 'Security' and 'Country of Domicile'."
+        " The 'security' column contains the original input stock_ids,"
+        " The country of domicile column contains the name of the country"
+        " for each of the input stocks."
+        " Use this function to add country of domicile to a dataset before display"
+        " or for further processing."
+        " If you want to filter on a country or region or country of domicile do not use this function,"
+        " you should use the filter_stocks_by_country_of_domicile instead"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def get_country_of_domicile_for_stocks(
+    args: GetCountryInput, context: PlanRunContext
+) -> StockTable:
+    """Returns the country for each stock
+
+    Returns:
+        StockTable: a table of stock identifiers and countries.
+    """
+    df = await get_metedata_for_stocks(args.stock_ids, context)
+
+    # we might not have found metadata for all the gbi_ids (rare)
+    # so lets select the ones we found and keep them for history
+    orig_stock_ids = {s.gbi_id: s for s in args.stock_ids}
+    new_stock_ids = [orig_stock_ids.get(id) for id in list(df["gbi_id"])]
+    df["Security"] = new_stock_ids
+
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Country of Domicile", col_type=TableColumnType.STRING),
+        ],
+    )
+
+    return table
+
+
 class GetCurrencyInput(ToolArgs):
     stock_ids: List[StockID]
 
@@ -1241,6 +1284,7 @@ async def get_metedata_for_stocks(
     FROM (
     SELECT gbi_security_id AS gbi_id,
     security_region AS country,
+    region AS country_of_domicile
     ms.isin AS isin,
     ms.currency AS currency,
     ms.gics AS gics4_sub_industry,
@@ -1269,6 +1313,7 @@ async def get_metedata_for_stocks(
     df.rename(
         columns={
             "country": "Country",
+            "country_of_domicile": "Country of Domicile",
             "currency": "Currency",
             "isin": "ISIN",
             "gics1_name": "Sector",
