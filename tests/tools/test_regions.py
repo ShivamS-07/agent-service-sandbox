@@ -2,7 +2,12 @@ import unittest
 
 from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_types.stock import StockID
-from agent_service.tools.regions import FilterStockRegionInput, filter_stocks_by_region
+from agent_service.tools.regions import (
+    FilterStockContryOfDomicileInput,
+    FilterStockRegionInput,
+    filter_stocks_by_country_of_domicile,
+    filter_stocks_by_region,
+)
 from agent_service.types import PlanRunContext
 
 MSFT = StockID(gbi_id=6963, isin="", symbol="MSFT", company_name="Microsoft Corporation")  # USA
@@ -99,3 +104,43 @@ class TestRegions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, len(stocks))
         self.assertTrue(any(stock.symbol == "SIE" for stock in stocks))
         self.assertTrue(any(stock.symbol == "ES" for stock in stocks))
+
+    async def test_region_filter_with_country_names(self):
+        stock_ids = [MSFT, FORD, RBC, CHN, TOY, TCS, SIE, ES]
+
+        # Test China
+        args = FilterStockContryOfDomicileInput(country_name="China", stock_ids=stock_ids)
+        stocks = await filter_stocks_by_country_of_domicile(args=args, context=self.context)
+        self.assertEqual(1, len(stocks))
+        self.assertTrue(any(stock.symbol == "601398" for stock in stocks))
+
+        args = FilterStockContryOfDomicileInput(
+            country_name="People's Republic of China", stock_ids=stock_ids
+        )
+        stocks = await filter_stocks_by_country_of_domicile(args=args, context=self.context)
+        self.assertEqual(1, len(stocks))
+        self.assertTrue(any(stock.symbol == "601398" for stock in stocks))
+
+        # Test United States
+        args = FilterStockContryOfDomicileInput(country_name="United States", stock_ids=stock_ids)
+        stocks = await filter_stocks_by_country_of_domicile(args=args, context=self.context)
+        self.assertEqual(2, len(stocks))
+        self.assertTrue(any(stock.symbol == "MSFT" for stock in stocks))
+        self.assertTrue(any(stock.symbol == "F" for stock in stocks))
+
+        args = FilterStockContryOfDomicileInput(country_name="USA", stock_ids=stock_ids)
+        stocks = await filter_stocks_by_country_of_domicile(args=args, context=self.context)
+        self.assertEqual(2, len(stocks))
+        self.assertTrue(any(stock.symbol == "MSFT" for stock in stocks))
+        self.assertTrue(any(stock.symbol == "F" for stock in stocks))
+
+        # Test Canada
+        args = FilterStockContryOfDomicileInput(country_name="Canada", stock_ids=stock_ids)
+        stocks = await filter_stocks_by_country_of_domicile(args=args, context=self.context)
+        self.assertEqual(1, len(stocks))
+        self.assertTrue(any(stock.symbol == "RY" for stock in stocks))
+
+        args = FilterStockContryOfDomicileInput(country_name="CAD", stock_ids=stock_ids)
+        stocks = await filter_stocks_by_country_of_domicile(args=args, context=self.context)
+        self.assertEqual(1, len(stocks))
+        self.assertTrue(any(stock.symbol == "RY" for stock in stocks))
