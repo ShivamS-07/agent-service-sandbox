@@ -16,6 +16,7 @@ from agent_service.io_types.text import (
     ThemeNewsDevelopmentText,
     ThemeText,
 )
+from agent_service.planner.errors import EmptyInputError
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.commentary.constants import (
     COMMENTARY_LLM,
@@ -571,4 +572,7 @@ async def get_commentary_inputs(
         except Exception as e:
             logger.exception(f"Failed to get texts for stock ids: {e}")
 
+    # raise if inputs are empty
+    if len(texts + tables) == 0:
+        raise EmptyInputError("No commentary inputs (texts, tables) found.")
     return texts + tables

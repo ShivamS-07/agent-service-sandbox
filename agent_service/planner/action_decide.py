@@ -45,7 +45,11 @@ class FirstActionDecider:
 
     @async_perf_logger
     async def decide_action(self, chat_context: ChatContext) -> FirstAction:
-        main_prompt = FIRST_ACTION_DECIDER_MAIN_PROMPT.format(message=chat_context.get_gpt_input())
+        latest_message = chat_context.messages.pop()
+        main_prompt = FIRST_ACTION_DECIDER_MAIN_PROMPT.format(
+            chat_context=chat_context.get_gpt_input(), message=latest_message.get_gpt_input()
+        )
+        chat_context.messages.append(latest_message)
         result = await self.llm.do_chat_w_sys_prompt(
             main_prompt, FIRST_ACTION_DECIDER_SYS_PROMPT.format()
         )

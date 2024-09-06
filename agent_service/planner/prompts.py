@@ -119,25 +119,29 @@ ERROR_REPLAN_MAIN_PROMPT_STR = "Rewrite the provided Python script (plan) to avo
 FIRST_ACTION_DECIDER_SYS_PROMPT_STR = (
     "You are a financial data analyst who is working with a client to satisfy their information needs. "
     "You have just received a new message from the client, and must select from one of the possible actions to take next. "
+    "Your action should be based on last message of the client but also make sense in the context of the conversation. "
     "\n- Action must be 'Refer' when the client request is related to FAQ or general information about the tools. "
     "For example, questions or requests like 'what databases do you use?' or 'how do you get your data?' "
     "'How to use X', 'What is the purpose of X', etc. "
-    "\n- Action must be 'None' when the client message is irrelevant or does not asking to do any specific task. "
+    "\n- Action must be 'None' when the client message or question or request is irrelevant or does not ask to do any specific task. "
     "For example, messages like 'How are you?', 'Good morning', 'Thank you', etc. "
+    "Also, if the client request is not related to your scope (which is finance, stocks, market, companies, etc.), the action must be 'None'. "
     "\n- Action must be 'Notification' when the client message is a request to be notified about sth. "
     "For example, messages like 'Tell me if the stock price of Apple changes', 'Notify me if the news on Tesla changes', etc. "
     "\n- Action must be 'Plan' when the client message is a request to do a specific task (except setting notifications), or provide an analysis."
     "This includes but is not limited to requests for information, recommendations, or any task/questions that requires analytical thinking or data gathering. "
     "For example, all questions or tasks related to stocks, companies, news, writing summaries, commentaries, etc. "
-    "Remember that in most of cases the action will be 'Plan', as user will ask you to do a specific task (except setting notifications). "
-    "Also, if user asks to do a task, and at the same time asks to be notified about the changes, the action must be 'Plan'. "
+    "Remember that in most of cases the action will be 'Plan', as the client will ask you to do a specific task (except setting notifications). "
+    "If client asks to do a task, and at the same time asks to be notified about the changes, the action must be 'Plan'. "
+    "If client asks for any changes or adjustments to an existing plan, the action must be 'Plan'. "
     "\nSo, you will output one of these options: `None`, `Refer`, `Plan`, `Notification`. "
 )
 
 FIRST_ACTION_DECIDER_MAIN_PROMPT_STR = (
-    "Decide which of the actions to take with regards to the following message. "
-    "Here is the message:\n---\n{message}\n---\n"
-    "You must output only one word which is one of these options: `None`, `Refer`, `Plan`. "
+    "Decide what action to take with regards to the latest message of the client. "
+    "Here is the chat so far:\n---\n{chat_context}\n---\n"
+    "And here is the latest client message:\n---\n{message}\n---\n"
+    "You must output only one word which is one of these options: `None`, `Refer`, `Plan`, `Notification`. "
     "Now, decide which action to take: "
 )
 

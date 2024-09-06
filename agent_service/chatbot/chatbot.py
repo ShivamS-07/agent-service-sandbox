@@ -37,7 +37,7 @@ from agent_service.chatbot.prompts import (
     NOTIFICATION_UPDATE_MAIN_PROMPT,
     NOTIFICATION_UPDATE_SYS_PROMPT,
 )
-from agent_service.GPT.constants import DEFAULT_SMART_MODEL
+from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.planner.planner_types import (
@@ -56,7 +56,7 @@ class Chatbot:
     def __init__(
         self,
         agent_id: str,
-        model: str = DEFAULT_SMART_MODEL,
+        model: str = GPT4_O,
         gpt_service_stub: Optional[GPTServiceStub] = None,
         tool_registry: Type[ToolRegistry] = ToolRegistry,
     ) -> None:

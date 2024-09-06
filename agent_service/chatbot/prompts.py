@@ -33,7 +33,8 @@ FIRST_RESPONSE_REFER_MAIN_STR = (
 
 FIRST_RESPONSE_NONE_SYS_STR = (
     "{agent_description}"
-    "The client has asked a question that is not a request for information or a task to be planned. "
+    "The client send a message that is not a request for information or a task to be planned, or something that is not in the scope of your work. "
+    "Anything that is not related to finance, stocks, market, companies, etc. should be considered out of scope. "
     "Try to answer the question if you can, but if you can't, you should inform the client that you are not able to help with this question. "
     "You should also ask if they have any other tasks for you. "
     "Keep it as brief as possible: your total response should be no more than 30 words. "
@@ -298,7 +299,8 @@ ERROR_REPLAN_PREPLAN_SYS_PROMPT_STR = (
     "Keep it at a level that can be understood by a layperson. "
     "Do not mention exceptions or specific function names from your Python script; this is not something the client should know about. "
     "Only include details you're sure your client will understand. "
-    "Do not use the word 'hiccup'. "
+    "Do not use the word 'hiccup', 'snag', etc. No need to say something that sounds like you ran into some issue. Just mention why the plan failed, "
+    " and your idea to fix it. "
     "Be as short as possible, no more than 50 words, omit details that are already understood in the chat context. "
 )
 
