@@ -202,6 +202,10 @@ def get_stock_identifier_lookup_cache_key(
         " the stock_name  passed to this function should"
         " usually be copied verbatim from the client input, avoid"
         " paraphrasing or copying from a sample plan."
+        " If the original input text contains a 2, 3, or 4 character stock ticker symbol,"
+        " do not attempt to spell correct, modify, or alter it,"
+        " do not replace it with a company name either,"
+        " instead pass it directly as the stock_name and allow this function to interpret it."
         " If the user intent is to find an ETF, you may set prefer_etfs = True"
         " to enable some etf specific matching logic"
     ),
@@ -829,6 +833,14 @@ class MultiStockIdentifierLookupInput(ToolArgs):
         "since you are NOT allowed to access stock ids in the resulting list using indexing, "
         "i.e. stock_ids[0] is NOT allowed, in those circumstances you should make separate calls to "
         "the stock_indentifier_lookup, for each stock, do not use this tool."
+        " You MUST let this function interpret the meaning of the input text,"
+        " the stock_names passed to this function should"
+        " usually be copied verbatim from the client input, avoid"
+        " paraphrasing or copying from a sample plan."
+        " If the original input text contains a 2, 3, or 4 character stock ticker symbol,"
+        " do not attempt to spell correct, modify, or alter it,"
+        " do not replace it with a company name either,"
+        " instead pass them directly as the stock_names and allow this function to interpret each of them."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -1612,6 +1624,9 @@ class GetRiskExposureForStocksInput(ToolArgs):
         "asking for filtering based on market cap, which is a specific statistic."
         "Do not use this tool to try to filter by Growth at a Reasonable Price (GARP) "
         "instead use a combination of growth_filter and value_filter. "
+        "Do not use this tool to determine if any risk factor exposure"
+        " has increased or decreased across time"
+        " it can only tell you the current exposure."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -1717,6 +1732,7 @@ async def get_risk_exposure_for_stocks(
 class GrowthFilterInput(ToolArgs):
     stock_ids: Optional[List[StockID]] = None
     min_value: float = 1
+    max_value: float = 10
 
 
 @tool(
@@ -1732,6 +1748,14 @@ class GrowthFilterInput(ToolArgs):
         " 3 to get 'extremely high growth'."
         " This tool is useful for finding growth stocks."
         " It can be combined with 'value_filter' tool to find GARP/Growth at a Reasonable Price."
+        " This function should only be used to determining the general growthiness of a stock."
+        "\n- When not to use this function:"
+        " This function MUST NOT be used to get 'expected growth' of something"
+        " or 'stocks expected to grow'"
+        " or specific types of growth like 'revenue growth' ."
+        " In those cases use the get_statistic_data_for_companies function instead ."
+        " 'low growth' should be interpreted as min_value = -10, max_value = -1 ."
+        " 'good growth' should be interpreted the same as high growth."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -1761,7 +1785,9 @@ async def growth_filter(args: GrowthFilterInput, context: PlanRunContext) -> Lis
     risk_table = await get_risk_exposure_for_stocks(risk_args, context)
     # mypy thinks this is not a table but a generic ComplexIO Base
     df = risk_table.to_df()  # type: ignore
-    filtered_df = df.loc[df[GROWTH_LABEL] >= args.min_value]
+    filtered_df = df.loc[
+        (df[GROWTH_LABEL] >= args.min_value) & (df[GROWTH_LABEL] <= args.max_value)
+    ]
     stock_list = filtered_df[STOCK_ID_COL_NAME_DEFAULT].squeeze().to_list()
     await tool_log(
         log=f"Filtered {len(stock_ids)} stocks down to {len(stock_list)}", context=context
@@ -1812,6 +1838,7 @@ async def growth_filter(args: GrowthFilterInput, context: PlanRunContext) -> Lis
 class ValueFilterInput(ToolArgs):
     stock_ids: Optional[List[StockID]] = None
     min_value: float = 1
+    max_value: float = 10
 
 
 @tool(
@@ -1827,6 +1854,10 @@ class ValueFilterInput(ToolArgs):
         " 3 to get 'extremely high value'."
         " This tool is useful for finding value stocks."
         " It can be combined with 'growth_filter' tool to find GARP/Growth at a Reasonable Price."
+        " 'overvalued stocks' should be interpreted as min_value = -10, max_value = -1 ."
+        " 'low value' should be interpreted as min_value = -10, max_value = -1 ."
+        " 'undervalued' should be interpreted as min_value = 1, max_value = 10 ."
+        " 'good value' should be interpreted the same as high value."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -1857,7 +1888,7 @@ async def value_filter(args: ValueFilterInput, context: PlanRunContext) -> List[
 
     # mypy thinks this is not a table but a generic ComplexIO Base
     df = risk_table.to_df()  # type: ignore
-    filtered_df = df.loc[df[VALUE_LABEL] >= args.min_value]
+    filtered_df = df.loc[(df[VALUE_LABEL] >= args.min_value) & (df[VALUE_LABEL] <= args.max_value)]
     stock_list = filtered_df[STOCK_ID_COL_NAME_DEFAULT].squeeze().to_list()
 
     await tool_log(
