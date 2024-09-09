@@ -315,6 +315,46 @@ async def get_n_width_date_range_near_date(
     return res
 
 
+class GetStartOfDateRangeInput(ToolArgs):
+    date_range: DateRange
+
+
+@tool(
+    description="""
+    This function returns a date range object representing the start of the  input date_range
+    with start_date and end_date both equal to the start_date of the input date_range.
+    You might need this when client refers to one larger date range needed for the overall request
+    but another part of the plan needs access to the start of that date_range
+    """,
+    category=ToolCategory.DATES,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_start_of_date_range(
+    args: GetStartOfDateRangeInput, context: PlanRunContext
+) -> DateRange:
+    return DateRange(start_date=args.date_range.start_date, end_date=args.date_range.start_date)
+
+
+class GetEndOfDateRangeInput(ToolArgs):
+    date_range: DateRange
+
+
+@tool(
+    description="""
+    This function returns a date range object representing the end of the input date_range
+    with start_date and end_date both equal to the end_date of the input date_range.
+    You might need this when client refers to one larger date range needed for the overall request
+    but another part of the plan needs access to the end of that date_range
+    """,
+    category=ToolCategory.DATES,
+    tool_registry=ToolRegistry,
+    is_visible=False,
+)
+async def get_end_of_date_range(args: GetEndOfDateRangeInput, context: PlanRunContext) -> DateRange:
+    return DateRange(start_date=args.date_range.end_date, end_date=args.date_range.end_date)
+
+
 async def main() -> None:
     # input_text = "Need a summary of all the earnings calls since Dec 3rd that might impact stocks in the TSX composite"  # noqa: E501
     input_text = "Graph Apple's stock price starting from the beginning of last year to 3 months ago"  # noqa: E501

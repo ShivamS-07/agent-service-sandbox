@@ -1387,11 +1387,22 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
     )
     stock_universe_list = stock_universe_table.to_df()[STOCK_ID_COL_NAME_DEFAULT].tolist()
 
+    date_clause = ""
+    if args.date_range:
+        if args.date_range.start_date == args.date_range.end_date:
+            date_clause = f" on {args.date_range.start_date.isoformat()}"
+        else:
+            date_clause = (
+                f" between {args.date_range.start_date.isoformat()}"
+                f" and {args.date_range.end_date.isoformat()}"
+            )
+
     logger.info(
-        f"found {len(stock_universe_list)} holdings in ETF: {etf_stock} from '{args.universe_name}'"
+        f"found {len(stock_universe_list)} holdings{date_clause} in ETF: {etf_stock} from '{args.universe_name}'"
     )
+
     await tool_log(
-        log=f"Found {len(stock_universe_list)} holdings in {etf_stock['symbol']}: {etf_stock['name']}",
+        log=f"Found {len(stock_universe_list)} holdings{date_clause} in {etf_stock['symbol']}: {etf_stock['name']}",
         context=context,
     )
 
@@ -1500,8 +1511,24 @@ async def get_stock_universe_table_from_universe_company_id(
         FROM "data".etf_universe_holdings euh
         JOIN master_security ms ON ms.gbi_security_id = euh.gbi_id
         WHERE spiq_company_id = %(spiq_company_id)s AND ms.is_public
-        And euh.from_z <= %(start_date)s
-        AND euh.to_z >= %(end_date)s
+        AND
+        (
+        -- the start date lands inside of a row's from/to daterange
+        (euh.from_z <= %(start_date)s AND %(start_date)s <= euh.to_z  )
+
+        OR
+
+        -- the row's date range is
+        -- entirly more than the start date
+        -- and entirely less than the end date
+        -- start date <= row_date_range <= end_date
+        (%(start_date)s <= euh.from_z AND euh.to_z <= %(end_date)s)
+
+        OR
+
+        -- the end_date lands inside of a row's daterange
+        (euh.from_z <= %(end_date)s AND %(end_date)s <= euh.to_z  )
+        )
         """
         rows = db.generic_read(
             sql,
