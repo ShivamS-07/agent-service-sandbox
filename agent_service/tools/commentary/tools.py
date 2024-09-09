@@ -291,7 +291,7 @@ class GetCommentaryInputsInput(ToolArgs):
         end_date=date.today(),
     )
     portfolio_id: Optional[str] = None
-    market_trend: Optional[bool] = False
+    macroeconomic: Optional[bool] = False
     theme_num: Optional[int] = 3
 
 
@@ -307,8 +307,8 @@ async def get_commentary_inputs(
     texts: List[Text] = []
     tables: List[Table] = []
 
-    # If market_trend is True, get the top themes and related texts
-    if args.market_trend:
+    # If macroeconomic is True, get the top themes and related texts
+    if args.macroeconomic:
         try:
             # get top themes
             theme_num: int = args.theme_num if args.theme_num else 3
@@ -357,9 +357,14 @@ async def get_commentary_inputs(
         except Exception as e:
             logger.exception(f"Failed to get top themes and related texts: {e}")
 
+    # If no topics are provided, use universe_name as topic
+    if not args.topics and args.universe_name:
+        args.topics = [args.universe_name]
+    # If topics are provided and universe_name is provided, add universe_name to topics
+    if args.topics and args.universe_name:
+        args.topics = args.topics + [args.universe_name]
     # If topics are provided, get the texts for the topics
     if args.topics:
-        args.topics = args.topics + [args.universe_name] if args.universe_name else args.topics
         try:
             topic_texts = await get_texts_for_topics(args.topics, args.date_range, context)
             await tool_log(
@@ -573,6 +578,6 @@ async def get_commentary_inputs(
             logger.exception(f"Failed to get texts for stock ids: {e}")
 
     # raise if inputs are empty
-    if len(texts + tables) == 0:
-        raise EmptyInputError("No commentary inputs (texts, tables) found.")
+    if len(texts) == 0:
+        raise EmptyInputError("No texts/news found for commentary.")
     return texts + tables
