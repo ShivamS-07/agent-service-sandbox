@@ -3,6 +3,8 @@ import logging
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple, cast
 
+from prefect.client.schemas import TaskRun as PrefectTaskRun
+
 from agent_service.endpoints.models import (
     PlanRun,
     PlanRunStatusInfo,
@@ -22,6 +24,10 @@ from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
+from agent_service.utils.prefect import (
+    get_prefect_plan_run_statuses,
+    get_prefect_task_statuses,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,16 +77,31 @@ async def get_agent_hierarchical_worklogs(
         str, Tuple[ExecutionPlan, PlanStatus, datetime.datetime, datetime.datetime]
     ]
     cancelled_ids: Set[str]
+    prefect_plan_run_id_to_status: Dict[str, PrefectTaskRun]
+    prefect_run_task_pair_to_status: Dict[Tuple[str, str], PrefectTaskRun]
 
+    # NOTE: due to the fact that Prefect isn't stable, we started to store statuses in the db since
+    # 2024.9.3. There's no easy way to backfill the statuses, so we will rely on DB first, if no
+    # entries, fallback to Prefect. If no prefect entries, default to NOT_STARTED
     tasks = [
         db.get_agent_worklogs(agent_id, start_date, end_date_exclusive, plan_run_ids),
         db.get_plan_run_statuses(plan_run_ids),
         db.get_task_run_statuses(plan_run_ids),
         db.get_execution_plans(plan_ids),
         db.get_cancelled_ids(ids_to_check=plan_run_ids + plan_ids),
+        get_prefect_plan_run_statuses(plan_run_ids),
+        get_prefect_task_statuses(plan_run_ids),
     ]
-    results = await gather_with_concurrency(tasks)
-    rows, plan_run_id_to_status, run_task_pair_to_status, plan_id_to_plan, cancelled_ids = results
+    results = await gather_with_concurrency(tasks, n=len(tasks))
+    (
+        rows,
+        plan_run_id_to_status,
+        run_task_pair_to_status,
+        plan_id_to_plan,
+        cancelled_ids,
+        prefect_plan_run_id_to_status,
+        prefect_run_task_pair_to_status,
+    ) = results
     cancelled_ids = set(cancelled_ids)
 
     logger.info(f"Creating lookup dictionaries for agent {agent_id}...")
@@ -99,7 +120,7 @@ async def get_agent_hierarchical_worklogs(
             RunMetadata.model_validate(row["run_metadata"]) if row["run_metadata"] else None
         )
 
-        if row["is_task_output"]:  # there should only be 1 task output per task
+        if row["is_task_output"]:
             plan_run_id_task_id_to_task_output[(row["plan_run_id"], row["task_id"])] = row
         else:
             plan_run_id_task_id_to_logs[(row["plan_run_id"], row["task_id"])].append(
@@ -142,17 +163,9 @@ async def get_agent_hierarchical_worklogs(
             )
             continue
 
-        # determine the status of the plan run
-        plan_run_info = plan_run_id_to_status.get(plan_run_id)
-        if plan_run_info is None:
-            logger.warning(f"Plan run for {plan_run_id=} not found")
-            plan_run_status = Status.NOT_STARTED
-            plan_run_start = None
-            plan_run_end = None
-        else:
-            plan_run_status = plan_run_info.status or Status.COMPLETE
-            plan_run_start = plan_run_info.start_time
-            plan_run_end = plan_run_info.end_time
+        plan_run_status, plan_run_start, plan_run_end = get_plan_run_info(
+            plan_run_id, plan_run_id_to_status, prefect_plan_run_id_to_status
+        )
 
         if plan_run_id in cancelled_ids or plan_id in cancelled_ids:
             # if the id is in the cancelled_ids, override the status
@@ -165,6 +178,8 @@ async def get_agent_hierarchical_worklogs(
             plan_run_id_task_id_to_logs,
             plan_run_id_task_id_to_task_output,
             run_task_pair_to_status,
+            prefect_run_task_pair_to_status,
+            plan_run_status,
         )
         plan_run_status = reset_plan_run_status_if_needed(plan_run_status, full_tasks)
 
@@ -191,46 +206,126 @@ async def get_agent_hierarchical_worklogs(
     return run_history
 
 
+def get_plan_run_info(
+    plan_run_id: str,
+    plan_run_id_to_status: Dict[str, PlanRunStatusInfo],
+    prefect_plan_run_id_to_status: Dict[str, PrefectTaskRun],
+) -> Tuple[Status, Optional[datetime.datetime], Optional[datetime.datetime]]:
+    """
+    Get plan run's status, start time and end time
+    - We first check if the status is stored in DB, if so, use that
+    - We next check if the status is stored in Prefect, if so, use that
+    - If neither, default to NOT_STARTED
+    """
+
+    plan_run_start: Optional[datetime.datetime]
+    plan_run_end: Optional[datetime.datetime]
+
+    if plan_run_id in plan_run_id_to_status:
+        plan_run_info = plan_run_id_to_status[plan_run_id]
+        plan_run_status = plan_run_info.status or Status.COMPLETE
+        plan_run_start = plan_run_info.start_time
+        plan_run_end = plan_run_info.end_time
+    elif plan_run_id in prefect_plan_run_id_to_status:
+        prefect_flow_run = prefect_plan_run_id_to_status[plan_run_id]
+        plan_run_status = Status.from_prefect_state(prefect_flow_run.state_type)
+        plan_run_start = cast(Optional[datetime.datetime], prefect_flow_run.start_time)
+        plan_run_end = cast(Optional[datetime.datetime], prefect_flow_run.end_time)
+    else:
+        logger.warning(f"Plan run for {plan_run_id=} not found")
+        plan_run_status = Status.NOT_STARTED
+        plan_run_start = None
+        plan_run_end = None
+
+    return plan_run_status, plan_run_start, plan_run_end
+
+
+def get_plan_run_task_info(
+    run_task_pair: Tuple[str, str],
+    run_task_pair_to_status: Dict[Tuple[str, str], TaskRunStatusInfo],
+    prefect_run_task_pair_to_status: Dict[Tuple[str, str], PrefectTaskRun],
+    has_logs: bool,
+    has_task_output: bool,
+    plan_run_status: Status,
+) -> Tuple[Status, Optional[datetime.datetime], Optional[datetime.datetime]]:
+    """
+    Get plan run task's status, start time and end time
+    - We first check if the status is stored in DB, if so, use that
+    - We next check if the status is stored in Prefect, if so, use that
+    - If neither
+        - If logs or task output is found, set status to COMPLETE
+        - If plan is cancelled, set status to CANCELLED
+        - Otherwise, set status to COMPLETE (or NOT_STARTED, but just in case)
+    """
+
+    task_start: Optional[datetime.datetime]
+    task_end: Optional[datetime.datetime]
+
+    if run_task_pair in run_task_pair_to_status:
+        task_run_info = run_task_pair_to_status[run_task_pair]
+        task_status = task_run_info.status or Status.COMPLETE
+        task_start = task_run_info.start_time
+        task_end = task_run_info.end_time
+    elif run_task_pair in prefect_run_task_pair_to_status:
+        prefect_task_run = prefect_run_task_pair_to_status[run_task_pair]
+        task_status = Status.from_prefect_state(prefect_task_run.state_type)
+        task_start = cast(Optional[datetime.datetime], prefect_task_run.start_time)
+        task_end = cast(Optional[datetime.datetime], prefect_task_run.end_time)
+    else:
+        task_start = None
+        task_end = None
+
+        if has_logs or has_task_output:
+            logger.warning(
+                f"Task info for (plan_run_id, task_id)={run_task_pair} not found. "
+                "But we found logs or task output, so Set task status to COMPLETE"
+            )
+            task_status = Status.COMPLETE
+        elif plan_run_status in (Status.CANCELLED, Status.ERROR):
+            logger.warning(
+                f"Task info for (plan_run_id, task_id)={run_task_pair} not found. "
+                f"Set task status as {plan_run_status=}"
+            )
+            task_status = plan_run_status
+        else:
+            logger.warning(
+                f"Task info for (plan_run_id, task_id)={run_task_pair} not found"
+                "Set task status to COMPLETE"
+            )
+            task_status = Status.COMPLETE
+
+    return task_status, task_start, task_end
+
+
 def get_plan_run_task_list(
     plan_run_id: str,
     plan_nodes: List[ToolExecutionNode],
     plan_run_id_task_id_to_logs: Dict[Tuple[str, str], List[PlanRunTaskLog]],
     plan_run_id_task_id_to_task_output: Dict[Tuple[str, str], Dict[str, Any]],
     run_task_pair_to_status: Dict[Tuple[str, str], TaskRunStatusInfo],
+    prefect_run_task_pair_to_status: Dict[Tuple[str, str], PrefectTaskRun],
+    plan_run_status: Status,
 ) -> List[PlanRunTask]:
     # we want each run to have the full list of tasks with different statuses
-    incomplete_tasks_dict: Dict[str, PlanRunTask] = {}
-    complete_tasks_dict: Dict[str, PlanRunTask] = {}
+    full_tasks: List[PlanRunTask] = []
     for node in plan_nodes:
         task_id = node.tool_task_id
         task_key = (plan_run_id, task_id)
-        task_run_info = run_task_pair_to_status.get((plan_run_id, task_id), None)
-        if task_run_info is None:
-            logger.warning(f"Task info for {task_id=} not found")
-            task_status = Status.COMPLETE
-            task_start = None
-            task_end = None
-        else:
-            task_status = task_run_info.status or Status.COMPLETE
-            task_start = task_run_info.start_time
-            task_end = task_run_info.end_time
 
-        if task_status != Status.COMPLETE:
-            incomplete_tasks_dict[task_id] = PlanRunTask(
-                task_id=task_id,
-                task_name=node.description,
-                status=task_status,
-                start_time=task_start,
-                end_time=task_end,
-                logs=[],
-                has_output=node.store_output,
-            )
-            continue
+        logs = plan_run_id_task_id_to_logs.get(task_key, [])
+        logs.sort(key=lambda x: x.created_at)
 
-        if task_key in plan_run_id_task_id_to_logs:  # this is a task that has logs
-            logs = plan_run_id_task_id_to_logs[task_key]
-            logs.sort(key=lambda x: x.created_at)
-            task = PlanRunTask(
+        task_status, task_start, task_end = get_plan_run_task_info(
+            run_task_pair=task_key,
+            run_task_pair_to_status=run_task_pair_to_status,
+            prefect_run_task_pair_to_status=prefect_run_task_pair_to_status,
+            has_logs=bool(logs),
+            has_task_output=task_key in plan_run_id_task_id_to_task_output,
+            plan_run_status=plan_run_status,
+        )
+
+        full_tasks.append(
+            PlanRunTask(
                 task_id=task_id,
                 task_name=node.description,
                 status=task_status,
@@ -239,21 +334,9 @@ def get_plan_run_task_list(
                 logs=logs,
                 has_output=node.store_output,
             )
-        else:  # this is a task that has no logs, just task output
-            task = PlanRunTask(
-                task_id=task_id,
-                task_name=node.description,
-                status=task_status,
-                start_time=task_start,
-                end_time=task_end,
-                logs=[],
-                has_output=node.store_output,
-            )
-        complete_tasks_dict[task_id] = task
-    full_tasks_dict = {**complete_tasks_dict, **incomplete_tasks_dict}
-    full_tasks: List[PlanRunTask] = []
-    for node in plan_nodes:
-        full_tasks.append(full_tasks_dict[node.tool_task_id])
+        )
+
+    full_tasks = reset_run_task_statuses_if_needed(full_tasks)
     return full_tasks
 
 
@@ -270,6 +353,27 @@ def create_default_tasks_from_plan(plan: ExecutionPlan) -> List[PlanRunTask]:
         )
         for node in plan.nodes
     ]
+
+
+def reset_run_task_statuses_if_needed(full_tasks: List[PlanRunTask]) -> List[PlanRunTask]:
+    """
+    If there's a non-COMPLETE task, all the following tasks should be reset to NOT_STARTED
+    """
+    non_complete_statuses = {Status.RUNNING, Status.ERROR, Status.CANCELLED, Status.NOT_STARTED}
+    for idx, task in enumerate(full_tasks):
+        if task.status in non_complete_statuses:
+            logger.info(
+                f"Found non-COMPLETE task {task.task_id}, "
+                "resetting the following tasks to NOT_STARTED"
+            )
+
+            idx += 1
+            while idx < len(full_tasks):
+                full_tasks[idx].status = Status.NOT_STARTED
+                idx += 1
+            break
+
+    return full_tasks
 
 
 def reset_plan_run_status_if_needed(
