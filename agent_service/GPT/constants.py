@@ -3,7 +3,7 @@ from agent_service.utils.prompt_utils import Prompt
 GPT35_TURBO = "gpt-3.5-turbo-0125"
 GPT4_TURBO = "gpt-4-turbo-preview"
 GPT4 = "gpt-4"
-GPT4_O = "gpt-4o"
+GPT4_O = "gpt-4o-2024-08-06"
 GPT4_O_MINI = "gpt-4o-mini"
 HAIKU = "claude-3-haiku-20240307"
 SONNET = "claude-3-5-sonnet-20240620"
