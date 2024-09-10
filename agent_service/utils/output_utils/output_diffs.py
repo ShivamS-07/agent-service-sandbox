@@ -356,7 +356,6 @@ class OutputDiffer:
 
             result = await self.llm.do_chat_w_sys_prompt(
                 main_prompt=DECIDE_NOTIFICATION_MAIN_PROMPT.format(
-                    output_schema=OutputDiff.model_json_schema(),
                     latest_output=latest_output_str,
                     prev_output=prev_output_str,
                     notification_instructions=notification_instructions_str,
