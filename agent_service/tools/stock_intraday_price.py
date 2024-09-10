@@ -19,13 +19,15 @@ class GetStockIntradayPriceInput(ToolArgs):
 
 @tool(
     description=(
-        "Given a list of stock ID's, return a Table of one price for each stock"
+        "Given a list of stock ID's, return a Table of stock prices"
         " the price will be the most up to date current price available"
         " also known as the intra-day price, real-time price, current price."
         " Only use this tool when the client asks to see current price, today's price,"
         " intra day, and realtime prices.\n"
         "Historical prices, prices on a certain date, close prices should use"
-        " get_statistic_data_for_companies function instead"
+        " get_statistic_data_for_companies function instead. "
+        "You must only show this data to the user, you must never use it in a table transform."
+        " This tool does NOT provide market cap, use get_statistic_data_for_companies for that."
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

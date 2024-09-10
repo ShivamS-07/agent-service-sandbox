@@ -491,8 +491,11 @@ occurred within the specified date range. You MUST always use the tool `get_date
 create a DateRange object for the date range from the context of the client's messages before using \
 this tool. For the upcoming earnings calls, the date range should be from today to today + 90 days. \
 For the most recent quarter's earnings calls, the date range should be from today - 90 days to today. \
-If there is no clear indication of the date range from the client's messages, you should default to \
-the upcoming earnings calls so the date range should be from today to today + 90 days.""",
+If the user asks to be notified when an earnings call happens, the date range should be today. You
+must always include a date range. If there is no clear indication of the date range from the client's
+messages, you should default to the upcoming earnings calls so the date range should be from today to
+today + 90 days.
+""",
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,
 )

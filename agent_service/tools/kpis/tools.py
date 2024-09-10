@@ -615,8 +615,8 @@ async def get_general_kpis_for_specific_stock(
     general_kpi_list: List[KPIText] = []
 
     for line in result.split("\n"):
-        index_num = int(line.split(",")[0])
         try:
+            index_num = int(line.split(",")[0])
             pid = company_info.kpi_index_to_pid_mapping[index_num]
             # Check to make sure we have an actual pid that can map to data
             pid_metadata = company_info.kpi_lookup.get(pid, None)
@@ -624,7 +624,7 @@ async def get_general_kpis_for_specific_stock(
                 general_kpi_list.append(
                     KPIText(val=pid_metadata.name, pid=pid_metadata.pid, stock_id=args.stock_id)
                 )
-        except KeyError:
+        except (KeyError, ValueError):
             logger.warning(
                 f"Failed to get pid due to faulty GPT response for gpt response: '{result}', "
                 f"had {len((company_info.kpi_index_to_pid_mapping.keys())) + 1}"
