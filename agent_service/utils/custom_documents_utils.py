@@ -2,7 +2,6 @@ import logging
 from typing import List, Optional, Self
 
 from grpclib import GRPCError
-from grpclib.const import Status as GrpcStatusCode
 from stock_universe_service_proto_v1.custom_data_service_pb2 import (
     GetFileContentsResponse,
     GetFileInfoResponse,
@@ -65,13 +64,6 @@ async def get_custom_doc_listings(
         resp: ListDocumentsResponse = await list_custom_docs(
             user_id=user_id, base_path=base_path, recursive=recursive
         )
-        if resp.status.code != GrpcStatusCode.OK:
-            raise CustomDocumentException(
-                resp.status.message,
-                errors=(
-                    [str(detail) for detail in resp.status.details] if resp.status.details else None
-                ),
-            )
 
         return ListCustomDocumentsResponse(
             documents=[
@@ -100,13 +92,6 @@ async def get_custom_doc_file(
         resp: GetFileContentsResponse = await get_custom_doc_file_contents_grpc(
             user_id=user_id, file_id=file_id, return_previewable_file=return_previewable_file
         )
-        if resp.status.code != GrpcStatusCode.OK:
-            raise CustomDocumentException(
-                resp.status.message,
-                errors=(
-                    [str(detail) for detail in resp.status.details] if resp.status.details else None
-                ),
-            )
 
         return GetCustomDocumentFileResponse(
             is_preview=False,
