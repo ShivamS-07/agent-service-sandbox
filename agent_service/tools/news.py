@@ -277,7 +277,7 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
         "list of news articles related to at least one of the given topics. (OR logic)"
         "If you need something which is about multiple topics at the same time (AND logic) "
         "Include it as a single topic joined by `and`"
-        "If someone wants general information about a topic "
+        "If someone wants general information about a topic that is NOT a company/stock"
         "this is the best tool to call. "
         "If you do not set max_num_articles_per_topic, all are returned. "
         "This function must NEVER be used if you intend to filter stocks, the news articles do not "
@@ -286,6 +286,10 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
         "Never use this function to collect news for writing a commentary, instead use the "
         "get_commentary_inputs. "
         "Never use this tool together with write_commentary tool or get_commentary_inputs. "
+        "Never use this tool with a stock/company/ticker in the topic, you MUST always use"
+        "get_all_news_developments_about_companies to get news if the topic is a stock."
+        "Again, if the client is interested in news about a particular stock, you must never, "
+        "ever use this tool, you must get the news for that company."
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,

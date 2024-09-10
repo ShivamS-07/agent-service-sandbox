@@ -178,6 +178,13 @@ class GetDateRangeInput(ToolArgs):
     needed and there is no need to build a date range, please check carefully for each tool before
     calling this function. You must never, ever run this function with a date_range_str that does
     not appear explicitly in the client's request (the chat context)!!!!!
+    This tool has no access to upcoming earnings information, and so you must absolutely never
+    call it with a date_range_str such as "upcoming earnings call".
+    If the user talks about an "upcoming earnings call" you must ignore that mention, do
+    not call this tool!!! In that case, you should simply use default date range for the relevant tools.
+    You must never pass 'upcoming earnings call' or something similar to this tool as the date_range_str,
+    especially if you are using the date range to retrieve text (there are no upcoming texts!!!!!)
+    Seriously, listen to me about this earnings call thing or you will be fired!
     """,
     category=ToolCategory.DATES,
     tool_registry=ToolRegistry,
