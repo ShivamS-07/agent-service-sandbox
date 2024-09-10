@@ -1,7 +1,10 @@
 import pprint
+import time
+import traceback
 from typing import DefaultDict, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
+from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
 from prefect import flow
 
 from agent_service.chatbot.chatbot import Chatbot
@@ -34,6 +37,7 @@ from agent_service.planner.planner_types import (
     RunMetadata,
     ToolExecutionNode,
 )
+from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.agent_event_utils import (
@@ -51,6 +55,7 @@ from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.check_cancelled import AgentCancelledError
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.do_not_error_exception import DoNotErrorException
+from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.gpt_logging import (
     GptJobIdType,
@@ -104,6 +109,37 @@ async def check_draft(db: Union[Postgres, AsyncDB], agent_id: Optional[str] = No
         return db.is_agent_draft(agent_id=agent_id)
     else:
         return await db.is_agent_draft(agent_id=agent_id)
+
+
+async def send_notification_slack_message(
+    pg: AsyncDB, agent_id: str, message: str, user_id: str, chat: Optional[ChatContext]
+) -> None:
+    try:
+        env = get_environment_tag()
+        channel = f"agent-notifications-{'prod' if env == PROD_TAG else 'dev'}"
+        base_url = f"https://{'alfa' if env == PROD_TAG else 'agent-dev'}.boosted.ai"
+        user_email, user_info_slack_string = await get_user_info_slack_string(pg, user_id)
+        if env != PROD_TAG or (
+            not user_email.endswith("@boosted.ai")
+            and not user_email.endswith("@gradientboostedinvestments.com")
+        ):
+            message_text = (
+                f"initial_prompt: {chat.messages[0].message if chat and chat.messages else ''}\n"
+                f"difference: {message}\n"
+                f"link: {base_url}/chat/{agent_id}\n"
+                f"{user_info_slack_string}"
+            )
+
+            SlackSender(channel).send_message_at(message_text, int(time.time()) + 60)
+
+    except Exception:
+        log_event(
+            "notifications-slack-message-error",
+            event_data={
+                "agent_id": agent_id,
+                "error_msg": f"Unable to send slack message for agent_id={agent_id}, error: {traceback.format_exc()}",
+            },
+        )
 
 
 @flow(name=RUN_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{context.plan_run_id}")
@@ -493,6 +529,13 @@ async def run_execution_plan(
                     visible_to_llm=False,
                 ),
                 db=db,
+            )
+            await send_notification_slack_message(
+                pg=async_db,
+                agent_id=context.agent_id,
+                message=short_diff_summary,
+                user_id=context.user_id,
+                chat=context.chat,
             )
 
             # Don't send email if agent is draft

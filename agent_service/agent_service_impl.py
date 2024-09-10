@@ -95,7 +95,7 @@ from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.action_decide import FirstActionDecider
 from agent_service.planner.constants import FirstAction
 from agent_service.planner.planner_types import Variable
-from agent_service.slack.slack_sender import SlackSender
+from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.tool import ToolCategory, ToolRegistry
 from agent_service.types import ChatContext, MemoryType, Message
 from agent_service.uploads import UploadHandler
@@ -455,33 +455,22 @@ class AgentServiceImpl:
     @async_perf_logger
     async def _slack_chat_msg(self, req: ChatWithAgentRequest, user: User) -> None:
         try:
-            user_info = (
-                await get_users(  # TODO: maybe we should cache it in memory?
-                    user_id=user.user_id, user_ids=[user.user_id], include_user_enabled=False
-                )
-            )[0]
-            user_email = user_info.email
+            user_email, user_info_slack_string = await get_user_info_slack_string(
+                self.pg, user.user_id
+            )
             if (
-                not user_email.endswith("@boosted.ai")
-                and not user_email.endswith("@gradientboostedinvestments.com")
-                and user.real_user_id == user.user_id
+                # not user_email.endswith("@boosted.ai")
+                # and not user_email.endswith("@gradientboostedinvestments.com")
+                user.user_id
+                == user.real_user_id
             ):
-                org_id = user_info.organization_membership.organization_id.id
-                org_name = await self.pg.get_org_name(org_id=org_id)
-
-                user_info_slack_string = ""
-                user_info_slack_string += f"\ncognito_username: {user_info.cognito_username}"
-                user_info_slack_string += f"\nname: {user_info.name}"
-                user_info_slack_string += f"\nuser_id: {user.user_id}"
-                user_info_slack_string += f"\norganization_name: {org_name}"
-                user_info_slack_string += f"\norganization_id: {org_id}"
                 if user.fullstory_link:
                     user_info_slack_string += f"\nfullstory_link: {user.fullstory_link}"
-                six_hours_from_now = int(time.time() + (60 * 60 * 2))
+                six_hours_from_now = int(time.time() + (10))
                 self.slack_sender.send_message_at(
                     message_text=f"{req.prompt}\n"
                     f"Link: {self.base_url}/chat/{req.agent_id}\n"
-                    f"canned_prompt_id: {req.canned_prompt_id}"
+                    f"canned_prompt_id: {req.canned_prompt_id}\n"
                     f"{user_info_slack_string}",
                     send_at=six_hours_from_now,
                 )
