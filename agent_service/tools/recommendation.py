@@ -46,7 +46,7 @@ from agent_service.tools.news import (
 )
 from agent_service.tools.other_text import (
     GetAllTextDataForStocksInput,
-    get_all_text_data_for_stocks,
+    get_default_text_data_for_stocks,
 )
 from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
 from agent_service.tools.tool_log import tool_log
@@ -313,7 +313,7 @@ async def add_scores_and_rationales_to_stocks(
         )
 
     else:
-        texts: List[StockText] = await get_all_text_data_for_stocks(  # type: ignore
+        texts: List[StockText] = await get_default_text_data_for_stocks(  # type: ignore
             GetAllTextDataForStocksInput(stock_ids=ranked_stocks), context
         )
     aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(ranked_stocks, texts)

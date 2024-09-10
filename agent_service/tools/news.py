@@ -165,6 +165,9 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         "Never use this function to collect news for writing a commentary, instead use the "
         "get_commentary_inputs. "
         "Never use this tool together with write_commentary tool or get_commentary_inputs. "
+        "Never, ever use get_default_text_data_for_stock as a substitute for this tool if the "
+        "client says they want to look 'news' data for companies, you must use this tool "
+        "even if multiple data sources are mentioned"
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,

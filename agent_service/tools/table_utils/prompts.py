@@ -213,7 +213,9 @@ you must insert the same string label for every row. Again, do not reject this
 case simply because it talks about criteria on the stock that you have data for,
 and do not just ignore the dates, do the required aggregation across all stocks
 for each date. For example, your output table might include an average performance
-metric on date 1, an average for date #2, etc.
+metric on date 1, an average for date #2, etc. You will accomplish this by grouping
+by Date. Again, you will always do aggregation across dates and output a time series
+If you have a date column and are not explicitly told otherwise!
 
 Note that you may be sometimes asked to rank by correlation. If you are
 doing correlation of stock statistics, you will often end up with a correlation

@@ -27,7 +27,7 @@ from agent_service.tools.category_hypothesis import (
 )
 from agent_service.tools.other_text import (
     GetAllTextDataForStocksInput,
-    get_all_text_data_for_stocks,
+    get_default_text_data_for_stocks,
 )
 from agent_service.tools.output import OutputArgs, prepare_output
 from agent_service.types import PlanRunContext
@@ -247,7 +247,7 @@ async def create_fake_past_run(
     ####################################
     # Prepare inputs that need to rerun
     ####################################
-    all_texts: List[StockText] = await get_all_text_data_for_stocks(  # type: ignore
+    all_texts: List[StockText] = await get_default_text_data_for_stocks(  # type: ignore
         GetAllTextDataForStocksInput(
             stock_ids=stocks,
             date_range=DateRange(start_date=start_date.date(), end_date=end_date.date()),

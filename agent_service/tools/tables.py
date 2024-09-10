@@ -485,19 +485,32 @@ def _join_two_tables(first: Table, second: Table) -> Table:
                 stock_hash_to_merged_stock_obj_map[val].union_history_with(val)  # type: ignore
 
     # Go case by case:
-    #   1. Join on stocks AND dates
+    #   1. Join on stocks AND dates, do merge so weights can be spread across dates or stocks if needed
     #   2. Join on just stocks
     #   3. Join on just dates
-    output_df = pd.concat((first_data, second_data))
-    if first_stock_col and second_stock_col and first_date_col and second_date_col:
-        key_cols = [first_date_col.metadata, first_stock_col.metadata]
-    elif first_stock_col and second_stock_col:
-        key_cols = [first_stock_col.metadata]
-    elif first_date_col and second_date_col:
-        key_cols = [first_date_col.metadata]
-    else:
+    key_cols = []
+    shared_cols = []
+    if first_date_col and second_date_col:
+        shared_cols.append(first_date_col.metadata)
+    elif first_date_col:
+        key_cols.append(first_date_col.metadata)
+    elif second_date_col:
+        key_cols.append(second_date_col.metadata)
+
+    if first_stock_col and second_stock_col:
+        shared_cols.append(first_stock_col.metadata)
+    elif first_stock_col:
+        key_cols.append(first_stock_col.metadata)
+    elif second_stock_col:
+        key_cols.append(second_stock_col.metadata)
+
+    if not shared_cols:
         # Can't join on anything! Just concat
         return Table(columns=first.columns + second.columns)
+
+    key_cols += shared_cols
+
+    output_df = pd.merge(left=first_data, right=second_data, on=[col.label for col in shared_cols])
 
     # Collapse rows with the same keys
     output_df = output_df.groupby(by=[col.label for col in key_cols]).first().reset_index()  # type: ignore
@@ -566,7 +579,12 @@ display everything combined in a single table. Ideally, the table should be
 derived in some way from the stock list. For example, you could get a list of
 recommended stocks, get their close prices in a table, and then merge the
 recommended stock list with the table to display both the recommendation reason
-and the statistical data.
+and the statistical data. However, it does NOT make sense to join a table to a list
+if the table was created by `get_statistic_data_for_companies` using the list, just
+use the table, joining the list is entirely redundant in that situation. Joining a
+table to a list is only useful when the list has extra information that the table
+does not, i.e. because a tool like get_stock_recommendations or per_stock_summarize_text
+has been used.
 """,
     category=ToolCategory.TABLE,
 )

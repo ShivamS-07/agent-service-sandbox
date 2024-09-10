@@ -251,6 +251,9 @@ class SecFilingsTypeLookupInput(ToolArgs):
     " SEC filings."
     " This tool should only be called if the user is looking for something specific within SEC filings"
     " and does not exactly tell us which SEC filings to retrieve."
+    " Never, ever use `get_default_text_data_for_stocks` as a substitute for this tool if the "
+    " client says they want to look SEC filings or 10-K/Q data for companies, you must always use this"
+    " tool even if multiple data sources are mentioned"
     " As an example, if a user asked `Describe the corporate structure for Apple`,"
     " you would include `Corporate Structure` in the search_term."
     " If the user specifically requests certain SEC filings to be included in the query, this"
@@ -334,7 +337,7 @@ class GetSecFilingsWithTypeInput(ToolArgs):
     " This tool should not be called if we only want to retrieve general information from SEC filings,"
     " instead the `get_10k_10q_sec_filings` tool should be used."
     " If a client asks for specific filings other than 10-k/q, you MUST use this tool, the SEC filings "
-    " that this tool accesses are NOT included in the output of the get_all_text_data_for_stocks!"
+    " that this tool accesses are NOT included in the output of `get_default_text_data_for_stocks`!"
     " Any documents published between start_date and end_date will be included, if the end_date is"
     " excluded it is assumed to include documents up to today, if start_date is not"
     " included, the start date is a quarter ago, which includes only the latest SEC filing.",

@@ -38,23 +38,31 @@ class GetAllTextDataForStocksInput(ToolArgs):
 @tool(
     description=(
         "This function takes a lists of stocks and returns a list of text objects with consists of"
-        "the most important text information that is available for these stocks. This data includes:\n"
-        "1. Company descriptions\n2. News developments\n3. Earnings Call Summaries\n4. 10-K/qQSEC Filings\n"
-        "This function should be your default tool for getting data when the best source is not clear. "
-        "However, you should never use this tool if the client specifically asks for one of the above "
-        "kinds of text, use the corresponding tool for that kind of text. You must absolutely never use "
-        "this tool when the clients asks for specific kinds of SEC filings that are not 10-K/Q (e.g. 8-K), "
-        "this tool will never return anything but 10-K/Q SEC filings. When the user asks for specific filings, "
-        "use the get_sec_filings_with_type tool. "
+        "the most important text information that is available for these stocks. "
+        "This is a substitute for calling specific text retrieval tools, you must, ever never call both this "
+        "AND get_news/earnings/sec filings tools."
+        "Instead, this function should be your default tool for getting data when the user just asks to look "
+        "at text data generally for a company or companies but does not make any mention any specific type "
+        "(i.e. there is no mention of news, earnings, or SEC filings) and the best type is not otherwise obvious. "
         "If a client asks for something related to qualitative information that could be contained in any of "
-        "these sources, you must this function to get the data, though if they specifically mention a subset "
-        "of these sources or it is clear which individual source would have the information required, "
-        "you must gather data using the individual function. For example, if a client asked "
+        "of various sources, you must this function to get the data. For example, if a client asked "
         "`Summarize the challenges McDonald's is facing in Asian markets`, relevant information"
-        " might be spread across multiple sources and you can use this function, but if the client "
-        "mentions they are specific interested in information from SEC filings, you should pull only that data."
+        "might be spread across multiple sources and you can use this tool. However, if they say "
+        "`Summarize the challenges McDonald's is facing in Asian markets based on their SEC filings`"
+        "i.e. they specifically mentioned an text type, you must NOT use this tool, and instead gather"
+        "data using the individual tool associated with that data source, i.e. get_10k_10q_sec_filings. "
+        "Again, you should never use this tool if the client specifically asks for particular "
+        "kinds of text, use the corresponding tool for that kind of text and then add the text lists "
+        "using `add_lists`."
+        "Specifically, NEVER use this tool if the user explicily mentions news!"
+        "NEVER use this tool if the user mentions SEC filings! "
+        "NEVER use this tool if the user mentions earnings calls! "
+        "And you must absolutely never use this tool when the clients asks for specific kinds "
+        "of SEC filings that are not 10-K/Q (e.g. 8-K), this tool will never return such filings "
+        "When the user asks for specific filings, use the get_sec_filings_with_type tool. "
+        "The fact that a client mentions multiple text sources must NOT be used an excuse to call this "
+        "tool, any mention of any of the specific sources must mean you do NOT use this tool."
         "Seriously, you will be fired if you use this tool when the user asks for specific kinds of documents, "
-        "even if they ask for numerous different kinds that seems to fit the definition of 'all'. DO NOT DO IT."
         "If end_date is omitted, data up to the current day will be included, if the start date is "
         "omitted, all data for the last quarter will be included."
     ),
@@ -63,7 +71,7 @@ class GetAllTextDataForStocksInput(ToolArgs):
     is_visible=False,
     store_output=False,
 )
-async def get_all_text_data_for_stocks(
+async def get_default_text_data_for_stocks(
     args: GetAllTextDataForStocksInput, context: PlanRunContext
 ) -> List[StockText]:
     stock_ids = args.stock_ids
@@ -135,3 +143,16 @@ async def get_all_text_data_for_stocks(
     if len(all_data) == 0:
         raise Exception("Found no data for the provided stocks")
     return all_data
+
+
+@tool(
+    description="",
+    category=ToolCategory.TEXT,
+    tool_registry=ToolRegistry,
+    enabled=False,
+    store_output=False,
+)
+async def get_all_text_data_for_stocks(
+    args: GetAllTextDataForStocksInput, context: PlanRunContext
+) -> List[StockText]:
+    return await get_default_text_data_for_stocks(args, context)  # type: ignore

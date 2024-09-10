@@ -421,6 +421,9 @@ that were published within the provided date range. \
 If the client simply mentions `earnings calls`, you will get data using this tool unless \
 the term `transcript` is specifically used, at which point you would use the transcript tool. \
 Again, this tool is the default tool for getting earnings call information!
+Never, ever use get_default_text_data_for_stock as a substitute for this tool if the client says they want
+to look 'earnings' data, you must use either this tool, or the transcript tool if the word transcript
+is also used.
 You should first use the tool `get_date_range` to create a DateRange object if there is a specific \
 date range mentioned in the client's messages. If no date range is provided or can be inferred from \
 the client's messages, you should set `date_range` to None, and it defaults to the last quarter under \

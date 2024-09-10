@@ -1498,7 +1498,7 @@ if __name__ == "__main__":
 
         from agent_service.tools.other_text import (
             GetAllTextDataForStocksInput,
-            get_all_text_data_for_stocks,
+            get_default_text_data_for_stocks,
         )
         from agent_service.tools.product_filter import (
             FilterStocksByProductOrServiceInput,
@@ -1530,7 +1530,7 @@ if __name__ == "__main__":
             context,
         )
 
-        all_texts: List[StockText] = await get_all_text_data_for_stocks(  # type: ignore
+        all_texts: List[StockText] = await get_default_text_data_for_stocks(  # type: ignore
             GetAllTextDataForStocksInput(
                 stock_ids=filtered_stocks, start_date=datetime.date(2024, 6, 1)  # type: ignore # noqa
             ),

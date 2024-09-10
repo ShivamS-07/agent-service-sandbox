@@ -34,10 +34,10 @@ class TestTableTools(unittest.IsolatedAsyncioTestCase):
                 TableColumnMetadata(label="Open Price", col_type=TableColumnType.FLOAT, unit=None),
             ],
         )
-        self.assertEqual(result.get_num_rows(), 27)
+        self.assertEqual(result.get_num_rows(), 3)
         self.assertEqual(len(result.columns), 4)
         df = result.to_df()
-        self.assertEqual(set((sec.gbi_id for sec in df["Security"])), {112, 124, 149, 72, 76, 78})
+        self.assertEqual(set((sec.gbi_id for sec in df["Security"])), {112})
 
     async def test_join_string_date_tables(self):
         args = JoinTableArgs(input_tables=[TEST_STRING_DATE_TABLE1, TEST_STRING_DATE_TABLE2])
@@ -52,7 +52,7 @@ class TestTableTools(unittest.IsolatedAsyncioTestCase):
                 TableColumnMetadata(label="Open Price", col_type=TableColumnType.FLOAT, unit=None),
             ],
         )
-        self.assertEqual(result.get_num_rows(), 27)
+        self.assertEqual(result.get_num_rows(), 3)
         self.assertEqual(len(result.columns), 4)
 
     async def test_join_tables_vertically(self):
@@ -83,7 +83,7 @@ class TestTableTools(unittest.IsolatedAsyncioTestCase):
                 ),
             ],
         )
-        self.assertEqual(result.get_num_rows(), 3)
+        self.assertEqual(result.get_num_rows(), 2)
         self.assertEqual(len(result.columns), 3)
         df = result.to_df()
         # Make sure the history merged correctly
@@ -112,7 +112,7 @@ class TestTableTools(unittest.IsolatedAsyncioTestCase):
                 company_name="",
             ),
         )
-        self.assertEqual(set((sec.gbi_id for sec in df["Security"])), {112, 124, 149})
+        self.assertEqual(set((sec.gbi_id for sec in df["Security"])), {112, 124})
 
     async def test_get_stock_identifier_list_from_table(self):
         args = GetStockListFromTableArgs(input_table=TEST_STOCK_TABLE1)

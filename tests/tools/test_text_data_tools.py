@@ -5,7 +5,7 @@ from unittest import IsolatedAsyncioTestCase
 from agent_service.io_types.stock import StockID
 from agent_service.tools.other_text import (
     GetAllTextDataForStocksInput,
-    get_all_text_data_for_stocks,
+    get_default_text_data_for_stocks,
 )
 from agent_service.types import PlanRunContext
 from tests.tools.test_custom_docs import CUSTOM_DOC_DEV_TEST_USER
@@ -21,9 +21,9 @@ class TestTextData(IsolatedAsyncioTestCase):
         self.context = PlanRunContext.get_dummy(user_id=CUSTOM_DOC_DEV_TEST_USER)
 
     @unittest.skip("occasionally fails")
-    async def test_get_all_text_data(self):
+    async def test_get_default_text_data(self):
 
-        all_data = await get_all_text_data_for_stocks(
+        all_data = await get_default_text_data_for_stocks(
             args=GetAllTextDataForStocksInput(
                 stock_ids=[StockID(gbi_id=2781, symbol="", isin="", company_name="")]
             ),
