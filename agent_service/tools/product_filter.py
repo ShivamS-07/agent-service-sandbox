@@ -197,7 +197,13 @@ async def filter_stocks_by_product_or_service(
         )
         return args.must_include_stocks
 
+    # run filter on both input stocks and must_include_stocks
+    stock_ids_set = set(args.stock_ids)
+    must_include_stocks_set = set(args.must_include_stocks if args.must_include_stocks else [])
+    stocks_to_filter = list(stock_ids_set | must_include_stocks_set)
+
     prev_run_info = None
+    prev_output: List[StockID] = []
     try:  # since everything associated with diffing is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "filter_stocks_by_profile_match")
         if prev_run_info is not None:
@@ -206,37 +212,39 @@ async def filter_stocks_by_product_or_service(
             )
 
             # only include the stocks that were in the previous run as well as in the current input
-            stock_ids_set = set(args.stock_ids)
-            prev_output: List[StockID] = [
+            prev_output = [
                 stock for stock in prev_run_info.output if stock in stock_ids_set  # type:ignore
             ]
 
-            # start by finding the differences in the input stocks
+            # we are only going to run the tool on the stocks that are different
             diff_stock_ids = stock_ids_set - set(prev_args.stock_ids)
 
-            # we are only going to run the tool on the stocks that are different
-            args.stock_ids = list(diff_stock_ids)
+            # only run the tool on must_include_stocks that are different
+            diff_must_include_stocks = must_include_stocks_set - set(
+                prev_args.must_include_stocks if prev_args.must_include_stocks else []
+            )
 
+            stocks_to_filter = list(diff_stock_ids | diff_must_include_stocks)
     except Exception as e:
         logger.warning(f"Error including stock ids from previous run: {e}")
 
     # get company/stock descriptions
     description_texts = await get_company_descriptions(
         GetStockDescriptionInput(
-            stock_ids=args.stock_ids,
+            stock_ids=stocks_to_filter,
         ),
         context,
     )
 
     # create aligned stock text groups and get all the text strings
     aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(
-        args.stock_ids, description_texts  # type: ignore
+        stocks_to_filter, description_texts  # type: ignore
     )
     stock_description_map: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
         aligned_text_groups.val, include_header=True, text_group_numbering=True
     )
     # filter out those with no data
-    stocks = [stock for stock in args.stock_ids if stock in stock_description_map]
+    stocks = [stock for stock in stocks_to_filter if stock in stock_description_map]
     logger.info(f"Number of stocks to be filtered: {len(stocks)}")
 
     # first round of filtering
@@ -351,7 +359,9 @@ async def filter_stocks_by_product_or_service(
     if args.must_include_stocks:
         for stock in args.must_include_stocks:
             if stock not in filtered_stocks2_dict:
-                filtered_stocks2_dict[stock] = "Must include company"
+                filtered_stocks2_dict[stock] = (
+                    f"Company included but could not find connection to '{args.product_str}'"
+                )
 
     # add explanation to the filtered stocks history
     res = []
@@ -366,7 +376,7 @@ async def filter_stocks_by_product_or_service(
             )
         )
     # add previous run stocks to the result
-    if prev_run_info is not None:
+    if prev_run_info is not None and len(prev_output) != 0:
         res.extend(prev_output)
 
     logger.info(
