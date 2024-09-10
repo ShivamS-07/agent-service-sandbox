@@ -739,6 +739,60 @@ class RenameMemoryResponse(BaseModel):
 
 
 ####################################################################################################
+# Custom Documents
+####################################################################################################
+
+
+class CustomDocumentListing(BaseModel):
+    file_id: str
+    name: str
+    full_path: str
+    base_path: str
+    type: str
+    size: int
+    is_dir: bool
+    listing_status: str
+    upload_time: datetime.datetime
+
+
+class ListCustomDocumentsResponse(BaseModel):
+    documents: List[CustomDocumentListing]
+
+
+class GetCustomDocumentFileRequest(BaseModel):
+    for_preview: bool
+
+
+class GetCustomDocumentFileResponse(BaseModel):
+    is_preview: bool
+    file_name: str
+    file_type: str
+    content: bytes
+
+
+class CustomDocumentSummaryChunk(BaseModel):
+    chunk_id: str
+    headline: str
+    summary: str
+    long_summary: str
+
+
+class GetCustomDocumentFileInfoResponse(BaseModel):
+    file_id: str
+    status: str
+    file_type: str
+    file_size: int
+    author: str
+    author_org: str
+    upload_time: datetime.datetime
+    publication_time: datetime.datetime
+    company_name: str
+    spiq_company_id: int
+    chunks: List[CustomDocumentSummaryChunk]
+    file_paths: List[str]
+
+
+####################################################################################################
 # User
 ####################################################################################################
 

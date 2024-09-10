@@ -44,6 +44,8 @@ from agent_service.endpoints.models import (
     GetAutocompleteItemsResponse,
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
+    GetCustomDocumentFileInfoResponse,
+    GetCustomDocumentFileResponse,
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
     GetMemoryContentResponse,
@@ -55,6 +57,7 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
     GetToolLibraryResponse,
+    ListCustomDocumentsResponse,
     ListMemoryItemsResponse,
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadResponse,
@@ -109,6 +112,11 @@ from agent_service.utils.async_utils import (
 )
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
+from agent_service.utils.custom_documents_utils import get_custom_doc_file
+from agent_service.utils.custom_documents_utils import (
+    get_custom_doc_file_info as get_custom_doc_file_info_util,
+)
+from agent_service.utils.custom_documents_utils import get_custom_doc_listings
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import (
@@ -1203,3 +1211,18 @@ class AgentServiceImpl:
             )
             res[user_id] = new_agent_id
         return res
+
+    async def list_custom_documents(self, user: User) -> ListCustomDocumentsResponse:
+        return await get_custom_doc_listings(user_id=user.user_id)
+
+    async def get_custom_doc_file_content(
+        self, user: User, file_id: str, return_previewable_file: bool
+    ) -> GetCustomDocumentFileResponse:
+        return await get_custom_doc_file(
+            user_id=user.user_id, file_id=file_id, return_previewable_file=return_previewable_file
+        )
+
+    async def get_custom_doc_file_info(
+        self, user: User, file_id: str
+    ) -> GetCustomDocumentFileInfoResponse:
+        return await get_custom_doc_file_info_util(user_id=user.user_id, file_id=file_id)

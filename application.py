@@ -66,6 +66,7 @@ from agent_service.endpoints.models import (
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
     GetCitationDetailsResponse,
+    GetCustomDocumentFileInfoResponse,
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
     GetMemoryContentResponse,
@@ -78,6 +79,7 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
     GetToolLibraryResponse,
+    ListCustomDocumentsResponse,
     ListMemoryItemsResponse,
     MarkNotificationsAsReadRequest,
     MarkNotificationsAsReadResponse,
@@ -120,6 +122,7 @@ from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.clickhouse import Clickhouse
+from agent_service.utils.custom_documents_utils import CustomDocumentException
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.feature_flags import is_user_agent_admin
@@ -1315,6 +1318,81 @@ async def copy_agent(
         )
 
     return CopyAgentToUsersResponse(user_id_to_new_agent_id_map=response_dict)
+
+
+# custom doc endpoints
+
+
+@router.get(
+    "/custom-documents",
+    response_model=ListCustomDocumentsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def list_custom_docs(
+    user: User = Depends(parse_header),
+) -> ListCustomDocumentsResponse:
+    """
+    Gets custom document file content as a byte stream
+    Args:
+        file_id (str): the file's ID
+    """
+    try:
+        return await application.state.agent_service_impl.list_custom_documents(user=user)
+    except CustomDocumentException as e:
+        logger.exception("Error while listing custom docs")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.message)
+
+
+@router.get(
+    "/custom-documents/{file_id}/download",
+    response_class=Response,
+    status_code=status.HTTP_200_OK,
+)
+async def get_custom_doc_file(
+    file_id: str,
+    preview: bool = False,
+    user: User = Depends(parse_header),
+) -> Response:
+    """
+    Gets custom document file content as a byte stream
+    Args:
+        file_id (str): the file's ID
+    Query Params:
+        preview (bool): whether to return a previewable version of the file
+                        ie: a PDF for files more complex than txt.
+    """
+    try:
+        resp = await application.state.agent_service_impl.get_custom_doc_file_content(
+            user=user, file_id=file_id, return_previewable_file=preview
+        )
+        return Response(content=resp.content, media_type=resp.file_type)
+    except CustomDocumentException as e:
+        logger.exception(f"Error while downloading custom doc {file_id}; {preview=}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.message
+        ) from e
+
+
+@router.get(
+    "/custom-documents/{file_id}/info",
+    response_model=GetCustomDocumentFileInfoResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_custom_doc_details(
+    file_id: str, user: User = Depends(parse_header)
+) -> GetCustomDocumentFileInfoResponse:
+    """
+    Gets custom document details
+    Args:
+        file_id (str): the file's ID
+    """
+    try:
+        return await application.state.agent_service_impl.get_custom_doc_file_info(
+            user=user, file_id=file_id
+        )
+    except CustomDocumentException as e:
+        logger.exception(f"Error while getting custom doc metadata {file_id}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.message)
 
 
 initialize_unauthed_endpoints(application)

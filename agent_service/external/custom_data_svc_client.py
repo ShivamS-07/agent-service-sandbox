@@ -16,10 +16,18 @@ from stock_universe_service_proto_v1.custom_data_service_grpc import (
     CustomDataServiceStub,
 )
 from stock_universe_service_proto_v1.custom_data_service_pb2 import (
+    CheckDocumentUploadQuotaRequest,
+    CheckDocumentUploadQuotaResponse,
     GetDocsBySecurityRequest,
     GetDocsBySecurityResponse,
     GetFileChunkInfoRequest,
     GetFileChunkInfoResponse,
+    GetFileContentsRequest,
+    GetFileContentsResponse,
+    GetFileInfoRequest,
+    GetFileInfoResponse,
+    ListDocumentsRequest,
+    ListDocumentsResponse,
     SemanticSearchDocsRequest,
     SemanticSearchDocsResponse,
 )
@@ -140,6 +148,62 @@ async def get_custom_doc_articles_info(
             version=get_doc_version(user_id),
         )
         resp: GetFileChunkInfoResponse = await stub.GetFileChunkInfo(
+            req,
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def get_custom_doc_file_info(user_id: str, file_id: str) -> GetFileInfoResponse:
+    with _get_service_stub() as stub:
+        req = GetFileInfoRequest(file_ids=[file_id])
+        resp: GetFileInfoResponse = await stub.GetFileInfo(
+            req,
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def get_custom_doc_file_contents(
+    user_id: str, file_id: str, return_previewable_file: bool = False
+) -> GetFileContentsResponse:
+    with _get_service_stub() as stub:
+        req = GetFileContentsRequest(
+            file_id=file_id, return_previewable_file=return_previewable_file
+        )
+        resp: GetFileContentsResponse = await stub.GetFileContents(
+            req,
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def check_custom_doc_upload_quota(
+    user_id: str, candidate_total_size: int
+) -> CheckDocumentUploadQuotaResponse:
+    with _get_service_stub() as stub:
+        req = CheckDocumentUploadQuotaRequest(request_total_file_size=candidate_total_size)
+        resp: CheckDocumentUploadQuotaResponse = await stub.CheckDocumentUploadQuota(
+            req,
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def list_custom_docs(
+    user_id: str, base_path: str = "", recursive: bool = True
+) -> ListDocumentsResponse:
+    with _get_service_stub() as stub:
+        req = ListDocumentsRequest(base_path=base_path, recursive=recursive)
+        resp: ListDocumentsResponse = await stub.ListDocuments(
             req,
             metadata=get_default_grpc_metadata(user_id=user_id),
         )
