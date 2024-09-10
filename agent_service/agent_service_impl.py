@@ -459,14 +459,13 @@ class AgentServiceImpl:
                 self.pg, user.user_id
             )
             if (
-                # not user_email.endswith("@boosted.ai")
-                # and not user_email.endswith("@gradientboostedinvestments.com")
-                user.user_id
-                == user.real_user_id
+                not user_email.endswith("@boosted.ai")
+                and not user_email.endswith("@gradientboostedinvestments.com")
+                and user.user_id == user.real_user_id
             ):
                 if user.fullstory_link:
                     user_info_slack_string += f"\nfullstory_link: {user.fullstory_link}"
-                six_hours_from_now = int(time.time() + (10))
+                six_hours_from_now = int(time.time() + (60 * 60 * 2))
                 self.slack_sender.send_message_at(
                     message_text=f"{req.prompt}\n"
                     f"Link: {self.base_url}/chat/{req.agent_id}\n"
