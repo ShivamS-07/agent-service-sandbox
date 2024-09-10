@@ -72,6 +72,9 @@ and if you drop that column then that isn't possible, you will fail on this requ
 and be fired! Those cases will typically involve outputting three colums: the Date,
 the Stock Group, and then the averaged statistic, in that order.
 
+You must NOT change the col_type or units of any particular statistic if you are not
+doing some kind of explicit modification of it asked for by the user.
+
 If a date column is required, you must always put it first in your output.
 
 If the transformation description does not relate AT ALL to pandas or any sort
