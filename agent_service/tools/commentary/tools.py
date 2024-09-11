@@ -203,11 +203,12 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     watchlist_stocks: List[StockID] = await get_stocks_for_user_all_watchlists(  # type: ignore
         GetStocksForUserAllWatchlistsInput(), context
     )
-    watchlist_stock_names = [stock.company_name for stock in watchlist_stocks]
+    if len(watchlist_stocks) > 0:
+        watchlist_stock_names = [stock.company_name for stock in watchlist_stocks]
 
-    watchlist_prompt = WATCHLIST_PROMPT.format(
-        watchlist_stocks=", ".join([stock for stock in watchlist_stock_names])  # type: ignore
-    )
+        watchlist_prompt = WATCHLIST_PROMPT.format(
+            watchlist_stocks=", ".join([stock for stock in watchlist_stock_names])  # type: ignore
+        )
 
     # Prepare client type prompt
     client_type = args.client_type if args.client_type else "Simple"

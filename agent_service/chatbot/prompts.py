@@ -67,8 +67,8 @@ INITIAL_PREPLAN_SYS_PROMPT_STR = (
     "plan regardless of how the client responds. "
     "Keep it as brief as possible: your total response including any follow-up question should be no more than 40 words. "
     "Do not mention the term `information need` or `plan` in your response. "
-    "If the user asked for a task, and also asked for setting up a notification, you should briefly mention that "
-    "the user can set up the notification themselves, from 'settings'. "
+    "If the user asked for a task, and also asked for setting up a notification, you can briefly mention that "
+    "the user can set up the notification themselves, from 'settings'. Only mention this if the user asked for notification. "
 )
 
 INITIAL_PREPLAN_MAIN_PROMPT_STR = (
@@ -290,10 +290,10 @@ INPUT_UPDATE_REPLAN_POSTPLAN_MAIN_PROMPT_STR = (
 ERROR_REPLAN_PREPLAN_SYS_PROMPT_STR = (
     "{agent_description}"
     "Your client sent you a request for information and you created a plan (in the form of a Python script) for satisfying that request. "
-    "However, during execution of the plan, something went wrong. "
-    "You'll be provided with your interaction with the client so far, the plan that failed, the specific step of the plan that failed, "
+    "However, the execution of the plan stopped on a specific step. "
+    "You'll be provided with your interaction with the client so far, the plan that didn't finish, the specific step of the plan that plan has stopped, "
     "the error thrown by the software, and your preliminary plan for changing the plan so that it will succeed next time. "
-    "You need to explain to the client what has happened, mentioning shortly where in the plan the failure occurred. "
+    "You need to explain to the client what has happened, mentioning shortly where the plan has stopped, "
     "Then, shortly mention your idea for fixing and updating the plan. "
     "This is very important: your client is not technical (they do not understand code), so you must not mention any low-level technical details. "
     "Keep it at a level that can be understood by a layperson. "
@@ -305,12 +305,12 @@ ERROR_REPLAN_PREPLAN_SYS_PROMPT_STR = (
 )
 
 ERROR_REPLAN_PREPLAN_MAIN_PROMPT_STR = (
-    "Given the following interaction with your client, let your client know about the reason that has caused your plan to fail "
+    "Given the following interaction with your client, let your client know about the reason that has caused your plan to stop, "
     "and your forthcoming efforts to rewrite the plan to avoid the error. "
     "Your response shouldn't sound like that there is an issue on your side."
     "Here is the interaction with the client thus far:\n----\n{chat_context}\n---\n"
-    "Here is the plan that failed:\n---\n{old_plan}\n---\n"
-    "Here is the step of the plan that failed:\n{step}\n"
+    "Here is the plan that stopped:\n---\n{old_plan}\n---\n"
+    "Here is the step of the plan that plan stopped on:\n{step}\n"
     "Here is the error:\n{error}\n"
     "And here is your current plan to fix it:\n{change}\n"
     "Now write your short and concise message to the client: "
@@ -320,7 +320,7 @@ ERROR_REPLAN_PREPLAN_MAIN_PROMPT_STR = (
 ERROR_REPLAN_POSTPLAN_SYS_PROMPT_STR = (
     "{agent_description}"
     "Your client sent you a request for information and you created a plan (in the form of a Python script) for satisfying that request. "
-    "However, during execution of the plan, something went wrong. "
+    "However, the execution of the plan stopped on a specific step. "
     "Based on the error you encountered, you have updated your plan and are now ready to re-execute it. "
     "Please let the client know that you have finished your replanning and confirm the specific change(s) you have made, "
     "which you should have already explained to the user. "
@@ -367,10 +367,10 @@ NOTIFICATION_UPDATE_MAIN_PROMPT_STR = (
 NON_RETRIABLE_ERROR_MAIN_PROMPT_STR = (
     "{agent_description}"
     "Your client sent you a request for information and you created a plan (in the form of a python script) "
-    "for satisfying that request, however, during execution of the plan, something went wrong and you're not able to continue. "
-    "You'll be provided with your interaction the client so far, the plan that failed, "
-    "the specific step of the plan that failed, and the error thrown by the software. "
-    "You need to explain to the client what has happened, mentioning at the very least where in the plan the failure occurred, "
+    "for satisfying that request, however, the execution of the plan stopped on a specific step. "
+    "You'll be provided with your interaction the client so far, the plan that stopped, "
+    "the specific step where in the plan the stop occured, and the error thrown by the software. "
+    "You need to explain to the client what has happened, mentioning at the very least where in the plan stop occurred, "
     "and talk about the error if the error is straightforward enough that your client will understand. "
     "This is very important: your client is not technical (they do not understand code), "
     "and so you must not mention any low level technical details, "
@@ -382,10 +382,12 @@ NON_RETRIABLE_ERROR_MAIN_PROMPT_STR = (
     "You should be as brief as possible, no more than 80 words, in a single short paragraph, "
     "omit details that are already understood in the chat context. "
     "Never start your message with 'Dear ...'."
+    "If the error is due to not finding news or texts, you can simply state that no news or texts were found, without asking for clarification. "
+    "Do not mention the terms failure, error, or bug in your response. "
 )
 
 NON_RETRIABLE_ERROR_SYS_PROMPT_STR = (
-    "Given the following interaction with your client, let your client know about an error that has caused your plan to fail "
+    "Given the following interaction with your client, let your client know about an error that has caused your plan to stop "
     "and if necessary ask for clarifications required to retry. "
     "Here is the interaction with the client thus far:"
     "\n----\n{chat_context}\n---\n"
