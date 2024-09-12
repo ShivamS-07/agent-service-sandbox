@@ -23,6 +23,7 @@ from agent_service.io_types.table import (
 )
 from agent_service.planner.errors import EmptyInputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.lists import CombineListsInput, add_lists
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
@@ -1339,6 +1340,60 @@ async def get_metedata_for_stocks(
     return df
 
 
+class GetInternationalCapStartingUniverseInput(ToolArgs):
+    pass
+
+
+@tool(
+    description=(
+        "This function only gives you the stocks you need to start with to"
+        " later filter on by region and market cap,"
+        " they are not pre-filtered to meet that criteria."
+        " This function should only be used when you need a starting list of stocks to be later"
+        " filtered by non-USA country, region or countries that will then also later be filtered by"
+        " small, medium, or mid cap stocks by market cap range."
+        " If the user does not mention a country or region, do not use this function!"
+        " I repeat the output list MUST be further filtered by a country first using region_filter"
+        " and then filtered by a market cap range after the region filter."
+        " The filter by market cap can be achieved by using the get_statistic_data_for_companies"
+        " function to get market cap and followed by transform_table to filter to the"
+        " correct market cap range such as small cap, mid cap, medium cap."
+        " These steps MUST happen immediatelty after calling this function and before calling "
+        " prepare_output or you will be FIRED!!"
+        " I REPEAT this function does not do any country or market cap filtering itself,"
+        " you ABSOLUTELY MUST perform the market cap and country filtering in"
+        " additional steps in the plan!"
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    enabled=False,
+)
+async def get_international_cap_starting_universe(
+    args: GetInternationalCapStartingUniverseInput, context: PlanRunContext
+) -> List[StockID]:
+    target_tickers = [
+        "IWSZ LN Equity",  # iShares MSCI World Mid-Cap Equal Weight UCITS ETF
+        "WSML LN Equity",  # iShares MSCI World Small Cap UCITS ETF
+        "VSS US Equity",  # Vanguard FTSE All-World ex-US Small-Cap ETF
+        "VT US Equity",  # Vanguard International Equity Index Funds - Vanguard Total World Stock ETF
+        "PDN US Equity",  # Invesco FTSE RAFI Developed Markets ex-U.S. Small-Mid ETF
+        "IEUS US Equity",  # iShares Trust - iShares MSCI Europe Small-Cap ETF
+        "ISFE LN Equity",  # iShares II Public Limited Company - iShares MSCI AC Far East ex-Japan Small Cap UCITS ETF
+        "SCJ US Equity",  # iShares, Inc. - iShares MSCI Japan Small-Cap ETF
+    ]
+
+    await tool_log(log="Getting a list of international stocks to start with", context=context)
+
+    current: List[StockID] = []
+    for tkr in target_tickers:
+        arg1 = GetStockUniverseInput(universe_name=tkr)
+        stocks: List[StockID] = await get_stock_universe(args=arg1, context=context)  # type:ignore
+        arg2 = CombineListsInput(list1=current, list2=stocks)  # type:ignore
+        current = await add_lists(args=arg2, context=context)  # type:ignore
+
+    return current
+
+
 class GetStockUniverseInput(ToolArgs):
     # name of the universe to lookup
     universe_name: str
@@ -1378,6 +1433,18 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
     # TODO :
     # add a cache for the stock universe
     # switch to using GetEtfHoldingsForDate not db
+
+    if "INTERNATIONAL_SMALL" == args.universe_name.upper().replace(" ", "_"):
+        await tool_log(
+            log="Looking up a list of international stocks including small & midcap",
+            context=context,
+        )
+
+        results = await get_international_cap_starting_universe(
+            args=GetInternationalCapStartingUniverseInput(), context=context
+        )
+        # List[StockID]
+        return results  # type: ignore
 
     etf_stock = await get_stock_info_for_universe(args, context)
     universe_spiq_company_id = etf_stock["spiq_company_id"]

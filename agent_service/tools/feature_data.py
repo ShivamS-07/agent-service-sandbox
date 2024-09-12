@@ -286,7 +286,6 @@ class FeatureDataInput(ToolArgs):
     start_date: Optional[datetime.date] = None
     end_date: Optional[datetime.date] = None
     date_range: Optional[DateRange] = None
-    # in the future we may want to take a currency as well
 
 
 @tool(
@@ -365,6 +364,7 @@ async def get_statistic_data(
     force_daily: bool = False,
     ffill_days: Optional[int] = None,
     add_quarterly: bool = False,
+    target_currency: Optional[str] = None,
 ) -> StockTable:
     stock_ids = stock_ids or []
     gbi_id_map = {stock.gbi_id: stock for stock in stock_ids}
@@ -387,21 +387,14 @@ async def get_statistic_data(
         f"{start_date=}, {end_date=}"
     )
 
-    # first, determine the currency to use instead of leaving to the service to
-    # infer for each chunk.
-    db = get_psql()
-    sql = """
-        SELECT ms.currency, count(1) as frequency
-        FROM master_security ms
-        WHERE gbi_security_id = ANY(%s)
-        GROUP BY currency
-        ORDER BY frequency DESC
-    """
-    requested_stock_currency_frequencies = db.generic_read(sql, [gbi_ids])
-    if len(requested_stock_currency_frequencies) > 0:
-        use_currency = requested_stock_currency_frequencies[0]["currency"]
+    # use target currency provided, or default to USD
+
+    if target_currency:
+        use_currency = target_currency
     else:
         use_currency = "USD"
+
+    logger.info(f"using currency: {use_currency}")
 
     # TODO: is there a better way to get this across the wire? send as raw bytes?
     # Arbitrary chunk size of 300 - feel free to adjust as needed.

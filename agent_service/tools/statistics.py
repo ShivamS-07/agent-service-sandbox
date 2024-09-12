@@ -65,6 +65,7 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
     stock_ids: List[StockID]
     date_range: Optional[DateRange] = None
     is_time_series: bool = False
+    target_currency: Optional[str] = None
 
 
 @tool(
@@ -148,6 +149,12 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
         " as the statistic reference. If a client is using words like that without any other context, you must assume"
         " they want the output of the recommendations tool. However, if the user asks specifically for `analyst"
         " expectations` (using those words), use this tool, not the recommendations tool!"
+        " Optionally a target_currency can be provided as a 3 character ISO 4217 code such as 'EUR', 'JPY', 'CAN'"
+        " to convert any currency-valued data from the native currency of the stock to the target_currency"
+        " if target_currency is None then the currency of the outputs will be auto converted to USD. Use"
+        " target_currency if the client clearly wants output in a particular foreign currency or if they ask for"
+        " a filtering based on a foreign currency. When they mention a currency amount, you should assume it is USD"
+        " unless specified otherwise."
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
@@ -265,6 +272,7 @@ async def get_statistic_data_for_companies(
                 end_date=end_date,
                 force_daily=force_daily,
                 add_quarterly="estimate" in source.lower() or "quarterly" in source.lower(),
+                target_currency=args.target_currency,
             )
         )
 
