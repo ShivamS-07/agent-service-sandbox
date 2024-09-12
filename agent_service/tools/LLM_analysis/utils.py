@@ -1,11 +1,19 @@
+import copy
 import json
 from typing import Any, Dict, List, Optional, Tuple
 
 import Levenshtein
 
-from agent_service.GPT.constants import GPT4_O_MINI, NO_PROMPT
+from agent_service.GPT.constants import GPT4_O, GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.io_types.text import NewsText, TextCitation, TextGroup
+from agent_service.io_type_utils import ComplexIOBase, IOTypeBase
+from agent_service.io_types.text import (
+    DEFAULT_TEXT_TYPE,
+    NewsText,
+    TextCitation,
+    TextCitationGroup,
+    TextGroup,
+)
 from agent_service.tools.LLM_analysis.constants import (
     ANCHOR_HEADER,
     ANCHOR_REGEX,
@@ -14,9 +22,13 @@ from agent_service.tools.LLM_analysis.constants import (
     SENTENCE_REGEX,
     UNITS,
 )
-from agent_service.tools.LLM_analysis.prompts import KEY_PHRASE_PROMPT
+from agent_service.tools.LLM_analysis.prompts import (
+    KEY_PHRASE_PROMPT,
+    SECOND_ORDER_CITATION_PROMPT,
+)
 from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.output_utils.output_construction import PreparedOutput
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
@@ -128,7 +140,8 @@ async def extract_citations_from_gpt_output(
                     )
                     continue
                 source_text_obj = text_group.convert_citation_num_to_text(citation_json["num"])
-                if source_text_obj is None:
+                if source_text_obj is None or source_text_obj.text_type == DEFAULT_TEXT_TYPE:
+                    # Do not create citations for text we general, do second order citations
                     continue
                 citation_snippet = citation_json.get("snippet", None)
                 citation_snippet_context = None
@@ -191,3 +204,58 @@ async def extract_citations_from_gpt_output(
         final_text_bits.append(main_text[last_end:])
     final_text = "".join(final_text_bits)
     return final_text, final_citations
+
+
+def get_all_text_citations(obj: IOTypeBase) -> List[TextCitation]:
+    if isinstance(obj, List):
+        return [citation for sub_obj in obj for citation in get_all_text_citations(sub_obj)]
+    elif isinstance(obj, PreparedOutput):
+        return get_all_text_citations(obj.val)
+    elif isinstance(obj, ComplexIOBase):
+        return [
+            citation for citation in obj.get_all_citations() if isinstance(citation, TextCitation)
+        ]
+    else:
+        return []
+
+
+async def get_second_order_citations(
+    main_text: str, old_citations: List[TextCitation], context: PlanRunContext
+) -> List[TextCitation]:
+    if not old_citations:
+        return []
+
+    citation_group = TextCitationGroup(val=old_citations)
+    citation_str = await citation_group.convert_to_str()
+
+    sentences = [sentence for sentence in get_sentences(main_text) if len(sentence) > 20]
+
+    sentences_str = "\n".join(f"{i}. {sentence}" for i, sentence in enumerate(sentences, start=1))
+
+    llm = GPT(
+        model=GPT4_O,
+        context=create_gpt_context(GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID),
+    )
+
+    main_prompt = SECOND_ORDER_CITATION_PROMPT.format(sents=sentences_str, snippets=citation_str)
+
+    result = await llm.do_chat_w_sys_prompt(main_prompt, NO_PROMPT, output_json=True)
+
+    # json mode can't output integer keys, so need to change to ints manually
+    citation_mapping = {
+        int(key): value for key, value in json.loads(clean_to_json_if_needed(result)).items()
+    }
+
+    new_citations = []
+
+    for num, sentence in enumerate(sentences, start=1):
+        if num in citation_mapping and citation_mapping[num] and sentence in main_text:
+            sentence_offset = main_text.index(sentence) + len(sentence)
+            for citation_num in citation_mapping[num]:
+                citation = citation_group.convert_citation_num_to_citation(citation_num)
+                if citation:
+                    new_citation = copy.deepcopy(citation)
+                    new_citation.citation_text_offset = sentence_offset
+                    new_citations.append(new_citation)
+
+    return new_citations

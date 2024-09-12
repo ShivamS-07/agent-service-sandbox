@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-import json
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union, cast
 
@@ -69,7 +68,11 @@ from agent_service.tools.LLM_analysis.prompts import (
     UPDATE_SUMMARIZE_MAIN_PROMPT,
     UPDATE_SUMMARIZE_SYS_PROMPT,
 )
-from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
+from agent_service.tools.LLM_analysis.utils import (
+    extract_citations_from_gpt_output,
+    get_all_text_citations,
+    get_second_order_citations,
+)
 from agent_service.tools.news import (
     GetNewsDevelopmentsAboutCompaniesInput,
     get_all_news_developments_about_companies,
@@ -85,29 +88,12 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
-from agent_service.utils.string_utils import clean_to_json_if_needed
 from agent_service.utils.tool_diff import (
     add_old_history,
     get_prev_run_info,
     get_stock_text_lookup,
     get_text_diff,
 )
-
-
-# Helper functions
-# to be depreciated
-def split_text_and_citation_ids(GPT_ouput: str) -> Tuple[str, List[int]]:
-    logger = get_prefect_logger(__name__)
-    lines = GPT_ouput.replace("\n\n", "\n").split("\n")
-    try:
-        citation_ids = json.loads(clean_to_json_if_needed(lines[-1]))
-    except json.JSONDecodeError as e:
-        logger.warning(
-            f"Got error `{e}` when loading `{lines[-1]}` for citations, no citations included"
-        )
-        citation_ids = []
-    main_text = "\n".join(lines[:-1])
-    return main_text, citation_ids
 
 
 class SummarizeTextInput(ToolArgs):
@@ -193,7 +179,20 @@ async def _initial_summarize_helper(
         text, citations = await extract_citations_from_gpt_output(result, text_group, context)
         tries += 1
 
-    return text or result, citations or []
+    if not text:
+        text = result
+
+    if citations is None:
+        citations = []
+
+    try:
+        citations += await get_second_order_citations(
+            text, get_all_text_citations(args.texts), context
+        )
+    except Exception as e:
+        logger.exception(f"Failed to add second order citations: {e}")
+
+    return text, citations
 
 
 async def _update_summarize_helper(
@@ -295,7 +294,20 @@ async def _update_summarize_helper(
 
         tries += 1
 
-    return text or result, citations or []
+    if not text:
+        text = result
+
+    if citations is None:
+        citations = []
+
+    try:
+        citations += await get_second_order_citations(
+            text, get_all_text_citations(args.texts), context
+        )
+    except Exception as e:
+        logger.exception(f"Failed to add second order citations: {e}")
+
+    return text, citations
 
 
 @tool(

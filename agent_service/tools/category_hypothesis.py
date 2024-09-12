@@ -45,7 +45,11 @@ from agent_service.tools.category import (
     get_criteria_for_competitive_analysis,
 )
 from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT, CITATION_REMINDER
-from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
+from agent_service.tools.LLM_analysis.utils import (
+    extract_citations_from_gpt_output,
+    get_all_text_citations,
+    get_second_order_citations,
+)
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import (
@@ -783,6 +787,14 @@ async def generate_summary_for_competitive_analysis(
         gpt_service_stub=gpt_service_stub,
     )
 
+    try:
+        final_summary_citations = await get_second_order_citations(
+            final_summary, get_all_text_citations(args.competitive_analysis.val), context
+        )
+    except Exception as e:
+        logger.exception(f"Failed to add second order citations: {e}")
+        final_summary_citations = []
+
     await tool_log(log="Generated the final summary", context=context)
 
     target_stock_symbol = args.competitive_analysis.actual_target_stock.symbol
@@ -797,7 +809,13 @@ async def generate_summary_for_competitive_analysis(
         final_score = final_scores[target_stock_symbol]
 
     return Text(
-        val=final_summary, history=[HistoryEntry(score=Score.scale_input(final_score, lb=0, ub=5))]
+        val=final_summary,
+        history=[
+            HistoryEntry(
+                score=Score.scale_input(final_score, lb=0, ub=5),
+                citations=final_summary_citations,  # type:ignore
+            )
+        ],
     )
 
 

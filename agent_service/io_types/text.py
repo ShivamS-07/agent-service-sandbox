@@ -57,12 +57,14 @@ logger = logging.getLogger(__name__)
 
 TextIDType = Union[str, int]
 
+DEFAULT_TEXT_TYPE = "Misc"
+
 
 @io_type
 class Text(ComplexIOBase):
     id: TextIDType = Field(default_factory=lambda: str(uuid4()))
     val: str = ""
-    text_type: ClassVar[str] = "Misc"
+    text_type: ClassVar[str] = DEFAULT_TEXT_TYPE
     stock_id: Optional[StockID] = None
     timestamp: Optional[datetime.datetime] = None
     # Text objects are rich "widgets" that are rendered on the UI. For example,
@@ -1746,7 +1748,10 @@ class TextGroup(ComplexIOBase):
         return TextGroup(val=texts, id_to_str=joined_id_to_str)
 
     def convert_to_str(
-        self, id_to_str: Dict[TextIDType, str], numbering: bool = False, symbols: bool = False
+        self,
+        id_to_str: Dict[TextIDType, str],
+        numbering: bool = False,
+        symbols: bool = False,
     ) -> str:
         # sort texts by timestamp so any truncations cuts off older texts
         self.val.sort(key=lambda x: x.timestamp.timestamp() if x.timestamp else 0, reverse=True)
@@ -1905,7 +1910,14 @@ class TextCitationGroup(ComplexIOBase):
     val: List[TextCitation]
 
     def _sort_citations(self) -> None:
-        self.val = sorted(self.val, key=lambda x: 0 if x.citation_snippet is None else 1)
+        self.val = sorted(
+            self.val,
+            key=lambda x: (
+                1 if x.citation_snippet is None else 0,
+                x.source_text.timestamp.timestamp() if x.source_text.timestamp else 0,
+            ),
+            reverse=True,
+        )
 
     def _get_snippet_start(self) -> int:
         try:

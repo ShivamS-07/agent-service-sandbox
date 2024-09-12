@@ -72,8 +72,10 @@ and if you drop that column then that isn't possible, you will fail on this requ
 and be fired! Those cases will typically involve outputting three colums: the Date,
 the Stock Group, and then the averaged statistic, in that order.
 
-You must NOT change the col_type or units of any particular statistic if you are not
-doing some kind of explicit modification of it asked for by the user.
+You must NOT change the col_type or units of any particular statistic if you are
+not carrying out some mathmatical operation. Note that when you divide two statistics
+of the same type (e.g. two fields with USD currency), the output is typically NOT of
+that type, but rather a percent or a float.
 
 If a date column is required, you must always put it first in your output.
 
