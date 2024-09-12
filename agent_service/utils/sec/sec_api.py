@@ -2,11 +2,13 @@ import datetime
 import html
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 import backoff
+from bs4 import BeautifulSoup
 from gbi_common_py_utils.utils.ssm import get_param
 from sec_api import ExtractorApi, MappingApi, QueryApi, RenderApi  # type: ignore
 
@@ -17,14 +19,17 @@ from agent_service.utils.sec.constants import (
     COMPANY_NAME,
     CUSIP,
     DEFAULT_FILING_FORMAT,
+    DEFAULT_FILINGS_SEARCH_RANGE,
     FILE_10K,
     FILE_10Q,
     FILED_TIMESTAMP,
     FILING_DOWNLOAD_LOOKUP,
     FILINGS,
     FORM_TYPE,
+    HTML_PARSER,
     LINK_TO_FILING_DETAILS,
     LINK_TO_HTML,
+    LINK_TO_TXT,
     MANAGEMENT_SECTION,
     NASDAQ,
     NYSE,
@@ -37,6 +42,11 @@ from agent_service.utils.sec.supported_types import SUPPORTED_TYPE_MAPPING
 from agent_service.utils.string_utils import get_sections
 
 logger = logging.getLogger(__name__)
+
+
+def get_file_extension(url: str) -> str:
+    _, file_extension = os.path.splitext(url)
+    return file_extension
 
 
 @dataclass(frozen=True, eq=True)
@@ -273,15 +283,9 @@ class SecFiling:
         if not form_types:
             raise Exception("Couldn't find any supported SEC filing types in the request.")
 
-        if end_date is None:
-            end_date = datetime.date.today() + datetime.timedelta(days=1)
-        if start_date is None:
-            # default to a quarter of data (one filing)
-            start_date = end_date - datetime.timedelta(days=100)
-
         filing_to_db_id = await cls._get_db_ids_for_filings(
             gbi_ids, form_types=form_types, start_date=start_date, end_date=end_date
-        )
+        )  # default to search for last quarter in DB cache
 
         # Get the CIK mapping for the GBI IDs from DB
         gbi_cik_mapping = SecMapping.get_gbi_cik_mapping_from_db(gbi_ids)
@@ -303,32 +307,91 @@ class SecFiling:
                 continue
 
             try:
-                queries = SecFiling._build_queries_for_filings(
-                    cik, form_types=form_types, start_date=start_date, end_date=end_date
-                )
-                for query in queries:
-                    resp: Optional[Dict] = SecFiling.query_api.get_filings(query=query)
-                    if (not resp) or (FILINGS not in resp):
-                        continue
-                    elif not resp[FILINGS]:
-                        break
+                if not start_date and not end_date:
+                    filings = []
+                    # split up by form type as each will have separate date ranges
+                    for form in form_types:
+                        # find each document's daterange
+                        queries = SecFiling._build_queries_for_filings(cik, form_types=[form])
+                        daterange_resp: Optional[Dict] = SecFiling.query_api.get_filings(
+                            query=queries.pop()
+                        )
+                        if (
+                            (not daterange_resp)
+                            or (FILINGS not in daterange_resp)
+                            or (not daterange_resp[FILINGS])
+                            or len(daterange_resp[FILINGS]) != 1
+                        ):
+                            continue  # move onto next form type
 
-                    filing_gbi_pairs.extend(
-                        [(json.dumps(filing), gbi_id) for filing in resp[FILINGS]]
+                        # filing date of most recent filing
+                        latest_filed_at = parse_date_str_in_utc(
+                            daterange_resp[FILINGS].pop()[FILED_TIMESTAMP]
+                        )
+
+                        # do not include if most recent filing is older than DEFAULT_FILINGS_SEARCH_RANGE
+                        if latest_filed_at < get_now_utc() - datetime.timedelta(
+                            days=DEFAULT_FILINGS_SEARCH_RANGE
+                        ):
+                            continue  # move onto next form type
+
+                        # just under one quarter
+                        latest_start = latest_filed_at - datetime.timedelta(days=75)
+
+                        # retrieve all documents that match within the recent range
+                        queries = SecFiling._build_queries_for_filings(
+                            cik,
+                            form_types=[form],
+                            start_date=latest_start,
+                            end_date=latest_filed_at,
+                        )
+                        for query in queries:
+                            document_resp: Optional[Dict] = SecFiling.query_api.get_filings(
+                                query=query
+                            )
+                            if (
+                                (not document_resp)
+                                or (FILINGS not in document_resp)
+                                or (not document_resp[FILINGS])
+                            ):
+                                continue  # move onto next form type
+
+                            for filing in document_resp[FILINGS]:
+                                filings.append(filing)
+
+                            if len(document_resp[FILINGS]) < cls.MAX_SEC_QUERY_SIZE:
+                                # If there are fewer than the max number of allowed
+                                # responses for this query, we're done.
+                                break
+
+                    filings_dict = {json.dumps(filing): gbi_id for filing in filings}
+                    filing_gbi_pairs.extend(list(filings_dict.items()))
+                else:
+                    queries = SecFiling._build_queries_for_filings(
+                        cik, form_types=form_types, start_date=start_date, end_date=end_date
                     )
+                    for query in queries:
+                        resp: Optional[Dict] = SecFiling.query_api.get_filings(query=query)
+                        if (not resp) or (FILINGS not in resp):
+                            continue
+                        elif not resp[FILINGS]:
+                            break
 
-                    if len(resp[FILINGS]) < cls.MAX_SEC_QUERY_SIZE:
-                        # If there are fewer than the max number of allowed
-                        # responses for this query, we're done.
-                        break
+                        filing_gbi_pairs.extend(
+                            [(json.dumps(filing), gbi_id) for filing in resp[FILINGS]]
+                        )
+
+                        if len(resp[FILINGS]) < cls.MAX_SEC_QUERY_SIZE:
+                            # If there are fewer than the max number of allowed
+                            # responses for this query, we're done.
+                            break
                 time.sleep(0.5)  # avoid rate limit
             except Exception as e:
                 logger.exception(f"Failed to get filings for {gbi_id=}: {e}")
                 time.sleep(10)
 
         logger.info(
-            f"Found {len(filing_gbi_pairs)} filings for {len(gbi_ids)} stocks "
-            f"between {start_date} and {end_date}. "
+            f"Found {len(filing_gbi_pairs)} filings for {len(gbi_ids)} stocks."
             f"Found {len(filing_to_db_id)} filings cached in the database."
         )
 
@@ -339,8 +402,8 @@ class SecFiling:
         cls,
         cik: str,
         form_types: List[str],
-        start_date: datetime.date,
-        end_date: datetime.date,
+        start_date: Optional[datetime.date] = None,
+        end_date: Optional[datetime.date] = None,
     ) -> List[Dict]:
         """Build the query string for the SEC Filing API
 
@@ -348,8 +411,8 @@ class SecFiling:
             cik (str): Stock's CIK code
             form_types (List[str]): List of form types to search for
             start_date (datetime.date): Start date for the query
-            end_date (datetime.date): End date for the query. If neither start_date nor
-        end_date is provided, the default is to search for the last 100 days
+            end_date (datetime.date): End date for the query.
+        If neither start_date nor end_date is provided, it will find the most recent filing (1)
 
         Returns:
             List[Dict]: A list of query dictionaries. To download the filing via the query, call
@@ -359,19 +422,34 @@ class SecFiling:
         if not form_types:
             return []
 
-        end_date_str = end_date.isoformat()
-        start_date_str = start_date.isoformat()
+        filed_at = ""
+        if start_date and end_date:
+            end_date_str = end_date.isoformat()
+            start_date_str = start_date.isoformat()
+            filed_at = f"AND filedAt:[{start_date_str} TO {end_date_str}]"
 
         forms = " OR ".join((f'formType:"{typ}"' for typ in form_types))
-        filter_query = f"cik:{cik} AND filedAt:[{start_date_str} TO {end_date_str}] AND ({forms})"
+        filter_query = f"cik:{cik} {filed_at} AND ({forms})"
 
         queries = []
+        if filed_at == "":
+            # If no date range is provided, just find most recent filing
+            queries.append(
+                {
+                    "query": {"query_string": {"query": filter_query}},
+                    "from": "0",
+                    "size": "1",
+                    "sort": [{"filedAt": {"order": "desc"}}],
+                }
+            )
+            return queries
+
         for i in range(0, 5000, cls.MAX_SEC_QUERY_SIZE):
             queries.append(
                 {
                     "query": {"query_string": {"query": filter_query}},
                     "from": str(i),
-                    "size": cls.MAX_SEC_QUERY_SIZE,
+                    "size": str(cls.MAX_SEC_QUERY_SIZE),
                     "sort": [{"filedAt": {"order": "desc"}}],
                 }
             )
@@ -383,12 +461,18 @@ class SecFiling:
         cls,
         gbi_ids: List[int],
         form_types: List[str],
-        start_date: datetime.date,  # inclusive
-        end_date: datetime.date,  # inclusive
+        start_date: Optional[datetime.date] = None,  # inclusive
+        end_date: Optional[datetime.date] = None,  # inclusive
     ) -> Dict[str, str]:
         """
-        Given a list of SEC filings, return a list of database table IDs for the available filings
+        Given a list of SEC filings, return a list of database table IDs for the available filings.
+        Default date range will be the last 100 days.
         """
+        if end_date is None:
+            end_date = datetime.date.today() + datetime.timedelta(days=1)
+        if start_date is None:
+            # default to a quarter of data (one filing)
+            start_date = end_date - datetime.timedelta(days=100)
 
         sql = """
             SELECT DISTINCT ON (formType, gbi_id, filedAt)
@@ -442,7 +526,7 @@ class SecFiling:
                         f"Risk Factors Section:\n\n{risk_factor_section}"
                     )
                 else:
-                    text = row["content"]
+                    text = BeautifulSoup(row["content"], HTML_PARSER).getText()
 
                 filing_id = db_id_to_text_id[row["id"]]
                 output[filing_id] = text
@@ -477,7 +561,7 @@ class SecFiling:
                         f"Risk Factors Section:\n\n{risk_factor_section}"
                     )
                 else:
-                    text = row["content"]
+                    text = BeautifulSoup(row["content"], HTML_PARSER).getText()
 
                 output[row["filing"]] = (row["id"], text)
 
@@ -511,14 +595,26 @@ class SecFiling:
                 )
 
                 # LINK_TO_HTML is ok for extracting sections, but LINK_TO_FILING_DETAILS is needed for full content
-                # See examples here:
+                # Examples:
                 # LINK_TO_HTML: https://www.sec.gov/Archives/edgar/data/320193/000032019324000069/0000320193-24-000069-index.htm  # noqa
                 # LINK_TO_FILING_DETAILS: https://www.sec.gov/Archives/edgar/data/320193/000032019324000069/aapl-20240330.htm  # noqa
+                # For some older SEC filings (pre-2000), LINK_TO_FILING_DETAILS returns a directory
+                # and not the actual text, so we use LINK_TO_TXT when LINK_TO_FILING_DETAILS has no extension
+                # Examples:
+                # LINK_TO_FILING_DETAILS: https://www.sec.gov/Archives/edgar/data/320193/  # noqa
+                # LINK_TO_TXT: https://www.sec.gov/Archives/edgar/data/320193/0000912057-97-019277.txt  # noqa
 
-                full_content = SecFiling.render_api.get_filing(
-                    url=filing_info[LINK_TO_FILING_DETAILS]
-                )
-                processed_full_content = html.unescape(full_content)
+                extension: str = get_file_extension(filing_info[LINK_TO_FILING_DETAILS])
+                # no extension == directory
+                if len(extension) == 0:
+                    full_content = SecFiling.render_api.get_filing(url=filing_info[LINK_TO_TXT])
+                else:
+                    full_content = SecFiling.render_api.get_filing(
+                        url=filing_info[LINK_TO_FILING_DETAILS]
+                    )
+
+                parsed_full_content = BeautifulSoup(html.unescape(full_content), HTML_PARSER)
+                processed_full_content = parsed_full_content.getText()
                 time.sleep(0.25)
 
                 if management_section or risk_factor_section:
@@ -588,8 +684,9 @@ class SecFiling:
                 section=sec_section,
                 return_type=DEFAULT_FILING_FORMAT,
             )
+            processed_html_text = html.unescape(html_text)
             time.sleep(0.25)
-            return html.unescape(html_text)
+            return processed_html_text
         except Exception as e:
             cik = filing.get(CIK, None)
             company_name = filing.get(COMPANY_NAME, None)
@@ -621,7 +718,7 @@ class SecFiling:
 
             for row in result:
                 filing_id = db_id_to_text_id[row["id"]]
-                output[filing_id] = row["content"]
+                output[filing_id] = BeautifulSoup(row["content"], HTML_PARSER).getText()
 
         return output
 
@@ -645,7 +742,10 @@ class SecFiling:
             result = await ch.generic_read(sql, params={"filing_jsons": batch_filing_jsons})
 
             for row in result:
-                output[row["filing"]] = (row["id"], row["content"])
+                output[row["filing"]] = (
+                    row["id"],
+                    BeautifulSoup(row["content"], HTML_PARSER).getText(),
+                )
 
         return output
 
@@ -671,7 +771,7 @@ class SecFiling:
                     f"Risk Factors Section:\n\n{risk_factor_section}"
                 )
                 if management_section and risk_factor_section
-                else row["content"]
+                else BeautifulSoup(row["content"], HTML_PARSER).getText()
             )
             output[filing_id] = SecFilingData(**row)
 
@@ -706,7 +806,7 @@ class SecFiling:
                 f"Risk Factors Section:\n\n{risk_factor_section}"
             )
             if management_section and risk_factor_section
-            else row["content"]
+            else BeautifulSoup(row["content"], HTML_PARSER).getText()
         )
         return SecFilingData(**row)
 
@@ -724,11 +824,19 @@ class SecFiling:
             filing_info = json.loads(filing_info_str)
 
             try:
-                text = SecFiling.render_api.get_filing(url=filing_info[LINK_TO_FILING_DETAILS])
+                extension: str = get_file_extension(filing_info[LINK_TO_FILING_DETAILS])
+                # no extension == directory
+                if len(extension) == 0:
+                    full_content = SecFiling.render_api.get_filing(url=filing_info[LINK_TO_TXT])
+                else:
+                    full_content = SecFiling.render_api.get_filing(
+                        url=filing_info[LINK_TO_FILING_DETAILS]
+                    )
 
-                processed_text = html.unescape(text)
+                parsed_full_content = BeautifulSoup(html.unescape(full_content), HTML_PARSER)
+                processed_full_content = parsed_full_content.getText()
 
-                output[filing_info_str] = processed_text
+                output[filing_info_str] = processed_full_content
 
                 if insert_to_db:
                     try:
@@ -743,7 +851,7 @@ class SecFiling:
                                         filing_info[FILED_TIMESTAMP]
                                     ),
                                     "filing": filing_info_str,
-                                    "content": processed_text,
+                                    "content": processed_full_content,
                                 }
                             ],
                         )

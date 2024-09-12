@@ -107,12 +107,14 @@ async def get_10k_10q_sec_filings(
             args.stock_ids[0].symbol if args.stock_ids[0].symbol else args.stock_ids[0].company_name
         )
 
-    daterange_str = "in the last 100 days"
+    daterange_str = ""
+    use_latest_str = "the most recent "
     if start_date and end_date:
         daterange_str = f"from {start_date.isoformat()} to {end_date.isoformat()}"
+        use_latest_str = ""
 
     await tool_log(
-        f"Retrieving 10-K, 10-Q SEC filings for {stocks_str} {daterange_str}.",
+        f"Retrieving {use_latest_str}10-K, 10-Q SEC filings for {stocks_str} {daterange_str}.",
         context=context,
     )
     stock_filing_map = await get_sec_filings_helper(args.stock_ids, start_date, end_date)
@@ -336,6 +338,8 @@ class GetSecFilingsWithTypeInput(ToolArgs):
     " we need to retrieve. This tool should never be called by itself."
     " This tool should not be called if we only want to retrieve general information from SEC filings,"
     " instead the `get_10k_10q_sec_filings` tool should be used."
+    " The output of this tool should never be outputted directly, instead you should use the `summarize_texts`"
+    " or `answer_question_with_text_data` tool on the text output of this tool. Do not output it directly."
     " If a client asks for specific filings other than 10-k/q, you MUST use this tool, the SEC filings "
     " that this tool accesses are NOT included in the output of `get_default_text_data_for_stocks`!"
     " Any documents published between start_date and end_date will be included, if the end_date is"
@@ -384,12 +388,14 @@ async def get_sec_filings_with_type(
                 else args.stock_ids[0].company_name
             )
 
-        daterange_str = "in the last 100 days"
+        daterange_str = ""
+        use_latest_str = "the most recent "
         if start_date and end_date:
             daterange_str = f"from {start_date.isoformat()} to {end_date.isoformat()}"
+            use_latest_str = ""
 
         await tool_log(
-            f"Retrieving {form_types_str} SEC filing(s) for {stocks_str} {daterange_str}.",
+            f"Retrieving {use_latest_str}{form_types_str} SEC filing(s) for {stocks_str} {daterange_str}.",
             context=context,
         )
         stock_filing_map = await get_other_sec_filings_helper(

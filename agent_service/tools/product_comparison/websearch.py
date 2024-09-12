@@ -20,6 +20,7 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.sec.constants import HTML_PARSER
 from agent_service.utils.string_utils import clean_to_json_if_needed
 
 WEB_SCRAPE_PRODUCT_MAIN_PROMPT = """
@@ -194,7 +195,7 @@ class WebScraper:
                         text += page.extract_text()
                 elif "text/html" in content_type:
                     html_content = response.read().decode("utf-8")
-                    soup = BeautifulSoup(html_content, "html.parser")
+                    soup = BeautifulSoup(html_content, HTML_PARSER)
                     text = soup.get_text()
                     title = soup.title.string if soup.title else url
                 else:
