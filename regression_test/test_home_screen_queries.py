@@ -71,7 +71,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
                 required_tools=[
                     "get_stock_universe",
                     "sector_identifier_lookup",
-                    "sector_filter",
+                    "gics_sector_industry_filter",
                     "get_statistic_data_for_companies",
                     "transform_table",
                     "get_stock_identifier_list_from_table",
