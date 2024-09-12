@@ -87,18 +87,20 @@ def validate_tools_used(
 ) -> None:
     actual_tools = set((step.tool_name for step in plan.nodes))
     assert len(required_tools) > 0, "No required tools provided"
+    missing_required_tools = set(required_tools).difference(set(actual_tools))
     err_msg = (
-        f"The required tools are not called.\nActual plan is {plan_to_simple_json(plan)}\n"
-        f"required tools are {required_tools}"
+        "The required tools are not called.\n"
+        f"Missing required tools are {missing_required_tools}\n"
+        f"Actual plan is {plan_to_simple_json(plan)}"
     )
     assert set(required_tools).issubset(set(actual_tools)), err_msg
 
     disallowed_tools_used = set(disallowed_tools).intersection(set(actual_tools))
 
     err_msg = f"""
-    Some of the disallowed tools are called.
-    actual plan is {plan_to_simple_json(plan)} and
-    disallowed tools that were used are {disallowed_tools_used}
+    Some of the disallowed tools are called.\n
+    disallowed tools that were used are {disallowed_tools_used}\n
+    actual plan is {plan_to_simple_json(plan)}
     """
 
     assert len(disallowed_tools_used) == 0, err_msg
