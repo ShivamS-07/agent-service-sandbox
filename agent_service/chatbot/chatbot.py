@@ -1,9 +1,10 @@
+from datetime import date
 from typing import List, Optional, Type
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
 from agent_service.chatbot.prompts import (
-    AGENT_DESCRIPTION,
+    AGENT_DESCRIPTION_PROMPT,
     COMPLETE_EXECUTION_MAIN_PROMPT,
     COMPLETE_EXECUTION_SYS_PROMPT,
     ERROR_REPLAN_POSTPLAN_MAIN_PROMPT,
@@ -70,7 +71,9 @@ class Chatbot:
         main_prompt = FIRST_RESPONSE_REFER_MAIN_PROMPT.format(
             chat_context=chat_context.get_gpt_input()
         )
-        sys_prompt = FIRST_RESPONSE_REFER_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        sys_prompt = FIRST_RESPONSE_REFER_SYS_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=50)
         return result
 
@@ -79,7 +82,9 @@ class Chatbot:
         main_prompt = FIRST_RESPONSE_NONE_MAIN_PROMPT.format(
             chat_context=chat_context.get_gpt_input()
         )
-        sys_prompt = FIRST_RESPONSE_NONE_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        sys_prompt = FIRST_RESPONSE_NONE_SYS_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=50)
         return result
 
@@ -91,13 +96,17 @@ class Chatbot:
     @async_perf_logger
     async def generate_initial_preplan_response(self, chat_context: ChatContext) -> str:
         main_prompt = INITIAL_PREPLAN_MAIN_PROMPT.format(chat_context=chat_context.get_gpt_input())
-        sys_prompt = INITIAL_PREPLAN_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        sys_prompt = INITIAL_PREPLAN_SYS_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=70)
         return result
 
     async def generate_initial_midplan_response(self, chat_context: ChatContext) -> str:
         main_prompt = INITIAL_MIDPLAN_MAIN_PROMPT.format(chat_context=chat_context.get_gpt_input())
-        sys_prompt = INITIAL_MIDPLAN_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        sys_prompt = INITIAL_MIDPLAN_SYS_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=50)
         return result
 
@@ -107,7 +116,9 @@ class Chatbot:
         main_prompt = INITIAL_POSTPLAN_MAIN_PROMPT.format(
             chat_context=chat_context.get_gpt_input(), plan=execution_plan.get_plan_steps_for_gpt()
         )
-        sys_prompt = INITIAL_POSTPLAN_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        sys_prompt = INITIAL_POSTPLAN_SYS_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=100)
         return result
 
@@ -115,7 +126,9 @@ class Chatbot:
         main_prompt = INITIAL_PLAN_FAILED_MAIN_PROMPT.format(
             chat_context=chat_context.get_gpt_input()
         )
-        sys_prompt = INITIAL_PLAN_FAILED_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        sys_prompt = INITIAL_PLAN_FAILED_SYS_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=50)
         return result
 
@@ -126,7 +139,8 @@ class Chatbot:
             chat_context=chat_context.get_gpt_input()
         )
         sys_prompt = INITIAL_PLAN_FAILED_SUGGESTIONS_SYS_PROMPT.format(
-            agent_description=AGENT_DESCRIPTION, tools=self.tool_registry.get_tool_str()
+            agent_description=self.prepare_agent_description(),
+            tools=self.tool_registry.get_tool_str(),
         )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=500)
         return result
@@ -150,7 +164,9 @@ class Chatbot:
             plan=execution_plan.get_plan_steps_for_gpt(),
             output=output_str,
         )
-        sys_prompt = COMPLETE_EXECUTION_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        sys_prompt = COMPLETE_EXECUTION_SYS_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=100)
         return result
 
@@ -158,7 +174,9 @@ class Chatbot:
         main_prompt = INPUT_UPDATE_NO_ACTION_MAIN_PROMPT.format(
             chat_context=chat_context.get_gpt_input()
         )
-        sys_prompt = INPUT_UPDATE_NO_ACTION_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        sys_prompt = INPUT_UPDATE_NO_ACTION_SYS_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=30)
         return result
 
@@ -168,7 +186,9 @@ class Chatbot:
         main_prompt = INPUT_UPDATE_RERUN_MAIN_PROMPT.format(
             chat_context=chat_context.get_gpt_input(), plan=execution_plan, functions=functions
         )
-        sys_prompt = INPUT_UPDATE_RERUN_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        sys_prompt = INPUT_UPDATE_RERUN_SYS_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=60)
         return result
 
@@ -177,7 +197,7 @@ class Chatbot:
             chat_context=chat_context.get_gpt_input()
         )
         sys_prompt = INPUT_UPDATE_REPLAN_PREPLAN_SYS_PROMPT.format(
-            agent_description=AGENT_DESCRIPTION
+            agent_description=self.prepare_agent_description()
         )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=80)
         return result
@@ -191,7 +211,7 @@ class Chatbot:
             new_plan=new_plan.get_formatted_plan(),
         )
         sys_prompt = INPUT_UPDATE_REPLAN_POSTPLAN_SYS_PROMPT.format(
-            agent_description=AGENT_DESCRIPTION
+            agent_description=self.prepare_agent_description()
         )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=80)
         return result
@@ -206,7 +226,9 @@ class Chatbot:
             error=error_info.error,
             change=error_info.change,
         )
-        sys_prompt = ERROR_REPLAN_PREPLAN_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        sys_prompt = ERROR_REPLAN_PREPLAN_SYS_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=120)
         return result
 
@@ -218,7 +240,9 @@ class Chatbot:
             old_plan=old_plan.get_formatted_plan(),
             new_plan=new_plan.get_formatted_plan(),
         )
-        sys_prompt = ERROR_REPLAN_POSTPLAN_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        sys_prompt = ERROR_REPLAN_POSTPLAN_SYS_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=80)
         return result
 
@@ -226,7 +250,9 @@ class Chatbot:
         main_prompt = NOTIFICATION_UPDATE_MAIN_PROMPT.format(
             chat_context=chat_context.get_gpt_input(),
         )
-        sys_prompt = NOTIFICATION_UPDATE_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        sys_prompt = NOTIFICATION_UPDATE_SYS_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=60)
         return result
 
@@ -243,6 +269,14 @@ class Chatbot:
             step=step.get_plan_step_str(),
             error=error,
         )
-        main_prompt = NON_RETRIABLE_ERROR_MAIN_PROMPT.format(agent_description=AGENT_DESCRIPTION)
+        main_prompt = NON_RETRIABLE_ERROR_MAIN_PROMPT.format(
+            agent_description=self.prepare_agent_description()
+        )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=120)
         return result
+
+    async def prepare_agent_description(self) -> str:
+        agent_description = AGENT_DESCRIPTION_PROMPT.format(
+            today=str(date.today().strftime("%Y-%m-%d"))
+        ).filled_prompt
+        return agent_description

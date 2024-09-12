@@ -1,14 +1,19 @@
+from datetime import date
 from typing import List, Optional
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
-from agent_service.chatbot.prompts import AGENT_DESCRIPTION
+from agent_service.chatbot.prompts import AGENT_DESCRIPTION_PROMPT
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
 from agent_service.types import ChatContext
 from agent_service.utils.gpt_logging import chatbot_context
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.prompt_utils import Prompt
+
+AGENT_DESCRIPTION = AGENT_DESCRIPTION_PROMPT.format(
+    today=str(date.today().strftime("%Y-%m-%d")),
+).filled_prompt
 
 NAME_AGENT_SYS_PROMPT_STR = "{agent_description}"
 

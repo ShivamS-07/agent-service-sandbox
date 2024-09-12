@@ -1,6 +1,12 @@
 # flake8: noqa
-from agent_service.chatbot.prompts import AGENT_DESCRIPTION
+from datetime import date
+
+from agent_service.chatbot.prompts import AGENT_DESCRIPTION_PROMPT
 from agent_service.utils.prompt_utils import FilledPrompt, Prompt
+
+AGENT_DESCRIPTION = AGENT_DESCRIPTION_PROMPT.format(
+    today=str(date.today().strftime("%Y-%m-%d")),
+).filled_prompt
 
 TEXT_GENERATE_BASIC_DIFF_PROMPT_STR = "You are a financial analyst. Your current work involves running a daily python task for your boss. This task produces a text output, and it is your job to create a list of the changes in the output since the previous run. In this initial pass, simply list all the topics found in today's run, and then, for each topic, say whether or not the topic is mentioned in the previous run. A topic will generally correspond to a sentence or bullet point, though some sentences or bullet points may not have any real informational content, or may contain more than one topic, so use your intuition about what counts as a topic. You will not write the full topic, but rather you must represent each topic as a short keyword phrase of ideally just a few words which uniquely identifies the topic within today's summary. For each topic, on a line by itself, write the topic, and then next to the topic, on the same line separated by a `:` (a colon), write Yes if the topic is mentioned in the previous run's output, or No if it is not. You must NEVER have a topic keyword listed which includes more than 5 words, either slim it down, or split it into multiple topics. A topic must never include a list. You must not include topics that are about there being 'no information' about a stock, that is not a useful topic. I repeat, do not output any topic that has 'no information' or 'insufficient information' in the topic: you must skip that topic; if you do, you will be fired. Do not number or bullet point your topics. You should not reject a topic as not being mentioned simply because of differences of wording, focus or details, the important thing is whether the topic is addressed. Here is the today's output, delimited by ---:\n---\n{latest_output}\n---\nHere is the previous run output:\n---\n{prev_output}\n---\nNow write the topics for today's output, indicating whether or not they appear in the previous run:\n"
 
