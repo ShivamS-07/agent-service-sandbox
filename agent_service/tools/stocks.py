@@ -1689,8 +1689,8 @@ async def get_risk_exposure_for_stocks(
     exposures = await universe_stock_factor_exposures(
         user_id=context.user_id,
         universe_id=universe_id,
-        # TODO default to None for now
-        risk_model_id=None,
+        # NA risk model id is 5 in both DEV and PROD
+        risk_model_id=5,
         gbi_ids=[stock.gbi_id for stock in args.stock_list],
     )
 
