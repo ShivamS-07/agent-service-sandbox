@@ -394,7 +394,7 @@ class Postgres(PostgresBase):
         )
 
     def write_tool_split_outputs(
-        self, split_outputs: List[IOType], context: PlanRunContext
+        self, outputs_with_ids: List[OutputWithID], context: PlanRunContext
     ) -> None:
         now = get_now_utc()
         time_delta = datetime.timedelta(seconds=0.01)
@@ -403,12 +403,13 @@ class Postgres(PostgresBase):
                 "agent_id": context.agent_id,
                 "plan_id": context.plan_id,
                 "plan_run_id": context.plan_run_id,
-                "task_id": context.task_id,
+                "log_id": output.output_id,
+                "task_id": output.task_id,
                 "log_data": dump_io_type(output),
                 "is_task_output": True,
                 "created_at": now + idx * time_delta,  # preserve order
             }
-            for idx, output in enumerate(split_outputs)
+            for idx, output in enumerate(outputs_with_ids)
         ]
         self.multi_row_insert(table_name="agent.work_logs", rows=rows)
 
@@ -457,6 +458,7 @@ class Postgres(PostgresBase):
                 "agent_id": context.agent_id,
                 "plan_id": context.plan_id,
                 "plan_run_id": context.plan_run_id,
+                "task_id": output_with_id.task_id,
                 "output": dump_io_type(output_with_id.output),
                 "is_intermediate": is_intermediate,
                 "live_plan_output": live_plan_output,

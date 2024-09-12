@@ -366,12 +366,13 @@ async def run_execution_plan(
         split_outputs = await split_io_type_into_components(tool_output)
         # This will only be used if the step is an output node
         outputs_with_ids = [
-            OutputWithID(output=output, output_id=str(uuid4())) for output in split_outputs
+            OutputWithID(output=output, task_id=step.tool_task_id, output_id=str(uuid4()))
+            for output in split_outputs
         ]
 
         if not step.is_output_node:
             if step.store_output:
-                db.write_tool_split_outputs(split_outputs=split_outputs, context=context)
+                db.write_tool_split_outputs(outputs_with_ids=outputs_with_ids, context=context)
         else:
             # We have an output node
             live_plan_output = False
@@ -388,6 +389,9 @@ async def run_execution_plan(
                 db=db,
             )
 
+            final_outputs.extend(split_outputs)
+            final_outputs_with_ids.extend(outputs_with_ids)
+
         if log_all_outputs:
             logger.info(f"Output of step '{step.tool_name}': {output_for_log(tool_output)}")
 
@@ -398,9 +402,6 @@ async def run_execution_plan(
         # Update the chat context in case of new messages
         if not context.skip_db_commit and not scheduled_by_automation:
             context.chat = db.get_chats_history_for_agent(agent_id=context.agent_id)
-        if step.is_output_node:
-            final_outputs.extend(split_outputs)
-            final_outputs_with_ids.extend(outputs_with_ids)
 
         current_task_logs = await get_agent_task_logs(
             agent_id=context.agent_id, task_id=context.task_id, db=db

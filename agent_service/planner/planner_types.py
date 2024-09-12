@@ -174,3 +174,4 @@ class RunMetadata(ComplexIOBase):
 class OutputWithID:
     output: IOType
     output_id: str
+    task_id: Optional[str] = None  # None for backwards compatibility

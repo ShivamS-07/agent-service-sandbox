@@ -131,6 +131,7 @@ class AsyncDB:
 
         sql = f"""
                 SELECT ao.plan_id::VARCHAR, ao.output_id::VARCHAR, ao.plan_run_id::VARCHAR,
+                    ao.task_id::VARCHAR,
                     ao.is_intermediate, ao.live_plan_output,
                     ao.output, ao.created_at, pr.shared, pr.run_metadata
                 FROM agent.agent_outputs ao
@@ -192,7 +193,7 @@ class AsyncDB:
     async def get_plan_run_outputs(self, plan_run_id: str) -> List[AgentOutput]:
         sql = """
                 SELECT ao.agent_id::VARCHAR, ao.plan_id::VARCHAR, ao.plan_run_id::VARCHAR,
-                  ao.output_id::VARCHAR, ao.is_intermediate,
+                  ao.output_id::VARCHAR, ao.task_id::VARCHAR, ao.is_intermediate,
                     ao.output, ao.created_at, COALESCE(pr.shared, FALSE) AS shared
                 FROM agent.agent_outputs ao
                 LEFT JOIN agent.plan_runs pr

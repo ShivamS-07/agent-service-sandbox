@@ -417,6 +417,7 @@ class AgentOutput(BaseModel):
     # metadata from the run, currently only populated by certain db functions
     run_metadata: Optional[RunMetadata] = None
     live_plan_output: bool = False
+    task_id: Optional[str] = None  # None for backward compatibility
 
 
 class GetAgentOutputResponse(BaseModel):

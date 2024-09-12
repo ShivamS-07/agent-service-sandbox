@@ -36,14 +36,17 @@ def build_plan_object(agent_id: str, plan_id: str) -> ExecutionPlan:
 
 def get_run_outputs(agent_id: str, plan_run_id: str) -> List[OutputWithID]:
     sql = """
-        SELECT output_id::VARCHAR, output
+        SELECT output_id::VARCHAR, task_id::VARCHAR, output
         FROM agent.agent_outputs
         WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s
     """
     db = Postgres()
     rows = db.generic_read(sql, {"agent_id": agent_id, "plan_run_id": plan_run_id})
     return [
-        OutputWithID(output_id=row["output_id"], output=load_io_type(row["output"])) for row in rows
+        OutputWithID(
+            output_id=row["output_id"], task_id=row["task_id"], output=load_io_type(row["output"])
+        )
+        for row in rows
     ]
 
 
