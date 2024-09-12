@@ -7,7 +7,7 @@ from typing import Any, DefaultDict, Dict, Iterator, List, Optional, Tuple
 from gbi_common_py_utils.utils.postgres import PostgresBase
 from psycopg import Cursor
 
-from agent_service.endpoints.models import AgentMetadata
+from agent_service.endpoints.models import AgentMetadata, Status
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 from agent_service.planner.planner_types import (
     ExecutionPlan,
@@ -205,6 +205,28 @@ class Postgres(PostgresBase):
 
         return rows[0]
 
+    def get_running_plan_run(self, agent_id: str) -> Optional[Dict[str, str]]:
+        """
+        Look at `agent.plan_runs` table and find the latest plan run that is either NOT_STARTED or
+        RUNNING. If there is no such plan run, return None.
+        """
+
+        sql = """
+            SELECT plan_run_id::VARCHAR, plan_id::VARCHAR
+            FROM agent.plan_runs
+            WHERE agent_id = %(agent_id)s AND status = ANY(%(status)s)
+            ORDER BY created_at DESC
+            LIMIT 1
+        """
+        rows = self.generic_read(
+            sql,
+            params={
+                "agent_id": agent_id,
+                "status": [Status.NOT_STARTED.value, Status.RUNNING.value],
+            },
+        )
+        return rows[0] if rows else None
+
     def insert_plan_run(self, agent_id: str, plan_id: str, plan_run_id: str) -> None:
         sql = """
         INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id)
@@ -220,6 +242,15 @@ class Postgres(PostgresBase):
                 "plan_run_id": plan_run_id,
             },
         )
+
+    def cancel_agent_plan(
+        self, plan_id: Optional[str] = None, plan_run_id: Optional[str] = None
+    ) -> None:
+        cancelled_ids = [{"cancelled_id": _id} for _id in (plan_id, plan_run_id) if _id]
+        if not cancelled_ids:
+            return
+
+        self.multi_row_insert(table_name="agent.cancelled_ids", rows=cancelled_ids)
 
     def is_cancelled(self, ids_to_check: List[str]) -> bool:
         """

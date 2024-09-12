@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import enum
 import json
@@ -28,6 +29,8 @@ from agent_service.endpoints.models import Status
 from agent_service.planner.constants import FollowupAction
 from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan
 from agent_service.types import PlanRunContext
+from agent_service.utils.agent_event_utils import publish_agent_execution_status
+from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.constants import AGENT_WORKER_QUEUE, BOOSTED_DAG_QUEUE
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.feature_flags import use_boosted_dag_for_run_execution_plan
@@ -261,12 +264,61 @@ async def prefect_resume_agent_flow(run: PrefectFlowRun) -> None:
         await client.set_flow_run_state(flow_run_id=run.flow_run_id, state=run.prior_state)
 
 
-async def prefect_cancel_agent_flow(run: PrefectFlowRun, db: Postgres) -> None:
-    logger.info(f"Cancelling flow run {run.flow_run_id}")
-    # The 'name' here is the plan_id or plan_run_id. Those are set as the
-    # prefect flow name.
-    db.insert_into_table(table_name="agent.cancelled_ids", cancelled_id=run.name)
-    logger.info(f"Cancelling flow run {run.flow_run_id}")
+async def prefect_cancel_agent_flow(
+    db: Postgres,
+    agent_id: str,
+    plan_id: Optional[str],
+    plan_run_id: Optional[str],
+    flow_run: Optional[PrefectFlowRun],
+) -> None:
+    """
+    A few steps:
+    1. Try to cancel the flow run in Prefect
+    2. Insert the plan run ID into the cancelled_ids table (also plan_id if we decide to not use it)
+    3. Publish the execution status to FE
+
+    The reason to do 2) and 3) is because when the task is cancelled by Prefect, FE won't know the
+    status immediately. So we need to publish the event to update FE
+    """
+    logger.info(
+        f"Inserting {plan_run_id=} into cancelled_ids table and publishing execution status"
+    )
+
+    cancelled_ids = [_id for _id in (plan_run_id, plan_id) if _id]
+    if flow_run and flow_run.name not in cancelled_ids:
+        cancelled_ids.append(flow_run.name)
+
+    tasks = []
+    if cancelled_ids:
+        tasks.append(
+            run_async_background(
+                asyncio.to_thread(
+                    db.multi_row_insert,
+                    table_name="agent.cancelled_ids",
+                    rows=[{"cancelled_id": _id} for _id in cancelled_ids],
+                )
+            )
+        )
+    if plan_run_id and plan_id:
+        tasks.append(
+            run_async_background(
+                publish_agent_execution_status(agent_id, plan_run_id, plan_id, Status.CANCELLED)
+            )
+        )
+
+    if flow_run:
+        try:
+            logger.info(f"Cancelling Prefect flow run {flow_run.flow_run_id}")
+            async with get_client() as client:  # type: ignore
+                await client.set_flow_run_state(
+                    flow_run_id=flow_run.flow_run_id, state=State(type=StateType.CANCELLED)
+                )
+            logger.info(f"Cancelled Prefect flow run {flow_run.flow_run_id}")
+        except Exception as e:
+            logger.error(f"Failed to cancel Prefect flow run {flow_run.flow_run_id}: {e}")
+
+    await asyncio.gather(*tasks)
+    logger.info(f"Inserted {plan_run_id=} into cancelled_ids table and published execution status")
 
 
 async def prefect_get_current_plan_run_task_id(run: PrefectFlowRun) -> Optional[str]:
