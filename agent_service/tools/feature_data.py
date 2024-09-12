@@ -3,7 +3,6 @@ import json
 from threading import Lock
 from typing import Dict, List, Optional
 
-import numpy as np
 import pandas as pd
 from cachetools import TTLCache, cached
 from data_access_layer.core.dao.features.features_dao import FeaturesDAO
@@ -493,7 +492,7 @@ async def get_statistic_data(
     # here, lets assert we got at least one dataframe back before concatenating chunks.
     assert len(df_chunks) > 0
     df = pd.concat(df_chunks, axis=1)
-    df = df.replace(0, np.nan).dropna(axis="index", how="all")
+    df = df.dropna(axis="index", how="all")
 
     # wrangle units
     units = dict(result.feature_value_units).get(statistic_id.stat_id, FEATURE_VALUE_UNITS_UNIT)
