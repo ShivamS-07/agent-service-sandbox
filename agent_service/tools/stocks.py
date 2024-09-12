@@ -26,6 +26,7 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.cache_utils import PostgresCacheBackend
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
@@ -861,20 +862,20 @@ async def multi_stock_identifier_lookup(
             prev_args = MultiStockIdentifierLookupInput.model_validate_json(
                 prev_run_info.inputs_str
             )
-            if args.stock_names == prev_args.stock_names:
+            if sorted(args.stock_names) == sorted(prev_args.stock_names):
                 prev_output: List[StockID] = prev_run_info.output  # type:ignore
                 return prev_output
 
     except Exception as e:
         logger.warning(f"Error using previous run cache: {e}")
 
-    output: List[StockID] = []
-    for stock_name in args.stock_names:
-        output.append(
-            await stock_identifier_lookup(  # type: ignore
-                StockIdentifierLookupInput(stock_name=stock_name), context
-            )
-        )
+    output: List[StockID] = await gather_with_concurrency(
+        [
+            stock_identifier_lookup(StockIdentifierLookupInput(stock_name=stock_name), context)
+            for stock_name in args.stock_names
+        ],
+        n=len(args.stock_names),
+    )
     return output
 
 
