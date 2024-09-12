@@ -7,7 +7,7 @@ import logging
 import time
 import traceback
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Dict, List, Optional
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile, status
@@ -23,6 +23,7 @@ from gbi_common_py_utils.utils.environment import (
 from gbi_common_py_utils.utils.event_logging import log_event
 from sse_starlette.sse import AsyncContentStream, EventSourceResponse, ServerSentEvent
 from starlette.requests import Request
+from starlette.types import ASGIApp, Receive, Send
 
 from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.authz_helper import (
@@ -206,53 +207,72 @@ def update_audit_info_with_response_info(
         audit_info.total_processing_time = (response_timestamp - client_ts).total_seconds()
 
 
-@application.middleware("http")
-async def add_process_time_header(request: Request, call_next: Callable) -> Any:
-    received_timestamp = get_now_utc()
-    global REQUEST_COUNTER
-    REQUEST_COUNTER += 1
-    client_timestamp = request.headers.get("clienttimestamp", None)
-    if client_timestamp:
-        client_timestamp = (
-            client_timestamp[:-1] if client_timestamp.endswith("Z") else client_timestamp
-        )
+class ProcessTimeHeaderMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
 
-    audit_info = AuditInfo(
-        path=request.url.path,
-        internal_request_id=str(uuid.uuid4()),
-        received_timestamp=received_timestamp,
-        client_timestamp=client_timestamp,
-        client_request_id=request.headers.get("clientrequestid", None),
-        request_number=REQUEST_COUNTER,
-        frontend_version=request.headers.get("clientversion", None),
-        fullstory_link=request.headers.get("fullstorylink", None),
-    )
-    try:
-        authorization = request.headers.get("Authorization", None)
-        if authorization:
-            user_info = parse_header(request=request, auth_token=authorization)
-            request.state.user_info = user_info
-            audit_info.user_id = user_info.user_id
-            audit_info.real_user_id = user_info.real_user_id
-        request_body = await request.body()
-        audit_info.request_body = json.loads(request_body) if request_body else None
-    except Exception:
-        audit_info.error = traceback.format_exc()
-    try:
-        response = await call_next(request)
-    except Exception as e:
-        error = traceback.format_exc()
-        audit_info.error = audit_info.error + "/n" + error if audit_info.error else error
-        update_audit_info_with_response_info(
-            audit_info=audit_info, received_timestamp=received_timestamp
-        )
-        log_event(event_name="AgentService-RequestError", event_data=audit_info.to_json_dict())
-        raise e
-    update_audit_info_with_response_info(
-        audit_info=audit_info, received_timestamp=received_timestamp
-    )
-    log_event(event_name="AgentService-RequestCompleted", event_data=audit_info.to_json_dict())
-    return response
+    async def __call__(self, scope: dict, receive: Receive, send: Send) -> Awaitable[None]:  # type: ignore
+        if scope["type"] == "http":
+            request = Request(scope, receive)
+            received_timestamp = get_now_utc()
+            global REQUEST_COUNTER
+            REQUEST_COUNTER += 1
+            client_timestamp = request.headers.get("clienttimestamp", None)
+            if client_timestamp:
+                client_timestamp = (
+                    client_timestamp[:-1] if client_timestamp.endswith("Z") else client_timestamp
+                )
+
+            audit_info = AuditInfo(
+                path=request.url.path,
+                internal_request_id=str(uuid.uuid4()),
+                received_timestamp=received_timestamp,
+                client_timestamp=client_timestamp,
+                client_request_id=request.headers.get("clientrequestid", None),
+                request_number=REQUEST_COUNTER,
+                frontend_version=request.headers.get("clientversion", None),
+                fullstory_link=request.headers.get("fullstorylink", None),
+            )
+            try:
+                authorization = request.headers.get("Authorization", None)
+                if authorization:
+                    user_info = parse_header(request=request, auth_token=authorization)
+                    request.state.user_info = user_info
+                    audit_info.user_id = user_info.user_id
+                    audit_info.real_user_id = user_info.real_user_id
+                request_body = await request.body()
+                audit_info.request_body = json.loads(request_body) if request_body else None
+            except Exception:
+                audit_info.error = traceback.format_exc()
+
+            # Wrap the send function to capture the response
+            async def send_wrapper(message: dict) -> Awaitable[None]:  # type: ignore
+                await send(message)
+
+            try:
+                await self.app(scope, receive, send_wrapper)  # type: ignore
+            except Exception as e:
+                error = traceback.format_exc()
+                audit_info.error = audit_info.error + "/n" + error if audit_info.error else error
+                update_audit_info_with_response_info(
+                    audit_info=audit_info, received_timestamp=received_timestamp
+                )
+                log_event(
+                    event_name="AgentService-RequestError", event_data=audit_info.to_json_dict()
+                )
+                raise e
+
+            update_audit_info_with_response_info(
+                audit_info=audit_info, received_timestamp=received_timestamp
+            )
+            log_event(
+                event_name="AgentService-RequestCompleted", event_data=audit_info.to_json_dict()
+            )
+        else:
+            await self.app(scope, receive, send)
+
+
+application.add_middleware(ProcessTimeHeaderMiddleware)  # type: ignore
 
 
 ####################################################################################################
