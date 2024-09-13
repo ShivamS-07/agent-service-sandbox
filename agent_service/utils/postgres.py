@@ -405,7 +405,7 @@ class Postgres(PostgresBase):
                 "plan_run_id": context.plan_run_id,
                 "log_id": output.output_id,
                 "task_id": output.task_id,
-                "log_data": dump_io_type(output),
+                "log_data": dump_io_type(output.output),
                 "is_task_output": True,
                 "created_at": now + idx * time_delta,  # preserve order
             }
