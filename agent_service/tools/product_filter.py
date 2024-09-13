@@ -126,6 +126,8 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "do NOT use this function in cases where the user is looking for consumers of a product "
         "or service, or companies otherwise linked to the product via supply chains. This tool only "
         "finds suppliers of the product or service indicated by product_str. "
+        "The client may use words such as `institutions`, `firms`, `companies`, or `stocks` to refer to "
+        "sectors and this tool should be used filter stocks. "
         "Do NOT use this function if the client is asking for filtering based on properties more "
         "complicated than just what specific product or service they sell, even when products or services "
         "are mentioned. For every company X selected by this function, it will be true that "
@@ -205,7 +207,7 @@ async def filter_stocks_by_product_or_service(
     prev_run_info = None
     prev_output: List[StockID] = []
     try:  # since everything associated with diffing is optional, put in try/except
-        prev_run_info = await get_prev_run_info(context, "filter_stocks_by_profile_match")
+        prev_run_info = await get_prev_run_info(context, "filter_stocks_by_product_or_service")
         if prev_run_info is not None:
             prev_args = FilterStocksByProductOrServiceInput.model_validate_json(
                 prev_run_info.inputs_str

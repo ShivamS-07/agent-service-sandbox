@@ -177,6 +177,8 @@ For example, if the client asks for `car companies`, the input string should be 
 You must ONLY use this look up and the corresponding sector filter tool if the client specifically
 asks for one of these classifications directly. Sometimes the client may use the word `sector` to
 refer to things which do not correspond to GICS sectors, in such a case you will NOT use this tool.
+Sometimes the client may use words such as `institutions`, `firms`, `companies`, or `stocks` to refer
+to a particular category or selection of stocks which may actually refer to a sector.
 For example, if someone mentions 'high bond yield sector', 'high bond yield' does not correspond to
 anything in the above list of sectors and you must NOT use this sector tool under any circumstances!
 If the client asks to filter stocks by something more specific than an industry/sector, you must use the
@@ -281,11 +283,16 @@ async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> Lis
 This function takes a sector id integer and an optional list of stocks
 and filters the list to only those stocks whose sector matches the sector_id
 If no stocks are passed in, a suitable default list such as S&P500 will be used
-Returns a list of stock_ids filtered by sector
+Returns a list of stock_ids filtered by sector.
 You must call the sector_identifier_lookup tool as a separate step before this tool to
 get a correct sector identifier You must use this tool (after calling sector_identifier_lookup
 as a separate step!) if the client asks for filtering by specific sector, NEVER use the
 get_sector_for_stocks tool for filtering.
+Sometimes the client may use the word `sector` to
+refer to things which do not correspond to GICS sectors, in such a case you will NOT use this tool.
+The client may use words such as `institutions`, `firms`, `companies`, or `stocks` to refer to
+sectors and this tool should be used filter stocks.
+If client mentions specific stock names, be sure to include them in the list of stocks.
 """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
