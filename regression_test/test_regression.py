@@ -2,6 +2,7 @@
 import asyncio
 import inspect
 import json
+import logging
 import os
 import traceback
 import unittest
@@ -31,6 +32,9 @@ from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.output_utils.output_construction import PreparedOutput
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
+
+logger = logging.getLogger(__name__)
+
 
 CH = ClickhouseBase(environment=DEV_TAG)
 SERVICE_VERSION = "374053208103.dkr.ecr.us-west-2.amazonaws.com/agent-service:405d39f6fb15ad617fae2584cd812ae51ca033a9"
@@ -226,6 +230,7 @@ class TestExecutionPlanner(unittest.TestCase):
         chat = ChatContext(
             messages=[Message(message=prompt, is_user_message=True, agent_id=agent_id)]
         )
+        logger.warning(f"test started {plan_id=}, {prompt=}")
         try:
             sample_plans = self.loop.run_until_complete(
                 get_similar_sample_plans(input=chat.get_gpt_input(client_only=True))
@@ -290,4 +295,5 @@ class TestExecutionPlanner(unittest.TestCase):
                 "output": dump_io_type(output),
             }
         )
+        logger.warning(f"test completed {plan_id=}, {prompt=}")
         return sample_plans, plan, output, execution_log

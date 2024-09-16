@@ -13,4 +13,4 @@ async def tool_log(
         db = get_psql(skip_commit=context.skip_db_commit)
         db.write_tool_log(log=log, context=context, associated_data=associated_data)
     logger = get_prefect_logger(__name__)
-    logger.info(dump_io_type(log))
+    logger.warning(dump_io_type(log))

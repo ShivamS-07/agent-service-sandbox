@@ -95,7 +95,7 @@ async def wait_for_messages(channel: PubSub, request: Request) -> AsyncGenerator
 async def publish_agent_event(agent_id: str, serialized_event: str) -> None:
     redis = get_redis_queue_client()
     if not redis:
-        logger.warning("Skipping message publish on local")
+        logger.info("Skipping message publish on local")
         return
 
     env = get_environment_tag().lower()
@@ -127,7 +127,7 @@ async def publish_agent_event(agent_id: str, serialized_event: str) -> None:
 async def publish_notification_event(user_id: str, serialized_event: str) -> None:
     redis = get_redis_queue_client()
     if not redis:
-        logger.warning("Skipping message publish on local")
+        logger.info("Skipping message publish on local")
         return
 
     env = get_environment_tag().lower()

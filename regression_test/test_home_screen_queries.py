@@ -1,9 +1,12 @@
 # type: ignore
+import logging
 from typing import DefaultDict, List
 
 from agent_service.canned_prompts.canned_prompts import CANNED_PROMPTS
 from agent_service.io_type_utils import IOType
 from regression_test.test_regression import TestExecutionPlanner, get_output, skip_in_ci
+
+logger = logging.getLogger(__name__)
 
 
 def get_canned_prompt_text(prompt_id: str) -> str:
@@ -14,6 +17,19 @@ def get_canned_prompt_text(prompt_id: str) -> str:
 
 
 class TestHomeScreenQueries(TestExecutionPlanner):
+
+    # we run this test 3 times to catch any randomness
+    # use duplicated test so that they can be run in parallel
+    @skip_in_ci
+    def test_home_screen_q1_commentary2(self):
+        logger.warning("Run 2 of test_home_screen_q1_commentary")
+        self.test_home_screen_q1_commentary()
+
+    @skip_in_ci
+    def test_home_screen_q1_commentary3(self):
+        logger.warning("Run 3 of test_home_screen_q1_commentary")
+        self.test_home_screen_q1_commentary()
+
     @skip_in_ci
     def test_home_screen_q1_commentary(self):
         prompt = get_canned_prompt_text(prompt_id="write_commentary")
@@ -35,9 +51,9 @@ class TestHomeScreenQueries(TestExecutionPlanner):
                 f"Args tool {tool_name} - {arg_name}",
             )
 
-        max_runs = 3
+        max_runs = 1
         for idx in range(max_runs):
-            print(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
+            logger.warning(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
                 prompt=prompt,
                 validate_output=validate_output,
@@ -51,7 +67,19 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
     @skip_in_ci
     def test_home_screen_q2_top_tech(self):
-        prompt = get_canned_prompt_text(prompt_id="identify_top_tech_stocks")
+        # changed from the original:
+        # prompt = get_canned_prompt_text(prompt_id="identify_top_tech_stocks")
+        """
+        Identify the top 5 performing stocks in the technology sector over the past year,
+        focusing on companies with a market cap above $10B.
+        provide a summary of their recent financial performance and any significant news.
+        """
+
+        # changed to this to make it consistent and repeatable
+        prompt = """Identify the top 5 performing stocks in the technology
+        sector in 2023, focusing on companies with a market cap above $10B.
+        provide a summary of their recent financial performance and any significant news.
+        """
 
         def validate_output(prompt: str, output: IOType):
             return
@@ -64,7 +92,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
         max_runs = 3
         for idx in range(max_runs):
-            print(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
+            logger.warning(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
                 prompt=prompt,
                 validate_output=validate_output,
@@ -85,13 +113,46 @@ class TestHomeScreenQueries(TestExecutionPlanner):
                 validate_tool_args=validate_tool_args,
             )
 
+    # we run this test 3 times to catch any randomness
+    # use duplicated test so that they can be run in parallel
+    @skip_in_ci
+    def test_home_screen_q3_COST_developments2(self):
+        logger.warning("Run 2 of test_home_screen_q3_COST_developments")
+        self.test_home_screen_q3_COST_developments()
+
+    @skip_in_ci
+    def test_home_screen_q3_COST_developments3(self):
+        logger.warning("Run 3 of test_home_screen_q3_COST_developments")
+        self.test_home_screen_q3_COST_developments()
+
     @skip_in_ci
     def test_home_screen_q3_COST_developments(self):
-        prompt = get_canned_prompt_text(prompt_id="summarize_costco")
+        # this should be renamed to:
+        # test_home_screen_q3_AAPL_developments(self):
+        # This original is needlessly slow for testing purposes
+        """
+        Summarize all the major developments for COST over the past year.
+        Focus your analysis on corporate filings and earnings calls.
+        Show the developments in point form as a timeline with dates.
+        Bold anything important. For each development mention if it
+        is positive or negative and why it is significant to COST.
+        """
+
+        # Use last quarter instead
+        # switch to apple that actually has data on dev.
+        prompt = """
+        Summarize all the major developments for Apple over the last quarter.
+        Focus your analysis on corporate filings and earnings calls.
+        Show the developments in point form as a timeline with dates.
+        Bold anything important. For each development mention if it
+        is positive or negative and why it is significant to AAPL.
+        """
 
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output=output)
             self.assertTrue(len(output_text.val.strip()) > 0)
+            self.assertTrue("\n- " in output_text.val, msg="not bullet points in markdown")
+            self.assertTrue("**" in output_text.val, msg="no bold in markdown")
 
         def validate_tool_args(execution_log: DefaultDict[str, List[dict]]):
             # Tool - get_date_range
@@ -99,7 +160,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
             self.assertTrue(tool_name in execution_log.keys())
             arg_name = "date_range_str"
             ref_tool_arg = execution_log[tool_name][0][arg_name]
-            exp_tool_arg = "last month"
+            exp_tool_arg = "last quarter"
             self.assertEqual(
                 ref_tool_arg,
                 exp_tool_arg,
@@ -117,9 +178,10 @@ class TestHomeScreenQueries(TestExecutionPlanner):
                 f"Args tool {tool_name} - {arg_name}",
             )
 
-        max_runs = 3
+        # duplicated the test 2 times so we can run this in parallel instead
+        max_runs = 1
         for idx in range(max_runs):
-            print(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
+            logger.warning(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
                 prompt=prompt,
                 validate_output=validate_output,
@@ -169,7 +231,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
 
         max_runs = 3
         for idx in range(max_runs):
-            print(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
+            logger.warning(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
                 prompt=prompt,
                 validate_output=validate_output,
@@ -204,6 +266,18 @@ class TestHomeScreenQueries(TestExecutionPlanner):
                 required_tools=[],
                 validate_tool_args=validate_tool_args,
             )
+
+    # we run this test 3 times to catch any randomness
+    # use duplicated test so that they can be run in parallel
+    @skip_in_ci
+    def test_home_screen_q6_hypothesis_leader2(self):
+        logger.warning("Run 2 of test_home_screen_q6_hypothesis_leader")
+        self.test_home_screen_q6_hypothesis_leader()
+
+    @skip_in_ci
+    def test_home_screen_q6_hypothesis_leader3(self):
+        logger.warning("Run 3 of test_home_screen_q6_hypothesis_leader")
+        self.test_home_screen_q6_hypothesis_leader()
 
     @skip_in_ci
     def test_home_screen_q6_hypothesis_leader(self):
@@ -251,9 +325,9 @@ class TestHomeScreenQueries(TestExecutionPlanner):
             self.assertTrue(tool_name in execution_log.keys())
             self.assertTrue(len(execution_log[tool_name]) == 3)
 
-        max_runs = 3
+        max_runs = 1
         for idx in range(max_runs):
-            print(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
+            logger.warning(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
                 prompt=prompt,
                 validate_output=validate_output,

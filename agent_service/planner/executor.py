@@ -168,8 +168,8 @@ async def run_execution_plan(
     ###########################################
     # PLAN RUN SETUP
     ###########################################
-
     logger = get_prefect_logger(__name__)
+    logger.warning(f"PLAN RUN SETUP {context.plan_run_id=}")
     # Maps variables to their resolved values
     variable_lookup: Dict[str, IOType] = {}
     db = get_psql(skip_commit=context.skip_db_commit)
@@ -237,7 +237,10 @@ async def run_execution_plan(
             )
             raise DoNotErrorException("Execution plan has been cancelled")
 
-        logger.info(f"Running step '{step.tool_name}' (Task ID: {step.tool_task_id})")
+        logger.warning(
+            f"Running step '{step.tool_name}' (Task ID: {step.tool_task_id}),"
+            f" {context.plan_id=}"
+        )
 
         tool = ToolRegistry.get_tool(step.tool_name)
         # First, resolve the variables
@@ -973,7 +976,7 @@ async def update_execution_after_input(
                     use_sample_plans=use_sample_plans,
                 )
                 if plan:
-                    print("plan created: ", new_plan_id, plan)
+                    logger.info(f"plan created: {new_plan_id}, {plan}")
                     return new_plan_id, plan, action
             await prefect_create_execution_plan(
                 agent_id=agent_id,
@@ -1230,11 +1233,12 @@ async def handle_error_in_execution(
                 log_all_outputs=False,
                 replan_execution_error=True,
             )
-            print("Got replan after error output:")
-            pprint.pprint(output)
+            logger.info("Got replan after error output:")
+            out_str = pprint.pformat(output)
+            logger.info(out_str)
             return True
         else:
-            print("replan failed")
+            logger.warning("replan failed")
             return False
 
     else:

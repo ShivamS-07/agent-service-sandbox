@@ -48,12 +48,22 @@ from agent_service.endpoints.models import (
 from agent_service.utils.do_nothing_task_executor import DoNothingTaskExecutor
 
 
+def get_loop():
+    try:
+        _loop = asyncio.get_event_loop()  # type: ignore[assignment]
+        return _loop
+    except RuntimeError:
+        _loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_loop)
+        return _loop
+
+
 class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
         init_stdout_logging()
 
-        cls.loop = asyncio.get_event_loop()  # type: ignore[assignment]
+        cls.loop = get_loop()
         cls.pg = AsyncDB(pg=SkipCommitBoostedPG())
         cls.channel = Channel(host="gpt-service-2.boosted.ai", port=50051)
         cls.gpt_service_stub = GPTServiceStub(cls.channel)

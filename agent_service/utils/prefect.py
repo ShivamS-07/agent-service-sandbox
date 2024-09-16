@@ -29,6 +29,7 @@ from agent_service.endpoints.models import Status
 from agent_service.planner.constants import FollowupAction
 from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan
 from agent_service.types import PlanRunContext
+from agent_service.unit_test_util import RUNNING_IN_UNIT_TEST
 from agent_service.utils.agent_event_utils import publish_agent_execution_status
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.constants import AGENT_WORKER_QUEUE, BOOSTED_DAG_QUEUE
@@ -176,6 +177,9 @@ async def get_prefect_plan_run_statuses(plan_run_ids: List[str]) -> Dict[str, Ta
 
 
 def get_prefect_logger(name: str) -> Union[Logger, LoggerAdapter]:
+    if RUNNING_IN_UNIT_TEST:
+        return logging.getLogger(name)
+
     try:
         return get_run_logger()
     except Exception:

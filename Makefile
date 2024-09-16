@@ -30,3 +30,7 @@ testfast:
 .PHONY: testslow
 testslow:
 	pipenv run invoke testslow
+
+.PHONY: regtest
+regtest:
+	pipenv run invoke testregression

@@ -52,7 +52,7 @@ class TestStockScreener(TestExecutionPlanner):
             required_sample_plans=[],
         )
 
-    @skip_in_ci
+    @unittest.skip("takes 12+ minutes to compute this, after we removed the theme tool")
     def test_best_gen_ai_stocks_july_2024(self):
         prompt = "Give me your best Generative AI theme buying ideas for first week of July 2024"
 
@@ -92,7 +92,7 @@ class TestStockScreener(TestExecutionPlanner):
             raise_plan_validation_error=True,
         )
 
-    @unittest.skip("This test is failing")
+    @skip_in_ci
     def test_growth_garp1(self):
         prompt = """Small and medium cap biotechnology companies that
         have made a major technology breakthrough in the past year

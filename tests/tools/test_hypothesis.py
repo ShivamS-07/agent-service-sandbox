@@ -28,6 +28,12 @@ CUSTOM_DOC_DEV_TEST_USER = "515b61f7-38af-4826-ad32-0900b3b1b7d4"
 STZ_STOCK_ID = StockID(gbi_id=2202, isin="", symbol="STZ", company_name="")
 
 
+# hide these functions from pytest that match the normal test_* signature
+# they are not actually tests
+test_and_summarize_hypothesis_with_custom_documents.__test__ = False
+test_hypothesis_for_custom_documents.__test__ = False
+
+
 @unittest.skip("The tool is disabled")
 class TestHypothesisPipeline(IsolatedAsyncioTestCase):
     @classmethod

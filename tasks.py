@@ -32,28 +32,49 @@ def testfast(c):
     # runs each test class in its own process 8 at a time
     print("running tests in parallel")
     c.run(
-        "RUN_IN_CI=true unittest-parallel -v --level class --disable-process-pooling --jobs 3  "
-        "-t . -s tests"
+        "RUN_IN_CI=true pipenv run python -m pytest  --durations=0 --durations-min=1.0"
+        " --disable-warnings --capture=tee-sys  --log-cli-level=WARNING"
+        " -n 8 --dist worksteal"
+        " -v tests"
     )
 
 
 @task
 def test(c):
-    testslow(c)
-    testregressionslow(c)
+    testfast(c)
+    testregressionci(c)
+
+
+# ci versions only run parts of the reg test that are for each PR
+@task
+def testregressionci(c):
+    c.run(
+        "RUN_IN_CI=true pipenv run python -m pytest  --durations=0 --durations-min=1.0"
+        " --disable-warnings --capture=tee-sys  --log-cli-level=WARNING"
+        " -n 8 --dist worksteal"
+        " -v regression_test"
+    )
 
 
 @task
+def testregressionslowci(c):
+    c.run("RUN_IN_CI=true python -W ignore -m unittest discover -v -s regression_test")
+
+
+# run these to invoke the full regression tests
+@task
 def testregression(c):
     c.run(
-        "RUN_IN_CI=true unittest-parallel -v --level class --disable-process-pooling --jobs 3  "
-        "-t . -s regression_test"
+        "pipenv run python -m pytest  --durations=0 --durations-min=1.0"
+        " --disable-warnings --capture=tee-sys  --log-cli-level=WARNING"
+        " -n 8 --dist worksteal"
+        " -v regression_test"
     )
 
 
 @task
 def testregressionslow(c):
-    c.run("RUN_IN_CI=true python -W ignore -m unittest discover -v -s regression_test")
+    c.run("python -W ignore -m unittest discover -v -s regression_test")
 
 
 @task
