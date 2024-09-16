@@ -95,6 +95,7 @@ async def _get_cron_from_gpt(agent_id: str, user_desc: str) -> str:
     output = await llm.do_chat_w_sys_prompt(
         main_prompt=prompt, sys_prompt=FilledPrompt(filled_prompt="")
     )
+    output = output.replace("`", "")
     return strip_code_backticks(output.strip()).strip()
 
 
