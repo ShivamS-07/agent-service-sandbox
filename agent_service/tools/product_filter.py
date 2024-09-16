@@ -213,20 +213,26 @@ async def filter_stocks_by_product_or_service(
                 prev_run_info.inputs_str
             )
 
-            # only include the stocks that were in the previous run as well as in the current input
+            # only include the stocks that were in the previous run as well as in the current inputs
             prev_output = [
-                stock for stock in prev_run_info.output if stock in stock_ids_set  # type:ignore
+                stock  # type: ignore
+                for stock in prev_run_info.output  # type: ignore
+                if stock in stock_ids_set or stock in must_include_stocks_set
             ]
+            prev_output_set = set(prev_output)
 
             # we are only going to run the tool on the stocks that are different
             diff_stock_ids = stock_ids_set - set(prev_args.stock_ids)
 
-            # only run the tool on must_include_stocks that are different
-            diff_must_include_stocks = must_include_stocks_set - set(
-                prev_args.must_include_stocks if prev_args.must_include_stocks else []
-            )
+            # must_include_stocks should always be in prev_output
+            args.must_include_stocks = list(must_include_stocks_set - prev_output_set)
 
-            stocks_to_filter = list(diff_stock_ids | diff_must_include_stocks)
+            # only run the tool on new input stocks that have not passed through the filter yet
+            stocks_to_filter = list((diff_stock_ids | must_include_stocks_set) - prev_output_set)
+
+            # if there are no new stocks to filter, return previous output
+            if len(stocks_to_filter) == 0:
+                return prev_output
     except Exception as e:
         logger.warning(f"Error including stock ids from previous run: {e}")
 
@@ -280,12 +286,15 @@ async def filter_stocks_by_product_or_service(
     filtered_stocks1 = list(filtered_stocks1_dict.keys())
 
     if not filtered_stocks1_dict:
-        raise EmptyOutputError(
-            f"No stocks are a good match for the given product/service: '{args.product_str}'"
-        )
+        if prev_output:
+            return prev_output
+        else:
+            raise EmptyOutputError(
+                f"No stocks are a good match for the provided product/service: '{args.product_str}'"
+            )
     debug_info["filtered_stocks1"] = filtered_stocks1
     await tool_log(
-        log=(f"Number of stocks after first round of filtering: {len(filtered_stocks1)}"),
+        log=f"Number of stocks after first round of filtering: {len(filtered_stocks1)}",
         context=context,
     )
     await tool_log(
@@ -303,11 +312,15 @@ async def filter_stocks_by_product_or_service(
 
     debug_info["filtered_stock2"] = dump_io_type(filtered_stocks2)
     await tool_log(
-        log=(f"Number of stocks after second round of filtering: {len(filtered_stocks2)}"),
+        log=f"Number of stocks after second round of filtering: {len(filtered_stocks2)}",
         context=context,
     )
 
     if args.max_results:
+        # no intersection between prev_outputs and filtered_stocks since we only filter on new input stocks
+        if prev_run_info:
+            args.max_results = args.max_results - len(prev_output)
+
         non_must_stocks = list(
             [
                 stock
@@ -353,7 +366,7 @@ async def filter_stocks_by_product_or_service(
                     del filtered_stocks2_dict[stock]
 
             await tool_log(
-                log=(f"Number of stocks after market cap filtering: {len(filtered_stocks2_dict)}"),
+                log=f"Number of stocks after market cap filtering: {len(filtered_stocks2_dict)}",
                 context=context,
             )
 
