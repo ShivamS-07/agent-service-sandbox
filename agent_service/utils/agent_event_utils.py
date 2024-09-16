@@ -34,6 +34,7 @@ from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.constants import NOTIFICATION_SERVICE_QUEUE
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
 from agent_service.utils.redis_queue import (
@@ -318,13 +319,12 @@ async def send_agent_emails(
     pg: AsyncDB, agent_id: str, plan_run_id: str, run_summary_short: str, run_summary_long: str
 ) -> None:
     """
-
     Args:
         pg: Async database
         agent_id: The agent id to retrieve the owner for
         plan_run_id: The plan run id
-        run_summary_short: Summary of run
-        run_summary_long: Long Summary of run
+        run_summary_short: Short summary of run
+        run_summary_long: Long Summary of run (What's new section on report)
 
     Returns: None this function checks at the completion of a plan and checks
     if the agent has email subscriptions and sends a message to the notification service
@@ -343,8 +343,32 @@ async def send_agent_emails(
         user_ids = set([agent_sub.user_id for agent_sub in agent_subs])
 
         # create a subscription message
-        message = AgentSubscriptionMessage(
-            user_ids=list(user_ids),
+        detailed_emails_user_ids = [
+            id
+            for id in user_ids
+            if get_ld_flag("whats-new-in-email", default=False, user_context=get_user_context(id))
+        ]
+
+        detailed_message = AgentSubscriptionMessage(
+            user_ids=detailed_emails_user_ids,
+            agent_data=[
+                AgentNotificationData(
+                    agent_name=agent_name,
+                    agent_id=agent_id,
+                    plan_run_id=plan_run_id,
+                    agent_owner=agent_owner if agent_owner else "",
+                    notification_body=AgentNotificationBody(
+                        summary_title=run_summary_short if run_summary_short else "",
+                        summary_body=run_summary_long if run_summary_long else "",
+                    ),
+                )
+            ],
+        )
+
+        # this list contains the users who do not have the "whats-new-in-email" feature flag enabled
+        simple_emails_user_ids = [id for id in user_ids if id not in detailed_emails_user_ids]
+        simple_message = AgentSubscriptionMessage(
+            user_ids=simple_emails_user_ids,
             agent_data=[
                 AgentNotificationData(
                     agent_name=agent_name,
@@ -358,5 +382,7 @@ async def send_agent_emails(
                 )
             ],
         )
+
         queue = sqs.get_queue_by_name(QueueName=NOTIFICATION_SERVICE_QUEUE)
-        queue.send_message(MessageBody=message.model_dump_json())
+        queue.send_message(MessageBody=detailed_message.model_dump_json())
+        queue.send_message(MessageBody=simple_message.model_dump_json())

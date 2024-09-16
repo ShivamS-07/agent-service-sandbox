@@ -493,6 +493,7 @@ async def run_execution_plan(
         full_diff_summary_output = (
             (await full_diff_summary.get()).val if full_diff_summary else None
         )
+        whats_new_summary = full_diff_summary_output
         if isinstance(full_diff_summary, Text):
             full_diff_summary_output = await full_diff_summary.to_rich_output(pg=async_db.pg)  # type: ignore
 
@@ -558,7 +559,7 @@ async def run_execution_plan(
                     agent_id=context.agent_id,
                     plan_run_id=context.plan_run_id,
                     run_summary_short=short_diff_summary if short_diff_summary else "",
-                    run_summary_long=filtered_diff_summary if filtered_diff_summary else "",
+                    run_summary_long=whats_new_summary if whats_new_summary else "",
                 )
 
     await async_db.set_plan_run_metadata(
