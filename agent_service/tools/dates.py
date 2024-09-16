@@ -69,6 +69,10 @@ class DateFromDateStrInput(ToolArgs):
         "relative to the current time, and converts it to a Python date. "
         "You should always input some string, never an empty string. "
         "This function should be used when a start_date is needed given a string."
+        " As a reminder, keywords in the date_str such as: last, previous, before, ago, etc"
+        " will tend to create date ranges in the past."
+        " Keywords like next, future, upcoming, forthcoming, expected, projected, etc"
+        " will tend to create date ranges in the future"
     ),
     category=ToolCategory.DATES,
     tool_registry=ToolRegistry,

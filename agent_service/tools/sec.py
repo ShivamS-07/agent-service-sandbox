@@ -85,7 +85,10 @@ class GetSecFilingsInput(ToolArgs):
     "It is especially useful for finding current information about less well-known "
     "companies which may have little or no news for a given period. "
     "Any documents published within the date_range are included. Date_range will "
-    "default to the last quarter, which includes the latest SEC filing.",
+    "default to the last quarter, which includes the latest SEC filing."
+    " You should not pass a date_range containing dates after todays date into this function."
+    " documents can only be found for dates in the past up to the present, including todays date."
+    " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!",
     category=ToolCategory.SEC_FILINGS,
     tool_registry=ToolRegistry,
     store_output=False,
@@ -344,7 +347,10 @@ class GetSecFilingsWithTypeInput(ToolArgs):
     " that this tool accesses are NOT included in the output of `get_default_text_data_for_stocks`!"
     " Any documents published between start_date and end_date will be included, if the end_date is"
     " excluded it is assumed to include documents up to today, if start_date is not"
-    " included, the start date is a quarter ago, which includes only the latest SEC filing.",
+    " included, the start date is a quarter ago, which includes only the latest SEC filing."
+    " You should not pass a date_range containing dates after todays date into this function."
+    " documents can only be found for dates in the past up to the present, including todays date."
+    " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!",
     category=ToolCategory.SEC_FILINGS,
     tool_registry=ToolRegistry,
     store_output=False,

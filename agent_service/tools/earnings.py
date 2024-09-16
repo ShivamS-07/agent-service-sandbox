@@ -367,7 +367,11 @@ You should first use the tool `get_date_range` to create a DateRange object if t
 date range mentioned in the client's messages. If no date range is provided or can be inferred from \
 the client's messages, you should set `date_range` to None, and it defaults to the last quarter under \
 the hood, which you can assume is what the clients are usually interested in unless they explicitly \
-state otherwise.""",
+state otherwise.\
+You should not pass a date_range containing dates after todays date into this function. \
+documents can only be found for dates in the past up to the present, including todays date. \
+I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
+""",
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,
 )
@@ -428,7 +432,11 @@ You should first use the tool `get_date_range` to create a DateRange object if t
 date range mentioned in the client's messages. If no date range is provided or can be inferred from \
 the client's messages, you should set `date_range` to None, and it defaults to the last quarter under \
 the hood, containing the summary for the most recent earnings call in which the clients are \
-usually interested in unless they explicitly state otherwise.""",
+usually interested in unless they explicitly state otherwise. \
+You should not pass a date_range containing dates after todays date into this function. \
+documents can only be found for dates in the past up to the present, including todays date. \
+I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!
+""",
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,
 )

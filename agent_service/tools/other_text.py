@@ -65,6 +65,9 @@ class GetAllTextDataForStocksInput(ToolArgs):
         "Seriously, you will be fired if you use this tool when the user asks for specific kinds of documents, "
         "If end_date is omitted, data up to the current day will be included, if the start date is "
         "omitted, all data for the last quarter will be included."
+        " You should not pass a date_range containing dates after todays date into this function."
+        " documents can only be found for dates in the past up to the present, including todays date."
+        " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
     ),
     category=ToolCategory.TEXT,
     tool_registry=ToolRegistry,

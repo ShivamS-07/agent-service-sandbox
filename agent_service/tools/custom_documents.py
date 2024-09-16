@@ -31,6 +31,9 @@ class GetCustomDocsInput(ToolArgs):
         " during a certain time period. This should not be used to filter to documents"
         " ABOUT events that occurred during said period as many documents are forwards or"
         " backwards-looking."
+        " You should not pass a date_range containing dates after todays date into this function."
+        " documents can only be found for dates in the past up to the present, including todays date."
+        " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
     ),
     category=ToolCategory.TEXT,
     tool_registry=ToolRegistry,
@@ -105,6 +108,9 @@ class GetCustomDocsByTopicInput(ToolArgs):
         " during a certain time period. This should not be used to filter to documents"
         " ABOUT events that occurred during said period as many documents are forwards or"
         " backwards-looking."
+        " You should not pass a date_range containing dates after todays date into this function."
+        " documents can only be found for dates in the past up to the present, including todays date."
+        " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
     ),
     category=ToolCategory.TEXT,
     tool_registry=ToolRegistry,

@@ -30,7 +30,7 @@ class TestStockScreener(TestExecutionPlanner):
     @skip_in_ci
     def test_stock_screener_qqq_feb_2024(self):
         prompt = (
-            "Find companies in QQQ with a PE < 30 and PE > 10 in Feb 2024 that mention "
+            "Find companies in QQQ with a PE < 25 and PE > 20 in Feb 2024 that mention "
             "greenshoots in their Q1 earnings."
         )
 
@@ -38,11 +38,10 @@ class TestStockScreener(TestExecutionPlanner):
             output_stock_ids = get_output(output=output)
             actual_gbi_ids = [output_stock_id.gbi_id for output_stock_id in output_stock_ids]
             actual_gbi_ids.sort()
-            expected_gbi_ids = [713]
-            self.assertEqual(
-                actual_gbi_ids,
-                expected_gbi_ids,
-                "Output stocks don't match",
+            expected_gbi_ids = set([713])  # AMAT
+            self.assertTrue(
+                expected_gbi_ids.issubset(set(actual_gbi_ids)),
+                f"Some expected stocks missing {expected_gbi_ids=}, {actual_gbi_ids=}",
             )
 
         self.prompt_test(

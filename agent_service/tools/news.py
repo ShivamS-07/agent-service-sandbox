@@ -167,7 +167,15 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         "Never use this tool together with write_commentary tool or get_commentary_inputs. "
         "Never, ever use get_default_text_data_for_stock as a substitute for this tool if the "
         "client says they want to look 'news' data for companies, you must use this tool "
-        "even if multiple data sources are mentioned"
+        "even if multiple data sources are mentioned."
+        " You should not pass a date_range containing dates after todays date into this function."
+        " News documents can only be found for dates in the past up to the present, including todays date."
+        " Sometimes you may be asked to read the news to prepare for, analyze or predict something "
+        " about an upcoming event in the future,"
+        " in those cases, when calling this function to get news, "
+        " you MUST either use the default date_range or use a separate date_range from the past,"
+        " the date_range used here must not be for the time period of the upcoming future event."
+        " I repeat you will be FIRED if you try to find news from the future!!! YOU MUST NEVER DO THAT!!!"
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,
@@ -187,8 +195,12 @@ async def get_all_news_developments_about_companies(
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
     if len(output) == 0:
+        stock_info = f"{len(args.stock_ids)} stocks"
+        if len(args.stock_ids) < 10:
+            stock_info = f"stocks: {args.stock_ids}"
         raise EmptyOutputError(
-            "Did not get any news developments for these stocks over the time period"
+            f"Did not get any news developments for {stock_info}"
+            f" over the time period: {start_date=}, {end_date=}"
         )
 
     await tool_log(
