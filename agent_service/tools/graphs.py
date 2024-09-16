@@ -111,7 +111,10 @@ compatible with a line graphs.
 It is extremely important that you provide enough data to
 graph. E.g. at least 7-14 datapoints to make a nice line. Note that the input
 must be a Table! If the source data is stock pricing data, financial data, or
-economic time series data, then a date range should be used to acquire the data rather than a single date or no date.
+economic time series data, then a date range should be used to acquire the data
+rather than a single date or no date.
+Note that if the client mentions wanting to overlay one kind of data with another,
+you should first construct a table with all the required data and then create a single graph.
 """
 )
 async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> LineGraph:
