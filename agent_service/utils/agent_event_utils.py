@@ -336,13 +336,12 @@ async def send_agent_emails(
     agent_owner = await pg.get_agent_owner(agent_id=agent_id)
     agent_subs = await pg.get_agent_subscriptions(agent_id=agent_id)
     # if we have any agent subscriptions then send an sqs message
+    # Do not automatically include the agent owner in the emailing list
     if agent_subs:
         # share the plan
         await pg.set_plan_run_share_status(plan_run_id=plan_run_id, status=True)
-        # Always include the agent owner in emails
         user_ids = set([agent_sub.user_id for agent_sub in agent_subs])
-        if agent_owner:
-            user_ids.add(agent_owner)
+
         # create a subscription message
         message = AgentSubscriptionMessage(
             user_ids=list(user_ids),
