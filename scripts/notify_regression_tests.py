@@ -1,7 +1,8 @@
+import argparse
 import asyncio
 import logging
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.clickhouse import Clickhouse
@@ -30,22 +31,31 @@ async def get_results_for_latest_version(ch: Clickhouse, service_version: str) -
     return results[0]
 
 
-async def main() -> None:
+async def main(agent_service_version: Optional[str] = None) -> None:
     ch_dev = Clickhouse(environment="DEV")
-    latest_version = await get_latest_version(ch_dev)
-    results = await get_results_for_latest_version(ch_dev, latest_version)
-    version_short = latest_version.split(":")[-1]
+    if not agent_service_version:
+        agent_service_version = await get_latest_version(ch_dev)
+    results = await get_results_for_latest_version(ch_dev, agent_service_version)
+    version_short = agent_service_version.split(":")[-1]
     msg_content = (
-        f"Regression Test Result for Latest Version {version_short}:\n"
+        f"Regression Test Result for Version {version_short}:\n"
         f"    Success Count: {results['success_count']}\n"
         f"    Error Count: {results['error_count']}\n"
         f"    Warning Count: {results['warning_count']}\n"
         f"To see detailed results, visit this link: "
         f"https://agent-dev.boosted.ai/regression-test/{version_short}"
     )
-
     SlackSender("regression-tests").send_message_at(msg_content, int(time.time()) + 60)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-a",
+        "--agent-service-version",
+        default=None,
+        type=str,
+        required=False,
+    )
+    args = parser.parse_args()
+    asyncio.run(main(agent_service_version=args.agent_service_version))
