@@ -17,21 +17,20 @@ from agent_service.types import PlanRunContext
 
 class GetCustomDocsInput(ToolArgs):
     stock_ids: List[StockID]
-    limit: Optional[int] = None
     date_range: Optional[DateRange] = None
 
 
 @tool(
     description=(
-        "This function takes a list of stock IDs and returns a list of N most recent"
-        " custom document summaries associated with the stocks."
-        " If someone explicitly wants information"
+        "This function takes a list of stock IDs and returns custom document summaries"
+        " associated with the stocks. If someone explicitly wants information"
         " specific to custom documents or uploaded documents they have uploaded about a stock,"
         " this is the best tool to use. Do not use this tool if the user has not"
         " explicitly asked for custom documents or uploaded documents."
-        " The limit N can be specified using the"
-        " `limit` parameter and represents the concept of the most recent N documents"
-        " uploaded about a stock."
+        " `date_range` can be optionally specified to filter the documents published"
+        " during a certain time period. This should not be used to filter to documents"
+        " ABOUT events that occurred during said period as many documents are forwards or"
+        " backwards-looking."
     ),
     category=ToolCategory.TEXT,
     tool_registry=ToolRegistry,
@@ -47,17 +46,16 @@ async def get_user_custom_documents(
         start_date = None
         end_date = None
 
-    # arbitrary limit of 50 company documents if no limit is specified
-    if args.limit is None or args.limit == 0:
-        args.limit = 50
-
     stock_ids = [s.gbi_id for s in args.stock_ids]
     custom_doc_summaries = await get_custom_docs_by_security(
         context.user_id,
         gbi_ids=stock_ids,
         publish_date_start=start_date,
         publish_date_end=end_date,
-        limit=args.limit,
+        # return all custom docs without limit.
+        # NOTE: the limit argument is not provided as an argument as it has lead
+        # to very inconsistent behavior. I dont personally see a huge use case for this yet
+        limit=None,
     )
     await tool_log(
         log=f"Got {len(custom_doc_summaries.documents)} "
@@ -86,23 +84,27 @@ async def get_user_custom_documents(
 
 class GetCustomDocsByTopicInput(ToolArgs):
     topic: str
-    limit: Optional[int] = None
+    top_n: Optional[int] = 100
     date_range: Optional[DateRange] = None
 
 
 @tool(
     description=(
-        "This function takes a topic and returns a list of top N custom document"
-        " summaries associated with the topic. Do not use this tool if the user has not"
-        " explicitly asked for custom documents or uploaded documents."
-        " The limit N can be specified using the"
-        " `limit` parameter and represents the concept of the N documents most relevant"
-        " to the topic."
+        "This function takes a topic and returns N most relevant"
+        " summaries associated with a given non-stock topic."
+        " Do not use this tool if the user has not"
+        " specifically asked for custom documents or uploaded documents."
         " If someone explicitly wants summarized information specific to custom"
         " documents or uploaded documents they have uploaded about a topic, or related"
         " to a phrase or keyword, this is the best tool to use."
         " Do not use the output of this function for in a stock filter function, the documents"
         " do not contain information about associated stocks."
+        " `top_n` can be optionally specified to limit the number of documents returned to"
+        " only the N most relevant documents."
+        " `date_range` can be specified to filter the documents PUBLISHED"
+        " during a certain time period. This should not be used to filter to documents"
+        " ABOUT events that occurred during said period as many documents are forwards or"
+        " backwards-looking."
     ),
     category=ToolCategory.TEXT,
     tool_registry=ToolRegistry,
@@ -118,17 +120,17 @@ async def get_user_custom_documents_by_topic(
         start_date = None
         end_date = None
 
-    # arbitrary limit of 10 topic-vector-similarity fdocs if no limit is specified
+    # arbitrary top_n of 100 topic-vector-similarity docs if no top_n is specified
     # TODO: pass this through a secondary LLM filter to be more confident in result.
-    if args.limit is None or args.limit == 0:
-        args.limit = 10
+    if args.top_n is None or args.top_n == 0:
+        args.top_n = 100
 
     custom_doc_summaries = await get_custom_docs_by_topic(
         context.user_id,
         topic=args.topic,
         publish_date_start=start_date,
         publish_date_end=end_date,
-        limit=args.limit,
+        limit=args.top_n,
     )
     await tool_log(
         log=f"Got {len(custom_doc_summaries.documents)} documents for topic {args.topic}.",

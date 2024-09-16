@@ -131,7 +131,6 @@ async def get_default_text_data_for_stocks(
             GetCustomDocsInput(
                 stock_ids=stock_ids,
                 date_range=args.date_range,
-                limit=None,
             ),
             context=context,
         )
