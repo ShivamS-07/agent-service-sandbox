@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 import pandas as pd
 
@@ -16,6 +16,7 @@ from agent_service.io_types.graph import (
     PieGraph,
     PieSection,
 )
+from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table, TableColumn, TableColumnMetadata
 from agent_service.io_types.text import KPIText, TextCitation
 from agent_service.tool import ToolArgs, tool
@@ -40,7 +41,7 @@ def consolidate_table_columns(table: Table) -> Table:
     security_col = None
     metric_col = None
     quarter_col = []
-    lable_col = []
+    label_col: List[Any] = []
     amount_col = []
     for col in cols:
         if not date_col and col.metadata.col_type.is_date_type():
@@ -62,14 +63,12 @@ def consolidate_table_columns(table: Table) -> Table:
                 if date_col is not None:
                     quarter_col.append(date_col.data[i])
                 if security_col is not None:
-                    security = security_col.data[i]
-                    label: Any = deepcopy(security)
-                    label.symbol = (
-                        f"{label.symbol + ' - ' if label.symbol else ''}{col.metadata.label}"
+                    security = cast(StockID, security_col.data[i])
+                    label_col.append(
+                        f"{security.symbol + ' - ' if security.symbol else ''}{col.metadata.label}"
                     )
-                    lable_col.append(label)
                 else:
-                    lable_col.append(col.metadata.label)
+                    label_col.append(col.metadata.label)
                 amount_col.append(c)
 
     if security_col is not None and date_col is not None and metric_col is not None:
@@ -82,10 +81,8 @@ def consolidate_table_columns(table: Table) -> Table:
                 data=quarter_col,
             ),
             TableColumn(
-                metadata=TableColumnMetadata(
-                    label="Label", col_type=security_col.metadata.col_type
-                ),
-                data=lable_col,
+                metadata=TableColumnMetadata(label="Label", col_type=TableColumnType.STRING),
+                data=label_col,
             ),
             TableColumn(
                 metadata=TableColumnMetadata(label="Amount", col_type=metric_col.metadata.col_type),
