@@ -75,6 +75,13 @@ class NewsDevelopmentCitationDetails(CitationDetails):
 CitationDetailsType = Union[RawTextCitationDetails, NewsDevelopmentCitationDetails, CitationDetails]
 
 
+####################################################################################################
+# Citation Details
+####################################################################################################
+class GetCitationDetailsResponse(BaseModel):
+    details: Optional[CitationDetailsType]
+
+
 class CitationOutput(BaseModel, ABC):
     id: CitationID = Field(default_factory=lambda: str(uuid4()))
     internal_id: CitationID = Field(default_factory=lambda: str(uuid4()))

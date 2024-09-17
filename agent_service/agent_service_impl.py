@@ -14,6 +14,12 @@ from uuid import uuid4
 import pandoc
 from fastapi import HTTPException, Request, UploadFile, status
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
+from grpclib import GRPCError
+from stock_universe_service_proto_v1.custom_data_service_pb2 import (
+    GetFileContentsResponse,
+    GetFileInfoResponse,
+    ListDocumentsResponse,
+)
 
 from agent_service.canned_prompts.canned_prompts import CANNED_PROMPTS
 from agent_service.chatbot.chatbot import Chatbot
@@ -27,6 +33,8 @@ from agent_service.endpoints.models import (
     ChatWithAgentResponse,
     CreateAgentResponse,
     CreateCustomNotificationRequest,
+    CustomDocumentListing,
+    CustomDocumentSummaryChunk,
     CustomNotification,
     Debug,
     DeleteAgentResponse,
@@ -86,6 +94,12 @@ from agent_service.endpoints.models import (
     UploadFileResponse,
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
+from agent_service.external.custom_data_svc_client import (
+    document_listing_status_to_str,
+    get_custom_doc_file_contents,
+    get_custom_doc_file_info,
+    list_custom_docs,
+)
 from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
 from agent_service.external.user_svc_client import (
     get_users,
@@ -112,11 +126,7 @@ from agent_service.utils.async_utils import (
 )
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
-from agent_service.utils.custom_documents_utils import get_custom_doc_file
-from agent_service.utils.custom_documents_utils import (
-    get_custom_doc_file_info as get_custom_doc_file_info_util,
-)
-from agent_service.utils.custom_documents_utils import get_custom_doc_listings
+from agent_service.utils.custom_documents_utils import CustomDocumentException
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import (
@@ -1213,16 +1223,86 @@ class AgentServiceImpl:
         return res
 
     async def list_custom_documents(self, user: User) -> ListCustomDocumentsResponse:
-        return await get_custom_doc_listings(user_id=user.user_id)
+        try:
+            resp: ListDocumentsResponse = await list_custom_docs(user_id=user.user_id)
+
+            return ListCustomDocumentsResponse(
+                documents=[
+                    CustomDocumentListing(
+                        file_id=listing.file_id,
+                        name=listing.name,
+                        base_path=listing.base_path,
+                        full_path=listing.full_path,
+                        type=listing.type,
+                        size=listing.size,
+                        is_dir=listing.is_dir,
+                        listing_status=document_listing_status_to_str(
+                            listing.listing_status.status
+                        ),
+                        upload_time=listing.upload_time.ToDatetime(),
+                    )
+                    for listing in resp.listings
+                ],
+            )
+        except GRPCError as e:
+            raise CustomDocumentException.from_grpc_error(e) from e
 
     async def get_custom_doc_file_content(
         self, user: User, file_id: str, return_previewable_file: bool
     ) -> GetCustomDocumentFileResponse:
-        return await get_custom_doc_file(
-            user_id=user.user_id, file_id=file_id, return_previewable_file=return_previewable_file
-        )
+        try:
+            resp: GetFileContentsResponse = await get_custom_doc_file_contents(
+                user_id=user.user_id,
+                file_id=file_id,
+                return_previewable_file=return_previewable_file,
+            )
+
+            return GetCustomDocumentFileResponse(
+                is_preview=False,
+                file_name=resp.file_name,
+                file_type=resp.content_type,
+                content=resp.raw_file,
+            )
+        except GRPCError as e:
+            raise CustomDocumentException.from_grpc_error(e) from e
 
     async def get_custom_doc_file_info(
         self, user: User, file_id: str
     ) -> GetCustomDocumentFileInfoResponse:
-        return await get_custom_doc_file_info_util(user_id=user.user_id, file_id=file_id)
+        try:
+            resp: GetFileInfoResponse = await get_custom_doc_file_info(
+                user_id=user.user_id, file_id=file_id
+            )
+
+            # rpc is for a list of docs, try to grab the one we requested
+            file_info = resp.file_info.get(file_id)
+            if file_info is None:
+                raise CustomDocumentException(
+                    f"document not found for file_id: {file_id}", ["No file info found"]
+                )
+
+            return GetCustomDocumentFileInfoResponse(
+                file_id=file_info.file_id,
+                author=file_info.author,
+                status=document_listing_status_to_str(file_info.status),
+                file_type=file_info.file_type,
+                file_size=file_info.size,
+                author_org=file_info.author_org,
+                upload_time=file_info.upload_time.ToDatetime(),
+                publication_time=file_info.publication_time.ToDatetime(),
+                company_name=file_info.company_name,
+                spiq_company_id=file_info.spiq_company_id,
+                file_paths=[f for f in file_info.file_paths],
+                chunks=[
+                    CustomDocumentSummaryChunk(
+                        chunk_id=ch.chunk_id,
+                        headline=ch.headline,
+                        summary=ch.summary,
+                        long_summary=ch.long_summary,
+                        # note: not including citations from this endpoint for now until we have a use case
+                    )
+                    for ch in file_info.chunks
+                ],
+            )
+        except GRPCError as e:
+            raise CustomDocumentException.from_grpc_error(e) from e

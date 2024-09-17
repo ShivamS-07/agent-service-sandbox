@@ -28,6 +28,7 @@ from stock_universe_service_proto_v1.custom_data_service_pb2 import (
     GetFileInfoResponse,
     ListDocumentsRequest,
     ListDocumentsResponse,
+    ListingStatusType,
     SemanticSearchDocsRequest,
     SemanticSearchDocsResponse,
 )
@@ -46,6 +47,16 @@ DEFAULT_URLS = {
     DEV_TAG: ("custom-data-service-dev.boosted.ai", 50051),
     PROD_TAG: ("custom-data-service-prod.boosted.ai", 50051),
 }
+
+
+def document_listing_status_to_str(status: ListingStatusType) -> str:
+    if status == ListingStatusType.LISTING_STATUS_PROCESSING:
+        return "PROCESSING"
+    if status == ListingStatusType.LISTING_STATUS_AVAILABLE:
+        return "AVAILABLE"
+    if status == ListingStatusType.LISTING_STATUS_ERROR:
+        return "ERROR"
+    return "UNKNOWN"
 
 
 @lru_cache(maxsize=1)

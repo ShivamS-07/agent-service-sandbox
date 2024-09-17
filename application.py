@@ -66,7 +66,6 @@ from agent_service.endpoints.models import (
     GetAutocompleteItemsResponse,
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
-    GetCitationDetailsResponse,
     GetCustomDocumentFileInfoResponse,
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
@@ -118,7 +117,7 @@ from agent_service.endpoints.models import (
 )
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.GPT.requests import _get_gpt_service_stub
-from agent_service.io_types.citations import CitationType
+from agent_service.io_types.citations import CitationType, GetCitationDetailsResponse
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
