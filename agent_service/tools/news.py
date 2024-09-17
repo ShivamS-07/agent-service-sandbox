@@ -191,6 +191,15 @@ async def get_all_news_developments_about_companies(
     topic_lookup = await _get_news_developments_helper(
         args.stock_ids, context.user_id, start_date, end_date
     )
+    # if there are no news and there was no date range passed
+    # then we extend the default to 1 month and try to get news again
+    if start_date is None and end_date is None and len(topic_lookup.keys()) == 0:
+        start_date = (get_now_utc() - datetime.timedelta(days=30)).date()
+        # Add an extra day to be sure we don't miss anything with timezone weirdness
+        end_date = get_now_utc().date() + datetime.timedelta(days=1)
+        topic_lookup = await _get_news_developments_helper(
+            args.stock_ids, context.user_id, start_date, end_date
+        )
     output: List[StockNewsDevelopmentText] = []
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
