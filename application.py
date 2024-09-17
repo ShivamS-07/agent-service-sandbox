@@ -7,7 +7,7 @@ import logging
 import time
 import traceback
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile, status
@@ -23,6 +23,7 @@ from gbi_common_py_utils.utils.environment import (
 from gbi_common_py_utils.utils.event_logging import log_event
 from sse_starlette.sse import AsyncContentStream, EventSourceResponse, ServerSentEvent
 from starlette.requests import Request
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.authz_helper import (
@@ -206,53 +207,86 @@ def update_audit_info_with_response_info(
         audit_info.total_processing_time = (response_timestamp - client_ts).total_seconds()
 
 
-@application.middleware("http")
-async def add_process_time_header(request: Request, call_next: Callable) -> Any:
-    received_timestamp = get_now_utc()
-    global REQUEST_COUNTER
-    REQUEST_COUNTER += 1
-    client_timestamp = request.headers.get("clienttimestamp", None)
-    if client_timestamp:
-        client_timestamp = (
-            client_timestamp[:-1] if client_timestamp.endswith("Z") else client_timestamp
+class ProcessTimeMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        global REQUEST_COUNTER
+        REQUEST_COUNTER += 1
+
+        received_timestamp = get_now_utc()
+
+        message_queue: asyncio.Queue[Message] = asyncio.Queue()
+
+        async def receive_wrapper() -> Message:
+            message = await receive()
+            await message_queue.put(message)
+            return message
+
+        async def receive_from_queue() -> Any:
+            return await message_queue.get()
+
+        request = Request(scope, receive_wrapper)
+
+        client_timestamp = request.headers.get("clienttimestamp", None)
+
+        if client_timestamp:
+            client_timestamp = (
+                client_timestamp[:-1] if client_timestamp.endswith("Z") else client_timestamp
+            )
+
+        audit_info = AuditInfo(
+            path=request.url.path,
+            internal_request_id=str(uuid.uuid4()),
+            received_timestamp=received_timestamp,
+            client_timestamp=client_timestamp,
+            client_request_id=request.headers.get("clientrequestid", None),
+            request_number=REQUEST_COUNTER,
+            frontend_version=request.headers.get("clientversion", None),
+            fullstory_link=request.headers.get("fullstorylink", None),
         )
 
-    audit_info = AuditInfo(
-        path=request.url.path,
-        internal_request_id=str(uuid.uuid4()),
-        received_timestamp=received_timestamp,
-        client_timestamp=client_timestamp,
-        client_request_id=request.headers.get("clientrequestid", None),
-        request_number=REQUEST_COUNTER,
-        frontend_version=request.headers.get("clientversion", None),
-        fullstory_link=request.headers.get("fullstorylink", None),
-    )
-    try:
-        authorization = request.headers.get("Authorization", None)
-        if authorization:
-            user_info = parse_header(request=request, auth_token=authorization)
-            request.state.user_info = user_info
-            audit_info.user_id = user_info.user_id
-            audit_info.real_user_id = user_info.real_user_id
-        request_body = await request.body()
-        audit_info.request_body = json.loads(request_body) if request_body else None
-    except Exception:
-        audit_info.error = traceback.format_exc()
-    try:
-        response = await call_next(request)
-    except Exception as e:
-        error = traceback.format_exc()
-        audit_info.error = audit_info.error + "/n" + error if audit_info.error else error
+        try:
+            authorization = request.headers.get("Authorization", None)
+            if authorization:
+                user_info = parse_header(request=request, auth_token=authorization)
+                request.state.user_info = user_info
+                audit_info.user_id = user_info.user_id
+                audit_info.real_user_id = user_info.real_user_id
+
+            request_body = await request.body()
+            audit_info.request_body = json.loads(request_body) if request_body else None
+        except Exception:
+            audit_info.error = traceback.format_exc()
+
+        try:
+            # Consuming `request.body()` in the middleware reads the request body from `receive`,
+            # which means the downstream app won't be able to access it because it's already consumed.
+            # To prevent blocking downstream apps from accessing the request body, we use `message_queue`
+            # to store the messages read from `receive`. Then, we pass `receive_from_queue` to the
+            # downstream app, so it can read the same messages as if they were coming directly from `receive`.
+            # This ensures the request body is available to downstream apps without loss of data.
+            await self.app(scope, receive_from_queue, send)
+        except Exception as e:
+            error = traceback.format_exc()
+            audit_info.error = audit_info.error + "/n" + error if audit_info.error else error
+            update_audit_info_with_response_info(
+                audit_info=audit_info, received_timestamp=received_timestamp
+            )
+            log_event(event_name="AgentService-RequestError", event_data=audit_info.to_json_dict())
+            raise e
         update_audit_info_with_response_info(
             audit_info=audit_info, received_timestamp=received_timestamp
         )
-        log_event(event_name="AgentService-RequestError", event_data=audit_info.to_json_dict())
-        raise e
-    update_audit_info_with_response_info(
-        audit_info=audit_info, received_timestamp=received_timestamp
-    )
-    log_event(event_name="AgentService-RequestCompleted", event_data=audit_info.to_json_dict())
-    return response
+        log_event(event_name="AgentService-RequestCompleted", event_data=audit_info.to_json_dict())
+
+
+application.add_middleware(ProcessTimeMiddleware)
 
 
 ####################################################################################################
