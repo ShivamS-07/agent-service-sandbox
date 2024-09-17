@@ -623,7 +623,7 @@ class CustomDocumentSummaryText(StockText):
                     citation_name = chunk_info.file_id
                 else:
                     # pick an arbitrary custom file path
-                    citation_name = file_paths[0]
+                    citation_name = file_paths[0].lstrip("/")
 
                 chunk_cit = text_id_map.get(chunk_info.chunk_id)
                 if not chunk_cit:
@@ -637,7 +637,9 @@ class CustomDocumentSummaryText(StockText):
                         )
                     output_citations[chunk_cit].append(
                         CustomDocumentCitationOutput(
-                            internal_id=chunk_id,
+                            id=citation.citation_id,
+                            internal_id=citation.citation_id,
+                            chunk_id=chunk_id,
                             name=f"User Document: {citation_name}",
                             last_updated_at=chunk_info.upload_time.ToDatetime(),
                             custom_doc_id=chunk_info.file_id,
@@ -650,7 +652,9 @@ class CustomDocumentSummaryText(StockText):
                 if not chunk_info.citations:
                     output_citations[chunk_cit].append(
                         CustomDocumentCitationOutput(
-                            internal_id=chunk_id,
+                            id=citation.citation_id,
+                            internal_id=citation.citation_id,
+                            chunk_id=chunk_id,
                             name=f"User Document: {citation_name}",
                             last_updated_at=chunk_info.upload_time.ToDatetime(),
                             custom_doc_id=chunk_info.file_id,

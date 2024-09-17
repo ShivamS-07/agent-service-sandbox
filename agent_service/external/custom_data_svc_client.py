@@ -18,6 +18,8 @@ from stock_universe_service_proto_v1.custom_data_service_grpc import (
 from stock_universe_service_proto_v1.custom_data_service_pb2 import (
     CheckDocumentUploadQuotaRequest,
     CheckDocumentUploadQuotaResponse,
+    GetCitationContextRequest,
+    GetCitationContextResponse,
     GetDocsBySecurityRequest,
     GetDocsBySecurityResponse,
     GetFileChunkInfoRequest,
@@ -215,6 +217,20 @@ async def list_custom_docs(
     with _get_service_stub() as stub:
         req = ListDocumentsRequest(base_path=base_path, recursive=recursive)
         resp: ListDocumentsResponse = await stub.ListDocuments(
+            req,
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def get_citation_custom_doc_context(
+    user_id: str, citation_id: str
+) -> GetCitationContextResponse:
+    with _get_service_stub() as stub:
+        req = GetCitationContextRequest(citation_id=citation_id)
+        resp: GetCitationContextResponse = await stub.GetCitationContext(
             req,
             metadata=get_default_grpc_metadata(user_id=user_id),
         )

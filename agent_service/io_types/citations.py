@@ -1,14 +1,21 @@
 import datetime
 import enum
+import logging
 from abc import ABC
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 from uuid import uuid4
 
+from grpclib import GRPCError
 from pydantic import BaseModel, Field
 
+from agent_service.external.custom_data_svc_client import (
+    get_citation_custom_doc_context,
+)
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.clickhouse import AsyncClickhouseBase
 from agent_service.utils.sec.sec_api import SecFiling
+
+logger = logging.getLogger(__name__)
 
 
 class CitationType(enum.StrEnum):
@@ -72,7 +79,41 @@ class NewsDevelopmentCitationDetails(CitationDetails):
     articles: List[ArticleInfo] = Field(default_factory=list)
 
 
-CitationDetailsType = Union[RawTextCitationDetails, NewsDevelopmentCitationDetails, CitationDetails]
+class CustomDocumentCitationDetails(CitationDetails):
+    class CustomDocumentTxtCitationLocation(BaseModel):
+        class TxtCitationHighlight(BaseModel):
+            start_line_idx: int
+            start_char: int
+            end_char: int
+
+        highlights: List[TxtCitationHighlight]
+
+    class CustomDocumentPdfCitationLocation(BaseModel):
+        class PdfCitationHighlight(BaseModel):
+            page_number: int
+            bbox_x0: float
+            bbox_y0: float
+            bbox_x1: float
+            bbox_y1: float
+
+        highlights: List[PdfCitationHighlight]
+
+    long_summary_offset: int
+    citation_snippet: str
+    citation_context: str
+    citation_source_loc: CustomDocumentPdfCitationLocation | CustomDocumentTxtCitationLocation
+    custom_doc_id: str
+    custom_doc_file_type: str
+    chunk_id: str
+    long_summary: str
+
+
+CitationDetailsType = Union[
+    CustomDocumentCitationDetails,
+    RawTextCitationDetails,
+    NewsDevelopmentCitationDetails,
+    CitationDetails,
+]
 
 
 ####################################################################################################
@@ -137,6 +178,59 @@ class ThemeCitationOutput(CitationOutput):
 class CustomDocumentCitationOutput(DocumentCitationOutput):
     citation_type: CitationType = CitationType.CUSTOM_DOC
     custom_doc_id: str
+    chunk_id: str
+
+    @classmethod
+    async def get_citation_details(
+        cls, citation_id: str, db: BoostedPG, user_id: str
+    ) -> Optional[CustomDocumentCitationDetails]:
+        try:
+            detail_resp = await get_citation_custom_doc_context(
+                citation_id=citation_id, user_id=user_id
+            )
+            citation_info = detail_resp.citation_info
+
+            return CustomDocumentCitationDetails(
+                citation_id=citation_id,
+                citation_type=CitationType.CUSTOM_DOC,
+                custom_doc_id=citation_info.file_id,
+                custom_doc_file_type=citation_info.document_file_type,
+                chunk_id=citation_info.article_id,
+                title=f"User document: {citation_info.file_name.lstrip("/")}",
+                long_summary=citation_info.long_summary,
+                long_summary_offset=citation_info.citation.long_summary_offset,
+                citation_context=citation_info.citation.citation_context,
+                citation_snippet=citation_info.citation.citation_snippet,
+                citation_source_loc=(
+                    CustomDocumentCitationDetails.CustomDocumentPdfCitationLocation(
+                        highlights=[
+                            CustomDocumentCitationDetails.CustomDocumentPdfCitationLocation.PdfCitationHighlight(
+                                page_number=h.page_number,
+                                bbox_x0=h.bbox_x0,
+                                bbox_x1=h.bbox_x1,
+                                bbox_y0=h.bbox_y0,
+                                bbox_y1=h.bbox_y1,
+                            )
+                            for h in citation_info.citation.pdf_citation_loc.highlights
+                        ]
+                    )
+                    if citation_info.citation.HasField("pdf_citation_loc")
+                    else CustomDocumentCitationDetails.CustomDocumentTxtCitationLocation(
+                        highlights=[
+                            CustomDocumentCitationDetails.CustomDocumentTxtCitationLocation.TxtCitationHighlight(
+                                start_line_idx=h.line_idx,
+                                start_char=h.start_char,
+                                end_char=h.end_char,
+                            )
+                            for h in citation_info.citation.txt_citation_loc.highlights
+                        ]
+                    )
+                ),
+            )
+
+        except GRPCError as e:
+            logger.exception(f"Error getting citation {citation_id} for custom doc: {e}")
+            return None
 
 
 class CompanyFilingCitationOutput(DocumentCitationOutput):
