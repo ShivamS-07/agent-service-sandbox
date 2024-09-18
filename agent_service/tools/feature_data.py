@@ -1,11 +1,11 @@
 import datetime
+import functools
 import json
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 import pandas as pd
 from cachetools import TTLCache, cached
-from data_access_layer.core.dao.features.features_dao import FeaturesDAO
 from feature_service_proto_v1.feature_service_common_messages_pb2 import (
     FEATURE_VALUE_UNITS_PERCENT,
     FEATURE_VALUE_UNITS_PRICE,
@@ -48,10 +48,20 @@ from agent_service.utils.prompt_utils import Prompt
 LATEST_DATE_SECONDS = 60 * 60
 TTLCache(maxsize=1, ttl=LATEST_DATE_SECONDS)
 
+# need to expose this type to the type checker but avoid importing it until needed normally
+if TYPE_CHECKING:
+    from data_access_layer.core.dao.features.features_dao import FeaturesDAO
 
-# instantiate globally so that metadata caches do not have to be created on each
-# new request
-FEATURES_DAO = FeaturesDAO()
+
+@functools.cache
+def get_FeaturesDAO() -> "FeaturesDAO":
+    from data_access_layer.core.dao.features.features_dao import FeaturesDAO
+
+    # cache globally so that metadata caches do not have to be created on each
+    # new request
+
+    _FEATURES_DAO = FeaturesDAO()
+    return _FEATURES_DAO
 
 
 @io_type
@@ -576,12 +586,16 @@ def get_latest_date() -> datetime.date:
 
     # I assume there is a better way to figure this out?
     # what is the most recent price we have for apple
-    feature_value_map = FEATURES_DAO.get_feature_data(
-        gbi_ids=[714],
-        features=["spiq_close"],
-        start_date=start_date,
-        end_date=end_date,
-    ).get()
+    feature_value_map = (
+        get_FeaturesDAO()
+        .get_feature_data(
+            gbi_ids=[714],
+            features=["spiq_close"],
+            start_date=start_date,
+            end_date=end_date,
+        )
+        .get()
+    )
 
     latest_datetime = feature_value_map["spiq_close"].index[-1].to_pydatetime()
     return latest_datetime.date()

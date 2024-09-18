@@ -1,10 +1,9 @@
 import datetime as dt
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import backoff
 import numpy as np
-from data_access_layer.core.dao.features.stock_search_dao import StockSearchDAO
 from feature_service_proto_v1.feature_service_pb2 import GetFeatureDataResponse
 from gbi_common_py_utils.numpy_common import NumpyCube
 
@@ -17,7 +16,11 @@ from agent_service.utils.feature_flags import get_ld_flag
 
 logger = logging.getLogger(__name__)
 EARLIEST_START_DATE = dt.date(1990, 1, 1)
-dao = None
+_dao = None
+
+# need to expose this type to the type checker but avoid importing it until needed normally
+if TYPE_CHECKING:
+    from data_access_layer.core.dao.features.stock_search_dao import StockSearchDAO
 
 
 @backoff.on_exception(
@@ -27,11 +30,13 @@ dao = None
     max_tries=10,
     logger=logger,
 )
-def get_stock_search_dao() -> StockSearchDAO:
-    global dao
-    if not dao:
-        dao = StockSearchDAO()
-    return dao
+def get_stock_search_dao() -> "StockSearchDAO":
+    from data_access_layer.core.dao.features.stock_search_dao import StockSearchDAO
+
+    global _dao
+    if not _dao:
+        _dao = StockSearchDAO()
+    return _dao
 
 
 @async_wrap
