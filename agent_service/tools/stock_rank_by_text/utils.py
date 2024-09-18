@@ -370,8 +370,13 @@ async def get_profile_rubric(
             ),
         )
     else:
-        sys_prompt = PROFILE_RUBRIC_GENERATION_SYS_OBJ.format()
-        main_prompt = PROFILE_RUBRIC_GENERATION_MAIN_OBJ.format(profile=profile)
+        sys_prompt = PROFILE_RUBRIC_GENERATION_SYS_OBJ.format(
+            rubric_delimiter=RUBRIC_DELIMITER,
+            additional_instruction="",
+        )
+        main_prompt = PROFILE_RUBRIC_GENERATION_MAIN_OBJ.format(
+            profile=profile, additional_instruction=""
+        )
 
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=main_prompt,
