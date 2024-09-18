@@ -650,10 +650,10 @@ class CustomDocumentSummaryText(StockText):
                         )
                     )
                 if not chunk_info.citations:
+                    # if this happens it implies the custom doc is not properly processed
+                    logger.warning("No citations found for custom doc chunk %s", chunk_id)
                     output_citations[chunk_cit].append(
                         CustomDocumentCitationOutput(
-                            id=citation.citation_id,
-                            internal_id=citation.citation_id,
                             chunk_id=chunk_id,
                             name=f"User Document: {citation_name}",
                             last_updated_at=chunk_info.upload_time.ToDatetime(),
