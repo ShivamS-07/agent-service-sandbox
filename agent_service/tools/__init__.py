@@ -5,6 +5,7 @@ from agent_service.tools.kpis import *  # noqa
 from agent_service.tools.LLM_analysis import *  # noqa
 from agent_service.tools.product_comparison import *  # noqa
 from agent_service.tools.profiler import *  # noqa
+from agent_service.tools.stock_rank_by_text import *  # noqa
 
 # This is hacky, but we want to make sure that "from tools import *" gets ALL tools
 

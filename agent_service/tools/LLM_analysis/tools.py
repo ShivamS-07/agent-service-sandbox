@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Set, Tuple, Union, cast
 from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O, GPT4_O_MINI, SONNET
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
-from agent_service.io_type_utils import Citation, HistoryEntry, Score
+from agent_service.io_type_utils import Citation, HistoryEntry
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
 from agent_service.io_types.text import (
@@ -28,9 +28,6 @@ from agent_service.tools.LLM_analysis.constants import (
     NO_CITATIONS_DIFF,
     NO_SUMMARY,
     NO_SUMMARY_FOR_STOCK,
-    RUBRIC_DELIMITER,
-    SCORE_MAPPING,
-    SCORE_OUTPUT_DELIMITER,
 )
 from agent_service.tools.LLM_analysis.prompts import (
     ANSWER_QUESTION_DESCRIPTION,
@@ -51,10 +48,6 @@ from agent_service.tools.LLM_analysis.prompts import (
     PROFILE_FILTER_MAIN_PROMPT,
     PROFILE_REMOVE_DIFF_MAIN_PROMPT,
     PROFILE_REMOVE_DIFF_SYS_PROMPT,
-    PROFILE_RUBRIC_GENERATION_MAIN_OBJ,
-    PROFILE_RUBRIC_GENERATION_SYS_OBJ,
-    RUBRIC_EVALUATION_MAIN_OBJ,
-    RUBRIC_EVALUATION_SYS_OBJ,
     SIMPLE_PROFILE_FILTER_SYS_PROMPT,
     STOCK_PHRASE,
     SUMMARIZE_BRAINSTORM_INSTRUCTIONS,
@@ -76,6 +69,10 @@ from agent_service.tools.LLM_analysis.utils import (
 from agent_service.tools.news import (
     GetNewsDevelopmentsAboutCompaniesInput,
     get_all_news_developments_about_companies,
+)
+from agent_service.tools.stock_rank_by_text.utils import (
+    get_profile_rubric,
+    stocks_rubric_score_assignment,
 )
 from agent_service.tools.stocks import (
     StockIdentifierLookupInput,
@@ -317,7 +314,6 @@ async def _update_summarize_helper(
     update_instructions=SUMMARIZE_UPDATE_INSTRUCTIONS,
 )
 async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> Text:
-
     logger = get_prefect_logger(__name__)
     # TODO we need guardrails on this
     gpt_context = create_gpt_context(
@@ -389,7 +385,6 @@ class PerStockSummarizeTextInput(ToolArgs):
 async def per_stock_summarize_texts(
     args: PerStockSummarizeTextInput, context: PlanRunContext
 ) -> List[StockID]:
-
     logger = get_prefect_logger(__name__)
     # TODO we need guardrails on this
     gpt_context = create_gpt_context(
@@ -797,85 +792,6 @@ async def profile_filter_helper(
     return output_tuples
 
 
-async def get_profile_rubric(profile: str, agent_id: str) -> Dict[int, str]:
-    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
-    llm = GPT(context=gpt_context, model=SONNET)
-    result = await llm.do_chat_w_sys_prompt(
-        main_prompt=PROFILE_RUBRIC_GENERATION_MAIN_OBJ.format(profile=profile),
-        sys_prompt=PROFILE_RUBRIC_GENERATION_SYS_OBJ.format(),
-        max_tokens=2000,
-    )
-    # We don't care about the justification at the top, just meant to keep
-    # GPT whipped
-    rubric_dict = {k: "" for k in range(1, 6)}
-    rubric_str = result.split(RUBRIC_DELIMITER)[1].strip()
-
-    # We output the rubric from the LLM by starting the description of
-    # each level with "Level" as follows:
-    #
-    #   Level 1: Description
-    #   Level 2: Description
-    #   ...
-    #
-    # Splitting by "Level " then helps to grab all the level descriptions
-    # along with the level number associated with it, we then apply
-    # some indexing to grab the Description component and strip trailing
-    # line breaks
-    for entry in rubric_str.split("Level "):
-        # Check if empty string
-        if entry:
-            if isinstance(rubric_dict.get(int(entry[0]), None), str):
-                rubric_dict[int(entry[0])] = entry[2:].strip()
-    return rubric_dict
-
-
-async def filtered_stocks_score_assignment(
-    stocks: List[StockID],
-    rubric_dict: Dict[int, str],
-    stock_reason_map: Dict[StockID, Tuple[str, List[Citation]]],
-    profile: str,
-    context: PlanRunContext,
-) -> List[StockID]:
-    gpt_context = create_gpt_context(
-        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
-    )
-    llm = GPT(context=gpt_context, model=SONNET)
-    tasks = []
-
-    rubric_str_list = [f"Level {k}: {v}" for k, v in rubric_dict.items()]
-
-    for stock in stocks:
-        tasks.append(
-            llm.do_chat_w_sys_prompt(
-                main_prompt=RUBRIC_EVALUATION_MAIN_OBJ.format(
-                    company_name=stock.company_name,
-                    reason=stock_reason_map[stock][0],
-                ),
-                sys_prompt=RUBRIC_EVALUATION_SYS_OBJ.format(
-                    rubric_str="\n".join(rubric_str_list),
-                ),
-            )
-        )
-    scores = await gather_with_concurrency(tasks, 20)
-
-    non_zero_scoring_stocks = []
-    for stock, score in zip(stocks, scores):
-        level_score, _ = score.split(SCORE_OUTPUT_DELIMITER)
-        # if level_score != "0":
-        non_zero_scoring_stocks.append(
-            stock.inject_history_entry(
-                HistoryEntry(
-                    explanation=stock_reason_map[stock][0],
-                    title=f"Connection to '{profile}'",
-                    score=Score(val=SCORE_MAPPING[level_score]),
-                    citations=stock_reason_map[stock][1],
-                    task_id=context.task_id,
-                )
-            )
-        )
-    return non_zero_scoring_stocks
-
-
 async def profile_filter_added_diff_info(
     added_stocks: List[StockID],
     profile_str: str,
@@ -1096,7 +1012,7 @@ async def filter_stocks_by_profile_match(
 
     rubric_dict = await get_profile_rubric(profile_data_for_rubric, context.agent_id)
     # Assigns scores inplace
-    filtered_stocks_with_scores = await filtered_stocks_score_assignment(
+    filtered_stocks_with_scores = await stocks_rubric_score_assignment(
         filtered_stocks, rubric_dict, stock_reason_map, profile_data_for_rubric, context
     )
 
