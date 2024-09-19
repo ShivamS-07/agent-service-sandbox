@@ -207,14 +207,15 @@ async def get_all_news_developments_about_companies(
         stock_info = f"{len(args.stock_ids)} stocks"
         if len(args.stock_ids) < 10:
             stock_info = f"stocks: {args.stock_ids}"
-        raise EmptyOutputError(
-            f"Did not get any news developments for {stock_info}"
-            f" over the time period: {start_date=}, {end_date=}"
+        await tool_log(
+            log=f"Did not get any news developments for {stock_info}"
+            f" over the time period: {start_date=}, {end_date=}",
+            context=context,
         )
-
-    await tool_log(
-        log=f"Found {len(output)} news developments for the provided stocks.", context=context
-    )
+    else:
+        await tool_log(
+            log=f"Found {len(output)} news developments for the provided stocks.", context=context
+        )
 
     return output
 
@@ -249,10 +250,6 @@ async def get_news_articles_for_stock_developments(
     gbi_id_stock_map = {
         text.stock_id.gbi_id: text.stock_id for text in args.developments_list if text.stock_id
     }
-    if not rows:
-        raise EmptyOutputError(
-            "No articles for these news developments over the specified time period"
-        )
     return [
         StockNewsDevelopmentArticlesText(
             id=row["news_id"],

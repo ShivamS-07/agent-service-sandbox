@@ -3,7 +3,13 @@ import datetime
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union, cast
 
-from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O, GPT4_O_MINI, SONNET
+from agent_service.GPT.constants import (
+    FILTER_CONCURRENCY,
+    GPT4_O,
+    GPT4_O_MINI,
+    MAX_TOKENS,
+    SONNET,
+)
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import Citation, HistoryEntry
@@ -23,7 +29,9 @@ from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_s
 from agent_service.tools.LLM_analysis.constants import (
     BRAINSTORM_DELIMITER,
     DEFAULT_LLM,
+    LLM_FILTER_MAX_INPUT_PERCENTAGE,
     LLM_FILTER_MAX_PERCENT,
+    LLM_FILTER_MIN_TOKENS,
     MAX_CITATION_TRIES,
     NO_CITATIONS_DIFF,
     NO_SUMMARY,
@@ -103,6 +111,13 @@ async def _initial_summarize_helper(
     args: SummarizeTextInput, context: PlanRunContext, llm: GPT
 ) -> Tuple[str, List[TextCitation]]:
     logger = get_prefect_logger(__name__)
+    if args.topic:
+        texts = await topic_filter_helper(
+            args.texts, args.topic, context.agent_id, model_for_filter_to_context=GPT4_O
+        )
+    else:
+        texts = args.texts
+
     text_group = TextGroup(val=args.texts)
     texts_str: str = await Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)  # type: ignore
     if context.chat:
@@ -183,9 +198,7 @@ async def _initial_summarize_helper(
         citations = []
 
     try:
-        citations += await get_second_order_citations(
-            text, get_all_text_citations(args.texts), context
-        )
+        citations += await get_second_order_citations(text, get_all_text_citations(texts), context)
     except Exception as e:
         logger.exception(f"Failed to add second order citations: {e}")
 
@@ -201,6 +214,10 @@ async def _update_summarize_helper(
     old_summary: str,
 ) -> Tuple[str, List[TextCitation]]:
     logger = get_prefect_logger(__name__)
+    if args.topic:
+        new_texts = await topic_filter_helper(
+            new_texts, args.topic, context.agent_id, model_for_filter_to_context=GPT4_O
+        )
     new_text_group = TextGroup(val=new_texts)
     new_texts_str: str = await Text.get_all_strs(
         new_text_group, include_header=True, text_group_numbering=True
@@ -392,6 +409,12 @@ async def per_stock_summarize_texts(
     )
     llm = GPT(context=gpt_context, model=DEFAULT_LLM)
 
+    if len(args.stocks) == 0:
+        raise EmptyInputError("Cannot do per stock summarize when no stocks provided")
+
+    if len(args.texts) == 0:
+        raise EmptyInputError("Cannot summarize when no texts provided")
+
     text_dict: Dict[StockID, List[StockText]] = {stock: [] for stock in args.stocks}
     for text in args.texts:
         try:
@@ -525,6 +548,12 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
         # just for mypy, shouldn't happen
         return Text(val="")
     # TODO we need guardrails on this
+
+    if len(args.group1) == 0:
+        raise EmptyInputError("Cannot compare when no text provided for group 1")
+    if len(args.group2) == 0:
+        raise EmptyInputError("Cannot compare when no text provided for group 2")
+
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
@@ -632,16 +661,21 @@ async def answer_question_with_text_data(
 
 
 async def topic_filter_helper(
-    texts: List[str], topic: str, agent_id: str
-) -> List[Tuple[bool, str]]:
+    texts: List[Text], topic: str, agent_id: str, model_for_filter_to_context: Optional[str] = None
+) -> List[Text]:
+
+    # sort first by timestamp so more likely to drop older, less relevant texts
+    texts.sort(key=lambda x: x.timestamp.timestamp() if x.timestamp else 0, reverse=True)
+
+    text_strs: List[str] = await Text.get_all_strs(texts, include_header=True)  # type: ignore
     gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
-    llm = GPT(context=gpt_context, model=GPT4_O)
-    tokenizer = GPTTokenizer(GPT4_O)
+    llm = GPT(context=gpt_context, model=GPT4_O_MINI)
+    tokenizer = GPTTokenizer(GPT4_O_MINI)
     used = tokenizer.get_token_length(
         "\n".join([TOPIC_FILTER_MAIN_PROMPT.template, TOPIC_FILTER_SYS_PROMPT.template, topic])
     )
     tasks = []
-    for text_str in texts:
+    for text_str in text_strs:
         text_str = tokenizer.chop_input_to_allowed_length(text_str, used)
         tasks.append(
             llm.do_chat_w_sys_prompt(
@@ -651,29 +685,66 @@ async def topic_filter_helper(
         )
     results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
 
-    counts: Dict[int, int] = defaultdict(int)
+    token_counts: Dict[int, int] = defaultdict(int)
+    all_tokens_count = 0
     score_tuples = []
-    for result in results:
+    for result, text_str in zip(results, text_strs):
+
         try:
             rationale, score = result.strip().replace("\n\n", "\n").split("\n")
             score = int(score)
         except ValueError:
             score = 0
             rationale = "No relevance"
-        counts[score] += 1
+
+        # this works under assumption that both LLM types have same tokenizer, true for GPT4O models
+        text_tokens = tokenizer.get_token_length(text_str)
+        token_counts[score] += text_tokens
+        all_tokens_count += text_tokens
         score_tuples.append((score, rationale))
 
-    if counts[3] > len(texts) * LLM_FILTER_MAX_PERCENT:
-        # If there are lot of 3s, only include 3
-        cutoff = 3
-    elif counts[3] + counts[2] < len(texts) * LLM_FILTER_MAX_PERCENT:
-        # If there are hardly any 3 + 2, include 1s
-        cutoff = 1
-    else:
-        # otherwise, includes 2s and 3s
-        cutoff = 2
+    token_filter_upper_bound = LLM_FILTER_MAX_PERCENT * all_tokens_count
+    if model_for_filter_to_context:
+        token_filter_upper_bound = max(
+            token_filter_upper_bound,
+            MAX_TOKENS[model_for_filter_to_context] * LLM_FILTER_MAX_INPUT_PERCENTAGE,
+        )
+    token_filter_lower_bound = LLM_FILTER_MIN_TOKENS
 
-    return [(score >= cutoff, rationale) for score, rationale in score_tuples]
+    if token_counts[3] > token_filter_upper_bound:
+        # If there are lot of 3s, only include 3
+        # these may need to be truncated, but not here, still support basic topic filtering case
+        answers = [(score >= 3, rationale) for score, rationale in score_tuples]
+    else:
+        if token_counts[3] + token_counts[2] < token_filter_lower_bound:
+            # If there are hardly any 3 + 2, include 1s, optionally
+            cutoff = 1
+        else:
+            # otherwise, includes 3s and 2s, optionally
+            cutoff = 2
+
+        # we always include all texts above the cutoff, include texts at the cutoff as long as
+        # we have tokens in our quota
+        must_include_token_count = sum([token_counts[i] for i in range(cutoff + 1, 4)])
+        optional_token_counts = 0
+        answers = []
+        for (score, rationale), text_str in zip(score_tuples, text_strs):
+            if score < cutoff:
+                answers.append((False, rationale))
+            elif score > cutoff:
+                answers.append((True, rationale))
+            else:
+                optional_token_counts += tokenizer.get_token_length(text_str)
+                if optional_token_counts + must_include_token_count < token_filter_upper_bound:
+                    answers.append((True, rationale))
+                else:
+                    answers.append((False, rationale))
+
+    return [
+        text.inject_history_entry(HistoryEntry(explanation=reason, title=f"Connection to {topic}"))
+        for text, (is_relevant, reason) in zip(texts, answers)
+        if is_relevant
+    ]
 
 
 class FilterNewsByTopicInput(ToolArgs):
@@ -690,17 +761,8 @@ async def filter_news_by_topic(
 ) -> List[NewsText]:
     if len(args.news_texts) == 0:
         raise EmptyInputError("Cannot filter empty list of texts")
-    # not currently returning rationale, but will probably want it
-    texts: List[str] = await Text.get_all_strs(args.news_texts, include_header=True)  # type: ignore
-    return [
-        text.inject_history_entry(
-            HistoryEntry(explanation=reason, title=f"Connection to {args.topic}")
-        )
-        for text, (is_relevant, reason) in zip(
-            args.news_texts, await topic_filter_helper(texts, args.topic, context.agent_id)
-        )
-        if is_relevant
-    ]
+
+    return await topic_filter_helper(args.news_texts, args.topic, context.agent_id)  # type: ignore
 
 
 # Profile filter

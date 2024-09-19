@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockText
+from agent_service.planner.errors import EmptyInputError
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.stock_rank_by_text.prompts import (
     RANK_STOCKS_BY_PROFILE_DESCRIPTION,
@@ -33,6 +34,11 @@ async def rank_stocks_by_profile(
     args: RankStocksByProfileInput, context: PlanRunContext
 ) -> List[StockID]:
     logger = get_prefect_logger(__name__)
+
+    if len(args.stocks) == 0:
+        raise EmptyInputError("Cannot rank empty list of stocks")
+    if len(args.stock_texts) == 0:
+        raise EmptyInputError("Cannot rank stocks with empty list of texts")
 
     logger.info("Summarizing Relevant Text For Each Stock...")
     stock_summary_map = await evaluate_and_summarize_profile_fit_for_stocks(

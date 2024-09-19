@@ -17,7 +17,6 @@ from agent_service.io_types.text import (
     StockSecFilingText,
     Text,
 )
-from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -125,19 +124,21 @@ async def get_10k_10q_sec_filings(
     for filings in stock_filing_map.values():
         all_filings.extend(filings)
 
-    if len(all_filings) == 0:
-        raise EmptyOutputError("No filings were retrieved for these stocks over this time period")
-
     filing_list = [
         f"{filing.to_citation_title()} ({filing.form_type}) "
         + (f"- {filing.timestamp.strftime('%Y-%m-%d')}" if filing.timestamp else "")
         for filing in all_filings
     ]
-    await tool_log(
-        log=f"Found {len(all_filings)} filing(s).",
-        context=context,
-        associated_data=filing_list,
-    )
+    if len(all_filings) == 0:
+        await tool_log(
+            log="No filings were retrieved for these stocks over this time period", context=context
+        )
+    else:
+        await tool_log(
+            log=f"Found {len(all_filings)} filing(s).",
+            context=context,
+            associated_data=filing_list,
+        )
 
     return all_filings
 
@@ -171,9 +172,6 @@ async def get_other_sec_filings_helper(
                 form_type=filing_json.get(FORM_TYPE),
             )
         )
-
-    if not stock_filing_map:
-        raise EmptyOutputError("No filings were found.")
 
     return stock_filing_map
 
@@ -412,8 +410,9 @@ async def get_sec_filings_with_type(
             sec_filings.extend(filings)
 
         if len(sec_filings) == 0 and len(sec_10k_10q_filings) == 0:
-            raise EmptyOutputError(
-                "No filings were retrieved for these stocks over this time period"
+            await tool_log(
+                log="No filings were retrieved for these stocks over this time period",
+                context=context,
             )
         sec_filings.extend(sec_10k_10q_filings)
 

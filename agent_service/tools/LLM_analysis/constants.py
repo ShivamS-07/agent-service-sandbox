@@ -6,7 +6,8 @@ DEFAULT_LLM = GPT4_O
 
 # These are to try to force the filter to allow some hits but not too many
 LLM_FILTER_MAX_PERCENT = 0.2
-LLM_FILTER_MIN_PERCENT = 0.05
+LLM_FILTER_MIN_TOKENS = 500
+LLM_FILTER_MAX_INPUT_PERCENTAGE = 0.75
 
 # Constants to help out with scoring filtered stocks by profile
 SCORE_OUTPUT_DELIMITER = "___"

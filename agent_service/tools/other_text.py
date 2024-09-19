@@ -143,7 +143,7 @@ async def get_default_text_data_for_stocks(
 
     await tool_log(log="Combining all text data", context=context)
     if len(all_data) == 0:
-        raise Exception("Found no data for the provided stocks")
+        await tool_log(log="Found no data for the provided stocks", context=context)
     return all_data
 
 

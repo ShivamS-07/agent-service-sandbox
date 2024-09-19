@@ -412,8 +412,9 @@ async def get_earnings_call_full_transcripts(
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
     if not output:
-        raise EmptyOutputError(
-            "Did not get any earnings call transcripts for these stocks over the specified time period"
+        await tool_log(
+            log="Did not get any earnings call transcripts for these stocks over the specified time period",
+            context=context,
         )
     await tool_log(log=f"Found {len(output)} earnings call transcripts", context=context)
     return output
@@ -462,9 +463,11 @@ async def get_earnings_call_summaries(
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
     if not output:
-        raise EmptyOutputError(
-            "Did not get any earnings call summaries for these stocks over the specified time period"
+        await tool_log(
+            log="Did not get any earnings call summaries for these stocks over the specified time period",
+            context=context,
         )
+        return []
 
     num_earning_call_summaries = len(
         [text for text in output if isinstance(text, StockEarningsSummaryText)]
