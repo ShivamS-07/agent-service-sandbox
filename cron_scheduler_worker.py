@@ -158,6 +158,7 @@ def start_agent_run(agent: AgentInfo) -> None:
         "plan_id": agent.context.plan_id,
         "plan_run_id": agent.context.plan_run_id,
         "user_id": agent.context.user_id,
+        "scheduled_by_automation": True,
     }
     queue = sqs.get_queue_by_name(QueueName=AGENT_AUTOMATION_WORKER_QUEUE)
     if not TEST_MODE:
