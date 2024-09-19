@@ -2,7 +2,7 @@ import datetime
 import unittest
 import warnings
 from typing import Any, List, Optional, Type, Union
-from unittest import IsolatedAsyncioTestCase
+from unittest import IsolatedAsyncioTestCase, TestCase
 
 import pandas as pd
 
@@ -844,3 +844,148 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
             self.assertEqual(in_node.args, out_node.args)
             self.assertEqual(in_node.is_output_node, out_node.is_output_node)
             self.assertEqual(in_node.output_variable_name, out_node.output_variable_name)
+
+
+class TestPlannerTypes(TestCase):
+    def test_get_node_dependency_map(self):
+        # define nodes
+        test1 = ToolExecutionNode(
+            tool_name="test_1",
+            args={"name": "constant"},
+            description="",
+            output_variable_name="test_1_out",
+        )
+        test2 = ToolExecutionNode(
+            tool_name="test_2",
+            args={"name": "constant", "name2": Variable(var_name="test_1_out")},
+            description="",
+            output_variable_name="test_2_out",
+        )
+        test3 = ToolExecutionNode(
+            tool_name="test_3",
+            args={
+                "name": "constant",
+                "name2": Variable(var_name="test_1_out"),
+                "name3": Variable(var_name="test_2_out"),
+            },
+            description="",
+            output_variable_name="test_3_out",
+        )
+        test4 = ToolExecutionNode(
+            tool_name="test_4",
+            args={
+                "name": Variable(var_name="test_1_out"),
+            },
+            description="",
+            output_variable_name="test_4_out",
+        )
+        test5 = ToolExecutionNode(
+            tool_name="test_5",
+            args={
+                "name": "constant",
+                "name2": Variable(var_name="test_4_out"),
+                "name3": Variable(var_name="test_3_out"),
+            },
+            description="",
+            output_variable_name="test_5_out",
+        )
+
+        test_plan = ExecutionPlan(nodes=[test1, test2, test3, test4, test5])
+        expected_tree = {
+            test1: {test2, test3, test4},
+            test2: {test3},
+            test3: {test5},
+            test4: {test5},
+            test5: set(),
+        }
+        actual = test_plan.get_node_dependency_map()
+        self.assertEqual(expected_tree, actual)
+
+    def test_get_pruned_plan(self):
+        # define nodes
+        test1 = ToolExecutionNode(
+            tool_name="test_1",
+            args={"name": "constant"},
+            description="",
+            output_variable_name="test_1_out",
+            tool_task_id="test_1",
+        )
+        test2 = ToolExecutionNode(
+            tool_name="test_2",
+            args={"name": "constant", "name2": Variable(var_name="test_1_out")},
+            description="",
+            output_variable_name="test_2_out",
+        )
+        test3 = ToolExecutionNode(
+            tool_name="test_3",
+            args={
+                "name": "constant",
+                "name2": Variable(var_name="test_1_out"),
+                "name3": Variable(var_name="test_2_out"),
+            },
+            description="",
+            output_variable_name="test_3_out",
+        )
+        test4 = ToolExecutionNode(
+            tool_name="test_4",
+            args={
+                "name": Variable(var_name="test_1_out"),
+            },
+            description="",
+            output_variable_name="test_4_out",
+        )
+        test5 = ToolExecutionNode(
+            tool_name="test_5",
+            args={
+                "name": "constant",
+                "name2": Variable(var_name="test_4_out"),
+                "name3": Variable(var_name="test_3_out"),
+            },
+            description="",
+            output_variable_name="test_5_out",
+        )
+        test_out_1 = ToolExecutionNode(
+            tool_name="prepare_output",
+            args={"name": Variable(var_name="test_2_out")},
+            description="",
+            is_output_node=True,
+            tool_task_id="output1",
+        )
+        test_out_2 = ToolExecutionNode(
+            tool_name="prepare_output",
+            args={"name": Variable(var_name="test_5_out")},
+            description="",
+            is_output_node=True,
+            tool_task_id="output2",
+        )
+
+        test_plan = ExecutionPlan(nodes=[test1, test2, test3, test4, test5, test_out_1, test_out_2])
+        # First, remove output 1. Since another node depends on "test_2_out", it should have no effect
+        expected_plan = ExecutionPlan(nodes=[test1, test2, test3, test4, test5, test_out_2])
+        pruned = test_plan.get_pruned_plan(task_ids_to_remove={"output1"})
+        with self.subTest(msg="No change expected"):
+            self.assertEqual(pruned, expected_plan)
+
+        # Now, remove output 2. Nodes should be removed in this case
+        expected_plan = ExecutionPlan(nodes=[test1, test2, test_out_1])
+        pruned = test_plan.get_pruned_plan(task_ids_to_remove={"output2"})
+        with self.subTest(msg="Pruning expected"):
+            self.assertEqual(pruned, expected_plan)
+
+        # Now, remove both outputs. Plan should now be empty.
+        expected_plan = ExecutionPlan(nodes=[])
+        pruned = test_plan.get_pruned_plan(task_ids_to_remove={"output1", "output2"})
+        with self.subTest(msg="All nodes removed"):
+            self.assertEqual(pruned, expected_plan)
+
+        # Now, remove nothing. Plan should be unchanged.
+        expected_plan = ExecutionPlan(
+            nodes=[test1, test2, test3, test4, test5, test_out_1, test_out_2]
+        )
+        pruned = test_plan.get_pruned_plan(task_ids_to_remove=set())
+        with self.subTest(msg="No nodes removed"):
+            self.assertEqual(pruned, expected_plan)
+
+        with self.subTest(msg="Expect error removing non-output"):
+            with self.assertRaises(RuntimeError):
+                pruned = test_plan.get_pruned_plan(task_ids_to_remove={"test_1"})

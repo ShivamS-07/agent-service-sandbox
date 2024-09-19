@@ -1,6 +1,7 @@
 import enum
+from collections import defaultdict, deque
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -61,6 +62,15 @@ class ToolExecutionNode(BaseModel):
     def convert_args(self) -> str:
         return ", ".join(f"{key}={convert_arg(value)}" for key, value in self.args.items())
 
+    def __hash__(self) -> int:
+        # Each node is unique, even with an identical tool name and arguments.
+        return hash(self.tool_task_id)
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, ToolExecutionNode):
+            return False
+        return other.tool_task_id == self.tool_task_id
+
     @field_validator("args", mode="before")
     @classmethod
     def _deserialize_args(cls, args: Any) -> Any:
@@ -109,6 +119,16 @@ class ToolExecutionNode(BaseModel):
 
         return resolved_args
 
+    def get_variables_in_arguments(self) -> List[Variable]:
+        variables = []
+        for val in self.args.values():
+            if isinstance(val, Variable):
+                variables.append(val)
+            elif isinstance(val, list):
+                variables.extend((list_val for list_val in val if isinstance(list_val, Variable)))
+
+        return variables
+
 
 class PlanStatus(enum.StrEnum):
     CREATING = "CREATING"
@@ -142,6 +162,78 @@ class ExecutionPlan(BaseModel):
                 prefix = f"{i}. "
             str_list.append(f"{prefix}{node.get_plan_step_str()}")
         return "\n\n".join(str_list)
+
+    def get_node_dependency_map(self) -> Dict[ToolExecutionNode, Set[ToolExecutionNode]]:
+        """
+        Given an execution plan (i.e. a list of tool execution nodes), we can
+        construct a dependency tree mapping each node to its dependent
+        ("children") nodes. This is useful for pruning an execution plan by
+        removing any non-output nodes with no dependents.
+        """
+
+        # Maps each node to its children
+        dependency_map: Dict[ToolExecutionNode, Set[ToolExecutionNode]] = {
+            node: set() for node in self.nodes
+        }
+
+        # Maps a variable name to the node that created it
+        variable_node_map = {
+            node.output_variable_name: node for node in self.nodes if node.output_variable_name
+        }
+        for node in reversed(self.nodes):
+            variable_args = node.get_variables_in_arguments()
+            for var in variable_args:
+                parent = variable_node_map.get(var.var_name)
+                if not parent:
+                    continue
+                dependency_map[parent].add(node)
+
+        return dependency_map
+
+    def get_pruned_plan(self, task_ids_to_remove: Set[str]) -> "ExecutionPlan":
+        """
+        Given a set of task IDs that represent OUPTUTS ONLY, return a new execution
+        plan with the specified task ID's removed, and unused plan nodes (that
+        aren't outputs) pruned. NOTE: THIS DOES NOT UPDATE IN PLACE.
+        """
+
+        nodes_to_remove = [node for node in self.nodes if node.tool_task_id in task_ids_to_remove]
+        if not all((node.is_output_node for node in nodes_to_remove)):
+            raise RuntimeError("Only may remove output nodes!!")
+
+        plan_with_nodes_removed = ExecutionPlan(
+            nodes=[node for node in self.nodes if node.tool_task_id not in task_ids_to_remove]
+        )
+        node_to_children = plan_with_nodes_removed.get_node_dependency_map()
+        node_to_parents = defaultdict(list)
+        for parent, children in node_to_children.items():
+            for child in children:
+                node_to_parents[child].append(parent)
+
+        nodes_to_remove = deque(
+            [
+                node
+                for node, children in node_to_children.items()
+                if not children and not node.is_output_node
+            ]
+        )
+
+        while nodes_to_remove:
+            node = nodes_to_remove.popleft()
+            for parent in node_to_parents[node]:
+                # Remove the leaf from its parent's children list
+                node_to_children[parent].remove(node)
+
+                # If the parent becomes a leaf, add it to the queue
+                if not node_to_children[parent] and not parent.is_output_node:
+                    nodes_to_remove.append(parent)
+
+            # Remove the node
+            node_to_children.pop(node)
+
+        # Make sure we preserve order
+        remaining_nodes = [node for node in self.nodes if node in node_to_children]
+        return ExecutionPlan(nodes=remaining_nodes)
 
 
 class ExecutionPlanParsingError(RuntimeError):

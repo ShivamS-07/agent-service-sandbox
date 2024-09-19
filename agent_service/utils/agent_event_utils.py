@@ -286,6 +286,7 @@ async def publish_agent_task_status(
 
 async def get_agent_task_logs(
     agent_id: str,
+    plan_run_id: str,
     task_id: str,
     db: Optional[Postgres] = None,
 ) -> List[PlanRunTaskLog]:
@@ -295,7 +296,7 @@ async def get_agent_task_logs(
     """
 
     db = db or get_psql()
-    rows = db.get_agent_worklogs(agent_id, task_ids=[task_id])
+    rows = db.get_agent_worklogs(agent_id, task_ids=[task_id], plan_run_ids=[plan_run_id])
 
     if rows:
         return sorted(

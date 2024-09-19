@@ -407,7 +407,10 @@ async def run_execution_plan(
             context.chat = db.get_chats_history_for_agent(agent_id=context.agent_id)
 
         current_task_logs = await get_agent_task_logs(
-            agent_id=context.agent_id, task_id=context.task_id, db=db
+            agent_id=context.agent_id,
+            plan_run_id=context.plan_run_id,
+            task_id=context.task_id,
+            db=db,
         )
         tasks[i].logs = current_task_logs
         tasks[i].status = Status.COMPLETE
