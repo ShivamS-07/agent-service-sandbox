@@ -86,7 +86,7 @@ def get_arg_dict(arg_str: str) -> Dict[str, str]:
 class Planner:
     def __init__(
         self,
-        agent_id: str,
+        agent_id: Optional[str] = None,
         context: Optional[Dict[str, str]] = None,
         tool_registry: Type[ToolRegistry] = ToolRegistry,
         send_chat: bool = True,
@@ -104,7 +104,10 @@ class Planner:
 
     @async_perf_logger
     async def create_initial_plan(
-        self, chat_context: ChatContext, plan_id: str, use_sample_plans: bool = True
+        self,
+        chat_context: ChatContext,
+        plan_id: Optional[str] = None,
+        use_sample_plans: bool = True,
     ) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
         if use_sample_plans:
@@ -167,7 +170,7 @@ class Planner:
         return breakdown_plan
 
     async def _get_plan_from_breakdown(
-        self, chat_context: ChatContext, plan_id: str
+        self, chat_context: ChatContext, plan_id: Optional[str] = None
     ) -> Optional[ExecutionPlan]:
         request_breakdown = await self._get_request_breakdown(chat_context)
         breakdown_tasks = [
@@ -196,7 +199,7 @@ class Planner:
     async def _create_initial_plan(
         self,
         chat_context: ChatContext,
-        plan_id: str,
+        plan_id: Optional[str] = None,
         llm: Optional[GPT] = None,
         sample_plans: str = "",
     ) -> Optional[ExecutionPlan]:
@@ -254,7 +257,7 @@ class Planner:
 
     @async_perf_logger
     async def _pick_best_plan(
-        self, chat_context: ChatContext, plans: List[ExecutionPlan], plan_id: str
+        self, chat_context: ChatContext, plans: List[ExecutionPlan], plan_id: Optional[str] = None
     ) -> ExecutionPlan:
         plan_pick_started_at = get_now_utc().isoformat()
         plans_str = "\n\n".join(
@@ -291,13 +294,14 @@ class Planner:
 
     @async_perf_logger
     async def _send_delayed_planning_message(self, chat_context: ChatContext) -> None:
-        chatbot = Chatbot(agent_id=self.agent_id)
-        message = await chatbot.generate_initial_midplan_response(chat_context=chat_context)
+        if self.agent_id:
+            chatbot = Chatbot(agent_id=self.agent_id)
+            message = await chatbot.generate_initial_midplan_response(chat_context=chat_context)
 
-        await send_chat_message(
-            message=Message(agent_id=self.agent_id, message=message, is_user_message=False),
-            db=self.db,
-        )
+            await send_chat_message(
+                message=Message(agent_id=self.agent_id, message=message, is_user_message=False),
+                db=self.db,
+            )
 
     @async_perf_logger
     async def rewrite_plan_after_input(

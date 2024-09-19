@@ -9,10 +9,10 @@ from pydantic import BaseModel, Field
 from agent_service.io_types.graph import GraphOutput
 from agent_service.io_types.table import TableOutput
 from agent_service.io_types.text import TextOutput
-from agent_service.planner.planner_types import PlanStatus, RunMetadata
+from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
 from agent_service.types import Message
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.prompt_template import PromptTemplate
+from agent_service.utils.prompt_template import OutputType, PromptTemplate
 from agent_service.utils.scheduling import AgentSchedule
 from agent_service.utils.sidebar_sections import SidebarSection
 
@@ -917,3 +917,21 @@ class CopyAgentToUsersRequest(BaseModel):
 
 class CopyAgentToUsersResponse(BaseModel):
     user_id_to_new_agent_id_map: Dict[str, str]
+
+
+class GenTemplatePlanResponse(BaseModel):
+    plan: Optional[ExecutionPlan] = None
+    output_types: Optional[List[OutputType]] = None
+
+
+class GenTemplatePlanRequest(BaseModel):
+    template_prompt: str
+
+
+class RunTemplatePlanResponse(BaseModel):
+    agent_id: str
+
+
+class RunTemplatePlanRequest(BaseModel):
+    template_prompt: str
+    plan: ExecutionPlan

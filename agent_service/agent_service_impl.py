@@ -42,6 +42,7 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationResponse,
     ExecutionPlanTemplate,
+    GenTemplatePlanResponse,
     GetAccountInfoResponse,
     GetAgentDebugInfoResponse,
     GetAgentFeedBackResponse,
@@ -73,10 +74,12 @@ from agent_service.endpoints.models import (
     MemoryItem,
     NotificationEmailsResponse,
     NotificationEvent,
+    OutputType,
     PlanRunToolDebugInfo,
     PlanTemplateTask,
     RenameMemoryResponse,
     RestoreAgentResponse,
+    RunTemplatePlanResponse,
     SetAgentFeedBackRequest,
     SetAgentFeedBackResponse,
     SetAgentScheduleRequest,
@@ -108,15 +111,22 @@ from agent_service.external.user_svc_client import (
 )
 from agent_service.io_type_utils import load_io_type
 from agent_service.io_types.citations import CitationDetailsType, CitationType
+from agent_service.io_types.graph import BarGraph, LineGraph, PieGraph
+from agent_service.io_types.table import Table
 from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.action_decide import FirstActionDecider
 from agent_service.planner.constants import FirstAction
-from agent_service.planner.planner_types import Variable
+from agent_service.planner.planner import Planner
+from agent_service.planner.planner_types import ExecutionPlan, Variable
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.tool import ToolCategory, ToolRegistry
-from agent_service.types import ChatContext, MemoryType, Message
+from agent_service.types import ChatContext, MemoryType, Message, PlanRunContext
 from agent_service.uploads import UploadHandler
-from agent_service.utils.agent_event_utils import publish_agent_name, send_chat_message
+from agent_service.utils.agent_event_utils import (
+    publish_agent_execution_plan,
+    publish_agent_name,
+    send_chat_message,
+)
 from agent_service.utils.agent_name import generate_name_for_agent
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import (
@@ -138,6 +148,7 @@ from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.memory_handler import MemoryHandler, get_handler
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
+from agent_service.utils.prefect import prefect_run_execution_plan
 from agent_service.utils.prompt_template import PromptTemplate
 from agent_service.utils.redis_queue import (
     get_agent_event_channel,
@@ -687,7 +698,7 @@ class AgentServiceImpl:
         next_run = schedule.get_next_run()
         await self.pg.set_latest_plan_for_automated_run(agent_id=agent_id)
 
-        # Now automatically subscribe the agent owner to email notifications
+        # Now automatically subscribe the agent owner to email notification
         # get the email for the user
         user = await get_users(user_id=user_id, user_ids=[user_id], include_user_enabled=True)
         email = user[0].email
@@ -1209,9 +1220,6 @@ class AgentServiceImpl:
 
         return GetAgentFeedBackResponse(agent_feedback=feedback[0], success=True)
 
-    async def get_prompt_tempaltes(self) -> List[PromptTemplate]:
-        return await self.pg.get_prompt_templates()
-
     async def copy_agent(self, src_agent_id: str, dst_user_ids: List[str]) -> Dict[str, str]:
         res = {}
         for user_id in dst_user_ids:
@@ -1306,3 +1314,125 @@ class AgentServiceImpl:
             )
         except GRPCError as e:
             raise CustomDocumentException.from_grpc_error(e) from e
+
+    async def get_prompt_templates(self) -> List[PromptTemplate]:
+        prompt_templates = await self.pg.get_prompt_templates()
+        for template in prompt_templates:
+            template.output_types = self._output_types_from_plan(template.plan)
+        return prompt_templates
+
+    def _output_types_from_plan(self, plan: ExecutionPlan) -> List[OutputType]:
+        output_types = []
+        output_nodes = [node for node in plan.nodes if node.is_output_node]
+
+        output_type_mapping = {
+            Table: OutputType.TABLE,
+            LineGraph: OutputType.LINE_GRAPH,
+            BarGraph: OutputType.BAR_GRAPH,
+            PieGraph: OutputType.PIE_GRAPH,
+        }
+
+        for node in output_nodes:
+            try:
+                var_name = node.args.get("object_to_output").var_name  # type: ignore
+                matching_node = next(
+                    (n for n in plan.nodes if n.output_variable_name == var_name), None
+                )
+
+                if matching_node:
+                    tool_name = matching_node.tool_name
+                    output_type = ToolRegistry.get_tool(tool_name).return_type
+
+                    # Find the corresponding output type or default to TEXT
+                    output_types.append(
+                        next(
+                            (
+                                out_type
+                                for tool_class, out_type in output_type_mapping.items()
+                                if issubclass(output_type, tool_class)
+                            ),
+                            OutputType.TEXT,
+                        )
+                    )
+            except Exception:
+                output_types.append(OutputType.TEXT)
+
+        return output_types
+
+    async def gen_template_plan(self, template_prompt: str, user: User) -> GenTemplatePlanResponse:
+
+        LOGGER.info("Generating template plan")
+        chat_context = ChatContext(
+            messages=[Message(message=template_prompt, is_user_message=True)]
+        )
+        planner = Planner(skip_db_commit=True, send_chat=False)
+        plan = await planner.create_initial_plan(chat_context=chat_context, use_sample_plans=True)
+        if plan is None:
+            raise HTTPException(status_code=400, detail="Plan generation failed: no plan created.")
+
+        return GenTemplatePlanResponse(
+            plan=plan,
+            output_types=self._output_types_from_plan(plan),
+        )
+
+    async def create_agent_and_run_template_plan(
+        self, template_prompt: str, plan: ExecutionPlan, user: User
+    ) -> RunTemplatePlanResponse:
+
+        # create a new agent
+        LOGGER.info("Creating agent for the template plan")
+        agent = await self.create_agent(user)
+        agent_id = agent.agent_id if agent.agent_id else ""
+
+        # insert user's new message to DB for the agent
+        LOGGER.info(f"Inserting user's new message to DB for {agent_id=}")
+        user_msg = Message(
+            agent_id=agent_id,
+            message=template_prompt,
+            is_user_message=True,
+            message_author=user.real_user_id,
+        )
+        await self.pg.insert_chat_messages(messages=[user_msg])
+
+        # Write complete plan to db and let FE know the plan is ready
+        # FE cancellation button will show up after this point
+        LOGGER.info("Saving the plan in the DB")
+        plan_id = str(uuid.uuid4())
+        plan_run_id = str(uuid.uuid4())
+        chat_context = ChatContext(
+            messages=[Message(message=template_prompt, is_user_message=True)]
+        )
+        ctx = PlanRunContext(
+            agent_id=agent_id,
+            plan_id=plan_id,
+            user_id=user.user_id,
+            plan_run_id=plan_run_id,
+            chat=chat_context,
+        )
+        await publish_agent_execution_plan(plan, ctx, self.pg)
+
+        # create agent name and store in db
+        LOGGER.info("Creating future task to generate agent name and store in DB")
+        user_msg = Message(
+            agent_id=agent_id,
+            message=template_prompt,
+            is_user_message=True,
+        )
+        run_async_background(self._generate_agent_name_and_store(user.user_id, agent_id, user_msg))
+
+        # run the plan
+        LOGGER.info(f"Running the plan for {agent_id=}")
+        context = PlanRunContext(
+            agent_id=agent_id,
+            plan_id=plan_id,
+            user_id=user.user_id,
+            plan_run_id=plan_run_id,
+        )
+        await prefect_run_execution_plan(
+            plan=plan,
+            context=context,
+            do_chat=True,
+        )
+        return RunTemplatePlanResponse(
+            agent_id=agent_id,
+        )

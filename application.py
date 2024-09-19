@@ -55,6 +55,8 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationRequest,
     EnableAgentAutomationResponse,
+    GenTemplatePlanRequest,
+    GenTemplatePlanResponse,
     GetAccountInfoResponse,
     GetAgentDebugInfoResponse,
     GetAgentFeedBackResponse,
@@ -93,6 +95,8 @@ from agent_service.endpoints.models import (
     RenameSectionRequest,
     RenameSectionResponse,
     RestoreAgentResponse,
+    RunTemplatePlanRequest,
+    RunTemplatePlanResponse,
     SetAgentFeedBackRequest,
     SetAgentFeedBackResponse,
     SetAgentScheduleRequest,
@@ -1328,9 +1332,39 @@ async def rearrange_section(
     response_model=GetPromptTemplatesResponse,
     status_code=status.HTTP_200_OK,
 )
-async def get_prompt_tempaltes() -> GetPromptTemplatesResponse:
-    templates = await application.state.agent_service_impl.get_prompt_tempaltes()
+async def get_prompt_templates() -> GetPromptTemplatesResponse:
+    templates = await application.state.agent_service_impl.get_prompt_templates()
     return GetPromptTemplatesResponse(prompt_templates=templates)
+
+
+@router.post(
+    "/template/generate-template-plan",
+    response_model=GenTemplatePlanResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def gen_template_plan(
+    req: GenTemplatePlanRequest, user: User = Depends(parse_header)
+) -> GenTemplatePlanResponse:
+    return await application.state.agent_service_impl.gen_template_plan(
+        template_prompt=req.template_prompt,
+        user=user,
+    )
+
+
+@router.post(
+    "/template/run-template-plan",
+    response_model=RunTemplatePlanResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def create_agent_and_run_template_plan(
+    req: RunTemplatePlanRequest, user: User = Depends(parse_header)
+) -> RunTemplatePlanResponse:
+
+    return await application.state.agent_service_impl.create_agent_and_run_template_plan(
+        template_prompt=req.template_prompt,
+        plan=req.plan,
+        user=user,
+    )
 
 
 @router.post(

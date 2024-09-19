@@ -1089,14 +1089,28 @@ class AsyncDB:
 
     async def get_prompt_templates(self) -> List[PromptTemplate]:
         sql = """
-        SELECT template_id::TEXT, name, description, prompt, category, created_at
+        SELECT template_id::TEXT, name, description, prompt, category, created_at, plan
         FROM agent.prompt_templates
         ORDER BY name ASC
         """
         rows = await self.pg.generic_read(sql=sql)
         if not rows:
             return []
-        return [PromptTemplate(**row) for row in rows]
+        res = []
+        for row in rows:
+            res.append(
+                PromptTemplate(
+                    template_id=row["template_id"],
+                    name=row["name"],
+                    description=row["description"],
+                    prompt=row["prompt"],
+                    category=row["category"],
+                    created_at=row["created_at"],
+                    plan=ExecutionPlan.model_validate(row["plan"]),
+                )
+            )
+
+        return res
 
     async def get_org_name(self, org_id: str) -> str:
         sql = """

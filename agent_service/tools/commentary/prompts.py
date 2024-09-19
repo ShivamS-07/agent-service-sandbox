@@ -34,8 +34,11 @@ COMMENTARY_SYS_PROMPT = Prompt(
         "\n- You can use markdown to format your text and highlight important words or numbers. "
         "\n- Highlight numbers and statistics and important words in your writing in bold for emphasis. "
         "\n- You MUST ONLY cite texts in the texts section, and DO NOT cite tables in other sections. "
-        "\n- If you want to mention the trends (such as gains/loss in some sectors/stocks) "
-        ", you MUST back it up with numbers and some justifications backed by the texts. "
+        "\n- You must not use the numerical data from texts in your commentary as they might be outdated. "
+        "Use the numerical data only from the tables provided in the other sections. If there was not any tables "
+        "and you need to use a numerical data from a text, you MUST cite the text as instructed. "
+        "\n- If you want to mention the trends (such as gains/loss in some sectors/stocks), "
+        "you MUST back it up with numbers and some justifications backed by the texts. "
         f"\n {CITATION_PROMPT}"
     ),
 )
