@@ -368,7 +368,8 @@ async def run_execution_plan(
                 if retrying:
                     raise AgentRetryError("Plan run attempt failed, retrying")
 
-                raise RuntimeError("All retry attempts failed")
+                logger.error("All retry attempts failed!")
+                raise e
 
         split_outputs = await split_io_type_into_components(tool_output)
         # This will only be used if the step is an output node
