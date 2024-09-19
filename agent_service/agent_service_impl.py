@@ -7,7 +7,6 @@ import time
 import traceback
 import uuid
 from collections import defaultdict
-from copy import deepcopy
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, cast
 from uuid import uuid4
 
@@ -72,6 +71,8 @@ from agent_service.endpoints.models import (
     MarkNotificationsAsUnreadResponse,
     MediaType,
     MemoryItem,
+    ModifyPlanRunArgsRequest,
+    ModifyPlanRunArgsResponse,
     NotificationEmailsResponse,
     NotificationEvent,
     OutputType,
@@ -86,6 +87,7 @@ from agent_service.endpoints.models import (
     SetAgentScheduleResponse,
     SharePlanRunResponse,
     TerminateAgentResponse,
+    ToolArgInfo,
     ToolMetadata,
     ToolPromptInfo,
     Tooltips,
@@ -95,6 +97,7 @@ from agent_service.endpoints.models import (
     UpdateAgentResponse,
     UpdateUserResponse,
     UploadFileResponse,
+    ValidateArgError,
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.external.custom_data_svc_client import (
@@ -109,7 +112,7 @@ from agent_service.external.user_svc_client import (
     list_team_members,
     update_user,
 )
-from agent_service.io_type_utils import load_io_type
+from agent_service.io_type_utils import get_clean_type_name, load_io_type
 from agent_service.io_types.citations import CitationDetailsType, CitationType
 from agent_service.io_types.graph import BarGraph, LineGraph, PieGraph
 from agent_service.io_types.table import Table
@@ -164,6 +167,40 @@ from agent_service.utils.string_utils import is_valid_uuid
 from agent_service.utils.task_executor import TaskExecutor
 
 LOGGER = logging.getLogger(__name__)
+
+EDITABLE_TYPE_STRS = {
+    "int",
+    "str",
+    "float",
+    "bool",
+    "Optional[int]",
+    "Optional[str]",
+    "Optional[float]",
+    "Optional[bool]",
+    "List[int]",
+    "List[str]",
+    "List[float]",
+    "List[bool]",
+}
+
+PRIMITIVE_TYPES = {
+    "int": int,
+    "str": str,
+    "float": float,
+    "bool": bool,
+}
+OPTIONAL_TYPES = {
+    "Optional[int]": int,
+    "Optional[str]": str,
+    "Optional[float]": float,
+    "Optional[bool]": bool,
+}
+LIST_TYPES = {
+    "List[int]": int,
+    "List[str]": str,
+    "List[float]": float,
+    "List[bool]": bool,
+}
 
 
 class AgentServiceImpl:
@@ -873,6 +910,8 @@ class AgentServiceImpl:
         )
         task_id_to_tool_call = {tool_call["task_id"]: tool_call for tool_call in tool_calls}
 
+        var_name_to_task: Dict[str, Dict[str, str]] = {}
+
         resp = GetPlanRunDebugInfoResponse(plan_run_tools=[])
         for node in execution_plan.nodes:
             task_id = node.tool_task_id
@@ -880,26 +919,51 @@ class AgentServiceImpl:
             tool_name = node.tool_name
             tool = ToolRegistry.get_tool(tool_name)
 
-            # if the tool hasn't been run yet, there won't be `tool_call`
+            var_name_to_task[node.output_variable_name] = {
+                "task_id": task_id,
+                "task_name": tool_name,
+            }
+
             tool_call = task_id_to_tool_call.get(task_id)
-            arg_values = json.loads(tool_call["args"]) if tool_call else None
+            arg_values = json.loads(tool_call["args"]) if tool_call else {}
             start_time_utc = tool_call["start_time_utc"] if tool_call else None
             end_time_utc = tool_call["end_time_utc"] if tool_call else None
             duration_seconds = tool_call["duration_seconds"] if tool_call else None
 
-            # remove the constant args from `node.args` to avoid duplicates with `arg_values`
-            # keep consistent with `ToolExecutionNode.resolve_arguments`
-            arg_names = deepcopy(node.args)
-            for arg in list(arg_names.keys()):
-                val = arg_names[arg]
-                if not isinstance(val, Variable | list):
-                    del arg_names[arg]
-                elif isinstance(val, list):
-                    var_val = [v for v in val if isinstance(v, Variable)]
-                    if var_val:
-                        arg_names[arg] = var_val
-                    else:
-                        del arg_names[arg]
+            arg_list: List[ToolArgInfo] = []
+            for arg_name, info in tool.input_type.model_fields.items():
+                clean_type_name = get_clean_type_name(info.annotation)
+
+                # `arg` is not editable when:
+                # 1) not in EDITABLE_TYPE_STRS
+                # 2) is a Variable or a list of Variables
+                is_editable = True
+                if clean_type_name not in EDITABLE_TYPE_STRS:
+                    is_editable = False
+
+                tasks_to_depend_on: List[Dict[str, str]] = []
+                vars = node.args.get(arg_name)
+                if isinstance(vars, Variable):
+                    is_editable = False
+                    if vars.var_name in var_name_to_task:
+                        tasks_to_depend_on.append(var_name_to_task[vars.var_name])
+                elif isinstance(vars, list):
+                    for v in vars:
+                        if isinstance(v, Variable):
+                            is_editable = False
+                            if v.var_name in var_name_to_task:
+                                tasks_to_depend_on.append(var_name_to_task[v.var_name])
+
+                arg_list.append(
+                    ToolArgInfo(
+                        arg_name=arg_name,
+                        arg_value=arg_values.get(arg_name),
+                        arg_type_name=clean_type_name,
+                        required=info.is_required(),
+                        is_editable=is_editable,
+                        tasks_to_depend_on=tasks_to_depend_on,
+                    )
+                )
 
             tool_prompts = tool_prompt_infos.get(task_id, [])
             tool_prompt_objs = [ToolPromptInfo(**prompt) for prompt in tool_prompts]
@@ -910,8 +974,7 @@ class AgentServiceImpl:
                     tool_name=tool_name,
                     tool_description=tool.description,
                     tool_comment=node.description,
-                    arg_names=arg_names,
-                    args=arg_values,
+                    arg_list=arg_list,
                     output_variable_name=node.output_variable_name,
                     start_time_utc=start_time_utc,
                     end_time_utc=end_time_utc,
@@ -921,6 +984,154 @@ class AgentServiceImpl:
             )
 
         return resp
+
+    async def modify_plan_run_args(
+        self, agent_id: str, plan_run_id: str, user_id: str, req: ModifyPlanRunArgsRequest
+    ) -> ModifyPlanRunArgsResponse:
+        """
+        1. Download the execution plan from DB
+        2. Modify the args in the execution plan. If the type mismatches, append an error into list
+        3. If there's any error, return the list of errors:
+            - type of arg value is not in EDITABLE_TYPE_STRS
+            - type of arg value is not matched with expected type
+        4. Otherwise, create a new plan entry in DB and kick off the rerun
+        """
+
+        arg_mapping: Dict[str, Dict[str, Any]] = defaultdict(dict)
+        for arg in req.args_to_modify:
+            arg_mapping[arg.tool_id][arg.arg_name] = arg.arg_value
+
+        type_mismatch_error_temp = (
+            "The type of arg '{arg_name}' is {arg_val_type}, "
+            "not matched with expected type {expected_type}"
+        )
+        arg_is_variable_error_temp = "The arg '{arg_name}' is a Variable, not editable"
+        not_editable_type_error_temp = (
+            "The type of arg '{arg_name}' is not editable (arg type: {type})"
+        )
+        errors: list[ValidateArgError] = []
+
+        execution_plan = await self.pg.get_execution_plan_for_run(plan_run_id)
+        for node in execution_plan.nodes:
+            if node.tool_task_id not in arg_mapping:
+                continue
+
+            tool_name = node.tool_name
+            tool = ToolRegistry.get_tool(tool_name)
+
+            for arg_name, info in tool.input_type.model_fields.items():
+                if arg_name not in arg_mapping[node.tool_task_id]:
+                    continue
+
+                # Check if the arg value is a Variable or a list of Variables
+                if arg_name in node.args:
+                    vars = node.args[arg_name]
+                    if isinstance(vars, Variable):
+                        errors.append(
+                            ValidateArgError(
+                                tool_id=node.tool_task_id,
+                                arg_name=arg_name,
+                                error=arg_is_variable_error_temp.format(arg_name=arg_name),
+                            )
+                        )
+                        continue
+                    elif isinstance(vars, list):
+                        is_variable = False
+                        for v in vars:
+                            if isinstance(v, Variable):
+                                errors.append(
+                                    ValidateArgError(
+                                        tool_id=node.tool_task_id,
+                                        arg_name=arg_name,
+                                        error=arg_is_variable_error_temp.format(arg_name=arg_name),
+                                    )
+                                )
+                                is_variable = True
+                                break
+                        if is_variable:
+                            continue
+
+                # Validate the type of arg value and check if it's editable
+                arg_val = arg_mapping[node.tool_task_id][arg_name]
+                expected_type = info.annotation
+                expected_clean_type_name = get_clean_type_name(expected_type)
+                if expected_clean_type_name not in EDITABLE_TYPE_STRS:
+                    errors.append(
+                        ValidateArgError(
+                            tool_id=node.tool_task_id,
+                            arg_name=arg_name,
+                            error=not_editable_type_error_temp.format(
+                                arg_name=arg_name, type=type(arg_val)
+                            ),
+                        )
+                    )
+                    continue
+
+                correct = True
+                if expected_clean_type_name in PRIMITIVE_TYPES:
+                    class_type = PRIMITIVE_TYPES[expected_clean_type_name]
+                    correct = isinstance(arg_val, class_type)
+                elif expected_clean_type_name in OPTIONAL_TYPES:
+                    class_type = OPTIONAL_TYPES[expected_clean_type_name]
+                    correct = arg_val is None or isinstance(arg_val, class_type)
+                else:
+                    class_type = LIST_TYPES[expected_clean_type_name]
+                    correct = isinstance(arg_val, list)
+                    for item in arg_val:
+                        if not isinstance(item, class_type):
+                            correct = False
+                            break
+
+                if not correct:
+                    errors.append(
+                        ValidateArgError(
+                            tool_id=node.tool_task_id,
+                            arg_name=arg_name,
+                            error=type_mismatch_error_temp.format(
+                                arg_name=arg_name,
+                                arg_val_type=type(arg_val),
+                                expected_type=expected_clean_type_name,
+                            ),
+                        )
+                    )
+                else:
+                    node.args[arg_name] = arg_val
+
+        if errors:
+            return ModifyPlanRunArgsResponse(errors=errors)
+
+        # change node's taskId to new taskId
+        for node in execution_plan.nodes:
+            node.tool_task_id = str(uuid4())
+
+        # TODO: The problem is the `node.description` won't change when args are modified
+        # e.g. "Get NVDA's prices". If you change `NVDA` to `AAPL`, the description is still the
+        # same because I don't want to make another GPT call
+        new_plan_id = str(uuid4())
+        new_plan_run_id = str(uuid4())
+        ctx = PlanRunContext(
+            agent_id=agent_id,
+            plan_id=new_plan_id,
+            user_id=user_id,
+            plan_run_id=new_plan_run_id,
+        )
+
+        await asyncio.gather(
+            send_chat_message(
+                message=Message(
+                    agent_id=agent_id,
+                    message="New plan with modified args has been created. Running the plan now.",
+                    is_user_message=False,
+                    visible_to_llm=False,
+                ),
+            ),
+            publish_agent_execution_plan(execution_plan, ctx, db=self.pg),
+        )
+
+        # we need to make sure the plan is stored in DB before executing it
+        await self.task_executor.run_execution_plan(plan=execution_plan, context=ctx)
+
+        return ModifyPlanRunArgsResponse(errors=[])
 
     async def get_agent_debug_info(self, agent_id: str) -> GetAgentDebugInfoResponse:
         tasks = [

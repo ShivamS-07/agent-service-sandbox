@@ -615,6 +615,17 @@ class GetAgentDebugInfoResponse(BaseModel):
     tooltips: Tooltips
 
 
+class GetDebugToolArgsResponse(BaseModel):
+    args: Dict[str, Any]
+
+
+class GetDebugToolResultResponse(BaseModel):
+    result: Any
+
+
+####################################################################################################
+# View Plan Tools
+####################################################################################################
 class ToolPromptInfo(BaseModel):
     gpt_model: str
 
@@ -634,6 +645,16 @@ class ToolPromptInfo(BaseModel):
     duration_seconds: float  # end time of last call - start time of first call
 
 
+class ToolArgInfo(BaseModel):
+    arg_name: str
+    arg_value: Any
+    arg_type_name: str
+    required: bool
+    is_editable: bool  # type of edited value should be consistent with `arg_type_name`
+    # empty if no dependency. {'task_id': ..., 'task_name': ...}
+    tasks_to_depend_on: List[Dict[str, str]]
+
+
 class PlanRunToolDebugInfo(BaseModel):
     tool_id: str  # task_id internally
     tool_name: str  # python function name
@@ -648,8 +669,7 @@ class PlanRunToolDebugInfo(BaseModel):
     - `output_variable_name`: the name of the output variable that the tool produces, which can
         potentially be the input to another tool
     """
-    arg_names: Dict[str, Any]
-    args: Optional[Dict[str, Any]]
+    arg_list: List[ToolArgInfo]
     output_variable_name: str
 
     # output: Any  # `IOType` type but in JSON format
@@ -664,14 +684,32 @@ class GetPlanRunDebugInfoResponse(BaseModel):
     plan_run_tools: List[PlanRunToolDebugInfo]
 
 
-class GetDebugToolArgsResponse(BaseModel):
-    args: Dict[str, Any]
+####################################################################################################
+# Modify Tool Args
+####################################################################################################
+class ArgToModify(BaseModel):
+    tool_id: str
+    arg_name: str
+    arg_value: Any  # BE validate if the type is correct
 
 
-class GetDebugToolResultResponse(BaseModel):
-    result: Any
+class ModifyPlanRunArgsRequest(BaseModel):
+    args_to_modify: List[ArgToModify]
 
 
+class ValidateArgError(BaseModel):
+    tool_id: str
+    arg_name: str
+    error: str
+
+
+class ModifyPlanRunArgsResponse(BaseModel):
+    errors: List[ValidateArgError] = Field(default_factory=list)
+
+
+####################################################################################################
+# Tool Library
+####################################################################################################
 class ToolMetadata(BaseModel):
     tool_name: str  # python function name
     tool_description: str  # the prompt to GPT for what this tool does

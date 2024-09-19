@@ -13,6 +13,7 @@ from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
@@ -196,7 +197,10 @@ class GetDateRangeInput(ToolArgs):
 )
 async def get_date_range(args: GetDateRangeInput, context: PlanRunContext) -> DateRange:
     # use gpt to parse the date string
-    llm = GPT(model=GPT4_O)
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=GPT4_O)
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=DATE_RANGE_MAIN_PROMPT.format(
             string_date=args.date_range_str,

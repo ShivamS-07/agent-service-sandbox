@@ -87,6 +87,8 @@ from agent_service.endpoints.models import (
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadRequest,
     MarkNotificationsAsUnreadResponse,
+    ModifyPlanRunArgsRequest,
+    ModifyPlanRunArgsResponse,
     NotificationEmailsResponse,
     RearrangeSectionRequest,
     RearrangeSectionResponse,
@@ -980,13 +982,31 @@ async def get_plan_run_debug_info(
     """Return detailed information about a plan run for debugging purposes,
     include the list of tools, inputs, outputs
     """
-    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
-        )
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        validate_user_agent_access(user.user_id, agent_id)
 
     return await application.state.agent_service_impl.get_plan_run_debug_info(
         agent_id=agent_id, plan_run_id=plan_run_id
+    )
+
+
+@router.post(
+    "/debug/modify-plan-run-args/{agent_id}/{plan_run_id}",
+    response_model=ModifyPlanRunArgsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def modify_plan_run_args(
+    agent_id: str,
+    plan_run_id: str,
+    req: ModifyPlanRunArgsRequest,
+    user: User = Depends(parse_header),
+) -> ModifyPlanRunArgsResponse:
+    """Duplicate the plan with modified input variables and rerun it"""
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        validate_user_agent_access(user.user_id, agent_id)
+
+    return await application.state.agent_service_impl.modify_plan_run_args(
+        agent_id=agent_id, plan_run_id=plan_run_id, user_id=user.user_id, req=req
     )
 
 
