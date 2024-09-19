@@ -50,6 +50,7 @@ class AsyncDB:
           ARRAY_AGG(ao.output ORDER BY ao.created_at) AS outputs
         FROM agent.agent_outputs ao
         WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
+                AND NOT ao.deleted
                 AND plan_id = %(plan_id)s
                 AND plan_run_id IN
                   (
@@ -117,7 +118,11 @@ class AsyncDB:
         """
 
         if plan_run_id:
-            where_clause = "ao.plan_run_id = %(plan_run_id)s AND ao.output NOTNULL AND ao.is_intermediate = FALSE"
+            where_clause = """
+            ao.plan_run_id = %(plan_run_id)s
+            AND NOT ao.deleted
+            AND ao.output NOTNULL AND ao.is_intermediate = FALSE
+            """
             params = {"plan_run_id": plan_run_id}
         else:
             where_clause = """
@@ -126,6 +131,7 @@ class AsyncDB:
                         WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
                         ORDER BY created_at DESC LIMIT 1
                     )
+                AND NOT ao.deleted
             """
             params = {"agent_id": agent_id}
 
@@ -133,10 +139,12 @@ class AsyncDB:
                 SELECT ao.plan_id::VARCHAR, ao.output_id::VARCHAR, ao.plan_run_id::VARCHAR,
                     ao.task_id::VARCHAR,
                     ao.is_intermediate, ao.live_plan_output,
-                    ao.output, ao.created_at, pr.shared, pr.run_metadata
+                    ao.output, ao.created_at, pr.shared, pr.run_metadata, ao.plan_id::TEXT, ep.plan
                 FROM agent.agent_outputs ao
                 LEFT JOIN agent.plan_runs pr
-                ON ao.plan_run_id = pr.plan_run_id
+                  ON ao.plan_run_id = pr.plan_run_id
+                LEFT JOIN agent.execution_plans ep
+                  ON ao.plan_id = ep.plan_id
                 WHERE {where_clause}
                 ORDER BY created_at ASC;
                 """
@@ -157,9 +165,31 @@ class AsyncDB:
             row["run_metadata"] = (
                 RunMetadata.model_validate(row["run_metadata"]) if row["run_metadata"] else None
             )
+            if row["plan"]:
+                # Might be slightly inefficient, but in the scheme of things
+                # probably not noticeable. We can revisit if needed. Need to do
+                # this so that frontend knows which outputs depend on other
+                # outputs in case of deleting.
+                plan = ExecutionPlan.model_validate(row["plan"])
+                node_dependency_map = plan.get_node_dependency_map()
+                node_parent_map = plan.get_node_parent_map()
+                for node, children in node_dependency_map.items():
+                    if node.tool_task_id == row["task_id"]:
+                        parents = node_parent_map.get(node, set())
+                        row["dependent_task_ids"] = [node.tool_task_id for node in children]
+                        row["parent_task_ids"] = [node.tool_task_id for node in parents]
+
             outputs.append(AgentOutput(agent_id=agent_id, **row))
 
         return outputs
+
+    async def delete_agent_outputs(self, agent_id: str, output_ids: List[str]) -> None:
+        sql = """
+        UPDATE agent.agent_outputs
+        SET deleted = TRUE
+        WHERE agent_id = %(agent_id)s AND output_id = ANY(%(output_ids)s)
+        """
+        await self.pg.generic_write(sql, {"agent_id": agent_id, "output_ids": output_ids})
 
     async def cancel_agent_plan(
         self, plan_id: Optional[str] = None, plan_run_id: Optional[str] = None
@@ -199,6 +229,7 @@ class AsyncDB:
                 LEFT JOIN agent.plan_runs pr
                 ON ao.plan_run_id = pr.plan_run_id
                 WHERE ao.plan_run_id = %(plan_run_id)s
+                  AND NOT ao.deleted
                 ORDER BY created_at ASC;
                 """
         rows = await self.pg.generic_read(sql, {"plan_run_id": plan_run_id})
@@ -682,6 +713,7 @@ class AsyncDB:
           (
             SELECT DISTINCT ON (ao.agent_id) ao.agent_id, ao.created_at
             FROM agent.agent_outputs ao
+            WHERE NOT ao.deleted
             ORDER BY ao.agent_id, ao.created_at DESC
           )
           SELECT a_id.agent_id::VARCHAR, a_id.user_id::VARCHAR, a_id.agent_name, a_id.created_at,

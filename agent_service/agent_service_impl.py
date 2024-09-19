@@ -36,6 +36,8 @@ from agent_service.endpoints.models import (
     CustomDocumentSummaryChunk,
     CustomNotification,
     Debug,
+    DeleteAgentOutputRequest,
+    DeleteAgentOutputResponse,
     DeleteAgentResponse,
     DeleteMemoryResponse,
     DisableAgentAutomationResponse,
@@ -67,6 +69,8 @@ from agent_service.endpoints.models import (
     GetToolLibraryResponse,
     ListCustomDocumentsResponse,
     ListMemoryItemsResponse,
+    LockAgentOutputRequest,
+    LockAgentOutputResponse,
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadResponse,
     MediaType,
@@ -91,6 +95,8 @@ from agent_service.endpoints.models import (
     ToolMetadata,
     ToolPromptInfo,
     Tooltips,
+    UnlockAgentOutputRequest,
+    UnlockAgentOutputResponse,
     UnsharePlanRunResponse,
     UpdateAgentDraftStatusResponse,
     UpdateAgentRequest,
@@ -666,6 +672,43 @@ class AgentServiceImpl:
             run_summary_short=run_summary_short,
             newly_updated_outputs=newly_updated_outputs,
         )
+
+    async def delete_agent_output(
+        self, agent_id: str, req: DeleteAgentOutputRequest
+    ) -> DeleteAgentOutputResponse:
+        # 1. Get the plan
+        plan_map = await self.pg.get_execution_plans(plan_ids=[req.plan_id])
+        if not plan_map:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan ID not found")
+
+        # 2. Delete and prune
+        old_plan = plan_map[req.plan_id][0]
+        new_plan = old_plan.get_pruned_plan(task_ids_to_remove=set(req.task_ids))
+
+        # 3. Insert new plan
+        write_plan_task = self.pg.write_execution_plan(
+            plan_id=str(uuid4()), agent_id=agent_id, plan=new_plan
+        )
+
+        # 4. Delete outputs
+        delete_outputs_task = self.pg.delete_agent_outputs(
+            agent_id=agent_id, output_ids=req.output_ids
+        )
+
+        await asyncio.gather(write_plan_task, delete_outputs_task)
+        return DeleteAgentOutputResponse()
+
+    async def lock_agent_output(
+        self, agent_id: str, req: LockAgentOutputRequest
+    ) -> LockAgentOutputResponse:
+        # TODO
+        return LockAgentOutputResponse()
+
+    async def unlock_agent_output(
+        self, agent_id: str, req: UnlockAgentOutputRequest
+    ) -> UnlockAgentOutputResponse:
+        # TODO
+        return UnlockAgentOutputResponse()
 
     async def get_citation_details(
         self, citation_type: CitationType, citation_id: str, user_id: str

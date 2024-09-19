@@ -166,6 +166,7 @@ async def publish_agent_output(
                     shared=False,
                     live_plan_output=live_plan_output,
                     task_id=o.task_id,
+                    dependent_task_ids=o.dependent_task_ids,
                 )
                 for (rich_output, o) in zip(results, outputs_with_ids)
             ]

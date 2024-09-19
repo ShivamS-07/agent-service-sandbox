@@ -1,6 +1,6 @@
 import enum
 from collections import defaultdict, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Union
 from uuid import uuid4
 
@@ -190,6 +190,20 @@ class ExecutionPlan(BaseModel):
 
         return dependency_map
 
+    def get_node_parent_map(self) -> Dict[ToolExecutionNode, Set[ToolExecutionNode]]:
+        """
+        Given an execution plan (i.e. a list of tool execution nodes), we can
+        construct a reverse dependency tree mapping each node to its parent
+        nodes.
+        """
+        node_to_children = self.get_node_dependency_map()
+        node_to_parents = defaultdict(set)
+        for parent, children in node_to_children.items():
+            for child in children:
+                node_to_parents[child].add(parent)
+
+        return node_to_parents
+
     def get_pruned_plan(self, task_ids_to_remove: Set[str]) -> "ExecutionPlan":
         """
         Given a set of task IDs that represent OUPTUTS ONLY, return a new execution
@@ -205,10 +219,7 @@ class ExecutionPlan(BaseModel):
             nodes=[node for node in self.nodes if node.tool_task_id not in task_ids_to_remove]
         )
         node_to_children = plan_with_nodes_removed.get_node_dependency_map()
-        node_to_parents = defaultdict(list)
-        for parent, children in node_to_children.items():
-            for child in children:
-                node_to_parents[child].append(parent)
+        node_to_parents = plan_with_nodes_removed.get_node_parent_map()
 
         nodes_to_remove = deque(
             [
@@ -267,3 +278,6 @@ class OutputWithID:
     output: IOType
     output_id: str
     task_id: Optional[str] = None  # None for backwards compatibility
+    # Tasks which analyze or read this output are dependent on it.
+    dependent_task_ids: List[str] = field(default_factory=list)
+    parent_task_ids: List[str] = field(default_factory=list)

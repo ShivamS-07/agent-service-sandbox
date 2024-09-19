@@ -2,7 +2,7 @@ import asyncio
 import pprint
 import time
 import traceback
-from typing import DefaultDict, Dict, List, Optional, Tuple, Union
+from typing import DefaultDict, Dict, List, Optional, Set, Tuple, Union
 from uuid import uuid4
 
 from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
@@ -214,8 +214,12 @@ async def run_execution_plan(
         )
         for step in plan.nodes
     ]
+    # Maps each node to its direct child nodes
+    node_dependency_map: Dict[ToolExecutionNode, Set[ToolExecutionNode]] = (
+        plan.get_node_dependency_map()
+    )
+    node_parent_map: Dict[ToolExecutionNode, Set[ToolExecutionNode]] = plan.get_node_parent_map()
     chatbot = Chatbot(agent_id=context.agent_id)
-
     ###########################################
     # PLAN RUN BEGINS
     ###########################################
@@ -368,8 +372,16 @@ async def run_execution_plan(
 
         split_outputs = await split_io_type_into_components(tool_output)
         # This will only be used if the step is an output node
+        dependent_nodes = node_dependency_map.get(step, set())
+        parent_nodes = node_parent_map.get(step, set())
         outputs_with_ids = [
-            OutputWithID(output=output, task_id=step.tool_task_id, output_id=str(uuid4()))
+            OutputWithID(
+                output=output,
+                task_id=step.tool_task_id,
+                output_id=str(uuid4()),
+                dependent_task_ids=[node.tool_task_id for node in dependent_nodes],
+                parent_task_ids=[node.tool_task_id for node in parent_nodes],
+            )
             for output in split_outputs
         ]
 

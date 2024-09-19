@@ -417,6 +417,8 @@ class AgentOutput(BaseModel):
     run_metadata: Optional[RunMetadata] = None
     live_plan_output: bool = False
     task_id: Optional[str] = None  # None for backward compatibility
+    dependent_task_ids: List[str] = Field(default_factory=list)
+    parent_task_ids: List[str] = Field(default_factory=list)
 
 
 class GetAgentOutputResponse(BaseModel):
@@ -430,6 +432,36 @@ class GetAgentOutputResponse(BaseModel):
 class GetPlanRunOutputResponse(BaseModel):
     outputs: List[AgentOutput]
     agent_name: str
+
+
+class DeleteAgentOutputRequest(BaseModel):
+    plan_id: str
+    output_ids: List[str]
+    task_ids: List[str]
+
+
+class DeleteAgentOutputResponse(BaseModel):
+    success: bool = True
+
+
+class LockAgentOutputRequest(BaseModel):
+    plan_id: str
+    output_ids: List[str]
+    task_ids: List[str]
+
+
+class LockAgentOutputResponse(BaseModel):
+    success: bool = True
+
+
+class UnlockAgentOutputRequest(BaseModel):
+    plan_id: str
+    output_ids: List[str]
+    task_ids: List[str]
+
+
+class UnlockAgentOutputResponse(BaseModel):
+    success: bool = True
 
 
 ####################################################################################################

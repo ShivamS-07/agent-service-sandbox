@@ -3,8 +3,6 @@ import datetime
 import logging
 from typing import Dict, List, Optional
 
-from fastapi import UploadFile
-
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.clickhouse import Clickhouse
@@ -28,6 +26,8 @@ from agent_service.endpoints.models import (
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     CreateAgentResponse,
+    DeleteAgentOutputRequest,
+    DeleteAgentOutputResponse,
     DeleteAgentResponse,
     GetAgentDebugInfoResponse,
     GetAgentOutputResponse,
@@ -177,3 +177,8 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
                 src_agent_id=src_agent_id, dst_user_ids=dest_user_ids
             )
         )
+
+    async def delete_agent_output(
+        self, agent_id: str, req: DeleteAgentOutputRequest
+    ) -> DeleteAgentOutputResponse:
+        return await self.agent_service_impl.delete_agent_output(agent_id=agent_id, req=req)

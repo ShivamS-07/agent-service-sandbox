@@ -47,6 +47,8 @@ from agent_service.endpoints.models import (
     CreateSectionResponse,
     CustomNotification,
     CustomNotificationStatusResponse,
+    DeleteAgentOutputRequest,
+    DeleteAgentOutputResponse,
     DeleteAgentResponse,
     DeleteMemoryResponse,
     DeleteSectionRequest,
@@ -83,6 +85,8 @@ from agent_service.endpoints.models import (
     GetToolLibraryResponse,
     ListCustomDocumentsResponse,
     ListMemoryItemsResponse,
+    LockAgentOutputRequest,
+    LockAgentOutputResponse,
     MarkNotificationsAsReadRequest,
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadRequest,
@@ -109,6 +113,8 @@ from agent_service.endpoints.models import (
     SharePlanRunResponse,
     TerminateAgentRequest,
     TerminateAgentResponse,
+    UnlockAgentOutputRequest,
+    UnlockAgentOutputResponse,
     UnsharePlanRunRequest,
     UnsharePlanRunResponse,
     UpdateAgentDraftStatusRequest,
@@ -697,6 +703,60 @@ async def get_agent_output(
         validate_user_agent_access(user.user_id, agent_id)
 
     return await application.state.agent_service_impl.get_agent_plan_output(agent_id=agent_id)
+
+
+@router.post(
+    "/agent/delete-agent-output/{agent_id}",
+    response_model=DeleteAgentOutputResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def delete_agent_output(
+    agent_id: str, req: DeleteAgentOutputRequest, user: User = Depends(parse_header)
+) -> DeleteAgentOutputResponse:
+    """
+    Delete an agent output, creating a new modified plan without the output step.
+    """
+    validate_user_agent_access(user.user_id, agent_id)
+
+    return await application.state.agent_service_impl.delete_agent_output(
+        agent_id=agent_id, req=req
+    )
+
+
+@router.post(
+    "/agent/lock-agent-output/{agent_id}",
+    response_model=LockAgentOutputResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def lock_agent_output(
+    agent_id: str, req: LockAgentOutputRequest, user: User = Depends(parse_header)
+) -> LockAgentOutputResponse:
+    """
+    Delete an agent output, creating a new modified plan without the output step.
+    """
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        validate_user_agent_access(user.user_id, agent_id)
+
+    return await application.state.agent_service_impl.lock_agent_output(agent_id=agent_id, req=req)
+
+
+@router.post(
+    "/agent/unlock-agent-output/{agent_id}",
+    response_model=UnlockAgentOutputResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def unlock_agent_output(
+    agent_id: str, req: UnlockAgentOutputRequest, user: User = Depends(parse_header)
+) -> UnlockAgentOutputResponse:
+    """
+    Delete an agent output, creating a new modified plan without the output step.
+    """
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        validate_user_agent_access(user.user_id, agent_id)
+
+    return await application.state.agent_service_impl.unlock_agent_output(
+        agent_id=agent_id, req=req
+    )
 
 
 @router.get(

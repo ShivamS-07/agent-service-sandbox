@@ -7,6 +7,7 @@ from agent_service.endpoints.models import (
     AgentFeedback,
     AgentNotificationEmail,
     ChatWithAgentRequest,
+    DeleteAgentOutputRequest,
     MediaType,
     NotificationUser,
     SetAgentFeedBackRequest,
@@ -549,3 +550,29 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
             src_agent_id=agent_to_duplicate, dest_user_ids=[user_id_to_send_to]
         )
         print(res)
+
+    async def test_delete_agent_output(self):
+        TEST_AGENT_ID = "fd7b8b1a-3e3a-4195-8a6c-99f500149fde"
+        TEST_PLAN_ID = "5633b272-1a29-45c0-b2d0-de12160bd23c"
+        EXPECTED_TASK_IDs = [
+            "b7cd537c-eb71-4be9-8369-727e592f284c",
+            "3be8d66e-70b8-4034-b036-073cad924dfc",
+            "ecd58097-16bc-4fdf-adc8-c82491a9e382",
+            "e2e1bfd1-9f7f-420d-97e8-278b379ee704",
+            "4db70330-e715-4585-9c0e-0058dba7bbbc",
+        ]
+        res = await self.delete_agent_output(
+            agent_id=TEST_AGENT_ID,
+            req=DeleteAgentOutputRequest(
+                plan_id=TEST_PLAN_ID,
+                output_ids=["e0fafdcd-19ae-4740-bdf7-8bd09e23ac7a"],
+                task_ids=["1982aa37-48d1-4451-be70-5d42dc66fab6"],
+            ),
+        )
+        self.assertTrue(res.success)
+        new_id, new_plan, _, _, _ = await self.pg.get_latest_execution_plan(agent_id=TEST_AGENT_ID)
+        self.assertNotEqual(new_id, TEST_PLAN_ID)
+        assert new_plan is not None
+        self.assertEqual([node.tool_task_id for node in new_plan.nodes], EXPECTED_TASK_IDs)
+        outputs = await self.pg.get_agent_outputs(agent_id=TEST_AGENT_ID)
+        self.assertEqual(len(outputs), 1)
