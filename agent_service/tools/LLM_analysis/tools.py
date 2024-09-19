@@ -805,23 +805,26 @@ async def profile_filter_added_diff_info(
 
     # might later do citations for this but not bothering now
     str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
-        {stock: stock_text_diff[stock] for stock in added_stocks},
+        {stock: stock_text_diff.get(stock, []) for stock in added_stocks},
         include_header=True,
         text_group_numbering=False,
     )
 
     tasks = []
     for stock in added_stocks:
-        tasks.append(
-            llm.do_chat_w_sys_prompt(
-                PROFILE_ADD_DIFF_MAIN_PROMPT.format(
-                    company_name=stock.company_name,
-                    profiles=profile_str,
-                    new_documents=str_lookup[stock],
-                ),
-                PROFILE_ADD_DIFF_SYS_PROMPT.format(),
+        if str_lookup[stock]:
+            tasks.append(
+                llm.do_chat_w_sys_prompt(
+                    PROFILE_ADD_DIFF_MAIN_PROMPT.format(
+                        company_name=stock.company_name,
+                        profiles=profile_str,
+                        new_documents=str_lookup[stock],
+                    ),
+                    PROFILE_ADD_DIFF_SYS_PROMPT.format(),
+                )
             )
-        )
+        else:
+            tasks.append(identity(""))
 
     results = await gather_with_concurrency(tasks)
     return {
@@ -844,23 +847,26 @@ async def profile_filter_removed_diff_info(
 
     # might later do citations for this but not bothering now
     str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
-        {stock: stock_text_diff[stock] for stock in removed_stocks},
+        {stock: stock_text_diff.get(stock, []) for stock in removed_stocks},
         include_header=True,
         text_group_numbering=False,
     )
 
     tasks = []
     for stock in removed_stocks:
-        tasks.append(
-            llm.do_chat_w_sys_prompt(
-                PROFILE_REMOVE_DIFF_MAIN_PROMPT.format(
-                    company_name=stock.company_name,
-                    profiles=profile_str,
-                    new_documents=str_lookup[stock],
-                ),
-                PROFILE_REMOVE_DIFF_SYS_PROMPT.format(),
+        if str_lookup[stock]:
+            tasks.append(
+                llm.do_chat_w_sys_prompt(
+                    PROFILE_REMOVE_DIFF_MAIN_PROMPT.format(
+                        company_name=stock.company_name,
+                        profiles=profile_str,
+                        new_documents=str_lookup[stock],
+                    ),
+                    PROFILE_REMOVE_DIFF_SYS_PROMPT.format(),
+                )
             )
-        )
+        else:
+            tasks.append(identity(""))
 
     results = await gather_with_concurrency(tasks)
     return {
@@ -905,15 +911,36 @@ async def filter_stocks_by_profile_match(
             diff_text_stocks = []
             same_text_stocks = []
             stock_text_diff = {}
+            current_input_set = set(args.stocks)
             for stock in args.stocks:
-                text_diff = get_text_diff(
+                added_text_diff = get_text_diff(
                     current_stock_text_lookup.get(stock, []), prev_stock_text_lookup.get(stock, [])
                 )
-                if text_diff:
+                removed_text_diff = get_text_diff(
+                    prev_stock_text_lookup.get(stock, []),
+                    current_stock_text_lookup.get(stock, []),
+                )
+                if added_text_diff or removed_text_diff:
                     diff_text_stocks.append(stock)
-                    stock_text_diff[stock] = text_diff
-                else:
-                    same_text_stocks.append(stock)
+                    if added_text_diff:
+                        stock_text_diff[stock] = added_text_diff
+                else:  # make sure we NEVER rubber stamp stocks with have citations that are missing
+                    missing_citations = False
+                    for output_stock in prev_output:
+                        if output_stock == stock:
+                            for citation in output_stock.history[-1].citations:
+                                if (
+                                    isinstance(citation, TextCitation)
+                                    and citation.source_text not in current_input_set
+                                ):
+                                    missing_citations = True
+                                    break
+                            break
+
+                    if missing_citations:
+                        diff_text_stocks.append(stock)
+                    else:
+                        same_text_stocks.append(stock)
 
             # we are only going to do main pass for stocks that have some text difference
             # relative to previous run
@@ -1038,7 +1065,6 @@ async def filter_stocks_by_profile_match(
                     if stock not in added_stocks or stock in added_diff_info
                 ]
 
-                current_input_set = set(args.stocks)
                 current_output_set = set(filtered_stocks_with_scores)
 
                 removed_stocks = []
