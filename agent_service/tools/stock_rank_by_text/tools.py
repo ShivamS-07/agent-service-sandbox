@@ -54,8 +54,9 @@ async def rank_stocks_by_profile(
     )
 
     logger.info("Applying Inter-level Ranking...")
-    fully_ranked_stocks = await rank_individual_levels(args.profile, stocks_with_scores, context)
-
+    fully_ranked_stocks = await rank_individual_levels(
+        args.profile, stocks_with_scores, context, top_n=args.top_n
+    )
     await tool_log(
         f"Analysed the given stocks for exposure to '{args.profile}' and ranked them in descending order",
         context=context,

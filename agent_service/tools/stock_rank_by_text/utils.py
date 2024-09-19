@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from agent_service.GPT.constants import GPT4_O, GPT4_O_MINI, SONNET
 from agent_service.GPT.requests import GPT
+from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import Citation, HistoryEntry, Score
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
@@ -56,14 +57,31 @@ async def evaluate_and_summarize_profile_fit_for_stock(
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
+
     llm = GPT(model=GPT4_O, context=gpt_context)
     cheap_llm = GPT(model=GPT4_O_MINI, context=gpt_context)
+
+    tokenizer = GPTTokenizer(model=cheap_llm.model)
+    fixed_len = tokenizer.get_token_length(
+        input=(
+            " ".join(
+                [
+                    PROFILE_EXPOSURE_TEXT_SUMMARIZER_SYS_PROMPT.template,
+                    PROFILE_EXPOSURE_TEXT_SUMMARIZER_MAIN_PROMPT.template,
+                    profile,
+                ]
+            )
+        )
+    )
+    chopped_company_texts = tokenizer.chop_input_to_allowed_length(
+        flexible_input=company_texts, fixed_input_len=fixed_len
+    )
 
     llm_output = await cheap_llm.do_chat_w_sys_prompt(
         main_prompt=PROFILE_EXPOSURE_TEXT_EVALUATER_MAIN_PROMPT.format(
             profile=profile,
             company_name=stock_id.company_name,
-            company_texts=company_texts,
+            company_texts=chopped_company_texts,
         ),
         sys_prompt=PROFILE_EXPOSURE_TEXT_EVALUATER_SYS_PROMPT.format(),
         max_tokens=2,
@@ -72,9 +90,26 @@ async def evaluate_and_summarize_profile_fit_for_stock(
     decision = int(llm_output.strip())
     stock_profile_summary_data: Optional[Tuple[str, List[Citation]]] = None
     if decision == 1:
+        # Different model, different context limit
+        tokenizer = GPTTokenizer(model=llm.model)
+        fixed_len = tokenizer.get_token_length(
+            input=(
+                " ".join(
+                    [
+                        PROFILE_EXPOSURE_TEXT_SUMMARIZER_SYS_PROMPT.template,
+                        PROFILE_EXPOSURE_TEXT_SUMMARIZER_MAIN_PROMPT.template,
+                        profile,
+                    ]
+                )
+            )
+        )
+        chopped_company_texts = tokenizer.chop_input_to_allowed_length(
+            flexible_input=company_texts, fixed_input_len=fixed_len
+        )
+
         llm_output = await llm.do_chat_w_sys_prompt(
             main_prompt=PROFILE_EXPOSURE_TEXT_SUMMARIZER_MAIN_PROMPT.format(
-                profile=profile, documents=company_texts
+                profile=profile, documents=chopped_company_texts
             ),
             sys_prompt=PROFILE_EXPOSURE_TEXT_SUMMARIZER_SYS_PROMPT.format(),
         )
@@ -303,7 +338,7 @@ async def run_pairwise_comparison(
 
 
 async def rank_individual_levels(
-    profile: str, stocks: List[StockID], context: PlanRunContext
+    profile: str, stocks: List[StockID], context: PlanRunContext, top_n: Optional[int] = None
 ) -> List[StockID]:
     stock_score_mapping: Dict[float, List[StockID]] = defaultdict(list)
     fully_ranked_stocks: List[StockID] = []
@@ -313,7 +348,8 @@ async def rank_individual_levels(
         latest_stock_history = stock.history[-1]
         stock_score_mapping[latest_stock_history.score.val].append(stock)  # type: ignore
 
-    for initial_score, stocks in stock_score_mapping.items():
+    for initial_score in sorted(stock_score_mapping.keys(), reverse=True):
+        stocks = stock_score_mapping[initial_score]
         # No need to do inner-level ranking for stocks with a 0 score
         if initial_score != 0:
             # Re-initialize each stock with a score at the midpoint
@@ -329,6 +365,12 @@ async def rank_individual_levels(
                 fully_ranked_stocks.extend(ranked_stocks_for_level)
         else:
             fully_ranked_stocks.extend(stocks)
+
+        # If a user only wants the top N stocks, there's no reason to keep going if we already have at least
+        # 10 of the highest ranked stocks
+        if top_n:
+            if len(fully_ranked_stocks) >= top_n:
+                break
 
     for stock in fully_ranked_stocks:
         # We now need to normalize the score from [0, 5] back to [0, 1]
