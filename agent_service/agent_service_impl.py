@@ -657,6 +657,19 @@ class AgentServiceImpl:
             run_summary_long = await run_summary_long.to_rich_output(pg=self.pg.pg)
             run_summary_long = cast(TextOutput, run_summary_long)
 
+            # replace summary title with widget anchor
+            summary_title = outputs[0].output.title
+            summary_title_dict = {
+                "type": "output_widget",
+                "name": summary_title,
+                "output_id": outputs[0].output_id,
+                "plan_run_id": outputs[0].plan_run_id,
+            }
+            summary_title_anchor = "```" + json.dumps(summary_title_dict) + "```"
+            run_summary_long.val = re.sub(
+                summary_title, summary_title_anchor, run_summary_long.val, count=1
+            )
+
         final_outputs = [output for output in outputs if not output.is_intermediate]
         if final_outputs:
             return GetAgentOutputResponse(
