@@ -78,7 +78,7 @@ async def prefect_run_execution_plan(
     context: PlanRunContext,
     do_chat: bool = True,
     override_task_output_id_lookup: Optional[Dict[str, str]] = None,
-    replan_execution_error: bool = True,
+    replan_execution_error: bool = False,
 ) -> None:
     sqs = boto3.resource("sqs", region_name="us-west-2")
     arguments = {

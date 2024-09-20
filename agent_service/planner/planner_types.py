@@ -1,4 +1,5 @@
 import enum
+import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Union
@@ -9,6 +10,8 @@ from pydantic.functional_validators import field_validator
 
 from agent_service.io_type_utils import ComplexIOBase, IOType, io_type
 from agent_service.io_types.text import Text
+
+logger = logging.getLogger(__name__)
 
 
 class Variable(BaseModel):
@@ -139,6 +142,7 @@ class PlanStatus(enum.StrEnum):
 
 class ExecutionPlan(BaseModel):
     nodes: List[ToolExecutionNode]
+    locked_task_ids: List[str] = []
 
     def __hash__(self) -> int:
         return self.get_formatted_plan().__hash__()
@@ -204,6 +208,26 @@ class ExecutionPlan(BaseModel):
 
         return node_to_parents
 
+    def inherit_locked_task_ids_from(self, old_plan: "ExecutionPlan") -> None:
+        task_id_set = {node.tool_task_id for node in self.nodes}
+        self.locked_task_ids = [
+            task_id for task_id in old_plan.locked_task_ids if task_id in task_id_set
+        ]
+
+    def remove_non_locked_output_nodes(self) -> "ExecutionPlan":
+        """
+        Returns a NEW plan with non-locked output nodes removed, and pruned to
+        remove unused tasks.
+        """
+        locked_task_set = set(self.locked_task_ids)
+        logger.info(f"Replanning while preserving locked tasks: {locked_task_set}")
+        non_locked_output_task_ids = {
+            node.tool_task_id
+            for node in self.nodes
+            if node.is_output_node and node.tool_task_id not in locked_task_set
+        }
+        return self.get_pruned_plan(task_ids_to_remove=non_locked_output_task_ids)
+
     def get_pruned_plan(self, task_ids_to_remove: Set[str]) -> "ExecutionPlan":
         """
         Given a set of task IDs that represent OUPTUTS ONLY, return a new execution
@@ -244,7 +268,14 @@ class ExecutionPlan(BaseModel):
 
         # Make sure we preserve order
         remaining_nodes = [node for node in self.nodes if node in node_to_children]
-        return ExecutionPlan(nodes=remaining_nodes)
+        remaining_task_ids = {node.tool_task_id for node in remaining_nodes}
+        return ExecutionPlan(
+            nodes=remaining_nodes,
+            # Preserve locked tasks that are still in the new plan
+            locked_task_ids=[
+                task_id for task_id in self.locked_task_ids if task_id in remaining_task_ids
+            ],
+        )
 
 
 class ExecutionPlanParsingError(RuntimeError):

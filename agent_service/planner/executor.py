@@ -149,7 +149,7 @@ async def run_execution_plan(
     context: PlanRunContext,
     do_chat: bool = True,
     log_all_outputs: bool = False,
-    replan_execution_error: bool = True,
+    replan_execution_error: bool = False,
     run_plan_in_prefect_immediately: bool = True,
     # This is meant for testing, basically we can fill in the lookup table to
     # make sure we only run the plan starting from a certain point while passing
@@ -381,7 +381,7 @@ async def run_execution_plan(
                 task_id=step.tool_task_id,
                 output_id=str(uuid4()),
                 dependent_task_ids=[node.tool_task_id for node in dependent_nodes],
-                parent_task_ids=[node.tool_task_id for node in parent_nodes],
+                parent_task_ids=[node.tool_task_id for node in parent_nodes if node.is_output_node],
             )
             for output in split_outputs
         ]
@@ -731,7 +731,10 @@ async def create_execution_plan(
         raise RuntimeError("Plan creation has been cancelled.")
 
     logger.info(f"Submitting execution plan to Prefect for {agent_id=}, {plan_id=}, {plan_run_id=}")
-    await prefect_run_execution_plan(plan=plan, context=ctx, do_chat=do_chat)
+    # Replan on error only because it's the first run
+    await prefect_run_execution_plan(
+        plan=plan, context=ctx, do_chat=do_chat, replan_execution_error=True
+    )
     return plan
 
 
@@ -1028,7 +1031,6 @@ async def rewrite_execution_plan(
     db = db or AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
     chatbot = Chatbot(agent_id=agent_id)
     override_task_output_id_lookup = None
-    replan_execution_error = True
     logger.info(f"Starting rewrite of execution plan for {agent_id=}...")
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
     automation_enabled = await db.get_agent_automation_enabled(agent_id=agent_id)
@@ -1040,7 +1042,6 @@ async def rewrite_execution_plan(
             old_plan = live_plan
         else:
             raise RuntimeError(f"No live plan found for agent {agent_id}!")
-        replan_execution_error = False
 
     if not old_plan or not old_plan_id or not plan_timestamp:  # shouldn't happen, just for mypy
         raise RuntimeError("Cannot rewrite a plan that does not exist!")
@@ -1133,6 +1134,8 @@ async def rewrite_execution_plan(
         chat=chat_context,
     )
 
+    # Make sure any new plan maintains locking if possible
+    new_plan.inherit_locked_task_ids_from(old_plan)
     await publish_agent_execution_plan(new_plan, ctx, db)
 
     logger.info(
@@ -1149,7 +1152,6 @@ async def rewrite_execution_plan(
         context=ctx,
         do_chat=do_chat,
         override_task_output_id_lookup=override_task_output_id_lookup,
-        replan_execution_error=replan_execution_error,
     )
 
     return new_plan

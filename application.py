@@ -732,7 +732,7 @@ async def lock_agent_output(
     agent_id: str, req: LockAgentOutputRequest, user: User = Depends(parse_header)
 ) -> LockAgentOutputResponse:
     """
-    Delete an agent output, creating a new modified plan without the output step.
+    Lock an agent output, which will force it to be included always.
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
         validate_user_agent_access(user.user_id, agent_id)
@@ -749,7 +749,7 @@ async def unlock_agent_output(
     agent_id: str, req: UnlockAgentOutputRequest, user: User = Depends(parse_header)
 ) -> UnlockAgentOutputResponse:
     """
-    Delete an agent output, creating a new modified plan without the output step.
+    Unlock an agent output.
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
         validate_user_agent_access(user.user_id, agent_id)

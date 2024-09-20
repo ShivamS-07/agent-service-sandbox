@@ -177,7 +177,10 @@ class AsyncDB:
                     if node.tool_task_id == row["task_id"]:
                         parents = node_parent_map.get(node, set())
                         row["dependent_task_ids"] = [node.tool_task_id for node in children]
-                        row["parent_task_ids"] = [node.tool_task_id for node in parents]
+                        # Only include parents if they are also outputs
+                        row["parent_task_ids"] = [
+                            node.tool_task_id for node in parents if node.is_output_node
+                        ]
 
             outputs.append(AgentOutput(agent_id=agent_id, **row))
 
@@ -190,6 +193,32 @@ class AsyncDB:
         WHERE agent_id = %(agent_id)s AND output_id = ANY(%(output_ids)s)
         """
         await self.pg.generic_write(sql, {"agent_id": agent_id, "output_ids": output_ids})
+
+    async def lock_plan_tasks(self, agent_id: str, plan_id: str, task_ids: List[str]) -> None:
+        sql = """
+        UPDATE agent.execution_plans
+        SET locked_tasks = ARRAY_CAT(locked_tasks, %(task_ids)s)
+        WHERE agent_id = %(agent_id)s AND plan_id = %(plan_id)s
+        """
+        await self.pg.generic_write(
+            sql, {"agent_id": agent_id, "plan_id": plan_id, "task_ids": task_ids}
+        )
+
+    async def unlock_plan_tasks(self, agent_id: str, plan_id: str, task_ids: List[str]) -> None:
+        sql = """
+        UPDATE agent.execution_plans
+        SET locked_tasks = (
+          SELECT ARRAY(
+            SELECT UNNEST(locked_tasks)
+            EXCEPT
+            SELECT UNNEST(%(task_ids)s::TEXT[])
+          )
+        )
+        WHERE agent_id = %(agent_id)s AND plan_id = %(plan_id)s
+        """
+        await self.pg.generic_write(
+            sql, {"agent_id": agent_id, "plan_id": plan_id, "task_ids": task_ids}
+        )
 
     async def cancel_agent_plan(
         self, plan_id: Optional[str] = None, plan_run_id: Optional[str] = None
@@ -293,7 +322,7 @@ class AsyncDB:
     ]:
         sql = """
             SELECT ep.plan_id::VARCHAR, ep.plan, COALESCE(pr.created_at, ep.created_at) AS created_at,
-                ep.status, pr.plan_run_id::VARCHAR AS upcoming_plan_run_id
+                ep.status, pr.plan_run_id::VARCHAR AS upcoming_plan_run_id, ep.locked_tasks
             FROM agent.execution_plans ep
             LEFT JOIN agent.plan_runs pr ON ep.plan_id = pr.plan_id
             WHERE ep.agent_id = %(agent_id)s
@@ -303,9 +332,11 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
         if not rows:
             return None, None, None, None, None
+        plan = ExecutionPlan.model_validate(rows[0]["plan"])
+        plan.locked_task_ids = list(rows[0]["locked_tasks"])
         return (
             rows[0]["plan_id"],
-            ExecutionPlan.model_validate(rows[0]["plan"]),
+            plan,
             rows[0]["created_at"],
             rows[0]["status"],
             rows[0]["upcoming_plan_run_id"],
@@ -427,15 +458,17 @@ class AsyncDB:
         self, plan_ids: List[str]
     ) -> Dict[str, Tuple[ExecutionPlan, PlanStatus, datetime.datetime, datetime.datetime]]:
         sql = """
-            SELECT plan_id::VARCHAR, plan, status, created_at, last_updated
+            SELECT plan_id::VARCHAR, plan, status, created_at, last_updated, locked_tasks
             FROM agent.execution_plans
             WHERE plan_id = ANY(%(plan_ids)s)
         """
         rows = await self.pg.generic_read(sql, params={"plan_ids": plan_ids})
         output = {}
         for row in rows:
+            plan = ExecutionPlan.model_validate(row["plan"])
+            plan.locked_task_ids = list(row["locked_tasks"])
             output[row["plan_id"]] = (
-                ExecutionPlan.model_validate(row["plan"]),
+                plan,
                 PlanStatus(row["status"]),
                 row["created_at"],
                 row["last_updated"],

@@ -384,11 +384,27 @@ class Planner:
         logger = get_prefect_logger(__name__)
         main_chat_str = chat_context.get_gpt_input()
         new_messages = "\n".join([message.get_gpt_input() for message in latest_messages])
+        append = action == FollowupAction.APPEND
+        replan_with_locked_tasks = False
+
+        # Handle locked tasks, which should ALWAYS be included
+        if last_plan.locked_task_ids and action == FollowupAction.REPLAN:
+            replan_with_locked_tasks = True
+            # When a replan is going to happen, but we have locked widgets, we
+            # retain then by doing the following:
+            # 1. Remove ALL outputs nodes that are NOT locked
+            # 2. Switch into APPEND mode and create a new plan
+            # This ensures we retain locked widgets while potentially recreating
+            # non-locked ones.
+            last_plan = last_plan.remove_non_locked_output_nodes()
+            action = FollowupAction.APPEND
+
+        append = action == FollowupAction.APPEND
         old_plan_str = last_plan.get_formatted_plan()
         new_plan_str = await self._query_GPT_for_new_plan_after_input(
             new_messages, main_chat_str, old_plan_str, sample_plans_str, action=action
         )
-        append = action == FollowupAction.APPEND
+
         if append:
             plan_str = old_plan_str + "\n" + new_plan_str
         else:
@@ -409,6 +425,8 @@ class Planner:
                     "action": action,
                     "sample_plans": sample_plans_str,
                     "plan_id": plan_id,
+                    "prior_locked_tasks": last_plan.locked_task_ids,
+                    "replan_with_locked_tasks": replan_with_locked_tasks,
                 },
             )
         except Exception as e:
@@ -425,6 +443,8 @@ class Planner:
                     "action": action,
                     "sample_plans": sample_plans_str,
                     "plan_id": plan_id,
+                    "prior_locked_tasks": last_plan.locked_task_ids,
+                    "replan_with_locked_tasks": replan_with_locked_tasks,
                 },
             )
             logger.warning(

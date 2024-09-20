@@ -419,6 +419,7 @@ class AgentOutput(BaseModel):
     task_id: Optional[str] = None  # None for backward compatibility
     dependent_task_ids: List[str] = Field(default_factory=list)
     parent_task_ids: List[str] = Field(default_factory=list)
+    is_locked: bool = False
 
 
 class GetAgentOutputResponse(BaseModel):

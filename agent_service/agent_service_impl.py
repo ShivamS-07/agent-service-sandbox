@@ -716,13 +716,15 @@ class AgentServiceImpl:
     async def lock_agent_output(
         self, agent_id: str, req: LockAgentOutputRequest
     ) -> LockAgentOutputResponse:
-        # TODO
+        await self.pg.lock_plan_tasks(agent_id=agent_id, plan_id=req.plan_id, task_ids=req.task_ids)
         return LockAgentOutputResponse()
 
     async def unlock_agent_output(
         self, agent_id: str, req: UnlockAgentOutputRequest
     ) -> UnlockAgentOutputResponse:
-        # TODO
+        await self.pg.unlock_plan_tasks(
+            agent_id=agent_id, plan_id=req.plan_id, task_ids=req.task_ids
+        )
         return UnlockAgentOutputResponse()
 
     async def get_citation_details(
