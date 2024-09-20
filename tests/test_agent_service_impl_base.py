@@ -73,7 +73,7 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
             async_db=cls.pg,
             clickhouse_db=Clickhouse(),
             slack_sender=SlackSender(channel="tommy-test"),
-            base_url="https://agent-dev.boosted.ai",
+            base_url="agent-dev.boosted.ai",
         )
 
     @classmethod

@@ -118,7 +118,7 @@ async def send_notification_slack_message(
     try:
         env = get_environment_tag()
         channel = f"agent-notifications-{'prod' if env == PROD_TAG else 'dev'}"
-        base_url = f"https://{'alfa' if env == PROD_TAG else 'agent-dev'}.boosted.ai"
+        base_url = f"{'alfa' if env == PROD_TAG else 'agent-dev'}.boosted.ai"
         user_email, user_info_slack_string = await get_user_info_slack_string(pg, user_id)
         if env != PROD_TAG or (
             not user_email.endswith("@boosted.ai")

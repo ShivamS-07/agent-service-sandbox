@@ -1579,7 +1579,7 @@ if __name__ == "__main__":
 
     logger.info("Starting server...")
     env = get_environment_tag()
-    base_url = "https://alfa.boosted.ai" if env == "ALPHA" else "https://agent-dev.boosted.ai"
+    base_url = "alfa.boosted.ai" if env == "ALPHA" else "agent-dev.boosted.ai"
     channel = "alfa-client-queries" if env == "ALPHA" else "alfa-client-queries-dev"
     application.state.agent_service_impl = AgentServiceImpl(
         task_executor=PrefectTaskExecutor(),
