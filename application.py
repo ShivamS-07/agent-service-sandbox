@@ -126,6 +126,7 @@ from agent_service.endpoints.models import (
     UpdateUserRequest,
     UpdateUserResponse,
     UploadFileResponse,
+    UserHasAccessResponse,
 )
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.GPT.requests import _get_gpt_service_stub
@@ -1309,6 +1310,17 @@ async def get_team_accounts(user: User = Depends(parse_header)) -> GetTeamAccoun
         user_id=user.user_id
     )
     return GetTeamAccountsResponse(accounts=accounts)
+
+
+@router.get(
+    "/user/has-access", response_model=UserHasAccessResponse, status_code=status.HTTP_200_OK
+)
+async def get_user_has_access(user: User = Depends(parse_header)) -> UserHasAccessResponse:
+    if user.is_admin or user.is_super_admin:
+        return UserHasAccessResponse(success=True)
+
+    has_access = await application.state.agent_service_impl.get_user_has_alfa_access(user=user)
+    return UserHasAccessResponse(success=has_access)
 
 
 @router.post(

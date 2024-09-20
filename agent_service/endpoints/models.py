@@ -886,6 +886,10 @@ class GetTeamAccountsResponse(BaseModel):
     accounts: List[Account]
 
 
+class UserHasAccessResponse(BaseModel):
+    success: bool
+
+
 # Regression Test Run Info
 ####################################################################################################
 class GetTestSuiteRunInfoResponse(BaseModel):

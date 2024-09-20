@@ -152,6 +152,7 @@ from agent_service.utils.feature_flags import (
     get_custom_user_dict,
     get_secure_mode_hash,
     get_user_context,
+    is_database_access_check_enabled_for_user,
 )
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.memory_handler import MemoryHandler, get_handler
@@ -1706,4 +1707,17 @@ class AgentServiceImpl:
         )
         return RunTemplatePlanResponse(
             agent_id=agent_id,
+        )
+
+    async def get_user_has_alfa_access(self, user: User) -> bool:
+        db_user = await get_users(
+            user_id=user.user_id, user_ids=[user.user_id], include_user_enabled=True
+        )
+
+        if not db_user or not db_user[0]:
+            return False
+
+        # Check if feature flag has been disabled for user (giving them access) or check their db permission
+        return not is_database_access_check_enabled_for_user(user_id=user.user_id) or (
+            bool(db_user[0].has_alfa_access) and bool(db_user[0].cognito_enabled)
         )
