@@ -1010,3 +1010,4 @@ class RunTemplatePlanResponse(BaseModel):
 class RunTemplatePlanRequest(BaseModel):
     template_prompt: str
     plan: ExecutionPlan
+    is_draft: bool = False

@@ -531,6 +531,7 @@ async def prepare_main_prompt(
                 writing_style_prompt.filled_prompt,
                 chat_context,
             ],
+            output_len=10000,
         )
         main_prompt = COMMENTARY_PROMPT_MAIN.format(
             previous_commentary_prompt=previous_commentary_prompt.filled_prompt,

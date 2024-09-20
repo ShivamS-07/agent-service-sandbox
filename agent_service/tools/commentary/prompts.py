@@ -388,6 +388,8 @@ GET_COMMENTARY_INPUTS_DESCRIPTION = (
     "DO NOT use 'stock_ids' directly from get_stock_universe without any filtering top contributors."
     "\n- 'theme_num' is the number of top themes to be retrieved for the commentary. "
     "It can be changed based on client request. "
+    "\n- 'top_n_stocks' is the number of top contributors and detractors to be retrieved for the commentary. "
+    "It can be changed based on client request. It's default value is 3. "
     "\n- 'portfolio_id' can be provided if client wants a commentary based on a specific portfolio."
     "\n- 'macroeconomic' ONLY MUST be set to True when a client wants to know about "
     "general macroeconomic updates and trends that might impact the market. "

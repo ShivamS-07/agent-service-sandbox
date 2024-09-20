@@ -10,9 +10,11 @@ class GPTTokenizer:
         self.model = model
         self.encoder = tiktoken.encoding_for_model(model)
 
-    def do_truncation_if_needed(self, truncate_str: str, other_prompt_strs: List[str]) -> str:
+    def do_truncation_if_needed(
+        self, truncate_str: str, other_prompt_strs: List[str], output_len: int = DEFAULT_OUTPUT_LEN
+    ) -> str:
         used = self.get_token_length("\n".join(other_prompt_strs))
-        return self.chop_input_to_allowed_length(truncate_str, used)
+        return self.chop_input_to_allowed_length(truncate_str, used, output_len)
 
     def do_multi_truncation_if_needed(
         self,

@@ -1782,12 +1782,12 @@ class AgentServiceImpl:
         )
 
     async def create_agent_and_run_template_plan(
-        self, template_prompt: str, plan: ExecutionPlan, user: User
+        self, template_prompt: str, plan: ExecutionPlan, is_draft: bool, user: User
     ) -> RunTemplatePlanResponse:
 
         # create a new agent
         LOGGER.info("Creating agent for the template plan")
-        agent = await self.create_agent(user)
+        agent = await self.create_agent(user=user, is_draft=is_draft)
         agent_id = agent.agent_id if agent.agent_id else ""
 
         # insert user's new message to DB for the agent

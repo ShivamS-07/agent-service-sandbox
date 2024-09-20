@@ -294,6 +294,7 @@ class GetCommentaryInputsInput(ToolArgs):
     portfolio_id: Optional[str] = None
     macroeconomic: Optional[bool] = False
     theme_num: Optional[int] = 3
+    top_n_stocks: int = 3
 
 
 @tool(
@@ -403,22 +404,22 @@ async def get_commentary_inputs(
             # get top and bottom 3 contributers and performers
             top_contributers = (
                 uni_perf_df.sort_values("weighted-return", ascending=False)
-                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
                 .tolist()
             )
             bottom_contributers = (
                 uni_perf_df.sort_values("weighted-return", ascending=True)
-                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
                 .tolist()
             )
             top_performers = (
                 uni_perf_df.sort_values("return", ascending=False)
-                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
                 .tolist()
             )
             bottom_performers = (
                 uni_perf_df.sort_values("return", ascending=True)
-                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
                 .tolist()
             )
 
@@ -434,7 +435,7 @@ async def get_commentary_inputs(
             )
 
             await tool_log(
-                log=f"Retrieved top 3 and bottom 3 contributers and performers in {args.universe_name}.",
+                log=f"Retrieved {args.top_n_stocks} top/bottom contributers and performers in {args.universe_name}.",
                 context=context,
             )
 
@@ -496,22 +497,22 @@ async def get_commentary_inputs(
             # get top and bottom 3 contributers and performers
             top_contributers = (
                 port_perf_df.sort_values("weighted-return", ascending=False)
-                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
                 .tolist()
             )
             bottom_contributers = (
                 port_perf_df.sort_values("weighted-return", ascending=True)
-                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
                 .tolist()
             )
             top_performers = (
                 port_perf_df.sort_values("return", ascending=False)
-                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
                 .tolist()
             )
             bottom_performers = (
                 port_perf_df.sort_values("return", ascending=True)
-                .head(3)[STOCK_ID_COL_NAME_DEFAULT]
+                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
                 .tolist()
             )
 
@@ -527,7 +528,7 @@ async def get_commentary_inputs(
             )
 
             await tool_log(
-                log="Retrieved top 3 and bottom 3 contributers and performers in portfolio.",
+                log=f"Retrieved {args.top_n_stocks} top/bottom contributers and performers in portfolio.",
                 context=context,
             )
         except Exception as e:

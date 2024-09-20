@@ -1455,6 +1455,7 @@ async def create_agent_and_run_template_plan(
     return await application.state.agent_service_impl.create_agent_and_run_template_plan(
         template_prompt=req.template_prompt,
         plan=req.plan,
+        is_draft=req.is_draft,
         user=user,
     )
 
