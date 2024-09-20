@@ -110,10 +110,14 @@ async def extract_citations_from_gpt_output(
     if anchor_citation_dict is None:
         return main_text, anchor_citation_dict
     final_text_bits = []
-    final_citations = []
+    final_citations = None
     index_counter = -1  # point to the last character in each added string
     last_end = 0
     for match in ANCHOR_REGEX.finditer(main_text):  # iterate over anchors
+        if (
+            final_citations is None
+        ):  # at least one citation, so not a formatting fail/pure hallucination
+            final_citations = []
         anchor = match.group(1)
         punct = match.group(2)
         new_text = main_text[last_end : match.start()]  # text before anchor
@@ -250,7 +254,7 @@ async def get_second_order_citations(
 
     for num, sentence in enumerate(sentences, start=1):
         if num in citation_mapping and citation_mapping[num] and sentence in main_text:
-            sentence_offset = main_text.index(sentence) + len(sentence)
+            sentence_offset = main_text.index(sentence) + len(sentence) - 1
             for citation_num in citation_mapping[num]:
                 citation = citation_group.convert_citation_num_to_citation(citation_num)
                 if citation:

@@ -19,6 +19,8 @@ class CombineListsInput(ToolArgs):
         " put them together into a single list"
         " This is equivalent to `boolean OR` or `Union` logic, if you only want elements in "
         " both lists, use intersect_lists"
+        " This is the ONLY way to combine lists, you must NEVER, EVER use the + operator in the plan"
+        " Note that like all other tools, this tool must be called as as a separate step of the plan!"
     ),
     category=ToolCategory.LIST,
     tool_registry=ToolRegistry,

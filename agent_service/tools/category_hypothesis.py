@@ -16,6 +16,7 @@ from agent_service.io_type_utils import (
     io_type,
     load_io_type,
 )
+from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
     CustomDocumentSummaryText,
@@ -30,8 +31,9 @@ from agent_service.io_types.text import (
     Text,
     TextCitation,
     TextGroup,
+    TextOutput,
 )
-from agent_service.planner.errors import EmptyInputError
+from agent_service.planner.errors import EmptyInputError, EmptyOutputError
 from agent_service.tool import (
     TOOL_DEBUG_INFO,
     ToolArgs,
@@ -57,6 +59,7 @@ from agent_service.utils.async_utils import (
     gather_with_concurrency,
     identity,
 )
+from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.check_cancelled import check_cancelled_decorator
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
@@ -503,6 +506,13 @@ class CompetitiveAnalysis(ComplexIOBase):
                     title=f"Analysis - {self.ranked_categories[category_idx].name}",
                 )
             )
+
+    async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
+        if not self.val:
+            self.prepare_categorical_hypothesis_outputs()
+        return TextOutput(
+            title=title, val="\n".join([str(await text.to_rich_output(pg)) for text in self.val])
+        )
 
 
 ####################################################################################################
@@ -1430,6 +1440,11 @@ def calculate_weighted_average_scores(
                 scores_mapping[ranking.symbol][1] += weight
 
     final_scores = {symbol: score / weight for symbol, (score, weight) in scores_mapping.items()}
+
+    if len(final_scores) == 0:
+        EmptyOutputError(
+            "Competitive analysis failed due to no data for any stock across all criteria"
+        )
 
     if candidate_target_stock is not None:
         target_stock = candidate_target_stock

@@ -112,7 +112,9 @@ PRODUCT_DESCRIPTION_PROMPT = Prompt(
 
 class FilterStocksByProductOrServiceInput(ToolArgs):
     stock_ids: List[StockID]
-    texts: List[Text]  # we are including this to help the planner not be stupid, not used!
+    texts: Optional[List[Text]] = (
+        None  # we are including this to help the planner not be stupid, not used!
+    )
     product_str: str
     must_include_stocks: Optional[List[StockID]] = None
     max_results: Optional[int] = None
@@ -145,6 +147,7 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "This tool is only for simple cases where it should be clear whether a company counts as a provider"
         "of the product or service based on a company description. "
         "For this product filter tool ONLY, you should always pass in company descriptions as the texts. "
+        "However, if you leave them out, that's fine, we will load them as needed. "
         "If the user specifically mentions a sector that is covered by the sector_identifier tool, use "
         "that tool instead, but some things the user refers to as sectors will be covered by this tool."
         "Note that retail should be considered a general service, and then retailers that sell specific kinds "
