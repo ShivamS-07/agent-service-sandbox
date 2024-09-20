@@ -56,7 +56,7 @@ class Postgres(PostgresBase):
         sql = """
             SELECT user_id::VARCHAR
             FROM agent.agents
-            WHERE agent_id = %(agent_id)s;
+            WHERE agent_id = %(agent_id)s AND NOT deleted;
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
         return rows[0]["user_id"] if rows else None

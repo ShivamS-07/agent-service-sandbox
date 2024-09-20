@@ -312,15 +312,42 @@ class AgentServiceImpl:
         return TerminateAgentResponse(success=True)
 
     async def delete_agent(self, agent_id: str) -> DeleteAgentResponse:
-        await self.pg.delete_agent_by_id(agent_id)
+        await self.pg.delete_agent_by_id(agent_id)  # soft delete
+        await send_chat_message(
+            message=Message(
+                agent_id=agent_id,
+                message="Analyst has been deleted successfully.",
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
+            db=self.pg,
+        )
         return DeleteAgentResponse(success=True)
 
     async def restore_agent(self, agent_id: str) -> RestoreAgentResponse:
         await self.pg.restore_agent_by_id(agent_id)
+        await send_chat_message(
+            message=Message(
+                agent_id=agent_id,
+                message="Analyst has been restored successfully.",
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
+            db=self.pg,
+        )
         return RestoreAgentResponse(success=True)
 
     async def update_agent(self, agent_id: str, req: UpdateAgentRequest) -> UpdateAgentResponse:
         await self.pg.update_agent_name(agent_id, req.agent_name)
+        await send_chat_message(
+            message=Message(
+                agent_id=agent_id,
+                message=f"Analyst's name has been updated to <{req.agent_name}>.",
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
+            db=self.pg,
+        )
         return UpdateAgentResponse(success=True)
 
     async def get_all_agent_notification_criteria(self, agent_id: str) -> List[CustomNotification]:
