@@ -36,4 +36,4 @@ class FirstAction(StrEnum):
 
 
 NO_CHANGE_MESSAGE = "Report updated, but no important differences found."
-CHAT_DIFF_TEMPLATE = "I have an important update related to our most recent analysis:\n{diff}"
+CHAT_DIFF_TEMPLATE = "Report updated with important changes found:\n{diff}"

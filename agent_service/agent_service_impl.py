@@ -124,7 +124,7 @@ from agent_service.io_types.graph import BarGraph, LineGraph, PieGraph
 from agent_service.io_types.table import Table
 from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.action_decide import FirstActionDecider
-from agent_service.planner.constants import FirstAction
+from agent_service.planner.constants import CHAT_DIFF_TEMPLATE, FirstAction
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import ExecutionPlan, Variable
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
@@ -583,6 +583,23 @@ class AgentServiceImpl:
         self, agent_id: str, start: Optional[datetime.datetime], end: Optional[datetime.datetime]
     ) -> GetChatHistoryResponse:
         chat_context = await self.pg.get_chats_history_for_agent(agent_id, start, end)
+
+        report_updated_message = CHAT_DIFF_TEMPLATE.split("\n")[0]
+        for message in chat_context.messages:
+            if not message.is_user_message and message.message.startswith(  # type: ignore
+                report_updated_message
+            ):
+                # get the first two words
+                report_updated_text = " ".join(CHAT_DIFF_TEMPLATE.split()[:2])
+                report_updated_dict = {
+                    "type": "output_report",
+                    "text": report_updated_text,
+                    "plan_run_id": message.plan_run_id,
+                }
+                message.message = message.message.replace(  # type: ignore
+                    report_updated_text, "```" + json.dumps(report_updated_dict) + "```"  # type: ignore
+                )
+
         return GetChatHistoryResponse(messages=chat_context.messages)
 
     @async_perf_logger
@@ -1746,5 +1763,5 @@ class AgentServiceImpl:
 
         # Check if feature flag has been disabled for user (giving them access) or check their db permission
         return not is_database_access_check_enabled_for_user(user_id=user.user_id) or (
-            bool(db_user[0].has_alfa_access) and bool(db_user[0].cognito_enabled)
+            bool(db_user[0].has_alfa_access) and bool(db_user[0].cognito_enabled)  # type: ignore
         )

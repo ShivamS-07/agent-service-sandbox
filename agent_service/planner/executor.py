@@ -549,6 +549,7 @@ async def run_execution_plan(
                     message=CHAT_DIFF_TEMPLATE.format(diff=short_diff_summary),
                     is_user_message=False,
                     visible_to_llm=False,
+                    plan_run_id=context.plan_run_id,
                 ),
                 db=db,
             )

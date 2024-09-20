@@ -497,7 +497,7 @@ class AsyncDB:
 
         sql = f"""
             SELECT cm.message_id::VARCHAR, cm.message, cm.is_user_message, cm.message_time,
-            cm.message_author,
+            cm.message_author, cm.plan_run_id::VARCHAR,
               COALESCE(nf.unread, FALSE) as unread
             FROM agent.chat_messages cm
             LEFT JOIN agent.notifications nf

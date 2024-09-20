@@ -22,6 +22,7 @@ class Message(BaseModel):
     unread: bool = False
     visible_to_llm: bool = True
     message_author: Optional[str] = ""
+    plan_run_id: Optional[str] = None
 
     def get_gpt_input(self) -> str:
         tag = GPT_USER_TAG if self.is_user_message else GPT_AGENT_TAG
@@ -36,6 +37,7 @@ class Message(BaseModel):
             "message_time": self.message_time,
             "visible_to_llm": self.visible_to_llm,
             "message_author": self.message_author,
+            "plan_run_id": self.plan_run_id,
         }
 
 
