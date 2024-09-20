@@ -358,6 +358,19 @@ class AgentServiceImpl:
             agent_id=req.agent_id, notification_prompt=req.notification_prompt, auto_generated=False
         )
         await self.pg.insert_agent_custom_notification(cn=cn)
+
+        await send_chat_message(
+            message=Message(
+                agent_id=req.agent_id,
+                message=(
+                    f"Notification criteria <{req.notification_prompt}> "
+                    "has been created successfully."
+                ),
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
+        )
+
         return cn.custom_notification_id
 
     async def delete_agent_notification_criteria(
@@ -365,6 +378,14 @@ class AgentServiceImpl:
     ) -> None:
         await self.pg.delete_agent_custom_notification_prompt(
             agent_id=agent_id, custom_notification_id=custom_notification_id
+        )
+        await send_chat_message(
+            message=Message(
+                agent_id=agent_id,
+                message="Notification criteria has been deleted successfully.",
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
         )
 
     async def get_agent_notification_emails(self, agent_id: str) -> NotificationEmailsResponse:
@@ -405,10 +426,19 @@ class AgentServiceImpl:
             else:
                 invalid_emails_to_user.append(email)
         await self.pg.set_agent_subscriptions(agent_id=agent_id, emails_to_user=email_to_user)
+
         return invalid_emails_to_user
 
     async def delete_agent_notification_emails(self, agent_id: str, email: str) -> None:
         await self.pg.delete_agent_emails(agent_id=agent_id, email=email)
+        await send_chat_message(
+            message=Message(
+                agent_id=agent_id,
+                message=f"Notification email <{email}> has been deleted successfully.",
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
+        )
 
     async def get_valid_notification_users(self, user_id: str) -> List[Account]:
         valid_users = []
@@ -756,13 +786,33 @@ class AgentServiceImpl:
         )
 
         await asyncio.gather(write_plan_task, delete_outputs_task)
+
+        await send_chat_message(
+            message=Message(
+                agent_id=agent_id,
+                message="Outputs have been deleted successfully.",
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
+        )
+
         return DeleteAgentOutputResponse()
 
     async def lock_agent_output(
         self, agent_id: str, req: LockAgentOutputRequest
     ) -> LockAgentOutputResponse:
         await self.pg.lock_plan_tasks(agent_id=agent_id, plan_id=req.plan_id, task_ids=req.task_ids)
-        return LockAgentOutputResponse()
+
+        await send_chat_message(
+            message=Message(
+                agent_id=agent_id,
+                message="Outputs have been locked successfully.",
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
+        )
+
+        return LockAgentOutputResponse(success=True)
 
     async def unlock_agent_output(
         self, agent_id: str, req: UnlockAgentOutputRequest
@@ -770,7 +820,17 @@ class AgentServiceImpl:
         await self.pg.unlock_plan_tasks(
             agent_id=agent_id, plan_id=req.plan_id, task_ids=req.task_ids
         )
-        return UnlockAgentOutputResponse()
+
+        await send_chat_message(
+            message=Message(
+                agent_id=agent_id,
+                message="Outputs have been unlocked successfully.",
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
+        )
+
+        return UnlockAgentOutputResponse(success=True)
 
     async def get_citation_details(
         self, citation_type: CitationType, citation_id: str, user_id: str
@@ -853,12 +913,32 @@ class AgentServiceImpl:
             },
             delete_previous_emails=False,
         )
+
+        await send_chat_message(
+            message=Message(
+                agent_id=agent_id,
+                message="Automation has been enabled successfully.",
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
+        )
+
         return EnableAgentAutomationResponse(success=True, next_run=next_run)
 
     async def disable_agent_automation(
         self, agent_id: str, user_id: str
     ) -> DisableAgentAutomationResponse:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=False)
+
+        await send_chat_message(
+            message=Message(
+                agent_id=agent_id,
+                message="Automation has been disabled successfully.",
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
+        )
+
         return DisableAgentAutomationResponse(success=True)
 
     async def set_agent_schedule(self, req: SetAgentScheduleRequest) -> SetAgentScheduleResponse:
@@ -867,6 +947,16 @@ class AgentServiceImpl:
         )
         if success:
             await self.pg.update_agent_schedule(agent_id=req.agent_id, schedule=schedule)
+
+            await send_chat_message(
+                message=Message(
+                    agent_id=req.agent_id,
+                    message=f"Schedule has been set to <{req.user_schedule_description}> successfully.",
+                    is_user_message=False,
+                    visible_to_llm=False,
+                ),
+            )
+
         return SetAgentScheduleResponse(
             agent_id=req.agent_id,
             schedule=schedule,
