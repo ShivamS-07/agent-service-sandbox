@@ -360,6 +360,7 @@ class AgentServiceImpl:
         await self.pg.insert_agent_custom_notification(cn=cn)
 
         await send_chat_message(
+            db=self.pg,
             message=Message(
                 agent_id=req.agent_id,
                 message=(
@@ -380,6 +381,7 @@ class AgentServiceImpl:
             agent_id=agent_id, custom_notification_id=custom_notification_id
         )
         await send_chat_message(
+            db=self.pg,
             message=Message(
                 agent_id=agent_id,
                 message="Notification criteria has been deleted successfully.",
@@ -432,6 +434,7 @@ class AgentServiceImpl:
     async def delete_agent_notification_emails(self, agent_id: str, email: str) -> None:
         await self.pg.delete_agent_emails(agent_id=agent_id, email=email)
         await send_chat_message(
+            db=self.pg,
             message=Message(
                 agent_id=agent_id,
                 message=f"Notification email <{email}> has been deleted successfully.",
@@ -788,6 +791,7 @@ class AgentServiceImpl:
         await asyncio.gather(write_plan_task, delete_outputs_task)
 
         await send_chat_message(
+            db=self.pg,
             message=Message(
                 agent_id=agent_id,
                 message="Outputs have been deleted successfully.",
@@ -804,6 +808,7 @@ class AgentServiceImpl:
         await self.pg.lock_plan_tasks(agent_id=agent_id, plan_id=req.plan_id, task_ids=req.task_ids)
 
         await send_chat_message(
+            db=self.pg,
             message=Message(
                 agent_id=agent_id,
                 message="Outputs have been locked successfully.",
@@ -822,6 +827,7 @@ class AgentServiceImpl:
         )
 
         await send_chat_message(
+            db=self.pg,
             message=Message(
                 agent_id=agent_id,
                 message="Outputs have been unlocked successfully.",
@@ -915,6 +921,7 @@ class AgentServiceImpl:
         )
 
         await send_chat_message(
+            db=self.pg,
             message=Message(
                 agent_id=agent_id,
                 message="Automation has been enabled successfully.",
@@ -931,6 +938,7 @@ class AgentServiceImpl:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=False)
 
         await send_chat_message(
+            db=self.pg,
             message=Message(
                 agent_id=agent_id,
                 message="Automation has been disabled successfully.",
@@ -949,6 +957,7 @@ class AgentServiceImpl:
             await self.pg.update_agent_schedule(agent_id=req.agent_id, schedule=schedule)
 
             await send_chat_message(
+                db=self.pg,
                 message=Message(
                     agent_id=req.agent_id,
                     message=f"Schedule has been set to <{req.user_schedule_description}> successfully.",
@@ -1313,6 +1322,7 @@ class AgentServiceImpl:
 
         await asyncio.gather(
             send_chat_message(
+                db=self.pg,
                 message=Message(
                     agent_id=agent_id,
                     message="New plan with modified args has been created. Running the plan now.",
