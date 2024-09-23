@@ -402,6 +402,9 @@ async def filter_stocks_by_product_or_service(
         )
     # add previous run stocks to the result
     if prev_run_info is not None and len(prev_output) != 0:
+        await tool_log(
+            log=f"Including {len(prev_output)} stocks selected in earlier run", context=context
+        )
         res.extend(prev_output)
 
     logger.info(

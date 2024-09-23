@@ -1390,6 +1390,10 @@ async def _rank_output_postprocess(
     ranking_objs = []
     symbol_to_stock = {stock.symbol: stock for stock in all_stocks}
     for each_match in matches:
+        if each_match[1] not in symbol_to_stock:
+            # list of competitors changed, shouldn't happen hardly ever with good caching
+            # but if it did, skip the stock that's no longer included in the list instead of crashing
+            continue
         ranking_objs.append(
             RankedCompany(
                 company_name=each_match[0],
