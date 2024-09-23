@@ -7,7 +7,18 @@ import time
 import traceback
 import uuid
 from collections import defaultdict
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, cast
+from typing import (
+    Any,
+    AsyncGenerator,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+)
 from uuid import uuid4
 
 import pandoc
@@ -175,38 +186,41 @@ from agent_service.utils.task_executor import TaskExecutor
 
 LOGGER = logging.getLogger(__name__)
 
-EDITABLE_TYPE_STRS = {
-    "int",
-    "str",
-    "float",
-    "bool",
-    "Optional[int]",
-    "Optional[str]",
-    "Optional[float]",
-    "Optional[bool]",
-    "List[int]",
-    "List[str]",
-    "List[float]",
-    "List[bool]",
+
+EDITABLE_TYPE = {
+    int,
+    str,
+    float,
+    bool,
+    Optional[int],
+    Optional[str],
+    Optional[float],
+    Optional[bool],
+    List[int],
+    List[str],
+    List[float],
+    List[bool],
 }
 
 PRIMITIVE_TYPES = {
-    "int": int,
-    "str": str,
-    "float": float,
-    "bool": bool,
+    int: int,
+    str: str,
+    float: float,
+    bool: bool,
 }
+
 OPTIONAL_TYPES = {
-    "Optional[int]": int,
-    "Optional[str]": str,
-    "Optional[float]": float,
-    "Optional[bool]": bool,
+    Optional[int]: int,
+    Optional[str]: str,
+    Optional[float]: float,
+    Optional[bool]: bool,
 }
+
 LIST_TYPES = {
-    "List[int]": int,
-    "List[str]": str,
-    "List[float]": float,
-    "List[bool]": bool,
+    List[int]: int,
+    List[str]: str,
+    List[float]: float,
+    List[bool]: bool,
 }
 
 
@@ -1138,15 +1152,8 @@ class AgentServiceImpl:
 
             arg_list: List[ToolArgInfo] = []
             for arg_name, info in tool.input_type.model_fields.items():
-                clean_type_name = get_clean_type_name(info.annotation)
-
-                # `arg` is not editable when:
-                # 1) not in EDITABLE_TYPE_STRS
-                # 2) is a Variable or a list of Variables
+                # To be editable, first it must not be a Variable or List[Variable]
                 is_editable = True
-                if clean_type_name not in EDITABLE_TYPE_STRS:
-                    is_editable = False
-
                 tasks_to_depend_on: List[Dict[str, str]] = []
                 vars = node.args.get(arg_name)
                 if isinstance(vars, Variable):
@@ -1160,10 +1167,35 @@ class AgentServiceImpl:
                             if v.var_name in var_name_to_task:
                                 tasks_to_depend_on.append(var_name_to_task[v.var_name])
 
+                # determine arg type
+                arg_value = arg_values.get(arg_name)
+                clean_type_name = get_clean_type_name(info.annotation)
+                if info.annotation not in EDITABLE_TYPE:
+                    # `info.annotation` can be complex/union types and some of them should be editable,
+                    # so we check the type of `arg_value`, e.g. Union[str, SelfDefinedType]
+                    # if `arg_value` is string, we should still allow it to be a string
+                    arg_value_type = type(arg_value)
+                    if arg_value is None:
+                        is_editable = False
+                    elif arg_value_type in PRIMITIVE_TYPES:
+                        clean_type_name = get_clean_type_name(arg_value_type)
+                    else:
+                        if arg_value_type is list:
+                            if len(arg_value) == 0:
+                                is_editable = False
+                            else:
+                                inner_type = type(arg_value[0])
+                                if all(isinstance(item, inner_type) for item in arg_value):
+                                    clean_type_name = f"List[{inner_type.__name__}]"
+                                else:
+                                    is_editable = False
+                        else:
+                            is_editable = False
+
                 arg_list.append(
                     ToolArgInfo(
                         arg_name=arg_name,
-                        arg_value=arg_values.get(arg_name),
+                        arg_value=arg_value,
                         arg_type_name=clean_type_name,
                         required=info.is_required(),
                         is_editable=is_editable,
@@ -1198,10 +1230,11 @@ class AgentServiceImpl:
         1. Download the execution plan from DB
         2. Modify the args in the execution plan. If the type mismatches, append an error into list
         3. If there's any error, return the list of errors:
-            - type of arg value is not in EDITABLE_TYPE_STRS
+            - type of arg value is not in EDITABLE_TYPE
             - type of arg value is not matched with expected type
         4. Otherwise, create a new plan entry in DB and kick off the rerun
         """
+        LOGGER.info(f"Args to modify:\n{req}")
 
         arg_mapping: Dict[str, Dict[str, Any]] = defaultdict(dict)
         for arg in req.args_to_modify:
@@ -1212,9 +1245,6 @@ class AgentServiceImpl:
             "not matched with expected type {expected_type}"
         )
         arg_is_variable_error_temp = "The arg '{arg_name}' is a Variable, not editable"
-        not_editable_type_error_temp = (
-            "The type of arg '{arg_name}' is not editable (arg type: {type})"
-        )
         errors: list[ValidateArgError] = []
 
         execution_plan = await self.pg.get_execution_plan_for_run(plan_run_id)
@@ -1260,35 +1290,30 @@ class AgentServiceImpl:
                 # Validate the type of arg value and check if it's editable
                 arg_val = arg_mapping[node.tool_task_id][arg_name]
                 expected_type = info.annotation
-                expected_clean_type_name = get_clean_type_name(expected_type)
-                if expected_clean_type_name not in EDITABLE_TYPE_STRS:
-                    errors.append(
-                        ValidateArgError(
-                            tool_id=node.tool_task_id,
-                            arg_name=arg_name,
-                            error=not_editable_type_error_temp.format(
-                                arg_name=arg_name, type=type(arg_val)
-                            ),
-                        )
-                    )
-                    continue
-
                 correct = True
-                if expected_clean_type_name in PRIMITIVE_TYPES:
-                    class_type = PRIMITIVE_TYPES[expected_clean_type_name]
+                if expected_type in PRIMITIVE_TYPES:
+                    class_type = PRIMITIVE_TYPES[expected_type]
                     correct = isinstance(arg_val, class_type)
-                elif expected_clean_type_name in OPTIONAL_TYPES:
-                    class_type = OPTIONAL_TYPES[expected_clean_type_name]
+                elif expected_type in OPTIONAL_TYPES:
+                    class_type = OPTIONAL_TYPES[expected_type]  # type: ignore
                     correct = arg_val is None or isinstance(arg_val, class_type)
+                elif expected_type in LIST_TYPES:
+                    class_type = LIST_TYPES[expected_type]  # type: ignore
+                    correct = isinstance(arg_val, list) and all(
+                        isinstance(item, class_type) for item in arg_val
+                    )
                 else:
-                    class_type = LIST_TYPES[expected_clean_type_name]
-                    correct = isinstance(arg_val, list)
-                    for item in arg_val:
-                        if not isinstance(item, class_type):
-                            correct = False
-                            break
+                    # not in any of the above types - can be Union or other types, so we check if
+                    # the modified arg has the same type as the original arg's type
+                    origin_type = get_origin(expected_type)
+                    if origin_type is Union:
+                        expected_types = get_args(expected_type)
+                        correct = any(isinstance(arg_val, t) for t in expected_types)
+                    else:
+                        correct = False
 
                 if not correct:
+                    expected_clean_type_name = get_clean_type_name(expected_type)
                     errors.append(
                         ValidateArgError(
                             tool_id=node.tool_task_id,
@@ -1304,6 +1329,8 @@ class AgentServiceImpl:
                     node.args[arg_name] = arg_val
 
         if errors:
+            error_log = "Rejected args to be modified:\n" + "\n".join([f"{err}" for err in errors])
+            LOGGER.info(error_log)
             return ModifyPlanRunArgsResponse(errors=errors)
 
         # change node's taskId to new taskId

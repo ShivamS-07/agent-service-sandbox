@@ -729,11 +729,20 @@ class ArgToModify(BaseModel):
 class ModifyPlanRunArgsRequest(BaseModel):
     args_to_modify: List[ArgToModify]
 
+    def __str__(self) -> str:
+        outputs = [
+            f"{arg.tool_id=}, {arg.arg_name=}, {arg.arg_value=}" for arg in self.args_to_modify
+        ]
+        return "\n".join(outputs)
+
 
 class ValidateArgError(BaseModel):
     tool_id: str
     arg_name: str
     error: str
+
+    def __str__(self) -> str:
+        return f"{self.tool_id=}, {self.arg_name=}, {self.error=}"
 
 
 class ModifyPlanRunArgsResponse(BaseModel):
