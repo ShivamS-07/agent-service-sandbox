@@ -56,6 +56,16 @@ async def prepare_list_of_texts(texts: List[Text]) -> Text:
     text_strs = await Text.get_all_strs(texts)
     for text, text_str in zip(texts, text_strs):
         text.val = text_str
+        if text_str and not text.get_all_citations():
+            # If a text does not have citations, add a citation to itself at the
+            # end of the text. This is useful for e.g. lists of articles.
+            text.history.append(
+                HistoryEntry(
+                    citations=[
+                        TextCitation(source_text=text, citation_text_offset=len(text_str) - 1)
+                    ]
+                )
+            )
     return combine_text_list(texts=texts)
 
 
@@ -67,17 +77,27 @@ async def prepare_list_of_stock_texts(texts: List[StockText]) -> Text:
         if text.stock_id:
             # Make sure the value is set
             text.val = text_str
+            # If a text does not have citations, add a citation to itself at the
+            # end of the text. This is useful for e.g. lists of articles.
+            if text_str and not text.get_all_citations():
+                text.history.append(
+                    HistoryEntry(
+                        citations=[
+                            TextCitation(source_text=text, citation_text_offset=len(text_str) - 1)
+                        ]
+                    )
+                )
             stock_text_map[text.stock_id].append(text)
 
     # Now for each stock, construct a text and stick it in a list
     stock_texts = []
     for stock, text_list in stock_text_map.items():
-        prefix = f"{stock.to_markdown_string()}\n{stock.history_to_str_with_text_objects()}\n"
+        prefix = f"## {stock.to_markdown_string()}\n{stock.history_to_str_with_text_objects()}\n"
         combined_text = combine_text_list(text_list, overall_prefix=prefix)
         stock_texts.append(combined_text)
 
     # Merge the markdown strings together
-    return combine_text_list(texts=stock_texts, per_line_suffix="\n\n")
+    return combine_text_list(texts=stock_texts, per_line_suffix="\n\n", per_line_prefix="")
 
 
 @async_perf_logger

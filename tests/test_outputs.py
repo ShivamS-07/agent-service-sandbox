@@ -200,4 +200,5 @@ class TestOutputConstruction(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
-        self.assertEqual(len(output.get_all_citations()), 5)
+        # 5 above, 1 auto inserted for text 2 because it has no citations
+        self.assertEqual(len(output.get_all_citations()), 6)
