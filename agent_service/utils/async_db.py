@@ -139,8 +139,11 @@ class AsyncDB:
                 SELECT ao.plan_id::VARCHAR, ao.output_id::VARCHAR, ao.plan_run_id::VARCHAR,
                     ao.task_id::VARCHAR,
                     ao.is_intermediate, ao.live_plan_output,
-                    ao.output, ao.created_at, pr.shared, pr.run_metadata, ao.plan_id::TEXT, ep.plan
+                    ao.output, ao.created_at, pr.shared, pr.run_metadata,
+                    ao.plan_id::TEXT, ep.plan, a.automation_enabled
                 FROM agent.agent_outputs ao
+                JOIN agent.agents a
+                  ON a.agent_Id = ao.agent_id
                 LEFT JOIN agent.plan_runs pr
                   ON ao.plan_run_id = pr.plan_run_id
                 LEFT JOIN agent.execution_plans ep
@@ -182,7 +185,12 @@ class AsyncDB:
                             node.tool_task_id for node in parents if node.is_output_node
                         ]
 
-            outputs.append(AgentOutput(agent_id=agent_id, **row))
+            output = AgentOutput(agent_id=agent_id, **row)
+            # ALL outputs are auto-locked when automation is enabled
+            output.is_locked = (
+                row["automation_enabled"] if row["automation_enabled"] else output.is_locked
+            )
+            outputs.append(output)
 
         return outputs
 
