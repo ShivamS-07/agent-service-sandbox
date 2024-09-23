@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 
 @async_perf_logger
-async def prefect_create_execution_plan(
+async def kick_off_create_execution_plan(
     agent_id: str,
     plan_id: str,
     user_id: str,
@@ -73,7 +73,7 @@ async def prefect_create_execution_plan(
 
 
 @async_perf_logger
-async def prefect_run_execution_plan(
+async def kick_off_run_execution_plan(
     plan: ExecutionPlan,
     context: PlanRunContext,
     do_chat: bool = True,
@@ -264,12 +264,12 @@ async def prefect_resume_agent_flow(run: PrefectFlowRun) -> None:
         await client.set_flow_run_state(flow_run_id=run.flow_run_id, state=run.prior_state)
 
 
-async def prefect_cancel_agent_flow(
+async def cancel_agent_flow(
     db: Postgres,
     agent_id: str,
     plan_id: Optional[str],
     plan_run_id: Optional[str],
-    flow_run: Optional[PrefectFlowRun],
+    flow_run: Optional[PrefectFlowRun] = None,
 ) -> None:
     """
     A few steps:

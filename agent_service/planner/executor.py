@@ -74,12 +74,11 @@ from agent_service.utils.output_utils.utils import io_type_to_gpt_input, output_
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
 from agent_service.utils.prefect import (
     FlowRunType,
+    cancel_agent_flow,
     get_prefect_logger,
-    prefect_cancel_agent_flow,
-    prefect_create_execution_plan,
+    kick_off_create_execution_plan,
+    kick_off_run_execution_plan,
     prefect_pause_current_agent_flow,
-    prefect_resume_agent_flow,
-    prefect_run_execution_plan,
 )
 
 
@@ -733,7 +732,7 @@ async def create_execution_plan(
 
     logger.info(f"Submitting execution plan to Prefect for {agent_id=}, {plan_id=}, {plan_run_id=}")
     # Replan on error only because it's the first run
-    await prefect_run_execution_plan(
+    await kick_off_run_execution_plan(
         plan=plan, context=ctx, do_chat=do_chat, replan_execution_error=True
     )
     return plan
@@ -742,9 +741,9 @@ async def create_execution_plan(
 # Update logic
 # First, pause current plan
 # Then check to see what action we should take
-# If no action, then just simple chatbot prompt (TODO) and resume plan
+# If no action, then just simple chatbot prompt (TODO)
 # If rerun, then check to see if current step is before step that requires
-# rerun, if so, can resume, otherwise cancel current run and restart run
+# rerun, if so, can continue, otherwise cancel current run and restart run
 # if append or replan, update the plan and rerun
 
 
@@ -822,8 +821,6 @@ async def update_execution_after_input(
                     db=db,
                     send_notification=False,
                 )
-            if flow_run:
-                await prefect_resume_agent_flow(flow_run)
             return None
         elif action == FirstAction.NOTIFICATION:
             if do_chat:
@@ -838,8 +835,6 @@ async def update_execution_after_input(
                     db=db,
                     send_notification=False,
                 )
-            if flow_run:
-                await prefect_resume_agent_flow(flow_run)
             return None
         elif action == FirstAction.REFER:
             if do_chat:
@@ -849,15 +844,11 @@ async def update_execution_after_input(
                     db=db,
                     send_notification=False,
                 )
-            if flow_run:
-                await prefect_resume_agent_flow(flow_run)
             return None
 
     elif isinstance(action, FollowupAction):
         if action == FollowupAction.CREATE:
-            await prefect_cancel_agent_flow(
-                db, agent_id, running_plan_id, running_plan_run_id, flow_run
-            )
+            await cancel_agent_flow(db, agent_id, running_plan_id, running_plan_run_id)
 
             new_plan_id = str(uuid4())
             if run_tasks_without_prefect:
@@ -874,7 +865,7 @@ async def update_execution_after_input(
                 )
                 if plan:
                     return new_plan_id, plan, action
-            await prefect_create_execution_plan(
+            await kick_off_create_execution_plan(
                 agent_id=agent_id,
                 user_id=user_id,
                 plan_id=new_plan_id,
@@ -888,9 +879,6 @@ async def update_execution_after_input(
             action == FollowupAction.RERUN
             and (flow_run and flow_run.flow_run_type == FlowRunType.PLAN_CREATION)
         ):
-            if flow_run:
-                await prefect_resume_agent_flow(flow_run)
-
             if do_chat:
                 message = await chatbot.generate_input_update_no_action_response(chat_context)
                 await send_chat_message(
@@ -902,9 +890,6 @@ async def update_execution_after_input(
             return None
 
         elif action == action.NOTIFICATION:
-            if flow_run:
-                await prefect_resume_agent_flow(flow_run)
-
             if do_chat:
                 message = await chatbot.generate_first_response_notification(chat_context)
                 await send_chat_message(
@@ -922,9 +907,7 @@ async def update_execution_after_input(
 
         elif action == FollowupAction.RERUN:
             # cancel the running agent flow first (DO NOT cancel this plan)
-            await prefect_cancel_agent_flow(
-                db, agent_id, plan_id=None, plan_run_id=running_plan_run_id, flow_run=flow_run
-            )
+            await cancel_agent_flow(db, agent_id, plan_id=None, plan_run_id=running_plan_run_id)
 
             # In this case, we know that the flow_run_type is PLAN_EXECUTION (or there no flow_run),
             # otherwise we'd have run the above block instead.
@@ -967,12 +950,15 @@ async def update_execution_after_input(
             db.insert_plan_run(
                 agent_id=ctx.agent_id, plan_id=ctx.plan_id, plan_run_id=ctx.plan_run_id
             )
-            await prefect_run_execution_plan(plan=latest_plan, context=ctx, do_chat=do_chat)
+            await kick_off_run_execution_plan(plan=latest_plan, context=ctx, do_chat=do_chat)
 
         else:
             # This handles the cases for REPLAN, APPEND, and CREATE
-            await prefect_cancel_agent_flow(
-                db, agent_id, running_plan_id, running_plan_run_id, flow_run
+            await cancel_agent_flow(
+                db,
+                agent_id,
+                running_plan_id,
+                running_plan_run_id,
             )
 
             if do_chat:
@@ -998,7 +984,7 @@ async def update_execution_after_input(
                 if plan:
                     logger.info(f"plan created: {new_plan_id}, {plan}")
                     return new_plan_id, plan, action
-            await prefect_create_execution_plan(
+            await kick_off_create_execution_plan(
                 agent_id=agent_id,
                 user_id=user_id,
                 plan_id=new_plan_id,
@@ -1148,7 +1134,7 @@ async def rewrite_execution_plan(
         )
         raise RuntimeError("Plan rewrite has been cancelled.")
 
-    await prefect_run_execution_plan(
+    await kick_off_run_execution_plan(
         plan=new_plan,
         context=ctx,
         do_chat=do_chat,
@@ -1262,7 +1248,7 @@ async def handle_error_in_execution(
 
     else:
         logger.info("Submitting a new creation job to Prefect through SQS")
-        await prefect_create_execution_plan(
+        await kick_off_create_execution_plan(
             agent_id=context.agent_id,
             user_id=context.user_id,
             plan_id=new_plan_id,

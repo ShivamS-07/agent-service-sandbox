@@ -4,8 +4,8 @@ from agent_service.planner.executor import update_execution_after_input
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, PlanRunContext
 from agent_service.utils.prefect import (
-    prefect_create_execution_plan,
-    prefect_run_execution_plan,
+    kick_off_create_execution_plan,
+    kick_off_run_execution_plan,
 )
 from agent_service.utils.task_executor import TaskExecutor
 
@@ -20,7 +20,7 @@ class PrefectTaskExecutor(TaskExecutor):
         skip_task_cache: bool = False,
         run_plan_in_prefect_immediately: bool = True,
     ) -> None:
-        await prefect_create_execution_plan(
+        await kick_off_create_execution_plan(
             agent_id=agent_id,
             plan_id=plan_id,
             user_id=user_id,
@@ -32,7 +32,7 @@ class PrefectTaskExecutor(TaskExecutor):
     async def run_execution_plan(
         self, plan: ExecutionPlan, context: PlanRunContext, do_chat: bool = True
     ) -> None:
-        await prefect_run_execution_plan(plan=plan, context=context, do_chat=do_chat)
+        await kick_off_run_execution_plan(plan=plan, context=context, do_chat=do_chat)
 
     async def update_execution_after_input(
         self,

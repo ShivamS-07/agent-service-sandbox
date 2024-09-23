@@ -169,7 +169,7 @@ from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.memory_handler import MemoryHandler, get_handler
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
-from agent_service.utils.prefect import prefect_run_execution_plan
+from agent_service.utils.prefect import kick_off_run_execution_plan
 from agent_service.utils.prompt_template import PromptTemplate
 from agent_service.utils.redis_queue import (
     get_agent_event_channel,
@@ -1873,7 +1873,7 @@ class AgentServiceImpl:
             user_id=user.user_id,
             plan_run_id=plan_run_id,
         )
-        await prefect_run_execution_plan(
+        await kick_off_run_execution_plan(
             plan=plan,
             context=context,
             do_chat=True,
