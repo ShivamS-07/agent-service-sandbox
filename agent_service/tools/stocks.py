@@ -238,8 +238,13 @@ async def stock_identifier_lookup(
     Returns:
         int: The integer identifier of the stock.
     """
-    logger = get_prefect_logger(__name__)
+    return await stock_identifier_lookup_helper(args, context)
 
+
+async def stock_identifier_lookup_helper(
+    args: StockIdentifierLookupInput, context: PlanRunContext
+) -> StockID:
+    logger = get_prefect_logger(__name__)
     try:  # since everything associated with diffing/rerun cache is optional, put in try/except
         logger.info("Checking previous run info...")
         prev_run_info = await get_prev_run_info(context, "stock_identifier_lookup")
@@ -872,7 +877,9 @@ async def multi_stock_identifier_lookup(
 
     output: List[StockID] = await gather_with_concurrency(
         [
-            stock_identifier_lookup(StockIdentifierLookupInput(stock_name=stock_name), context)
+            stock_identifier_lookup_helper(
+                StockIdentifierLookupInput(stock_name=stock_name), context
+            )
             for stock_name in args.stock_names
         ],
         n=len(args.stock_names),
