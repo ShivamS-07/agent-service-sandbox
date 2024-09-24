@@ -812,6 +812,42 @@ class RenameMemoryResponse(BaseModel):
 
 
 ####################################################################################################
+# Variables and Data
+####################################################################################################
+class AvailableVariable(BaseModel):
+    """
+    This is only a subset of all available fields in the metadata - returned for view only.
+    """
+
+    id: str
+    name: str
+    description: str
+    alternate_names: List[str]
+    is_global: bool
+    is_preset: bool
+    hierarchical_category_id: str
+
+
+class GetAvailableVariablesResponse(BaseModel):
+    variables: List[AvailableVariable]
+
+
+class VariableHierarchyNode(BaseModel):
+    """
+    Flat representation of the hierarchy tree view.
+    A null parent indicates a top level node
+    """
+
+    category_id: str
+    category_name: str
+    parent_category_id: Optional[str]
+
+
+class GetVariableHierarchyResponse(BaseModel):
+    flat_nodes: List[VariableHierarchyNode]
+
+
+####################################################################################################
 # Custom Documents
 ####################################################################################################
 

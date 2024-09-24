@@ -22,6 +22,8 @@ from feature_service_proto_v1.feature_metadata_service_grpc import (
 from feature_service_proto_v1.feature_metadata_service_pb2 import (
     GetAllFeaturesMetadataRequest,
     GetAllFeaturesMetadataResponse,
+    GetFeatureHierarchyRequest,
+    GetFeatureHierarchyResponse,
 )
 from feature_service_proto_v1.feature_service_grpc import FeatureServiceStub
 from feature_service_proto_v1.feature_service_pb2 import (
@@ -160,12 +162,22 @@ async def get_feature_data(
 
 @grpc_retry
 @async_perf_logger
-async def get_all_features_metadata(
-    user_id: str, filtered: bool = False
-) -> GetAllFeaturesMetadataResponse:
+async def get_all_variables_metadata(user_id: str) -> GetAllFeaturesMetadataResponse:
     with _get_metadata_service_stub() as stub:
-        req = GetAllFeaturesMetadataRequest(filter_agent_enabled=filtered)
+        req = GetAllFeaturesMetadataRequest(filter_agent_enabled=True)
         resp: GetAllFeaturesMetadataResponse = await stub.GetAllFeaturesMetadata(
+            req,
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def get_all_variable_hierarchy(user_id: str) -> GetFeatureHierarchyResponse:
+    with _get_metadata_service_stub() as stub:
+        req = GetFeatureHierarchyRequest()
+        resp: GetFeatureHierarchyResponse = await stub.GetFeatureHierarchy(
             req,
             metadata=get_default_grpc_metadata(user_id=user_id),
         )

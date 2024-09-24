@@ -38,6 +38,7 @@ from agent_service.endpoints.models import (
     Account,
     AgentEvent,
     AgentMetadata,
+    AvailableVariable,
     CannedPrompt,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
@@ -63,6 +64,7 @@ from agent_service.endpoints.models import (
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
     GetAutocompleteItemsResponse,
+    GetAvailableVariablesResponse,
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
     GetCustomDocumentFileInfoResponse,
@@ -78,6 +80,7 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
     GetToolLibraryResponse,
+    GetVariableHierarchyResponse,
     ListCustomDocumentsResponse,
     ListMemoryItemsResponse,
     LockAgentOutputRequest,
@@ -115,6 +118,7 @@ from agent_service.endpoints.models import (
     UpdateUserResponse,
     UploadFileResponse,
     ValidateArgError,
+    VariableHierarchyNode,
 )
 from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
 from agent_service.external.custom_data_svc_client import (
@@ -122,6 +126,10 @@ from agent_service.external.custom_data_svc_client import (
     get_custom_doc_file_contents,
     get_custom_doc_file_info,
     list_custom_docs,
+)
+from agent_service.external.feature_svc_client import (
+    get_all_variable_hierarchy,
+    get_all_variables_metadata,
 )
 from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
 from agent_service.external.user_svc_client import (
@@ -1675,6 +1683,46 @@ class AgentServiceImpl:
             res[user_id] = new_agent_id
         return res
 
+    # Variables / Data
+    async def get_all_available_variables(self, user: User) -> GetAvailableVariablesResponse:
+        try:
+            resp = await get_all_variables_metadata(user_id=user.user_id)
+            return GetAvailableVariablesResponse(
+                variables=[
+                    AvailableVariable(
+                        id=var.feature_id,
+                        name=var.name,
+                        description=var.description,
+                        alternate_names=list(var.alternate_names),
+                        is_global=var.is_global,
+                        is_preset=var.is_composite_preset,
+                        hierarchical_category_id=var.hierarchical_category_id,
+                    )
+                    for var in resp.features
+                ]
+            )
+        except GRPCError as e:
+            raise CustomDocumentException.from_grpc_error(e) from e
+
+    async def get_variable_hierarchy(self, user: User) -> GetVariableHierarchyResponse:
+        try:
+            resp = await get_all_variable_hierarchy(user_id=user.user_id)
+            return GetVariableHierarchyResponse(
+                flat_nodes=[
+                    VariableHierarchyNode(
+                        category_id=cat.category_id,
+                        category_name=cat.category_name,
+                        parent_category_id=(
+                            cat.parent_category_id if cat.parent_category_id else None
+                        ),
+                    )
+                    for cat in resp.categories
+                ]
+            )
+        except GRPCError as e:
+            raise CustomDocumentException.from_grpc_error(e) from e
+
+    # Custom Documents
     async def list_custom_documents(self, user: User) -> ListCustomDocumentsResponse:
         try:
             resp: ListDocumentsResponse = await list_custom_docs(user_id=user.user_id)

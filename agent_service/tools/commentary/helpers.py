@@ -12,7 +12,7 @@ from feature_service_proto_v1.feature_metadata_service_pb2 import (
 from gbi_common_py_utils.numpy_common import NumpySheet
 
 from agent_service.external.feature_svc_client import (
-    get_all_features_metadata,
+    get_all_variables_metadata,
     get_feature_data,
 )
 from agent_service.GPT.constants import GPT4_O, MAX_TOKENS, NO_PROMPT
@@ -193,7 +193,7 @@ async def get_statistics_for_theme(
     context: PlanRunContext, texts: List[ThemeText], date_range: DateRange
 ) -> List[StatisticsText]:
     # get all the features
-    resp = await get_all_features_metadata(context.user_id, filtered=True)
+    resp = await get_all_variables_metadata(context.user_id)
     all_statistic_lookup: Dict[str, GetAllFeaturesMetadataResponse.FeatureMetadata] = {
         feature_metadata.feature_id: feature_metadata
         for feature_metadata in resp.features

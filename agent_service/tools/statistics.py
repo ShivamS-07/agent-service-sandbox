@@ -5,7 +5,7 @@ from typing import List, Optional
 
 import pytz
 
-from agent_service.external.feature_svc_client import get_all_features_metadata
+from agent_service.external.feature_svc_client import get_all_variables_metadata
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.dates import DateRange
@@ -217,7 +217,7 @@ async def get_statistic_data_for_companies(
             end_date = latest_date
             start_date = latest_date
 
-    resp = await get_all_features_metadata(context.user_id, filtered=True)
+    resp = await get_all_variables_metadata(context.user_id)
     all_statistic_lookup = {
         feature_metadata.name: feature_metadata
         for feature_metadata in resp.features

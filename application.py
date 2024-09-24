@@ -68,6 +68,7 @@ from agent_service.endpoints.models import (
     GetAllAgentsResponse,
     GetAutocompleteItemsRequest,
     GetAutocompleteItemsResponse,
+    GetAvailableVariablesResponse,
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
     GetCustomDocumentFileInfoResponse,
@@ -83,6 +84,7 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
     GetToolLibraryResponse,
+    GetVariableHierarchyResponse,
     ListCustomDocumentsResponse,
     ListMemoryItemsResponse,
     LockAgentOutputRequest,
@@ -1480,9 +1482,36 @@ async def copy_agent(
     return CopyAgentToUsersResponse(user_id_to_new_agent_id_map=response_dict)
 
 
+# variables/data endpoints
+@router.get(
+    "/data/variables/available-variables",
+    response_model=GetAvailableVariablesResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_available_variable(
+    user: User = Depends(parse_header),
+) -> GetAvailableVariablesResponse:
+    """
+    Retrieves relevant metadata about all variables available to the user.
+    """
+    return await application.state.agent_service_impl.get_all_available_variables(user=user)
+
+
+@router.get(
+    "/data/variables/hierarchy",
+    response_model=GetVariableHierarchyResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_all_variable_hierarchy(
+    user: User = Depends(parse_header),
+) -> GetVariableHierarchyResponse:
+    """
+    Retrieves all variable display hierarchies in a flat format.
+    """
+    return await application.state.agent_service_impl.get_variable_hierarchy(user=user)
+
+
 # custom doc endpoints
-
-
 @router.get(
     "/custom-documents",
     response_model=ListCustomDocumentsResponse,
