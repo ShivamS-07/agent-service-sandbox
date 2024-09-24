@@ -498,9 +498,11 @@ class GetEarningsCallDatesInput(ToolArgs):
 
 @tool(
     description="""This tool returns a table for the dates of earnings calls for the provided stocks that \
-occurred within the specified date range. You MUST always use the tool `get_date_range` first to \
-create a DateRange object for the date range from the context of the client's messages before using \
-this tool. For the upcoming earnings calls, the date range should be from today to today + 90 days. \
+occurred within the specified date range. For each earnings call it will also return a second column containing \
+the datetime, which will also include the specific time of the earnings call, however this is not guaranteed, \
+if a earnings call does not have this data, it will instead have None. You MUST always use the tool \
+`get_date_range` first to create a DateRange object for the date range from the context of the client's messages \
+before using this tool. For the upcoming earnings calls, the date range should be from today to today + 90 days. \
 For the most recent quarter's earnings calls, the date range should be from today - 90 days to today. \
 If the user asks to be notified when an earnings call happens, the date range should be today. You
 must always include a date range. If there is no clear indication of the date range from the client's
@@ -523,10 +525,11 @@ async def get_earnings_call_dates(
         end_date=end_date,
         user_id=context.user_id,
     )
+
     rows = []
-    for gbi_id, dates in gbi_dates_map.items():
-        for date in dates:
-            rows.append((gbi_id, date))
+    for gbi_id, dates_data in gbi_dates_map.items():
+        for date, date_with_time in dates_data:
+            rows.append((gbi_id, date, date_with_time))
 
     return StockTable(
         columns=[
@@ -535,6 +538,12 @@ async def get_earnings_call_dates(
                 data=[row[1] for row in rows],
                 metadata=TableColumnMetadata(
                     label="Earnings Call Date", col_type=TableColumnType.DATE
+                ),
+            ),
+            TableColumn(
+                data=[row[2] for row in rows],
+                metadata=TableColumnMetadata(
+                    label="Earnings Call Date and Time", col_type=TableColumnType.DATETIME
                 ),
             ),
         ]

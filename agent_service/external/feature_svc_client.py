@@ -188,7 +188,7 @@ async def get_all_variable_hierarchy(user_id: str) -> GetFeatureHierarchyRespons
 @async_perf_logger
 async def get_earnings_releases_in_range(
     gbi_ids: List[int], start_date: datetime.date, end_date: datetime.date, user_id: str = ""
-) -> Dict[int, Set[datetime.date]]:
+) -> Dict[int, Set[Tuple[datetime.date, Optional[datetime.datetime]]]]:
     """
     Given a list of stocks and a date range, return a mapping from gbi id to a
     list of earnings release dates within the range. Note that if no earnings
@@ -203,12 +203,23 @@ async def get_earnings_releases_in_range(
         resp: GetEarningsReleasesInRangeResponse = await stub.GetEarningsReleasesInRange(
             req, metadata=get_default_grpc_metadata(user_id=user_id)
         )
-    output: Dict[int, Set[datetime.date]] = defaultdict(set)
+    output: Dict[int, Set[Tuple[datetime.date, Optional[datetime.datetime]]]] = defaultdict(set)
     for date_releases in resp.data:
-        for gbi_id in date_releases.gbi_ids:
-            date = timestamp_to_date(date_releases.release_date)
-            if date:
-                output[gbi_id].add(date)
+        earnings_time_lookup: Dict[int, datetime.datetime] = {}
+        date = timestamp_to_date(date_releases.release_date)  # This will only have YY MM DD
+        if date:
+            for timestamp in date_releases.earnings_timestamps:
+                if timestamp.timestamp:
+                    converted_datetime = timestamp.timestamp.ToDatetime()
+                    if converted_datetime != datetime.datetime(1970, 1, 1, 0, 0):
+                        earnings_time_lookup[timestamp.gbi_id] = converted_datetime
+
+            for gbi_id in date_releases.gbi_ids:
+                earnings_datetime = earnings_time_lookup.get(gbi_id, None)
+                if earnings_datetime:
+                    output[gbi_id].add((date, earnings_datetime))
+                else:
+                    output[gbi_id].add((date, None))
 
     return output
 
