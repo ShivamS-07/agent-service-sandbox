@@ -15,6 +15,20 @@ def get_now_utc(strip_tz: bool = False) -> datetime.datetime:
     return now
 
 
+def get_next_quarter(quarter: str) -> str:
+    if quarter[-1] != "4":
+        return quarter[:-1] + str(int(quarter[-1]) + 1)
+    else:
+        return str(int(quarter[:4]) + 1) + "Q1"
+
+
+def get_prev_quarter(quarter: str) -> str:
+    if quarter[-1] != "1":
+        return quarter[:-1] + str(int(quarter[-1]) - 1)
+    else:
+        return str(int(quarter[:4]) - 1) + "Q4"
+
+
 def get_year_quarter_for_date(date: datetime.date) -> Tuple[int, int]:
     quarter = (date.month - 1) // 3 + 1
     return (date.year, quarter)

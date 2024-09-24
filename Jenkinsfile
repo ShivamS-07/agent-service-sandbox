@@ -48,6 +48,26 @@ pipeline {
                     }
 
                     if (env.BRANCH_NAME != env.MASTER_BRANCH){
+                        withCredentials([gitUsernamePassword(credentialsId: 'GitHub', gitToolName: 'Default')]) {
+                        checkout([$class: 'GitSCM', branches: [[name: "*/${env.BRANCH_NAME}"]], extensions: [], userRemoteConfigs: [[credentialsId: 'GitHub', url: "https://github.com/GBI-Core/${REPO_NAME}"]]])
+                        sh "echo =============================================="
+                        sh "echo begin 'porcelain' prompt diff"
+                        sh "echo + = added, - = removed ~ = newline"
+                        sh "echo =============================================="
+                        sh "git diff --word-diff=porcelain origin/main"
+                        sh "echo =============================================="
+                        sh "echo end 'porcelain' prompt diff"
+                        sh "echo =============================================="
+
+                        sh "echo =============================================="
+                        sh "echo begin 'plain' prompt diff"
+                        sh "echo look for [+added+][-removed-]"
+                        sh "echo =============================================="
+                        sh "git diff --word-diff=plain origin/main"
+                        sh "echo =============================================="
+                        sh "echo end 'plain' prompt diff"
+                        sh "echo =============================================="
+                        }
                         sh "aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 374053208103.dkr.ecr.us-west-2.amazonaws.com"
                         sh "docker build -f test.dockerfile -t \$(git rev-parse HEAD) ."
                         sh "docker run --network host --memory=8G --cpus=3 \$(git rev-parse HEAD)"

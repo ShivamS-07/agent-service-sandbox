@@ -15,18 +15,20 @@ immediately what the table has inside it. Please make sure that the column order
 makes sense for a viewer as if it were being viewed in a table. For example, a
 date column or a stock ID column (if they are present) should be on the left
 side, specifically in the order (date, stock ID, other data...). Please also
-make sure that only RELEVANT columns are in the output. Input columns that are entirely
-irrelevant or only useful for intermediate calculations should typically be dropped.
-For example, if the user asks for a list of stocks ranked or filtered by a specific
-column, include that exact column in the output, even if the column is not in the
-input, but don't include any other extraneous columns.
+make sure that only RELEVANT columns are include in the output. If your transformation
+involves the calculation of a new column, input columns whose clear purpose is forming
+the basis of that calculation should typically be dropped.
 
-There is one important exception to the drop-irrelevant-columns rule:
-If the user explicitly mentions that they only want to replace one of the columns
-(The transform explicity mentions the word "replace") the you must keep all the
-other columns as is and only remove the column that is being replaced
-For these replace queries, the number of columns in the inputs and output
-will be the same (unless some other transformation is also needed).
+However, if you are not adding a new column but are simply ranking or filtering the data
+by a existing column, you must keep all columns in the data as is unless the tranformation
+explicitly mentions dropping them. You must NEVER add a column which indicates the stock's
+rank in the output table, you will sort the rows directly, and, if required, take the top/bottom n.
+
+Also, if the user explicitly mentions that they only
+want to replace one of the columns (The transform explicity mentions the word "replace")
+then you must keep all the other columns as is and only remove the column that is being replaced
+Thus for ranking, filtering, and replace transformation, the number of columns in the inputs
+and output will be the same (unless some other transformation is also needed).
 
 If the user asks for a ranking of a delta or
 percent change, include the percent change column NOT the raw data column
@@ -42,16 +44,6 @@ very common. If the transformation explicitly mentions outputing only a single d
 for a single date (for each stock), or no dates at all, you must not include a DATE
 column in your output. Please be very careful about this, if you have the wrong columns
 everything else will fail.
-
-If you are being asked to calculate a ranking or filtering of a table of stocks, it
-is typical that your input is a single statistic per stock (any complex
-statistic or ratio should be already calculated for you), and correspondingly
-your output should be just a single number per stock, there will be no date
-column in the input, and you should include no date column in our output either.
-That output number should be the value the ranking and/or filtering is based on,
-typically the input value.
-You must NEVER include a column which indicates the stock's rank in the output table, you will
-sort the rows directly, and, if required, take the top/bottom n.
 
 If the transformation description explicitly talks about creating a time series, you
 must ALWAYS include date column in your output! If the user asks for a "daily" or "weekly"
@@ -69,13 +61,13 @@ doing an aggregation across stocks (e.g. 'Average performance of stocks ...')
 and the input table has a date column, then you MUST preserve that date column in
 your output, do NOT drop it. It indicates that the user wants to see a time series,
 and if you drop that column then that isn't possible, you will fail on this request
-and be fired! Those cases will typically involve outputting three colums: the Date,
+and be fired! Those cases will typically involve outputting three columns: the Date,
 the Stock Group, and then the averaged statistic, in that order.
 
 You must NOT change the col_type or units of any particular statistic if you are
-not carrying out some mathmatical operation. Note that when you divide two statistics
-of the same type (e.g. two fields with USD currency), the output is typically NOT of
-that type, but rather a percent or a float.
+simply copying that column from the input to the output. Note that when you divide two
+statistics of the same type (e.g. two fields with USD currency), the output is typically
+NOT of that type, but rather a percent or a float.
 
 If a date column is required, you must always put it first in your output.
 
@@ -181,11 +173,18 @@ In most cases, after removing the Nones you will just sort the values of
 interest directly, and, if required, take the top/bottom n. In most case you
 should not need to add a column, and you must NEVER include a column which
 indicates the rank in your output table unless the user is asking for it explicitly.
-In cases where the user just asks for an undefined number of stocks in the
-output (e.g. stocks with highest/lowest value), output at least 10 stocks. In
-cases where ranks are asked for, make sure to output the 10 ranked highest or
-lowest! If the user specifies a number, make sure to output that specific
-number!
+
+In cases where the user clearly wants some kind of filtering (not just ranking!!!!)
+but just asks for an undefined number of stocks (e.g. `give me the stocks with the best
+P/E`), output at least 10 stocks. If the user specifies a number, make
+sure to output that specific number! Don't forget to rank before you apply any filter!
+
+If the user just asks for a ranking without saying anything that suggests a filter,
+then you should just rank and return all the stocks. You must not filter unless it is
+obvious that the user wants a filter.
+
+Note that when you are ranking or filtering, your input and output columns will almost always
+be the same.
 
 If your operation across stocks involves a sum, averaging, or other agglomeration across
 stocks, your output will NOT have a stock column (the rows of which correspond to

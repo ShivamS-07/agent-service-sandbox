@@ -47,6 +47,7 @@ from agent_service.utils.prompt_utils import Prompt
 
 LATEST_DATE_SECONDS = 60 * 60
 TTLCache(maxsize=1, ttl=LATEST_DATE_SECONDS)
+ONE_DAY = datetime.timedelta(days=1)
 
 # need to expose this type to the type checker but avoid importing it until needed normally
 if TYPE_CHECKING:
@@ -326,11 +327,9 @@ async def get_statistic_data_for_companies(
     To get a specific date only set both inputs to the same date
     if only one of them is filled in or not None then it will be assumed to be a single date to be returned
     If neither date is provided then it will assume the request is for the most recent date for which data exists
-
     Args:
         args (FeatureDataInput): The input arguments for the feature data retrieval.
         context (PlanRunContext): The context of the plan run.
-
     Returns:
         Table: The requested data.
     """
@@ -383,10 +382,16 @@ async def get_statistic_data(
     ffill_days_val = ffill_days if ffill_days is not None else 0
 
     use_natural_axis = True  # use the axis the data prefers (quarterly or data)
+    today = datetime.date.today()
 
-    if (ffill_days is None) and (force_daily or (end_date - start_date).days < 90):
+    if (ffill_days is None) and (
+        force_daily
+        or (end_date == start_date and today - 5 * ONE_DAY <= start_date <= today + ONE_DAY)
+    ):
         # need to turn quarterly into daily and forward fill if it is going to be combined with daily
-        # or if the range is less than a quarter
+        # or if looking for a single, very recent date (which suggests we just want PIT latest).
+        # Otherwise, if we are using natural axis we will get the data for any quarter which falls
+        # between start_date and end_date
         ffill_days_val = 180
         use_natural_axis = False
 

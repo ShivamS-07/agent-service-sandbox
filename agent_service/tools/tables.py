@@ -510,7 +510,9 @@ def _join_two_tables(first: Table, second: Table) -> Table:
 
     key_cols += shared_cols
 
-    output_df = pd.merge(left=first_data, right=second_data, on=[col.label for col in shared_cols])
+    output_df = pd.merge(
+        left=first_data, right=second_data, on=[col.label for col in shared_cols], how="outer"
+    )
 
     # Collapse rows with the same keys
     output_df = output_df.groupby(by=[col.label for col in key_cols]).first().reset_index()  # type: ignore
