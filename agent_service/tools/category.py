@@ -2,6 +2,7 @@ import asyncio
 import json
 from typing import List, Optional
 
+import pydantic_core
 from typing_extensions import Self
 
 from agent_service.GPT.constants import GPT4_O
@@ -9,6 +10,7 @@ from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
@@ -94,6 +96,7 @@ GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT = Prompt(
 
 DEFAULT_CATEGORY_LIMIT = 7
 CATEGORY_CACHE_TTL = 10 * 365 * 24 * 60 * 60  # 10 years
+MAX_RETRIES = 5
 
 
 @io_type
@@ -214,6 +217,9 @@ def category_cache_key_fn(tool_name: str, args: ToolArgs, context: PlanRunContex
     'limit' parameter can be passed in to adjust the number of outputted criteria based on the user input.
     Note that these criteria are very general and only appropriate as a high level rubric for evalulating
     stocks in the context of a competitive analysis.
+    If multiple stocks are mentioned by name in the input, you must pick the most prominently mentioned stock as
+    the target stock. For example, if the input is `Is Expedia a market leader compared to PriceLine and
+    and Kayak`, your target stock would be Expedia. You may only have one target stock.
     Never use this tool in the context of due diligence, use the summary tool to write due diligence criteria.
     """,
     category=ToolCategory.COMPETITIVE_ANALYSIS,
@@ -282,18 +288,28 @@ async def get_categories_for_stock_impl(
         """
 
     # initial prompt for categories
-    initial_categories_gpt_resp = await llm.do_chat_w_sys_prompt(
-        sys_prompt=GET_CATEGORIES_FOR_STOCK_SYS_PROMPT.format(limit=limit),
-        main_prompt=GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT.format(
-            market=market,
-            chat_context=context.chat,
-            must_include_criteria_names_str=must_include_criteria_names_str,
-            company_description_str=company_description_str,
-        ),
-    )
-    categories = json.loads(repair_json_if_needed(initial_categories_gpt_resp))
+    output = None
+    retry_count = 0
+    while output is None and retry_count < MAX_RETRIES:
+        try:
+            initial_categories_gpt_resp = await llm.do_chat_w_sys_prompt(
+                sys_prompt=GET_CATEGORIES_FOR_STOCK_SYS_PROMPT.format(limit=limit),
+                main_prompt=GET_CATEGORIES_FOR_STOCK_MAIN_PROMPT.format(
+                    market=market,
+                    chat_context=context.chat,
+                    must_include_criteria_names_str=must_include_criteria_names_str,
+                    company_description_str=company_description_str,
+                ),
+                no_cache=True,
+                output_json=True,
+            )
+            categories = json.loads(repair_json_if_needed(initial_categories_gpt_resp))
+            output = [Category(**category) for category in categories]
+        except pydantic_core._pydantic_core.ValidationError:
+            retry_count += 1
 
-    output = [Category(**category) for category in categories]
+    if not output:
+        raise EmptyOutputError("Unable to generate appropriate criteria for competitive analysis")
     output.sort(key=lambda x: x.weight, reverse=True)
     return output
 
