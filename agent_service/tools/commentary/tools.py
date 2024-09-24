@@ -363,7 +363,7 @@ async def get_commentary_inputs(
     if not args.topics and args.universe_name:
         args.topics = [args.universe_name]
     # If topics are provided and universe_name is provided, add universe_name to topics
-    if args.topics and args.universe_name:
+    elif args.topics and args.universe_name:
         args.topics = args.topics + [args.universe_name]
     # If topics are provided, get the texts for the topics
     if args.topics:
