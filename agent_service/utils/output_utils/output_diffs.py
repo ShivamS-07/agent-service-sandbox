@@ -62,10 +62,8 @@ def generate_full_diff_summary(diffs: List[OutputDiff]) -> Optional[Text]:
     for diff in diffs:
         if not diff.diff_summary_message.strip() or diff.diff_summary_message == NO_UPDATE_MESSAGE:
             continue
-        output_strs.append("- ")
         if diff.title:
             output_strs.append(diff.title)
-            output_strs.append(": ")
         curr_offset = get_output_len(output_strs)
         if diff.citations:
             for citation in diff.citations:
@@ -211,7 +209,7 @@ class OutputDiffer:
                 continue
             topic, sentence = topic_and_sentence.split(": ")
             if topic in citable_changes:
-                diff_text_bits.append("\n    - ")
+                diff_text_bits.append("\n- ")
                 diff_text_bits.append(sentence)
                 offset = sum([len(S) for S in diff_text_bits])
                 for citation_num in citable_changes[topic]:
