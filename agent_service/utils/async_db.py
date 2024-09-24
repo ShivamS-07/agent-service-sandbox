@@ -197,13 +197,26 @@ class AsyncDB:
         await self.pg.generic_write(sql, {"agent_id": agent_id, "output_ids": output_ids})
 
     async def lock_plan_tasks(self, agent_id: str, plan_id: str, task_ids: List[str]) -> None:
+        # Probably a faster/better way to do this, but should work for now
+        sql = """
+        SELECT locked_tasks FROM agent.execution_plans
+        WHERE agent_id = %(agent_id)s AND plan_id = %(plan_id)s
+        """
+        rows = await self.pg.generic_read(
+            sql, {"agent_id": agent_id, "plan_id": plan_id, "task_ids": task_ids}
+        )
+        if not rows:
+            return
+        locked_tasks = set(rows[0]["locked_tasks"])
+        task_ids_set = locked_tasks.union(task_ids)
+
         sql = """
         UPDATE agent.execution_plans
-        SET locked_tasks = ARRAY_CAT(locked_tasks, %(task_ids)s)
+        SET locked_tasks = %(task_ids)s
         WHERE agent_id = %(agent_id)s AND plan_id = %(plan_id)s
         """
         await self.pg.generic_write(
-            sql, {"agent_id": agent_id, "plan_id": plan_id, "task_ids": task_ids}
+            sql, {"agent_id": agent_id, "plan_id": plan_id, "task_ids": list(task_ids_set)}
         )
 
     async def unlock_plan_tasks(self, agent_id: str, plan_id: str, task_ids: List[str]) -> None:
