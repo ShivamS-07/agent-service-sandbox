@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import (
     Any,
     Callable,
+    ClassVar,
     Dict,
     List,
     Optional,
@@ -66,11 +67,25 @@ logger = logging.getLogger(__name__)
 TOOL_DEBUG_INFO: contextvars.ContextVar = contextvars.ContextVar("debug_info", default={})
 
 
+class ToolArgMetadata(BaseModel):
+    """
+    Class to track additional metadata for arguments to tools.
+    """
+
+    # Hide the argument from the planner. Arguments that use this MUST have a
+    # default value.
+    hidden_from_planner: bool = False
+
+
 class ToolArgs(BaseModel, ABC):
     """
     Generic class for tool args. Note that ALL member variables of this class
     MUST be variants of IOType. This will be checked by the @tool decorator.
     """
+
+    # Stores a mapping from the field name as a string to its metadata. Fields
+    # not present will use the defaults for all metadata options.
+    arg_metadata: ClassVar[Dict[str, ToolArgMetadata]] = {}
 
     @classmethod
     def validate_types(cls) -> None:
@@ -146,6 +161,9 @@ class Tool:
         """
         args = []
         for var, info in self.input_type.model_fields.items():
+            arg_metadata = self.input_type.arg_metadata.get(var, ToolArgMetadata())
+            if arg_metadata.hidden_from_planner:
+                continue
             clean_type_name = get_clean_type_name(info.annotation)
             if info.default is PydanticUndefined:
                 args.append(f"{var}: {clean_type_name}")
