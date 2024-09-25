@@ -771,8 +771,12 @@ class AgentServiceImpl:
                     }
                     summary_title_anchor = "```" + json.dumps(summary_title_dict) + "```"
                     run_summary_long.val = re.sub(
-                        widget_title, summary_title_anchor, run_summary_long.val, count=1
+                        "- " + widget_title, summary_title_anchor, run_summary_long.val, count=1
                     )
+
+            # regex removes all the spaces between any "\n" and "-"" so bullet points
+            # can be displayed properly
+            run_summary_long.val = re.sub(r"(?<=\n)\s+(?=-)", "", run_summary_long.val)
 
         final_outputs = [output for output in outputs if not output.is_intermediate]
         if final_outputs:
