@@ -21,6 +21,7 @@ from gbi_common_py_utils.utils.environment import (
 
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
+from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
 
@@ -579,6 +580,7 @@ class Clickhouse(AsyncClickhouseBase):
     ################################################################################################
     # Agent Debug Info
     ################################################################################################
+    @async_perf_logger
     async def get_agent_debug_plan_selections(self, agent_id: str) -> List[Dict[str, Any]]:
         sql = """
             SELECT plans, selection_str, selection, plan_id, service_version, start_time_utc,
@@ -603,6 +605,7 @@ class Clickhouse(AsyncClickhouseBase):
             res.append(row)
         return res
 
+    @async_perf_logger
     async def get_agent_debug_plans(self, agent_id: str) -> List[Dict[str, Any]]:
         sql = """
         SELECT execution_plan, action, model_id, plan_str, plan_id, error_msg, service_version,
@@ -624,6 +627,7 @@ class Clickhouse(AsyncClickhouseBase):
             row["execution_plan"] = steps_dict
         return rows
 
+    @async_perf_logger
     async def get_agent_debug_tool_calls(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         SELECT  plan_id, plan_run_id, task_id, tool_name, start_time_utc,
@@ -654,6 +658,7 @@ class Clickhouse(AsyncClickhouseBase):
             res[plan_run_id][f"{tool_name}_{row['task_id']}"] = row
         return res
 
+    @async_perf_logger
     async def get_plan_run_debug_tool_calls(self, plan_run_id: str) -> List[Dict]:
         sql = """
         SELECT task_id, tool_name, args, start_time_utc, end_time_utc, duration_seconds
@@ -663,6 +668,7 @@ class Clickhouse(AsyncClickhouseBase):
         """
         return await self.generic_read(sql, {"plan_run_id": plan_run_id})
 
+    @async_perf_logger
     async def get_plan_run_debug_prompt_infos(self, plan_run_id: str) -> Dict[str, List[Dict]]:
         # `argMax(args, val)` is a ClickHouse function that returns the value of `args` where `val`
         # is the maximum value in the group.
@@ -690,6 +696,7 @@ class Clickhouse(AsyncClickhouseBase):
             output[row["task_id"]].append(row)
         return output
 
+    @async_perf_logger
     async def get_agent_debug_cost_info(self, agent_id: str) -> Dict[str, Any]:
         total_cost_sql = """select round(sum(cost_usd), 2) as total_cost_usd from llm.queries q
         where agent_id =  %(agent_id)s"""
@@ -720,6 +727,7 @@ class Clickhouse(AsyncClickhouseBase):
         result["model_breakdown"] = model_breakdown_dict
         return result
 
+    @async_perf_logger
     async def get_agent_debug_gpt_service_info(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         select count(*) as num_queries, min(client_timestamp_utc) as first_request_sent_utc,
@@ -746,6 +754,7 @@ class Clickhouse(AsyncClickhouseBase):
             logger.info(f"Unable to get gpt_service_info for {agent_id=}: {traceback.format_exc()}")
         return result
 
+    @async_perf_logger
     async def get_debug_tool_args(self, replay_id: str) -> str:
         sql = """
         select args from agent.tool_calls
@@ -756,6 +765,7 @@ class Clickhouse(AsyncClickhouseBase):
             return ""
         return res[0]["args"]
 
+    @async_perf_logger
     async def get_debug_tool_result(self, replay_id: str) -> str:
         sql = """
         select result from agent.tool_calls
@@ -766,6 +776,7 @@ class Clickhouse(AsyncClickhouseBase):
             return ""
         return res[0]["result"]
 
+    @async_perf_logger
     async def get_agent_debug_worker_sqs_log(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         SELECT plan_id, plan_run_id, method, message, send_time_utc,
@@ -787,6 +798,7 @@ class Clickhouse(AsyncClickhouseBase):
             res[row["method"]][row["send_time_utc"]] = row
         return res
 
+    @async_perf_logger
     async def get_agents_cost_info(self, agent_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
         res = {}
         try:
