@@ -1810,8 +1810,9 @@ class AgentServiceImpl:
 
     async def get_prompt_templates(self) -> List[PromptTemplate]:
         prompt_templates = await self.pg.get_prompt_templates()
-        # for template in prompt_templates:
-        #     template.output_types = self._output_types_from_plan(template.plan)
+        for template in prompt_templates:
+            if template.plan is not None:
+                template.output_types = self._output_types_from_plan(template.plan)
         return prompt_templates
 
     def _output_types_from_plan(self, plan: ExecutionPlan) -> List[OutputType]:

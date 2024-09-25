@@ -1186,7 +1186,7 @@ class AsyncDB:
                     prompt=row["prompt"],
                     category=row["category"],
                     created_at=row["created_at"],
-                    # plan=ExecutionPlan.model_validate(row["plan"]),
+                    plan=ExecutionPlan.model_validate(row["plan"]),
                 )
             )
 
