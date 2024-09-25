@@ -164,6 +164,54 @@ async def run_execution_plan(
     # network (sqs, to prefect, etc.).
     override_task_output_id_lookup: Optional[Dict[str, str]] = None,
 ) -> List[IOType]:
+    logger = get_prefect_logger(__name__)
+    async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
+    try:
+        return await _run_execution_plan_impl(
+            plan=plan,
+            context=context,
+            do_chat=do_chat,
+            log_all_outputs=log_all_outputs,
+            replan_execution_error=replan_execution_error,
+            run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
+            override_task_output_lookup=override_task_output_lookup,
+            override_task_output_id_lookup=override_task_output_id_lookup,
+            execution_log=execution_log,
+            scheduled_by_automation=scheduled_by_automation,
+        )
+    except Exception:
+        await publish_agent_execution_status(
+            agent_id=context.agent_id,
+            plan_run_id=context.plan_run_id,
+            plan_id=context.plan_id,
+            status=Status.ERROR,
+            logger=logger,
+            db=async_db,
+        )
+        raise
+
+
+async def _run_execution_plan_impl(
+    plan: ExecutionPlan,
+    context: PlanRunContext,
+    do_chat: bool = True,
+    log_all_outputs: bool = False,
+    replan_execution_error: bool = False,
+    run_plan_in_prefect_immediately: bool = True,
+    # This is meant for testing, basically we can fill in the lookup table to
+    # make sure we only run the plan starting from a certain point while passing
+    # in precomputed outputs for prior tasks.
+    override_task_output_lookup: Optional[Dict[str, IOType]] = None,
+    scheduled_by_automation: bool = False,
+    execution_log: Optional[DefaultDict[str, List[dict]]] = None,
+    # This is the production ready alternative to
+    # `override_task_output_lookup`.  Instead of including the entire
+    # output in the dict (which could be very large), simply map task ID's to
+    # "replay ID's", which uniquely identify rows in clickhouse's tool_calls
+    # table. By doing this, we can avoid having to send massive objects over the
+    # network (sqs, to prefect, etc.).
+    override_task_output_id_lookup: Optional[Dict[str, str]] = None,
+) -> List[IOType]:
     ###########################################
     # PLAN RUN SETUP
     ###########################################
