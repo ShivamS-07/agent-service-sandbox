@@ -140,7 +140,7 @@ class AsyncDB:
                     ao.task_id::VARCHAR,
                     ao.is_intermediate, ao.live_plan_output,
                     ao.output, ao.created_at, pr.shared, pr.run_metadata,
-                    ao.plan_id::TEXT, ep.plan
+                    ao.plan_id::TEXT, ep.plan, ep.locked_tasks
                 FROM agent.agent_outputs ao
                 LEFT JOIN agent.plan_runs pr
                   ON ao.plan_run_id = pr.plan_run_id
@@ -166,6 +166,8 @@ class AsyncDB:
             row["run_metadata"] = (
                 RunMetadata.model_validate(row["run_metadata"]) if row["run_metadata"] else None
             )
+            locked_tasks = row["locked_tasks"] if row["locked_tasks"] else set()
+            row["is_locked"] = row["task_id"] in locked_tasks
             if row["plan"]:
                 # Might be slightly inefficient, but in the scheme of things
                 # probably not noticeable. We can revisit if needed. Need to do
