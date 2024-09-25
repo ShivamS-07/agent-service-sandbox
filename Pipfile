@@ -65,6 +65,7 @@ beautifulsoup4 = {version = "==4.12.3", index = "pypi"}
 PyPDF2 = {version = "==3.0.1", index = "pypi"}
 griffe= {version = "==0.48.0", index = "pypi"}
 rapidfuzz = {version = "==3.9.7", index = "pypi"}
+uvloop = {version = "==0.20.0", index = "pypi", markers = "sys_platform != 'win32'"}
 
 [requires]
 python_version = "3.12"

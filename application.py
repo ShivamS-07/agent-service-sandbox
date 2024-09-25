@@ -1631,4 +1631,13 @@ if __name__ == "__main__":
         slack_sender=SlackSender(channel=channel),
         base_url=base_url,
     )
-    uvicorn.run(application, host=args.address, port=args.port)
+
+    try:
+        logger.info("Using uvloop for faster event loop.")
+        uvicorn.run(application, host=args.address, port=args.port, loop="uvloop")
+    except ImportError:
+        logger.info(
+            "Failed to use uvloop (either not installed or you're on Windows). "
+            "Using default event loop."
+        )
+        uvicorn.run(application, host=args.address, port=args.port)
