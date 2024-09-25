@@ -60,13 +60,17 @@ async def _get_news_sentiment_helper(
     description=(
         "This tool helps generate a time series of news sentiment for one or more stocks."
         " Use this when a time series is required (rather than a single latest value)"
+        " You must ONLY use this client when a user wants to see a sentiment graph, if the client wants"
+        " individual, current sentiment values, use the get recommendation tool! I repeat, do NOT use"
+        " this tool if the user asks for a table of sentiment scores!!!!"
+        " This tool must NEVER, EVER be used to get highest or lowest sentiment scores for a set of"
+        " stocks, use the get_stock_recommendations tool instead."
         " News Sentiment, is the same as investor sentiment, public sentiment."
         " The input is a list of stock IDs and an optional Date Range."
         " If the date_range is not provided, it will be assumed to be start_date = 1 year before today,"
         " end date should be the current date."
         " The output is a StockTable with columns: Security, Date, Sentiment."
-        " Unless the user specifically asks to present as a table, the output StockTable must be converted"
-        " to a Line Graph for visualization."
+        " The output StockTable must be converted to a Line Graph for visualization."
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,

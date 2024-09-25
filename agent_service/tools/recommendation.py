@@ -346,6 +346,7 @@ async def add_scores_and_rationales_to_stocks(
         text_str = tokenizer.chop_input_to_allowed_length(text_str, used)
         if text_str == "":  # no text, skip
             tasks.append(identity(""))
+            continue
         if is_buy is None:
             score = score_dict[stock].get_overall()
             direction_str = SCORE_DIRECTION.format(score=score.val)
@@ -371,6 +372,8 @@ async def add_scores_and_rationales_to_stocks(
     stocks_with_rec = []
 
     for result, stock in zip(results, ranked_stocks):
+        if not result:
+            stocks_with_rec.append(stock)
         text_group = aligned_text_groups.val[stock]
         scores = score_dict[stock]
         try:
@@ -378,8 +381,11 @@ async def add_scores_and_rationales_to_stocks(
                 result, text_group, context
             )
         except Exception as e:
-            logger.exception(f"Could not extra rationale with citations due to {e}")
+            logger.exception(f"Could not extract rationale with citations due to {e}")
             rationale = ""
+            citations = []
+
+        if citations is None:
             citations = []
 
         stock = stock.inject_history_entry(
@@ -620,6 +626,10 @@ class GetStockRecommendationsInput(ToolArgs):
         "If the client asks for a ranking of stocks or scores for stocks without mentioning any other specific "
         "statistic to rank on, e.g. `give me a table with stocks ranked by score` use this tool and "
         "NOT transform table and/or the statistic tool."
+        "You must NEVER pass the output of this tool to the transform_table function. If the user wants to filter "
+        "On the top/bottom n stocks, you must use the num_stocks_to_return argument. When the list of stocks "
+        "outputed by this tool are displayed it looks like a table to the client, so you do not need to take any "
+        "other steps to convert the output to a table!!!"
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
