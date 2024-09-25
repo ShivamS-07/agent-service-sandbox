@@ -3,8 +3,6 @@ from typing import List
 import country_converter as coco
 from gbi_common_py_utils.utils.util import memoize_one
 
-from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL
-from agent_service.GPT.requests import GPT
 from agent_service.io_types.stock import StockID
 from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
@@ -62,20 +60,16 @@ def get_country_iso3s(search: str) -> List[str]:
         return [countries]
 
 
-async def get_country_name(search: str, retries: int = 3) -> str:
-    llm = GPT(model=DEFAULT_CHEAP_MODEL)
-    result = search
-    for _ in range(retries):
-        result = await llm.do_chat_w_sys_prompt(
-            main_prompt=COUNTRY_MAIN_PROMPT.format(raw_country_string=search),
-            sys_prompt=COUNTRY_SYS_PROMPT.format(
-                country_list="" + ", ".join(SUPPORTED_COUNTRIES) + "."
-            ),
-        )
-        # check if a correct country was returned
-        if result in SUPPORTED_COUNTRIES:
-            break
-    return result
+async def get_country_name(search: str) -> str:
+    # create get country to iso dict
+    iso_to_country_name = {
+        get_country_iso3s(country)[0]: country for country in SUPPORTED_COUNTRIES
+    }
+    # Create a country to region map
+    if search.upper() in iso_to_country_name:
+        return iso_to_country_name.get(search.upper(), "UNKNOWN_COUNTRY")
+    incoming_country_name = get_country_iso3s(search)[0]
+    return iso_to_country_name.get(incoming_country_name, "UNKNOWN_COUNTRY")
 
 
 # This REGION -> COUNTRY map contains all the countries in the

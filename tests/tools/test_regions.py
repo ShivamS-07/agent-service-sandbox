@@ -140,7 +140,7 @@ class TestRegions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(stocks))
         self.assertTrue(any(stock.symbol == "RY" for stock in stocks))
 
-        args = FilterStockContryOfDomicileInput(country_name="CAD", stock_ids=stock_ids)
+        args = FilterStockContryOfDomicileInput(country_name="CAN", stock_ids=stock_ids)
         stocks = await filter_stocks_by_country_of_domicile(args=args, context=self.context)
         self.assertEqual(1, len(stocks))
         self.assertTrue(any(stock.symbol == "RY" for stock in stocks))
