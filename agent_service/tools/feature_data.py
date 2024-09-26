@@ -355,12 +355,18 @@ async def get_statistic_data_for_companies(
         start_date = args.start_date
         end_date = args.end_date
 
+    if start_date == end_date:
+        force_daily = True
+    else:
+        force_daily = False
+
     return await get_statistic_data(
         context=context,
         statistic_id=args.statistic_id,
         start_date=start_date,
         end_date=end_date,
         stock_ids=args.stock_ids,
+        force_daily=force_daily,
     )
 
 
@@ -382,12 +388,8 @@ async def get_statistic_data(
     ffill_days_val = ffill_days if ffill_days is not None else 0
 
     use_natural_axis = True  # use the axis the data prefers (quarterly or data)
-    today = datetime.date.today()
 
-    if (ffill_days is None) and (
-        force_daily
-        or (end_date == start_date and today - 5 * ONE_DAY <= start_date <= today + ONE_DAY)
-    ):
+    if (ffill_days is None) and force_daily:
         # need to turn quarterly into daily and forward fill if it is going to be combined with daily
         # or if looking for a single, very recent date (which suggests we just want PIT latest).
         # Otherwise, if we are using natural axis we will get the data for any quarter which falls
