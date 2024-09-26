@@ -13,8 +13,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile, status
 from fastapi.datastructures import State
 from fastapi.middleware.cors import CORSMiddleware
-
-# from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRouter
 from gbi_common_py_utils.utils.environment import (
@@ -174,8 +173,24 @@ application.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class CustomGZipMiddleware(GZipMiddleware):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await super().__call__(scope, receive, send)
+            return
+
+        if any(
+            prefix in scope["path"] for prefix in ("/api/notification/stream", "/api/agent/stream")
+        ):
+            await self.app(scope, receive, send)
+        else:
+            await super().__call__(scope, receive, send)
+
+
 # compress responses that >1MB (level 1 to 9, the higher the level, the smaller size is)
-# application.add_middleware(GZipMiddleware, minimum_size=1000 * 1000, compresslevel=5)
+application.add_middleware(CustomGZipMiddleware, minimum_size=1000 * 1000, compresslevel=5)
 
 REQUEST_COUNTER = int(time.time())
 
