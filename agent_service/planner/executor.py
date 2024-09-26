@@ -2,7 +2,7 @@ import asyncio
 import pprint
 import time
 import traceback
-from typing import DefaultDict, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 from uuid import uuid4
 
 from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
@@ -12,7 +12,11 @@ from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.models import Status, TaskStatus
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT, set_plan_run_context
-from agent_service.io_type_utils import IOType, split_io_type_into_components
+from agent_service.io_type_utils import (
+    IOType,
+    dump_io_type,
+    split_io_type_into_components,
+)
 from agent_service.io_types.text import Text
 from agent_service.planner.action_decide import (
     ErrorActionDecider,
@@ -55,6 +59,7 @@ from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.check_cancelled import AgentCancelledError
 from agent_service.utils.clickhouse import Clickhouse
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.do_not_error_exception import DoNotErrorException
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
@@ -319,6 +324,14 @@ async def _run_execution_plan_impl(
         if override_task_output_lookup and step.tool_task_id in override_task_output_lookup:
             logger.info(f"Step '{step.tool_name}' already in task lookup, using existing value...")
             tool_output = override_task_output_lookup[step.tool_task_id]
+            event_data: Dict[str, Any] = {
+                "tool_name": step.tool_name,
+                "context": context.model_dump_json(),
+                "result": dump_io_type(override_task_output_lookup[step.tool_task_id]),
+                "end_time_utc": get_now_utc().isoformat(),
+                "start_time_utc": get_now_utc().isoformat(),
+            }
+            log_event(event_name="agent-service-tool-call", event_data=event_data)
         else:
             # Run the tool, store its output, errors and replan
             try:
