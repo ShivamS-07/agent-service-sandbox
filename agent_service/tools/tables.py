@@ -135,7 +135,7 @@ def _run_transform_code(df: pd.DataFrame, code: str) -> Tuple[Optional[pd.DataFr
     ) as code_file, tempfile.NamedTemporaryFile(mode="w+", delete=delete) as data_file:
         code_file.write(code)
         code_file.flush()
-        serialized = df.to_json()
+        serialized = df.to_json(date_format="iso")
         data_file.write(serialized)
         data_file.flush()
         command: str = _get_command(data_file=data_file.name, code_file=code_file.name)

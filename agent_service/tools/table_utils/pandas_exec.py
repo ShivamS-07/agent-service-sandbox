@@ -35,7 +35,7 @@ def exec_code(df: pd.DataFrame, code: str) -> pd.DataFrame:
 
 
 def write_output(df: pd.DataFrame) -> None:
-    print(df.to_json())
+    print(df.to_json(date_format="iso"))
 
 
 def main() -> None:
