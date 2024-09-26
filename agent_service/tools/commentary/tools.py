@@ -17,7 +17,7 @@ from agent_service.io_types.text import (
     ThemeText,
 )
 from agent_service.planner.errors import EmptyInputError
-from agent_service.tool import ToolArgs, ToolCategory, tool
+from agent_service.tool import ToolArgMetadata, ToolArgs, ToolCategory, tool
 from agent_service.tools.commentary.constants import (
     COMMENTARY_LLM,
     MAX_DEVELOPMENTS_PER_COMMENTARY,
@@ -36,19 +36,24 @@ from agent_service.tools.commentary.helpers import (
 )
 from agent_service.tools.commentary.prompts import (
     CLIENTELE_TEXT_DICT,
-    CLIENTELE_TYPE_PROMPT,
-    COMMENTARY_SYS_PROMPT,
+    CLIENTELE_TYPE_PROMPT_STR_DEFAULT,
+    COMMENTARY_PROMPT_MAIN_STR_DEFAULT,
+    COMMENTARY_SYS_PROMPT_STR_DEFAULT,
+    GEOGRAPHY_PROMPT_STR_DEFAULT,
     GET_COMMENTARY_INPUTS_DESCRIPTION,
     LONG_WRITING_STYLE,
+    PORTFOLIO_PROMPT_STR_DEFAULT,
     PREVIOUS_COMMENTARY_PROMPT,
     SIMPLE_CLIENTELE,
-    STOCKS_STATS_PROMPT,
+    STOCKS_STATS_PROMPT_STR_DEFAULT,
+    UNIVERSE_PERFORMANCE_PROMPT_STR_DEFAULT,
     UPDATE_COMMENTARY_INSTRUCTIONS,
-    WATCHLIST_PROMPT,
+    WATCHLIST_PROMPT_STR_DEFAULT,
     WRITE_COMMENTARY_DESCRIPTION,
     WRITING_FORMAT_TEXT_DICT,
-    WRITING_STYLE_PROMPT,
+    WRITING_STYLE_PROMPT_STR_DEFAULT,
 )
+from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT, CITATION_REMINDER
 from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.tools.news import (
     GetNewsArticlesForStockDevelopmentsInput,
@@ -90,12 +95,37 @@ from agent_service.tools.watchlist import (
 from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.prompt_utils import Prompt
 
 
 class WriteCommentaryInput(ToolArgs):
     inputs: List[Union[Text, Table]]
     client_type: Optional[str] = "Simple"
     writing_format: Optional[str] = "Long"
+
+    # hidden from planner
+    commentary_sys_prompt: str = COMMENTARY_SYS_PROMPT_STR_DEFAULT
+    commentary_main_prompt: str = COMMENTARY_PROMPT_MAIN_STR_DEFAULT
+    geography_prompt: str = GEOGRAPHY_PROMPT_STR_DEFAULT
+    portfolio_prompt: str = PORTFOLIO_PROMPT_STR_DEFAULT
+    universe_performance_prompt: str = UNIVERSE_PERFORMANCE_PROMPT_STR_DEFAULT
+    stock_stats_prompt: str = STOCKS_STATS_PROMPT_STR_DEFAULT
+    watchlist_prompt: str = WATCHLIST_PROMPT_STR_DEFAULT
+    client_type_prompt: str = CLIENTELE_TYPE_PROMPT_STR_DEFAULT
+    writing_format_prompt: str = WRITING_STYLE_PROMPT_STR_DEFAULT
+
+    # tool arguments metadata
+    arg_metadata = {
+        "commentary_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "commentary_main_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "geography_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "portfolio_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "universe_performance_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "stock_stats_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "watchlist_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "client_type_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "writing_format_prompt": ToolArgMetadata(hidden_from_planner=True),
+    }
 
 
 @tool(
@@ -127,7 +157,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     )
 
     # Prepare the portfolio prompt
-    portfolio_prompt = NO_PROMPT
+    portfolio_prompt_filled = NO_PROMPT
     portfolio_related_tables: List[Table] = []
     for input in args.inputs:
         if isinstance(input, Table):
@@ -136,14 +166,22 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
                     portfolio_related_tables.append(input)
     if portfolio_related_tables:
         try:
-            portfolio_prompt = await prepare_portfolio_prompt(
-                portfolio_related_tables, context=context
+            geography_prompt = Prompt(
+                name="GEOGRAPHY_PROMPT",
+                template=args.geography_prompt,
+            )
+            portfolio_prompt = Prompt(
+                name="PORTFOLIO_PROMPT",
+                template=args.portfolio_prompt,
+            )
+            portfolio_prompt_filled = await prepare_portfolio_prompt(
+                portfolio_prompt, geography_prompt, portfolio_related_tables, context=context
             )
         except Exception as e:
             logger.info(f"Failed to prepare portfolio prompt: {e}")
 
     # Prepare the universe performance prompt
-    universe_performance_prompt = NO_PROMPT
+    universe_performance_prompt_filled = NO_PROMPT
     universe_related_tables: List[Table] = []
     for input in args.inputs:
         if isinstance(input, Table) and input.title:
@@ -151,8 +189,12 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
                 universe_related_tables.append(input)
     if universe_related_tables:
         try:
-            universe_performance_prompt = await prepare_universe_prompt(
-                universe_related_tables, context=context
+            universe_performance_prompt = Prompt(
+                name="UNIVERSE_PERFORMANCE_PROMPT",
+                template=args.universe_performance_prompt,
+            )
+            universe_performance_prompt_filled = await prepare_universe_prompt(
+                universe_performance_prompt, universe_related_tables
             )
         except Exception as e:
             logger.info(f"Failed to prepare universe performance prompt: {e}")
@@ -188,37 +230,52 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     )
 
     # Prepare the stock performance prompt
-    stocks_stats_prompt = NO_PROMPT
+    stocks_stats_prompt_filled = NO_PROMPT
     for table in input_mapping.get("Tables", []):
         if isinstance(table, Table) and STOCK_PERFORMANCE_TABLE_NAME == table.title:
             stocks_stats_df = table.to_df()[STOCK_ID_COL_NAME_DEFAULT].apply(
                 lambda x: x.company_name
             )
-            stocks_stats_prompt = STOCKS_STATS_PROMPT.format(
+            stocks_stats_prompt = Prompt(
+                name="STOCKS_STATS_PROMPT",
+                template=args.stock_stats_prompt,
+            )
+            stocks_stats_prompt_filled = stocks_stats_prompt.format(
                 stock_stats=stocks_stats_df.to_string(index=False)
             )
 
     # Prepare watchlist prompt
-    watchlist_prompt = NO_PROMPT
+    watchlist_prompt_filled = NO_PROMPT
     watchlist_stocks: List[StockID] = await get_stocks_for_user_all_watchlists(  # type: ignore
         GetStocksForUserAllWatchlistsInput(), context
     )
     if len(watchlist_stocks) > 0:
         watchlist_stock_names = [stock.company_name for stock in watchlist_stocks]
-
-        watchlist_prompt = WATCHLIST_PROMPT.format(
+        watchlist_prompt = Prompt(
+            name="WATCHLIST_PROMPT",
+            template=args.watchlist_prompt,
+        )
+        watchlist_prompt_filled = watchlist_prompt.format(
             watchlist_stocks=", ".join([stock for stock in watchlist_stock_names])  # type: ignore
         )
 
     # Prepare client type prompt
     client_type = args.client_type if args.client_type else "Simple"
-    client_type_prompt = CLIENTELE_TYPE_PROMPT.format(
+    client_type_prompt = Prompt(
+        name="CLIENTELE_TYPE_PROMPT",
+        template=args.client_type_prompt,
+    )
+    client_type_prompt_filled = client_type_prompt.format(
         client_type=CLIENTELE_TEXT_DICT.get(client_type, SIMPLE_CLIENTELE)
     )
 
     # Prepare writing style prompt
     writing_format = args.writing_format if args.writing_format else "Long"
-    writing_style_prompt = WRITING_STYLE_PROMPT.format(
+    writing_style_prompt = Prompt(
+        name="WRITING_STYLE_PROMPT",
+        template=args.writing_format_prompt,
+    )
+    writing_style_prompt_filled = writing_style_prompt.format(
         writing_format=WRITING_FORMAT_TEXT_DICT.get(writing_format, LONG_WRITING_STYLE)
     )
 
@@ -228,14 +285,25 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     )
 
     # Prepare the main prompt using the above prompts
+    commentary_sys_prompt = Prompt(
+        name="COMMENTARY_SYS_PROMPT", template=args.commentary_sys_prompt + CITATION_PROMPT
+    )
+    commentary_main_prompt = Prompt(
+        name="COMMENTARY_MAIN_PROMPT",
+        template=args.commentary_main_prompt
+        + CITATION_REMINDER
+        + "\nNow, please write your commentary. ",
+    )
     main_prompt = await prepare_main_prompt(
+        commentary_sys_prompt=commentary_sys_prompt,
+        commentary_main_prompt=commentary_main_prompt,
         previous_commentary_prompt=previous_commentary_prompt,
-        portfolio_prompt=portfolio_prompt,
-        universe_performance_prompt=universe_performance_prompt,
-        stocks_stats_prompt=stocks_stats_prompt,
-        watchlist_prompt=watchlist_prompt,
-        client_type_prompt=client_type_prompt,
-        writing_style_prompt=writing_style_prompt,
+        portfolio_prompt=portfolio_prompt_filled,
+        universe_performance_prompt=universe_performance_prompt_filled,
+        stocks_stats_prompt=stocks_stats_prompt_filled,
+        watchlist_prompt=watchlist_prompt_filled,
+        client_type_prompt=client_type_prompt_filled,
+        writing_style_prompt=writing_style_prompt_filled,
         texts=texts_str,
         text_mapping=text_mapping,
         context=context,
@@ -260,14 +328,14 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     )
     llm = GPT(context=gpt_context, model=COMMENTARY_LLM)
     result = await llm.do_chat_w_sys_prompt(
-        main_prompt=main_prompt, sys_prompt=COMMENTARY_SYS_PROMPT.format(), no_cache=True
+        main_prompt=main_prompt, sys_prompt=commentary_sys_prompt.format(), no_cache=True
     )
     commentary_text, citations = await extract_citations_from_gpt_output(
         result, all_text_group, context
     )
     if texts_str and not citations:  # missing all citations, do a retry
         result = await llm.do_chat_w_sys_prompt(
-            main_prompt=main_prompt, sys_prompt=COMMENTARY_SYS_PROMPT.format(), no_cache=True
+            main_prompt=main_prompt, sys_prompt=commentary_sys_prompt.format(), no_cache=True
         )
         commentary_text, citations = await extract_citations_from_gpt_output(
             result, all_text_group, context

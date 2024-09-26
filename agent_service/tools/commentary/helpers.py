@@ -27,14 +27,7 @@ from agent_service.tools.commentary.constants import (
     MAX_DEVELOPMENTS_PER_TOPIC,
     MAX_MATCHED_ARTICLES_PER_TOPIC,
 )
-from agent_service.tools.commentary.prompts import (
-    CHOOSE_STATISTICS_PROMPT,
-    COMMENTARY_PROMPT_MAIN,
-    COMMENTARY_SYS_PROMPT,
-    GEOGRAPHY_PROMPT,
-    PORTFOLIO_PROMPT,
-    UNIVERSE_PERFORMANCE_PROMPT,
-)
+from agent_service.tools.commentary.prompts import CHOOSE_STATISTICS_PROMPT
 from agent_service.tools.news import (
     GetNewsArticlesForTopicsInput,
     get_news_articles_for_topics,
@@ -68,7 +61,7 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
-from agent_service.utils.prompt_utils import FilledPrompt
+from agent_service.utils.prompt_utils import FilledPrompt, Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
 
 logger = get_prefect_logger(__name__)
@@ -313,7 +306,7 @@ async def get_texts_for_topics(
 
 
 async def prepare_geography_prompt(
-    portfolio_holdings_expanded_df: pd.DataFrame, context: PlanRunContext
+    geography_prompt: Prompt, portfolio_holdings_expanded_df: pd.DataFrame, context: PlanRunContext
 ) -> FilledPrompt:
     """
     This function prepares the geography prompt for the commentary.
@@ -334,13 +327,15 @@ async def prepare_geography_prompt(
     # group by Country and sum the weights
     df = df.groupby("Country").agg({"Weight": "sum"}).reset_index()
 
-    portfolio_geography_prompt = GEOGRAPHY_PROMPT.format(
+    portfolio_geography_prompt = geography_prompt.format(
         portfolio_geography_df=df.to_string(index=False)
     )
     return portfolio_geography_prompt
 
 
 async def prepare_portfolio_prompt(
+    portfolio_prompt: Prompt,
+    geography_prompt: Prompt,
     portfolio_related_tables: List[Table],
     context: PlanRunContext,
 ) -> FilledPrompt:
@@ -374,7 +369,7 @@ async def prepare_portfolio_prompt(
 
     # Prepare the geography prompt
     portfolio_geography_prompt = await prepare_geography_prompt(
-        portfolio_holdings_expanded_df, context
+        geography_prompt, portfolio_holdings_expanded_df, context
     )
     # convert StockID column to company name to aviod commentary using tickers
     for df in table_mapping:
@@ -390,7 +385,7 @@ async def prepare_portfolio_prompt(
     table_mapping["benchmark_holdings_neg"] = table_mapping["benchmark_perf_stock"].tail(5)
 
     # Prepare the portfolio prompt
-    portfolio_prompt = PORTFOLIO_PROMPT.format(
+    portfolio_prompt_filled = portfolio_prompt.format(
         portfolio_holdings=table_mapping["portfolio_holdings"].to_string(index=False),
         portfolio_geography_prompt=portfolio_geography_prompt.filled_prompt,
         portfolio_performance_by_overall=table_mapping["portfolio_perf_overall"].to_string(
@@ -416,12 +411,12 @@ async def prepare_portfolio_prompt(
             index=False
         ),
     )
-    return portfolio_prompt
+    return portfolio_prompt_filled
 
 
 async def prepare_universe_prompt(
+    universe_performance_prompt: Prompt,
     universe_related_tables: List[Table],
-    context: PlanRunContext,
 ) -> FilledPrompt:
     """
     This function prepares the universe prompt for the commentary.
@@ -462,7 +457,7 @@ async def prepare_universe_prompt(
     )
 
     # Prepare the portfolio prompt
-    universe_prompt = UNIVERSE_PERFORMANCE_PROMPT.format(
+    universe_prompt_filled = universe_performance_prompt.format(
         overall_performance=table_mapping["universe_perf_overall"].to_string(index=False),
         sector_performance=table_mapping["universe_perf_sector"].to_string(index=False),
         daily_performance=table_mapping["universe_perf_daily"].to_string(index=False),
@@ -472,10 +467,12 @@ async def prepare_universe_prompt(
         worst_performers=table_mapping["universe_worst_performers"].to_string(index=False),
     )
 
-    return universe_prompt
+    return universe_prompt_filled
 
 
 async def prepare_main_prompt(
+    commentary_sys_prompt: Prompt,
+    commentary_main_prompt: Prompt,
     previous_commentary_prompt: FilledPrompt,
     portfolio_prompt: FilledPrompt,
     universe_performance_prompt: FilledPrompt,
@@ -499,7 +496,7 @@ async def prepare_main_prompt(
             f"Length of tokens in {text_type}: {GPTTokenizer(COMMENTARY_LLM).get_token_length(text_list_str)}"
         )
 
-    main_prompt = COMMENTARY_PROMPT_MAIN.format(
+    main_prompt = commentary_main_prompt.format(
         previous_commentary_prompt=previous_commentary_prompt.filled_prompt,
         portfolio_prompt=portfolio_prompt.filled_prompt,
         universe_performance_prompt=universe_performance_prompt.filled_prompt,
@@ -521,8 +518,8 @@ async def prepare_main_prompt(
         texts = GPTTokenizer(COMMENTARY_LLM).do_truncation_if_needed(
             texts,
             [
-                COMMENTARY_PROMPT_MAIN.template,
-                COMMENTARY_SYS_PROMPT.template,
+                commentary_main_prompt.template,
+                commentary_sys_prompt.template,
                 previous_commentary_prompt.filled_prompt,
                 portfolio_prompt.filled_prompt,
                 stocks_stats_prompt.filled_prompt,
@@ -533,7 +530,7 @@ async def prepare_main_prompt(
             ],
             output_len=10000,
         )
-        main_prompt = COMMENTARY_PROMPT_MAIN.format(
+        main_prompt = commentary_main_prompt.format(
             previous_commentary_prompt=previous_commentary_prompt.filled_prompt,
             portfolio_prompt=portfolio_prompt.filled_prompt,
             universe_performance_prompt=universe_performance_prompt.filled_prompt,
