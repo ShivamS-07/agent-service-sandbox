@@ -580,6 +580,7 @@ async def get_statistic_data(
             ],
         )
     stock_table.prefer_graph_type = prefer_graph_type
+    stock_table.should_subsample_large_table = True
     return stock_table
 
 

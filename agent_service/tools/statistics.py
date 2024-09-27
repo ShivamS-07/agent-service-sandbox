@@ -415,6 +415,7 @@ async def get_statistic_data_for_companies(
     ):  # if we did a rolling calculation, the extra days are usually there, remove them
         logger.info("Deleting extra days in table due to rolling calculation")
         transformed_table.delete_data_before_start_date(start_date=start_date)
+    transformed_table.should_subsample_large_table = True
     return transformed_table
 
 

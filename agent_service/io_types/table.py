@@ -1,11 +1,12 @@
 import datetime
+import logging
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional, Union, cast
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from typing_extensions import Self
 
 from agent_service.io_type_utils import (
@@ -31,6 +32,8 @@ STOCK_ID_COL_NAME_DEFAULT = "Security"
 SCORE_COL_NAME_DEFAULT = "Criteria Match"
 
 MAX_DATAPOINTS_FOR_GPT = 50
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -181,6 +184,40 @@ class Table(ComplexIOBase):
     columns: List[TableColumn]
     prefer_graph_type: Optional[GraphType] = None
 
+    # If set to true, will reduce large tables when serializing
+    should_subsample_large_table: bool = False
+    table_was_reduced: bool = False
+
+    @field_serializer("columns", when_used="json")
+    def _subsample_large_table(self, columns: List[TableColumn]) -> List[TableColumn]:
+        """
+        When we're serializing to json, for massive tables we want to cut down
+        on the number of rows so that we don't cause issues.
+        """
+        MAX_ROW_COUNT = 100000
+
+        num_rows = self.get_num_rows()
+        if not self.should_subsample_large_table or num_rows <= MAX_ROW_COUNT:
+            return columns
+
+        date_col = self.get_date_column()
+        stock_col = self.get_stock_column()
+        if not date_col or not stock_col:
+            # Right now we only care about timeseries data, that's really the
+            # only time this ever happens anyway.
+            return columns
+
+        logger.info(f"Reducing size of table with {num_rows} rows for serialization...")
+        df = self.to_df(dates_to_timestamps=True)
+        stock_col_name = str(stock_col.metadata.label)
+        keep_every_nth = max(2, num_rows // MAX_ROW_COUNT)
+        reduced = df.groupby(stock_col_name, as_index=False).apply(
+            lambda x: x.iloc[::keep_every_nth]
+        )
+        new_table = Table.from_df_and_cols(columns=[col.metadata for col in columns], data=reduced)
+        self.table_was_reduced = True
+        return new_table.columns
+
     def get_num_rows(self) -> int:
         if not self.columns:
             return 0
@@ -223,12 +260,20 @@ class Table(ComplexIOBase):
         self.columns = new_cols
 
     def to_df(
-        self, stocks_as_tickers_only: bool = False, stocks_as_hashables: bool = False
+        self,
+        stocks_as_tickers_only: bool = False,
+        stocks_as_hashables: bool = False,
+        dates_to_timestamps: bool = False,
     ) -> pd.DataFrame:
         data = {}
         for col in self.columns:
             data[col.metadata.label] = col.data
-            if isinstance(col, StockTableColumn):
+            if dates_to_timestamps and col.metadata.col_type in (
+                TableColumnType.DATE,
+                TableColumnType.DATETIME,
+            ):
+                data[col.metadata.label] = pd.to_datetime(col.data)  # type: ignore
+            elif isinstance(col, StockTableColumn):
                 if stocks_as_tickers_only:
                     data[col.metadata.label] = list(
                         map(lambda stock: stock.symbol or stock.isin if stock else stock, col.data)
