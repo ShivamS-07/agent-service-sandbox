@@ -647,7 +647,8 @@ async def get_expected_revenue_growth(
         statistic_id=StatisticId(
             stat_id=all_statistic_lookup[EXPECTED_REVENUE].feature_id, stat_name=EXPECTED_REVENUE
         ),
-        start_date=today,
+        start_date=today
+        - QUARTER,  # back one quarter in case previous quarter data not yet released
         end_date=end_date,
         force_daily=False,
         add_quarterly=True,
@@ -666,7 +667,7 @@ async def get_expected_revenue_growth(
             stock in per_stock_actuals
             and stock in per_stock_expected
             and len(per_stock_actuals[stock]) >= args.num_quarters
-            and len(per_stock_expected[stock]) > args.num_quarters
+            and len(per_stock_expected[stock]) >= args.num_quarters
         ):
             failed = False
             past_revenue_total = 0.0
@@ -679,7 +680,7 @@ async def get_expected_revenue_growth(
                 try:
                     past_revenue_total += actuals[curr_quarter]
                     past_quarter_lookup[stock].append(curr_quarter)
-                except IndexError:
+                except KeyError:
                     failed = True
                     break
                 curr_quarter = get_prev_quarter(curr_quarter)
@@ -690,7 +691,7 @@ async def get_expected_revenue_growth(
                 try:
                     future_revenue_total += expecteds[curr_quarter]
                     future_quarter_lookup[stock].append(curr_quarter)
-                except IndexError:
+                except KeyError:
                     failed = True
                     break
             if failed:

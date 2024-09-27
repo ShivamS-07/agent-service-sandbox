@@ -4,31 +4,28 @@ DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT = Prompt(
     name="DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT",
     template="""
 You will be given a json object describing the columns of a pandas
-dataframe. You should transform this json into another json which uses the same basic
-schema representing a dataframe after the transformation is applied. The transformation
-will be described to you. If the output columns are identical to the inputs, you can
-simply return an empty list. Note that you should try to keep the table vertically
-aligned if possible (that is, more rows than columns).
+dataframe. You should output a json which uses the same basic
+schema representing a dataframe after the described transformation is applied.
 
-Use descriptive column names so that someone looking at the list of columns would know
-immediately what the table has inside it. Please make sure that the column order
-makes sense for a viewer as if it were being viewed in a table. For example, a
-date column or a stock ID column (if they are present) should be on the left
-side, specifically in the order (date, stock ID, other data...). Please also
-make sure that only RELEVANT columns are include in the output. If your transformation
-involves the calculation of a new column, input columns whose clear purpose is forming
-the basis of that calculation should typically be dropped.
+The simpliest case is when the tranformation involves simply ranking or filtering the data
+by a existing column. In this case, you must preserve ALL columns in the input data unless the
+tranformation explicitly mentions dropping them. When ranking or filtering, you also must NEVER
+add a column which indicates the stock's rank in the output table, you will sort the rows directly,
+and, if required, take the top/bottom n.
 
-However, if you are not adding a new column but are simply ranking or filtering the data
-by a existing column, you must keep all columns in the data as is unless the tranformation
-explicitly mentions dropping them. You must NEVER add a column which indicates the stock's
-rank in the output table, you will sort the rows directly, and, if required, take the top/bottom n.
+If the user explicitly mentions that they only want to replace one of the columns
+(The transform explicity mentions the word "replace")
+then you must keep all the other columns as is and only delete the column that is being replaced.
 
-Also, if the user explicitly mentions that they only
-want to replace one of the columns (The transform explicity mentions the word "replace")
-then you must keep all the other columns as is and only remove the column that is being replaced
-Thus for ranking, filtering, and replace transformation, the number of columns in the inputs
-and output will be the same (unless some other transformation is also needed).
+For most ranking, filtering, and replace transformations, the number of columns in the inputs
+and output must be the same (unless some other transformation is also needed). Do not delete columns
+not mentioned in the transformation. If you drop data you're not supposed to, you will be fired.
+
+In other cases, you will need to generate a new column. In such a case, use descriptive column names
+so that someone looking at the list of columns would know immediately what the table has inside it.
+Please make sure that the column order makes sense for a viewer as if it were being viewed in a table.
+For example, a date column or a stock ID column (if they are present) should be on the left
+side, specifically in the order (date, stock ID, other data...).
 
 If the user asks for a ranking of a delta or
 percent change, include the percent change column NOT the raw data column
@@ -44,6 +41,13 @@ very common. If the transformation explicitly mentions outputing only a single d
 for a single date (for each stock), or no dates at all, you must not include a DATE
 column in your output. Please be very careful about this, if you have the wrong columns
 everything else will fail.
+
+You should of course drop a column if the transformation explicitly asks you to drop it.
+The only other reason to drop a non-date column is when you are creating a new column which will be
+directly derived from the data in the existing column. In that case, you should drop the old
+column unless told otherwise. For example, if the user is asking for you to calculate return, you
+can drop the original stock price column from the input data, and if the user is asking you to
+calculate P/E ratio, you can drop both the original price column and the original earnings column.
 
 If the transformation description explicitly talks about creating a time series, you
 must ALWAYS include date column in your output! If the user asks for a "daily" or "weekly"
