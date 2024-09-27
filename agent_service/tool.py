@@ -195,6 +195,7 @@ class ToolCategory(enum.StrEnum):
     KPI = "key performance indicators"
     SEC_FILINGS = "SEC Filings"
     COMPETITIVE_ANALYSIS = "competitive_analysis"
+    IDEAS = "ideas"
 
     def get_description(self) -> str:
         if self == ToolCategory.MISC:
@@ -267,6 +268,9 @@ class ToolCategory(enum.StrEnum):
 
         if self == ToolCategory.COMPETITIVE_ANALYSIS:
             return "Tools used in determining the relative ranking of companies in particular product markets"
+
+        if self == ToolCategory.IDEAS:
+            return "Tools that involve brainstormed ideas"
 
         return ""
 

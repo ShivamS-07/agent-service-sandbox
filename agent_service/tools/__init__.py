@@ -1,6 +1,7 @@
 import os
 
 from agent_service.tools.commentary import *  # noqa
+from agent_service.tools.ideas import *  # noqa
 from agent_service.tools.kpis import *  # noqa
 from agent_service.tools.LLM_analysis import *  # noqa
 from agent_service.tools.product_comparison import *  # noqa
