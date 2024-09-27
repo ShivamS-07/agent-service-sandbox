@@ -145,7 +145,7 @@ async def extract_citations_from_gpt_output(
                     continue
                 source_text_obj = text_group.convert_citation_num_to_text(citation_json["num"])
                 if source_text_obj is None or source_text_obj.text_type == DEFAULT_TEXT_TYPE:
-                    # Do not create citations for text we general, do second order citations
+                    # Do not create citations for text we generate, do second order citations
                     continue
                 citation_snippet = citation_json.get("snippet", None)
                 citation_snippet_context = None
@@ -208,6 +208,12 @@ async def extract_citations_from_gpt_output(
         final_text_bits.append(main_text[last_end:])
     final_text = "".join(final_text_bits)
     return final_text, final_citations
+
+
+def get_original_cite_count(citations: List[TextCitation]) -> int:
+    return len(
+        [citation for citation in citations if citation.source_text.text_type != DEFAULT_TEXT_TYPE]
+    )
 
 
 def get_all_text_citations(obj: IOTypeBase) -> List[TextCitation]:

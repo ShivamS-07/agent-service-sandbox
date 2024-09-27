@@ -16,6 +16,7 @@ from agent_service.io_type_utils import Citation, HistoryEntry
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
 from agent_service.io_types.text import (
+    DEFAULT_TEXT_TYPE,
     NewsText,
     StockText,
     Text,
@@ -32,10 +33,12 @@ from agent_service.tools.LLM_analysis.constants import (
     LLM_FILTER_MAX_INPUT_PERCENTAGE,
     LLM_FILTER_MAX_PERCENT,
     LLM_FILTER_MIN_TOKENS,
+    MAX_CITATION_DROP_RATIO,
     MAX_CITATION_TRIES,
     NO_CITATIONS_DIFF,
     NO_SUMMARY,
     NO_SUMMARY_FOR_STOCK,
+    SUMMARIZE_CITATION_INCREASE_LIMIT,
 )
 from agent_service.tools.LLM_analysis.prompts import (
     ANSWER_QUESTION_DESCRIPTION,
@@ -72,6 +75,7 @@ from agent_service.tools.LLM_analysis.prompts import (
 from agent_service.tools.LLM_analysis.utils import (
     extract_citations_from_gpt_output,
     get_all_text_citations,
+    get_original_cite_count,
     get_second_order_citations,
 )
 from agent_service.tools.news import (
@@ -180,8 +184,15 @@ async def _initial_summarize_helper(
         result = result.split(BRAINSTORM_DELIMITER)[-1]
 
     text, citations = await extract_citations_from_gpt_output(result, text_group, context)
+    has_gpt_generated_sources = (
+        len([text for text in texts if text.text_type == DEFAULT_TEXT_TYPE]) > 0
+    )
+    # if we have gpt generated source texts (i.e. this is a "second order" text), then it's reasonable
+    # not get to get citations in this round, otherwise we would always expect some
     tries = 0
-    while citations is None and tries < MAX_CITATION_TRIES:  # failed to load citations, retry
+    while (
+        citations is None or (not has_gpt_generated_sources and len(citations) == 0)
+    ) and tries < MAX_CITATION_TRIES:  # failed to load citations, retry
         logger.warning(f"Retrying after no citations after  {result}")
         result = await llm.do_chat_w_sys_prompt(
             main_prompt, sys_prompt, no_cache=True, temperature=0.1 * (tries + 1)
@@ -212,6 +223,8 @@ async def _update_summarize_helper(
     new_texts: List[Text],
     old_texts: List[Text],
     old_summary: str,
+    last_original_citation_count: int,
+    remaining_original_citation_count: int,
 ) -> Tuple[str, List[TextCitation]]:
     logger = get_prefect_logger(__name__)
     if args.topic:
@@ -278,7 +291,9 @@ async def _update_summarize_helper(
     )
 
     sys_prompt = UPDATE_SUMMARIZE_SYS_PROMPT.format(
-        plan_delimiter=BRAINSTORM_DELIMITER, brainstorm_instructions=""
+        plan_delimiter=BRAINSTORM_DELIMITER,
+        brainstorm_instructions="",
+        remaining_citations=remaining_original_citation_count,
     )
 
     result = await llm.do_chat_w_sys_prompt(
@@ -291,9 +306,40 @@ async def _update_summarize_helper(
     combined_text_group = TextGroup.join(new_text_group, old_texts_group)
 
     text, citations = await extract_citations_from_gpt_output(result, combined_text_group, context)
+
     tries = 0
-    while citations is None and tries < MAX_CITATION_TRIES:  # missing all citations, do a retry
-        logger.warning(f"Retrying after no citations for {result}")
+    while (
+        citations is None
+        or (
+            remaining_original_citation_count > 0
+            and not (
+                max(
+                    remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
+                    remaining_original_citation_count - tries,
+                )
+                <= len(citations)
+                <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
+            )
+        )
+    ) and tries < MAX_CITATION_TRIES:
+        logger.warning(f"Retrying after bad citation count for {result}")
+        if citations:
+            min_value = max(
+                remaining_original_citation_count * 0.5, remaining_original_citation_count - tries
+            )
+            max_value = last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
+            if len(citations) < min_value:
+                logger.warning(
+                    f"Output had {len(citations)} original source citations, "
+                    f"but wanted at least {min_value}"
+                )
+            elif len(citations) > max_value:
+                logger.warning(
+                    f"Output had {len(citations)} original source citations, "
+                    f"but wanted no more than {max_value}"
+                )
+        else:
+            logger.warning("Failed to extract citations")
         result = await llm.do_chat_w_sys_prompt(
             main_prompt,
             sys_prompt,
@@ -308,11 +354,24 @@ async def _update_summarize_helper(
 
         tries += 1
 
-    if not text:
-        text = result
-
-    if citations is None:
-        citations = []
+    if (
+        not text
+        or citations is None
+        or (
+            remaining_original_citation_count > 0
+            and not (
+                max(
+                    remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
+                    remaining_original_citation_count - tries,
+                )
+                <= len(citations)
+                <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
+            )
+        )
+    ):
+        # if the retries failed and we still ended up with a bad result, just try a new regular summarization
+        logger.warning("Failed to do summary update, falling back to from-scratch summary")
+        return await _initial_summarize_helper(args, context, llm)
 
     try:
         citations += await get_second_order_citations(
@@ -361,9 +420,16 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
             if new_texts or (
                 remaining_citations and len(all_old_citations) > len(remaining_citations)
             ):
-                old_texts = [citation.source_text for citation in remaining_citations]
+                old_texts = list(set([citation.source_text for citation in remaining_citations]))
                 text, citations = await _update_summarize_helper(
-                    args, context, llm, new_texts, old_texts, prev_output.val
+                    args,
+                    context,
+                    llm,
+                    new_texts,
+                    old_texts,
+                    prev_output.val,
+                    get_original_cite_count(all_old_citations),
+                    get_original_cite_count(remaining_citations),
                 )
             else:
                 if remaining_citations:  # output old summary
@@ -423,9 +489,9 @@ async def per_stock_summarize_texts(
         except AttributeError:
             logger.warning("Non-StockText passed to per stock summarize")
 
-    prev_run_dict: Dict[StockID, Tuple[List[StockText], List[TextCitation], bool, str]] = (
-        defaultdict()
-    )
+    prev_run_dict: Dict[
+        StockID, Tuple[List[StockText], List[TextCitation], List[TextCitation], str]
+    ] = defaultdict()
 
     try:  # since everything associated with diffing is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "per_stock_summarize_texts")
@@ -456,7 +522,7 @@ async def per_stock_summarize_texts(
                 prev_run_dict[stock] = (
                     new_texts,
                     remaining_citations,
-                    len(all_old_citations) > len(remaining_citations),
+                    all_old_citations,
                     old_summary,
                 )
 
@@ -471,11 +537,11 @@ async def per_stock_summarize_texts(
     for stock in args.stocks:
         if stock in text_dict:
             if stock in prev_run_dict:
-                new_texts, remaining_citations, has_lost_citations, old_summary = prev_run_dict[
+                new_texts, remaining_citations, all_old_citations, old_summary = prev_run_dict[
                     stock
                 ]
-                old_texts = [citation.source_text for citation in remaining_citations]
-                if new_texts or (remaining_citations and has_lost_citations):
+                old_texts = list(set([citation.source_text for citation in remaining_citations]))
+                if new_texts or (remaining_citations and remaining_citations < all_old_citations):
                     tasks.append(
                         _update_summarize_helper(
                             SummarizeTextInput(texts=new_texts, topic=args.topic, stock=stock),  # type: ignore
@@ -484,6 +550,8 @@ async def per_stock_summarize_texts(
                             new_texts,  # type: ignore
                             old_texts,
                             old_summary,
+                            get_original_cite_count(all_old_citations),
+                            get_original_cite_count(remaining_citations),
                         )
                     )
                 else:
