@@ -116,6 +116,24 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
                     TextObject(type=TextObjectType.STOCK, index=1024, end_index=1027),
                 ],
             ),
+            param(
+                text="Recent news on Apple includes several significant updates. Apple (AAPL) has announced a new patent for the MacBook Pro,",
+                stocks={
+                    "Apple": StockID(gbi_id=714, symbol="AAPL", isin=""),
+                },
+                expected_output=[
+                    TextObject(type=TextObjectType.STOCK, index=15, end_index=19),
+                ],
+            ),
+            param(
+                text="Recent news on TSMC includes several significant updates.",
+                stocks={
+                    "TSMC": StockID(gbi_id=714, symbol="TSM", isin=""),
+                },
+                expected_output=[
+                    TextObject(type=TextObjectType.STOCK, index=15, end_index=18),
+                ],
+            ),
         ]
     )
     async def test__extract_stock_tags_from_text(

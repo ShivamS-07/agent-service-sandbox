@@ -152,7 +152,7 @@ class TextObject(SerializeableBase):
                 # Check if symbol occurs immediately after company name with only
                 # spaces and parentheses in between (eg. "Apple Inc. (AAPL)")
                 between_text = text[company_end:symbol_start]
-                if re.fullmatch(r"[\s()]*", between_text):
+                if between_text and re.fullmatch(r"[\s()]*", between_text):
                     # Use symbol's position
                     stock_location_start = symbol_start
                     stock_location_end = symbol_end - 1
