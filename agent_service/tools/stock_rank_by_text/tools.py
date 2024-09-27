@@ -73,11 +73,24 @@ async def rank_stocks_by_profile(
     truncated_ranked_stocks = set()
     if args.top_n:
         logger.info(f"Determined the top {args.top_n}")
-        await tool_log(
-            f"Determined the top {args.top_n}",
-            context=context,
-        )
-        truncated_ranked_stocks.update(fully_ranked_stocks[: args.top_n])
+        top_stocks = fully_ranked_stocks[: args.top_n]
+        non_zero_top_stocks = [stock for stock in top_stocks if stock.history[-1].score.val != 0]  # type: ignore
+        if len(non_zero_top_stocks) == 0:
+            await tool_log(
+                f"Could not find any relavent stocks from the given set relevant to '{args.profile}'",
+                context=context,
+            )
+        elif len(non_zero_top_stocks) < len(top_stocks):
+            await tool_log(
+                f"Only able to find {len(non_zero_top_stocks)} top stocks, all other stocks were not relevant",
+                context=context,
+            )
+        else:
+            await tool_log(
+                f"Determined the top {args.top_n}",
+                context=context,
+            )
+        truncated_ranked_stocks.update(non_zero_top_stocks)
     if args.bottom_m:
         logger.info(f"Determined the bottom {args.bottom_m}")
         await tool_log(
@@ -86,6 +99,9 @@ async def rank_stocks_by_profile(
         )
         truncated_ranked_stocks.update(fully_ranked_stocks[args.bottom_m * (-1) :])
     if args.top_n or args.bottom_m:
-        return list(truncated_ranked_stocks)
+        truncated_stock_list = sorted(
+            list(truncated_ranked_stocks), key=lambda stock: stock.history[-1].score.val, reverse=True  # type: ignore
+        )
+        return truncated_stock_list
     else:
         return fully_ranked_stocks
