@@ -6,7 +6,10 @@ from typing import Any, Dict, List, Optional
 
 import pytz
 
-from agent_service.external.feature_svc_client import get_all_variables_metadata
+from agent_service.external.feature_svc_client import (
+    get_all_variables_metadata,
+    get_intraday_prices,
+)
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import HistoryEntry, TableColumnType
@@ -27,10 +30,6 @@ from agent_service.tools.feature_data import (
     get_latest_date,
     get_statistic_data,
     statistic_identifier_lookup,
-)
-from agent_service.tools.stock_intraday_price import (
-    GetStockIntradayPriceInput,
-    get_stock_intraday_prices,
 )
 from agent_service.tools.tables import (
     JoinTableArgs,
@@ -296,9 +295,7 @@ async def get_statistic_data_for_companies(
         and end_date == today - ONE_DAY  # but we only have yesterdays
     ):
         logger.info("Getting intraday prices to supplement Close Prices")
-        real_time_prices: StockTable = await get_stock_intraday_prices(  # type: ignore
-            GetStockIntradayPriceInput(stock_ids=stocks), context
-        )
+        real_time_prices, _, _ = await get_intraday_prices(stocks)
         rt_stock_column, rt_price_column = real_time_prices.columns
         if 0 in rt_price_column.data:
             missing_stocks = []

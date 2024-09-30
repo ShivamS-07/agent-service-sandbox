@@ -52,6 +52,9 @@ from agent_service.external.grpc_utils import (
     grpc_retry,
     timestamp_to_date,
 )
+from agent_service.io_type_utils import TableColumnType
+from agent_service.io_types.stock import StockID
+from agent_service.io_types.table import StockTable, TableColumnMetadata
 from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
@@ -364,18 +367,53 @@ async def get_return_for_single_stock(
 
 @grpc_retry
 @async_perf_logger
-async def get_intraday_prices(gbi_ids: List[int]) -> Dict[int, float]:
+async def get_intraday_prices(
+    stocks: List[StockID],
+) -> Tuple[StockTable, datetime.datetime, datetime.datetime]:
     """
-    Given a stock ids, returns the latest real-time prices for those stocks.
+    Given a list of stock ids, returns the latest real-time prices for those stocks.
     """
+
+    id2stock = {stock_id.gbi_id: stock_id for stock_id in stocks}
     with _get_service_stub() as stub:
-        req = GetRealTimePricesRequest(gbi_ids=gbi_ids)
+        req = GetRealTimePricesRequest(gbi_ids=[stock.gbi_id for stock in stocks])
         resp: GetRealTimePricesResponse = await stub.GetRealTimePrices(req)
+        resp.prices[0].last_update.ToDatetime()
         if resp.status.code != 0:
             raise ValueError(
-                f"Failed to get realtime price: {resp.status.code} - {resp.status.message},  {gbi_ids=}"
+                f"Failed to get realtime price: {resp.status.code} - {resp.status.message}, "
+                f"{[stock.gbi_id for stock in stocks]}"
             )
-    return {price.gbi_id: price.latest_price for price in resp.prices}
+
+    new_gbi_ids = []
+    price_list = []
+    timestamps = []
+    for price in resp.prices:
+        new_gbi_ids.append(price.gbi_id)
+        price_list.append(price.latest_price)
+        timestamps.append(price.last_update.ToDatetime())
+
+    min_time, max_time = min(timestamps), max(timestamps)
+    # preserve the history of the old stock_ids
+    new_stock_ids = [
+        id2stock.get(id, (await StockID.from_gbi_id_list([id]))[0]) for id in new_gbi_ids
+    ]
+
+    df = pd.DataFrame()
+    df["Security"] = new_stock_ids
+    df["Current Price"] = price_list
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK),
+            # TODO
+            # this should be col_type=<TableColumnType.CURRENCY: 'currency'>,
+            # but I dont know where to get unit='USD', from
+            # other than asking for close price also
+            TableColumnMetadata(label="Current Price", col_type=TableColumnType.FLOAT),
+        ],
+    )
+    return table, min_time, max_time
 
 
 def nc_swap_rows_fields(nc: NumpyCube) -> None:
