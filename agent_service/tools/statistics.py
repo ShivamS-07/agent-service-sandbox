@@ -274,12 +274,22 @@ async def get_statistic_data_for_companies(
     output_json = json.loads(clean_to_json_if_needed(result))
     stat_list = output_json["components"]
     if len(stat_list) == 0:
-        raise EmptyOutputError(
-            (
-                "No decomposition found for client statistic using supported component statistics,"
-                " cannot figure out how to calculate the requested value!"
-            )
+        main_prompt = DECOMPOSITION_MAIN_PROMPT.format(
+            statistic_description=stat_ref,
+            chat_context=stat_ref,
+            statistic_list=all_statistics,
+            time_series=time_series_str,
         )
+        result = await llm.do_chat_w_sys_prompt(main_prompt, DECOMPOSITION_SYS_PROMPT.format())
+        output_json = json.loads(clean_to_json_if_needed(result))
+        stat_list = output_json["components"]
+        if len(stat_list) == 0:
+            raise EmptyOutputError(
+                (
+                    "No decomposition found for client statistic using supported component statistics,"
+                    " cannot figure out how to calculate the requested value!"
+                )
+            )
     calculation = output_json["calculation"]
     added_timespan = output_json["extra_timespan"]
 
