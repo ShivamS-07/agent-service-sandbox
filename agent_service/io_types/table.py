@@ -307,7 +307,9 @@ class Table(ComplexIOBase):
         for col_meta in columns:
             df_col = col_meta.label
             if df_col not in data.columns:
-                raise Exception(f"Requested label: {df_col=} not in dataframe cols: {data.columns}")
+                raise RuntimeError(
+                    f"Requested label: {df_col=} not in dataframe cols: {data.columns}"
+                )
 
             if col_meta.col_type == TableColumnType.DATE:
                 data[df_col] = data[df_col].apply(

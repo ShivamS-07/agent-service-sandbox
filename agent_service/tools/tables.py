@@ -322,7 +322,15 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
     debug_info["code_first_attempt"] = code
     logger.info(f"Running transform code:\n{code}")
     output_df, error = _run_transform_code(df=data_df, code=code)
-    if output_df is None:
+    if output_df:
+        for col_meta in new_col_schema:
+            df_col = col_meta.label
+            if df_col not in output_df.columns:
+                error = (
+                    f"Output DF schema not correct! Requested column: "
+                    f"'{df_col}' not in dataframe cols: {output_df.columns}"
+                )
+    if output_df is None or error:
         logger.warning("Failed when transforming dataframe... trying again")
         logger.warning(f"Failing code:\n{code}")
         code = await gpt.do_chat_w_sys_prompt(

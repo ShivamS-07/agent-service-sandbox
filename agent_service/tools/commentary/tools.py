@@ -340,7 +340,8 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         commentary_text, citations = await extract_citations_from_gpt_output(
             result, all_text_group, context
         )
-        logger.info(f"Size of citations: {len(citations)}")  # type:ignore
+        if citations is not None:
+            logger.info(f"Size of citations: {len(citations)}")
 
     # create commentary object
     commentary: Text = Text(val=commentary_text or result)

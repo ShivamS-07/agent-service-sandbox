@@ -1,4 +1,5 @@
 from collections import defaultdict
+from copy import deepcopy
 from typing import Dict, List, Union
 
 from agent_service.io_type_utils import (
@@ -59,10 +60,13 @@ async def prepare_list_of_texts(texts: List[Text]) -> Text:
         if text_str and not text.get_all_citations():
             # If a text does not have citations, add a citation to itself at the
             # end of the text. This is useful for e.g. lists of articles.
+            # Need to copy to prevent circular references
+            cited_text = deepcopy(text)
+            cited_text.val = ""
             text.history.append(
                 HistoryEntry(
                     citations=[
-                        TextCitation(source_text=text, citation_text_offset=len(text_str) - 1)
+                        TextCitation(source_text=cited_text, citation_text_offset=len(text_str) - 1)
                     ]
                 )
             )
@@ -80,10 +84,14 @@ async def prepare_list_of_stock_texts(texts: List[StockText]) -> Text:
             # If a text does not have citations, add a citation to itself at the
             # end of the text. This is useful for e.g. lists of articles.
             if text_str and not text.get_all_citations():
+                cited_text = deepcopy(text)
+                cited_text.val = ""
                 text.history.append(
                     HistoryEntry(
                         citations=[
-                            TextCitation(source_text=text, citation_text_offset=len(text_str) - 1)
+                            TextCitation(
+                                source_text=cited_text, citation_text_offset=len(text_str) - 1
+                            )
                         ]
                     )
                 )
