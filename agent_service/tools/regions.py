@@ -496,11 +496,11 @@ COUNTRY_SYS_PROMPT = Prompt(
 
 @tool(
     description=(
-        "This function takes a list of stock ID's and either an ISO3 country code string"
-        " (e.g., 'USA', 'CAN', 'JPN'), a country's name in english,"
-        " or a specific region name which represents a group of countries."
-        " It filters the list of stocks by the given"
-        " country or region. Supported regions are: " + ", ".join(REGION_COUNTRY_MAP.keys()) + "."
+        "This function takes a list of stock ID's and either an ISO 3166-1 alpha-3 country code string"
+        " (e.g., 'USA', 'CHE', 'JPN', 'CAN', 'GBR'), or a country name in english, or a specific region name."
+        " It filters the list of stocks by the given country or region. Supported regions are: "
+        + ", ".join(REGION_COUNTRY_MAP.keys())
+        + "."
         " For countries, use the standard 3-letter ISO country code."
         " The function returns the filtered list of stock IDs."
     ),
