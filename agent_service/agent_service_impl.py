@@ -194,7 +194,6 @@ from agent_service.utils.task_executor import TaskExecutor
 
 LOGGER = logging.getLogger(__name__)
 
-
 EDITABLE_TYPE = {
     int,
     str,
@@ -1480,10 +1479,14 @@ class AgentServiceImpl:
         result = await self.ch.get_debug_tool_result(replay_id=replay_id)
         return GetDebugToolResultResponse(result=json.loads(result))
 
-    async def get_tool_library(self) -> GetToolLibraryResponse:
+    async def get_tool_library(self, user: Optional[User] = None) -> GetToolLibraryResponse:
         tools = []
         for tool_name, tool in ToolRegistry._REGISTRY_ALL_TOOLS_MAP.items():
             if not tool.enabled:
+                continue
+            elif tool.enabled_checker_func and not (
+                user and tool.enabled_checker_func(user.user_id)
+            ):
                 continue
 
             category = ToolRegistry._TOOL_NAME_TO_CATEGORY[tool_name]
@@ -1863,7 +1866,7 @@ class AgentServiceImpl:
         chat_context = ChatContext(
             messages=[Message(message=template_prompt, is_user_message=True)]
         )
-        planner = Planner(skip_db_commit=True, send_chat=False)
+        planner = Planner(user_id=user.user_id, skip_db_commit=True, send_chat=False)
         plan = await planner.create_initial_plan(chat_context=chat_context, use_sample_plans=True)
         if plan is None:
             raise HTTPException(status_code=400, detail="Plan generation failed: no plan created.")

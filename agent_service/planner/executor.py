@@ -709,7 +709,11 @@ async def create_execution_plan(
     logger = get_prefect_logger(__name__)
     context = plan_create_context(agent_id, user_id, plan_id)
     planner = Planner(
-        agent_id=agent_id, context=context, skip_db_commit=skip_db_commit, send_chat=do_chat
+        agent_id=agent_id,
+        user_id=user_id,
+        context=context,
+        skip_db_commit=skip_db_commit,
+        send_chat=do_chat,
     )
 
     logger.info(f"Starting creation of execution plan for {agent_id=}...")
@@ -1081,7 +1085,7 @@ async def rewrite_execution_plan(
 ) -> Optional[ExecutionPlan]:
     logger = get_prefect_logger(__name__)
     context = plan_create_context(agent_id, user_id, plan_id)
-    planner = Planner(agent_id=agent_id, context=context)
+    planner = Planner(agent_id=agent_id, context=context, user_id=user_id)
     db = db or AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
     chatbot = Chatbot(agent_id=agent_id)
     override_task_output_id_lookup = None

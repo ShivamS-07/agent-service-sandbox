@@ -87,17 +87,19 @@ class Planner:
     def __init__(
         self,
         agent_id: Optional[str] = None,
+        user_id: Optional[str] = None,
         context: Optional[Dict[str, str]] = None,
         tool_registry: Type[ToolRegistry] = ToolRegistry,
         send_chat: bool = True,
         skip_db_commit: bool = False,
     ) -> None:
         self.agent_id = agent_id
+        self.user_id = user_id
         self.context = context
         self.smart_llm = GPT(self.context, DEFAULT_SMART_MODEL)
         self.fast_llm = GPT(self.context, GPT4_O)
         self.tool_registry = tool_registry
-        self.tool_string = tool_registry.get_tool_str()
+        self.tool_string = tool_registry.get_tool_str(self.user_id)
         self.send_chat = send_chat
         self.skip_db_commit = skip_db_commit
         self.db = get_psql(skip_commit=skip_db_commit)

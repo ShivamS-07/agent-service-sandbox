@@ -1128,7 +1128,7 @@ async def get_agent_debug_result(
     status_code=status.HTTP_200_OK,
 )
 async def get_tool_library(user: User = Depends(parse_header)) -> GetToolLibraryResponse:
-    return await application.state.agent_service_impl.get_tool_library()
+    return await application.state.agent_service_impl.get_tool_library(user=user)
 
 
 @router.get(

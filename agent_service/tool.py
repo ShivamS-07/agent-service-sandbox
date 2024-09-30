@@ -151,6 +151,7 @@ class Tool:
     is_output_tool: bool = False
     store_output: bool = True
     enabled: bool = True
+    enabled_checker_func: Optional[Callable[[str], bool]] = None
 
     def to_function_header(self) -> str:
         """
@@ -310,13 +311,18 @@ class ToolRegistry:
         return tool_name in cls._REGISTRY_ALL_TOOLS_MAP
 
     @classmethod
-    def get_tool_str(cls) -> str:
+    def get_tool_str(cls, user_id: Optional[str] = None) -> str:
         output = []
         for tool_category, tool_dict in cls._REGISTRY_CATEGORY_MAP.items():
             tool_descriptions = []
             for tool in tool_dict.values():
                 if not tool.enabled:
                     continue
+                elif tool.enabled_checker_func and not (
+                    user_id and tool.enabled_checker_func(user_id)
+                ):
+                    continue
+                    # If there is a checker, only continue if there is a user ID which results in a true checker
                 tool_descriptions.append(tool.to_function_header())
                 tool_descriptions.append(f"# {tool.description}")
             if tool_descriptions:
@@ -354,6 +360,7 @@ def tool(
     create_prefect_task: bool = True,
     is_visible: bool = True,
     enabled: bool = True,
+    enabled_checker_func: Optional[Callable[..., bool]] = None,
     reads_chat: bool = False,
     update_instructions: Optional[str] = None,
     tool_registry: Type[ToolRegistry] = ToolRegistry,
@@ -395,6 +402,9 @@ def tool(
     is_visible: If true, the task is visible to the end user.
 
     enabled: If false, the tool is not registered for use.
+
+    enabled_checker_func: A function which resolves to a boolean, will be resolved at planner time alongside context
+      to determine if a tool should be enabled for specific user. If None, then it resolved as should be enabled
 
     tool_registry: A class type for the registry. Useful for testing or tiered registries.
 
@@ -573,6 +583,7 @@ def tool(
                 is_output_tool=is_output_tool,
                 store_output=store_output,
                 enabled=enabled,
+                enabled_checker_func=enabled_checker_func,
             ),
             category=category,
         )
