@@ -32,7 +32,12 @@ from agent_service.planner.constants import (
     NO_CHANGE_MESSAGE,
     RUN_EXECUTION_PLAN_FLOW_NAME,
 )
-from agent_service.planner.errors import AgentRetryError, NonRetriableError
+from agent_service.planner.errors import (
+    AgentCancelledError,
+    AgentExecutionError,
+    AgentRetryError,
+    NonRetriableError,
+)
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import (
     ErrorInfo,
@@ -57,10 +62,8 @@ from agent_service.utils.agent_event_utils import (
 )
 from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
 from agent_service.utils.async_utils import gather_with_concurrency
-from agent_service.utils.check_cancelled import AgentCancelledError
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.do_not_error_exception import DoNotErrorException
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.gpt_logging import (
@@ -184,12 +187,15 @@ async def run_execution_plan(
             execution_log=execution_log,
             scheduled_by_automation=scheduled_by_automation,
         )
-    except Exception:
+    except Exception as e:
+        status = Status.ERROR
+        if isinstance(e, AgentExecutionError):
+            status = e.result_status
         await publish_agent_execution_status(
             agent_id=context.agent_id,
             plan_run_id=context.plan_run_id,
             plan_id=context.plan_id,
-            status=Status.ERROR,
+            status=status,
             logger=logger,
             db=async_db,
         )
@@ -291,7 +297,7 @@ async def _run_execution_plan_impl(
                 logger=logger,
                 db=async_db,
             )
-            raise DoNotErrorException("Execution plan has been cancelled")
+            raise AgentCancelledError("Execution plan has been cancelled")
 
         logger.warning(
             f"Running step '{step.tool_name}' (Task ID: {step.tool_task_id}),"
@@ -410,7 +416,7 @@ async def _run_execution_plan_impl(
                     )
 
                     # NEVER replan if the plan is already cancelled.
-                    raise Exception("Execution plan has been cancelled")
+                    raise AgentCancelledError("Execution plan has been cancelled")
 
                 await publish_agent_execution_status(
                     agent_id=context.agent_id,
@@ -513,7 +519,7 @@ async def _run_execution_plan_impl(
             logger=logger,
             db=async_db,
         )
-        raise Exception("Execution plan has been cancelled")
+        raise AgentCancelledError("Execution plan has been cancelled")
 
     logger.info(f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=}")
 
@@ -716,7 +722,7 @@ async def create_execution_plan(
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
-        raise RuntimeError("Plan creation has been cancelled.")
+        raise AgentCancelledError("Plan creation has been cancelled.")
     plan = await planner.create_initial_plan(
         chat_context=chat_context, use_sample_plans=use_sample_plans, plan_id=plan_id
     )
@@ -724,7 +730,7 @@ async def create_execution_plan(
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
-        raise RuntimeError("Plan creation has been cancelled.")
+        raise AgentCancelledError("Plan creation has been cancelled.")
     if plan is None:
         if do_chat:
             chatbot = Chatbot(agent_id=agent_id)
@@ -770,7 +776,7 @@ async def create_execution_plan(
             await publish_agent_plan_status(
                 agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
             )
-            raise RuntimeError("Plan creation has been cancelled.")
+            raise AgentCancelledError("Plan creation has been cancelled.")
 
         logger.info("Generating initial postplan response...")
         chatbot = Chatbot(agent_id=agent_id)
@@ -789,7 +795,7 @@ async def create_execution_plan(
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
-        raise RuntimeError("Plan creation has been cancelled.")
+        raise AgentCancelledError("Plan creation has been cancelled.")
 
     logger.info(f"Submitting execution plan to Prefect for {agent_id=}, {plan_id=}, {plan_run_id=}")
     # Replan on error only because it's the first run
@@ -1102,7 +1108,7 @@ async def rewrite_execution_plan(
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
-        raise RuntimeError("Plan rewrite has been cancelled.")
+        raise AgentCancelledError("Plan rewrite has been cancelled.")
     if error_info:
         new_plan = await planner.rewrite_plan_after_error(
             error_info,
@@ -1132,7 +1138,7 @@ async def rewrite_execution_plan(
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
-        raise RuntimeError("Plan rewrite has been cancelled.")
+        raise AgentCancelledError("Plan rewrite has been cancelled.")
     if not new_plan:
         if do_chat:
             message = await chatbot.generate_initial_plan_failed_response_suggestions(
@@ -1193,7 +1199,7 @@ async def rewrite_execution_plan(
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
         )
-        raise RuntimeError("Plan rewrite has been cancelled.")
+        raise AgentCancelledError("Plan rewrite has been cancelled.")
 
     await kick_off_run_execution_plan(
         plan=new_plan,

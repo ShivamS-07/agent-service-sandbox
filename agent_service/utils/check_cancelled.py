@@ -1,18 +1,13 @@
 from functools import wraps
 from typing import Any, Awaitable, Callable, TypeVar, Union
 
+from agent_service.planner.errors import AgentCancelledError
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.postgres import Postgres, SyncBoostedPG
 
 F = TypeVar("F", bound=Callable[..., Awaitable[Any]])
-
-
-class AgentCancelledError(Exception):
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
 
 
 async def raise_exc_if_cancelled(

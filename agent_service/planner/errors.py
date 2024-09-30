@@ -2,10 +2,11 @@ from agent_service.endpoints.models import Status
 
 
 class AgentExecutionError(Exception):
+    alert_on_error: bool = False
     result_status = Status.ERROR
 
 
-class AgentRetryError(Exception):
+class AgentRetryError(AgentExecutionError):
     pass
 
 
@@ -16,6 +17,14 @@ class NonRetriableError(AgentExecutionError):
 
     def get_message_for_llm(self) -> str:
         return f"{self.__class__.__name__}: {self.message}"
+
+
+class AgentCancelledError(AgentExecutionError):
+    result_status = Status.CANCELLED
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 class EmptyInputError(NonRetriableError):

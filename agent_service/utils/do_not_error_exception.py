@@ -1,2 +1,0 @@
-class DoNotErrorException(Exception):
-    pass

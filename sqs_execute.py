@@ -6,10 +6,9 @@ import resource
 import time
 import traceback
 
-from agent_service.planner.errors import AgentRetryError, NonRetriableError
+from agent_service.planner.errors import AgentExecutionError
 from agent_service.sqs_serve.message_handler import MessageHandler
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.do_not_error_exception import DoNotErrorException
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.s3_upload import download_json_from_s3
 
@@ -79,7 +78,7 @@ async def main() -> None:
             )
             f.write(str(total_mem))
 
-    except DoNotErrorException:
+    except Exception as e:
         log_event(
             event_name="agent_worker_message_processed",
             event_data={
@@ -90,9 +89,6 @@ async def main() -> None:
                 "error_msg": traceback.format_exc(),
             },
         )
-        wait_if_needed(start_time=start_time)
-
-    except Exception as e:
         exception_text = traceback.format_exc()
         with open("/exit_script/exception.txt", "w") as f:
             f.write(exception_text)
@@ -102,19 +98,10 @@ async def main() -> None:
                 + resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
             )
             f.write(str(total_mem))
-        log_event(
-            event_name="agent_worker_message_processed",
-            event_data={
-                "start_time_utc": start_time_utc,
-                "end_time_utc": get_now_utc().isoformat(),
-                "raw_message": message_string,
-                "message": converted_message_str,
-                "error_msg": traceback.format_exc(),
-            },
-        )
         wait_if_needed(start_time=start_time)
-        if not isinstance(e, NonRetriableError) and not isinstance(e, AgentRetryError):
-            raise e
+        if isinstance(e, AgentExecutionError) and not e.alert_on_error:
+            return
+        raise e
 
 
 if __name__ == "__main__":
