@@ -1405,6 +1405,7 @@ class GetStockUniverseInput(ToolArgs):
     # name of the universe to lookup
     universe_name: str
     date_range: Optional[DateRange] = None
+    dedup_companies: bool = True
 
 
 @tool(
@@ -1418,6 +1419,9 @@ class GetStockUniverseInput(ToolArgs):
         " stocks in an ETF, but note that you should NOT look up the identifier for the ETF"
         " using stock_identifier_lookup before calling this tool, pass the name of the ETF"
         " as a string directly."
+        " If a client asks for the companies in the universe "
+        " you must set dedup_companies to True. If a client asks for the stocks in a universe "
+        " you must set dedup_companies to False. "
         " If the client wants to filter over stocks but does not specify an initial set"
         " of stocks, you should call this tool with 'S&P 500'."
         " You can also use this tool to get the holdings of an ETF or stock."
@@ -1462,6 +1466,7 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
     stock_universe_table = await get_stock_universe_table_from_universe_company_id(
         universe_spiq_company_id=universe_spiq_company_id,
         date_range=args.date_range,
+        dedup_companies=args.dedup_companies,
         context=context,
     )
     stock_universe_list = stock_universe_table.to_df()[STOCK_ID_COL_NAME_DEFAULT].tolist()
@@ -1563,7 +1568,10 @@ async def get_stock_info_for_universe(args: GetStockUniverseInput, context: Plan
 
 
 async def get_stock_universe_table_from_universe_company_id(
-    universe_spiq_company_id: int, date_range: Optional[DateRange], context: PlanRunContext
+    universe_spiq_company_id: int,
+    date_range: Optional[DateRange],
+    context: PlanRunContext,
+    dedup_companies: bool = False,
 ) -> StockTable:
     """Returns the list of stock identifiers given a stock universe's company id.
 
@@ -1579,12 +1587,13 @@ async def get_stock_universe_table_from_universe_company_id(
     db = get_psql()
     gbi_ids = []
     rows = []
+
     if date_range:
         start_date = date_range.start_date
         end_date = date_range.end_date
 
         # Find the stocks in the universe
-        sql = """
+        query = """
         SELECT DISTINCT ON (gbi_id)
         gbi_id, symbol, ms.isin, name, weight
         FROM "data".etf_universe_holdings euh
@@ -1609,18 +1618,34 @@ async def get_stock_universe_table_from_universe_company_id(
         (euh.from_z <= %(end_date)s AND %(end_date)s <= euh.to_z  )
         )
         """
-        rows = db.generic_read(
-            sql,
+        if dedup_companies:
+            dedup_query = f"""
+                SELECT DISTINCT ON (name)
+                gbi_id, symbol, isin, name, weight
+                FROM ({query})
+                AS subquery
+            """
+            deduped_rows_by_company = db.generic_read(
+                dedup_query,
+                params={
+                    "spiq_company_id": universe_spiq_company_id,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+            )
+
+        full_rows = db.generic_read(
+            query,
             params={
                 "spiq_company_id": universe_spiq_company_id,
                 "start_date": start_date,
                 "end_date": end_date,
             },
         )
-        gbi_ids = [row["gbi_id"] for row in rows]
+
     elif not date_range:
         # Find the stocks in the universe
-        sql = """
+        query = """
         SELECT DISTINCT ON (gbi_id)
         gbi_id, symbol, ms.isin, name, weight
         FROM "data".etf_universe_holdings euh
@@ -1628,8 +1653,31 @@ async def get_stock_universe_table_from_universe_company_id(
         WHERE spiq_company_id = %s AND ms.is_public
         AND euh.to_z > NOW()
         """
-        rows = db.generic_read(sql, [universe_spiq_company_id])
-        gbi_ids = [row["gbi_id"] for row in rows]
+
+        if dedup_companies:
+            dedup_query = f"""
+                SELECT DISTINCT ON (name)
+                gbi_id, symbol, isin, name, weight
+                FROM ({query})
+                AS subquery
+            """
+            deduped_rows_by_company = db.generic_read(dedup_query, [universe_spiq_company_id])
+
+        full_rows = db.generic_read(query, [universe_spiq_company_id])
+
+    if dedup_companies:
+        await tool_log(
+            f"Retrieving unique companies, ignoring {len(full_rows) - len(deduped_rows_by_company)} redundant stocks",
+            context,
+        )
+        rows = deduped_rows_by_company
+    else:
+        await tool_log(
+            "Retrieving unique stocks, may contain multiple stocks for the same company", context
+        )
+        rows = full_rows
+
+    gbi_ids = [row["gbi_id"] for row in rows]
     stock_ids = await StockID.from_gbi_id_list(gbi_ids)
     data = {
         STOCK_ID_COL_NAME_DEFAULT: stock_ids,
