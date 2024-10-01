@@ -65,6 +65,18 @@ class TestHomeScreenQueries(TestExecutionPlanner):
                 validate_tool_args=validate_tool_args,
             )
 
+    # we run this test 3 times to catch any randomness
+    # use duplicated test so that they can be run in parallel
+    @skip_in_ci
+    def test_home_screen_q2_top_tech2(self):
+        logger.warning("Run 2 of test_home_screen_q2_top_tech")
+        self.test_home_screen_q2_top_tech()
+
+    @skip_in_ci
+    def test_home_screen_q2_top_tech3(self):
+        logger.warning("Run 3 of test_home_screen_q2_top_tech")
+        self.test_home_screen_q2_top_tech()
+
     @skip_in_ci
     def test_home_screen_q2_top_tech(self):
         # changed from the original:
@@ -90,7 +102,8 @@ class TestHomeScreenQueries(TestExecutionPlanner):
             self.assertTrue(tool_name in execution_log.keys())
             self.assertTrue(len(execution_log[tool_name]) == 3)
 
-        max_runs = 3
+        # we run it 3 times above in parallel instead of this loop
+        max_runs = 1
         for idx in range(max_runs):
             logger.warning(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
@@ -197,8 +210,21 @@ class TestHomeScreenQueries(TestExecutionPlanner):
                 validate_tool_args=validate_tool_args,
             )
 
+    # we run this test 3 times to catch any randomness
+    # use duplicated test so that they can be run in parallel
+    @skip_in_ci
+    def test_home_screen_q4_netlfix_earnings_call2(self):
+        logger.warning("Run 2 of test_home_screen_q4_netlfix_earnings_call")
+        self.test_home_screen_q4_netlfix_earnings_call()
+
+    @skip_in_ci
+    def test_home_screen_q4_netlfix_earnings_call3(self):
+        logger.warning("Run 3 of test_home_screen_q4_netlfix_earnings_call")
+        self.test_home_screen_q4_netlfix_earnings_call()
+
     @skip_in_ci
     def test_home_screen_q4_netlfix_earnings_call(self):
+        # actually AAPL now
         prompt = get_canned_prompt_text(prompt_id="summarize_netflix")
 
         def validate_output(prompt: str, output: IOType):
@@ -229,7 +255,7 @@ class TestHomeScreenQueries(TestExecutionPlanner):
                 f"Args tool {tool_name} - {arg_name}",
             )
 
-        max_runs = 3
+        max_runs = 1
         for idx in range(max_runs):
             logger.warning(f"Run {idx + 1} of {max_runs}\nprompt={prompt}")
             self.prompt_test(
