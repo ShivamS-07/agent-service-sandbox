@@ -543,17 +543,20 @@ def _join_two_tables(first: Table, second: Table) -> Table:
 
 
 @tool(
-    description="""Given a list of input tables, attempt to join the tables into
-a single table. Ideally, the tables will share a column or two that can be used
-to join (e.g. a stock column or a date column). This will create a single table
-from the multiple inputs. If you want to transform multiple tables, they must be
-merged with this first. By default, the assumption is that the tables share only
-some columns, not all of them, and we want to create a table with all the columns
-of both.
-If we are joining two tables with the same columns and just want to create a table
-which has the rows from both tables, use row_join = True, this will commonly be used
-when we are constructing a final output table for comparison of the performance
-of different stock groups/baskets.
+    description="""
+    Given a list of input tables, attempt to join the tables into
+    a single table. Ideally, the tables will share a column or two that can be used
+    to join (e.g. a stock column or a date column). This will create a single table
+    from the multiple inputs. If you want to transform multiple tables, they must be
+    merged with this first. By default, the assumption is that the tables share only
+    some columns, not all of them, and we want to create a table with all the columns
+    of both.
+    If we are joining two tables with the same columns and just want to create a table
+    which has the rows from both tables, use row_join = True, this will commonly be used
+    when we are constructing a final output table for comparison of the performance
+    of different stock groups/baskets.
+    When the task is joining tables to have more columns in a single table, the row_join
+    must be False.
 """,
     category=ToolCategory.TABLE,
 )
@@ -564,8 +567,14 @@ async def join_tables(args: JoinTableArgs, context: PlanRunContext) -> Table:
         raise RuntimeError("Cannot join a list of tables with one element!")
 
     _join_table_func = _join_two_tables
+
+    # check if row_join is True and the tables have the same column types to join them vertically
     if args.row_join:
-        _join_table_func = _join_two_tables_vertically
+        if all(
+            col1.metadata.col_type == col2.metadata.col_type
+            for col1, col2 in zip(args.input_tables[0].columns, args.input_tables[1].columns)
+        ):
+            _join_table_func = _join_two_tables_vertically
     joined_table = args.input_tables[0]
     for table in args.input_tables[1:]:
         joined_table = _join_table_func(joined_table, table)
