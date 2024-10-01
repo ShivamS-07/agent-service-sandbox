@@ -549,7 +549,15 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         res = self.duplicate_agent(
             src_agent_id=agent_to_duplicate, dest_user_ids=[user_id_to_send_to]
         )
-        print(res)
+        self.assertIsNotNone(res)
+
+    def test_duplicate_agent_null_task_id(self):
+        agent_to_duplicate = "512f3ce0-8796-4bdd-a1fa-c2115f4ff579"
+        user_id_to_send_to = "ac7c96d7-3e57-40e7-a1a5-8e2ce5e23639"  # tommy
+        res = self.duplicate_agent(
+            src_agent_id=agent_to_duplicate, dest_user_ids=[user_id_to_send_to]
+        )
+        self.assertIsNotNone(res)
 
     async def test_delete_agent_output(self):
         TEST_AGENT_ID = "fd7b8b1a-3e3a-4195-8a6c-99f500149fde"

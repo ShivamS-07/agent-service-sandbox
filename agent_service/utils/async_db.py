@@ -1295,12 +1295,27 @@ class AsyncDB:
 
         outputs_sql = """select * from agent.agent_outputs where agent_id = %(agent_id)s"""
         agent_outputs = await self.pg.generic_read(outputs_sql, {"agent_id": src_agent_id})
+        regular_output_entries = []
+        null_task_id_output_entries = []
         for agent_output in agent_outputs:
             agent_output["output_id"] = str(uuid.uuid4())
             agent_output["agent_id"] = dst_agent_id
             agent_output["plan_id"] = execution_plan_id_map[agent_output["plan_id"]]
             agent_output["plan_run_id"] = plan_run_id_map[agent_output["plan_run_id"]]
-        to_insert.append(InsertToTableArgs(table_name="agent.agent_outputs", rows=agent_outputs))
+            if not agent_output["task_id"]:
+                null_task_id_output_entries.append(agent_output)
+            else:
+                regular_output_entries.append(agent_output)
+        if null_task_id_output_entries:
+            to_insert.append(
+                InsertToTableArgs(
+                    table_name="agent.agent_outputs", rows=null_task_id_output_entries
+                )
+            )
+        if regular_output_entries:
+            to_insert.append(
+                InsertToTableArgs(table_name="agent.agent_outputs", rows=regular_output_entries)
+            )
         await self.pg.insert_atomic(to_insert=to_insert)
 
 

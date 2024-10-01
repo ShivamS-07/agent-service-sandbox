@@ -30,4 +30,9 @@ class SkipCommitBoostedPG(BoostedPG):
         # This is not actually atomic, since these inserts might happen in different transactions.
         # However, this class is only for testing purposes, so this is completely fine.
         for arg in to_insert:
-            self.pg.multi_row_insert(table_name=arg.table_name, rows=arg.rows)
+            try:
+
+                self.pg.multi_row_insert(table_name=arg.table_name, rows=arg.rows)
+            except Exception as e:
+                print(f"failed inserting into {arg.table_name}")
+                raise e
