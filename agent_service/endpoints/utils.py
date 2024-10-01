@@ -14,6 +14,7 @@ from agent_service.endpoints.models import (
     TaskRunStatusInfo,
 )
 from agent_service.io_type_utils import load_io_type
+from agent_service.io_types.text import Text
 from agent_service.planner.planner_types import (
     ExecutionPlan,
     PlanStatus,
@@ -123,10 +124,12 @@ async def get_agent_hierarchical_worklogs(
         if row["is_task_output"]:
             plan_run_id_task_id_to_task_output[(row["plan_run_id"], row["task_id"])] = row
         else:
+            message = load_io_type(row["log_message"])
+            message_str = (await message.get()).val if isinstance(message, Text) else str(message)
             plan_run_id_task_id_to_logs[(row["plan_run_id"], row["task_id"])].append(
                 PlanRunTaskLog(
                     log_id=row["log_id"],
-                    log_message=cast(str, load_io_type(row["log_message"])),
+                    log_message=message_str,
                     created_at=row["created_at"],
                     has_output=row["has_output"],
                 )

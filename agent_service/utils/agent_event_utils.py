@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Union, cast
+from typing import List, Optional, Union
 
 import boto3
 
@@ -26,7 +26,7 @@ from agent_service.endpoints.models import (
     TaskStatusEvent,
 )
 from agent_service.io_type_utils import load_io_type
-from agent_service.io_types.text import TextOutput
+from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, OutputWithID, PlanStatus
 from agent_service.types import Message, Notification, PlanRunContext
 from agent_service.utils.async_db import AsyncDB
@@ -300,17 +300,22 @@ async def get_agent_task_logs(
     rows = db.get_agent_worklogs(agent_id, task_ids=[task_id], plan_run_ids=[plan_run_id])
 
     if rows:
-        return sorted(
-            [
+        log_rows = []
+        for row in rows:
+            if row["is_task_output"]:
+                continue
+            message = load_io_type(row["log_message"])
+            message_str = (await message.get()).val if isinstance(message, Text) else str(message)
+            log_rows.append(
                 PlanRunTaskLog(
                     log_id=row["log_id"],
-                    log_message=cast(str, load_io_type(row["log_message"])),
+                    log_message=message_str,
                     created_at=row["created_at"],
                     has_output=row["has_output"],
                 )
-                for row in rows
-                if not row["is_task_output"]
-            ],
+            )
+        return sorted(
+            log_rows,
             key=lambda tl: tl.created_at,
         )
 
