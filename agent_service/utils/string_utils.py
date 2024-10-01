@@ -1,7 +1,9 @@
+import html
 import json
 import logging
 import re
 import uuid
+from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional
 
 from json_repair import repair_json  # type: ignore
@@ -158,6 +160,19 @@ def is_valid_uuid(input: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+class HTMLFilter(HTMLParser):
+    text = ""
+
+    def handle_data(self, data: str) -> None:
+        self.text += data
+
+
+def html_to_text(html_str: str) -> str:
+    parser = HTMLFilter()
+    parser.feed(html.escape(html_str))
+    return parser.text
 
 
 if __name__ == "__main__":

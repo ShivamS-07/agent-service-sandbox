@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 import backoff
-from bs4 import BeautifulSoup
 from gbi_common_py_utils.utils.ssm import get_param
 from sec_api import ExtractorApi, MappingApi, QueryApi, RenderApi  # type: ignore
 
@@ -26,7 +25,6 @@ from agent_service.utils.sec.constants import (
     FILING_DOWNLOAD_LOOKUP,
     FILINGS,
     FORM_TYPE,
-    HTML_PARSER,
     LINK_TO_FILING_DETAILS,
     LINK_TO_HTML,
     LINK_TO_TXT,
@@ -39,7 +37,7 @@ from agent_service.utils.sec.constants import (
     US,
 )
 from agent_service.utils.sec.supported_types import SUPPORTED_TYPE_MAPPING
-from agent_service.utils.string_utils import get_sections
+from agent_service.utils.string_utils import get_sections, html_to_text
 
 logger = logging.getLogger(__name__)
 
@@ -526,7 +524,7 @@ class SecFiling:
                         f"Risk Factors Section:\n\n{risk_factor_section}"
                     )
                 else:
-                    text = BeautifulSoup(row["content"], HTML_PARSER).getText()
+                    text = row["content"]
 
                 filing_id = db_id_to_text_id[row["id"]]
                 output[filing_id] = text
@@ -561,7 +559,7 @@ class SecFiling:
                         f"Risk Factors Section:\n\n{risk_factor_section}"
                     )
                 else:
-                    text = BeautifulSoup(row["content"], HTML_PARSER).getText()
+                    text = row["content"]
 
                 output[row["filing"]] = (row["id"], text)
 
@@ -613,8 +611,7 @@ class SecFiling:
                         url=filing_info[LINK_TO_FILING_DETAILS]
                     )
 
-                parsed_full_content = BeautifulSoup(html.unescape(full_content), HTML_PARSER)
-                processed_full_content = parsed_full_content.getText()
+                processed_full_content = html_to_text(full_content)
                 time.sleep(0.25)
 
                 if management_section or risk_factor_section:
@@ -714,11 +711,17 @@ class SecFiling:
         db_ids = list(db_id_to_text_id.keys())
         for idx in range(0, len(db_ids), cls.MAX_DB_QUERY_SIZE):
             batch_db_ids = db_ids[idx : idx + cls.MAX_DB_QUERY_SIZE]
+            start_time_ch = time.perf_counter()
             result = await ch.generic_read(sql, params={"db_ids": batch_db_ids})
+            end_time_ch = time.perf_counter()
+            logger.info(f"ch_get: {end_time_ch - start_time_ch}s")
 
+            start_time_bs4 = time.perf_counter()
             for row in result:
                 filing_id = db_id_to_text_id[row["id"]]
-                output[filing_id] = BeautifulSoup(row["content"], HTML_PARSER).getText()
+                output[filing_id] = row["content"]
+            end_time_bs4 = time.perf_counter()
+            logger.info(f"bs4_parse: {end_time_bs4 - start_time_bs4}s")
 
         return output
 
@@ -744,7 +747,7 @@ class SecFiling:
             for row in result:
                 output[row["filing"]] = (
                     row["id"],
-                    BeautifulSoup(row["content"], HTML_PARSER).getText(),
+                    row["content"],
                 )
 
         return output
@@ -771,7 +774,7 @@ class SecFiling:
                     f"Risk Factors Section:\n\n{risk_factor_section}"
                 )
                 if management_section and risk_factor_section
-                else BeautifulSoup(row["content"], HTML_PARSER).getText()
+                else row["content"]
             )
             output[filing_id] = SecFilingData(**row)
 
@@ -806,7 +809,7 @@ class SecFiling:
                 f"Risk Factors Section:\n\n{risk_factor_section}"
             )
             if management_section and risk_factor_section
-            else BeautifulSoup(row["content"], HTML_PARSER).getText()
+            else row["content"]
         )
         return SecFilingData(**row)
 
@@ -833,8 +836,7 @@ class SecFiling:
                         url=filing_info[LINK_TO_FILING_DETAILS]
                     )
 
-                parsed_full_content = BeautifulSoup(html.unescape(full_content), HTML_PARSER)
-                processed_full_content = parsed_full_content.getText()
+                processed_full_content = html_to_text(full_content)
 
                 output[filing_info_str] = processed_full_content
 
