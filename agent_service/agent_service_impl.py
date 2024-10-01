@@ -278,11 +278,6 @@ class AgentServiceImpl:
         )
         for i, section in enumerate(sections):
             section.index = i
-        agent_id_list = [metadata.agent_id for metadata in agents]
-        cost_infos = await self.ch.get_agents_cost_info(agent_ids=agent_id_list)
-        for agent_metadata in agents:
-            if agent_metadata.agent_id in cost_infos:
-                agent_metadata.cost_info = cost_infos[agent_metadata.agent_id]
         return GetAllAgentsResponse(agents=agents, sections=sections)
 
     async def get_agent(self, agent_id: str) -> AgentMetadata:
