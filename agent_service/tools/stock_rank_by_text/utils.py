@@ -66,8 +66,8 @@ async def evaluate_and_summarize_profile_fit_for_stock(
         input=(
             " ".join(
                 [
-                    PROFILE_EXPOSURE_TEXT_SUMMARIZER_SYS_PROMPT.template,
-                    PROFILE_EXPOSURE_TEXT_SUMMARIZER_MAIN_PROMPT.template,
+                    PROFILE_EXPOSURE_TEXT_EVALUATER_SYS_PROMPT.template,
+                    PROFILE_EXPOSURE_TEXT_EVALUATER_MAIN_PROMPT.template,
                     profile,
                 ]
             )
@@ -84,10 +84,11 @@ async def evaluate_and_summarize_profile_fit_for_stock(
             company_texts=chopped_company_texts,
         ),
         sys_prompt=PROFILE_EXPOSURE_TEXT_EVALUATER_SYS_PROMPT.format(),
-        max_tokens=2,
+        max_tokens=1,
     )
 
     decision = int(llm_output.strip())
+
     stock_profile_summary_data: Optional[Tuple[str, List[Citation]]] = None
     if decision == 1:
         # Different model, different context limit
