@@ -322,7 +322,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
     debug_info["code_first_attempt"] = code
     logger.info(f"Running transform code:\n{code}")
     output_df, error = _run_transform_code(df=data_df, code=code)
-    if output_df:
+    if output_df is not None:
         for col_meta in new_col_schema:
             df_col = col_meta.label
             if df_col not in output_df.columns:
