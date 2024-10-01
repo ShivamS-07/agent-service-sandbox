@@ -1033,6 +1033,7 @@ class GetPromptTemplatesResponse(BaseModel):
 class CopyAgentToUsersRequest(BaseModel):
     src_agent_id: str
     dst_user_ids: List[str]
+    dst_agent_name: Optional[str] = None
 
 
 class CopyAgentToUsersResponse(BaseModel):

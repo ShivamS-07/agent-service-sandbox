@@ -1202,13 +1202,21 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql=sql, params={"org_id": org_id})
         return rows[0]["name"]
 
-    async def copy_agent(self, src_agent_id: str, dst_agent_id: str, dst_user_id: str) -> None:
+    async def copy_agent(
+        self,
+        src_agent_id: str,
+        dst_agent_id: str,
+        dst_user_id: str,
+        dst_agent_name: Optional[str] = None,
+    ) -> None:
         get_agent_sql = """
         select * from agent.agents where agent_id = %(agent_id)s
         """
         agent_info = (await self.pg.generic_read(get_agent_sql, {"agent_id": src_agent_id}))[0]
         agent_info["agent_id"] = dst_agent_id
         agent_info["user_id"] = dst_user_id
+        if dst_agent_name is not None:
+            agent_info["agent_name"] = dst_agent_name
         agent_info["created_at"] = datetime.datetime.utcnow()
         agent_info["last_updated"] = datetime.datetime.utcnow()
         agent_info["section_id"] = None
