@@ -6,14 +6,13 @@ from regression_test.util import compare_with_expected_text
 
 
 class TestMarketCommentary(TestExecutionPlanner):
-
+    @skip_in_ci
     def test_market_commentary_jan_2024(self):
         prompt = """
         Write a commentary on market performance for the last week of Jan 2024.
         Your response should be in one paragraph less than 200 words.
         """
 
-        @skip_in_ci
         def validate_output(prompt: str, output: IOType):
             output_text = get_output(output=output)
             expected_text = (
