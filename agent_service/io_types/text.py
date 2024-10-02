@@ -900,7 +900,9 @@ class StockEarningsSummaryText(StockEarningsText):
 
         outputs: Dict[TextCitation, List[CitationOutput]] = defaultdict(list)
         for summary_id, text_citation_list in summary_id_to_text.items():
-            row = summary_id_to_row[summary_id]
+            row = summary_id_to_row.get(summary_id)
+            if not row:
+                continue
             for text_citation in text_citation_list:
                 summary_dict: Dict = row["summary"]
 
@@ -1106,7 +1108,9 @@ class StockEarningsSummaryPointText(StockEarningsText):
 
         outputs: Dict[TextCitation, List[CitationOutput]] = defaultdict(list)
         for summary_id, text_citations in summary_id_to_texts.items():
-            row = summary_id_to_row[summary_id]
+            row = summary_id_to_row.get(summary_id)
+            if not row:
+                continue
             summary_dict: Dict = row["summary"]
 
             for text_citation in text_citations:

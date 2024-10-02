@@ -74,7 +74,7 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
             ("Data Center REITs", 60108050),
             ("Application Software", 45103010),
             ("Food Retail", 30101030),
-            ("Heavy Electrical Equipment", 20104020),
+            ("Heavy Electrical Equipment", 20104010),
             ("Oil & Gas Drilling", 10101010),
         ]
 
