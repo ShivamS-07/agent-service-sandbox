@@ -1291,7 +1291,8 @@ class StockDescriptionText(StockText):
         db = get_psql()
         rows = db.generic_read(sql, {"stocks": stocks})
 
-        descriptions = {row["gbi_id"]: row["company_description_short"] for row in rows}
+        descriptions_rows = {row["gbi_id"]: row["company_description_short"] for row in rows}
+        descriptions = {gbi: descriptions_rows.get(gbi, "No description found") for gbi in stocks}
 
         # replace with long if it exists
 
@@ -1310,7 +1311,7 @@ class StockDescriptionText(StockText):
             else:
                 descriptions[gbi] = "No description found"
 
-        return descriptions
+        return descriptions  # type: ignore
 
     @classmethod
     async def get_citations_for_output(

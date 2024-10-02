@@ -1151,7 +1151,7 @@ class AgentServiceImpl:
             }
 
             tool_call = task_id_to_tool_call.get(task_id)
-            arg_values = json.loads(tool_call["args"]) if tool_call else {}
+            arg_values = json.loads(tool_call["args"]) if tool_call and tool_call["args"] else {}
             start_time_utc = tool_call["start_time_utc"] if tool_call else None
             end_time_utc = tool_call["end_time_utc"] if tool_call else None
             duration_seconds = tool_call["duration_seconds"] if tool_call else None

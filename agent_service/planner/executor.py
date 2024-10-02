@@ -330,8 +330,14 @@ async def _run_execution_plan_impl(
         if override_task_output_lookup and step.tool_task_id in override_task_output_lookup:
             logger.info(f"Step '{step.tool_name}' already in task lookup, using existing value...")
             tool_output = override_task_output_lookup[step.tool_task_id]
+            step_args = None
+            try:
+                step_args = tool.input_type(**resolved_args)
+            except Exception:
+                logger.exception("Failed to validate tool args on cached run")
             event_data: Dict[str, Any] = {
                 "tool_name": step.tool_name,
+                "args": step_args.model_dump_json(serialize_as_any=True) if step_args else None,
                 "context": context.model_dump_json(),
                 "result": dump_io_type(override_task_output_lookup[step.tool_task_id]),
                 "end_time_utc": get_now_utc().isoformat(),
