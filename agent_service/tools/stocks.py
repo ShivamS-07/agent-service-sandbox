@@ -284,7 +284,9 @@ async def stock_identifier_lookup_helper(
     logger.info(f"found {len(rows)} best potential matching stocks")
     rows = await augment_stock_rows_with_volume(context.user_id, rows)
 
-    orig_stocks_sorted_by_match = sorted(rows, key=lambda x: x["final_match_score"], reverse=True)
+    orig_stocks_sorted_by_match = sorted(
+        rows, key=lambda x: (x["final_match_score"], x.get("volume", 0)), reverse=True
+    )
     orig_stocks_sorted_by_volume = sorted(
         rows, key=lambda x: (x.get("volume", 0), x["final_match_score"]), reverse=True
     )
@@ -317,26 +319,54 @@ async def stock_identifier_lookup_helper(
         gpt_answer_full_name = cast(str, gpt_answer["full_name"])
 
         gpt_stock: Optional[Dict[str, Any]] = None
+        ticker_match: Optional[Dict[str, Any]] = None
         # first check if gpt answer is in the original set:
         for s in orig_stocks_sorted_by_volume:
             if gpt_answer_full_name.lower() == s.get("name", "").lower():
                 gpt_stock = s
                 logger.info(f"found gpt answer in original set: {gpt_stock=}, {gpt_answer=}")
                 break
+            if not ticker_match and args.stock_name.lower() == s.get("symbol", "").lower():
+                # we will need this for a corner case where GPT likes to lock on to ticker typos
+                ticker_match = s
+                logger.info(
+                    f"found potential ticker match: {args.stock_name=}, {s=}, {gpt_answer=}"
+                )
 
         if gpt_stock:
+            # we found the same name stock in original result set as GPT
             confirm_rows = [gpt_stock]
         else:
-            # next do a full text search to map the gpt answer back to a gbi_id
-            confirm_args = StockIdentifierLookupInput(stock_name=gpt_answer_full_name)
-            confirm_rows = await stock_lookup_by_text_similarity(
-                confirm_args, context, min_match_strength=MIN_GPT_NAME_MATCH
-            )
-            logger.info(f"found {len(confirm_rows)} best matching stock to the gpt answer")
-            if len(confirm_rows) != 1:
-                confirm_rows = await augment_stock_rows_with_volume(context.user_id, confirm_rows)
+            reason = gpt_answer.get("reason", "")
+            if (
+                ticker_match
+                and ("ticker" in reason or "symbol" in reason)
+                and ("closely matches" in reason or "typo" in reason or "misspell" in reason)
+            ):
+                logger.info(
+                    f"using ticker match instead of typo reasoning: {args.stock_name=}, {ticker_match=}, {gpt_answer=}"
+                )
+                # GPT has been told not to use ticker typos as it's reason but it doesnt always listen
+                # so if we could not find the company name in the original search list, and GPT thinks it
+                # is a ticker typo and the original search text matches the ticker of one of the original
+                # matches, we will assume that is the correct stock.
+                confirm_rows = [ticker_match]
             else:
-                logger.info(f"confirmed by gpt: {confirm_rows}")
+                # GPT either used an alternative name for one of the stocks we found
+                # or it is deciding that our suggested answers are all wrong, and it came up with
+                # its own likely company match
+                # so now we do a full text search to map the gpt answer back to a gbi_id
+                confirm_args = StockIdentifierLookupInput(stock_name=gpt_answer_full_name)
+                confirm_rows = await stock_lookup_by_text_similarity(
+                    confirm_args, context, min_match_strength=MIN_GPT_NAME_MATCH
+                )
+                logger.info(f"found {len(confirm_rows)} best matching stock to the gpt answer")
+                if len(confirm_rows) != 1:
+                    confirm_rows = await augment_stock_rows_with_volume(
+                        context.user_id, confirm_rows
+                    )
+                else:
+                    logger.info(f"confirmed by gpt: {confirm_rows}")
 
     else:
         # TODO, should we assume GPT is correct that this is not a stock,
@@ -1533,31 +1563,20 @@ async def get_stock_info_for_universe(args: GetStockUniverseInput, context: Plan
         context (PlanRunContext): The context of the plan run.
 
     Returns:
-        int: company id
+        Dict: gbi_id, company id,  name
     """
     logger = get_prefect_logger(__name__)
-    db = get_psql()
 
     # Find the universe id/name by reusing the stock lookup, and then filter by ETF
     etf_stock_match = await get_stock_universe_from_etf_stock_match(args, context)
 
     if etf_stock_match:
+        logger.info(f"Found ETF directly for '{args.universe_name}'")
         stock = etf_stock_match
-        sql = """
-        SELECT gbi_id, spiq_company_id, name
-        FROM "data".etf_universes
-        WHERE gbi_id = ANY ( %s )
-        """
-        potential_etf_gbi_ids = [etf_stock_match["gbi_security_id"]]
-        etf_rows = db.generic_read(sql, [potential_etf_gbi_ids])
-        gbiid2companyid = {r["gbi_id"]: r["spiq_company_id"] for r in etf_rows}
-        universe_spiq_company_id = gbiid2companyid[stock["gbi_security_id"]]
-        stock["spiq_company_id"] = universe_spiq_company_id
     else:
         logger.info(f"Could not find ETF directly for '{args.universe_name}'")
         gbi_uni_row = await get_stock_universe_gbi_stock_universe(args, context)
         if gbi_uni_row:
-            universe_spiq_company_id = gbi_uni_row["spiq_company_id"]
             stock = gbi_uni_row
         else:
             raise ValueError(
@@ -2152,34 +2171,44 @@ async def get_stock_universe_from_etf_stock_match(
         logger.info(e)
 
     if not stock_rows:
-        return None
-
-    # TODO we could extend the stock search tool to have an etf_only flag
-    # filter the stock matches down to supported ETF list
-    sql = """
-    SELECT gbi_id, spiq_company_id, name
-    FROM "data".etf_universes
-    WHERE gbi_id = ANY ( %s )
-    """
-    potential_etf_gbi_ids = [r["gbi_security_id"] for r in stock_rows]
-    etf_rows = db.generic_read(sql, [potential_etf_gbi_ids])
-
-    if not etf_rows:
         # fall back to the old logic
         raw_stock_rows = await raw_stock_identifier_lookup(stock_args, context)
         stock_rows.extend(raw_stock_rows)
-        potential_etf_gbi_ids = [r["gbi_security_id"] for r in stock_rows]
-        etf_rows = db.generic_read(sql, [potential_etf_gbi_ids])
-        if not etf_rows:
-            return None
 
-    gbiid2companyid = {r["gbi_id"]: r["spiq_company_id"] for r in etf_rows}
-    rows = [r for r in stock_rows if r["gbi_security_id"] in gbiid2companyid]
-
-    if not rows:
+    if not stock_rows:
         return None
 
-    logger.info(f"found {len(rows)} best potential matching ETFs")
+    # get company ID
+    sql = """
+    SELECT ms.gbi_security_id AS gbi_id, ssm.spiq_company_id, ms.name
+    FROM master_security ms
+    JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
+    WHERE ms.gbi_security_id = ANY ( %s )
+    """
+    potential_etf_gbi_ids = [r["gbi_security_id"] for r in stock_rows]
+    company_id_rows = db.generic_read(sql, [potential_etf_gbi_ids])
+    if not company_id_rows:
+        # should not be possible
+        logger.error("could not find company IDs")
+        return None
+
+    gbiid2stock = {r["gbi_security_id"]: r for r in stock_rows}
+
+    # add the company id
+    for r in company_id_rows:
+        if r["gbi_id"] in gbiid2stock:
+            gbiid2stock[r["gbi_id"]]["spiq_company_id"] = r["spiq_company_id"]
+
+    rows = [r for r in gbiid2stock.values() if r.get("spiq_company_id")]
+    if not rows:
+        logger.error("could not find company IDs")
+        return None
+
+    if len(rows) < 5:
+        logger.info(f"found {len(rows)} best potential matching ETFs: {rows=}")
+    else:
+        logger.info(f"found {len(rows)} best potential matching ETFs")
+
     if 1 == len(rows):
         return rows[0]
 
