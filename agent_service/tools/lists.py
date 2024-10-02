@@ -11,6 +11,20 @@ class CombineListsInput(ToolArgs):
     list2: List[IOType]
 
 
+def _list_to_set(list1: list) -> set:
+    # Need to deal with nested lists to prevent unhashable errors. We assume
+    # there are no triply nested lists here, since there's nothing that would
+    # create those.
+    result = set()
+    for item in list1:
+        if isinstance(item, list):
+            result.add(tuple(item))
+        else:
+            result.add(item)
+
+    return result
+
+
 @tool(
     description=(
         "This function forms a single deduplicated list from the elements of two lists. "
@@ -30,10 +44,10 @@ async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IO
     result: List[IOType] = []
     try:
         # Do this if the lists have complex io types in them
-        result = list(ComplexIOBase.union_sets(set(args.list1), set(args.list2)))  # type: ignore
+        result = list(ComplexIOBase.union_sets(_list_to_set(args.list1), _list_to_set(args.list2)))  # type: ignore
     except Exception:
         # otherwise just do a normal union
-        result = list(set(args.list1 + args.list2))
+        result = list(_list_to_set(args.list1 + args.list2))
 
     await tool_log(
         log=f"Merged list has {len(result)} items",
@@ -59,10 +73,10 @@ async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IO
 async def intersect_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
     try:
         # Do this if the lists have complex io types in them
-        result = list(ComplexIOBase.intersect_sets(set(args.list1), set(args.list2)))  # type: ignore
+        result = list(ComplexIOBase.intersect_sets(_list_to_set(args.list1), _list_to_set(args.list2)))  # type: ignore
     except Exception:
         # otherwise just do a normal intersection
-        result = list(set(args.list1) & set(args.list2))  # type: ignore
+        result = list(_list_to_set(args.list1) & _list_to_set(args.list2))  # type: ignore
 
     await tool_log(
         log=f"Intersection has {len(result)} items",
@@ -84,7 +98,7 @@ async def intersect_lists(args: CombineListsInput, context: PlanRunContext) -> L
     is_visible=False,
 )
 async def diff_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
-    result = list(set(args.list1) - set(args.list2))
+    result = list(_list_to_set(args.list1) - _list_to_set(args.list2))
     await tool_log(
         log=f"Difference has {len(result)} items",
         context=context,

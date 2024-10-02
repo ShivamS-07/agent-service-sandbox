@@ -3,7 +3,7 @@ import json
 import logging
 import re
 from collections import defaultdict
-from typing import Dict, List, Optional, cast
+from typing import Dict, List, Optional
 
 from agent_service.GPT.constants import GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
@@ -136,12 +136,16 @@ class TextObject(SerializeableBase):
         text_objects: List[StockTextObject] = []
 
         for company_name in stocks:
-            symbol = cast(str, stocks[company_name].symbol)
+            symbol = stocks[company_name].symbol
             # Find the first occurrence of either the company name or ticker symbol
             company_match_regex = rf"\b{re.escape(company_name)}"
-            symbol_match_regex = rf"\b{re.escape(symbol)}"
+            symbol_match_regex = None
+            symbol_match = None
+            if symbol:
+                symbol_match_regex = rf"\b{re.escape(symbol)}"
             company_match = re.search(company_match_regex, text)
-            symbol_match = re.search(symbol_match_regex, text)
+            if symbol_match_regex:
+                symbol_match = re.search(symbol_match_regex, text)
 
             if company_match and symbol_match:
                 company_start = company_match.start()

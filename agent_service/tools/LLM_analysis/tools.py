@@ -541,7 +541,9 @@ async def per_stock_summarize_texts(
                     stock
                 ]
                 old_texts = list(set([citation.source_text for citation in remaining_citations]))
-                if new_texts or (remaining_citations and remaining_citations < all_old_citations):
+                if new_texts or (
+                    remaining_citations and len(remaining_citations) < len(all_old_citations)
+                ):
                     tasks.append(
                         _update_summarize_helper(
                             SummarizeTextInput(texts=new_texts, topic=args.topic, stock=stock),  # type: ignore
@@ -672,9 +674,10 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
     merged_group = TextGroup.join(text_group1, text_group2)
     main_text, citations = await extract_citations_from_gpt_output(result, merged_group, context)
     comparison: Text = Text(val=main_text)
-    comparison = comparison.inject_history_entry(
-        HistoryEntry(title="Text Comparison", citations=citations)  # type:ignore
-    )
+    if citations is not None:
+        comparison = comparison.inject_history_entry(
+            HistoryEntry(title="Text Comparison", citations=citations)  # type: ignore
+        )
     return comparison
 
 

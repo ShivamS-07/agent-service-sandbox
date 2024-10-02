@@ -1305,7 +1305,10 @@ class StockDescriptionText(StockText):
         # For some reason SPIQ includes invalid characters for apostraphes. For
         # now just replace them here, ideally a data ingestion problem to fix.
         for gbi, desc in descriptions.items():
-            descriptions[gbi] = desc.replace("\x92", "'")
+            if desc is not None:
+                descriptions[gbi] = desc.replace("\x92", "'")
+            else:
+                descriptions[gbi] = "No description found"
 
         return descriptions
 

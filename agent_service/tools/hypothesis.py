@@ -22,6 +22,7 @@ from agent_service.io_types.text import (
     TextCitation,
     TextGroup,
 )
+from agent_service.planner.errors import EmptyInputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -172,7 +173,7 @@ async def summarize_hypothesis_from_news_developments(
     args: SummarizeNewsHypothesisInput, context: PlanRunContext
 ) -> Text:
     if not args.news_developments:
-        raise ValueError("Could not find any relevant news developments")
+        raise EmptyInputError("Could not find any relevant news developments")
 
     # gbi_id doesn't matter, as long as it's valid
     pipeline = HypothesisPipeline(

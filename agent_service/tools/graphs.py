@@ -19,6 +19,7 @@ from agent_service.io_types.graph import (
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table, TableColumn, TableColumnMetadata
 from agent_service.io_types.text import KPIText, TextCitation
+from agent_service.planner.errors import EmptyInputError
 from agent_service.tool import ToolArgs, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.prefect import get_prefect_logger
@@ -120,12 +121,12 @@ you should first construct a table with all the required data and then create a 
 async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> LineGraph:
     cols = args.input_table.columns
     if len(cols) < 2:
-        raise RuntimeError("Table must have at least two columns to make a line graph!")
+        raise EmptyInputError("Table must have at least two columns to make a line graph!")
     if args.input_table.get_num_rows() < 2:
         # this check assumes there is only 1 dataset to be graphed
         # it fails to block a multidateset table (multi stock) where each stock
         # has only 1 datapoint
-        raise RuntimeError("Need at least two points to make a line graph!")
+        raise EmptyInputError("Need at least two points to make a line graph!")
 
     input_table = consolidate_table_columns(args.input_table)
     cols = input_table.columns
