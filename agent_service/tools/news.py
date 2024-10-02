@@ -398,7 +398,7 @@ def _get_similar_news_to_embedding(
             news_id::TEXT, headline::TEXT, summary::TEXT, published_at,
             1 - (%s::VECTOR <=> embedding) AS similarity
             FROM nlp_service.news_pool
-            WHERE published_at >= %s AND published_at <= %s
+            WHERE published_at::DATE >= %s AND published_at::DATE <= %s
             ORDER BY similarity DESC, published_at DESC
             """
 
