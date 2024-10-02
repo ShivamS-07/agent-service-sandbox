@@ -401,11 +401,25 @@ async def get_earnings_call_full_transcripts(
         ).earnings_event_info
 
     gbi_id_stock_id_lookup = {stock_id.gbi_id: stock_id for stock_id in args.stock_ids}
+
+    # Currently we drop earning events from FMP as they don't have a simple id lookup (event_id = -1)
     event_id_to_stock_id_lookup = {
-        event.event_id: gbi_id_stock_id_lookup[event.gbi_id] for event in earning_call_events
+        event.event_id: gbi_id_stock_id_lookup[event.gbi_id]
+        for event in earning_call_events
+        if event.event_id != -1
     }
+    earning_call_events_with_ids = [event for event in earning_call_events if event.event_id != -1]
+
+    if len(earning_call_events_with_ids) < len(earning_call_events):
+        await tool_log(
+            f"Could not retrieve {len(earning_call_events) - len(earning_call_events_with_ids)} earning transcript(s)",
+            context=context,
+        )
     topic_lookup = await get_earnings_full_transcripts(
-        context.user_id, args.stock_ids, list(earning_call_events), event_id_to_stock_id_lookup
+        context.user_id,
+        args.stock_ids,
+        list(earning_call_events_with_ids),
+        event_id_to_stock_id_lookup,
     )
 
     output: List[StockEarningsText] = []
