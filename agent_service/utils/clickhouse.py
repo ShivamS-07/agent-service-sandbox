@@ -66,12 +66,18 @@ class AsyncClickhouseBase:
                 clickhouse_connection_config=clickhouse_connection_config,
             )
         )
+        self.client: Optional[AsyncClient] = None
+
+    async def get_or_create_client(self) -> AsyncClient:
+        # only create connection in the beginning
+        if self.client is None:
+            self.client = await get_client(self.clickhouse_connection_config)
+        return self.client
 
     async def generic_read(
         self, sql: str, params: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
-        # This is a very simplistic thing to do, for now hopefully should be ok
-        client = await get_client(self.clickhouse_connection_config)
+        client = await self.get_or_create_client()
         query_result: QueryResult = await client.query(sql, parameters=params)
         column_names = query_result.column_names
         result_rows = query_result.result_rows
@@ -85,7 +91,7 @@ class AsyncClickhouseBase:
         return result
 
     async def multi_row_insert(self, table_name: str, rows: List[Dict[str, Any]]) -> None:
-        client = await get_client(self.clickhouse_connection_config)
+        client = await self.get_or_create_client()
         column_names = list(rows[0].keys())
         data_to_insert = []
         for row in rows:
