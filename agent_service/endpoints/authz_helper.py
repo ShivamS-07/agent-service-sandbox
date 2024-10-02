@@ -1,4 +1,5 @@
 import logging
+import time
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
@@ -92,6 +93,11 @@ def extract_user_from_jwt(
             signing_key.key,
             algorithms=[RS_256],
         )
+
+        # Check if the token is expired
+        if "exp" in data and data["exp"] < time.time():
+            raise ValueError("Token has expired")
+
         sub = data.get(SUBJECT, None)
         user_id = get_cognito_user_id_from_access_token(auth_token)
         groups = data.get("cognito:groups", [])
