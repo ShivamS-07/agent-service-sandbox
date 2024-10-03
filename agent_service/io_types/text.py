@@ -1636,36 +1636,57 @@ class StockOtherSecFilingText(StockSecFilingText):
         # Get the available content from DB first
         output: Dict[TextIDType, str] = {}
 
-        # determine which filings we know we definitely can get from the DB
-        logger.info("Getting SEC filing text from DB using `db_id`")
-        db_id_to_filing_json = {f.db_id: f.id for f in sec_filing_list if f.db_id}
-        output.update(await SecFiling.get_filings_content_from_db(db_id_to_filing_json))  # type: ignore
-        logger.info(f"Found {len(output)} SEC filings in DB")
+        try:
+            # determine which filings we know we definitely can get from the DB
+            logger.info("Getting SEC filing text from DB using `db_id`")
+            db_id_to_filing_json = {f.db_id: f.id for f in sec_filing_list if f.db_id}
+            output.update(await SecFiling.get_filings_content_from_db(db_id_to_filing_json))  # type: ignore
+            logger.info(f"Found {len(output)} SEC filings in DB")
 
-        logger.info("Getting SEC filing text from DB using filing json")
-        # some db_id may be lost after clickhouse merges duplicates
-        filing_jsons = [f.id for f in sec_filing_list if f.id not in output]
-        filing_json_to_row = await SecFiling.get_filings_content_from_db_by_filing_jsons(
-            filing_jsons
-        )
-        for filing_json, (db_id, val) in filing_json_to_row.items():
-            output[filing_json] = val
+            logger.info("Getting SEC filing text from DB using filing json")
+            # some db_id may be lost after clickhouse merges duplicates
+            filing_jsons = [f.id for f in sec_filing_list if f.id not in output]
+            filing_json_to_row = await SecFiling.get_filings_content_from_db_by_filing_jsons(
+                filing_jsons
+            )
+            for filing_json, (db_id, val) in filing_json_to_row.items():
+                output[filing_json] = val
 
-            if filing_json in filing_json_to_text_obj:
-                text_obj = filing_json_to_text_obj[filing_json]
-                text_obj.db_id = db_id  # set db_id
+                if filing_json in filing_json_to_text_obj:
+                    text_obj = filing_json_to_text_obj[filing_json]
+                    text_obj.db_id = db_id  # set db_id
 
-        logger.info(f"Found another {len(filing_json_to_row)} SEC filings in DB using filing json")
+            logger.info(
+                f"Found another {len(filing_json_to_row)} SEC filings in DB using filing json"
+            )
 
-        filing_gbi_pairs = [
-            (filing.id, filing.stock_id.gbi_id)
-            for filing in sec_filing_list
-            if not filing.db_id and filing.stock_id
-        ]
-        logger.info(f"Getting the rest of {len(filing_gbi_pairs)} SEC filing text from API")
-        output.update(
-            await SecFiling.get_filings_content_from_api(filing_gbi_pairs, insert_to_db=True)  # type: ignore
-        )
+            filing_gbi_pairs = [
+                (filing.id, filing.stock_id.gbi_id)
+                for filing in sec_filing_list
+                if filing.id not in output and not filing.db_id and filing.stock_id
+            ]
+            if len(filing_gbi_pairs) > 0:
+                logger.info(f"Getting the rest of {len(filing_gbi_pairs)} SEC filing text from API")
+                output.update(
+                    await SecFiling.get_filings_content_from_api(
+                        filing_gbi_pairs, insert_to_db=True
+                    )  # type: ignore
+                )
+                logger.info(f"Found another {len(filing_json_to_row)} SEC filings from API")
+        except Exception as e:
+            logger.info(f"Failed to retrieve text for SEC filings {e}")
+
+        if len(output) != len(sec_filing_list):
+            logger.info(
+                f"Could not retrieve text for {len(sec_filing_list) - len(output)} SEC filings, defaulting empty"
+            )
+            output.update(
+                {
+                    filing.id: "Could not retrieve this filing."
+                    for filing in sec_filing_list
+                    if filing.id not in output
+                }
+            )
 
         return output
 

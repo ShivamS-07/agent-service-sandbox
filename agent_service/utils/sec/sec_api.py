@@ -711,17 +711,11 @@ class SecFiling:
         db_ids = list(db_id_to_text_id.keys())
         for idx in range(0, len(db_ids), cls.MAX_DB_QUERY_SIZE):
             batch_db_ids = db_ids[idx : idx + cls.MAX_DB_QUERY_SIZE]
-            start_time_ch = time.perf_counter()
             result = await ch.generic_read(sql, params={"db_ids": batch_db_ids})
-            end_time_ch = time.perf_counter()
-            logger.info(f"ch_get: {end_time_ch - start_time_ch}s")
 
-            start_time_bs4 = time.perf_counter()
             for row in result:
                 filing_id = db_id_to_text_id[row["id"]]
                 output[filing_id] = row["content"]
-            end_time_bs4 = time.perf_counter()
-            logger.info(f"bs4_parse: {end_time_bs4 - start_time_bs4}s")
 
         return output
 
@@ -865,7 +859,7 @@ class SecFiling:
                 time.sleep(0.5)  # avoid rate limit
             except Exception as e:
                 logger.exception(f"Failed to get filing content for {gbi_id=}: {e}")
-                time.sleep(10)
+                time.sleep(5)
 
         return output
 
