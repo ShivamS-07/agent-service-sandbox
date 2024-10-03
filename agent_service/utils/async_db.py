@@ -1266,10 +1266,24 @@ class AsyncDB:
         chat_messages = await self.pg.generic_read(
             get_chat_messages_sql, {"agent_id": src_agent_id}
         )
+        null_plan_run_id_messages = []
+        regular_chat_messages = []
         for chat_message_data in chat_messages:
             chat_message_data["agent_id"] = dst_agent_id
             chat_message_data["message_id"] = str(uuid.uuid4())
-        to_insert.append(InsertToTableArgs(table_name="agent.chat_messages", rows=chat_messages))
+            if chat_message_data["plan_run_id"]:
+                regular_chat_messages.append(chat_message_data)
+            else:
+                null_plan_run_id_messages.append(chat_message_data)
+
+        if regular_chat_messages:
+            to_insert.append(
+                InsertToTableArgs(table_name="agent.chat_messages", rows=regular_chat_messages)
+            )
+        if null_plan_run_id_messages:
+            to_insert.append(
+                InsertToTableArgs(table_name="agent.chat_messages", rows=null_plan_run_id_messages)
+            )
 
         worklog_sql = """
         select * from agent.work_logs where agent_id = %(agent_id)s
