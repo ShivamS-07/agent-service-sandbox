@@ -322,11 +322,17 @@ async def stock_identifier_lookup_helper(
         ticker_match: Optional[Dict[str, Any]] = None
         # first check if gpt answer is in the original set:
         for s in orig_stocks_sorted_by_volume:
-            if gpt_answer_full_name.lower() == s.get("name", "").lower():
+            s_name = s.get("name", "")
+            s_name = s_name.lower() if s_name else ""
+
+            s_symbol = s.get("symbol", "")
+            s_symbol = s_symbol.lower() if s_symbol else ""
+
+            if gpt_answer_full_name.lower() == s_name:
                 gpt_stock = s
                 logger.info(f"found gpt answer in original set: {gpt_stock=}, {gpt_answer=}")
                 break
-            if not ticker_match and args.stock_name.lower() == s.get("symbol", "").lower():
+            if not ticker_match and args.stock_name.lower() == s_symbol:
                 # we will need this for a corner case where GPT likes to lock on to ticker typos
                 ticker_match = s
                 logger.info(
