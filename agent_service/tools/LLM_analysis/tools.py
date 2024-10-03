@@ -25,7 +25,7 @@ from agent_service.io_types.text import (
     TopicProfiles,
 )
 from agent_service.planner.errors import EmptyInputError, EmptyOutputError
-from agent_service.tool import ToolArgs, ToolCategory, tool
+from agent_service.tool import ToolArgMetadata, ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.LLM_analysis.constants import (
     BRAINSTORM_DELIMITER,
@@ -45,9 +45,11 @@ from agent_service.tools.LLM_analysis.prompts import (
     ANSWER_QUESTION_MAIN_PROMPT,
     ANSWER_QUESTION_SYS_PROMPT,
     BRAINSTORM_REMINDER,
+    CITATION_PROMPT,
+    CITATION_REMINDER,
     COMPARISON_DESCRIPTION,
-    COMPARISON_MAIN_PROMPT,
-    COMPARISON_SYS_PROMPT,
+    COMPARISON_MAIN_PROMPT_STR_DEFAULT,
+    COMPARISON_SYS_PROMPT_STR_DEFAULT,
     COMPARISON_UPDATE_INSTRUCTIONS,
     COMPLEX_PROFILE_FILTER_SYS_PROMPT,
     EXTRA_DATA_PHRASE,
@@ -97,6 +99,7 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.tool_diff import (
     add_old_history,
     get_prev_run_info,
@@ -605,6 +608,16 @@ class CompareTextInput(ToolArgs):
     extra_data: Optional[List[Text]] = None
     extra_data_label: Optional[str] = None
 
+    # prompt arguments (hidden from planner)
+    comparison_sys_prompt: str = COMPARISON_SYS_PROMPT_STR_DEFAULT
+    comparison_main_prompt: str = COMPARISON_MAIN_PROMPT_STR_DEFAULT
+
+    # tool arguments metadata
+    arg_metadata = {
+        "comparison_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "comparison_main_prompt": ToolArgMetadata(hidden_from_planner=True),
+    }
+
 
 @tool(
     description=COMPARISON_DESCRIPTION,
@@ -613,8 +626,26 @@ class CompareTextInput(ToolArgs):
     update_instructions=COMPARISON_UPDATE_INSTRUCTIONS,
 )
 async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text:
+    COMPARISON_SYS_PROMPT_TEMPLATE = args.comparison_sys_prompt + CITATION_PROMPT
+
+    COMPARISON_MAIN_PROMPT_TEMPLATE = (
+        args.comparison_main_prompt
+        + CITATION_REMINDER
+        + "\nNow write your comparison, with citations:\n"
+    )
+
+    COMPARISON_SYS_PROMPT = Prompt(
+        name="LLM_COMPARISON_SYS_PROMPT",
+        template=COMPARISON_SYS_PROMPT_TEMPLATE,
+    )
+
+    COMPARISON_MAIN_PROMPT = Prompt(
+        name="LLM_COMPARISON_MAIN_PROMPT",
+        template=COMPARISON_MAIN_PROMPT_TEMPLATE,
+    )
+
     if context.chat is None:
-        # just for mypy, shouldn't happen
+        # just for mypy, and shouldn't happen
         return Text(val="")
     # TODO we need guardrails on this
 
