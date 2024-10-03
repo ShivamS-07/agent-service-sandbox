@@ -261,15 +261,14 @@ async def _update_summarize_helper(
     else:
         stock_str = ""
 
-    new_texts_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
-        new_texts_str,
+    new_texts_str, old_texts_str = GPTTokenizer(DEFAULT_LLM).do_multi_truncation_if_needed(
+        [new_texts_str, old_texts_str],
         [
             UPDATE_SUMMARIZE_MAIN_PROMPT.template,
             UPDATE_SUMMARIZE_SYS_PROMPT.template,
             chat_str,
             topic_str,
             stock_str,
-            old_texts_str,
         ],
     )
 
