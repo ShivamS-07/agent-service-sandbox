@@ -23,10 +23,10 @@ class CacheBackend(ABC):
 
 
 class RedisCacheBackend(CacheBackend):
-    def __init__(self) -> None:
+    def __init__(self, namespace: Any, serialize_func: Any, deserialize_func: Any) -> None:
         # TODO use async redis client
         self.client = RedisCache(
-            namespace="agent-tool-cache", serialize_func=dump_io_type, deserialize_func=load_io_type
+            namespace=namespace, serialize_func=serialize_func, deserialize_func=deserialize_func
         )
 
     async def get(self, key: str, ttl: Optional[int] = None) -> Optional[IOType]:

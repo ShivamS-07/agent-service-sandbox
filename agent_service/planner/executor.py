@@ -654,6 +654,21 @@ async def _run_execution_plan_impl(
                     run_summary_long=whats_new_summary if whats_new_summary else "",
                 )
 
+    # await get_agent_output(
+    #     agent_id=context.agent_id,
+    #     plan_run_id=context.plan_run_id,
+    #     pg=async_db,
+    #     cache=(
+    #         RedisCacheBackend(
+    #             namespace="agent-output-cache",
+    #             serialize_func=lambda x: x.model_dump_json(),
+    #             deserialize_func=lambda x: GetAgentOutputResponse.model_validate_json(x),
+    #         )
+    #         if not context.skip_db_commit
+    #         else None
+    #     ),
+    # )
+
     await async_db.set_plan_run_metadata(
         context=context,
         metadata=RunMetadata(

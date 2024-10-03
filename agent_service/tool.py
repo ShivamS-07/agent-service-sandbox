@@ -47,6 +47,7 @@ from agent_service.io_type_utils import (
     check_type_is_io_type,
     dump_io_type,
     get_clean_type_name,
+    load_io_type,
 )
 from agent_service.io_types.stock import StockID
 from agent_service.planner.errors import AgentExecutionError
@@ -509,7 +510,15 @@ def tool(
                 ) and not context.skip_task_cache:
                     new_val = None
                     try:
-                        cache_client = cache_backend if cache_backend else RedisCacheBackend()
+                        cache_client = (
+                            cache_backend
+                            if cache_backend
+                            else RedisCacheBackend(
+                                namespace="agent-tool-cache",
+                                serialize_func=dump_io_type,
+                                deserialize_func=load_io_type,
+                            )
+                        )
                         key = cache_key_fn(tool_name, args, context)
                         cached_val = await cache_client.get(key, ttl=cache_ttl)
                         event_data["cache_key"] = key

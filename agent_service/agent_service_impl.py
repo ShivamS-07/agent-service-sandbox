@@ -15,7 +15,6 @@ from typing import (
     Optional,
     Tuple,
     Union,
-    cast,
     get_args,
     get_origin,
 )
@@ -141,7 +140,6 @@ from agent_service.io_type_utils import get_clean_type_name, load_io_type
 from agent_service.io_types.citations import CitationDetailsType, CitationType
 from agent_service.io_types.graph import BarGraph, LineGraph, PieGraph
 from agent_service.io_types.table import Table
-from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.action_decide import FirstActionDecider
 from agent_service.planner.constants import CHAT_DIFF_TEMPLATE, FirstAction
 from agent_service.planner.planner import Planner
@@ -162,6 +160,7 @@ from agent_service.utils.async_utils import (
     gather_with_concurrency,
     run_async_background,
 )
+from agent_service.utils.cache_utils import CacheBackend
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
 from agent_service.utils.custom_documents_utils import CustomDocumentException
@@ -173,6 +172,7 @@ from agent_service.utils.feature_flags import (
     get_user_context,
     is_database_access_check_enabled_for_user,
 )
+from agent_service.utils.get_agent_outputs import get_agent_output
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.memory_handler import MemoryHandler, get_handler
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
@@ -240,6 +240,7 @@ class AgentServiceImpl:
         clickhouse_db: Clickhouse,
         slack_sender: SlackSender,
         base_url: str,
+        cache: Optional[CacheBackend] = None,
     ):
         self.pg = async_db
         self.ch = clickhouse_db
@@ -247,6 +248,7 @@ class AgentServiceImpl:
         self.gpt_service_stub = gpt_service_stub
         self.slack_sender = slack_sender
         self.base_url = base_url
+        self.cache = cache
 
     async def create_agent(self, user: User, is_draft: bool = False) -> CreateAgentResponse:
         """Create an agent entry in the DB and return ID immediately"""
@@ -732,60 +734,8 @@ class AgentServiceImpl:
     async def get_agent_plan_output(
         self, agent_id: str, plan_run_id: Optional[str] = None
     ) -> GetAgentOutputResponse:
-        """
-        If `plan_run_id` is None, default to get the outputs of the latest run
-        """
-
-        outputs = await self.pg.get_agent_outputs(agent_id=agent_id, plan_run_id=plan_run_id)
-        if not outputs:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No output found for {agent_id=} and {plan_run_id=}",
-            )
-
-        run_metadata = outputs[0].run_metadata
-
-        newly_updated_outputs = (run_metadata.updated_output_ids or []) if run_metadata else []
-        run_summary_short = run_metadata.run_summary_short if run_metadata else None
-
-        run_summary_long: Any = run_metadata.run_summary_long if run_metadata else None
-        if isinstance(run_summary_long, Text):
-            run_summary_long = await run_summary_long.to_rich_output(pg=self.pg.pg)
-            run_summary_long = cast(TextOutput, run_summary_long)
-
-            # replace summary title with widget anchor
-            for output in outputs:
-                widget_title = output.output.title
-                if widget_title:
-                    summary_title_dict = {
-                        "type": "output_widget",
-                        "name": widget_title,
-                        "output_id": output.output_id,
-                        "plan_run_id": output.plan_run_id,
-                    }
-                    summary_title_anchor = "```" + json.dumps(summary_title_dict) + "```"
-                    run_summary_long.val = re.sub(
-                        "- " + widget_title, summary_title_anchor, run_summary_long.val, count=1
-                    )
-
-            # regex removes all the spaces between any "\n" and "-"" so bullet points
-            # can be displayed properly
-            run_summary_long.val = re.sub(r"(?<=\n)\s+(?=-)", "", run_summary_long.val)
-
-        final_outputs = [output for output in outputs if not output.is_intermediate]
-        if final_outputs:
-            return GetAgentOutputResponse(
-                outputs=final_outputs,
-                run_summary_long=run_summary_long,
-                run_summary_short=run_summary_short,
-                newly_updated_outputs=newly_updated_outputs,
-            )
-
-        return GetAgentOutputResponse(
-            outputs=outputs,
-            run_summary_long=run_summary_long,
-            run_summary_short=run_summary_short,
-            newly_updated_outputs=newly_updated_outputs,
+        return await get_agent_output(
+            pg=self.pg, agent_id=agent_id, plan_run_id=plan_run_id, cache=self.cache
         )
 
     async def delete_agent_output(

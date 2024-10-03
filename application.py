@@ -137,6 +137,7 @@ from agent_service.io_types.citations import CitationType, GetCitationDetailsRes
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
+from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.custom_documents_utils import CustomDocumentException
 from agent_service.utils.date_utils import get_now_utc
@@ -1654,6 +1655,11 @@ if __name__ == "__main__":
         clickhouse_db=Clickhouse(),
         slack_sender=SlackSender(channel=channel),
         base_url=base_url,
+        cache=RedisCacheBackend(
+            namespace="agent-output-cache",
+            serialize_func=lambda x: x.model_dump_json(),
+            deserialize_func=lambda x: GetAgentOutputResponse.model_validate_json(x),
+        ),
     )
 
     try:
