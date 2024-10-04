@@ -308,9 +308,6 @@ class GetPortfolioPerformanceInput(ToolArgs):
 
         if value not in PORTFOLIO_PERFORMANCE_LEVELS:
             raise ValueError(f"performance level must be one of {PORTFOLIO_PERFORMANCE_LEVELS}")
-        if value == "stock":
-            # For backwards compatibility
-            value = "security"
         return value
 
 
