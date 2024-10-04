@@ -361,7 +361,7 @@ def tool(
     create_prefect_task: bool = True,
     is_visible: bool = True,
     enabled: bool = True,
-    enabled_checker_func: Optional[Callable[..., bool]] = None,
+    enabled_checker_func: Optional[Callable[[str], bool]] = None,
     reads_chat: bool = False,
     update_instructions: Optional[str] = None,
     tool_registry: Type[ToolRegistry] = ToolRegistry,

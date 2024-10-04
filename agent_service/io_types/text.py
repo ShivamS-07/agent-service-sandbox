@@ -38,6 +38,7 @@ from agent_service.io_types.citations import (
     DocumentCitationOutput,
     EarningsSummaryCitationOutput,
     EarningsTranscriptCitationOutput,
+    KPICitationOutput,
     NewsArticleCitationOutput,
     NewsDevelopmentCitationOutput,
     ThemeCitationOutput,
@@ -1745,6 +1746,20 @@ class KPIText(Text):
     explanation: Optional[str] = None  # To be used as a way to store why a KPI has been selected
     text_type: ClassVar[str] = "KPI"
     url: Optional[str] = None
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[TextCitation], db: BoostedPG
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        output = defaultdict(list)
+        for cit in texts:
+            text = cast(Self, cit.source_text)
+            output[cit].append(
+                KPICitationOutput(
+                    internal_id=str(text.id), name=text.val, summary=text.explanation, link=text.url
+                )
+            )
+        return output  # type: ignore
 
 
 # These are not actual Text types, but build on top of them
