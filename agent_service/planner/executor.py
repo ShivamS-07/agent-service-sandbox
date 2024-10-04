@@ -9,7 +9,7 @@ from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
 from prefect import flow
 
 from agent_service.chatbot.chatbot import Chatbot
-from agent_service.endpoints.models import Status, TaskStatus
+from agent_service.endpoints.models import GetAgentOutputResponse, Status, TaskStatus
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT, set_plan_run_context
 from agent_service.io_type_utils import (
@@ -62,10 +62,12 @@ from agent_service.utils.agent_event_utils import (
 )
 from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
 from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
+from agent_service.utils.get_agent_outputs import get_agent_output
 from agent_service.utils.gpt_logging import (
     GptJobIdType,
     GptJobType,
@@ -665,20 +667,20 @@ async def _run_execution_plan_impl(
                     run_summary_long=whats_new_summary if whats_new_summary else "",
                 )
 
-    # await get_agent_output(
-    #     agent_id=context.agent_id,
-    #     plan_run_id=context.plan_run_id,
-    #     pg=async_db,
-    #     cache=(
-    #         RedisCacheBackend(
-    #             namespace="agent-output-cache",
-    #             serialize_func=lambda x: x.model_dump_json(),
-    #             deserialize_func=lambda x: GetAgentOutputResponse.model_validate_json(x),
-    #         )
-    #         if not context.skip_db_commit
-    #         else None
-    #     ),
-    # )
+    await get_agent_output(
+        agent_id=context.agent_id,
+        plan_run_id=context.plan_run_id,
+        pg=async_db,
+        cache=(
+            RedisCacheBackend(
+                namespace="agent-output-cache",
+                serialize_func=lambda x: x.model_dump_json(),
+                deserialize_func=lambda x: GetAgentOutputResponse.model_validate_json(x),
+            )
+            if not context.skip_db_commit
+            else None
+        ),
+    )
 
     await async_db.set_plan_run_metadata(
         context=context,
