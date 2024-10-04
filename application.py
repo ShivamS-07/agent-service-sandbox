@@ -44,6 +44,8 @@ from agent_service.endpoints.models import (
     CreateAgentRequest,
     CreateAgentResponse,
     CreateCustomNotificationRequest,
+    CreatePromptTemplateRequest,
+    CreatePromptTemplateResponse,
     CreateSectionRequest,
     CreateSectionResponse,
     CustomNotification,
@@ -112,6 +114,8 @@ from agent_service.endpoints.models import (
     SetAgentScheduleResponse,
     SetAgentSectionRequest,
     SetAgentSectionResponse,
+    SetPromptTemplateVisibilityRequest,
+    SetPromptTemplateVisibilityResponse,
     SharePlanRunRequest,
     SharePlanRunResponse,
     TerminateAgentRequest,
@@ -1449,6 +1453,35 @@ async def rearrange_section(
 async def get_prompt_templates() -> GetPromptTemplatesResponse:
     templates = await application.state.agent_service_impl.get_prompt_templates()
     return GetPromptTemplatesResponse(prompt_templates=templates)
+
+
+@router.post(
+    "/template/create-prompt-template",
+    response_model=CreatePromptTemplateRequest,
+    status_code=status.HTTP_200_OK,
+)
+async def create_prompt_template(req: CreatePromptTemplateRequest) -> CreatePromptTemplateResponse:
+    return await application.state.agent_service_impl.create_prompt_template(
+        name=req.name,
+        description=req.description,
+        prompt=req.prompt,
+        category=req.category,
+        plan_run_id=req.plan_run_id,
+    )
+
+
+@router.post(
+    "/template/set-prompt-template-visibility",
+    response_model=SetPromptTemplateVisibilityRequest,
+    status_code=status.HTTP_200_OK,
+)
+async def set_prompt_template_visibility(
+    req: SetPromptTemplateVisibilityRequest,
+) -> SetPromptTemplateVisibilityResponse:
+    return await application.state.agent_service_impl.set_prompt_template_visibility(
+        template_id=req.template_id,
+        is_visible=req.is_visible,
+    )
 
 
 @router.post(

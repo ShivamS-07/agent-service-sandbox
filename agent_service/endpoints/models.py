@@ -1026,6 +1026,34 @@ class RearrangeSectionResponse(BaseModel):
 ####################################################################################################
 # Prompt Templates
 ####################################################################################################
+class CreatePromptTemplateRequest(BaseModel):
+    name: str
+    description: str
+    prompt: str
+    category: str
+    plan_run_id: str
+
+
+class CreatePromptTemplateResponse(BaseModel):
+    template_id: str
+    name: str
+    description: str
+    prompt: str
+    category: str
+    created_at: datetime.datetime
+    plan_run_id: str
+
+
+class SetPromptTemplateVisibilityRequest(BaseModel):
+    template_id: str
+    is_visible: bool
+
+
+class SetPromptTemplateVisibilityResponse(BaseModel):
+    template_id: str
+    is_visible: bool
+
+
 class GetPromptTemplatesResponse(BaseModel):
     prompt_templates: List[PromptTemplate]
 

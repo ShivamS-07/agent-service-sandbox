@@ -43,6 +43,7 @@ from agent_service.endpoints.models import (
     ChatWithAgentResponse,
     CreateAgentResponse,
     CreateCustomNotificationRequest,
+    CreatePromptTemplateResponse,
     CustomDocumentListing,
     CustomDocumentSummaryChunk,
     CustomNotification,
@@ -102,6 +103,7 @@ from agent_service.endpoints.models import (
     SetAgentFeedBackResponse,
     SetAgentScheduleRequest,
     SetAgentScheduleResponse,
+    SetPromptTemplateVisibilityResponse,
     SharePlanRunResponse,
     TerminateAgentResponse,
     ToolArgInfo,
@@ -1772,6 +1774,45 @@ class AgentServiceImpl:
                 template.output_types = self._output_types_from_plan(template.plan)
         return prompt_templates
 
+    async def create_prompt_template(
+        self, name: str, description: str, prompt: str, category: str, plan_run_id: str
+    ) -> CreatePromptTemplateResponse:
+
+        # extract plan from agent_id and plan_id
+        plan = await self.pg.get_execution_plan_for_run(plan_run_id)
+
+        # create prompt template object
+        now = get_now_utc()
+        prompt_template = PromptTemplate(
+            template_id=str(uuid.uuid4()),
+            name=name,
+            description=description,
+            prompt=prompt,
+            created_at=now,
+            category=category,
+            plan=plan,
+        )
+        # add template to db
+        await self.pg.insert_prompt_template(prompt_template)
+        return CreatePromptTemplateResponse(
+            template_id=prompt_template.template_id,
+            name=prompt_template.name,
+            description=prompt_template.description,
+            prompt=prompt_template.prompt,
+            created_at=prompt_template.created_at,
+            category=prompt_template.category,
+            plan_run_id=plan_run_id,
+        )
+
+    async def set_prompt_template_visibility(
+        self, template_id: str, is_visible: bool
+    ) -> SetPromptTemplateVisibilityResponse:
+        await self.pg.set_prompt_template_visibility(template_id, is_visible)
+        return SetPromptTemplateVisibilityResponse(
+            template_id=template_id,
+            is_visible=is_visible,
+        )
+
     def _output_types_from_plan(self, plan: ExecutionPlan) -> List[OutputType]:
         output_types = []
         output_nodes = [node for node in plan.nodes if node.is_output_node]
@@ -1812,7 +1853,7 @@ class AgentServiceImpl:
 
     async def gen_template_plan(self, template_prompt: str, user: User) -> GenTemplatePlanResponse:
 
-        LOGGER.info("Generating template plan")
+        LOGGER.info("Generating template plan...")
         chat_context = ChatContext(
             messages=[Message(message=template_prompt, is_user_message=True)]
         )

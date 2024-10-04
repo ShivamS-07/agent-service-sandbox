@@ -1169,9 +1169,41 @@ class AsyncDB:
         )
         return [AgentFeedback(**row) for row in rows]
 
+    async def set_prompt_template_visibility(self, template_id: str, is_visible: bool) -> None:
+        sql = """
+        UPDATE agent.prompt_templates
+        SET is_visible = %(is_visible)s
+        WHERE template_id = %(template_id)s
+        """
+        await self.pg.generic_write(
+            sql,
+            params={"template_id": template_id, "is_visible": is_visible},
+        )
+
+    async def insert_prompt_template(self, prompt_template: PromptTemplate) -> None:
+        sql = """
+        INSERT INTO agent.prompt_templates
+          (template_id, name, description, prompt, category, created_at, plan, is_visible)
+        VALUES (%(template_id)s, %(name)s, %(description)s, %(prompt)s,
+                %(category)s, %(created_at)s, %(plan)s, %(is_visible)s)
+        """
+        await self.pg.generic_write(
+            sql,
+            {
+                "template_id": prompt_template.template_id,
+                "name": prompt_template.name,
+                "description": prompt_template.description,
+                "prompt": prompt_template.prompt,
+                "category": prompt_template.category,
+                "created_at": prompt_template.created_at,
+                "plan": prompt_template.plan.model_dump_json() if prompt_template.plan else None,
+                "is_visible": prompt_template.is_visible,
+            },
+        )
+
     async def get_prompt_templates(self) -> List[PromptTemplate]:
         sql = """
-        SELECT template_id::TEXT, name, description, prompt, category, created_at, plan
+        SELECT template_id::TEXT, name, description, prompt, category, created_at, plan, is_visible
         FROM agent.prompt_templates
         ORDER BY name ASC
         """
@@ -1188,6 +1220,7 @@ class AsyncDB:
                     prompt=row["prompt"],
                     category=row["category"],
                     created_at=row["created_at"],
+                    is_visible=row["is_visible"],
                     plan=ExecutionPlan.model_validate(row["plan"]),
                 )
             )
