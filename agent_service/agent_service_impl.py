@@ -326,6 +326,7 @@ class AgentServiceImpl:
                 message="Analyst has been cancelled successfully.",
                 is_user_message=False,
                 visible_to_llm=False,
+                plan_run_id=plan_run_id,
             ),
             db=self.pg,
         )
@@ -1315,6 +1316,7 @@ class AgentServiceImpl:
                     message="New plan with modified args has been created. Running the plan now.",
                     is_user_message=False,
                     visible_to_llm=False,
+                    plan_run_id=new_plan_run_id,
                 ),
             ),
             publish_agent_execution_plan(execution_plan, ctx, db=self.pg),
@@ -1892,7 +1894,9 @@ class AgentServiceImpl:
         plan_id = str(uuid.uuid4())
         plan_run_id = str(uuid.uuid4())
         chat_context = ChatContext(
-            messages=[Message(message=template_prompt, is_user_message=True)]
+            messages=[
+                Message(message=template_prompt, is_user_message=True, plan_run_id=plan_run_id)
+            ]
         )
         ctx = PlanRunContext(
             agent_id=agent_id,
@@ -1909,6 +1913,7 @@ class AgentServiceImpl:
             agent_id=agent_id,
             message=template_prompt,
             is_user_message=True,
+            plan_run_id=plan_run_id,
         )
         run_async_background(self._generate_agent_name_and_store(user.user_id, agent_id, user_msg))
 

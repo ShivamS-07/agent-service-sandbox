@@ -379,7 +379,12 @@ async def _run_execution_plan_impl(
                     step=step,
                     error=nre.get_message_for_llm(),
                 )
-                msg = Message(agent_id=context.agent_id, message=response, is_user_message=False)
+                msg = Message(
+                    agent_id=context.agent_id,
+                    message=response,
+                    is_user_message=False,
+                    plan_run_id=context.plan_run_id,
+                )
                 await send_chat_message(message=msg, db=db)
                 raise
             except AgentCancelledError as ace:
@@ -559,7 +564,12 @@ async def _run_execution_plan_impl(
             outputs=final_outputs,
         )
         await send_chat_message(
-            message=Message(agent_id=context.agent_id, message=message, is_user_message=False),
+            message=Message(
+                agent_id=context.agent_id,
+                message=message,
+                is_user_message=False,
+                plan_run_id=context.plan_run_id,
+            ),
             db=db,
         )
     elif scheduled_by_automation:
@@ -597,6 +607,7 @@ async def _run_execution_plan_impl(
                     message=NO_CHANGE_MESSAGE,
                     is_user_message=False,
                     visible_to_llm=False,
+                    plan_run_id=context.plan_run_id,
                 ),
                 db=db,
                 send_notification=False,
@@ -809,7 +820,10 @@ async def create_execution_plan(
             chat_context=await get_chat_history_from_db(agent_id, db), execution_plan=plan
         )
         await send_chat_message(
-            message=Message(agent_id=agent_id, message=message, is_user_message=False), db=db
+            message=Message(
+                agent_id=agent_id, message=message, is_user_message=False, plan_run_id=plan_run_id
+            ),
+            db=db,
         )
 
     if not run_plan_in_prefect_immediately:
@@ -909,7 +923,12 @@ async def update_execution_after_input(
             if do_chat:
                 message = await chatbot.generate_first_response_none(chat_context)
                 await send_chat_message(
-                    message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                    message=Message(
+                        agent_id=agent_id,
+                        message=message,
+                        is_user_message=False,
+                        plan_run_id=running_plan_run_id,
+                    ),
                     db=db,
                     send_notification=False,
                 )
@@ -923,6 +942,7 @@ async def update_execution_after_input(
                         message=message,
                         is_user_message=False,
                         visible_to_llm=False,
+                        plan_run_id=running_plan_run_id,
                     ),
                     db=db,
                     send_notification=False,
@@ -932,7 +952,12 @@ async def update_execution_after_input(
             if do_chat:
                 message = await chatbot.generate_first_response_refer(chat_context)
                 await send_chat_message(
-                    message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                    message=Message(
+                        agent_id=agent_id,
+                        message=message,
+                        is_user_message=False,
+                        plan_run_id=running_plan_run_id,
+                    ),
                     db=db,
                     send_notification=False,
                 )
@@ -974,7 +999,12 @@ async def update_execution_after_input(
             if do_chat:
                 message = await chatbot.generate_input_update_no_action_response(chat_context)
                 await send_chat_message(
-                    message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                    message=Message(
+                        agent_id=agent_id,
+                        message=message,
+                        is_user_message=False,
+                        plan_run_id=running_plan_run_id,
+                    ),
                     db=db,
                     send_notification=False,
                 )
@@ -990,6 +1020,7 @@ async def update_execution_after_input(
                         message=message,
                         is_user_message=False,
                         visible_to_llm=False,
+                        plan_run_id=running_plan_run_id,
                     ),
                     db=db,
                     send_notification=False,
@@ -1016,7 +1047,12 @@ async def update_execution_after_input(
                     ),
                 )
                 await send_chat_message(
-                    message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                    message=Message(
+                        agent_id=agent_id,
+                        message=message,
+                        is_user_message=False,
+                        plan_run_id=running_plan_run_id,
+                    ),
                     db=db,
                 )
 
@@ -1056,7 +1092,12 @@ async def update_execution_after_input(
             if do_chat:
                 message = await chatbot.generate_input_update_replan_preplan_response(chat_context)
                 await send_chat_message(
-                    message=Message(agent_id=agent_id, message=message, is_user_message=False),
+                    message=Message(
+                        agent_id=agent_id,
+                        message=message,
+                        is_user_message=False,
+                        plan_run_id=running_plan_run_id,
+                    ),
                     db=db,
                 )
 
@@ -1272,7 +1313,12 @@ async def handle_error_in_execution(
                 chat_context=chat_context
             )
             await send_chat_message(
-                message=Message(agent_id=context.agent_id, message=message, is_user_message=False),
+                message=Message(
+                    agent_id=context.agent_id,
+                    message=message,
+                    is_user_message=False,
+                    plan_run_id=context.plan_run_id,
+                ),
                 db=db,
             )
 
@@ -1287,7 +1333,12 @@ async def handle_error_in_execution(
             chat_context=chat_context, last_plan=plans[-1], error_info=error_info
         )
         await send_chat_message(
-            message=Message(agent_id=context.agent_id, message=message, is_user_message=False),
+            message=Message(
+                agent_id=context.agent_id,
+                message=message,
+                is_user_message=False,
+                plan_run_id=context.plan_run_id,
+            ),
             db=db,
         )
     new_plan_id = str(uuid4())
