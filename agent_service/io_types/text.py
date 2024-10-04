@@ -12,6 +12,7 @@ from typing import (
     Literal,
     Optional,
     Sequence,
+    Tuple,
     Type,
     Union,
     cast,
@@ -46,10 +47,17 @@ from agent_service.io_types.citations import (
 from agent_service.io_types.output import Output, OutputType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text_objects import CitationTextObject, TextObject
+from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import parse_date_str_in_utc
+from agent_service.utils.earnings.earnings_util import (
+    get_transcript_partitions_from_db,
+    get_transcript_sections_from_partitions,
+    insert_transcript_partitions_to_db,
+    split_transcript_into_smaller_sections,
+)
 from agent_service.utils.sec.constants import LINK_TO_FILING_DETAILS
 from agent_service.utils.sec.sec_api import SecFiling
 
@@ -1000,7 +1008,7 @@ class StockEarningsTranscriptText(StockEarningsText):
 
     @classmethod
     async def _get_strs_lookup(
-        cls, earnings_texts: List[StockEarningsSummaryText]  # type: ignore
+        cls, earnings_texts: List[StockEarningsTranscriptText]  # type: ignore
     ) -> Dict[TextIDType, str]:
         earnings_transcript_sql = """
             SELECT id::TEXT AS id, transcript, fiscal_year, fiscal_quarter
@@ -1040,6 +1048,139 @@ class StockEarningsTranscriptText(StockEarningsText):
                 )
             )
 
+        return output  # type: ignore
+
+
+@io_type
+class StockEarningsTranscriptSectionText(StockEarningsText):
+    """
+    This class is actually a "section" of `StockEarningsTranscriptText`. We split the transcript into
+    smaller (relatively) self-contained sections.
+    """
+
+    id: Union[int, str]  # hash((self.filing_id, self.header))  (str for backwards compatibility)
+
+    text_type: ClassVar[str] = "Earnings Transcript Section"
+
+    transcript_id: str
+    starting_line_num: int
+    ending_line_num: int
+
+    @field_serializer("val")
+    def serialize_val(self, val: str, _info: Any) -> str:
+        # Make sure we don't serialize unnecessary data, we only want to serialize the ID.
+        return ""
+
+    # For identifying the same texts across runs (different hash seeds)
+    def reset_id(self) -> None:
+        self.id = hash((self.transcript_id, self.starting_line_num, self.ending_line_num))
+
+    @classmethod
+    async def init_from_full_transcript(
+        cls,
+        transcripts: List[StockEarningsTranscriptText],
+        context: PlanRunContext,
+        cache_new_data: bool = True,
+    ) -> List[StockEarningsTranscriptSectionText]:
+        transcripts_lookup = await StockEarningsTranscriptText._get_strs_lookup(transcripts)
+
+        partition_lookup = await get_transcript_partitions_from_db(
+            [str(transcript.id) for transcript in transcripts]
+        )
+
+        data_to_cache: Dict[str, List[Tuple[int, int]]] = {}
+
+        transcript_section_texts = []
+        for transcript in transcripts:
+            if transcript.id not in transcripts_lookup:
+                continue
+
+            partition_data_from_db = partition_lookup.get(str(transcript.id))
+            if partition_data_from_db:
+                transcript_partitions = get_transcript_sections_from_partitions(
+                    transcripts_lookup[transcript.id], partition_data_from_db
+                )
+            else:
+                transcript_partitions = await split_transcript_into_smaller_sections(
+                    transcript_id=str(transcript.id),
+                    transcript=transcripts_lookup[transcript.id],
+                    context=context,
+                )
+                data_to_cache[str(transcript.id)] = list(transcript_partitions.keys())
+            for line_num_bounds, content in transcript_partitions.items():
+                starting_line_num = line_num_bounds[0]
+                ending_line_num = line_num_bounds[1]
+                transcript_section_texts.append(
+                    cls(
+                        id=hash((transcript.id, starting_line_num, ending_line_num)),
+                        val=content,
+                        transcript_id=str(transcript.id),
+                        year=transcript.year,
+                        quarter=transcript.quarter,
+                        timestamp=transcript.timestamp,
+                        starting_line_num=starting_line_num,
+                        ending_line_num=ending_line_num,
+                    )
+                )
+
+        if cache_new_data and (len(data_to_cache) == 0):
+            await insert_transcript_partitions_to_db(data_to_cache)
+
+        return transcript_section_texts
+
+    @classmethod
+    async def _get_strs_lookup(
+        cls, sections: List[StockEarningsTranscriptSectionText]  # type: ignore
+    ) -> Dict[TextIDType, str]:
+        transcript_ids = set([section.transcript_id for section in sections])
+
+        earnings_transcript_sql = """
+            SELECT id::TEXT AS id, transcript, fiscal_year, fiscal_quarter
+            FROM company_earnings.full_earning_transcripts
+            WHERE id IN %(ids)s
+        """
+        ch = Clickhouse()
+        transcript_query_result = await ch.generic_read(
+            earnings_transcript_sql,
+            params={"ids": list(transcript_ids)},
+        )
+        transcript_lookup = {
+            row["id"]: row["transcript"].split("\n") for row in transcript_query_result
+        }
+
+        outputs = {}
+        for section in sections:
+            transcript_lines = transcript_lookup[section.transcript_id]
+            outputs[section.id] = "\n".join(
+                transcript_lines[section.starting_line_num : section.ending_line_num]
+            )
+        return outputs  # type: ignore
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[TextCitation], db: BoostedPG
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        output: Dict[TextCitation, List[CitationOutput]] = defaultdict(list)
+
+        for text in texts:
+            if isinstance(text.source_text, StockEarningsTranscriptSectionText):
+                hl_start, hl_end = None, None
+                if text.citation_snippet_context and text.citation_snippet:
+                    hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
+                        smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
+                    )
+                # Use the transcript id to map back to the full transcript
+                output[text].append(
+                    EarningsTranscriptCitationOutput(
+                        internal_id=str(text.source_text.transcript_id),
+                        name=text.source_text.to_citation_title(),
+                        summary=text.citation_snippet_context,
+                        snippet_highlight_start=hl_start,
+                        snippet_highlight_end=hl_end,
+                        inline_offset=text.citation_text_offset,
+                        last_updated_at=text.source_text.timestamp,
+                    )
+                )
         return output  # type: ignore
 
 

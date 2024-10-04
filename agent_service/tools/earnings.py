@@ -270,7 +270,7 @@ async def get_earnings_full_transcripts(
     insert it into the db. Then referencing the new entry's id within the database.
     """
     earnings_transcript_sql = """
-        SELECT id::TEXT as id, gbi_id, earnings_date, event_id
+        SELECT id::TEXT as id, gbi_id, earnings_date, event_id, fiscal_year, fiscal_quarter
         FROM company_earnings.full_earning_transcripts
         WHERE gbi_id IN %(gbi_ids)s
     """
@@ -295,11 +295,20 @@ async def get_earnings_full_transcripts(
         stock_id = event_id_to_stock_id_lookup[event.event_id]
         db_data = transcript_db_data_lookup.get(event.event_id)
         if db_data:
+            if db_data["fiscal_year"] != 0:
+                year = db_data["fiscal_year"]
+                quarter = db_data["fiscal_quarter"]
+            else:
+                year = None
+                quarter = None
+
             stock_earnings_text_dict[stock_id].append(
                 StockEarningsTranscriptText(
                     id=str(db_data["id"]),
                     stock_id=stock_id,
                     timestamp=db_data["earnings_date"],
+                    year=year,
+                    quarter=quarter,
                 )
             )
         else:
