@@ -441,6 +441,22 @@ class Table(ComplexIOBase):
 
         return
 
+    def delete_date_column(self) -> None:
+        date_column_idx = None
+
+        for i, column in enumerate(self.columns):
+            if (
+                column.metadata.col_type == TableColumnType.DATE
+                or column.metadata.col_type == TableColumnType.QUARTER
+            ):
+                date_column_idx = i
+                break
+
+        if date_column_idx is None:
+            return
+
+        self.columns.pop(i)
+
 
 CellType = Union[PrimitiveType, StockMetadata, ScoreOutput]
 

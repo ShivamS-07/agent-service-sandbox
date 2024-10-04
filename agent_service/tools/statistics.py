@@ -408,6 +408,8 @@ async def get_statistic_data_for_companies(
         logger.info("Added real time price data")
 
     if not calculation and not added_timespan:
+        if not is_timeseries:
+            comp_table.delete_date_column()
         logger.info("No calculation explanation, returning component table")
         return comp_table
 
@@ -417,7 +419,7 @@ async def get_statistic_data_for_companies(
         # Inject some extra instructions for the table transform.
         calculation += (
             " The output should NOT be a timeseries, and should not contain a date column. "
-            "Only return the most up to date data for each stock."
+            "Only return the most up-to-date data for each stock."
         )
 
     transformed_table: StockTable = await transform_table(  # type: ignore
@@ -429,6 +431,9 @@ async def get_statistic_data_for_companies(
     ):  # if we did a rolling calculation, the extra days are usually there, remove them
         logger.info("Deleting extra days in table due to rolling calculation")
         transformed_table.delete_data_before_start_date(start_date=start_date)
+
+    if not is_timeseries:  # just in case GPT didn't listen about deleting
+        transformed_table.delete_date_column()
     transformed_table.should_subsample_large_table = True
     return transformed_table
 
