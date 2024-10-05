@@ -43,7 +43,8 @@ PLAN_RULES = """- Your output script must be valid Python code
 """
 
 PLAN_GUIDELINES = """The top priority of a plan is that the information needs of the client are being fully satisfied. Otherwise, please consider the following when selecting the best plan:
-- short plans are preferred over long ones
+- Short plans are preferred over long ones
+- However, if a relatively short query is a near perfect match to a provided sample plan which is very long, you must use every single relevant step of the provided sample plan, even if it is very long. Do not use a shortened plan in such a situation, in fact you must use the entire sample plan, you must not be lazy and leave out steps unless requested to do so! Before you stop, please double check you have the same number of outputs as the the sample plan. If you leave out even a single step of the plan (unless explictly asked by the user) in such a situation you will be fired.
 - in particular, it is better to use functions that do everything you need to do in one batched call, rather than separate calls, and it is very, very bad to do both versions redundantly in one script
 - simple functions are preferred over API calls
 - internal APIs calls are preferred over external API
