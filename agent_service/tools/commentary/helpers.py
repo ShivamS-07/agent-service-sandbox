@@ -340,7 +340,7 @@ async def prepare_portfolio_prompt(
     context: PlanRunContext,
 ) -> FilledPrompt:
     """
-    This function prepares the portfolio prompt for the commentary.
+    This function prepares the portfolio prompt for the commentary
     """
     table_mapping: Dict[str, pd.DataFrame] = {}
     for table in portfolio_related_tables:

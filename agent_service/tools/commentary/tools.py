@@ -11,6 +11,7 @@ from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT, StockTable, 
 from agent_service.io_types.text import (
     StockNewsDevelopmentText,
     Text,
+    TextCitation,
     TextGroup,
     ThemeNewsDevelopmentArticlesText,
     ThemeNewsDevelopmentText,
@@ -330,24 +331,32 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     result = await llm.do_chat_w_sys_prompt(
         main_prompt=main_prompt, sys_prompt=commentary_sys_prompt.format(), no_cache=True
     )
-    commentary_text, citations = await extract_citations_from_gpt_output(
-        result, all_text_group, context
-    )
-    if texts_str and not citations:  # missing all citations, do a retry
-        result = await llm.do_chat_w_sys_prompt(
-            main_prompt=main_prompt, sys_prompt=commentary_sys_prompt.format(), no_cache=True
-        )
+    # Extract citations from the GPT output
+    try:
         commentary_text, citations = await extract_citations_from_gpt_output(
             result, all_text_group, context
         )
-        if citations is not None:
-            logger.info(f"Size of citations: {len(citations)}")
+        if texts_str and not citations:  # missing all citations, do a retry
+            result = await llm.do_chat_w_sys_prompt(
+                main_prompt=main_prompt, sys_prompt=commentary_sys_prompt.format(), no_cache=True
+            )
+            commentary_text, citations = await extract_citations_from_gpt_output(
+                result, all_text_group, context
+            )
+            if citations is not None:
+                logger.info(f"Size of citations: {len(citations)}")
+    except Exception as e:
+        logger.exception(f"Failed to extract citations from GPT output: {e}")
+        citations = None
 
     # create commentary object
     commentary: Text = Text(val=commentary_text or result)
-    commentary = commentary.inject_history_entry(
-        HistoryEntry(title="Commentary", citations=citations)  # type:ignore
-    )
+    if isinstance(citations, list) and isinstance(citations[0], TextCitation):
+        commentary = commentary.inject_history_entry(
+            HistoryEntry(title="Commentary", citations=citations)  # type:ignore
+        )
+    else:
+        logger.info(f"Failed to extract citations from GPT output: {citations}")
 
     return commentary
 

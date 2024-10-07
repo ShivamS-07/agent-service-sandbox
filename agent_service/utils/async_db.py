@@ -1180,6 +1180,27 @@ class AsyncDB:
             params={"template_id": template_id, "is_visible": is_visible},
         )
 
+    async def update_prompt_template(self, prompt_template: PromptTemplate) -> None:
+        sql = """
+        UPDATE agent.prompt_templates
+        SET name = %(name)s, description = %(description)s, prompt = %(prompt)s,
+            category = %(category)s, plan = %(plan)s, is_visible = %(is_visible)s, created_at = %(created_at)s
+        WHERE template_id = %(template_id)s
+        """
+        await self.pg.generic_write(
+            sql,
+            {
+                "template_id": prompt_template.template_id,
+                "name": prompt_template.name,
+                "description": prompt_template.description,
+                "prompt": prompt_template.prompt,
+                "category": prompt_template.category,
+                "plan": prompt_template.plan.model_dump_json(),
+                "is_visible": prompt_template.is_visible,
+                "created_at": prompt_template.created_at,
+            },
+        )
+
     async def insert_prompt_template(self, prompt_template: PromptTemplate) -> None:
         sql = """
         INSERT INTO agent.prompt_templates
@@ -1196,7 +1217,7 @@ class AsyncDB:
                 "prompt": prompt_template.prompt,
                 "category": prompt_template.category,
                 "created_at": prompt_template.created_at,
-                "plan": prompt_template.plan.model_dump_json() if prompt_template.plan else None,
+                "plan": prompt_template.plan.model_dump_json(),
                 "is_visible": prompt_template.is_visible,
             },
         )
@@ -1226,6 +1247,13 @@ class AsyncDB:
             )
 
         return res
+
+    async def delete_prompt_template(self, template_id: str) -> None:
+        sql = """
+        DELETE FROM agent.prompt_templates
+        WHERE template_id = %(template_id)s
+        """
+        await self.pg.generic_write(sql, params={"template_id": template_id})
 
     async def get_org_name(self, org_id: str) -> str:
         sql = """

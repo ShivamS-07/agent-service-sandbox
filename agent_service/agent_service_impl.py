@@ -52,6 +52,7 @@ from agent_service.endpoints.models import (
     DeleteAgentOutputResponse,
     DeleteAgentResponse,
     DeleteMemoryResponse,
+    DeletePromptTemplateResponse,
     DisableAgentAutomationResponse,
     EnableAgentAutomationResponse,
     ExecutionPlanTemplate,
@@ -116,6 +117,7 @@ from agent_service.endpoints.models import (
     UpdateAgentDraftStatusResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
+    UpdatePromptTemplateResponse,
     UpdateUserResponse,
     UploadFileResponse,
     ValidateArgError,
@@ -1776,6 +1778,29 @@ class AgentServiceImpl:
                 template.output_types = self._output_types_from_plan(template.plan)
         return prompt_templates
 
+    async def update_prompt_template(
+        self,
+        template_id: str,
+        name: str,
+        description: str,
+        prompt: str,
+        category: str,
+        plan: ExecutionPlan,
+        is_visible: bool = False,
+    ) -> UpdatePromptTemplateResponse:
+        prompt_template = PromptTemplate(
+            template_id=template_id,
+            name=name,
+            description=description,
+            prompt=prompt,
+            category=category,
+            plan=plan,
+            is_visible=is_visible,
+            created_at=get_now_utc(),
+        )
+        await self.pg.update_prompt_template(prompt_template)
+        return UpdatePromptTemplateResponse(prompt_template=prompt_template)
+
     async def create_prompt_template(
         self, name: str, description: str, prompt: str, category: str, plan_run_id: str
     ) -> CreatePromptTemplateResponse:
@@ -1933,6 +1958,10 @@ class AgentServiceImpl:
         return RunTemplatePlanResponse(
             agent_id=agent_id,
         )
+
+    async def delete_prompt_template(self, template_id: str) -> DeletePromptTemplateResponse:
+        await self.pg.delete_prompt_template(template_id=template_id)
+        return DeletePromptTemplateResponse(template_id=template_id)
 
     async def get_user_has_alfa_access(self, user: User) -> bool:
         db_user = await get_users(

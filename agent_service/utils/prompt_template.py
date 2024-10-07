@@ -24,6 +24,6 @@ class PromptTemplate(BaseModel):
     prompt: str
     category: str
     created_at: datetime.datetime
-    plan: Optional[ExecutionPlan] = None
+    plan: ExecutionPlan
     is_visible: bool = False
     output_types: Optional[list[OutputType]] = None

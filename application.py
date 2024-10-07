@@ -54,6 +54,8 @@ from agent_service.endpoints.models import (
     DeleteAgentOutputResponse,
     DeleteAgentResponse,
     DeleteMemoryResponse,
+    DeletePromptTemplateRequest,
+    DeletePromptTemplateResponse,
     DeleteSectionRequest,
     DeleteSectionResponse,
     DisableAgentAutomationRequest,
@@ -130,6 +132,8 @@ from agent_service.endpoints.models import (
     UpdateAgentResponse,
     UpdateNotificationEmailsRequest,
     UpdateNotificationEmailsResponse,
+    UpdatePromptTemplateRequest,
+    UpdatePromptTemplateResponse,
     UpdateUserRequest,
     UpdateUserResponse,
     UploadFileResponse,
@@ -1512,6 +1516,39 @@ async def create_agent_and_run_template_plan(
         plan=req.plan,
         is_draft=req.is_draft,
         user=user,
+    )
+
+
+@router.post(
+    "/template/delete-template-prompt",
+    response_model=DeletePromptTemplateResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def delete_prompt_template(
+    req: DeletePromptTemplateRequest, user: User = Depends(parse_header)
+) -> DeletePromptTemplateResponse:
+
+    return await application.state.agent_service_impl.delete_prompt_template(
+        template_id=req.template_id
+    )
+
+
+@router.post(
+    "/template/update-template-prompt",
+    response_model=UpdatePromptTemplateResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def update_prompt_template(
+    req: UpdatePromptTemplateRequest, user: User = Depends(parse_header)
+) -> UpdatePromptTemplateResponse:
+
+    return await application.state.agent_service_impl.update_prompt_template(
+        template_id=req.template_id,
+        name=req.name,
+        description=req.description,
+        category=req.category,
+        prompt=req.prompt,
+        plan=req.plan,
     )
 
 

@@ -1044,6 +1044,20 @@ class CreatePromptTemplateResponse(BaseModel):
     plan_run_id: str
 
 
+class UpdatePromptTemplateRequest(BaseModel):
+    template_id: str
+    name: str
+    description: str
+    prompt: str
+    category: str
+    plan: ExecutionPlan
+    is_visible: bool = False
+
+
+class UpdatePromptTemplateResponse(BaseModel):
+    prompt_template: PromptTemplate
+
+
 class SetPromptTemplateVisibilityRequest(BaseModel):
     template_id: str
     is_visible: bool
@@ -1085,3 +1099,11 @@ class RunTemplatePlanRequest(BaseModel):
     template_prompt: str
     plan: ExecutionPlan
     is_draft: bool = False
+
+
+class DeletePromptTemplateRequest(BaseModel):
+    template_id: str
+
+
+class DeletePromptTemplateResponse(BaseModel):
+    template_id: str
