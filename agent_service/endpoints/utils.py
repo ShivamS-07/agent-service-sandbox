@@ -267,7 +267,15 @@ def get_plan_run_task_info(
 
     if run_task_pair in run_task_pair_to_status:
         task_run_info = run_task_pair_to_status[run_task_pair]
-        task_status = task_run_info.status or Status.COMPLETE
+        task_status = task_run_info.status
+        if task_status is None:
+            # if the task status is not stored in the db, use the prefect status
+            # if not in prefect, set to NOT_STARTED
+            if run_task_pair in prefect_run_task_pair_to_status:
+                prefect_task_run = prefect_run_task_pair_to_status[run_task_pair]
+                task_status = Status.from_prefect_state(prefect_task_run.state_type)
+            else:
+                task_status = Status.NOT_STARTED
         task_start = task_run_info.start_time
         task_end = task_run_info.end_time
     elif run_task_pair in prefect_run_task_pair_to_status:
