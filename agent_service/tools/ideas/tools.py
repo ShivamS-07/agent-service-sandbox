@@ -4,6 +4,8 @@ from typing import List, Tuple
 from agent_service.GPT.constants import GPT4_O, GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
+from agent_service.io_type_utils import HistoryEntry
+from agent_service.io_types.idea import Idea
 from agent_service.io_types.text import Text, TextGroup
 from agent_service.planner.errors import EmptyInputError
 from agent_service.tool import ToolArgs, ToolCategory, tool
@@ -20,7 +22,7 @@ from agent_service.tools.ideas.prompts import (
     IDEA_CLUSTER_SYS_PROMPT_STR,
     INITIAL_BRAINSTORM_PROMPT,
 )
-from agent_service.tools.ideas.utils import Idea, create_small_text_groups
+from agent_service.tools.ideas.utils import create_small_text_groups
 from agent_service.tools.LLM_analysis.constants import MAX_CITATION_TRIES
 from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.types import PlanRunContext
@@ -175,7 +177,10 @@ async def create_final_idea(
     if citations is None:
         citations = []
 
-    return Idea(title=title, description=final_text, citations=citations)
+    description: Text = Text(val=final_text)
+    description = description.inject_history_entry(HistoryEntry(citations=citations))  # type: ignore
+
+    return Idea(title=title, description=description)
 
 
 class BrainstormIdeasFromTextsInput(ToolArgs):

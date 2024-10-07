@@ -3,26 +3,11 @@ from typing import List
 
 from agent_service.GPT.constants import GPT4_O_MINI
 from agent_service.GPT.tokens import GPTTokenizer
-from agent_service.io_type_utils import ComplexIOBase, io_type
-from agent_service.io_types.text import Text, TextCitation
+from agent_service.io_types.text import Text
 from agent_service.tools.ideas.constants import (
     MAX_TEXT_GROUP_TOKENS,
     MIN_TEXT_GROUP_TOKENS,
 )
-
-
-@io_type
-class Idea(ComplexIOBase):
-    title: str
-    description: str
-    citations: List[TextCitation]
-
-    # TODO: Create functions that allow proper output
-    # async def split_into_components(self) -> List[IOType]:
-    #     pass
-
-    # async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
-    #     pass
 
 
 async def create_small_text_groups(input_texts: List[Text]) -> List[List[Text]]:

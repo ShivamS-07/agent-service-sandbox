@@ -6,12 +6,19 @@ from agent_service.io_type_utils import (
     ComplexIOBase,
     HistoryEntry,
     IOType,
+    TableColumnType,
     io_type,
     split_io_type_into_components,
 )
+from agent_service.io_types.idea import Idea
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import StockTableColumn, Table, TableColumn
+from agent_service.io_types.table import (
+    StockTableColumn,
+    Table,
+    TableColumn,
+    TableColumnMetadata,
+)
 from agent_service.io_types.text import StockText, Text, TextCitation
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
@@ -21,6 +28,24 @@ from agent_service.utils.output_utils.utils import io_type_to_gpt_input
 
 def prepare_list_of_stocks(stocks: List[StockID]) -> Table:
     columns: List[TableColumn] = [StockTableColumn(data=stocks)]
+    return Table(columns=columns)
+
+
+def prepare_list_of_ideas(ideas: List[Idea]) -> Table:
+    titles = [idea.title for idea in ideas]
+    descriptions = [idea.description for idea in ideas]
+    columns: List[TableColumn] = []
+    columns.append(
+        TableColumn(
+            metadata=TableColumnMetadata(label="Name", col_type=TableColumnType.STRING), data=titles  # type: ignore
+        )
+    )
+    columns.append(
+        TableColumn(
+            metadata=TableColumnMetadata(label="Description", col_type=TableColumnType.STRING),
+            data=descriptions,  # type: ignore
+        )
+    )
     return Table(columns=columns)
 
 
@@ -129,6 +154,8 @@ async def get_output_from_io_type(val: IOType, pg: BoostedPG, title: str = "") -
             val = await prepare_list_of_stock_texts(texts=val)
         elif isinstance(val[0], Text):
             val = await prepare_list_of_texts(texts=val)
+        elif isinstance(val[0], Idea):
+            val = prepare_list_of_ideas(ideas=val)
         else:
             coros = [get_output_from_io_type(v, pg=pg) for v in val]
             val = await gather_with_concurrency(coros, n=len(coros))
