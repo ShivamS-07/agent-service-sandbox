@@ -11,6 +11,7 @@ from agent_service.io_types.text import Text
 from agent_service.planner.errors import EmptyInputError, EmptyOutputError
 from agent_service.tool import (
     TOOL_DEBUG_INFO,
+    ToolArgMetadata,
     ToolArgs,
     ToolCategory,
     ToolRegistry,
@@ -50,49 +51,43 @@ CUNCURRENT_CALLS_FILTER1 = 300
 CUNCURRENT_CALLS_FILTER2 = 300
 
 
-STOCK_PRODUCT_FILTER1_MAIN_PROMPT = Prompt(
-    name="STOCK_PRODUCT_FILTER1_MAIN_PROMPT",
-    template=(
-        "Your task is to determine whether a company is a producer of a given Product "
-        "based on Product and company description below. "
-        "\n- The Product description below includes a description of the Product and "
-        "a list of synonyms and similar terms that might be used interchangeably for the Product. "
-        "\n- Based on company description, if it implies that the company is a producer of the Product, "
-        "your response MUST be 'YES'. "
-        "\n- The Product can be a service (e.g. retail) or physical products. "
-        "\n- Your response MUST start with 2 to 3 sentences justification of your decsion, "
-        "then your decision 'YES' or 'NO', all delineated with the separator {separator}. "
-        "For example: '<justification> {separator} YES/NO'."
-        "\n### Product Description\n"
-        "{product_description}"
-        "\n### Company Description\n"
-        "{company_description}"
-        "\nNow, please provide your response."
-    ),
+STOCK_PRODUCT_FILTER1_MAIN_PROMPT_STR_DEFAULT = (
+    "Your task is to determine whether a company is a producer of a given Product "
+    "based on Product and company description below. "
+    "\n- The Product description below includes a description of the Product and "
+    "a list of synonyms and similar terms that might be used interchangeably for the Product. "
+    "\n- Based on company description, if it implies that the company is a producer of the Product, "
+    "your response MUST be 'YES'. "
+    "\n- The Product can be a service (e.g. retail) or physical products. "
+    "\n- Your response MUST start with 2 to 3 sentences justification of your decsion, "
+    "then your decision 'YES' or 'NO', all delineated with the separator {separator}. "
+    "For example: '<justification> {separator} YES/NO'."
+    "\n### Product Description\n"
+    "{product_description}"
+    "\n### Company Description\n"
+    "{company_description}"
+    "\nNow, please provide your response."
 )
 
-STOCK_PRODUCT_FILTER2_MAIN_PROMPT = Prompt(
-    name="STOCK_PRODUCT_FILTER2_MAIN_PROMPT",
-    template=(
-        "Your task is to determine whether a given company is a producer of a given Product, "
-        "based on the Product and the company description below. "
-        "\n- The Product description below includes a description of the Product and "
-        "a list of synonyms and similar terms that might be used interchangeably for the Product. "
-        "\n\nSome guidelines to consider: "
-        "\n- If the company produce components or services that are used in the production "
-        "of the Product, and not producing the product itself the decision MUST be 'NO'. "
-        "\n- Product can be service (e.g. retail) or physical product. "
-        "\n- Be very strict in your decision, ONLY if the company is a direct producer of the Product, "
-        "the decision can be 'YES', Otherwise, the decision MUST be 'NO'. "
-        "\n- Your response MUST start with 2 to 3 sentences justification of your decsion, "
-        "then your decision 'YES' or 'NO', all delineated with the separator {separator}. "
-        "For example: '<justification> {separator} YES/NO'."
-        "\n### Product Description\n"
-        "{product_description}"
-        "\n### Company Description\n"
-        "{company_description}"
-        "\n\nNow, please provide your response."
-    ),
+STOCK_PRODUCT_FILTER2_MAIN_PROMPT_STR_DEFAULT = (
+    "Your task is to determine whether a given company is a producer of a given Product, "
+    "based on the Product and the company description below. "
+    "\n- The Product description below includes a description of the Product and "
+    "a list of synonyms and similar terms that might be used interchangeably for the Product. "
+    "\n\nSome guidelines to consider: "
+    "\n- If the company produce components or services that are used in the production "
+    "of the Product, and not producing the product itself the decision MUST be 'NO'. "
+    "\n- Product can be service (e.g. retail) or physical product. "
+    "\n- Be very strict in your decision, ONLY if the company is a direct producer of the Product, "
+    "the decision can be 'YES', Otherwise, the decision MUST be 'NO'. "
+    "\n- Your response MUST start with 2 to 3 sentences justification of your decsion, "
+    "then your decision 'YES' or 'NO', all delineated with the separator {separator}. "
+    "For example: '<justification> {separator} YES/NO'."
+    "\n### Product Description\n"
+    "{product_description}"
+    "\n### Company Description\n"
+    "{company_description}"
+    "\n\nNow, please provide your response."
 )
 
 
@@ -118,6 +113,16 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
     product_str: str
     must_include_stocks: Optional[List[StockID]] = None
     max_results: Optional[int] = None
+
+    # prompt arguments (hidden from planner)
+    stock_product_filter1_main_prompt: str = STOCK_PRODUCT_FILTER1_MAIN_PROMPT_STR_DEFAULT
+    stock_product_filter2_main_prompt: str = STOCK_PRODUCT_FILTER2_MAIN_PROMPT_STR_DEFAULT
+
+    # tool arguments metadata
+    arg_metadata = {
+        "stock_product_filter1_main_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "stock_product_filter2_main_prompt": ToolArgMetadata(hidden_from_planner=True),
+    }
 
 
 @tool(
@@ -190,6 +195,13 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
 async def filter_stocks_by_product_or_service(
     args: FilterStocksByProductOrServiceInput, context: PlanRunContext
 ) -> List[StockID]:
+    stock_product_filter1_main_prompt = Prompt(
+        name="STOCK_PRODUCT_FILTER1_MAIN_PROMPT", template=args.stock_product_filter1_main_prompt
+    )
+    stock_product_filter2_main_prompt = Prompt(
+        name="STOCK_PRODUCT_FILTER2_MAIN_PROMPT", template=args.stock_product_filter2_main_prompt
+    )
+
     if len(args.stock_ids) == 0:
         raise EmptyInputError("Cannot filter stocks by product/service with empty stock list")
 
@@ -292,6 +304,7 @@ async def filter_stocks_by_product_or_service(
         llm_cheap=llm_cheap,
         llm_big=llm_big,
         consistency_rounds=consistency_rounds,
+        stock_product_filter1_main_prompt=stock_product_filter1_main_prompt,
     )
     filtered_stocks1 = list(filtered_stocks1_dict.keys())
 
@@ -317,6 +330,7 @@ async def filter_stocks_by_product_or_service(
         stocks=filtered_stocks1,
         stock_description_map=stock_description_map,
         llm_big=llm_big,
+        stock_product_filter2_main_prompt=stock_product_filter2_main_prompt,
     )
     filtered_stocks2 = list(filtered_stocks2_dict.keys())
 
@@ -430,6 +444,7 @@ async def filter_stocks_round1(
     stock_description_map: Dict[StockID, str],
     llm_cheap: GPT,
     llm_big: GPT,
+    stock_product_filter1_main_prompt: Prompt,
     consistency_rounds: int = CONSISTENCY_ROUNDS_FILTER1,
 ) -> Dict[StockID, str]:
     # get product description from GPT
@@ -441,7 +456,7 @@ async def filter_stocks_round1(
     tasks = []
 
     for stock in stocks:
-        main_prompt = STOCK_PRODUCT_FILTER1_MAIN_PROMPT.format(
+        main_prompt = stock_product_filter1_main_prompt.format(
             separator=SEPARATOR,
             company_description=stock_description_map[stock],
             product_description=product_description,
@@ -488,6 +503,7 @@ async def filter_stocks_round2(
     stocks: List[StockID],
     stock_description_map: Dict[StockID, str],
     llm_big: GPT,
+    stock_product_filter2_main_prompt: Prompt,
     consistency_rounds: int = CONSISTENCY_ROUNDS_FILTER2,
 ) -> Dict[StockID, str]:
     # get product description from GPT
@@ -500,7 +516,7 @@ async def filter_stocks_round2(
         for _ in range(consistency_rounds):
             tasks.append(
                 llm_big.do_chat_w_sys_prompt(
-                    STOCK_PRODUCT_FILTER2_MAIN_PROMPT.format(
+                    stock_product_filter2_main_prompt.format(
                         separator=SEPARATOR,
                         company_description=stock_description_map[stock],
                         product_description=product_description,

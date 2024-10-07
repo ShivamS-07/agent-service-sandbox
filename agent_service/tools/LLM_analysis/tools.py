@@ -42,8 +42,8 @@ from agent_service.tools.LLM_analysis.constants import (
 )
 from agent_service.tools.LLM_analysis.prompts import (
     ANSWER_QUESTION_DESCRIPTION,
-    ANSWER_QUESTION_MAIN_PROMPT,
-    ANSWER_QUESTION_SYS_PROMPT,
+    ANSWER_QUESTION_MAIN_PROMPT_STR_DEFAULT,
+    ANSWER_QUESTION_SYS_PROMPT_STR_DEFAULT,
     BRAINSTORM_REMINDER,
     CITATION_PROMPT,
     CITATION_REMINDER,
@@ -51,17 +51,18 @@ from agent_service.tools.LLM_analysis.prompts import (
     COMPARISON_MAIN_PROMPT_STR_DEFAULT,
     COMPARISON_SYS_PROMPT_STR_DEFAULT,
     COMPARISON_UPDATE_INSTRUCTIONS,
-    COMPLEX_PROFILE_FILTER_SYS_PROMPT,
+    COMPLEX_PROFILE_FILTER_SYS_PROMPT_STR_DEFAULT,
     EXTRA_DATA_PHRASE,
     FILTER_BY_PROFILE_DESCRIPTION,
     FILTER_BY_TOPIC_DESCRIPTION,
     PER_STOCK_SUMMARIZE_DESCRIPTION,
     PROFILE_ADD_DIFF_MAIN_PROMPT,
     PROFILE_ADD_DIFF_SYS_PROMPT,
-    PROFILE_FILTER_MAIN_PROMPT,
+    PROFILE_FILTER_MAIN_PROMPT_STR_DEFAULT,
+    PROFILE_OUTPUT_INSTRUCTIONS_DEFAULT,
     PROFILE_REMOVE_DIFF_MAIN_PROMPT,
     PROFILE_REMOVE_DIFF_SYS_PROMPT,
-    SIMPLE_PROFILE_FILTER_SYS_PROMPT,
+    SIMPLE_PROFILE_FILTER_SYS_PROMPT_STR_DEFAULT,
     STOCK_PHRASE_STR_DEFAULT,
     SUMMARIZE_BRAINSTORM_INSTRUCTIONS_STR_DEFAULT,
     SUMMARIZE_DESCRIPTION,
@@ -750,6 +751,16 @@ class AnswerQuestionInput(ToolArgs):
     question: str
     texts: List[Text]
 
+    # prompt arguments (hidden from planner)
+    answer_question_main_prompt: str = ANSWER_QUESTION_MAIN_PROMPT_STR_DEFAULT
+    answer_question_sys_prompt: str = ANSWER_QUESTION_SYS_PROMPT_STR_DEFAULT
+
+    # toool arguments metadata
+    arg_metadata = {
+        "answer_question_main_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "answer_question_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
+    }
+
 
 @tool(
     description=ANSWER_QUESTION_DESCRIPTION,
@@ -758,6 +769,17 @@ class AnswerQuestionInput(ToolArgs):
 async def answer_question_with_text_data(
     args: AnswerQuestionInput, context: PlanRunContext
 ) -> Text:
+    answer_question_main_prompt = Prompt(
+        name="LLM_ANSWER_QUESTION_MAIN_PROMPT",
+        template=args.answer_question_main_prompt
+        + CITATION_REMINDER
+        + " Now write your answer, with citations:\n",
+    )
+    answer_question_sys_prompt = Prompt(
+        name="LLM_ANSWER_QUESTION_SYS_PROMPT",
+        template=args.answer_question_sys_prompt + CITATION_PROMPT,
+    )
+
     if len(args.texts) == 0:
         raise EmptyInputError(message="Cannot answer question with an empty list of texts")
     # TODO we need guardrails on this
@@ -769,11 +791,11 @@ async def answer_question_with_text_data(
     texts_str: str = await Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)  # type: ignore
     texts_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
         texts_str,
-        [ANSWER_QUESTION_MAIN_PROMPT.template, ANSWER_QUESTION_SYS_PROMPT.template, args.question],
+        [answer_question_main_prompt.template, answer_question_sys_prompt.template, args.question],
     )
 
     result = await llm.do_chat_w_sys_prompt(
-        ANSWER_QUESTION_MAIN_PROMPT.format(
+        answer_question_main_prompt.format(
             texts=texts_str,
             question=args.question,
             today=(
@@ -782,7 +804,7 @@ async def answer_question_with_text_data(
                 else datetime.date.today().isoformat()
             ),
         ),
-        ANSWER_QUESTION_SYS_PROMPT.format(),
+        answer_question_sys_prompt.format(),
     )
 
     text, citations = await extract_citations_from_gpt_output(result, text_group, context)
@@ -910,6 +932,9 @@ async def profile_filter_helper(
     profile: str,
     is_using_complex_profile: bool,
     llm: GPT,
+    profile_filter_main_prompt: Prompt,
+    simple_profile_filter_sys_prompt: Prompt,
+    complex_profile_filter_sys_prompt: Prompt,
     context: PlanRunContext,
     topic: str = "",
     do_citations: bool = True,
@@ -919,8 +944,8 @@ async def profile_filter_helper(
     used = tokenizer.get_token_length(
         "\n".join(
             [
-                PROFILE_FILTER_MAIN_PROMPT.template,
-                SIMPLE_PROFILE_FILTER_SYS_PROMPT.template,
+                profile_filter_main_prompt.template,
+                simple_profile_filter_sys_prompt.template,
                 profile,
             ]
         )
@@ -936,7 +961,7 @@ async def profile_filter_helper(
         elif is_using_complex_profile:
             tasks.append(
                 llm.do_chat_w_sys_prompt(
-                    PROFILE_FILTER_MAIN_PROMPT.format(
+                    profile_filter_main_prompt.format(
                         company_name=stock.company_name,
                         texts=text_str,
                         profile=profile,
@@ -946,13 +971,13 @@ async def profile_filter_helper(
                             else datetime.date.today().isoformat()
                         ),
                     ),
-                    COMPLEX_PROFILE_FILTER_SYS_PROMPT.format(topic_name=topic),
+                    complex_profile_filter_sys_prompt.format(topic_name=topic),
                 )
             )
         else:
             tasks.append(
                 llm.do_chat_w_sys_prompt(
-                    PROFILE_FILTER_MAIN_PROMPT.format(
+                    profile_filter_main_prompt.format(
                         company_name=stock.company_name,
                         texts=text_str,
                         profile=profile,
@@ -962,7 +987,7 @@ async def profile_filter_helper(
                             else datetime.date.today().isoformat()
                         ),
                     ),
-                    SIMPLE_PROFILE_FILTER_SYS_PROMPT.format(),
+                    simple_profile_filter_sys_prompt.format(),
                 )
             )
 
@@ -1079,6 +1104,20 @@ class FilterStocksByProfileMatch(ToolArgs):
     texts: List[StockText]
     profile: Union[str, TopicProfiles]
 
+    # prompt arguments (hidden from planner)
+    profile_filter_main_prompt: str = PROFILE_FILTER_MAIN_PROMPT_STR_DEFAULT
+    simple_profile_filter_sys_prompt: str = SIMPLE_PROFILE_FILTER_SYS_PROMPT_STR_DEFAULT
+    complex_profile_filter_sys_prompt: str = COMPLEX_PROFILE_FILTER_SYS_PROMPT_STR_DEFAULT
+    profile_output_instruction: str = PROFILE_OUTPUT_INSTRUCTIONS_DEFAULT
+
+    # tool arguments metadata
+    arg_metadata = {
+        "profile_filter_main_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "simple_profile_filter_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "complex_profile_filter_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "profile_output_instruction": ToolArgMetadata(hidden_from_planner=True),
+    }
+
 
 @tool(
     description=FILTER_BY_PROFILE_DESCRIPTION,
@@ -1095,6 +1134,31 @@ async def filter_stocks_by_profile_match(
     logger = get_prefect_logger(__name__)
     if context.task_id is None:
         return []  # for mypy
+
+    # prepare prompts
+    profile_filter_main_prompt = Prompt(
+        name="PROFILE_FILTER_MAIN_PROMPT",
+        template=(
+            args.profile_filter_main_prompt
+            + CITATION_REMINDER
+            + " Now discuss your decision in a single paragraph, "
+            + "provide a final answer, and then an anchor mapping json:\n"
+        ),
+    )
+    simple_profile_filter_sys_prompt = Prompt(
+        name="SIMPLE_PROFILE_FILTER_SYS_PROMPT",
+        template=(
+            args.simple_profile_filter_sys_prompt
+            + args.profile_output_instruction
+            + CITATION_PROMPT
+        ),
+    )
+    complex_profile_filter_sys_prompt = Prompt(
+        name="COMPLEX_PROFILE_FILTER_SYS_PROMPT",
+        template=args.complex_profile_filter_sys_prompt
+        + args.profile_output_instruction
+        + CITATION_PROMPT,
+    )
 
     prev_run_info = None
     try:  # since everything associated with diffing is optional, put in try/except
@@ -1188,6 +1252,9 @@ async def filter_stocks_by_profile_match(
             profile_str,
             is_using_complex_profile,
             llm=cheap_llm,
+            profile_filter_main_prompt=profile_filter_main_prompt,
+            simple_profile_filter_sys_prompt=simple_profile_filter_sys_prompt,
+            complex_profile_filter_sys_prompt=complex_profile_filter_sys_prompt,
             context=context,
             do_citations=False,
         ),
@@ -1210,6 +1277,9 @@ async def filter_stocks_by_profile_match(
                 profile_str,
                 is_using_complex_profile,
                 llm=llm,
+                profile_filter_main_prompt=profile_filter_main_prompt,
+                simple_profile_filter_sys_prompt=simple_profile_filter_sys_prompt,
+                complex_profile_filter_sys_prompt=complex_profile_filter_sys_prompt,
                 context=context,
                 do_citations=True,
                 stock_whitelist=stock_whitelist,
