@@ -58,6 +58,7 @@ from agent_service.utils.earnings.earnings_util import (
     insert_transcript_partitions_to_db,
     split_transcript_into_smaller_sections,
 )
+from agent_service.utils.event_logging import log_event
 from agent_service.utils.sec.constants import LINK_TO_FILING_DETAILS
 from agent_service.utils.sec.sec_api import SecFiling
 
@@ -278,6 +279,13 @@ class Text(ComplexIOBase):
             if isinstance(id_rep, TextGroup):
                 return id_rep.convert_to_str(strs_lookup, text_group_numbering)
             else:
+                if id_rep not in strs_lookup:
+                    logger.error(f"Text ID not found for type {cls}!: {id_rep=}")
+                    log_event(
+                        event_name="agent-svc-text-id-lookup-keyerror",
+                        event_data={"text_type": str(cls), "missing_id": id_rep},
+                    )
+                    return "Text not found"
                 return strs_lookup[id_rep]
 
         return convert_ids_to_strs(strs_lookup, texts_as_ids)
