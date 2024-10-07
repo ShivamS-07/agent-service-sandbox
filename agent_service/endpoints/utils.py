@@ -227,7 +227,15 @@ def get_plan_run_info(
 
     if plan_run_id in plan_run_id_to_status:
         plan_run_info = plan_run_id_to_status[plan_run_id]
-        plan_run_status = plan_run_info.status or Status.COMPLETE
+        plan_run_status = plan_run_info.status
+        if plan_run_status is None:
+            # if the plan run status is not stored in the db, use the prefect status
+            # if not in prefect, set to NOT_STARTED
+            if plan_run_id in prefect_plan_run_id_to_status:
+                prefect_flow_run = prefect_plan_run_id_to_status[plan_run_id]
+                plan_run_status = Status.from_prefect_state(prefect_flow_run.state_type)
+            else:
+                plan_run_status = Status.NOT_STARTED
         plan_run_start = plan_run_info.start_time
         plan_run_end = plan_run_info.end_time
     elif plan_run_id in prefect_plan_run_id_to_status:
@@ -259,7 +267,7 @@ def get_plan_run_task_info(
     - If neither
         - If logs or task output is found, set status to COMPLETE
         - If plan is cancelled, set status to CANCELLED
-        - Otherwise, set status to COMPLETE (or NOT_STARTED, but just in case)
+        - Otherwise, set status to NOT_STARTED just in case
     """
 
     task_start: Optional[datetime.datetime]
@@ -290,9 +298,9 @@ def get_plan_run_task_info(
         if has_logs or has_task_output:
             logger.warning(
                 f"Task info for (plan_run_id, task_id)={run_task_pair} not found. "
-                "But we found logs or task output, so Set task status to COMPLETE"
+                "But we found logs or task output, so Set task status to NOT_STARTED"
             )
-            task_status = Status.COMPLETE
+            task_status = Status.NOT_STARTED
         elif plan_run_status in (Status.CANCELLED, Status.ERROR):
             logger.warning(
                 f"Task info for (plan_run_id, task_id)={run_task_pair} not found. "
@@ -302,9 +310,9 @@ def get_plan_run_task_info(
         else:
             logger.warning(
                 f"Task info for (plan_run_id, task_id)={run_task_pair} not found"
-                "Set task status to COMPLETE"
+                "Set task status to NOT_STARTED"
             )
-            task_status = Status.COMPLETE
+            task_status = Status.NOT_STARTED
 
     return task_status, task_start, task_end
 
