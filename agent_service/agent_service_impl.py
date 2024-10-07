@@ -664,27 +664,29 @@ class AgentServiceImpl:
         agent_id: str,
         start_date: Optional[datetime.date] = None,
         end_date: Optional[datetime.date] = None,
-        most_recent_num_run: Optional[int] = None,
+        start_index: Optional[int] = 0,
+        limit_num: Optional[int] = None,
     ) -> GetAgentWorklogBoardResponse:
         """Get agent worklogs to build the Work Log Board
         Except `agent_id`, all other arguments are optional and can be used to filter the work log, but
         strongly recommend to have at least 1 filter to avoid returning too many entries.
-        NOTE: If any of `start_date` or `end_date` is provided, and `most_recent_num` is also provided,
+        NOTE: If any of `start_date` or `end_date` is provided, and `limit_num` is also provided,
         it will be most recent N entries within the date range.
 
         Args:
             agent_id (str): agent ID
             start (Optional[datetime.date]): start DATE to filter work log, inclusive
             end (Optional[datetime.date]): end DATE to filter work log, inclusive
-            most_recent_num_run (Optional[int]): number of most recent plan runs to return
+            start_index (Optional[int]): start index to filter work log
+            limit_num (Optional[int]): number of plan runs to return
         """
         LOGGER.info("Creating a future to get latest execution plan")
         # TODO: For now just get the latest plan. Later we can switch to LIVE plan
         future_task = run_async_background(self.pg.get_latest_execution_plan(agent_id))
 
         LOGGER.info("Getting agent worklogs")
-        run_history = await get_agent_hierarchical_worklogs(
-            agent_id, self.pg, start_date, end_date, most_recent_num_run
+        run_history, total_plan_count = await get_agent_hierarchical_worklogs(
+            agent_id, self.pg, start_date, end_date, start_index, limit_num
         )
 
         LOGGER.info("Waiting for getting latest execution plan (future) to complete")
@@ -712,6 +714,8 @@ class AgentServiceImpl:
             run_history=run_history,
             execution_plan_template=execution_plan_template,
             latest_plan_status=status,
+            total_plan_count=total_plan_count,
+            start_index=start_index,
         )
 
     async def get_agent_task_output(

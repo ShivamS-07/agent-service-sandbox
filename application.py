@@ -644,20 +644,22 @@ async def get_agent_worklog_board(
     agent_id: str,
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
-    most_recent_num_run: Optional[int] = None,
+    start_index: Optional[int] = 0,
+    limit_num: Optional[int] = None,
     user: User = Depends(parse_header),
 ) -> GetAgentWorklogBoardResponse:
     """Get agent worklogs to build the Work Log Board
     Except `agent_id`, all other arguments are optional and can be used to filter the work log, but
     strongly recommend to have at least 1 filter to avoid returning too many entries.
-    NOTE: If any of `start_date` or `end_date` is provided, and `most_recent_num` is also provided,
+    NOTE: If any of `start_date` or `end_date` is provided, and `limit_num` is also provided,
     it will be most recent N entries within the date range.
 
     Args:
         agent_id (str): agent ID
         start (Optional[datetime.date]): start DATE to filter work log, inclusive
         end (Optional[datetime.date]): end DATE to filter work log, inclusive
-        most_recent_num_run (Optional[int]): number of most recent plan runs to return
+        start_index (Optional[int]): start index to filter work log
+        limit_num (Optional[int]): number of plan runs to return
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
         logger.info(f"Validating if user {user.user_id} has access to agent {agent_id}.")
@@ -667,7 +669,8 @@ async def get_agent_worklog_board(
         agent_id=agent_id,
         start_date=start_date,
         end_date=end_date,
-        most_recent_num_run=most_recent_num_run,
+        start_index=start_index,
+        limit_num=limit_num,
     )
 
 

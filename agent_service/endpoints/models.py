@@ -388,6 +388,8 @@ class ExecutionPlanTemplate(BaseModel):
 
 class GetAgentWorklogBoardResponse(BaseModel):
     run_history: List[PlanRun]  # sorted by time ASC, all the runs that have happened
+    total_plan_count: Optional[int] = None
+    start_index: Optional[int] = None
     execution_plan_template: Optional[ExecutionPlanTemplate] = None
     latest_plan_status: Optional[str] = None
 

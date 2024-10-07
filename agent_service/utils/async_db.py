@@ -393,14 +393,10 @@ class AsyncDB:
         agent_id: str,
         start_date: Optional[datetime.date] = None,  # inclusive
         end_date: Optional[datetime.date] = None,  # exclusive
+        start_index: Optional[int] = 0,
         limit_num: Optional[int] = None,
-    ) -> List[Tuple[str, str]]:
+    ) -> Tuple[List[Tuple[str, str]], int]:
         params: Dict[str, Any] = {"agent_id": agent_id}
-
-        limit_sql = ""
-        if limit_num:
-            limit_sql = "LIMIT %(limit_num)s"
-            params["limit_num"] = limit_num
 
         start_date_filter = ""
         if start_date:
@@ -412,16 +408,35 @@ class AsyncDB:
             params["end_date"] = end_date
             end_date_filter = " AND created_at < %(end_date)s"
 
+        offset_sql = ""
+        if start_index is not None and start_index > 0:
+            offset_sql = "OFFSET %(start_index)s"
+            params["start_index"] = start_index
+
+        limit_sql = ""
+        if limit_num is not None:
+            limit_sql = "LIMIT %(limit_num)s"
+            params["limit_num"] = limit_num
+
         sql = f"""
         SELECT plan_run_id::VARCHAR, plan_id::VARCHAR
         FROM agent.plan_runs
         WHERE agent_id = %(agent_id)s{start_date_filter}{end_date_filter}
         ORDER BY created_at DESC
-        {limit_sql}
+        {limit_sql} {offset_sql}
         """
         rows = await self.pg.generic_read(sql, params=params)
 
-        return [(row["plan_run_id"], row["plan_id"]) for row in rows]
+        # Query to get total plan count
+        total_count_sql = f"""
+        SELECT COUNT(*) AS total_plan_count
+        FROM agent.plan_runs
+        WHERE agent_id = %(agent_id)s{start_date_filter}{end_date_filter}
+        """
+        total_count_rows = await self.pg.generic_read(total_count_sql, params=params)
+        total_plan_count = total_count_rows[0]["total_plan_count"] if total_count_rows else 0
+
+        return [(row["plan_run_id"], row["plan_id"]) for row in rows], total_plan_count
 
     async def get_agent_name(self, agent_id: str) -> str:
         sql = """

@@ -39,8 +39,9 @@ async def get_agent_hierarchical_worklogs(
     db: AsyncDB,
     start_date: Optional[datetime.date] = None,  # inclusive
     end_date: Optional[datetime.date] = None,  # inclusive
-    most_recent_num_runs: Optional[int] = None,
-) -> List[PlanRun]:
+    start_index: Optional[int] = 0,
+    limit_num: Optional[int] = None,
+) -> Tuple[List[PlanRun], Optional[int]]:
     """
     NOTE: To get the correct results, make sure you do
     `export PREFECT_API_URL=http://prefect-dev.boosted.ai:4200/api`
@@ -64,8 +65,8 @@ async def get_agent_hierarchical_worklogs(
     """
     logger.info(f"Getting plan runs for agent {agent_id}...")
     end_date_exclusive = end_date + datetime.timedelta(days=1) if end_date else None
-    tuples = await db.get_agent_plan_runs(
-        agent_id, start_date, end_date_exclusive, most_recent_num_runs
+    tuples, total_plan_count = await db.get_agent_plan_runs(
+        agent_id, start_date, end_date_exclusive, start_index, limit_num
     )
     plan_run_ids = [tup[0] for tup in tuples]
     plan_ids = list({tup[1] for tup in tuples})
@@ -200,13 +201,13 @@ async def get_agent_hierarchical_worklogs(
             )
         )
 
-    if most_recent_num_runs:
+    if limit_num:
         # if it errors here it means the db query is wrong
-        error_msg = f"Got {len(run_history)} runs than required {most_recent_num_runs=}"
-        assert len(run_history) <= most_recent_num_runs, error_msg
+        error_msg = f"Got {len(run_history)} runs than required {limit_num=}"
+        assert len(run_history) <= limit_num, error_msg
 
     run_history.sort(key=lambda x: x.start_time)
-    return run_history
+    return run_history, total_plan_count
 
 
 def get_plan_run_info(
