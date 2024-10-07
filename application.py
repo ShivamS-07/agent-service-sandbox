@@ -1552,6 +1552,7 @@ async def update_prompt_template(
         category=req.category,
         prompt=req.prompt,
         plan=req.plan,
+        is_visible=req.is_visible,
     )
 
 
