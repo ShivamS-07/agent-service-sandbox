@@ -34,6 +34,7 @@ from agent_service.io_types.table import (
     TableColumnType,
 )
 from agent_service.io_types.text import Text
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -231,7 +232,9 @@ async def statistic_identifier_lookup(
 
         return StatisticId(stat_id=row["id"], stat_name=row["name"])
 
-    raise ValueError(f"Could not find a stock data field related to: {args.statistic_name}")
+    raise EmptyOutputError(
+        f"Could not find a statistical data field related to: {args.statistic_name}"
+    )
 
 
 class MacroFeatureDataInput(ToolArgs):
