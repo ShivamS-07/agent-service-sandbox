@@ -62,15 +62,15 @@ from agent_service.tools.LLM_analysis.prompts import (
     PROFILE_REMOVE_DIFF_MAIN_PROMPT,
     PROFILE_REMOVE_DIFF_SYS_PROMPT,
     SIMPLE_PROFILE_FILTER_SYS_PROMPT,
-    STOCK_PHRASE,
-    SUMMARIZE_BRAINSTORM_INSTRUCTIONS,
+    STOCK_PHRASE_STR_DEFAULT,
+    SUMMARIZE_BRAINSTORM_INSTRUCTIONS_STR_DEFAULT,
     SUMMARIZE_DESCRIPTION,
-    SUMMARIZE_MAIN_PROMPT,
-    SUMMARIZE_SYS_PROMPT,
+    SUMMARIZE_MAIN_PROMPT_STR_DEFAULT,
+    SUMMARIZE_SYS_PROMPT_STR_DEFAULT,
     SUMMARIZE_UPDATE_INSTRUCTIONS,
     TOPIC_FILTER_MAIN_PROMPT,
     TOPIC_FILTER_SYS_PROMPT,
-    TOPIC_PHRASE,
+    TOPIC_PHRASE_STR_DEFAULT,
     UPDATE_SUMMARIZE_MAIN_PROMPT,
     UPDATE_SUMMARIZE_SYS_PROMPT,
 )
@@ -113,10 +113,43 @@ class SummarizeTextInput(ToolArgs):
     topic: Optional[str] = None
     stock: Optional[StockID] = None
 
+    # prompt arguments (hidden from planner)
+    summarize_sys_prompt: str = SUMMARIZE_SYS_PROMPT_STR_DEFAULT
+    summarize_main_prompt: str = SUMMARIZE_MAIN_PROMPT_STR_DEFAULT
+    summarize_brainstorm_instruction: str = SUMMARIZE_BRAINSTORM_INSTRUCTIONS_STR_DEFAULT
+    topic_phrase: str = TOPIC_PHRASE_STR_DEFAULT
+    stock_phrase: str = STOCK_PHRASE_STR_DEFAULT
+
+    # tool arguments metadata
+    arg_metadata = {
+        "summarize_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "summarize_main_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "summarize_brainstorm_instruction": ToolArgMetadata(hidden_from_planner=True),
+        "topic_phrase": ToolArgMetadata(hidden_from_planner=True),
+        "stock_phrase": ToolArgMetadata(hidden_from_planner=True),
+    }
+
 
 async def _initial_summarize_helper(
     args: SummarizeTextInput, context: PlanRunContext, llm: GPT
 ) -> Tuple[str, List[TextCitation]]:
+    # create prompts
+    summarize_sys_prompt = Prompt(
+        name="LLM_SUMMARIZE_SYS_PROMPT",
+        template=args.summarize_sys_prompt + CITATION_PROMPT,
+    )
+    summarize_main_prompt = Prompt(
+        name="LLM_SUMMARIZE_MAIN_PROMPT",
+        template=args.summarize_main_prompt
+        + CITATION_REMINDER
+        + " Pay specific attention to the way that the client wants you to output the summary, "
+        + "YOU MUST comply with this format"
+        + " Now proceed with your summary writing, do not forget that you must carry out a brainstorming session "
+        + "if you have been provided with a specific topic:\n",
+    )
+    summarize_brainstorm_instruction = args.summarize_brainstorm_instruction
+    topic_phrase = args.topic_phrase
+    stock_phrase = args.stock_phrase
     logger = get_prefect_logger(__name__)
     if args.topic:
         texts = await topic_filter_helper(
@@ -138,10 +171,10 @@ async def _initial_summarize_helper(
             .get_execution_plan_for_run(context.plan_run_id)
             .get_formatted_plan(numbered=True)
         )
-        topic_str = TOPIC_PHRASE.format(
+        topic_str = topic_phrase.format(
             topic=topic, plan_str=plan_str, brainstorm_reminder=BRAINSTORM_REMINDER
         )
-        brainstorm_str = SUMMARIZE_BRAINSTORM_INSTRUCTIONS.format(
+        brainstorm_str = summarize_brainstorm_instruction.format(
             brainstorm_delimiter=BRAINSTORM_DELIMITER
         )
     else:
@@ -149,22 +182,22 @@ async def _initial_summarize_helper(
         brainstorm_str = ""
     stock = args.stock
     if stock:
-        stock_str = STOCK_PHRASE.format(stock=stock.company_name)
+        stock_str = stock_phrase.format(stock=stock.company_name)
     else:
         stock_str = ""
 
     texts_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
         texts_str,
         [
-            SUMMARIZE_MAIN_PROMPT.template,
-            SUMMARIZE_SYS_PROMPT.template,
+            summarize_main_prompt.template,
+            summarize_sys_prompt.template,
             chat_str,
             topic_str,
             stock_str,
         ],
     )
 
-    main_prompt = SUMMARIZE_MAIN_PROMPT.format(
+    main_prompt = summarize_main_prompt.format(
         texts=texts_str,
         chat_context=chat_str,
         topic_phrase=topic_str,
@@ -176,7 +209,7 @@ async def _initial_summarize_helper(
         ),
     )
 
-    sys_prompt = SUMMARIZE_SYS_PROMPT.format(brainstorm_instructions=brainstorm_str)
+    sys_prompt = summarize_sys_prompt.format(brainstorm_instructions=brainstorm_str)
 
     result = await llm.do_chat_w_sys_prompt(
         main_prompt,
@@ -254,13 +287,15 @@ async def _update_summarize_helper(
             .get_execution_plan_for_run(context.plan_run_id)
             .get_formatted_plan(numbered=True)
         )
-        topic_str = TOPIC_PHRASE.format(topic=topic, plan_str=plan_str, brainstorm_reminder="")
+        topic_str = TOPIC_PHRASE_STR_DEFAULT.format(
+            topic=topic, plan_str=plan_str, brainstorm_reminder=""
+        )
     else:
         topic_str = ""
 
     stock = args.stock
     if stock:
-        stock_str = STOCK_PHRASE.format(stock=stock.company_name)
+        stock_str = STOCK_PHRASE_STR_DEFAULT.format(stock=stock.company_name)
     else:
         stock_str = ""
 
