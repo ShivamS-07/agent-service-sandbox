@@ -608,12 +608,12 @@ async def do_competitive_analysis(
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)
 
-    if not args.stocks:
-        raise EmptyInputError("At least one stock must be provided to do competative analysis")
+    if not len(args.stocks) >= 2:
+        raise EmptyInputError("At least two stocks must be provided to do competative analysis")
     elif not args.criteria:
         raise EmptyInputError("At least one criterion must be provided to do competative analysis")
     elif not args.all_text_data:
-        raise EmptyInputError("At least one text data must be provided to do competative analysis")
+        raise EmptyInputError("At least some text data must be provided to do competative analysis")
 
     prev_run_info = None
     prev_internal_data = None
