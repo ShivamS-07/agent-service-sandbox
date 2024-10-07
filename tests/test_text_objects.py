@@ -134,6 +134,17 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
                     TextObject(type=TextObjectType.STOCK, index=15, end_index=18),
                 ],
             ),
+            param(
+                text="Tata Consultancy Services (TCS) is a prominent IT services company. AT&T Inc. is a leading telecommunications and technology services provider.",
+                stocks={
+                    "Tata Consultancy Services": StockID(gbi_id=714, symbol="TCS", isin=""),
+                    "AT&T Inc.": StockID(gbi_id=714, symbol="T", isin=""),
+                },
+                expected_output=[
+                    TextObject(type=TextObjectType.STOCK, index=27, end_index=29),
+                    TextObject(type=TextObjectType.STOCK, index=68, end_index=76),
+                ],
+            ),
         ]
     )
     async def test__extract_stock_tags_from_text(

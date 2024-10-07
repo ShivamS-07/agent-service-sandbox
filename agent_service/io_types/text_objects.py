@@ -142,7 +142,7 @@ class TextObject(SerializeableBase):
             symbol_match_regex = None
             symbol_match = None
             if symbol:
-                symbol_match_regex = rf"\b{re.escape(symbol)}"
+                symbol_match_regex = rf"\b{re.escape(symbol)}\b"
             company_match = re.search(company_match_regex, text)
             if symbol_match_regex:
                 symbol_match = re.search(symbol_match_regex, text)
@@ -231,15 +231,19 @@ class TextObject(SerializeableBase):
 publicly traded company mentioned in a block of text, no matter how briefly it is mentioned.
 Even if the company is only mentioned once or in passing, it must be included in the final output.
 Your job is to:
-1. Carefully identify **every** publicly traded company, regardless of its prominence in the text.
+1. Carefully identify **every** publicly traded company, ensuring that only companies currently
+publicly traded on recognized stock exchanges are included.
 2. Output the corresponding stock ticker symbols for each publicly traded company.
 3. Your output format should be a dictionary where the keys are the company names and the
-values are the ticker symbols. Each company should only appear once.
+values are the ticker symbols. Each company should only appear once. Each ticker symbol should
+also only appear once.
 
 Here are additional instructions to help you perform the task:
 - You must identify **all publicly traded company names** in the text and only the publicly traded
-company names, whether they are the main subject or mentioned in passing.
-- If the text contains a company's stock ticker symbol, use that as the value in the dictionary.
+company names. Ignore any mentions of organizations, companies, or entities that are not public,
+even if they sound like publicly traded companies (e.g. OpenAI).
+- If the text uses a stock ticker symbol to refer to its corresponding company, use that stock
+ticker symbol as the value and identify the company name associated with that ticker.
 - The output should be only the dictionary containing the key-value pairs, with no additional text
 or commentary. Failure to comply means you will lose your job!
 

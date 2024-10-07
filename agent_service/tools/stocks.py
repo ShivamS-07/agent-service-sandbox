@@ -332,7 +332,7 @@ async def stock_identifier_lookup_helper(
                 gpt_stock = s
                 logger.info(f"found gpt answer in original set: {gpt_stock=}, {gpt_answer=}")
                 break
-            if not ticker_match and args.stock_name.lower() == s_symbol:
+            if not ticker_match and args.stock_name and args.stock_name.lower() == s_symbol:
                 # we will need this for a corner case where GPT likes to lock on to ticker typos
                 ticker_match = s
                 logger.info(
