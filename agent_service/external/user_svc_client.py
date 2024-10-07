@@ -22,6 +22,7 @@ from user_service_proto_v1.user_service_pb2 import (
 from user_service_proto_v1.well_known_types_pb2 import UUID
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
+from agent_service.utils.feature_flags import is_user_agent_admin
 from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
@@ -62,12 +63,16 @@ def _get_service_stub() -> Generator[UserServiceStub, None, None]:
 @async_perf_logger
 async def get_users(user_id: str, user_ids: List[str], include_user_enabled: bool) -> List[User]:
     with _get_service_stub() as stub:
+        metadata = [
+            *get_default_grpc_metadata(user_id=user_id),
+            ("is-warren-agent-admin", "True" if is_user_agent_admin(user_id) else "False"),
+        ]
         res = await stub.GetUsers(
             GetUsersRequest(
                 user_id=[UUID(id=user_id) for user_id in user_ids],
                 include_user_enabled=include_user_enabled,
             ),
-            metadata=get_default_grpc_metadata(user_id=user_id),
+            metadata=metadata,
         )
         return [u for u in res.user]
 
