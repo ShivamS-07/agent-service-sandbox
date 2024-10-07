@@ -28,7 +28,13 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
     TableColumnType,
 )
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import (
+    ToolArgMetadata,
+    ToolArgs,
+    ToolCategory,
+    ToolRegistry,
+    tool,
+)
 from agent_service.tools.feature_data import get_latest_price
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -61,7 +67,14 @@ logger = get_prefect_logger(__name__)
 class GetPortfolioHoldingsInput(ToolArgs):
     portfolio_id: PortfolioID
     expand_etfs: bool = False
-    fetch_default_stats: bool
+    fetch_default_stats: bool = False
+    fetch_stats: Optional[bool] = None  # old name for fetch_default_stats
+    date_range: Optional[DateRange] = None  # ignored
+
+    arg_metadata = {
+        "fetch_stats": ToolArgMetadata(hidden_from_planner=True),
+        "date_range": ToolArgMetadata(hidden_from_planner=True),
+    }
 
 
 async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
@@ -85,10 +98,11 @@ async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
         "If you only need a list of stocks without weights, MAKE SURE you use the "
         "`get_stock_identifier_list_from_table` function on the table output by this function! "
         "\n- There is a fetch_default_stats input which must be set to True or False. "
-        " fetch_default_stats should usually be set to True"
-        " if the holdings table returned by this function mostly answers the user's question"
+        " fetch_default_stats should only be set to True if "
+        " the holdings table returned by this function mostly answers the user's question"
         " and is then passed to the prepare_output function,"
         " If the question is more involved and requires more than 4 steps in your plan"
+        " or client asks for specific statistics by name"
         " then set fetch_default_stats = False"
         " when fetch_default_stats is True  pricing and returns information will be added into the table."
         " As this is useful default information to have when looking at the holdings."
@@ -105,6 +119,11 @@ async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
 async def get_portfolio_holdings(
     args: GetPortfolioHoldingsInput, context: PlanRunContext
 ) -> StockTable:
+
+    # respect the old name
+    if args.fetch_stats is not None:
+        args.fetch_default_stats = args.fetch_stats
+
     workspace = await get_all_holdings_in_workspace(context.user_id, args.portfolio_id)
 
     workspace_name = await get_workspace_name(

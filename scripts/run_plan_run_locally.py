@@ -1,7 +1,7 @@
 import argparse
 import asyncio
 from typing import Dict, List, Tuple
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from gbi_common_py_utils.utils.clickhouse_base import ClickhouseBase
 
@@ -91,10 +91,17 @@ async def main() -> IOType:
         for task_id, output in task_id_output_map.items():
             override_output_dict[task_id] = output
 
-    with patch(target="agent_service.planner.executor.get_psql"), patch(
-        target="agent_service.planner.executor.AsyncDB"
-    ), patch(target="agent_service.planner.executor.check_cancelled") as cc:
+    with (
+        patch(target="agent_service.planner.executor.get_psql"),
+        patch(target="agent_service.planner.executor.AsyncDB") as adb,
+        patch(target="agent_service.planner.executor.get_agent_output"),
+        patch(target="agent_service.planner.executor.check_cancelled") as cc,
+    ):
+
         cc.return_value = False
+        adb().set_plan_run_metadata = AsyncMock()
+        adb().update_plan_run = AsyncMock()
+        adb().update_task_statuses = AsyncMock()
         result = await run_execution_plan_local(
             plan=plan, context=context, override_task_output_lookup=override_output_dict
         )

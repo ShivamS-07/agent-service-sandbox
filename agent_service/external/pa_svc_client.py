@@ -79,7 +79,9 @@ def get_url_and_port() -> Tuple[str, int]:
     env = get_environment_tag()
     if env not in DEFAULT_URLS:
         raise ValueError(f"No URL is set for environment {env}")
-    return DEFAULT_URLS[env]
+    svc_target = DEFAULT_URLS[env]
+    logger.warning(f"using pa portfolio svc at: {svc_target=}")
+    return svc_target
 
 
 @contextmanager
