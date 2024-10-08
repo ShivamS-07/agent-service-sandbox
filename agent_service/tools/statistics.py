@@ -66,10 +66,10 @@ DECOMPOSITION_SYS_PROMPT_STR = "You are a financial analyst who is trying to pre
 TWO_QUARTERS = datetime.timedelta(days=183)
 
 # These EPS stats don't work for all companies, so need to be fixed
-ACTUAL_EPS = "Net EPS - Basic"
+ACTUAL_EPS = "EPS Normalized Actual"
 EXPECTED_EPS = "EPS Normalized Consensus Median"
 
-ACTUAL_REVENUE = "Revenues"
+ACTUAL_REVENUE = "Revenue Actual"
 EXPECTED_REVENUE = "Revenue Consensus Median"
 
 DECOMPOSITION_MAIN_PROMPT_STR = "Identify which of the following list of statistics is, or can be used to derive the statistic referenced by the user, as understood in the larger chat context, and provide a mathematical description of how such a derivation would occur, as needed. {time_series}\n Here is the statistic you must return: {statistic_description}\nHere is the larger chat context, delimited by `---`:\n---\n{chat_context}\n---\nAnd here is the long list of statistics you have data for, also delimited by `---`:\n---\n{statistic_list}\n---\nNow output your json consisting of a list of relevant statistics, and an explanation of how to derive the client's statistic from those statistics, and, if applicable, the amount additional time series data that must be requested beyond the timespan asked for by the client:\n"  # noqa: E501
@@ -490,6 +490,7 @@ class BeatOrMissEarningsFilterInput(ToolArgs):
     stocks: List[StockID]
     miss: bool = False
     quarters: Optional[DateRange] = None
+    mode: str = "earnings"
 
 
 @tool(
@@ -507,10 +508,12 @@ class BeatOrMissEarningsFilterInput(ToolArgs):
         " beat or missed earnings expectations, in this cases you must not use either the get_statistics"
         " tool, nor the transform table tool, and you should NEVER attempt to accomplish this by summarizing"
         " earnings reports, since this do not always mention relevant earnings expectations."
+        " If the user is interested in beat or miss for revenue expecations, pass revenue as the mode"
+        " instead of earnings, but you should default to earnings unless revenue is specifically mentioned."
+        " only 'earnings' and 'revenue' are supported as possible modes"
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
-    enabled=False,
 )
 async def beat_or_miss_earnings_filter(
     args: BeatOrMissEarningsFilterInput, context: PlanRunContext
@@ -529,11 +532,18 @@ async def beat_or_miss_earnings_filter(
 
     all_statistic_lookup = await get_statistic_lookup(context)
 
+    if args.mode == "earnings":
+        actual_stat = ACTUAL_EPS
+        expected_stat = EXPECTED_EPS
+    elif args.mode == "revenue":
+        actual_stat = ACTUAL_REVENUE
+        expected_stat = EXPECTED_REVENUE
+
     actual_EPS = await get_statistic_data(
         context=context,
         stock_ids=args.stocks,
         statistic_id=StatisticId(
-            stat_id=all_statistic_lookup[ACTUAL_EPS].feature_id, stat_name=ACTUAL_EPS
+            stat_id=all_statistic_lookup[actual_stat].feature_id, stat_name=actual_stat
         ),
         start_date=start_date,
         end_date=end_date,
@@ -545,7 +555,7 @@ async def beat_or_miss_earnings_filter(
         context=context,
         stock_ids=args.stocks,
         statistic_id=StatisticId(
-            stat_id=all_statistic_lookup[EXPECTED_EPS].feature_id, stat_name=EXPECTED_EPS
+            stat_id=all_statistic_lookup[expected_stat].feature_id, stat_name=expected_stat
         ),
         start_date=start_date,
         end_date=end_date,
@@ -591,7 +601,7 @@ async def beat_or_miss_earnings_filter(
             for quarter, actual, expected in to_check_list:
                 stock = stock.inject_history_entry(
                     HistoryEntry(
-                        title=f"{ACTUAL_EPS} ({quarter})",
+                        title=f"{actual_stat} ({quarter})",
                         explanation=actual,
                         entry_type=TableColumnType.CURRENCY,
                         unit="USD",
@@ -599,7 +609,7 @@ async def beat_or_miss_earnings_filter(
                 )
                 stock = stock.inject_history_entry(
                     HistoryEntry(
-                        title=f"{EXPECTED_EPS} ({quarter})",
+                        title=f"{expected_stat} ({quarter})",
                         explanation=expected,
                         entry_type=TableColumnType.CURRENCY,
                         unit="USD",
@@ -628,6 +638,7 @@ async def beat_or_miss_earnings_filter(
 class GetExpectedRevenueGrowth(ToolArgs):
     stocks: List[StockID]
     num_quarters: int = 4
+    mode: str = "revenue"
 
 
 @tool(
@@ -642,6 +653,8 @@ class GetExpectedRevenueGrowth(ToolArgs):
         " instead you should get the past revenue using the get statistic tool, and then calculate the desired "
         " growth number by tranforming that data."
         " But if the user wishes to compare actual and expected revenue, you must use this tool."
+        " If the user instead wants earnings growth, you may set mode='earnings' instead. Only 'revenue'"
+        " and 'earnings' are supported as possible models."
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
@@ -659,11 +672,18 @@ async def get_expected_revenue_growth(
 
     all_statistic_lookup = await get_statistic_lookup(context)
 
+    if args.mode == "earnings":
+        actual_stat = ACTUAL_EPS
+        expected_stat = EXPECTED_EPS
+    elif args.mode == "revenue":
+        actual_stat = ACTUAL_REVENUE
+        expected_stat = EXPECTED_REVENUE
+
     actual_revenue = await get_statistic_data(
         context=context,
         stock_ids=args.stocks,
         statistic_id=StatisticId(
-            stat_id=all_statistic_lookup[ACTUAL_REVENUE].feature_id, stat_name=ACTUAL_REVENUE
+            stat_id=all_statistic_lookup[actual_stat].feature_id, stat_name=actual_stat
         ),
         start_date=start_date,
         end_date=today,
@@ -675,7 +695,7 @@ async def get_expected_revenue_growth(
         context=context,
         stock_ids=args.stocks,
         statistic_id=StatisticId(
-            stat_id=all_statistic_lookup[EXPECTED_REVENUE].feature_id, stat_name=EXPECTED_REVENUE
+            stat_id=all_statistic_lookup[expected_stat].feature_id, stat_name=expected_stat
         ),
         start_date=today
         - QUARTER,  # back one quarter in case previous quarter data not yet released
@@ -765,31 +785,31 @@ async def get_expected_revenue_growth(
             ),
             TableColumn(
                 metadata=TableColumnMetadata(
-                    label="Projected Revenue Growth", col_type=TableColumnType.PERCENT
+                    label=f"Projected {args.mode.title()} Growth", col_type=TableColumnType.PERCENT
                 ),
                 data=growths,  # type:ignore
             ),
             TableColumn(
                 metadata=TableColumnMetadata(
-                    label="Actual Revenue", col_type=TableColumnType.CURRENCY, unit="USD"
+                    label=actual_stat, col_type=TableColumnType.CURRENCY, unit="USD"
                 ),
                 data=past_revenues,  # type:ignore
             ),
             TableColumn(
                 metadata=TableColumnMetadata(
-                    label="Actual Revenue Quarter(s)", col_type=TableColumnType.STRING
+                    label=f"{actual_stat} Quarter(s)", col_type=TableColumnType.STRING
                 ),
                 data=past_range,  # type:ignore
             ),
             TableColumn(
                 metadata=TableColumnMetadata(
-                    label="Projected Revenue", col_type=TableColumnType.CURRENCY, unit="USD"
+                    label=expected_stat, col_type=TableColumnType.CURRENCY, unit="USD"
                 ),
                 data=future_revenues,  # type:ignore
             ),
             TableColumn(
                 metadata=TableColumnMetadata(
-                    label="Projected Revenue Quarter(s)", col_type=TableColumnType.STRING
+                    label=f"{expected_stat} Quarter(s)", col_type=TableColumnType.STRING
                 ),
                 data=future_range,  # type:ignore
             ),
