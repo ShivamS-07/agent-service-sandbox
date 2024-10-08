@@ -23,7 +23,6 @@ from agent_service.io_types.text import (
     StockDescriptionText,
     StockEarningsSummaryPointText,
     StockEarningsSummaryText,
-    StockEarningsText,
     StockNewsDevelopmentText,
     StockSecFilingSectionText,
     StockSecFilingText,
@@ -847,7 +846,7 @@ async def download_content_for_text_data(
     logger.info("Separate text data by sources")
     company_descriptions = [t for t in all_text_data if isinstance(t, StockDescriptionText)]
     news_developments = [t for t in all_text_data if isinstance(t, StockNewsDevelopmentText)]
-    earnings_summaries: List[StockEarningsText] = [
+    earnings_summaries: List[StockEarningsSummaryText] = [
         t for t in all_text_data if isinstance(t, StockEarningsSummaryText)
     ]
     sec_filings = [t for t in all_text_data if isinstance(t, StockSecFilingText)]
@@ -862,13 +861,15 @@ async def download_content_for_text_data(
 
     # Currently ignoring earning texts containing transcripts instead of summaries
     logger.info("Converting earnings summaries to points")
-    earnings_summary_points = await StockEarningsSummaryPointText.init_from_earnings_texts(
+    earnings_summary_points = await StockEarningsSummaryPointText.init_from_full_text_data(
         earnings_summaries
     )
 
     # it does the downloading of the content inside `init_from_filings`
     logger.info("Downloading content for 10K/10Q and split into sections")
-    sec_filing_sections_with_text = await StockSecFilingSectionText.init_from_filings(sec_filings)
+    sec_filing_sections_with_text = await StockSecFilingSectionText.init_from_full_text_data(
+        sec_filings
+    )
     logger.info(
         f"Got {len(sec_filing_sections_with_text)} sections from {len(sec_filings)} filings"
     )

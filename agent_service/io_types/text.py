@@ -61,6 +61,7 @@ from agent_service.utils.earnings.earnings_util import (
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.sec.constants import LINK_TO_FILING_DETAILS
 from agent_service.utils.sec.sec_api import SecFiling
+from agent_service.utils.string_utils import get_sections
 
 logger = logging.getLogger(__name__)
 
@@ -1084,7 +1085,7 @@ class StockEarningsTranscriptSectionText(StockEarningsText):
         self.id = hash((self.transcript_id, self.starting_line_num, self.ending_line_num))
 
     @classmethod
-    async def init_from_full_transcript(
+    async def init_from_full_text_data(
         cls,
         transcripts: List[StockEarningsTranscriptText],
         context: PlanRunContext,
@@ -1329,8 +1330,8 @@ class StockEarningsSummaryPointText(StockEarningsText):
         return outputs  # type: ignore
 
     @classmethod
-    async def init_from_earnings_texts(
-        cls, earnings_summaries: List[StockEarningsText]
+    async def init_from_full_text_data(
+        cls, earnings_summaries: List[StockEarningsSummaryText]
     ) -> List[Self]:
         from agent_service.utils.postgres import get_psql
 
@@ -1429,33 +1430,12 @@ class StockDescriptionText(StockText):
     async def _get_strs_lookup(
         cls, company_descriptions: List[StockDescriptionText]  # type: ignore
     ) -> Dict[TextIDType, str]:
-        sql = """
-        SELECT ssm.gbi_id, cds.company_description_short
-        FROM spiq_security_mapping ssm
-        JOIN nlp_service.company_descriptions_short cds
-        ON cds.spiq_company_id = ssm.spiq_company_id
-        WHERE ssm.gbi_id = ANY(%(stocks)s)
-        """
         from agent_service.utils.postgres import get_psql
 
         stocks = [desc.id for desc in company_descriptions]
 
-        # get short first since we always have that
-
         db = get_psql()
-        rows = db.generic_read(sql, {"stocks": stocks})
-
-        descriptions_rows = {row["gbi_id"]: row["company_description_short"] for row in rows}
-        descriptions = {gbi: descriptions_rows.get(gbi, "No description found") for gbi in stocks}
-
-        # replace with long if it exists
-
-        long_sql = sql.replace("_short", "")
-
-        rows = db.generic_read(long_sql, {"stocks": stocks})
-
-        for row in rows:
-            descriptions[row["gbi_id"]] = row["company_description"]
+        descriptions = db.get_company_descriptions(stocks)
 
         # For some reason SPIQ includes invalid characters for apostraphes. For
         # now just replace them here, ideally a data ingestion problem to fix.
@@ -1466,6 +1446,94 @@ class StockDescriptionText(StockText):
                 descriptions[gbi] = "No description found"
 
         return descriptions  # type: ignore
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[TextCitation], db: BoostedPG
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        output = defaultdict(list)
+        for text in texts:
+            hl_start, hl_end = None, None
+            if text.citation_snippet_context and text.citation_snippet:
+                hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
+                    smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
+                )
+            output[text].append(
+                DocumentCitationOutput(
+                    name=text.source_text.to_citation_title(),
+                    summary=text.citation_snippet_context,
+                    snippet_highlight_start=hl_start,
+                    snippet_highlight_end=hl_end,
+                    inline_offset=text.citation_text_offset,
+                    last_updated_at=text.source_text.timestamp,
+                )
+            )
+
+        return output  # type: ignore
+
+
+@io_type
+class StockDescriptionSectionText(StockText):
+    id: Union[int, str]  # hash((self.filing_id, self.header))  (str for backwards compatibility)
+    description_id: int
+    header: str
+
+    text_type: ClassVar[str] = "Company Description Section"
+
+    @field_serializer("val")
+    def serialize_val(self, val: str, _info: Any) -> str:
+        # Make sure we don't serialize unnecessary data, we only want to serialize the ID.
+        return ""
+
+    @classmethod
+    async def init_from_full_text_data(
+        cls, descriptions: List[StockDescriptionText]
+    ) -> List[StockDescriptionSectionText]:
+        description_texts = await StockDescriptionText._get_strs_lookup(descriptions)
+
+        all_sections = []
+        for description in descriptions:
+            if description.id not in description_texts:
+                continue
+
+            sections = get_sections(description_texts[description.id])
+            for header, content in sections.items():
+                all_sections.append(
+                    cls(
+                        id=hash((description.id, header)),
+                        val=content,
+                        description_id=description.id,
+                        header=header,
+                        stock_id=description.stock_id,
+                        timestamp=description.timestamp,
+                    )
+                )
+        return all_sections
+
+    @classmethod
+    async def _get_strs_lookup(
+        cls, sections: List[StockDescriptionSectionText]
+    ) -> Dict[TextIDType, str]:
+        from agent_service.utils.postgres import get_psql
+
+        description_ids = [section.description_id for section in sections]
+        sections_by_desc_ids: Dict[int, List[Tuple[int, str]]] = defaultdict(list)
+
+        for section in sections:
+            sections_by_desc_ids[section.description_id].append((int(section.id), section.header))
+
+        db = get_psql()
+        desc_lookup = db.get_company_descriptions(description_ids)
+
+        output = {}
+        for gbi_id, desc in desc_lookup.items():
+            desc = desc.replace("\x92", "'")
+            desc_sections = get_sections(desc)
+            for section_of_interest in sections_by_desc_ids[gbi_id]:
+                section_id = section_of_interest[0]
+                section_header = section_of_interest[1]
+                output[section_id] = desc_sections[section_header]
+        return output  # type: ignore
 
     @classmethod
     async def get_citations_for_output(
@@ -1639,7 +1707,7 @@ class StockSecFilingSectionText(StockText):
         self.id = hash((self.filing_id, self.header))
 
     @classmethod
-    async def init_from_filings(
+    async def init_from_full_text_data(
         cls, filings: List[StockSecFilingText]
     ) -> List[StockSecFilingSectionText]:
         filing_texts = await StockSecFilingText._get_strs_lookup(filings)
@@ -1670,7 +1738,7 @@ class StockSecFilingSectionText(StockText):
     async def _get_strs_lookup(
         cls, sections: List[StockSecFilingSectionText]  # type: ignore
     ) -> Dict[TextIDType, str]:
-        # In the DB we only store `header`, not `content` to save space
+        # Full data in the DB since we only store `header`, not `content` to save space
         filing_text_objs = {}
         header_to_sections: Dict[str, List[StockSecFilingSectionText]] = defaultdict(list)
         for section in sections:
@@ -1887,6 +1955,135 @@ class StockOtherSecFilingText(StockSecFilingText):
                 )
             )
         return output  # type: ignore
+
+
+@io_type
+class StockOtherSecFilingSectionText(StockText):
+    """
+    This class is actually a "section" of `StockOtherSecFilingText`. SEC filings are split
+    into even smaller sections and store them in this class.
+    """
+
+    id: Union[int, str]  # hash((self.filing_id, self.header))  (str for backwards compatibility)
+
+    text_type: ClassVar[str] = "SEC Filing Section"
+
+    filing_id: str
+    header: str
+    db_id: Optional[str] = None
+    form_type: Optional[str] = None
+
+    @field_serializer("val")
+    def serialize_val(self, val: str, _info: Any) -> str:
+        # Make sure we don't serialize unnecessary data, we only want to serialize the ID.
+        return ""
+
+    # For identifying the same texts across runs (different hash seeds)
+    def reset_id(self) -> None:
+        self.id = hash((self.filing_id, self.header))
+
+    @classmethod
+    async def init_from_full_text_data(
+        cls, filings: List[StockOtherSecFilingText]
+    ) -> List[StockOtherSecFilingSectionText]:
+        filing_texts = await StockOtherSecFilingText._get_strs_lookup(filings)
+
+        sections = []
+        for filing in filings:
+            if filing.id not in filing_texts:
+                continue
+
+            split_sections = get_sections(filing_texts[filing.id])
+            for header, content in split_sections.items():
+                sections.append(
+                    cls(
+                        id=hash((filing.id, header)),
+                        val=content,
+                        filing_id=str(filing.id),
+                        header=header,
+                        stock_id=filing.stock_id,
+                        db_id=filing.db_id,
+                        timestamp=filing.timestamp,
+                        form_type=filing.form_type,
+                    )
+                )
+
+        return sections
+
+    @classmethod
+    async def _get_strs_lookup(
+        cls, sections: List[StockOtherSecFilingSectionText]  # type: ignore
+    ) -> Dict[TextIDType, str]:
+        # Full data in the DB since we only store `header`, not `content` to save space
+        filing_text_objs = {}
+        filing_to_section_ids: Dict[str, List[int]] = defaultdict(list)
+        section_id_lookup = {section.id: section for section in sections}
+        for section in sections:
+            if section.filing_id not in filing_text_objs:
+                filing_text_objs[section.filing_id] = StockOtherSecFilingText(
+                    id=section.filing_id,
+                    stock_id=section.stock_id,
+                    db_id=section.db_id,
+                    timestamp=section.timestamp,
+                    form_type=section.form_type,
+                )
+            filing_to_section_ids[section.filing_id].append(int(section.id))
+
+        filing_texts = await StockOtherSecFilingText._get_strs_lookup(
+            list(filing_text_objs.values())
+        )
+
+        outputs = {}
+        for filing_id, filing_text in filing_texts.items():
+            split_sections = get_sections(filing_text)
+            for section_id in filing_to_section_ids.get(str(filing_id), []):
+                section = section_id_lookup[section_id]
+                outputs[section.id] = split_sections.get(section.header)
+
+        return outputs  # type: ignore
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[TextCitation], db: BoostedPG
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        output = defaultdict(list)
+        filing_id_set = set()
+        for text in texts:
+            source_text = text.source_text
+            source_text = cast(Self, text.source_text)
+            if source_text.filing_id in filing_id_set:
+                continue
+            filing_id_set.add(source_text.filing_id)
+            hl_start, hl_end = None, None
+            if text.citation_snippet_context and text.citation_snippet:
+                hl_start, hl_end = CompanyFilingCitationOutput.get_offsets_from_snippets(
+                    smaller_snippet=text.citation_snippet, context=text.citation_snippet_context
+                )
+            form_type = f" ({text.source_text.form_type})" if text.source_text.form_type else ""  # type: ignore
+            if text.source_text.stock_id and text.source_text.timestamp:
+                internal_id = CompanyFilingCitationOutput.get_citation_internal_id(
+                    gbi_id=text.source_text.stock_id.gbi_id,
+                    form_type=text.source_text.form_type,  # type: ignore
+                    filing_date=text.source_text.timestamp.date(),
+                )
+            else:
+                internal_id = str(text.source_text.db_id or text.source_text.id)  # type: ignore
+            output[text].append(
+                CompanyFilingCitationOutput(
+                    internal_id=internal_id,
+                    name=text.source_text.to_citation_title() + form_type,
+                    summary=text.citation_snippet_context,
+                    snippet_highlight_start=hl_start,
+                    snippet_highlight_end=hl_end,
+                    inline_offset=text.citation_text_offset,
+                    last_updated_at=text.source_text.timestamp,
+                )
+            )
+
+        return output  # type: ignore
+
+    async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
+        return f"{self.header}: {self.val}"
 
 
 @io_type

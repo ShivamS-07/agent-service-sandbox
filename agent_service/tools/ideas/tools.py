@@ -31,6 +31,7 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.smart_clustering import SmartClustering
 from agent_service.utils.string_utils import clean_to_json_if_needed
+from agent_service.utils.text_utils import partition_to_smaller_text_sizes
 
 
 async def initial_brainstorm(
@@ -195,7 +196,10 @@ async def brainstorm_ideas_from_text(
 ) -> List[Idea]:
     if len(args.texts) == 0:
         raise EmptyInputError("Missing input texts to idea brainstorm")
-    text_groups = await create_small_text_groups(args.texts)
+
+    partitioned_texts: List[Text] = await partition_to_smaller_text_sizes(args.texts, context)
+
+    text_groups = await create_small_text_groups(partitioned_texts)
     tasks = []
     # do brainstorming for each group that can fit in a single GPT context call
     for text_group in text_groups:

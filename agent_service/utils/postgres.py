@@ -572,6 +572,33 @@ class Postgres(PostgresBase):
         row = records[0]
         return (row["company_description"], row["last_updated"])
 
+    def get_company_descriptions(self, gbi_ids: List[int]) -> Dict[int, str]:
+        sql = """
+        SELECT ssm.gbi_id, cds.company_description_short
+        FROM spiq_security_mapping ssm
+        JOIN nlp_service.company_descriptions_short cds
+        ON cds.spiq_company_id = ssm.spiq_company_id
+        WHERE ssm.gbi_id = ANY(%(gbi_ids)s)
+        """
+
+        # get short first since we always have that
+
+        db = get_psql()
+        rows = db.generic_read(sql, {"gbi_ids": gbi_ids})
+        db.get_long_company_description
+        descriptions_rows = {row["gbi_id"]: row["company_description_short"] for row in rows}
+        descriptions = {gbi: descriptions_rows.get(gbi, "No description found") for gbi in gbi_ids}
+
+        # replace with long if it exists
+
+        long_sql = sql.replace("_short", "")
+
+        rows = db.generic_read(long_sql, {"gbi_ids": gbi_ids})
+
+        for row in rows:
+            descriptions[row["gbi_id"]] = row["company_description"]
+        return descriptions
+
     # Sample plan functions
 
     def insert_sample_plan(self, sample_plan: SamplePlan) -> None:
