@@ -373,7 +373,7 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
                         value=val,
                         citation_refs=[
                             kpi_name_to_id_mapping[kpi_desc.name]
-                            for kpi_desc in data_col.metadata.row_descs[i]
+                            for kpi_desc in data_col.metadata.row_descs.get(i, [])
                         ],
                     )
                 )
