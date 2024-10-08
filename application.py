@@ -1731,7 +1731,7 @@ if __name__ == "__main__":
         base_url=base_url,
         cache=RedisCacheBackend(
             namespace="agent-output-cache",
-            serialize_func=lambda x: x.model_dump_json(),
+            serialize_func=lambda x: x.model_dump_json(serialize_as_any=True),
             deserialize_func=lambda x: GetAgentOutputResponse.model_validate_json(x),
         ),
     )

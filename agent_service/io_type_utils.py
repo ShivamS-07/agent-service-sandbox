@@ -120,10 +120,12 @@ class SerializeableBase(BaseModel, ABC):
     # For reasoning behind 'serialize_as_any'. We want this behavior pretty much
     # everywhere, so we can override these methods to always use it.
     def model_dump(self, **kwargs: Any) -> Dict[str, Any]:
-        return super().model_dump(serialize_as_any=True, **kwargs)
+        kwargs.setdefault("serialize_as_any", True)
+        return super().model_dump(**kwargs)
 
     def model_dump_json(self, **kwargs: Any) -> str:
-        return super().model_dump_json(serialize_as_any=True, **kwargs)
+        kwargs.setdefault("serialize_as_any", True)
+        return super().model_dump_json(**kwargs)
 
     @classmethod
     def type_name(cls) -> str:
