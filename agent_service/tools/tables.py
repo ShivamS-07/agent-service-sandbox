@@ -242,6 +242,11 @@ something vague like 'average stocks' but rather something specific like 'averag
 in the QQQ'. Do this in all cases, but this is especially critical if you are doing comparisons of
 aggregate statistics across different groupings of stocks.
 
+Do not use this tool directly to calculate monthly/yearly change rates (e.g. revenue growth) for
+stocks. You must use the get_statistic_for_companies tool in all cases where the calculation
+can be done independently per stock, this tool should only be used for cross-stock calculations!
+This is true even if you have already retrieved the underlying data you need for the calculation.
+
 You must never pass a vague transformation_description into this tool, you must always be fully
 explicit about the operations, particularly filtering. If the client only mentioned, for example,
 a filtering to "high" or "good" values without providing a definition of what "high" or "good"

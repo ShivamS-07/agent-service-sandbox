@@ -68,6 +68,13 @@ and if you drop that column then that isn't possible, you will fail on this requ
 and be fired! Those cases will typically involve outputting three columns: the Date,
 the Stock Group, and then the averaged statistic, in that order.
 
+Another transformation possibility is some calculation which takes daily data (data with a date
+column) and converts it to monthly or yearly data. Quarterly data may also be converted to yearly
+data. For example, `calculate the stock price growth for each of the last 12 months/5 years`
+In such a case, you will replace the date/quarter column with a month/year column in your output
+columns. Do this only if the user clearly wants outputs for multiple months/years. If the user
+just wants a single datapoint, you should not be including a date-related column at all.
+
 You must NOT change the col_type or units of any particular statistic if you are
 simply copying that column from the input to the output. Note that when you divide two
 statistics of the same type (e.g. two fields with USD currency), the output is typically
@@ -457,6 +464,24 @@ start_period = '2023Q2'
 end_period = '2024Q2'
 
 Otherwise, the calculations should be identical to what you would do with dates.
+
+Sometimes you will be converting data broken down by individual dates or quarters
+into other units of time, such as months or years. A few important things to keep
+in mind when doing such calculations:
+1. Make sure there is only one output per unit time the user is interested in. To accomplish
+this will often involve either filtering to work only with specific dates at the beginning
+or end of a period, or summing the values across the time period. If you are not doing one of
+those two things, you are probably doing something wrong!
+2. When deciding to filter or sum, you must consider the nature of the data. Stock price
+and many statistics related to it cannot be summed, it does not make sense. Overall debt
+is similar. However, raw revenue and other income-related values already refects a delta
+for a given period, so summing makes sense (you get the total revenue for a year by summing
+the revenue for the quarters, but you do NOT get a 'total' stock price for a year by summing
+stock price on each day).
+3. Note that you can only do proper year-over-year (or month-over-month) growth calculations
+when you have complete years (months). You must exclude partial years (months) from your
+calculation. For example, if the current date is in 2024, you cannot include year-over-year
+revenue growth for 2024 in your output.
 
 Now that we have given you explicit instructions with how to deal with various
 cases you might encounters, here is the specific data you will be working with:
