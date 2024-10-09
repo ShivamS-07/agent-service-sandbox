@@ -1,9 +1,7 @@
 import datetime
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set, Tuple, cast
-
-from prefect.client.schemas import TaskRun as PrefectTaskRun
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from agent_service.endpoints.models import (
     PlanRun,
@@ -25,10 +23,6 @@ from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
-from agent_service.utils.prefect import (
-    get_prefect_plan_run_statuses,
-    get_prefect_task_statuses,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -79,20 +73,16 @@ async def get_agent_hierarchical_worklogs(
         str, Tuple[ExecutionPlan, PlanStatus, datetime.datetime, datetime.datetime]
     ]
     cancelled_ids: Set[str]
-    prefect_plan_run_id_to_status: Dict[str, PrefectTaskRun]
-    prefect_run_task_pair_to_status: Dict[Tuple[str, str], PrefectTaskRun]
 
     # NOTE: due to the fact that Prefect isn't stable, we started to store statuses in the db since
     # 2024.9.3. There's no easy way to backfill the statuses, so we will rely on DB first, if no
-    # entries, fallback to Prefect. If no prefect entries, default to NOT_STARTED
+    # entries, default to NOT_STARTED
     tasks = [
         db.get_agent_worklogs(agent_id, start_date, end_date_exclusive, plan_run_ids),
         db.get_plan_run_statuses(plan_run_ids),
         db.get_task_run_statuses(plan_run_ids),
         db.get_execution_plans(plan_ids),
         db.get_cancelled_ids(ids_to_check=plan_run_ids + plan_ids),
-        get_prefect_plan_run_statuses(plan_run_ids),
-        get_prefect_task_statuses(plan_run_ids),
     ]
     results = await gather_with_concurrency(tasks, n=len(tasks))
     (
@@ -101,8 +91,6 @@ async def get_agent_hierarchical_worklogs(
         run_task_pair_to_status,
         plan_id_to_plan,
         cancelled_ids,
-        prefect_plan_run_id_to_status,
-        prefect_run_task_pair_to_status,
     ) = results
     cancelled_ids = set(cancelled_ids)
 
@@ -168,7 +156,7 @@ async def get_agent_hierarchical_worklogs(
             continue
 
         plan_run_status, plan_run_start, plan_run_end = get_plan_run_info(
-            plan_run_id, plan_run_id_to_status, prefect_plan_run_id_to_status
+            plan_run_id, plan_run_id_to_status
         )
 
         if plan_run_id in cancelled_ids or plan_id in cancelled_ids:
@@ -182,7 +170,6 @@ async def get_agent_hierarchical_worklogs(
             plan_run_id_task_id_to_logs,
             plan_run_id_task_id_to_task_output,
             run_task_pair_to_status,
-            prefect_run_task_pair_to_status,
             plan_run_status,
         )
         plan_run_status = reset_plan_run_status_if_needed(plan_run_status, full_tasks)
@@ -213,13 +200,11 @@ async def get_agent_hierarchical_worklogs(
 def get_plan_run_info(
     plan_run_id: str,
     plan_run_id_to_status: Dict[str, PlanRunStatusInfo],
-    prefect_plan_run_id_to_status: Dict[str, PrefectTaskRun],
 ) -> Tuple[Status, Optional[datetime.datetime], Optional[datetime.datetime]]:
     """
     Get plan run's status, start time and end time
     - We first check if the status is stored in DB, if so, use that
-    - We next check if the status is stored in Prefect, if so, use that
-    - If neither, default to NOT_STARTED
+    - If not, default to NOT_STARTED
     """
 
     plan_run_start: Optional[datetime.datetime]
@@ -229,20 +214,9 @@ def get_plan_run_info(
         plan_run_info = plan_run_id_to_status[plan_run_id]
         plan_run_status = plan_run_info.status
         if plan_run_status is None:
-            # if the plan run status is not stored in the db, use the prefect status
-            # if not in prefect, set to NOT_STARTED
-            if plan_run_id in prefect_plan_run_id_to_status:
-                prefect_flow_run = prefect_plan_run_id_to_status[plan_run_id]
-                plan_run_status = Status.from_prefect_state(prefect_flow_run.state_type)
-            else:
-                plan_run_status = Status.NOT_STARTED
+            plan_run_status = Status.NOT_STARTED
         plan_run_start = plan_run_info.start_time
         plan_run_end = plan_run_info.end_time
-    elif plan_run_id in prefect_plan_run_id_to_status:
-        prefect_flow_run = prefect_plan_run_id_to_status[plan_run_id]
-        plan_run_status = Status.from_prefect_state(prefect_flow_run.state_type)
-        plan_run_start = cast(Optional[datetime.datetime], prefect_flow_run.start_time)
-        plan_run_end = cast(Optional[datetime.datetime], prefect_flow_run.end_time)
     else:
         logger.warning(f"Plan run for {plan_run_id=} not found")
         plan_run_status = Status.NOT_STARTED
@@ -255,7 +229,6 @@ def get_plan_run_info(
 def get_plan_run_task_info(
     run_task_pair: Tuple[str, str],
     run_task_pair_to_status: Dict[Tuple[str, str], TaskRunStatusInfo],
-    prefect_run_task_pair_to_status: Dict[Tuple[str, str], PrefectTaskRun],
     has_logs: bool,
     has_task_output: bool,
     plan_run_status: Status,
@@ -263,8 +236,7 @@ def get_plan_run_task_info(
     """
     Get plan run task's status, start time and end time
     - We first check if the status is stored in DB, if so, use that
-    - We next check if the status is stored in Prefect, if so, use that
-    - If neither
+    - If not
         - If logs or task output is found, set status to COMPLETE
         - If plan is cancelled, set status to CANCELLED
         - Otherwise, set status to NOT_STARTED just in case
@@ -277,20 +249,9 @@ def get_plan_run_task_info(
         task_run_info = run_task_pair_to_status[run_task_pair]
         task_status = task_run_info.status
         if task_status is None:
-            # if the task status is not stored in the db, use the prefect status
-            # if not in prefect, set to NOT_STARTED
-            if run_task_pair in prefect_run_task_pair_to_status:
-                prefect_task_run = prefect_run_task_pair_to_status[run_task_pair]
-                task_status = Status.from_prefect_state(prefect_task_run.state_type)
-            else:
-                task_status = Status.NOT_STARTED
+            task_status = Status.NOT_STARTED
         task_start = task_run_info.start_time
         task_end = task_run_info.end_time
-    elif run_task_pair in prefect_run_task_pair_to_status:
-        prefect_task_run = prefect_run_task_pair_to_status[run_task_pair]
-        task_status = Status.from_prefect_state(prefect_task_run.state_type)
-        task_start = cast(Optional[datetime.datetime], prefect_task_run.start_time)
-        task_end = cast(Optional[datetime.datetime], prefect_task_run.end_time)
     else:
         task_start = None
         task_end = None
@@ -323,7 +284,6 @@ def get_plan_run_task_list(
     plan_run_id_task_id_to_logs: Dict[Tuple[str, str], List[PlanRunTaskLog]],
     plan_run_id_task_id_to_task_output: Dict[Tuple[str, str], Dict[str, Any]],
     run_task_pair_to_status: Dict[Tuple[str, str], TaskRunStatusInfo],
-    prefect_run_task_pair_to_status: Dict[Tuple[str, str], PrefectTaskRun],
     plan_run_status: Status,
 ) -> List[PlanRunTask]:
     # we want each run to have the full list of tasks with different statuses
@@ -338,7 +298,6 @@ def get_plan_run_task_list(
         task_status, task_start, task_end = get_plan_run_task_info(
             run_task_pair=task_key,
             run_task_pair_to_status=run_task_pair_to_status,
-            prefect_run_task_pair_to_status=prefect_run_task_pair_to_status,
             has_logs=bool(logs),
             has_task_output=task_key in plan_run_id_task_id_to_task_output,
             plan_run_status=plan_run_status,
