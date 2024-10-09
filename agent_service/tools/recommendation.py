@@ -776,20 +776,39 @@ async def get_stock_recommendations(
 
         if args.star_rating_threshold:
             threshold = args.star_rating_threshold / 5
+            num_before = len(ranked_stocks)
             if args.buy:
                 ranked_stocks = [
                     stock
                     for stock in ranked_stocks
                     if score_dict[stock].get_overall().val > threshold
                 ]
+                await tool_log(
+                    f"Filtered out {num_before - len(ranked_stocks)} stocks below a {args.star_rating_threshold} star rating",  # noqa
+                    context=context,
+                )
             else:
                 ranked_stocks = [
                     stock
                     for stock in ranked_stocks
                     if score_dict[stock].get_overall().val < threshold
                 ]
+                await tool_log(
+                    f"Filtered out {num_before - len(ranked_stocks)} stocks above a {args.star_rating_threshold} star rating",  # noqa
+                    context=context,
+                )
 
         if args.num_stocks_to_return:
+            if args.buy:
+                await tool_log(
+                    f"Keeping only the {args.num_stocks_to_return} highest-rated stocks",
+                    context=context,
+                )
+            else:
+                await tool_log(
+                    f"Keeping only the {args.num_stocks_to_return} lowest-rated stocks",
+                    context=context,
+                )
             ranked_stocks = ranked_stocks[: args.num_stocks_to_return]
 
         logger.info(f"Filtered to {len(ranked_stocks)} stocks")
