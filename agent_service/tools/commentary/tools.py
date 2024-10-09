@@ -351,7 +351,11 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
     # create commentary object
     commentary: Text = Text(val=commentary_text or result)
-    if isinstance(citations, list) and isinstance(citations[0], TextCitation):
+    if (
+        isinstance(citations, list)
+        and len(citations) > 0
+        and isinstance(citations[0], TextCitation)
+    ):
         commentary = commentary.inject_history_entry(
             HistoryEntry(title="Commentary", citations=citations)  # type:ignore
         )
