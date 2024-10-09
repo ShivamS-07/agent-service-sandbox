@@ -9,6 +9,7 @@ from agent_service.endpoints.models import (
     AgentMetadata,
     AgentNotificationEmail,
     AgentOutput,
+    AgentQC,
     AgentSchedule,
     CustomNotification,
     PlanRunStatusInfo,
@@ -1415,6 +1416,56 @@ class AsyncDB:
                 InsertToTableArgs(table_name="agent.agent_outputs", rows=regular_output_entries)
             )
         await self.pg.insert_atomic(to_insert=to_insert)
+
+    async def insert_agent_qc(self, agent_qc: AgentQC) -> None:
+        sql = """
+        INSERT INTO agent.agent_qc
+          (agent_qc_id, agent_id, plan_id, user_id, query, agent_status, cs_reviewer, eng_reviewer,
+           prod_reviewer, follow_up, score_rating, priority, use_case, problem_area,
+           cs_failed_reason, cs_attempt_reprompting, cs_expected_output, cs_notes,
+           canned_prompt_id, eng_failed_reason, eng_solution, eng_solution_difficulty,
+           jira_link, slack_link, fullstory_link, duplicate_agent, created_at, last_updated)
+        VALUES (%(agent_qc_id)s, %(agent_id)s, %(plan_id)s, %(user_id)s, %(query)s, %(agent_status)s,
+                %(cs_reviewer)s, %(eng_reviewer)s, %(prod_reviewer)s, %(follow_up)s,
+                %(score_rating)s, %(priority)s, %(use_case)s, %(problem_area)s,
+                %(cs_failed_reason)s, %(cs_attempt_reprompting)s, %(cs_expected_output)s, %(cs_notes)s,
+                %(canned_prompt_id)s, %(eng_failed_reason)s, %(eng_solution)s, %(eng_solution_difficulty)s,
+                %(jira_link)s, %(slack_link)s, %(fullstory_link)s, %(duplicate_agent)s,
+                %(created_at)s, %(last_updated)s)  -- Add the closing parentheses here
+        """
+        await self.pg.generic_write(
+            sql,
+            {
+                "agent_qc_id": agent_qc.agent_qc_id,
+                "agent_id": agent_qc.agent_id,
+                "plan_id": agent_qc.plan_id,
+                "user_id": agent_qc.user_id,
+                "query": agent_qc.query,
+                "agent_status": agent_qc.agent_status,
+                "cs_reviewer": agent_qc.cs_reviewer,
+                "eng_reviewer": agent_qc.eng_reviewer,
+                "prod_reviewer": agent_qc.prod_reviewer,
+                "follow_up": agent_qc.follow_up,
+                "score_rating": agent_qc.score_rating,
+                "priority": agent_qc.priority,
+                "use_case": agent_qc.use_case,
+                "problem_area": agent_qc.problem_area,
+                "cs_failed_reason": agent_qc.cs_failed_reason,
+                "cs_attempt_reprompting": agent_qc.cs_attempt_reprompting,
+                "cs_expected_output": agent_qc.cs_expected_output,
+                "cs_notes": agent_qc.cs_notes,
+                "canned_prompt_id": agent_qc.canned_prompt_id,
+                "eng_failed_reason": agent_qc.eng_failed_reason,
+                "eng_solution": agent_qc.eng_solution,
+                "eng_solution_difficulty": agent_qc.eng_solution_difficulty,
+                "jira_link": agent_qc.jira_link,
+                "slack_link": agent_qc.slack_link,
+                "fullstory_link": agent_qc.fullstory_link,
+                "duplicate_agent": agent_qc.duplicate_agent,
+                "created_at": agent_qc.created_at,
+                "last_updated": agent_qc.last_updated,
+            },
+        )
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:

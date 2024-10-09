@@ -1117,3 +1117,37 @@ class DeletePromptTemplateRequest(BaseModel):
 
 class DeletePromptTemplateResponse(BaseModel):
     template_id: str
+
+
+################################################
+# Quality Tool Classes
+################################################
+class AgentQC(BaseModel):
+    agent_qc_id: str
+    agent_id: str
+    user_id: str
+    agent_status: str
+    plan_id: Optional[str] = None
+    query: Optional[str] = None
+    cs_reviewer: Optional[str] = None
+    eng_reviewer: Optional[str] = None
+    prod_reviewer: Optional[str] = None
+    follow_up: Optional[str] = None
+    score_rating: Optional[int] = None
+    priority: Optional[str] = None
+    use_case: Optional[str] = None
+    problem_area: Optional[str] = None
+    cs_failed_reason: Optional[str] = None
+    cs_attempt_reprompting: Optional[str] = None
+    cs_expected_output: Optional[str] = None
+    cs_notes: Optional[str] = None
+    canned_prompt_id: Optional[str] = None
+    eng_failed_reason: Optional[str] = None
+    eng_solution: Optional[str] = None
+    eng_solution_difficulty: Optional[int] = None
+    jira_link: Optional[str] = None
+    slack_link: Optional[str] = None
+    fullstory_link: Optional[str] = None
+    duplicate_agent: Optional[str] = None
+    created_at: datetime.datetime
+    last_updated: datetime.datetime

@@ -2,6 +2,7 @@
 import datetime
 import logging
 from typing import Dict, List, Optional
+from uuid import uuid4
 
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.async_db import AsyncDB

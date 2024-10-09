@@ -37,6 +37,7 @@ from agent_service.endpoints.models import (
     Account,
     AgentEvent,
     AgentMetadata,
+    AgentQC,
     AvailableVariable,
     CannedPrompt,
     ChatWithAgentRequest,
@@ -171,6 +172,7 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import (
     get_custom_user_dict,
+    get_ld_flag,
     get_secure_mode_hash,
     get_user_context,
     is_database_access_check_enabled_for_user,
@@ -486,6 +488,26 @@ class AgentServiceImpl:
         ]
 
     @async_perf_logger
+    async def agent_quality_ingestion(self, req: ChatWithAgentRequest, user: User) -> None:
+        agent_quality_id = str(uuid4())
+        try:
+            agent_qc = AgentQC(
+                agent_qc_id=agent_quality_id,
+                agent_id=req.agent_id,
+                query=req.prompt,
+                user_id=user.user_id,
+                fullstory_link=user.fullstory_link.replace("https://", ""),
+                canned_prompt_id=req.canned_prompt_id,
+                created_at=datetime.datetime.now(),
+                last_updated=datetime.datetime.now(),
+                agent_status="CS",
+            )
+            await self.pg.insert_agent_qc(agent_qc=agent_qc)
+        except Exception:
+            LOGGER.warning(f"Unable to insert in agent quality db for  {req.agent_id=}")
+            LOGGER.warning(traceback.format_exc())
+
+    @async_perf_logger
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
         agent_id = req.agent_id
 
@@ -516,6 +538,12 @@ class AgentServiceImpl:
                     self._create_initial_response(user.user_id, agent_id, user_msg)  # 2s
                 )
                 run_async_background(self._slack_chat_msg(req, user))  # 0.1s
+                if get_ld_flag(
+                    flag_name="qc_tool_flag",
+                    default=False,
+                    user_context=get_user_context(user_id=user.user_id),
+                ):
+                    run_async_background(self.agent_quality_ingestion(req, user))
 
             if req.canned_prompt_id:
                 log_event(
@@ -620,7 +648,7 @@ class AgentServiceImpl:
             ):
                 if user.fullstory_link:
                     user_info_slack_string += (
-                        f"\nfullstory_link: {user.fullstory_link.replace("https://", "")}"
+                        f"\nfullstory_link: {user.fullstory_link.replace('https://', '')}"
                     )
                 six_hours_from_now = int(time.time() + (60 * 60 * 2))
                 self.slack_sender.send_message_at(
