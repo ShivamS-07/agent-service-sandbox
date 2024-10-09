@@ -89,6 +89,8 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
     GetToolLibraryResponse,
+    GetUsersRequest,
+    GetUsersResponse,
     GetVariableHierarchyResponse,
     ListCustomDocumentsResponse,
     ListMemoryItemsResponse,
@@ -1330,7 +1332,18 @@ async def update_user(
     "/user/get-account-info", response_model=GetAccountInfoResponse, status_code=status.HTTP_200_OK
 )
 async def get_account_info(user: User = Depends(parse_header)) -> GetAccountInfoResponse:
-    return await application.state.agent_service_impl.get_account_info(user=user)
+    account = await application.state.agent_service_impl.get_account_info(user=user)
+    return GetAccountInfoResponse(account=account)
+
+
+@router.post("/user/get-users", response_model=GetUsersResponse, status_code=status.HTTP_200_OK)
+async def get_users_info(
+    req: GetUsersRequest, user: User = Depends(parse_header)
+) -> GetUsersResponse:
+    accounts = await application.state.agent_service_impl.get_users_info(
+        user=user, user_ids=req.user_ids
+    )
+    return GetUsersResponse(accounts=accounts)
 
 
 @router.get(

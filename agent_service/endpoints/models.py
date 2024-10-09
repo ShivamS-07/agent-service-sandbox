@@ -921,6 +921,10 @@ class UpdateUserRequest(BaseModel):
     email: str
 
 
+class GetUsersRequest(BaseModel):
+    user_ids: List[str]
+
+
 class UpdateUserResponse(BaseModel):
     success: bool
 
@@ -930,6 +934,10 @@ class GetAccountInfoResponse(BaseModel):
 
 
 class GetTeamAccountsResponse(BaseModel):
+    accounts: List[Account]
+
+
+class GetUsersResponse(BaseModel):
     accounts: List[Account]
 
 

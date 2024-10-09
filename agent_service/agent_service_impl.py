@@ -57,7 +57,6 @@ from agent_service.endpoints.models import (
     EnableAgentAutomationResponse,
     ExecutionPlanTemplate,
     GenTemplatePlanResponse,
-    GetAccountInfoResponse,
     GetAgentDebugInfoResponse,
     GetAgentFeedBackResponse,
     GetAgentOutputResponse,
@@ -1527,22 +1526,26 @@ class AgentServiceImpl:
             )
         return UpdateUserResponse(success=await update_user(user_id, name, username, email))
 
-    async def get_account_info(self, user: User) -> GetAccountInfoResponse:
-        res = await get_users(user.user_id, [user.user_id], False)
+    async def get_users_info(self, user: User, user_ids: List[str]) -> List[Account]:
+        res = await get_users(user.user_id, user_ids, False)
         if len(res) == 0:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"No Account Info found for {user.user_id}",
             )
-        account = res[0]
-        return GetAccountInfoResponse(
-            account=Account(
+        return [
+            Account(
                 user_id=account.user_id.id,
                 email=account.email,
                 username=account.username,
                 name=account.name,
             )
-        )
+            for account in res
+        ]
+
+    async def get_account_info(self, user: User) -> Account:
+        res = await self.get_users_info(user, [user.user_id])
+        return res[0]
 
     @async_perf_logger
     @async_wrap
