@@ -166,13 +166,14 @@ async def run_execution_plan(
     override_task_output_lookup: Optional[Dict[str, IOType]] = None,
     scheduled_by_automation: bool = False,
     execution_log: Optional[DefaultDict[str, List[dict]]] = None,
-    # This is the production ready alternative to
-    # `override_task_output_lookup`.  Instead of including the entire
-    # output in the dict (which could be very large), simply map task ID's to
-    # "replay ID's", which uniquely identify rows in clickhouse's tool_calls
-    # table. By doing this, we can avoid having to send massive objects over the
-    # network (sqs, to prefect, etc.).
+    # Map task ID's to "replay ID's", which uniquely identify rows in
+    # clickhouse's tool_calls table.
     override_task_output_id_lookup: Optional[Dict[str, str]] = None,
+    # Map task ID's to log_ids, which uniquely identify rows in in the work_logs
+    # table. This is a more reliable alternative to the clickhouse version
+    # above, but they can be used together, with this map taking precedence over
+    # the above map.
+    override_task_work_log_id_lookup: Optional[Dict[str, str]] = None,
 ) -> List[IOType]:
     logger = get_prefect_logger(__name__)
     async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
@@ -188,6 +189,7 @@ async def run_execution_plan(
             override_task_output_id_lookup=override_task_output_id_lookup,
             execution_log=execution_log,
             scheduled_by_automation=scheduled_by_automation,
+            override_task_work_log_id_lookup=override_task_work_log_id_lookup,
         )
     except Exception as e:
         status = Status.ERROR
@@ -211,19 +213,11 @@ async def _run_execution_plan_impl(
     log_all_outputs: bool = False,
     replan_execution_error: bool = False,
     run_plan_in_prefect_immediately: bool = True,
-    # This is meant for testing, basically we can fill in the lookup table to
-    # make sure we only run the plan starting from a certain point while passing
-    # in precomputed outputs for prior tasks.
     override_task_output_lookup: Optional[Dict[str, IOType]] = None,
     scheduled_by_automation: bool = False,
     execution_log: Optional[DefaultDict[str, List[dict]]] = None,
-    # This is the production ready alternative to
-    # `override_task_output_lookup`.  Instead of including the entire
-    # output in the dict (which could be very large), simply map task ID's to
-    # "replay ID's", which uniquely identify rows in clickhouse's tool_calls
-    # table. By doing this, we can avoid having to send massive objects over the
-    # network (sqs, to prefect, etc.).
     override_task_output_id_lookup: Optional[Dict[str, str]] = None,
+    override_task_work_log_id_lookup: Optional[Dict[str, str]] = None,
 ) -> List[IOType]:
     ###########################################
     # PLAN RUN SETUP
@@ -250,14 +244,27 @@ async def _run_execution_plan_impl(
     if scheduled_by_automation:
         context.diff_info = {}  # this will be populated during the run
 
+    worklog_task_id_output_map = {}
+    if override_task_work_log_id_lookup:
+        try:
+            worklog_task_id_output_map = await async_db.get_task_outputs_from_work_log_ids(
+                log_ids=list(override_task_work_log_id_lookup.values())
+            )
+        except Exception:
+            logger.exception("Unable to fetch task outputs using work_logs table")
+
+    clickhouse_task_id_output_map = {}
     if override_task_output_id_lookup:
         try:
-            task_id_output_map = await Clickhouse().get_task_outputs_from_replay_ids(
+            clickhouse_task_id_output_map = await Clickhouse().get_task_outputs_from_replay_ids(
                 replay_ids=list(override_task_output_id_lookup.values())
             )
-            override_task_output_lookup = task_id_output_map
         except Exception:
             logger.exception("Unable to fetch task outputs using replay ID's from clickhouse")
+
+    # Override clickhouse values with postgres values if both are present
+    override_task_output_lookup = clickhouse_task_id_output_map
+    override_task_output_lookup.update(worklog_task_id_output_map)
 
     final_outputs = []
     final_outputs_with_ids: List[OutputWithID] = []
@@ -1153,6 +1160,7 @@ async def rewrite_execution_plan(
     db = db or AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
     chatbot = Chatbot(agent_id=agent_id)
     override_task_output_id_lookup = None
+    override_task_work_log_id_lookup = None
     logger.info(f"Starting rewrite of execution plan for {agent_id=}...")
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
     automation_enabled = await db.get_agent_automation_enabled(agent_id=agent_id)
@@ -1196,9 +1204,18 @@ async def rewrite_execution_plan(
             plan_id=plan_id,
         )
 
-        if automation_enabled and action == FollowupAction.APPEND and new_plan:
+        if action == FollowupAction.APPEND and new_plan:
+            # If we're appending to an existing plan, we want to re-use the
+            # outputs from the old plan so that the new results will appear
+            # faster (and more efficiently).
             task_ids = planner.replicate_plan_set_for_automated_run(old_plan, new_plan)
+            # These maps will be used to look up prior outputs when the plan
+            # runs. (Eventually will remove this clickhouse part, leaving it in
+            # for redundancy.)
             override_task_output_id_lookup = await Clickhouse().get_task_replay_ids(
+                agent_id=agent_id, task_ids=task_ids, plan_id=old_plan_id
+            )
+            override_task_work_log_id_lookup = await db.get_task_work_log_ids(
                 agent_id=agent_id, task_ids=task_ids, plan_id=old_plan_id
             )
 
@@ -1274,6 +1291,7 @@ async def rewrite_execution_plan(
         context=ctx,
         do_chat=do_chat,
         override_task_output_id_lookup=override_task_output_id_lookup,
+        override_task_work_log_id_lookup=override_task_work_log_id_lookup,
     )
 
     return new_plan

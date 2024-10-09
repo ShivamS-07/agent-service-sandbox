@@ -294,6 +294,43 @@ class AsyncDB:
 
         return outputs
 
+    async def get_task_work_log_ids(
+        self, agent_id: str, task_ids: List[str], plan_id: str
+    ) -> Dict[str, str]:
+        """
+        Returns a dict from task_id to log_id.
+        """
+        sql = """
+        SELECT DISTINCT ON (task_id) log_id::TEXT, task_id::TEXT
+        FROM agent.work_logs
+        WHERE agent_id = %(agent_id)s AND plan_id = %(plan_id)s
+              AND task_id = ANY(%(task_ids)s)
+        ORDER BY task_id, created_at DESC
+        """
+        rows = await self.pg.generic_read(
+            sql, {"agent_id": agent_id, "task_ids": task_ids, "plan_id": plan_id}
+        )
+        result = {}
+        for row in rows:
+            result[row["task_id"]] = row["log_id"]
+        return result
+
+    async def get_task_outputs_from_work_log_ids(self, log_ids: List[str]) -> Dict[str, Any]:
+        """
+        Given a list of log_ids, return a mapping from task_id to log_data for each input ID.
+        """
+        sql = """
+        SELECT task_id::TEXT, log_data FROM agent.work_logs
+        WHERE log_id = ANY(%(log_ids)s)
+            AND is_task_output AND log_data NOTNULL
+        """
+        rows = await self.pg.generic_read(sql, {"log_ids": log_ids})
+        result = {}
+        for row in rows:
+            result[row["task_id"]] = load_io_type(row["log_data"])
+
+        return result
+
     async def get_task_output(
         self, agent_id: str, plan_run_id: str, task_id: str
     ) -> Optional[IOType]:
@@ -301,7 +338,7 @@ class AsyncDB:
         SELECT log_data
         FROM agent.work_logs
         WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s AND task_id = %(task_id)s
-            AND is_task_output AND log_data NOTNULL
+            AND is_task_output AND log_data NOTNULL AND viewable
         ORDER BY created_at DESC
         LIMIT 1;
         """
@@ -319,7 +356,7 @@ class AsyncDB:
         SELECT log_data
         FROM agent.work_logs
         WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s AND log_id = %(log_id)s
-            AND NOT is_task_output AND log_data NOTNULL
+            AND NOT is_task_output AND log_data NOTNULL AND viewable
         ORDER BY created_at DESC
         LIMIT 1;
         """

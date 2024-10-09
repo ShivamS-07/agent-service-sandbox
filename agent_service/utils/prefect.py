@@ -78,6 +78,7 @@ async def kick_off_run_execution_plan(
     context: PlanRunContext,
     do_chat: bool = True,
     override_task_output_id_lookup: Optional[Dict[str, str]] = None,
+    override_task_work_log_id_lookup: Optional[Dict[str, str]] = None,
     replan_execution_error: bool = False,
 ) -> None:
     sqs = boto3.resource("sqs", region_name="us-west-2")
@@ -86,6 +87,7 @@ async def kick_off_run_execution_plan(
         "context": context.model_dump(),
         "do_chat": do_chat,
         "override_task_output_id_lookup": override_task_output_id_lookup,
+        "override_task_work_log_id_lookup": override_task_work_log_id_lookup,
         "replan_execution_error": replan_execution_error,
     }
     message_contents = {
