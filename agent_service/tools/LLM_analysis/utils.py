@@ -50,6 +50,8 @@ def get_sentences(text: str) -> List[str]:
     output_sentences = []
     for paragraph in paragraphs:
         output_sentences.extend(SENTENCE_REGEX.split(paragraph))
+    # remove very short sentences since they won't match properly
+    output_sentences = [sentence for sentence in output_sentences if len(sentence) > 3]
     return output_sentences
 
 
@@ -58,7 +60,6 @@ def find_best_sentence_match(snippet: str, sentences: List[str]) -> str:
         [
             (Levenshtein.distance(snippet, sentence) / len(sentence), sentence)
             for sentence in sentences
-            if len(sentence) > 3
         ]
     )[-1]
 

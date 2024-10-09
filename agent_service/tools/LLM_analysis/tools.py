@@ -244,6 +244,7 @@ async def _initial_summarize_helper(
 
     if citations is None:
         citations = []
+        logger.warning("Text generation failed to produce any citations")
 
     try:
         citations += await get_second_order_citations(text, get_all_text_citations(texts), context)
@@ -662,6 +663,7 @@ class CompareTextInput(ToolArgs):
     update_instructions=COMPARISON_UPDATE_INSTRUCTIONS,
 )
 async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text:
+    logger = get_prefect_logger(__name__)
     COMPARISON_SYS_PROMPT_TEMPLATE = args.comparison_sys_prompt + CITATION_PROMPT
 
     COMPARISON_MAIN_PROMPT_TEMPLATE = (
@@ -720,30 +722,54 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
             extra_data_str,
         ],
     )
-    result = await llm.do_chat_w_sys_prompt(
-        COMPARISON_MAIN_PROMPT.format(
-            group1=group1_str,
-            group2=group2_str,
-            group1_label=args.group1_label,
-            group2_label=args.group2_label,
-            extra_data=extra_data_str,
-            chat_context=chat_str,
-            today=(
-                context.as_of_date.date().isoformat()
-                if context.as_of_date
-                else datetime.date.today().isoformat()
-            ),
+    main_prompt = COMPARISON_MAIN_PROMPT.format(
+        group1=group1_str,
+        group2=group2_str,
+        group1_label=args.group1_label,
+        group2_label=args.group2_label,
+        extra_data=extra_data_str,
+        chat_context=chat_str,
+        today=(
+            context.as_of_date.date().isoformat()
+            if context.as_of_date
+            else datetime.date.today().isoformat()
         ),
-        COMPARISON_SYS_PROMPT.format(),
     )
 
+    sys_prompt = COMPARISON_SYS_PROMPT.format()
+
+    result = await llm.do_chat_w_sys_prompt(main_prompt=main_prompt, sys_prompt=sys_prompt)
+
     merged_group = TextGroup.join(text_group1, text_group2)
-    main_text, citations = await extract_citations_from_gpt_output(result, merged_group, context)
-    comparison: Text = Text(val=main_text)
-    if citations is not None:
-        comparison = comparison.inject_history_entry(
-            HistoryEntry(title="Text Comparison", citations=citations)  # type: ignore
+    text, citations = await extract_citations_from_gpt_output(result, merged_group, context)
+
+    tries = 0
+    while citations is None and tries < MAX_CITATION_TRIES:  # failed to load citations, retry
+        logger.warning(f"Retrying after no citations after  {result}")
+        result = await llm.do_chat_w_sys_prompt(
+            main_prompt, sys_prompt, no_cache=True, temperature=0.1 * (tries + 1)
         )
+        text, citations = await extract_citations_from_gpt_output(result, merged_group, context)
+        tries += 1
+
+    if not text:
+        text = result
+
+    if citations is None:
+        citations = []
+        logger.warning("Text generation failed to produce any citations")
+
+    try:
+        citations += await get_second_order_citations(
+            text, get_all_text_citations(args.group1 + args.group2), context
+        )
+    except Exception as e:
+        logger.exception(f"Failed to add second order citations: {e}")
+
+    comparison: Text = Text(val=text)
+    comparison = comparison.inject_history_entry(
+        HistoryEntry(title="Text Comparison", citations=citations)  # type: ignore
+    )
     return comparison
 
 
@@ -769,6 +795,7 @@ class AnswerQuestionInput(ToolArgs):
 async def answer_question_with_text_data(
     args: AnswerQuestionInput, context: PlanRunContext
 ) -> Text:
+    logger = get_prefect_logger(__name__)
     answer_question_main_prompt = Prompt(
         name="LLM_ANSWER_QUESTION_MAIN_PROMPT",
         template=args.answer_question_main_prompt
@@ -794,20 +821,44 @@ async def answer_question_with_text_data(
         [answer_question_main_prompt.template, answer_question_sys_prompt.template, args.question],
     )
 
-    result = await llm.do_chat_w_sys_prompt(
-        answer_question_main_prompt.format(
-            texts=texts_str,
-            question=args.question,
-            today=(
-                context.as_of_date.date().isoformat()
-                if context.as_of_date
-                else datetime.date.today().isoformat()
-            ),
+    main_prompt = answer_question_main_prompt.format(
+        texts=texts_str,
+        question=args.question,
+        today=(
+            context.as_of_date.date().isoformat()
+            if context.as_of_date
+            else datetime.date.today().isoformat()
         ),
-        answer_question_sys_prompt.format(),
     )
 
+    sys_prompt = answer_question_sys_prompt.format()
+
+    result = await llm.do_chat_w_sys_prompt(main_prompt=main_prompt, sys_prompt=sys_prompt)
     text, citations = await extract_citations_from_gpt_output(result, text_group, context)
+
+    tries = 0
+    while citations is None and tries < MAX_CITATION_TRIES:  # failed to load citations, retry
+        logger.warning(f"Retrying after no citations after  {result}")
+        result = await llm.do_chat_w_sys_prompt(
+            main_prompt, sys_prompt, no_cache=True, temperature=0.1 * (tries + 1)
+        )
+        text, citations = await extract_citations_from_gpt_output(result, text_group, context)
+        tries += 1
+
+    if not text:
+        text = result
+
+    if citations is None:
+        citations = []
+        logger.warning("Text generation failed to produce any citations")
+
+    try:
+        citations += await get_second_order_citations(
+            text, get_all_text_citations(args.texts), context
+        )
+    except Exception as e:
+        logger.exception(f"Failed to add second order citations: {e}")
+
     answer: Text = Text(val=text)
     answer = answer.inject_history_entry(
         HistoryEntry(title="Summary", citations=citations)  # type:ignore

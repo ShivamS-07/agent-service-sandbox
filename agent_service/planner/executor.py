@@ -12,6 +12,7 @@ from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.models import GetAgentOutputResponse, Status, TaskStatus
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT, set_plan_run_context
+from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import (
     IOType,
     dump_io_type,
@@ -557,9 +558,15 @@ async def _run_execution_plan_impl(
         )
         llm = GPT(gpt_context, GPT4_O)
         latest_report_list = [await io_type_to_gpt_input(output) for output in final_outputs]
+        latest_report = "\n".join(latest_report_list)
+        chat_text = chat_context.get_gpt_input()
+        latest_report = GPTTokenizer(GPT4_O).do_truncation_if_needed(
+            latest_report,
+            [SHORT_SUMMARY_WORKLOG_MAIN_PROMPT.template, chat_text],
+        )
         main_prompt = SHORT_SUMMARY_WORKLOG_MAIN_PROMPT.format(
-            chat_context=chat_context,
-            latest_report="\n".join(latest_report_list),
+            chat_context=chat_text,
+            latest_report=latest_report,
         )
         short_diff_summary = await llm.do_chat_w_sys_prompt(
             main_prompt=main_prompt,
