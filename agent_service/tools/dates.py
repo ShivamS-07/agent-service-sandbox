@@ -183,6 +183,10 @@ class GetDateRangeInput(ToolArgs):
     needed and there is no need to build a date range, please check carefully for each tool before
     calling this function. You must never, ever run this function with a date_range_str that does
     not appear explicitly in the client's request (the chat context)!!!!!
+    If the user asks for quarterly data and there is no date range provided, then it is of
+    utmost importance that you provide a default date range going 2 years into the past.
+    If the user asks for yearly data and there is no date range provided, then it is of
+    utmost importance that you provide a default date range going 5 years into the past.
     This tool has no access to upcoming earnings information, and so you must absolutely never
     call it with a date_range_str such as "upcoming earnings call".
     If the user talks about an "upcoming earnings call" you must ignore that mention, do

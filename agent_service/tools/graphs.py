@@ -113,7 +113,11 @@ It is extremely important that you provide enough data to
 graph. E.g. at least 7-14 datapoints to make a nice line. Note that the input
 must be a Table! If the source data is stock pricing data, financial data, or
 economic time series data, then a date range should be used to acquire the data
-rather than a single date or no date.
+rather than a single date or no date. If the user asks for quarterly data, and
+no date range is provided, then it is of absolute, utmost importance that you
+use a default date range of 2 years (8 quarters in the past). If the user
+asks for yearly data and no date range is provided, then it is of absolute, utmost
+importance that you use a default date range of 5 years.
 Note that if the client mentions wanting to overlay one kind of data with another,
 you should first construct a table with all the required data and then create a single graph.
 """
