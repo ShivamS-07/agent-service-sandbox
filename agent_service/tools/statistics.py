@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import pytz
 
@@ -501,7 +501,7 @@ async def get_macro_statistic_data(args: MacroFeatureDataInput, context: PlanRun
 class BeatOrMissEarningsFilterInput(ToolArgs):
     stocks: List[StockID]
     miss: bool = False
-    quarters: Optional[DateRange] = None
+    quarters: Union[Optional[DateRange], int] = None
     mode: str = "earnings"
 
 
@@ -510,6 +510,11 @@ class BeatOrMissEarningsFilterInput(ToolArgs):
         "This function filters the provided stock list to only those stocks which have beat earnings"
         " expectations (EPS) or, alternatively, only those which have missed earnings expectations if "
         " miss is set to true."
+        " if the user asks for a specific quarter or date range in the past, e.g. 2021Q2, a date range"
+        " should be passed to this tool as the quarters argument. Otherwise, if the user is just"
+        " interested in the last N quarters (or last N years), pass the integer number of quarters the"
+        " user wants to check. Never, ever pass a date_range object when the user asks for filtering  "
+        " of the last N quarter/years, this will not work properly."
         " If no quarters are provided as a date range, the stocks included in the list are chosen"
         " based on most recent quarter that where earnings data has been released. Otherwise, if one"
         " or more quarters is provided the stock must beat expecations in all of those quarters (or miss"
@@ -531,14 +536,21 @@ async def beat_or_miss_earnings_filter(
     args: BeatOrMissEarningsFilterInput, context: PlanRunContext
 ) -> List[StockID]:
     today = datetime.date.today()
-    check_most_recent = False
-    if args.quarters is None or args.quarters.end_date is None:
+    check_most_recent_quarters = 0
+    if args.quarters is None or isinstance(args.quarters, int) or args.quarters.end_date is None:
         end_date = today
     else:
         end_date = args.quarters.end_date
-    if args.quarters is None or args.quarters.start_date is None:
+    if args.quarters is None or (
+        not isinstance(args.quarters, int) and args.quarters.start_date is None
+    ):
         start_date = end_date - TWO_QUARTERS
-        check_most_recent = True
+        check_most_recent_quarters = 1
+    elif isinstance(args.quarters, int):
+        start_date = (
+            today - args.quarters * QUARTER - TWO_QUARTERS
+        )  # get extra data so we get 4 quarters
+        check_most_recent_quarters = args.quarters
     else:
         start_date = args.quarters.start_date
 
@@ -586,16 +598,17 @@ async def beat_or_miss_earnings_filter(
 
         to_check_list = []
 
-        if check_most_recent:
-            most_recent_quarter = max(per_stock_actuals[stock])
-            if stock in per_stock_expected and most_recent_quarter in per_stock_expected[stock]:
-                to_check_list.append(
-                    (
-                        most_recent_quarter,
-                        per_stock_actuals[stock][most_recent_quarter],
-                        per_stock_expected[stock][most_recent_quarter],
+        if check_most_recent_quarters:
+            most_recent_quarters = sorted(per_stock_actuals[stock], reverse=True)
+            for recent_quarter in most_recent_quarters[:check_most_recent_quarters]:
+                if stock in per_stock_expected and recent_quarter in per_stock_expected[stock]:
+                    to_check_list.append(
+                        (
+                            recent_quarter,
+                            per_stock_actuals[stock][recent_quarter],
+                            per_stock_expected[stock][recent_quarter],
+                        )
                     )
-                )
         else:
             for quarter in per_stock_actuals[stock]:
                 if stock in per_stock_expected and quarter in per_stock_expected[stock]:
@@ -627,10 +640,11 @@ async def beat_or_miss_earnings_filter(
                         unit="USD",
                     )
                 )
+                # can't calculate surprise properly if comparison number is zero or negative
                 stock = stock.inject_history_entry(
                     HistoryEntry(
-                        title="Surprise",
-                        explanation=actual / expected - 1,
+                        title=f"Surprise ({quarter})",
+                        explanation=(actual / expected - 1) if expected > 0 else 0,
                         entry_type=TableColumnType.PERCENT,
                     )
                 )
@@ -759,7 +773,10 @@ async def get_expected_revenue_growth(
             if failed:
                 failed_list.append(stock)
                 continue
-            growth_lookup[stock] = future_revenue_total / past_revenue_total - 1
+            # can't calculate growth properly if comparison number is zero or negative
+            growth_lookup[stock] = (
+                (future_revenue_total / past_revenue_total - 1) if past_revenue_total > 0 else 0
+            )
             past_revenue_totals[stock] = past_revenue_total
             future_revenue_totals[stock] = future_revenue_total
         else:
