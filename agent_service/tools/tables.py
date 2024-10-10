@@ -367,12 +367,14 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
         if output_df is None:
             raise RuntimeError(f"Table transformation subprocess failed with:\n{error}")
 
-    # ensure quarter-based columns are actually pandas Period strings (2024Q1, etc)
+    # ensure date-derived columns are actually strings (2024Q1, etc)
     for col in new_col_schema:
         if col.col_type == TableColumnType.QUARTER:
             output_df[col.label] = (
                 pd.to_datetime(output_df[col.label]).dt.to_period("Q").astype(str)
             )
+        if col.col_type == TableColumnType.YEAR or col.col_type == TableColumnType.MONTH:
+            output_df[col.label] = output_df[col.label].astype(str)
 
     output_table = Table.from_df_and_cols(
         columns=new_col_schema, data=output_df, stocks_are_hashable_objs=True

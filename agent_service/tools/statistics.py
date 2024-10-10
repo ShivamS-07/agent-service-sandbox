@@ -114,7 +114,7 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
 
 @tool(
     description=(
-        "This function returns a time series of data (possibly one point) for a client-provided statistic"
+        "This function returns a time series of data (sometimes one point) for a client-provided statistic"
         " for each stock in the list of stock_ids."
         " The function will analyze the statistic reference string, matching it to an appropriate database"
         " key and retrieving the data, or alternatively calculate the data from the data of component statistics."
@@ -186,6 +186,9 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
         " ` year-over-year revenue growth for each of the last 10 years` and since the output is a time series you"
         " must use is_time_series=True! You should never, ever use the transform table tool directly to calculate"
         " any kind of growth statistics for a set of stocks, even if you have already retrieved the relevant data."
+        " In this situation you must ALSO include a date_range, it is very rare to be missing a date_range"
+        " if is_time_series=True. For monthy/yearly (YoY, MoM) statistics, you must have both a date range AND mention"
+        " the year range in the statistic. Do not forget either of them or the calculation will not work!"
         " If you do so, your calculation will fail and you will be fired! Note you can only calculate one growth"
         " statistic at a time with this tool, you must calculate multiple statistics in multiple calls to the tool."
         " You should use this function for general performance indicators (like revenue) which apply to all"
