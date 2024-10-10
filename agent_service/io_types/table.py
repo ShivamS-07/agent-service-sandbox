@@ -299,6 +299,7 @@ class Table(ComplexIOBase):
         columns: List[TableColumnMetadata],
         data: pd.DataFrame,
         stocks_are_hashable_objs: bool = False,
+        ignore_extra_cols: bool = False,
     ) -> Self:
         out_columns: List[TableColumn] = []
         data = data.replace(np.nan, None)
@@ -307,6 +308,8 @@ class Table(ComplexIOBase):
         for col_meta in columns:
             df_col = col_meta.label
             if df_col not in data.columns:
+                if ignore_extra_cols:
+                    continue
                 raise RuntimeError(
                     f"Requested label: {df_col=} not in dataframe cols: {data.columns}"
                 )

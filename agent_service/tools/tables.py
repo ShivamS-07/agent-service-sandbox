@@ -7,14 +7,19 @@ import sys
 import tempfile
 from itertools import chain
 from json.decoder import JSONDecodeError
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, cast
 
 import pandas as pd
 from pydantic import ValidationError
 
 from agent_service.GPT.constants import NO_PROMPT, SONNET
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import HistoryEntry, dump_io_type, load_io_type
+from agent_service.io_type_utils import (
+    ComplexIOBase,
+    HistoryEntry,
+    dump_io_type,
+    load_io_type,
+)
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     StockTable,
@@ -22,6 +27,7 @@ from agent_service.io_types.table import (
     Table,
     TableColumnMetadata,
     TableColumnType,
+    object_histories_to_columns,
 )
 from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import TOOL_DEBUG_INFO, ToolArgs, ToolCategory, tool
@@ -531,13 +537,19 @@ def _join_two_tables(first: Table, second: Table) -> Table:
     key_cols += shared_cols
 
     output_df = pd.merge(
-        left=first_data, right=second_data, on=[col.label for col in shared_cols], how="outer"
+        left=first_data,
+        right=second_data,
+        on=[col.label for col in shared_cols],
+        how="outer",
+        suffixes=(None, "_ignored"),
     )
 
     # Collapse rows with the same keys
     output_df = output_df.groupby(by=[col.label for col in key_cols]).first().reset_index()  # type: ignore
     output_col_metas = key_cols + other_cols  # type: ignore
-    output_table = Table.from_df_and_cols(columns=output_col_metas, data=output_df)
+    output_table = Table.from_df_and_cols(
+        columns=output_col_metas, data=output_df, ignore_extra_cols=True
+    )
     if len(output_col_metas) > len(output_df.columns):
         # If the dataframe has fewer columns than the output table, we have a
         # duplicate column probably. We should remove it.
@@ -622,13 +634,50 @@ has been used.
 async def join_stock_list_to_table(
     args: JoinStockListTableArgs, context: PlanRunContext
 ) -> StockTable:
-    new_stock_table = StockTable(columns=[StockTableColumn(data=args.stock_list)])
+    stock_list_copied = copy.deepcopy(args.stock_list)
+    col = StockTableColumn(data=stock_list_copied)
+    additional_cols = object_histories_to_columns(objects=cast(List[ComplexIOBase], col.data))
+    # We need to now clear out the history of the stocks in the table, so we
+    # don't create duplicate columns.
+    for stock in col.data:
+        stock.history = []
+    new_stock_table = StockTable(columns=[col] + additional_cols)
     joined_table = _join_two_tables(first=args.input_table, second=new_stock_table)
     return StockTable(
         columns=joined_table.columns,
         history=joined_table.history,
         prefer_graph_type=joined_table.prefer_graph_type,
     )
+
+
+class CreateTableStockListArgs(ToolArgs):
+    stock_list: List[StockID]
+
+
+@tool(
+    description="""Given a list of stocks, create a table from the list that
+includes the stock identifier as well as supplemental data (e.g. scores,
+reasoning, summaries etc.) about each stock generated from prior steps
+(e.g. get_stock_recommendations, per_stock_summarize_text,
+filter_stocks_by_profile_match, get_statistics_for_companies,
+transform_table). If you are outputting a list of stocks, and a user asks for a
+column to be added, removed, or changed, this function MUST be called first
+before the list of stocks can be treated like a table and columns can be added
+or removed.
+""",
+    category=ToolCategory.TABLE,
+)
+async def create_table_from_stock_list(
+    args: CreateTableStockListArgs, context: PlanRunContext
+) -> StockTable:
+    stock_list_copied = copy.deepcopy(args.stock_list)
+    col = StockTableColumn(data=stock_list_copied)
+    additional_cols = object_histories_to_columns(objects=cast(List[ComplexIOBase], col.data))
+    # We need to now clear out the history of the stocks in the table, so we
+    # don't create duplicate columns.
+    for stock in col.data:
+        stock.history = []
+    return StockTable(columns=[col] + additional_cols)
 
 
 class GetStockListFromTableArgs(ToolArgs):
