@@ -1583,13 +1583,15 @@ async def copy_agent(
         dst_agent_name=req.dst_agent_name,
     )
     # Check to see if user is authorized to duplicate
-    # if not super admin, they are only allowed to request with one user_id and it must be their own
-    if not is_user_agent_admin(user.user_id) and (
-        len(req.dst_user_ids) > 1 or user.user_id not in req.dst_user_ids
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
-        )
+    # they are only allowed to request with one user_id and it must be their own
+    # if they are spoofing (user_id != real_user_id), allow request
+    if not is_user_agent_admin(user.user_id):
+        if user.user_id == user.real_user_id and (
+            len(req.dst_user_ids) > 1 or user.user_id not in req.dst_user_ids
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
+            )
 
     return CopyAgentToUsersResponse(user_id_to_new_agent_id_map=response_dict)
 
