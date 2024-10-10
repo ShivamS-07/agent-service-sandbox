@@ -42,7 +42,7 @@ from agent_service.tools.commentary.prompts import (
     COMMENTARY_SYS_PROMPT_STR_DEFAULT,
     GEOGRAPHY_PROMPT_STR_DEFAULT,
     GET_COMMENTARY_INPUTS_DESCRIPTION,
-    LONG_WRITING_STYLE,
+    LONG_WRITING_STYLE_GENERAL,
     PORTFOLIO_PROMPT_STR_DEFAULT,
     PREVIOUS_COMMENTARY_PROMPT,
     SIMPLE_CLIENTELE,
@@ -51,7 +51,8 @@ from agent_service.tools.commentary.prompts import (
     UPDATE_COMMENTARY_INSTRUCTIONS,
     WATCHLIST_PROMPT_STR_DEFAULT,
     WRITE_COMMENTARY_DESCRIPTION,
-    WRITING_FORMAT_TEXT_DICT,
+    WRITING_FORMAT_GENERAL_DICT,
+    WRITING_FORMAT_PORTFOLIO_DICT,
     WRITING_STYLE_PROMPT_STR_DEFAULT,
 )
 from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT, CITATION_REMINDER
@@ -276,8 +277,11 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         name="WRITING_STYLE_PROMPT",
         template=args.writing_format_prompt,
     )
+    writing_format_dict = (
+        WRITING_FORMAT_GENERAL_DICT if portfolio_related_tables else WRITING_FORMAT_PORTFOLIO_DICT
+    )
     writing_style_prompt_filled = writing_style_prompt.format(
-        writing_format=WRITING_FORMAT_TEXT_DICT.get(writing_format, LONG_WRITING_STYLE)
+        writing_format=writing_format_dict.get(writing_format, LONG_WRITING_STYLE_GENERAL)
     )
 
     # Prepare texts for commentary

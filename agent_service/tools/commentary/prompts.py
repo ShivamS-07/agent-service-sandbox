@@ -273,6 +273,7 @@ WRITING_STYLE_PROMPT_STR_DEFAULT = (
     "\n### Writing Style Section\n"
     "\nBelow is a short description of how the commentary should be formatted. Do not "
     "mention this specifically, just use it to guide in how the commentary is formatted. "
+    "Use markdown to format your text and highlight important words or numbers. "
     "\n### Writing Style\n"
     "{writing_format} "
 )
@@ -297,7 +298,7 @@ CHOOSE_STATISTICS_PROMPT = Prompt(
 
 # Writing Format
 
-LONG_WRITING_STYLE = """
+LONG_WRITING_STYLE_PORTFOLIO = """
 You are now in LAM, this stands for Long Answer Mode. As LAM it is extremely important
 that you conform your writing to the following structure:
 - Introduction of the topic
@@ -307,16 +308,34 @@ that you conform your writing to the following structure:
 - 1 paragraph on how the topic and its factoids are relevant to your portfolio.
 - Conclusion tying everything together. DO NOT start this paragraph with "In conclusion".
 """
+LONG_WRITING_STYLE_GENERAL = """
+You are now in LAM, this stands for Long Answer Mode. As LAM it is extremely important
+that you conform your writing to the following structure:
+- Introduction of the topic
+- 2-4 paragraphs on the most important factoids that relate to the topics. You do
+  not need to reference your portfolio in these paragraphs, just explain the
+  factoids in detail. Ideally one subtopic per paragraph.
+- Conclusion tying everything together. DO NOT start this paragraph with "In conclusion".
+"""
 
-SHORT_WRITING_STYLE = """
+SHORT_WRITING_STYLE_PORTFOLIO = """
 You are now in SAM, this stands for Short Answer Mode. As SAM you will only reply with a maximum of 150 words
 avoid filler phrases such as "as a large language model" it is extremely important that you conform
 your writing to the following structure:
 - Introduction of the topic
-- 2-3 sentences on the most important factoids that relate to the topic. You do
+- 2-4 sentences on the most important factoids that relate to the topic. You do
   not need to reference your portfolio in these sentences, just explain the
   factoids in detail.
 - 2 sentences on how the topic and its factoids are relevant to your portfolio.
+- 1 Conclusion sentence tying everything together. DO NOT start the conclusion with "In conclusion".
+"""
+
+SHORT_WRITING_STYLE_GENERAL = """
+You are now in SAM, this stands for Short Answer Mode. As SAM you will only reply with a maximum of 150 words
+avoid filler phrases such as "as a large language model" it is extremely important that you conform
+your writing to the following structure:
+- Introduction of the topic
+- 2-5 sentences on the most important factoids that relate to the topic.
 - 1 Conclusion sentence tying everything together. DO NOT start the conclusion with "In conclusion".
 """
 
@@ -328,9 +347,15 @@ There should be a maximum of 10 bullet points.
 You must identify and maintain the most critical pieces of information within the bullet points.
 """
 
-WRITING_FORMAT_TEXT_DICT = {
-    "Long": LONG_WRITING_STYLE,
-    "Short": SHORT_WRITING_STYLE,
+WRITING_FORMAT_GENERAL_DICT = {
+    "Long": LONG_WRITING_STYLE_GENERAL,
+    "Short": SHORT_WRITING_STYLE_GENERAL,
+    "Bullets": BULLETS_WRITING_STYLE,
+}
+
+WRITING_FORMAT_PORTFOLIO_DICT = {
+    "Long": LONG_WRITING_STYLE_PORTFOLIO,
+    "Short": SHORT_WRITING_STYLE_PORTFOLIO,
     "Bullets": BULLETS_WRITING_STYLE,
 }
 
