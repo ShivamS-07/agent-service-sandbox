@@ -101,7 +101,10 @@ async def get_default_text_data_for_stocks(
     await tool_log(log="Getting news developments", context=context)
     try:
         news_data = await get_all_news_developments_about_companies(
-            GetNewsDevelopmentsAboutCompaniesInput(stock_ids=stock_ids, date_range=args.date_range),
+            GetNewsDevelopmentsAboutCompaniesInput(
+                stock_ids=stock_ids,
+                date_range=args.date_range,
+            ),
             context=context,
         )
         all_data.extend(news_data)  # type: ignore

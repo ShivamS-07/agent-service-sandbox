@@ -644,7 +644,8 @@ async def get_commentary_inputs(
             stock_devs: List[StockNewsDevelopmentText] = (
                 await get_all_news_developments_about_companies(  # type: ignore
                     GetNewsDevelopmentsAboutCompaniesInput(
-                        stock_ids=args.stock_ids, date_range=args.date_range
+                        stock_ids=args.stock_ids,
+                        date_range=args.date_range,
                     ),
                     context,
                 )

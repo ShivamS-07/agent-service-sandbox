@@ -303,11 +303,15 @@ async def add_scores_and_rationales_to_stocks(
     logger = get_prefect_logger(__name__)
 
     if news_horizon:
-        horizon_date = convert_horizon_to_date(news_horizon)
+        horizon_date = convert_horizon_to_date(news_horizon) if news_horizon else None
         texts: List[StockText] = await get_all_news_developments_about_companies(  # type: ignore
             GetNewsDevelopmentsAboutCompaniesInput(
                 stock_ids=ranked_stocks,
-                date_range=DateRange(start_date=horizon_date, end_date=datetime.date.today()),
+                date_range=(
+                    DateRange(start_date=horizon_date, end_date=datetime.date.today())
+                    if horizon_date is not None
+                    else None
+                ),
             ),
             context,
         )

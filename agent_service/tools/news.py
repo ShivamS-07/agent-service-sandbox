@@ -24,6 +24,7 @@ from agent_service.utils.prompt_utils import Prompt
 EMBEDDING_POOL_BATCH_SIZE = 100
 MIN_POOL_PERCENT_PER_BATCH = 0.1
 MAX_NUM_RELEVANT_NEWS_PER_TOPIC = 200
+NEWS_COUNT_THRESHOLD = 5
 
 
 @dataclass(frozen=True)
@@ -183,30 +184,36 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
 async def get_all_news_developments_about_companies(
     args: GetNewsDevelopmentsAboutCompaniesInput, context: PlanRunContext
 ) -> List[StockNewsDevelopmentText]:
+    date_range_provided = args.date_range is not None
     if args.date_range:
         start_date, end_date = args.date_range.start_date, args.date_range.end_date
     else:
-        start_date = None
-        end_date = None
+        start_date = get_now_utc().date() - datetime.timedelta(days=7)
+        end_date = get_now_utc().date() + datetime.timedelta(days=1)
     topic_lookup = await _get_news_developments_helper(
         args.stock_ids, context.user_id, start_date, end_date
     )
     # if there are no news and there was no date range passed
     # then we extend the default to 1 month and try to get news again
-    if start_date is None and end_date is None and len(topic_lookup.keys()) == 0:
+    if not date_range_provided and len(topic_lookup.keys()) < NEWS_COUNT_THRESHOLD:
         start_date = (get_now_utc() - datetime.timedelta(days=30)).date()
         # Add an extra day to be sure we don't miss anything with timezone weirdness
         end_date = get_now_utc().date() + datetime.timedelta(days=1)
         topic_lookup = await _get_news_developments_helper(
             args.stock_ids, context.user_id, start_date, end_date
         )
+        if len(topic_lookup.keys()) < NEWS_COUNT_THRESHOLD:
+            start_date = (get_now_utc() - datetime.timedelta(days=90)).date()
+            topic_lookup = await _get_news_developments_helper(
+                args.stock_ids, context.user_id, start_date, end_date
+            )
     output: List[StockNewsDevelopmentText] = []
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
     if len(output) == 0:
         stock_info = f"{len(args.stock_ids)} stocks"
         if len(args.stock_ids) < 10:
-            stock_info = f"stocks: {args.stock_ids}"
+            stock_info = f"stocks: {", ".join([stock.company_name for stock in args.stock_ids])}"
         await tool_log(
             log=f"Did not get any news developments for {stock_info}"
             f" over the time period: {start_date=}, {end_date=}",
@@ -214,7 +221,9 @@ async def get_all_news_developments_about_companies(
         )
     else:
         await tool_log(
-            log=f"Found {len(output)} news developments for the provided stocks.", context=context
+            log=f"Found {len(output)} news developments for the provided stocks"
+            f" over the time period: {start_date=}, {end_date=}",
+            context=context,
         )
 
     return output
