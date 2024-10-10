@@ -278,7 +278,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         template=args.writing_format_prompt,
     )
     writing_format_dict = (
-        WRITING_FORMAT_GENERAL_DICT if portfolio_related_tables else WRITING_FORMAT_PORTFOLIO_DICT
+        WRITING_FORMAT_PORTFOLIO_DICT if portfolio_related_tables else WRITING_FORMAT_GENERAL_DICT
     )
     writing_style_prompt_filled = writing_style_prompt.format(
         writing_format=writing_format_dict.get(writing_format, LONG_WRITING_STYLE_GENERAL)
