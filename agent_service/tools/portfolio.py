@@ -1,5 +1,7 @@
 import asyncio
 import datetime
+import difflib
+from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -59,6 +61,14 @@ BENCHMARK_HOLDING_TABLE_NAME_EXPANDED = "Benchmark Holdings - ETFs Expanded"
 BENCHMARK_HOLDING_TABLE_NAME_NOT_EXPANDED = "Benchmark Holdings - ETFs Not Expanded"
 
 PortfolioID = str
+
+# The required name match strengths for portfolios
+# roughly this is like a string edit distance normalized to 0.0-1.0
+# https://docs.python.org/3/library/difflib.html#difflib.get_close_matches
+STD_MATCH_SIMILARITY = 0.7
+STRICT_MATCH_SIMILARITY = 0.8
+WEAK_MATCH_SIMILARITY = 0.6
+
 # Get the postgres connection
 db = get_psql()
 logger = get_prefect_logger(__name__)
@@ -263,11 +273,62 @@ async def convert_portfolio_mention_to_portfolio_id(
     # Find portfolios with the perfect matched names
     perfect_matches = []
     user_owned_portfolios = []
+    all_portfolios = defaultdict(list)
     for workspace in workspaces:
-        if str(args.portfolio_name).lower() in str(workspace.name).lower():
+        if str(args.portfolio_name).lower() == str(workspace.name).lower():
             perfect_matches.append(workspace)
+
+        all_portfolios[str(workspace.name).lower()].append(workspace)
+
         if workspace.user_auth_level == WorkspaceAuth.WORKSPACE_AUTH_OWNER:
             user_owned_portfolios.append(workspace)
+
+    # TODO we could add a fallback for matching by portfolio_id if str looks like a UUID
+    partial_matches = []
+    # if generically talking about a portfolio revert to the default most recent portfolio
+    if len(perfect_matches) == 0 and str(args.portfolio_name).lower() not in [
+        "my portfolio",
+        "portfolio",
+        "the portfolio",
+    ]:
+        # find a close textual match
+        search_str = str(args.portfolio_name).lower()
+        cutoff = STD_MATCH_SIMILARITY
+
+        # be more strict if portfolio is in the search
+        if "portfolio" in search_str:
+            cutoff = STRICT_MATCH_SIMILARITY
+
+        close_names = difflib.get_close_matches(
+            search_str, list(all_portfolios.keys()), n=1, cutoff=cutoff
+        )
+
+        # if portfolio was in the name but couldnt find it
+        # remove portfolio and try again less strict
+        if not close_names and "portfolio" in search_str:
+            search_str = search_str.replace("portfolio", "")
+            cutoff = WEAK_MATCH_SIMILARITY
+            close_names = difflib.get_close_matches(
+                search_str, list(all_portfolios.keys()), n=1, cutoff=cutoff
+            )
+
+        if close_names:
+            partial_matches = all_portfolios[close_names[0]]
+        else:
+            # the target portfolio is named 'foo portfolio'
+            # but we only searched for 'foo'
+            best_similarity = 0.0
+            best_name = None
+            for k, v in all_portfolios.items():
+                close = difflib.SequenceMatcher(
+                    None, search_str, k.replace("portfolio", "")
+                ).ratio()
+                if close >= cutoff and close > best_similarity:
+                    best_similarity = close
+                    best_name = k
+
+            if best_name:
+                partial_matches = all_portfolios[best_name]
 
     # If only 1 perfect match, return the id
     if len(perfect_matches) == 1:
@@ -286,6 +347,24 @@ async def convert_portfolio_mention_to_portfolio_id(
 
         portfolio = sorted_perfect_matches[0]
 
+    elif len(partial_matches) == 1:
+        portfolio = partial_matches[0]
+        logger.info(f"found 1 partial match {args.portfolio_name}: {portfolio}")
+
+    # If more than 1 perfect matches, return the one which edited most recently
+    elif len(partial_matches) > 1:
+        sorted_matches = sorted(
+            partial_matches,
+            key=lambda x: x.last_updated.seconds if x.last_updated else x.created_at.seconds,
+            reverse=True,
+        )
+        logger.info(
+            f"More than 1 partial match, {args.portfolio_name}:"
+            f" most recent: {sorted_matches[0]}"
+        )
+
+        portfolio = sorted_matches[0]
+
     # If no perfect matches, return the user owned portfolio which edited most recently
     elif len(user_owned_portfolios) > 0:
         sorted_user_owned_portfolios = sorted(
@@ -298,7 +377,7 @@ async def convert_portfolio_mention_to_portfolio_id(
     else:
         # If no perfect matches and no user owned portfolios, return first portfolio id
         logger.info(
-            "no perfect matches and no user owned portfolios,"
+            "no partial matches and no user owned portfolios,"
             f" return first portfolio id: {workspaces[0]}"
         )
         portfolio = workspaces[0]

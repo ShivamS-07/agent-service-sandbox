@@ -44,12 +44,13 @@ def do_add() -> None:
         plan.append(f"{step_count}. {plan_step}")
         step_count += 1
     plan_str = "\n".join(plan)
-    sample_plan = SamplePlan(id=str(uuid4()), input=input_str, plan=plan_str)
+    id = str(uuid4())
+    sample_plan = SamplePlan(id=id, input=input_str, plan=plan_str)
     confirm = input(ADD_CONFIRM.format(plan=sample_plan.get_formatted_plan())).strip()
     if confirm == "y":
         db = get_psql()
         db.insert_sample_plan(sample_plan)
-        print("added sample plan")
+        print(f"added sample plan: {id=}")
 
 
 def do_list() -> None:

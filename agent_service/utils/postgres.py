@@ -603,7 +603,10 @@ class Postgres(PostgresBase):
 
     def insert_sample_plan(self, sample_plan: SamplePlan) -> None:
         self.insert_into_table(
-            table_name="agent.sample_plans", input=sample_plan.input, plan=sample_plan.plan
+            table_name="agent.sample_plans",
+            sample_plan_id=sample_plan.id,
+            input=sample_plan.input,
+            plan=sample_plan.plan,
         )
 
     def get_all_sample_plans(self) -> List[SamplePlan]:

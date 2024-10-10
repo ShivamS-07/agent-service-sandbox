@@ -340,8 +340,9 @@ class GetStartOfDateRangeInput(ToolArgs):
 
 @tool(
     description="""
-    This function returns a date range object representing the start of the  input date_range
-    with start_date and end_date both equal to the start_date of the input date_range.
+    This function returns a date range object representing the start or beginning of
+    the  input date_range with start_date and end_date both equal to the start_date of the
+    input date_range.
     You might need this when client refers to one larger date range needed for the overall request
     but another part of the plan needs access to the start of that date_range
     """,
@@ -352,6 +353,11 @@ class GetStartOfDateRangeInput(ToolArgs):
 async def get_start_of_date_range(
     args: GetStartOfDateRangeInput, context: PlanRunContext
 ) -> DateRange:
+    await tool_log(
+        log=(f"{args.date_range.start_date.isoformat()}"),
+        context=context,
+    )
+
     return DateRange(start_date=args.date_range.start_date, end_date=args.date_range.start_date)
 
 
@@ -371,6 +377,10 @@ class GetEndOfDateRangeInput(ToolArgs):
     is_visible=False,
 )
 async def get_end_of_date_range(args: GetEndOfDateRangeInput, context: PlanRunContext) -> DateRange:
+    await tool_log(
+        log=(f"{args.date_range.end_date.isoformat()}"),
+        context=context,
+    )
     return DateRange(start_date=args.date_range.end_date, end_date=args.date_range.end_date)
 
 
