@@ -15,6 +15,7 @@ from agent_service.io_types.citations import (
     NewsDevelopmentCitationOutput,
     TextCitationOutput,
     ThemeCitationOutput,
+    WebCitationOutput,
 )
 
 
@@ -36,6 +37,7 @@ OutputCitationTypes = Union[
     LinkCitationOutput,
     CitationOutput,
     KPICitationOutput,
+    WebCitationOutput,
 ]
 
 

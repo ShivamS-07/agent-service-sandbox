@@ -27,6 +27,7 @@ class CitationType(enum.StrEnum):
     EARNINGS_SUMMARY = "earnings_summary"
     EARNINGS_TRANSCRIPT = "earnings_transcript"
     KPI = "kpi"
+    WEB = "web"
 
     # Generic, should no longer be used
     LINK = "link"
@@ -49,6 +50,8 @@ class CitationType(enum.StrEnum):
             return EarningsTranscriptCitationOutput
         elif self == CitationType.KPI:
             return KPICitationOutput
+        elif self == CitationType.WEB:
+            return WebCitationOutput
 
         return CitationOutput
 
@@ -435,6 +438,11 @@ class EarningsTranscriptCitationOutput(DocumentCitationOutput):
 
 class KPICitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.KPI
+    link: Optional[str] = None
+
+
+class WebCitationOutput(CitationOutput):
+    citation_type: CitationType = CitationType.WEB
     link: Optional[str] = None
 
 

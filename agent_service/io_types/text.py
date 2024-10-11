@@ -43,6 +43,7 @@ from agent_service.io_types.citations import (
     NewsArticleCitationOutput,
     NewsDevelopmentCitationOutput,
     ThemeCitationOutput,
+    WebCitationOutput,
 )
 from agent_service.io_types.output import Output, OutputType
 from agent_service.io_types.stock import StockID
@@ -2084,6 +2085,30 @@ class StockOtherSecFilingSectionText(StockText):
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         return f"{self.header}: {self.val}"
+
+
+@io_type
+class WebText(Text):
+    text_type: ClassVar[str] = "Web Results"
+    url: Optional[str] = None
+    title: Optional[str] = ""
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[TextCitation], db: BoostedPG
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        output = defaultdict(list)
+        for cit in texts:
+            text = cast(Self, cit.source_text)
+            output[cit].append(
+                WebCitationOutput(
+                    internal_id=str(text.id),
+                    name=text.title or text.url or text.to_citation_title(),
+                    link=text.url,
+                    inline_offset=cit.citation_text_offset,
+                )
+            )
+        return output  # type: ignore
 
 
 @io_type

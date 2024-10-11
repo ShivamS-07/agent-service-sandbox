@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 from PyPDF2 import PdfReader
 
 from agent_service.io_type_utils import ComplexIOBase, io_type
-from agent_service.io_types.text import Text
+from agent_service.io_types.text import WebText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.product_comparison.brightdata_websearch import (
     brd_request,
@@ -30,11 +30,6 @@ class GeneralWebSearchInput(ToolArgs):
     queries: List[str] | List[WebQuery]
 
 
-@io_type
-class WebResultText(Text):
-    pass
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -54,9 +49,7 @@ def enabler_function(user_id: str) -> bool:
     tool_registry=ToolRegistry,
     enabled_checker_func=enabler_function,
 )
-async def general_web_search(
-    args: GeneralWebSearchInput, context: PlanRunContext
-) -> List[WebResultText]:
+async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContext) -> List[WebText]:
     queries = args.queries
     search_results = []
     for query in queries:
@@ -65,8 +58,6 @@ async def general_web_search(
         else:
             urls = brd_websearch(query, 10)
 
-        # parse
-        parsed_results = []
         for url in urls:
             try:
                 response = brd_request(url)
@@ -103,8 +94,7 @@ async def general_web_search(
                 logger.info(f"Failed to retrieve {url}. Error: {e}")
                 continue
 
-            parsed_results.append({"title": title, "text": text, "url": url})
-            search_results.append(WebResultText(val=text))
+            search_results.append(WebText(val=text, url=url, title=title))
 
     return search_results
 
