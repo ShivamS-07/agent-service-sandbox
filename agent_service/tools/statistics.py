@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pytz
 
@@ -516,12 +516,18 @@ class BeatOrMissEarningsFilterInput(ToolArgs):
         " if the user asks for a specific quarter or date range in the past, e.g. 2021Q2, a date range"
         " should be passed to this tool as the quarters argument. Otherwise, if the user is just"
         " interested in the last N quarters (or last N years), pass the integer number of quarters the"
-        " user wants to check. Never, ever pass a date_range object when the user asks for filtering  "
+        " user wants to check. Never, ever pass a date_range object when the user asks for filtering"
         " of the last N quarter/years, this will not work properly."
         " If no quarters are provided as a date range, the stocks included in the list are chosen"
         " based on most recent quarter that where earnings data has been released. Otherwise, if one"
         " or more quarters is provided the stock must beat expecations in all of those quarters (or miss"
         " them if miss is True)."
+        " If quarters is an int, or not provided, the behavior of this tool is to default to the most"
+        " recent reported quarters for each stock. When writing the output title when outputting"
+        " the list returned by this tool using the prepare_output tool, the title should specifically"
+        " mention 'Last N Reported Quarters or `Last Reported Quarter` if quarters is 1 or None. For"
+        " example, if the user asked for stocks which beat expectations each quarter for the last year"
+        " for prepare_output would say instead 'beat expecations for the last 4 reported quarters. "
         " The stock list returned will include, actual and expected EPS and surprise for"
         " all stocks which passed the filter, which will be displayed to the user if the stock list is"
         " printed. You should use this tool whenever a user asks to filter stocks based on whether they"
@@ -531,6 +537,11 @@ class BeatOrMissEarningsFilterInput(ToolArgs):
         " If the user is interested in beat or miss for revenue expecations, pass revenue as the mode"
         " instead of earnings, but you should default to earnings unless revenue is specifically mentioned."
         " only 'earnings' and 'revenue' are supported as possible modes"
+        " This tool is not a substitute for reading earnings calls, you must never, ever use this tool"
+        " if the user is asking you to read earnings!"
+        " This tool does not have access to earnings guidance, you must not use this tool the user is"
+        " interested in earnings guidance, instead you must read the earnings calls where guidance is"
+        " discussed. Again, do not use this tool for earnings guidance related requests!"
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
@@ -556,6 +567,17 @@ async def beat_or_miss_earnings_filter(
         check_most_recent_quarters = args.quarters
     else:
         start_date = args.quarters.start_date
+
+    if check_most_recent_quarters:
+        await tool_log(
+            log=f"Checking the last {check_most_recent_quarters} quarters with reported data",
+            context=context,
+        )
+    else:
+        await tool_log(
+            log=(f"Checking quarters between {start_date.isoformat()} and {end_date.isoformat()}"),
+            context=context,
+        )
 
     all_statistic_lookup = await get_statistic_lookup(context)
 
@@ -599,29 +621,46 @@ async def beat_or_miss_earnings_filter(
         if stock not in per_stock_expected:
             continue
 
-        to_check_list = []
+        stock_actuals = per_stock_actuals[stock]
+        stock_expected = per_stock_expected[stock]
 
-        if check_most_recent_quarters:
-            most_recent_quarters = sorted(per_stock_actuals[stock], reverse=True)
-            for recent_quarter in most_recent_quarters[:check_most_recent_quarters]:
-                if stock in per_stock_expected and recent_quarter in per_stock_expected[stock]:
+        to_check_list: List[Tuple[str, float, float]] = []
+
+        if check_most_recent_quarters and len(stock_actuals) >= check_most_recent_quarters:
+            most_recent_quarters = sorted(stock_actuals, reverse=True)
+            for i, recent_quarter in enumerate(most_recent_quarters[:check_most_recent_quarters]):
+                # remove stocks with noncontiguous quarters, missing data
+                if i != 0 and most_recent_quarters[i - 1] != get_next_quarter(recent_quarter):
+                    to_check_list = []
+                    break
+                if recent_quarter in stock_expected:
                     to_check_list.append(
                         (
                             recent_quarter,
-                            per_stock_actuals[stock][recent_quarter],
-                            per_stock_expected[stock][recent_quarter],
+                            stock_actuals[recent_quarter],
+                            stock_expected[recent_quarter],
                         )
                     )
+                else:
+                    to_check_list = []
+                    break
         else:
-            for quarter in per_stock_actuals[stock]:
-                if stock in per_stock_expected and quarter in per_stock_expected[stock]:
+            # TODO: Technically a stock with some missing data over the time period could pass this
+            # However since quarters for particular stocks can be very out of sync (fiscal years), very
+            # difficult to stop this case without causing other stocks to potentially fail, so leaving
+            # it for now
+            for quarter in stock_actuals:
+                if quarter in stock_expected:
                     to_check_list.append(
                         (
                             quarter,
-                            per_stock_actuals[stock][quarter],
-                            per_stock_expected[stock][quarter],
+                            stock_actuals[quarter],
+                            stock_expected[quarter],
                         )
                     )
+                else:
+                    to_check_list = []
+                    break
 
         if to_check_list and all(
             [(actual >= expected) == (not args.miss) for _, actual, expected in to_check_list]
@@ -656,9 +695,11 @@ async def beat_or_miss_earnings_filter(
     if len(filtered_stocks) == 0:
         raise EmptyOutputError("No stocks passed beat/miss filter")
 
-    # sort by surprise
+    # sort first by quarter (only difference between titles is quarter), then by suprise
+    multipler = -1 if args.miss else 1
     filtered_stocks.sort(
-        key=lambda x: x.history[-1].explanation, reverse=not args.miss  # type:ignore
+        key=lambda x: (x.history[-1].title, x.history[-1].explanation * multipler),  # type:ignore
+        reverse=True,
     )
 
     return filtered_stocks
