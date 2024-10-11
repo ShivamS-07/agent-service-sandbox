@@ -97,6 +97,10 @@ def use_boosted_dag_for_run_execution_plan() -> bool:
     return get_ld_flag(flag_name="boosted-dag-run-execution-plan", user_context=None, default=False)
 
 
+def agent_output_cache_enabled() -> bool:
+    return get_ld_flag(flag_name="agent-output-cache", user_context=None, default=False)
+
+
 def is_database_access_check_enabled_for_user(user_id: str) -> bool:
     return get_ld_flag(
         flag_name="database-access-check", user_context=get_user_context(user_id), default=False

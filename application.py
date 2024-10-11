@@ -4,6 +4,7 @@ import dataclasses
 import datetime
 import json
 import logging
+import os
 import time
 import traceback
 import uuid
@@ -103,6 +104,7 @@ from agent_service.endpoints.models import (
     ModifyPlanRunArgsRequest,
     ModifyPlanRunArgsResponse,
     NotificationEmailsResponse,
+    OutputWrapper,
     RearrangeSectionRequest,
     RearrangeSectionResponse,
     RenameMemoryRequest,
@@ -147,11 +149,15 @@ from agent_service.io_types.citations import CitationType, GetCitationDetailsRes
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
+from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.custom_documents_utils import CustomDocumentException
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
-from agent_service.utils.feature_flags import is_user_agent_admin
+from agent_service.utils.feature_flags import (
+    agent_output_cache_enabled,
+    is_user_agent_admin,
+)
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect_task_executor import PrefectTaskExecutor
@@ -1736,6 +1742,24 @@ if __name__ == "__main__":
     env = get_environment_tag()
     base_url = "alfa.boosted.ai" if env == "ALPHA" else "agent-dev.boosted.ai"
     channel = "alfa-client-queries" if env == "ALPHA" else "alfa-client-queries-dev"
+
+    def serialize_func(raw_output: Any) -> Any:
+        to_write = OutputWrapper(output=raw_output)
+        res = to_write.model_dump_json(serialize_as_any=True)
+        return res
+
+    def deserialize_func(raw_input: Any) -> Any:
+        agent_output = OutputWrapper.model_validate_json(raw_input)
+        return agent_output.output
+
+    cache = None
+    if agent_output_cache_enabled() and os.getenv("REDIS_HOST"):
+        logger.info(f"Using redis output cache. Connecting to {os.getenv('REDIS_HOST')}")
+        cache = RedisCacheBackend(
+            namespace="agent-output-cache-new",
+            serialize_func=serialize_func,
+            deserialize_func=deserialize_func,
+        )
     application.state.agent_service_impl = AgentServiceImpl(
         task_executor=PrefectTaskExecutor(),
         gpt_service_stub=_get_gpt_service_stub()[0],
@@ -1743,7 +1767,7 @@ if __name__ == "__main__":
         clickhouse_db=Clickhouse(),
         slack_sender=SlackSender(channel=channel),
         base_url=base_url,
-        cache=None,
+        cache=cache,
     )
 
     try:

@@ -424,6 +424,10 @@ class AgentOutput(BaseModel):
     is_locked: bool = False
 
 
+class OutputWrapper(BaseModel):
+    output: Union[TextOutput, GraphOutput, TableOutput] = Field(discriminator="output_type")
+
+
 class GetAgentOutputResponse(BaseModel):
     # it'll be only intermediate outputs OR the final outputs, sorted by time ASC
     outputs: List[AgentOutput]

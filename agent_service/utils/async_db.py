@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import uuid
@@ -22,11 +23,14 @@ from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 
 # Make sure all io_types are registered
 from agent_service.io_types import *  # noqa
+from agent_service.io_types.graph import GraphOutput
+from agent_service.io_types.table import TableOutput
+from agent_service.io_types.text import TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
 from agent_service.types import ChatContext, Message, Notification, PlanRunContext
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
-from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
+from agent_service.utils.cache_utils import CacheBackend
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
@@ -112,7 +116,7 @@ class AsyncDB:
             return None
 
     async def get_agent_outputs(
-        self, agent_id: str, plan_run_id: Optional[str] = None
+        self, agent_id: str, plan_run_id: Optional[str] = None, cache: Optional[CacheBackend] = None
     ) -> List[AgentOutput]:
         """
         if `plan_run_id` is None, get the latest run's outputs
@@ -154,11 +158,41 @@ class AsyncDB:
         if not rows:
             return []
 
-        io_outputs = [
-            load_io_type(row["output"]) if row["output"] else row["output"] for row in rows
-        ]
-        tasks = [get_output_from_io_type(output, pg=self.pg) for output in io_outputs]
-        output_values = await gather_with_concurrency(tasks, n=len(tasks))
+        async def get_output_id_from_cache(
+            output_id: str,
+        ) -> Tuple[str, Optional[Union[TextOutput, GraphOutput, TableOutput]]]:
+            cached_output = None
+            return output_id, cached_output
+
+        async def get_output_values() -> List[Union[TextOutput, GraphOutput, TableOutput]]:
+            cached_output_ids = set()
+            to_return = []
+            if cache:
+                output_get_tasks = [get_output_id_from_cache(row["output_id"]) for row in rows]
+                outputs_with_ids = await asyncio.gather(*output_get_tasks)
+                for cached_output_id, cached_output in outputs_with_ids:
+                    if cached_output:
+                        cached_output_ids.add(cached_output_id)
+                        to_return.append(cached_output)
+
+            non_cached_output_tasks = []
+            for row in rows:
+
+                async def get_non_cached(output_id: str, a_io_output: IOType) -> Any:
+                    res = await get_output_from_io_type(a_io_output, pg=self.pg)
+                    if cache:
+                        await cache.set(key=output_id, val=res)
+                    return res
+
+                if row["output_id"] not in cached_output_ids:
+                    io_output = load_io_type(row["output"]) if row["output"] else row["output"]
+                    non_cached_output_tasks.append(get_non_cached(row["output_id"], io_output))
+            if non_cached_output_tasks:
+                results = await asyncio.gather(*non_cached_output_tasks)
+                to_return.extend(results)
+            return to_return
+
+        output_values = await get_output_values()
 
         outputs = []
         for row, output_value in zip(rows, output_values):

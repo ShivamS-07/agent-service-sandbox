@@ -36,15 +36,7 @@ async def get_agent_output(
                 detail=f"No output found for {agent_id=} and {plan_run_id=}",
             )
         plan_run_id = rows[0]["plan_run_id"]
-    key = f"{agent_id}-{plan_run_id}"
-    if cache:
-        cached_val = await cache.get(key)
-        if cached_val:
-            LOGGER.info(
-                f"total time to get output using cache for {agent_id} {time.perf_counter() - t}"
-            )
-            return cast(GetAgentOutputResponse, cached_val)
-    outputs = await pg.get_agent_outputs(agent_id=agent_id, plan_run_id=plan_run_id)
+    outputs = await pg.get_agent_outputs(agent_id=agent_id, plan_run_id=plan_run_id, cache=cache)
     if not outputs:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -94,8 +86,5 @@ async def get_agent_output(
             run_summary_short=run_summary_short,
             newly_updated_outputs=newly_updated_outputs,
         )
-    if cache:
-        await cache.set(key=key, val=result, ttl=60 * 24 * 60 * 60)
-        LOGGER.info(f"saved output for {agent_id} to cache")
     LOGGER.info(f"total time to get output for {agent_id} {time.perf_counter() - t}")
     return result
