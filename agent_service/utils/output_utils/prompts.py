@@ -174,3 +174,18 @@ Your response:
 DECIDE_NOTIFICATION_MAIN_PROMPT = Prompt(
     name="AGENT_OUTPUT_DECIDE_NOTIFICATION_MAIN_PROMPT", template=DECIDE_NOTIFICATION_PROMPT_STR
 )
+
+EMAIL_SUBJECT_MAIN_PROMPT = Prompt(
+    name="EMAIL_SUBJECT",
+    template="""
+You are a financial analyst who is in charge of creating the subject line for an email that starts with
+a brief summary followed by more detailed bullet points. Your job is to create a concise, attention-grabbing
+email subject line that focuses solely on the most important fact or key information, using fewer than 10
+words. If the email contains any stats, make sure to include the relevant timeframe (e.g., year-over-year
+or quarterly). Avoid vague phrases, labels, or analysis terms like "impact," "alert," or "analysis." Only
+output the subject line and nothing else, or else you will be fired.
+Here is the content of the email:
+{email_content}
+Now, output your subject line:
+""",
+)

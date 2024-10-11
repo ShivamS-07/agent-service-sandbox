@@ -323,7 +323,12 @@ async def get_agent_task_logs(
 
 
 async def send_agent_emails(
-    pg: AsyncDB, agent_id: str, plan_run_id: str, run_summary_short: str, run_summary_long: str
+    pg: AsyncDB,
+    agent_id: str,
+    email_subject: str,
+    plan_run_id: str,
+    run_summary_short: str,
+    run_summary_long: str,
 ) -> None:
     """
     Args:
@@ -362,6 +367,7 @@ async def send_agent_emails(
                 AgentNotificationData(
                     agent_name=agent_name,
                     agent_id=agent_id,
+                    email_subject=email_subject,
                     plan_run_id=plan_run_id,
                     agent_owner=agent_owner if agent_owner else "",
                     notification_body=AgentNotificationBody(
@@ -380,6 +386,7 @@ async def send_agent_emails(
                 AgentNotificationData(
                     agent_name=agent_name,
                     agent_id=agent_id,
+                    email_subject=email_subject,
                     plan_run_id=plan_run_id,
                     agent_owner=agent_owner if agent_owner else "",
                     notification_body=AgentNotificationBody(

@@ -80,7 +80,10 @@ from agent_service.utils.output_utils.output_diffs import (
     OutputDiffer,
     generate_full_diff_summary,
 )
-from agent_service.utils.output_utils.prompts import SHORT_SUMMARY_WORKLOG_MAIN_PROMPT
+from agent_service.utils.output_utils.prompts import (
+    EMAIL_SUBJECT_MAIN_PROMPT,
+    SHORT_SUMMARY_WORKLOG_MAIN_PROMPT,
+)
 from agent_service.utils.output_utils.utils import io_type_to_gpt_input, output_for_log
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
 from agent_service.utils.prefect import (
@@ -548,15 +551,16 @@ async def _run_execution_plan_impl(
     full_diff_summary = None
     full_diff_summary_output = None
     short_diff_summary = "Summary generation in progress..."
+
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_CHATBOT, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(gpt_context, GPT4_O)
     if not scheduled_by_automation and do_chat:
         logger.info("Generating chat message...")
         chat_context = db.get_chats_history_for_agent(agent_id=context.agent_id)
 
         # generate short diff summary
-        gpt_context = create_gpt_context(
-            GptJobType.AGENT_CHATBOT, context.agent_id, GptJobIdType.AGENT_ID
-        )
-        llm = GPT(gpt_context, GPT4_O)
         latest_report_list = [await io_type_to_gpt_input(output) for output in final_outputs]
         latest_report = "\n".join(latest_report_list)
         chat_text = chat_context.get_gpt_input()
@@ -673,9 +677,21 @@ async def _run_execution_plan_impl(
                 logger.info(
                     f"Sending Email notification for agent: {context.agent_id}, plan run: {context.plan_run_id}"
                 )
+
+                email_subject_prompt = EMAIL_SUBJECT_MAIN_PROMPT.format(
+                    email_content=(
+                        short_diff_summary + "\n" + whats_new_summary if whats_new_summary else ""
+                    )
+                )
+                email_subject = await llm.do_chat_w_sys_prompt(
+                    main_prompt=email_subject_prompt,
+                    sys_prompt=NO_PROMPT,
+                )
+
                 await send_agent_emails(
                     pg=async_db,
                     agent_id=context.agent_id,
+                    email_subject=email_subject,
                     plan_run_id=context.plan_run_id,
                     run_summary_short=short_diff_summary if short_diff_summary else "",
                     run_summary_long=whats_new_summary if whats_new_summary else "",
