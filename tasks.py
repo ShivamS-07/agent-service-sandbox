@@ -65,10 +65,7 @@ def testregressionslowci(c):
 @task
 def testregression(c):
     c.run(
-        "pipenv run python -m pytest  --durations=0 --durations-min=1.0"
-        " --disable-warnings --capture=tee-sys  --log-cli-level=WARNING"
-        " -n 8 --dist worksteal"
-        " -v regression_test"
+        "pipenv run python -m pytest -n 32 --dist worksteal -v regression_test --log-level=CRITICAL"
     )
 
 

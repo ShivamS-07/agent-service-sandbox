@@ -14,11 +14,7 @@ def log_event(
     event_data: Optional[Dict[str, Any]] = None,
     event_namespace: Optional[str] = None,
 ) -> None:
-    if CLIENT_NAMESPACE != "LOCAL":
-        gbi_common_log_event(
-            event_name=event_name, event_data=event_data, event_namespace=event_namespace
-        )
-    elif int(os.environ.get("FORCE_LOGGING", 0)) == 1:
+    if int(os.environ.get("FORCE_LOGGING", 0)) == 1:
         ch = ClickhouseBase()
         if event_data is None:
             event_data = {}
@@ -32,3 +28,7 @@ def log_event(
             event["event_namespace"] = event_namespace
 
         ch.multi_row_insert(table_name="events", rows=[event])
+    if CLIENT_NAMESPACE != "LOCAL":
+        gbi_common_log_event(
+            event_name=event_name, event_data=event_data, event_namespace=event_namespace
+        )

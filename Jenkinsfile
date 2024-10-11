@@ -27,6 +27,7 @@ pipeline {
                                                 VERSION = sh(script: "./bump_version.sh", returnStdout: true).trim()
                                                 sh "echo ${VERSION}"
                                                 sh "./build_and_push_image.sh ${VERSION}"
+                                                sh "./build_and_push_test_image.sh ${VERSION}"
                                                 sh "./run_regression.sh ${VERSION}"
                                                 checkout([$class: 'GitSCM', branches: [[name: "*/${DEPLOYMENTS_REPO_BRANCH}"]], extensions: [], userRemoteConfigs: [[credentialsId: 'GitHub', url: "https://github.com/GBI-Core/deployments"]]])
                                                 sh "git config user.name ${GIT_USERNAME}"
@@ -44,6 +45,7 @@ pipeline {
                     if (result == 0) {
                       sh "echo [build-me] detected in commit message. Building image for commit..."
                       sh "./build_and_push_image.sh"
+                      sh "./build_and_push_test_image.sh"
                       sh "./run_regression.sh"
                     }
 

@@ -9,16 +9,15 @@ import unittest
 import uuid
 import warnings
 from collections import defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
 from gbi_common_py_utils.utils.clickhouse_base import ClickhouseBase
 from gbi_common_py_utils.utils.environment import DEV_TAG
-from gbi_common_py_utils.utils.event_logging import log_event
 
 from agent_service.endpoints.models import AgentMetadata
-from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL
+from agent_service.GPT.constants import CLIENT_NAMESPACE, DEFAULT_CHEAP_MODEL
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import IOType, dump_io_type
 from agent_service.planner.executor import (
@@ -56,7 +55,26 @@ def skip_in_ci(test_func):
 @dataclass
 class EventLog:
     event_name: str
-    event_data: Optional[Dict[str, Any]] = None
+    event_data: Optional[Dict[str, Any]] = field(default_factory=dict)
+
+
+def force_log_bulk(events: List[EventLog]):
+    ch = ClickhouseBase()
+    agent_service_version = os.getenv("AGENT_SERVICE_VERSION")
+    if not agent_service_version:
+        raise Exception("Missing agent service version")
+    event_metadata = {"kubernetes": {"container_image": agent_service_version}}
+    event_dicts = []
+    for event in events:
+        event_dicts.append(
+            {
+                "event_data": json.dumps(event.event_data),
+                "event_name": event.event_name,
+                "timestamp": get_now_utc(),
+                "event_metadata": json.dumps(event_metadata),
+            }
+        )
+    ch.multi_row_insert(table_name="events", rows=event_dicts)
 
 
 def plan_to_simple_json(plan: ExecutionPlan) -> str:
@@ -125,6 +143,7 @@ class TestExecutionPlanner(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.loop = asyncio.get_event_loop()  # type: ignore[assignment]
         cls.llm = GPT(model=DEFAULT_CHEAP_MODEL)
+        cls.logs = []
 
     def prompt_test(
         self,
@@ -193,10 +212,11 @@ class TestExecutionPlanner(unittest.TestCase):
             if warning_msg:
                 regression_test_log.event_data["warning_msg"] = warning_msg.strip()
                 warnings.warn(warning_msg)
-            log_event(**asdict(regression_test_log))
+
+            self.logs.append(regression_test_log)
         except Exception as e:
             regression_test_log.event_data["error_msg"] = traceback.format_exc()
-            log_event(**asdict(regression_test_log))
+            self.logs.append(regression_test_log)
             raise e
 
     def run_regression(
@@ -297,3 +317,8 @@ class TestExecutionPlanner(unittest.TestCase):
         )
         logger.warning(f"test completed {plan_id=}, {prompt=}")
         return sample_plans, plan, output, execution_log
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if CLIENT_NAMESPACE != "LOCAL":
+            force_log_bulk(cls.logs)
