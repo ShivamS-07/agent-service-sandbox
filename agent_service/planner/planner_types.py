@@ -170,6 +170,12 @@ class ExecutionPlan(BaseModel):
             str_list.append(f"{prefix}{node.get_plan_step_str()}")
         return "\n\n".join(str_list)
 
+    def get_output_nodes(self) -> List[ToolExecutionNode]:
+        """
+        Returns a list of nodes that are output nodes. Order is preserved.
+        """
+        return [node for node in self.nodes if node.is_output_node]
+
     def get_node_dependency_map(self) -> Dict[ToolExecutionNode, Set[ToolExecutionNode]]:
         """
         Given an execution plan (i.e. a list of tool execution nodes), we can
@@ -279,6 +285,44 @@ class ExecutionPlan(BaseModel):
                 task_id for task_id in self.locked_task_ids if task_id in remaining_task_ids
             ],
         )
+
+    def reorder_plan_with_output_task_ordering(
+        self, output_task_ordering: List[ToolExecutionNode]
+    ) -> "ExecutionPlan":
+        """
+        Given an ordered list of output nodes, return a NEW execution plan with
+        that will produce outputs in the order given. NOTE: THIS DOES NOT UPDATE
+        IN PLACE.
+        """
+        output_nodes = self.get_output_nodes()
+        output_nodes_set = set(output_nodes)
+
+        # Add any unspecified output nodes to the end
+        output_nodes_not_specified = output_nodes_set - set(output_task_ordering)
+        output_task_ordering.extend(output_nodes_not_specified)
+
+        if not all((node in output_nodes_set for node in output_task_ordering)):
+            raise RuntimeError(
+                f"Some nodes in the ordering lists were not output nodes! {output_task_ordering}"
+            )
+
+        nodes_included = set()
+        final_nodes = []
+
+        # This method is probably inefficient in terms of time complexity, but
+        # in the scheme of things the size of the inputs will be so small that
+        # it won't matter.
+        for output_node in output_task_ordering:
+            # Get the execution plan of ONLY this node by removing all
+            # the others. We could make this more efficient.
+            task_ids_to_remove = {node.tool_task_id for node in output_nodes if node != output_node}
+            isolated_plan_nodes = self.get_pruned_plan(task_ids_to_remove=task_ids_to_remove).nodes
+            for node in isolated_plan_nodes:
+                if node not in nodes_included:
+                    final_nodes.append(node)
+                    nodes_included.add(node)
+
+        return ExecutionPlan(nodes=final_nodes, locked_task_ids=self.locked_task_ids)
 
 
 class ExecutionPlanParsingError(RuntimeError):

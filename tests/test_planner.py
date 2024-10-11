@@ -989,3 +989,94 @@ class TestPlannerTypes(TestCase):
         with self.subTest(msg="Expect error removing non-output"):
             with self.assertRaises(RuntimeError):
                 pruned = test_plan.get_pruned_plan(task_ids_to_remove={"test_1"})
+
+    def test_reorder_plan_with_output_task_ordering(self):
+        # define nodes
+        test1 = ToolExecutionNode(
+            tool_name="test_1",
+            args={"name": "constant"},
+            description="",
+            output_variable_name="test_1_out",
+            tool_task_id="test_1",
+        )
+        test2 = ToolExecutionNode(
+            tool_name="test_2",
+            args={"name": "constant", "name2": Variable(var_name="test_1_out")},
+            description="",
+            output_variable_name="test_2_out",
+        )
+        test3 = ToolExecutionNode(
+            tool_name="test_3",
+            args={
+                "name": "constant",
+                "name2": Variable(var_name="test_1_out"),
+                "name3": Variable(var_name="test_2_out"),
+            },
+            description="",
+            output_variable_name="test_3_out",
+        )
+        test4 = ToolExecutionNode(
+            tool_name="test_4",
+            args={
+                "name": Variable(var_name="test_1_out"),
+            },
+            description="",
+            output_variable_name="test_4_out",
+        )
+        test5 = ToolExecutionNode(
+            tool_name="test_5",
+            args={
+                "name": "constant",
+                "name2": Variable(var_name="test_4_out"),
+                "name3": Variable(var_name="test_3_out"),
+            },
+            description="",
+            output_variable_name="test_5_out",
+        )
+        test_out_1 = ToolExecutionNode(
+            tool_name="prepare_output",
+            args={"name": Variable(var_name="test_2_out")},
+            description="",
+            is_output_node=True,
+            tool_task_id="output1",
+        )
+        test_out_2 = ToolExecutionNode(
+            tool_name="prepare_output",
+            args={"name": Variable(var_name="test_5_out")},
+            description="",
+            is_output_node=True,
+            tool_task_id="output2",
+        )
+        test_out_3 = ToolExecutionNode(
+            tool_name="prepare_output",
+            args={"name": Variable(var_name="test_1_out")},
+            description="",
+            is_output_node=True,
+            tool_task_id="output3",
+        )
+
+        test_plan = ExecutionPlan(nodes=[test1, test2, test_out_1, test3, test4, test5, test_out_2])
+        # First, swap the ordering of outputs 1 and 2
+        expected_plan = ExecutionPlan(
+            nodes=[test1, test2, test3, test4, test5, test_out_2, test_out_1]
+        )
+        reordered = test_plan.reorder_plan_with_output_task_ordering([test_out_2, test_out_1])
+        with self.subTest(msg="First reordering"):
+            self.assertEqual(reordered, expected_plan)
+
+        test_plan = ExecutionPlan(
+            nodes=[test1, test2, test_out_1, test3, test4, test5, test_out_2, test_out_3]
+        )
+        expected_plan = ExecutionPlan(
+            nodes=[test1, test_out_3, test2, test3, test4, test5, test_out_2, test_out_1]
+        )
+        reordered = test_plan.reorder_plan_with_output_task_ordering(
+            [test_out_3, test_out_2, test_out_1]
+        )
+        with self.subTest(msg="Second reordering"):
+            self.assertEqual(reordered, expected_plan)
+
+        test_plan = ExecutionPlan(nodes=[test1, test2, test_out_1, test3, test4, test5, test_out_2])
+        with self.subTest(msg="Expect error reordering with non-output"):
+            with self.assertRaises(RuntimeError):
+                _ = test_plan.reorder_plan_with_output_task_ordering([test_out_1, test2])

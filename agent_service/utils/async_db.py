@@ -658,17 +658,21 @@ class AsyncDB:
         status: PlanStatus = PlanStatus.READY,
     ) -> None:
         sql = """
-        INSERT INTO agent.execution_plans (plan_id, agent_id, plan, created_at, last_updated, status)
+        INSERT INTO agent.execution_plans (plan_id, agent_id, plan, created_at,
+                    last_updated, status, locked_tasks)
         VALUES (
-          %(plan_id)s, %(agent_id)s, %(plan)s, %(created_at)s, %(last_updated)s, %(status)s
+          %(plan_id)s, %(agent_id)s, %(plan)s, %(created_at)s, %(last_updated)s,
+          %(status)s, %(locked_tasks)s
         )
         ON CONFLICT (plan_id) DO UPDATE SET
           agent_id = EXCLUDED.agent_id,
           plan = EXCLUDED.plan,
           last_updated = NOW(),
-          status = EXCLUDED.status
+          status = EXCLUDED.status,
+          locked_tasks = EXCLUDED.locked_tasks
         """
         created_at = last_updated = get_now_utc()  # need so skip_commit db has proper times
+        locked_ids = plan.locked_task_ids
         await self.pg.generic_write(
             sql,
             params={
@@ -678,6 +682,7 @@ class AsyncDB:
                 "created_at": created_at,
                 "last_updated": last_updated,
                 "status": status.value,
+                "locked_tasks": locked_ids,
             },
         )
 

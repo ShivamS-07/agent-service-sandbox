@@ -1227,20 +1227,28 @@ async def rewrite_execution_plan(
             plan_id=plan_id,
         )
 
-        if action == FollowupAction.APPEND and new_plan:
-            # If we're appending to an existing plan, we want to re-use the
-            # outputs from the old plan so that the new results will appear
-            # faster (and more efficiently).
-            task_ids = planner.replicate_plan_set_for_automated_run(old_plan, new_plan)
-            # These maps will be used to look up prior outputs when the plan
-            # runs. (Eventually will remove this clickhouse part, leaving it in
-            # for redundancy.)
-            override_task_output_id_lookup = await Clickhouse().get_task_replay_ids(
-                agent_id=agent_id, task_ids=task_ids, plan_id=old_plan_id
-            )
-            override_task_work_log_id_lookup = await db.get_task_work_log_ids(
-                agent_id=agent_id, task_ids=task_ids, plan_id=old_plan_id
-            )
+        if new_plan:
+            task_ids = []
+            if action == FollowupAction.APPEND:
+                # If we're appending to an existing plan, we want to re-use the
+                # outputs from the old plan so that the new results will appear
+                # faster (and more efficiently).
+                task_ids = planner.replicate_plan_set_for_automated_run(old_plan, new_plan)
+            elif old_plan.locked_task_ids:
+                # If we had locked nodes, we want to quickly redisplay them
+                # without recomputing. We should fetch all data from the old
+                # plan just in case the task is also in the new plan.
+                task_ids = [node.tool_task_id for node in old_plan.nodes]
+            if task_ids:
+                # These maps will be used to look up prior outputs when the plan
+                # runs. (Eventually will remove this clickhouse part, leaving it in
+                # for redundancy.)
+                override_task_output_id_lookup = await Clickhouse().get_task_replay_ids(
+                    agent_id=agent_id, task_ids=task_ids, plan_id=old_plan_id
+                )
+                override_task_work_log_id_lookup = await db.get_task_work_log_ids(
+                    agent_id=agent_id, task_ids=task_ids, plan_id=old_plan_id
+                )
 
     if await check_cancelled(db=db, agent_id=agent_id, plan_id=plan_id):
         await publish_agent_plan_status(
