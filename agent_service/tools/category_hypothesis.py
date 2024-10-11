@@ -307,7 +307,7 @@ class TopicGroup(TextGroup):
         if not self.id_to_str:  # TopicGroups must have their id_to_str set separately
             raise RuntimeError("tried to Topic Group to string before deriving id_to_str")
         self._cut_input_topics(target_num=200)
-        return super().convert_to_str(self.id_to_str, numbering=True, symbols=True)
+        return super().convert_to_str(self.id_to_str, numbering=True)
 
     def _cut_input_topics(self, target_num: int = 200) -> None:
         # if there are too many topics passed to GPT, it may cause the output being chopped off
@@ -883,7 +883,9 @@ async def download_content_for_text_data(
     )
     text_list.sort(key=lambda x: x.timestamp, reverse=True)  # type: ignore
     topic_group = TopicGroup(val=text_list)  # type: ignore
-    await Text.get_all_strs(topic_group)  # fill in `id_to_str` dict
+    await Text.get_all_strs(
+        topic_group, include_header=True, include_symbols=True, include_timestamps=False
+    )  # fill in `id_to_str` dict
     topic_group.sync_map_with_val()
 
     return gbi_id_to_short_description, topic_group

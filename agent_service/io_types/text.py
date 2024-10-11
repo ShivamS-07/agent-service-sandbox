@@ -78,6 +78,7 @@ class Text(ComplexIOBase):
     text_type: ClassVar[str] = DEFAULT_TEXT_TYPE
     stock_id: Optional[StockID] = None
     timestamp: Optional[datetime.datetime] = None
+    title: Optional[str] = None  # useful for lists of Texts to be displayed in a single widget
     # Text objects are rich "widgets" that are rendered on the UI. For example,
     # inline citations, stock links, portfolio links, etc. could all be text
     # objects.
@@ -213,6 +214,8 @@ class Text(ComplexIOBase):
         text: Union[Text, TextGroup, List[Any], Dict[Any, Any]],
         include_header: bool = False,
         text_group_numbering: bool = False,
+        include_symbols: bool = False,
+        include_timestamps: bool = True,  # only actually used if include_header is True
     ) -> Union[str, List[Any], Dict[Any, Any]]:
         # For any possible configuration of Texts or TextGroups in Lists, this converts that
         # configuration to the corresponding strings in list, in class specific batches
@@ -247,18 +250,35 @@ class Text(ComplexIOBase):
         categories: Dict[Type[Text], List[Text]] = defaultdict(list)
         # identical structure to input texts, but as IDs
         texts_as_ids = convert_to_ids_and_categorize(text, categories)
-        if include_header:
+        if include_header and include_timestamps:
             timestamp_lookup = {}
             for cat_texts in categories.values():
                 for text in cat_texts:
                     timestamp_lookup[text.id] = text.timestamp
         else:
             timestamp_lookup = None
+        if include_header and include_symbols:
+            symbol_lookup = {}
+            for cat_texts in categories.values():
+                for text in cat_texts:
+                    if (
+                        isinstance(text, StockText)
+                        and text.stock_id is not None
+                        and text.stock_id.symbol is not None
+                    ):
+                        symbol_lookup[text.id] = text.stock_id.symbol
+        else:
+            symbol_lookup = None
         strs_lookup: Dict[TextIDType, str] = {}
         # For every subclass of Text, fetch data
         lookups: List[Dict[TextIDType, str]] = await gather_with_concurrency(
             [
-                textclass.get_strs_lookup(texts, timestamp_lookup=timestamp_lookup)
+                textclass.get_strs_lookup(
+                    texts,
+                    include_header=include_header,
+                    timestamp_lookup=timestamp_lookup,
+                    symbol_lookup=symbol_lookup,
+                )
                 for textclass, texts in categories.items()
             ]
         )
@@ -296,16 +316,22 @@ class Text(ComplexIOBase):
     async def get_strs_lookup(
         cls,
         texts: List[Self],
+        include_header: bool = False,
         timestamp_lookup: Optional[Dict[TextIDType, Optional[datetime.datetime]]] = None,
+        symbol_lookup: Optional[Dict[TextIDType, str]] = None,
     ) -> Dict[TextIDType, str]:
         strs_lookup = await cls._get_strs_lookup(texts)
-        if timestamp_lookup is not None:
+        if include_header:
             for id, val in strs_lookup.items():
-                if id in timestamp_lookup and timestamp_lookup[id] is not None:
+                if timestamp_lookup and id in timestamp_lookup and timestamp_lookup[id] is not None:
                     date_str = f"Date: {timestamp_lookup[id].date()}\n"  # type: ignore
                 else:
                     date_str = ""
-                strs_lookup[id] = f"Text type: {cls.text_type}\n{date_str}Text:\n{val}"
+                if symbol_lookup and id in symbol_lookup:
+                    symbol_str = f"Stock: {symbol_lookup[id]}\n"
+                else:
+                    symbol_str = ""
+                strs_lookup[id] = f"Text type: {cls.text_type}\n{symbol_str}{date_str}Text:\n{val}"
         return strs_lookup
 
     @classmethod
@@ -2155,20 +2181,13 @@ class TextGroup(ComplexIOBase):
         self,
         id_to_str: Dict[TextIDType, str],
         numbering: bool = False,
-        symbols: bool = False,
     ) -> str:
         # sort texts by timestamp so any truncations cuts off older texts
         self.val.sort(key=lambda x: x.timestamp.timestamp() if x.timestamp else 0, reverse=True)
         self.id_to_str = id_to_str
         return "\n***\n".join(
             [
-                (f"Text Number: {i + self.offset}\n" if numbering else "")
-                + (
-                    f"Stock: {text.stock_id.symbol}\n"
-                    if symbols and isinstance(text, StockText) and text.stock_id
-                    else ""
-                )
-                + id_to_str[text.id]
+                (f"Text Number: {i + self.offset}\n" if numbering else "") + id_to_str[text.id]
                 for i, text in enumerate(self.val)
                 if text.id in id_to_str
             ]

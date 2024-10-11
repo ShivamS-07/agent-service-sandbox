@@ -60,7 +60,10 @@ def combine_text_list(
     all_citations = []
     cur_offset = len(overall_prefix)
     for text in texts:
-        line = f"{per_line_prefix}{text.val}{per_line_suffix}"
+        if text.title:  # output of per idea summarize, can't use -
+            line = text.val + "\n\n"
+        else:
+            line = f"{per_line_prefix}{text.val}{per_line_suffix}"
         citations = text.get_all_citations()
         cur_offset += len(per_line_prefix)
         for cit in citations:

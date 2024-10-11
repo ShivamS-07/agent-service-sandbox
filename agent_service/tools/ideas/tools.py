@@ -39,7 +39,9 @@ async def initial_brainstorm(
 ) -> List[Tuple[str, List[Text], int]]:
     logger = get_prefect_logger(__name__)
     text_group = TextGroup(val=texts)
-    text_str = await Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)
+    text_str = await Text.get_all_strs(
+        text_group, include_header=True, include_symbols=True, text_group_numbering=True
+    )
     if context.chat:
         chat_str = context.chat.get_gpt_input()
     else:
@@ -130,7 +132,7 @@ async def create_final_idea(
 
     text_group = TextGroup(val=idea_relevant_texts)
     text_str: str = await Text.get_all_strs(  # type: ignore
-        text_group, include_header=True, text_group_numbering=True
+        text_group, include_header=True, include_symbols=True, text_group_numbering=True
     )
     ideas_str = "\n".join(idea_formulations)
 

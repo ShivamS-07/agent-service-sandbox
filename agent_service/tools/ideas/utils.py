@@ -18,7 +18,9 @@ async def create_small_text_groups(input_texts: List[Text]) -> List[List[Text]]:
     output_text_groups = []
     curr_texts: List[Text] = []
     curr_token_count = 0
-    text_strs: List[str] = await Text.get_all_strs(input_texts, include_header=True)  # type: ignore
+    text_strs: List[str] = await Text.get_all_strs(  # type: ignore
+        input_texts, include_header=True, include_symbols=True
+    )
     for text_obj, text_str in zip(input_texts, text_strs):
         text_token_count = tokenizer.get_token_length(text_str)
         if text_token_count + curr_token_count > MAX_TEXT_GROUP_TOKENS:

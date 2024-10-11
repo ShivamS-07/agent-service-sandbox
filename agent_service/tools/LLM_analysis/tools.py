@@ -13,6 +13,7 @@ from agent_service.GPT.constants import (
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import Citation, HistoryEntry
+from agent_service.io_types.idea import Idea
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
 from agent_service.io_types.text import (
@@ -30,6 +31,7 @@ from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_s
 from agent_service.tools.LLM_analysis.constants import (
     BRAINSTORM_DELIMITER,
     DEFAULT_LLM,
+    IDEA,
     LLM_FILTER_MAX_INPUT_PERCENTAGE,
     LLM_FILTER_MAX_PERCENT,
     LLM_FILTER_MIN_TOKENS,
@@ -55,6 +57,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     EXTRA_DATA_PHRASE,
     FILTER_BY_PROFILE_DESCRIPTION,
     FILTER_BY_TOPIC_DESCRIPTION,
+    PER_IDEA_SUMMARIZE_DESCRIPTION,
     PER_STOCK_SUMMARIZE_DESCRIPTION,
     PROFILE_ADD_DIFF_MAIN_PROMPT,
     PROFILE_ADD_DIFF_SYS_PROMPT,
@@ -101,6 +104,7 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.text_utils import partition_to_smaller_text_sizes
 from agent_service.utils.tool_diff import (
     add_old_history,
     get_prev_run_info,
@@ -156,11 +160,18 @@ async def _initial_summarize_helper(
         texts = await topic_filter_helper(
             args.texts, args.topic, context.agent_id, model_for_filter_to_context=GPT4_O
         )
+        if len(texts) == 0:  # filtered out all relevant texts
+            if args.stock:
+                return NO_SUMMARY_FOR_STOCK, []
+            else:
+                return NO_SUMMARY, []
     else:
         texts = args.texts
 
     text_group = TextGroup(val=args.texts)
-    texts_str: str = await Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)  # type: ignore
+    texts_str: str = await Text.get_all_strs(  # type: ignore
+        text_group, include_header=True, text_group_numbering=True, include_symbols=True
+    )
     if context.chat:
         chat_str = context.chat.get_gpt_input()
     else:
@@ -261,21 +272,32 @@ async def _update_summarize_helper(
     new_texts: List[Text],
     old_texts: List[Text],
     old_summary: str,
-    last_original_citation_count: int,
+    original_citations: List[TextCitation],
     remaining_original_citation_count: int,
 ) -> Tuple[str, List[TextCitation]]:
     logger = get_prefect_logger(__name__)
+    last_original_citation_count = get_original_cite_count(original_citations)
     if args.topic:
         new_texts = await topic_filter_helper(
             new_texts, args.topic, context.agent_id, model_for_filter_to_context=GPT4_O
         )
+        if len(new_texts) == 0:
+            if remaining_original_citation_count == 0:
+                # nothing new or old to cite, return empty summary
+                if args.stock:
+                    return NO_SUMMARY_FOR_STOCK, []
+                else:
+                    return NO_SUMMARY, []
+            elif last_original_citation_count == remaining_original_citation_count:
+                # no change, return old stuff
+                return old_summary, original_citations
     new_text_group = TextGroup(val=new_texts)
     new_texts_str: str = await Text.get_all_strs(
-        new_text_group, include_header=True, text_group_numbering=True
+        new_text_group, include_header=True, text_group_numbering=True, include_symbols=True
     )  # type: ignore
     old_texts_group = TextGroup(val=old_texts, offset=len(new_texts))
     old_texts_str: str = await Text.get_all_strs(
-        old_texts_group, include_header=True, text_group_numbering=True
+        old_texts_group, include_header=True, text_group_numbering=True, include_symbols=True
     )  # type: ignore
 
     if context.chat:
@@ -439,6 +461,8 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     if len(args.texts) == 0:
         raise EmptyInputError("Cannot summarize when no texts provided")
 
+    args.texts = await partition_to_smaller_text_sizes(args.texts, context)
+
     text = None
     citations = None
 
@@ -446,11 +470,13 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         prev_run_info = await get_prev_run_info(context, "summarize_texts")
         if prev_run_info is not None:
             prev_args = SummarizeTextInput.model_validate_json(prev_run_info.inputs_str)
-            prev_texts: List[Text] = prev_args.texts
+            prev_texts: List[Text] = await partition_to_smaller_text_sizes(prev_args.texts, context)
             prev_output: Text = prev_run_info.output  # type:ignore
             curr_input_texts = set(args.texts)
             new_texts = list(curr_input_texts - set(prev_texts))
             all_old_citations = cast(List[TextCitation], prev_output.history[0].citations)
+            for citation in all_old_citations:
+                citation.source_text.reset_id()  # need to do this so we can match them
             remaining_citations = [
                 citation
                 for citation in all_old_citations
@@ -467,7 +493,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
                     new_texts,
                     old_texts,
                     prev_output.val,
-                    get_original_cite_count(all_old_citations),
+                    all_old_citations,
                     get_original_cite_count(remaining_citations),
                 )
             else:
@@ -520,6 +546,10 @@ async def per_stock_summarize_texts(
     if len(args.texts) == 0:
         raise EmptyInputError("Cannot summarize when no texts provided")
 
+    args.texts = cast(
+        List[StockText], await partition_to_smaller_text_sizes(args.texts, context)  # type:ignore
+    )
+
     text_dict: Dict[StockID, List[StockText]] = {stock: [] for stock in args.stocks}
     for text in args.texts:
         try:
@@ -537,8 +567,11 @@ async def per_stock_summarize_texts(
         if prev_run_info is not None:
             prev_args = PerStockSummarizeTextInput.model_validate_json(prev_run_info.inputs_str)
             prev_texts: List[StockText] = prev_args.texts
+            prev_texts = cast(
+                List[StockText],
+                await partition_to_smaller_text_sizes(prev_texts, context),  # type:ignore
+            )
             prev_output: List[StockID] = prev_run_info.output  # type:ignore
-
             old_text_dict: Dict[StockID, List[StockText]] = defaultdict(list)
             for text in prev_texts:
                 try:
@@ -553,6 +586,8 @@ async def per_stock_summarize_texts(
                 new_texts = list(curr_input_texts - old_input_texts)
                 old_summary = cast(str, stock.history[-1].explanation)
                 all_old_citations = cast(List[TextCitation], stock.history[-1].citations)
+                for citation in all_old_citations:
+                    citation.source_text.reset_id()  # need to do this so we can match them
                 remaining_citations = [
                     citation
                     for citation in all_old_citations
@@ -591,7 +626,7 @@ async def per_stock_summarize_texts(
                             new_texts,  # type: ignore
                             old_texts,
                             old_summary,
-                            get_original_cite_count(all_old_citations),
+                            all_old_citations,
                             get_original_cite_count(remaining_citations),
                         )
                     )
@@ -633,6 +668,133 @@ async def per_stock_summarize_texts(
             )
         )
         output.append(stock)
+
+    return output
+
+
+class PerIdeaSummarizeTextInput(ToolArgs):
+    ideas: List[Idea]
+    texts: List[Text]
+    topic_template: str
+
+
+@tool(
+    description=PER_IDEA_SUMMARIZE_DESCRIPTION,
+    category=ToolCategory.LLM_ANALYSIS,
+    reads_chat=True,
+    enabled=False,
+)
+async def per_idea_summarize_texts(
+    args: PerIdeaSummarizeTextInput, context: PlanRunContext
+) -> List[Text]:
+    logger = get_prefect_logger(__name__)
+    # TODO we need guardrails on this
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=DEFAULT_LLM)
+
+    if len(args.ideas) == 0:
+        raise EmptyInputError("Cannot do per idea summarize when no ideas provided")
+
+    if len(args.texts) == 0:
+        raise EmptyInputError("Cannot summarize when no texts provided")
+
+    if IDEA not in args.topic_template:
+        raise EmptyInputError("Input topic template missing IDEA placeholder")
+
+    args.texts = await partition_to_smaller_text_sizes(args.texts, context)
+
+    new_ideas = args.ideas  # default to redoing everything
+
+    old_ideas = []
+
+    prev_run_dict: Dict[Idea, Tuple[List[TextCitation], List[TextCitation], str]] = defaultdict()
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context, "per_idea_summarize_texts")
+        if prev_run_info is not None:
+            prev_args = PerIdeaSummarizeTextInput.model_validate_json(prev_run_info.inputs_str)
+            prev_ideas: List[Idea] = prev_args.ideas
+            old_ideas_lookup = {idea.title: idea for idea in prev_ideas}
+            prev_input_texts: List[Text] = prev_args.texts
+            prev_input_texts = await partition_to_smaller_text_sizes(prev_input_texts, context)
+            prev_output_texts: List[Text] = prev_run_info.output  # type:ignore
+            # get the title to text mapping for the old output texts, the titles are the idea titles
+            old_output_text_dict: Dict[str, Text] = {
+                text.title: text for text in prev_output_texts if text.title is not None
+            }
+            curr_input_texts = set(args.texts)
+            old_input_texts = set(prev_input_texts)
+            new_texts = list(curr_input_texts - old_input_texts)
+            new_ideas = []
+            for idea in args.ideas:
+                if idea.title not in old_ideas_lookup:
+                    new_ideas.append(idea)
+                    continue
+                old_output_text = old_output_text_dict[idea.title]
+                old_summary = old_output_text.val
+                all_old_citations = cast(List[TextCitation], old_output_text.history[-1].citations)
+                for citation in all_old_citations:
+                    citation.source_text.reset_id()  # need to do this so we can match them
+                remaining_citations = [
+                    citation
+                    for citation in all_old_citations
+                    if citation.source_text in curr_input_texts
+                ]
+                prev_run_dict[idea] = (
+                    remaining_citations,
+                    all_old_citations,
+                    old_summary,
+                )
+
+    except Exception as e:
+        logger.warning(
+            f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
+        )
+
+    tasks = []
+    for idea in new_ideas:
+        topic = args.topic_template.replace(IDEA, idea.title)
+        tasks.append(
+            _initial_summarize_helper(
+                SummarizeTextInput(texts=args.texts, topic=topic), context, llm
+            )
+        )
+
+    if prev_run_dict:
+        for idea, (remaining_citations, all_old_citations, old_summary) in prev_run_dict.items():
+            old_texts = list(set([citation.source_text for citation in remaining_citations]))
+            if new_texts or (
+                remaining_citations and len(remaining_citations) < len(all_old_citations)
+            ):
+                topic = args.topic_template.replace(IDEA, idea.title)
+                tasks.append(
+                    _update_summarize_helper(
+                        SummarizeTextInput(texts=new_texts, topic=topic),  # type: ignore
+                        context,
+                        llm,
+                        new_texts,  # type: ignore
+                        old_texts,
+                        old_summary,
+                        all_old_citations,
+                        get_original_cite_count(remaining_citations),
+                    )
+                )
+            else:
+                if remaining_citations:  # no new texts, just use old summary
+                    tasks.append(identity((old_summary, remaining_citations)))
+                else:  # unless there is nothing to cite, at which point use default
+                    tasks.append(identity((NO_SUMMARY, [])))
+            old_ideas.append(idea)
+
+    results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
+    output = []
+
+    for idea, (summary, citations) in zip(new_ideas + old_ideas, results):
+        text = Text(val=summary, title=idea.title)
+        text = text.inject_history_entry(HistoryEntry(citations=citations))
+        output.append(text)
 
     return output
 
@@ -698,11 +860,11 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
     llm = GPT(context=gpt_context, model=DEFAULT_LLM)
     text_group1 = TextGroup(val=args.group1)
     group1_str: str = await Text.get_all_strs(
-        text_group1, include_header=True, text_group_numbering=True
+        text_group1, include_header=True, include_symbols=True, text_group_numbering=True
     )  # type: ignore
     text_group2 = TextGroup(val=args.group2, offset=len(args.group1))
     group2_str: str = await Text.get_all_strs(
-        text_group2, include_header=True, text_group_numbering=True
+        text_group2, include_header=True, include_symbols=True, text_group_numbering=True
     )  # type: ignore
     if args.extra_data is not None and args.extra_data_label is not None:
         extra_group = TextGroup(val=args.extra_data)
@@ -815,7 +977,9 @@ async def answer_question_with_text_data(
     )
     llm = GPT(context=gpt_context, model=DEFAULT_LLM)
     text_group = TextGroup(val=args.texts)
-    texts_str: str = await Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)  # type: ignore
+    texts_str: str = await Text.get_all_strs(  # type: ignore
+        text_group, include_header=True, include_symbols=True, text_group_numbering=True
+    )
     texts_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
         texts_str,
         [answer_question_main_prompt.template, answer_question_sys_prompt.template, args.question],
@@ -876,7 +1040,7 @@ async def topic_filter_helper(
     # sort first by timestamp so more likely to drop older, less relevant texts
     texts.sort(key=lambda x: x.timestamp.timestamp() if x.timestamp else 0, reverse=True)
 
-    text_strs: List[str] = await Text.get_all_strs(texts, include_header=True)  # type: ignore
+    text_strs: List[str] = await Text.get_all_strs(texts, include_header=True, include_symbols=True)  # type: ignore
     gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
     llm = GPT(context=gpt_context, model=GPT4_O_MINI)
     tokenizer = GPTTokenizer(GPT4_O_MINI)
