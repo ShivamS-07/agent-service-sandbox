@@ -626,7 +626,9 @@ async def beat_or_miss_earnings_filter(
 
         to_check_list: List[Tuple[str, float, float]] = []
 
-        if check_most_recent_quarters and len(stock_actuals) >= check_most_recent_quarters:
+        if check_most_recent_quarters:
+            if len(stock_actuals) < check_most_recent_quarters:
+                continue  # has to have at least the right number of quarters
             most_recent_quarters = sorted(stock_actuals, reverse=True)
             for i, recent_quarter in enumerate(most_recent_quarters[:check_most_recent_quarters]):
                 # remove stocks with noncontiguous quarters, missing data
@@ -649,7 +651,7 @@ async def beat_or_miss_earnings_filter(
             # However since quarters for particular stocks can be very out of sync (fiscal years), very
             # difficult to stop this case without causing other stocks to potentially fail, so leaving
             # it for now
-            for quarter in stock_actuals:
+            for quarter in sorted(stock_actuals, reverse=True):
                 if quarter in stock_expected:
                     to_check_list.append(
                         (
