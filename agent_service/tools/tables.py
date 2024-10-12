@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, cast
 import pandas as pd
 from pydantic import ValidationError
 
-from agent_service.GPT.constants import NO_PROMPT, SONNET
+from agent_service.GPT.constants import GPT4_O, NO_PROMPT, O1, SONNET
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import (
     ComplexIOBase,
@@ -36,7 +36,7 @@ from agent_service.tools.table_utils.prompts import (
     DATAFRAME_SCHEMA_GENERATOR_SYS_PROMPT,
     DATAFRAME_TRANSFORMER_MAIN_PROMPT,
     DATAFRAME_TRANSFORMER_OLD_CODE_TEMPLATE,
-    DATAFRAME_TRANSFORMER_SYS_PROMPT,
+    PICK_GPT_MAIN_PROMPT,
     TABLE_ADD_DIFF_MAIN_PROMPT,
     TABLE_REMOVE_DIFF_MAIN_PROMPT,
 )
@@ -292,10 +292,22 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)
     input_col_metadata = [col.metadata for col in args.input_table.columns]
+    labels = [metadata.label for metadata in input_col_metadata]
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    gpt = GPT(context=gpt_context)
+    old_gpt = GPT(context=gpt_context)  # keep using turbo for the schema generation
+    medium_gpt = GPT(model=GPT4_O, context=gpt_context)
+    challenge = await medium_gpt.do_chat_w_sys_prompt(
+        PICK_GPT_MAIN_PROMPT.format(task=args.transformation_description, labels=labels), NO_PROMPT
+    )
+
+    if challenge.lower().strip() == "easy":
+        gpt = GPT(model=GPT4_O, context=gpt_context)
+        await tool_log("Using fast LLM to write calculation code", context)
+    else:
+        gpt = GPT(model=O1, context=gpt_context)
+        await tool_log("Using smartest LLM to write calculation code", context)
     if old_schema:
         await tool_log(log="Using table schema from previous run", context=context)
         new_col_schema = old_schema
@@ -303,7 +315,7 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
     else:
         await tool_log(log="Computing new table schema", context=context)
         new_col_schema = await gen_new_column_schema(
-            gpt,
+            old_gpt,
             transformation_description=args.transformation_description,
             current_table_cols=input_col_metadata,
         )
@@ -328,7 +340,9 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
             error="",
             old_code=old_code_section,
         ),
-        sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
+        temperature=1.0,
+        # sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
+        sys_prompt=NO_PROMPT,
     )
     debug_info["code_first_attempt"] = code
     logger.info(f"Running transform code:\n{code}")
@@ -359,7 +373,9 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
                 ),
                 old_code=old_code_section,
             ),
-            sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
+            # sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
+            sys_prompt=NO_PROMPT,
+            temperature=1.0,
         )
         debug_info["code_second_attempt"] = code
         logger.info(f"Running transform code:\n{code}")

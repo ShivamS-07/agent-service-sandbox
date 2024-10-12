@@ -68,12 +68,24 @@ and if you drop that column then that isn't possible, you will fail on this requ
 and be fired! Those cases will typically involve outputting three columns: the Date,
 the Stock Group, and then the averaged statistic, in that order.
 
+Note you will never, under any circumstances, drop the Security column from the input when it exists,
+you will only sometimes replace it with a Stock Group column! Dropping a Security column when you
+are not supposed to will result in you being fired.
+
 Another transformation possibility is some calculation which takes daily data (data with a date
 column) and converts it to monthly or yearly data. Quarterly data may also be converted to yearly
 data. For example, `calculate the stock price growth for each of the last 12 months/5 years`
 In such a case, you will replace the date/quarter column with a month/year column in your output
 columns. Do this only if the user clearly wants outputs for multiple months/years. If the user
-just wants a single datapoint, you should not be including a date-related column at all.
+just wants a single datapoint, you should not be including a date-related column at all. Make
+sure you change both the type of the column as well as the name/label of the column! Month-type
+columns must always be labeled 'Month', and year-type columns must always be labeled `Year`, you
+must never use Date or Period as the label for these columns.
+
+If you are changing a Date or Period column to a Month or Year column, you will never, ever touch
+the Security column. If there is a Security/stock column in the input, it must be in your output.
+Seriously, this is extremely important, do NOT drop the Security column when modifying other columns,
+if you do you will be fired! You must listen, damnit!
 
 You must NOT change the col_type or units of any particular statistic if you are
 simply copying that column from the input to the output. Note that when you divide two
@@ -118,10 +130,21 @@ You are a quantitative data scientist who is extremely proficient at both financ
 """,
 ).format()
 
+DATAFRAME_TRANSFORMER_SYS_PROMPT_STR = """
+You are a quantitative data scientist who is extremely proficient with Python
+and Pandas. You will use python and pandas to write code that applies numerical
+transformations to a pandas dataframe based on the instructions given to
+you. Please comment your code for each step you take, as if the person reading
+it was only minimally technical. Your managers sometimes like to see your code,
+so they need to understand what it's doing. One of your main strengths is that you
+listen carefully to instructions and follow them to the letter.
+"""
+
 
 DATAFRAME_TRANSFORMER_MAIN_PROMPT = Prompt(
     name="DATAFRAME_TRANSFORMER_MAIN_PROMPT",
-    template="""
+    template=DATAFRAME_TRANSFORMER_SYS_PROMPT_STR
+    + """
 You will be given the description of a pandas dataframe stored in the variable
 `df`, as well as a description of a transformation to apply to the
 dataframe. You will produce ONLY python code that utilizes pandas to apply these
@@ -196,6 +219,24 @@ obvious that the user wants a filter.
 
 Note that when you are ranking or filtering, your input and output columns will almost always
 be the same.
+
+There is one kind of filtering you may be asked to do that is more challenging, namely that
+you may be asked to filter a stock based on data across multiple dates (including months, quarter
+and years). For example: 'filter to stocks which have had at least a 5% stock gain in each of
+the last 6 months`. In this case, you must be very careful that you output only
+one row per stock that passes the filter. That is, in the input table, each stock will have
+multiple datapoints across the relevant days/months/quarters/years, but in the final table
+there must be only have one row for each stock that passes the filter (and of course no rows
+for stocks which do not).
+
+If you have been asked to do filtering involving multiple datapoints per stock (i.e. you are
+filtering and there is a date, quarter/period, month, or year column and a clear indication
+of more than one datapoint per stock), you must explicit state this in your comment at the
+top of your code. After you say it is a filter problem, say 'This is a multidate filter problem,
+I must remove all but one row for each stock which passes my filter'.
+You must also mention it explicitly in the comment for the line that removes the extra
+rows per stock. Do not forget, there is no deduplication later on and having the same stock
+listed multiple times will make the user angry.
 
 If your operation across stocks involves a sum, averaging, or other agglomeration across
 stocks, your output will NOT have a stock column (the rows of which correspond to
@@ -466,8 +507,8 @@ end_period = '2024Q2'
 Otherwise, the calculations should be identical to what you would do with dates.
 
 Sometimes you will be converting data broken down by individual dates or quarters
-into other units of time, such as months or years. A few important things to keep
-in mind when doing such calculations:
+into other units of time, such as months or years. Examples are YoY Revenue growth, or
+monthly stock returns. A few important things to keep in mind when doing such calculations:
 1. Make sure there is only one output per unit time the user is interested in. To accomplish
 this will often involve either filtering to work only with specific dates at the beginning
 or end of a period, or summing the values across the time period. If you are not doing one of
@@ -478,10 +519,32 @@ is similar. However, raw revenue and other income-related values already refects
 for a given period, so summing makes sense (you get the total revenue for a year by summing
 the revenue for the quarters, but you do NOT get a 'total' stock price for a year by summing
 stock price on each day).
-3. Note that you can only do proper year-over-year (or month-over-month) growth calculations
+3. Note that if you are doing a monthly/yearly change calculation with daily data, you must explicitly
+filter down to just the last day of each month/year, you should sort the dates, groupby the security
+AND month/year columns and then use tail to take the last day for each month.
+4. Note that you can only do proper year-over-year (or month-over-month) growth calculations
 when you have complete years (months). You must exclude partial years (months) from your
 calculation. For example, if the current date is in 2024, you cannot include year-over-year
 revenue growth for 2024 in your output.
+5. Make sure you output the exact number of outputs the user wants, no more, no less. For example,
+if the user is asking for 5 years, you must output 5 datapoints. Remember you usually need an extra
+datapoint because you must throw away the partial month/year we are currently in, for instance if
+you are in 2024 you will need your output years to be 2019, 2020, 2021, 2022, and 2023.
+However, note that if you are calculating YoY you will need an extra year of data to do the calculation,
+in this example 2018. For monthly calculations, you will list the relevant months (e.g. 2024-01, 2024-02...)
+You should assume you have all the input data you need to do the calculation, but you might have
+extra data, so make sure you are explicitly filtering down to exactly the datapoints you want to output
+at the end of the process (Do not do this at the beginning and remove data you need for your calculation)
+If you are doing a monthly/yearly calculation, in addition to following the procedure for a
+'calculation across time' problem as discussed above, you must have another comment at the top of your code
+that states that fact ('this is also a monthy/yearly conversion problem), and then explicitly enumerates
+your output months/years. If it is a YoY or other such problem that requires additional data for the
+calcuation,please state that you need to use that data in the comment before you start coding. You must
+always have a comment like this when you write this kind of code or otherwise you are likely to make a mistake.
+Please also mention in the comment for the code step that filters down to exactly the required output
+datapoints that you are about to do this filtering, do not forget!
+
+
 
 Now that we have given you explicit instructions with how to deal with various
 cases you might encounters, here is the specific data you will be working with:
@@ -515,17 +578,10 @@ Your code:
 """,
 )
 
+
 DATAFRAME_TRANSFORMER_SYS_PROMPT = Prompt(
     name="DATAFRAME_TRANSFORMER_SYS_PROMPT",
-    template="""
-You are a quantitative data scientist who is extremely proficient with Python
-and Pandas. You will use python and pandas to write code that applies numerical
-transformations to a pandas dataframe based on the instructions given to
-you. Please comment your code for each step you take, as if the person reading
-it was only minimally technical. Your managers sometimes like to see your code,
-so they need to understand what it's doing. One of your main strengths is that you
-carefully to instructions and follow them to the letter.
-""",
+    template=DATAFRAME_TRANSFORMER_SYS_PROMPT_STR,
 ).format()  # format immediately since no arguments
 
 
@@ -579,3 +635,37 @@ professional. Here is the company name: {company_name}. Here is the current stat
 {curr_stats}. Here are the stats from your previous analysis: {prev_stats}. And here is the description
 of the filter: {transformation}. Now write your explanation of the change:""",
 )
+
+PICK_GPT_MAIN_PROMPT = Prompt(
+    name="PICK_GPT_MAIN_PROMPT",
+    template="""
+You are a senior financial analyst that is deciding whether to give a small pandas coding task to
+an intern or an salaried employee. You don't trust the intern's skills yet, in particular you would
+only want to give them simple tasks that involve simple filtering data based on dates, or ranking or
+filtering stocks based on a single calculated measure for each stock, or simple stock return
+(cumulative stock price change) calculations. Any more challenging task, including any task that
+could possibly involve using the groupby function or otherwise manipulating the columns of the table
+should be left to experts.
+You should default to filtering or tasks being easy. It does not usually matter what we are filtering
+or ranking by, because this will already be calculated at this point. The one key exception is to this
+rule is filtering tasks that clearly require multiple datapoints per stock, for example `filter to
+stocks which have 5% return in each of the last 6 months`. In those cases, you will need to groupby
+stocks, and the task is therefore hard.
+
+Similarly, you should default to easy for most basic calculations of performance (simple cumulative or daily
+returns/stock price changes), however if task involves calculation of monthly, quarterly, or yearly returns
+involving multiple months, quarter, or years, you should consider the task hard.
+
+All other calculations that are not otherwise trivial should be considered hard.
+
+Here is the task: {task}
+
+Output the word 'easy' if you think that the task is simple enough for the pandas newbie intern, or
+'hard' if you think it is not trivial. Output only one of those two words:
+
+""",
+)
+
+# Here are the table column labels: {labels}
+
+# Now output the word easy or hard:

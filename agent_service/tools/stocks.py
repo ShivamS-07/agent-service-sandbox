@@ -1465,6 +1465,8 @@ class GetStockUniverseInput(ToolArgs):
         " if you do need portfolio holdings then use get_portfolio_holdings tool instead."
         " \n - Some example phrases that imply you should use this function are:"
         " 'stocks in', 'companies in', 'holdings of'"
+        " Please be careful not to confuse the r1k (Russell 1000), the r2k (Russell 2000),"
+        " and the r3k (Russell 3000) when using this tool, these are very different universes!"
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
