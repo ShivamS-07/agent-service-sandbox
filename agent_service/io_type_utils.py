@@ -273,7 +273,7 @@ class ScoreOutput(BaseModel):
     source: Optional[str] = None
     # At the end of a workflow, we may aggregate scores into groups with
     # averaged values. This list stores the sub-components.
-    sub_scores: List["ScoreOutput"] = []
+    sub_scores: List["SubScoreOutput"] = []
 
     def __lt__(self, other: Self) -> bool:
         return self.val < other.val
@@ -287,7 +287,7 @@ class ScoreOutput(BaseModel):
             if entry.score:
                 aggregate_score += entry.score.val
                 num_scores += 1
-                sub_scores.append(ScoreOutput(val=entry.score.val, source=entry.title))
+                sub_scores.append(SubScoreOutput(val=entry.score.val, source=entry.title))
         if num_scores == 0:
             return None
 
@@ -300,6 +300,10 @@ class ScoreOutput(BaseModel):
         else:
             sub_scores = ", ".join((f"{score.source}: {score.val}" for score in self.sub_scores))
             return f"(Overall Score: {self.val}, {sub_scores})"
+
+
+class SubScoreOutput(ScoreOutput):
+    pass
 
 
 @io_type
