@@ -76,6 +76,28 @@ TIMESERIES_TABLE_NO_DATASET = Table.from_df_and_cols(
     ),
 )
 
+CATEGORICAL_TABLE_NO_DATASET = Table.from_df_and_cols(
+    columns=[
+        TableColumnMetadata(label="Stock ID", col_type=TableColumnType.STOCK),
+        TableColumnMetadata(
+            label="Value",
+            col_type=TableColumnType.STRING,
+        ),
+    ],
+    data=pd.DataFrame(
+        data=[
+            [STOCK1, "X"],
+            [STOCK1, "Y"],
+            [STOCK1, "Z"],
+            [STOCK2, "X"],
+            [STOCK2, "Z"],
+            [STOCK3, "Z"],
+            [STOCK3, "Y"],
+        ],
+        columns=["Stock ID", "Value"],
+    ),
+)
+
 
 class TestGraphTools(unittest.IsolatedAsyncioTestCase):
     async def test_pie_graph(self):
@@ -228,10 +250,23 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
                     ],
                 ),
             ),
+            (
+                MakeBarGraphArgs(input_table=CATEGORICAL_TABLE_NO_DATASET),
+                BarGraph(
+                    data_type=TableColumnType.INTEGER,
+                    index_type=TableColumnType.STRING,
+                    data=[
+                        BarData(index="X", values=[BarDataPoint(label="Count", value=2)]),
+                        BarData(index="Y", values=[BarDataPoint(label="Count", value=2)]),
+                        BarData(index="Z", values=[BarDataPoint(label="Count", value=3)]),
+                    ],
+                ),
+            ),
         ]
-        for args, expected in cases:
+        for i, (args, expected) in enumerate(cases):
             actual = await make_bar_graph(args, PlanRunContext.get_dummy())
-            self.assertEqual(actual, expected)
+            with self.subTest(f"Case {i + 1}"):
+                self.assertEqual(actual, expected)
 
     async def test_generic_graph(self):
         prefer_pie = Table.from_df_and_cols(

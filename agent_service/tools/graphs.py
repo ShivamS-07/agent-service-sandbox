@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Any, Dict, List, cast
+from typing import Any, Dict, List, Tuple, cast
 
 import pandas as pd
 
@@ -465,45 +465,71 @@ async def make_bar_graph(args: MakeBarGraphArgs, context: PlanRunContext) -> Bar
             TableColumnType.STRING,
             TableColumnType.QUARTER,
         ):
-            x_axis_col = (col, df_col)
+            x_axis_col = (col.metadata, df_col)
             continue
 
         if not dataset_col and len(cols) > 2:
             # We only have a dataset column if we have > 2 columns. Otherwise we
             # just have the X axis and the value.
-            dataset_col = (col, df_col)
+            dataset_col = (col.metadata, df_col)
             continue
 
-        if not data_col and col.metadata.col_type in (
-            TableColumnType.CURRENCY,
-            TableColumnType.FLOAT,
-            TableColumnType.INTEGER,
-            TableColumnType.DELTA,
-            TableColumnType.PCT_DELTA,
-            TableColumnType.PERCENT,
-        ):
-            data_col = (col, df_col)
+        if not data_col:
+            data_col = (col.metadata, df_col)
+            break
 
-    if not data_col:
-        raise RuntimeError(f"No numerical columns found, cannot create bar graph: {cols}")
-
+    data_col = cast(Tuple, data_col)
     if not x_axis_col:
         raise RuntimeError(
             f"Unable to create bar graph for table with no possible x axis column: {cols}"
         )
+    data_col_meta, data_df_col = data_col
+    x_axis_col_meta, x_axis_df_col = x_axis_col
+    if data_col_meta.col_type not in (
+        TableColumnType.CURRENCY,
+        TableColumnType.FLOAT,
+        TableColumnType.INTEGER,
+        TableColumnType.DELTA,
+        TableColumnType.PCT_DELTA,
+        TableColumnType.PERCENT,
+    ):
+        # If it's not a numerical type, we have categorical data
+        if dataset_col:
+            # If there's a dataset column, we need to count by each
+            # dataset. E.g. for date, stock, category, we want to group by stock
+            # (dataset) to count. The result should be:
+            # X-axis: date, dataset: category, data: count
+            ds_col, dataset_df_col = dataset_col
+            df = (
+                df.groupby(by=[x_axis_df_col, data_df_col], as_index=False)
+                .size()
+                .rename(columns={"size": "Count"})  # type: ignore
+            )
+            # Swap the data col with the dataset col
+            dataset_col = (data_col_meta, data_df_col)
+        else:
+            # If there's not a dataset column, we can just count simply
+            df = df.groupby(data_df_col, as_index=False).size().rename(columns={"size": "Count"})  # type: ignore
+
+            # Swap the data col with the X axis
+            x_axis_col_meta, x_axis_df_col = data_col_meta, data_df_col
+
+        # make the new data col the count of values
+        data_col_meta = deepcopy(data_col_meta)
+        data_col_meta.label = "Count"
+        data_df_col = "Count"
+        data_col_meta.col_type = TableColumnType.INTEGER
 
     data: List[BarData] = []
-    data_col, data_df_col = data_col
-    x_axis_col, x_axis_df_col = x_axis_col
     label_type = TableColumnType.STRING
-    index_type = x_axis_col.metadata.col_type
+    index_type = x_axis_col_meta.col_type
     if dataset_col is None:
         # In this case, we only have a single dataset so we don't need to do any
         # fancy grouping. The dataset name is simply the name of the graphed
         # column. This only happens when there are exactly two columns, so we
         # can just use the first col to graph.
         data = [
-            BarData(index=x_val, values=[BarDataPoint(label=data_col.metadata.label, value=y_val)])
+            BarData(index=x_val, values=[BarDataPoint(label=data_col_meta.label, value=y_val)])
             for x_val, y_val in zip(df[x_axis_df_col], df[data_df_col])
             if not pd.isna(x_val) and not pd.isna(y_val)
         ]
@@ -525,11 +551,11 @@ async def make_bar_graph(args: MakeBarGraphArgs, context: PlanRunContext) -> Bar
             for index_val, record in zip(pivoted_df.index, records)
             if not pd.isna(index_val)
         ]
-        label_type = ds_col.metadata.col_type
+        label_type = ds_col.col_type
 
     return BarGraph(
-        data_type=data_col.metadata.col_type,
-        data_unit=data_col.metadata.unit,
+        data_type=data_col_meta.col_type,
+        data_unit=data_col_meta.unit,
         data=data,
         index_type=index_type,
         label_type=label_type,

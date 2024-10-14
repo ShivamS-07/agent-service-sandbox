@@ -610,13 +610,26 @@ async def join_tables(args: JoinTableArgs, context: PlanRunContext) -> Table:
 
     _join_table_func = _join_two_tables
 
-    # check if row_join is True and the tables have the same column types to join them vertically
-    if args.row_join:
-        if all(
-            col1.metadata.col_type == col2.metadata.col_type
-            for col1, col2 in zip(args.input_tables[0].columns, args.input_tables[1].columns)
-        ):
-            _join_table_func = _join_two_tables_vertically
+    # There are two cases we want to consider here. First, if all the tables
+    # have the EXACT same columns, then we always want to row join no matter
+    # what. Second, if the "row_join" argument is set, and all the tables share
+    # columns of the same type, we also use a row join.
+    all_tables_same_metadata = True
+    all_tables_columns_same_types = True
+    first_table_metadata = [col.metadata for col in args.input_tables[0].columns]
+    first_table_col_types = [meta.col_type for meta in first_table_metadata]
+    for table in args.input_tables[1:]:
+        table_metadata = [col.metadata for col in table.columns]
+        if table_metadata != first_table_metadata:
+            all_tables_same_metadata = False
+        if [meta.col_type for meta in table_metadata] != first_table_col_types:
+            all_tables_columns_same_types = False
+
+    if all_tables_same_metadata:
+        _join_table_func = _join_two_tables_vertically
+    elif args.row_join and all_tables_columns_same_types:
+        _join_table_func = _join_two_tables_vertically
+
     joined_table = args.input_tables[0]
     for table in args.input_tables[1:]:
         joined_table = _join_table_func(joined_table, table)
