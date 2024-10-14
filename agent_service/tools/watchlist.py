@@ -7,6 +7,7 @@ from agent_service.external.pa_svc_client import (
 )
 from agent_service.io_types.stock import StockID
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -30,11 +31,8 @@ WATCHLIST_REMOVE_STOCK_DIFF = "{company} was removed from the watchlist: {watchl
 
 @tool(
     description=(
-        "This function returns a list of stock identifiers that are inside a given watchlist name "
-        "or mention (e.g. my watchlist). "
-        "It MUST be used when the client mentions any 'watchlist' in the request. "
-        "This function will try to match the given name with the watchlist names for that clients "
-        "and return the closest match. "
+        "Given a watchlist name, this tool returns the list of stock identifiers that are inside "
+        "the watchlist. It MUST be used when the client mentions 'watchlist' in the request. "
     ),
     category=ToolCategory.USER,
     tool_registry=ToolRegistry,
@@ -83,6 +81,8 @@ async def get_user_watchlist_stocks(
         watchlist_name = rows[0]["watchlist_name"]
         watchlist_id = name_to_id[rows[0]["watchlist_name"]]
 
+    await tool_log(log=f"Found watchlist: <{watchlist_name}>", context=context)
+
     stock_list = await StockID.from_gbi_id_list(
         await get_watchlist_stocks(user_id=context.user_id, watchlist_id=watchlist_id)
     )
@@ -124,7 +124,11 @@ async def get_user_watchlist_stocks(
 
 
 @tool(
-    description="This function returns the list of stock identifiers in all watchlists of the user.",
+    description=(
+        "This tool returns the union of the stock identifiers in ALL watchlists of the user. "
+        "It should ONLY be used when the user mentions 'all watchlists' or something similar. "
+        "When a watchlist name is mentioned, you MUST use the tool 'get_user_watchlist_stocks'."
+    ),
     category=ToolCategory.USER,
     tool_registry=ToolRegistry,
     is_visible=True,
