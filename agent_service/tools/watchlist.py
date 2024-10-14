@@ -29,9 +29,13 @@ WATCHLIST_REMOVE_STOCK_DIFF = "{company} was removed from the watchlist: {watchl
 
 
 @tool(
-    description="This function takes a string which refers to a watchlist name, and returns the"
-    " list of stock identifiers in the best matched watchlist. A watchlist is a list of"
-    " stocks that the user cares about.",
+    description=(
+        "This function returns a list of stock identifiers that are inside a given watchlist name "
+        "or mention (e.g. my watchlist). "
+        "It MUST be used when the client mentions any 'watchlist' in the request. "
+        "This function will try to match the given name with the watchlist names for that clients "
+        "and return the closest match. "
+    ),
     category=ToolCategory.USER,
     tool_registry=ToolRegistry,
     is_visible=True,
