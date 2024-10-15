@@ -68,6 +68,26 @@ logger = logging.getLogger(__name__)
 TOOL_DEBUG_INFO: contextvars.ContextVar = contextvars.ContextVar("debug_info", default={})
 
 
+async def log_tool_call_event(context: PlanRunContext, event_data: Dict[str, Any]) -> None:
+    # Prevent circular imports
+    from agent_service.utils.async_db import AsyncDB, SyncBoostedPG
+
+    async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
+    log_event(event_data=event_data, event_name="agent-service-tool-call")
+    if context.skip_db_commit:
+        return
+    try:
+        debug_info = event_data.get("debug_info")
+        args = event_data.get("args")
+        tool_name = event_data.get("tool_name")
+        if args and tool_name:
+            await async_db.insert_task_run_info(
+                context=context, args=args, debug_info=debug_info, tool_name=tool_name
+            )
+    except Exception:
+        logger.exception("Failed to store tool call in agent.task_run_info table!")
+
+
 class ToolArgMetadata(BaseModel):
     """
     Class to track additional metadata for arguments to tools.
@@ -488,7 +508,7 @@ def tool(
                             TOOL_DEBUG_INFO.set({})
                         else:
                             TOOL_DEBUG_INFO.set(previous_debug_info)
-                        log_event(event_name="agent-service-tool-call", event_data=event_data)
+                        await log_tool_call_event(context=context, event_data=event_data)
 
                         return result
                     except Exception as e:
@@ -506,7 +526,7 @@ def tool(
                             TOOL_DEBUG_INFO.set({})
                         else:
                             TOOL_DEBUG_INFO.set(previous_debug_info)
-                        log_event(event_name="agent-service-tool-call", event_data=event_data)
+                        await log_tool_call_event(context=context, event_data=event_data)
                         raise e
 
                 if (
@@ -530,14 +550,14 @@ def tool(
                             event_data["cache_hit"] = True
                             event_data["end_time_utc"] = get_now_utc().isoformat()
                             event_data["result"] = dump_io_type(cached_val)
-                            log_event(event_name="agent-service-tool-call", event_data=event_data)
+                            await log_tool_call_event(context=context, event_data=event_data)
                             return cached_val
 
                         new_val = await func(args, context)
                         await cache_client.set(key=key, val=new_val, ttl=cache_ttl)
                         event_data["end_time_utc"] = get_now_utc().isoformat()
                         event_data["result"] = dump_io_type(new_val)
-                        log_event(event_name="agent-service-tool-call", event_data=event_data)
+                        await log_tool_call_event(context=context, event_data=event_data)
                         return new_val
                     except Exception as e:
                         event_data["end_time_utc"] = get_now_utc().isoformat()
@@ -547,10 +567,10 @@ def tool(
                             if isinstance(e, AgentExecutionError)
                             else Status.ERROR.value
                         )
-                        log_event(event_name="agent-service-tool-call", event_data=event_data)
+                        await log_tool_call_event(context=context, event_data=event_data)
                         logger.exception(f"Cache check failed for {(tool_name, args, context)}")
                         if new_val is not None:
-                            log_event(event_name="agent-service-tool-call", event_data=event_data)
+                            await log_tool_call_event(context=context, event_data=event_data)
                             return new_val
 
                         return await call_func()

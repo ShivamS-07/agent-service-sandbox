@@ -16,26 +16,30 @@ from agent_service.utils.postgres import SyncBoostedPG
 @dataclass
 class PrevRunInfo:
     inputs_str: str
-    output: IOType
+    output: Optional[IOType]
     debug: Dict[str, str]
     timestamp: datetime.datetime
 
 
 async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional[PrevRunInfo]:
     pg_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
-    previous_run = await pg_db.get_previous_plan_run(
+    previous_run_id = await pg_db.get_previous_plan_run(
         agent_id=context.agent_id,
         plan_id=context.plan_id,
         latest_plan_run_id=context.plan_run_id,
         cutoff_dt=context.as_of_date,
     )
-    if previous_run is None:
+    if previous_run_id is None:
         return None
 
     ch_db = Clickhouse()
     if context.task_id is None:  # shouldn't happen
         return None
-    io = await ch_db.get_io_for_tool_run(previous_run, context.task_id, tool_name)
+    io = await ch_db.get_io_for_tool_run(previous_run_id, context.task_id, tool_name)
+    if io is None:
+        io = await pg_db.get_task_run_info(
+            plan_run_id=previous_run_id, task_id=context.task_id, tool_name=tool_name
+        )
     if io is None:
         return None
     inputs_str, output_str, debug_str, timestamp = io
