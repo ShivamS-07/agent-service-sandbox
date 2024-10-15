@@ -382,7 +382,7 @@ def tool(
     cache_ttl: int = DEFAULT_CACHE_TTL,
     retries: int = 0,
     timeout_seconds: int = 6000,
-    create_prefect_task: bool = True,
+    create_prefect_task: bool = False,
     is_visible: bool = True,
     enabled: bool = True,
     enabled_checker_func: Optional[Callable[[str], bool]] = None,
