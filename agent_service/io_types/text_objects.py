@@ -239,15 +239,18 @@ values are the ticker symbols. Each company should only appear once. Each ticker
 also only appear once.
 
 Here are additional instructions to help you perform the task:
-- You must identify **all publicly traded company names** in the text and only the publicly traded
-company names. Ignore any mentions of organizations, companies, or entities that are not public,
-even if they sound like publicly traded companies (e.g. OpenAI).
+- You must identify **all publicly traded company names** in the text and **exclude** any mentions of
+organizations, companies, or entities that are not publicly traded (e.g., SpaceX, OpenAI, Tata
+Electronics). Ensure that only companies listed on recognized stock exchanges are included.
 - If the text uses a stock ticker symbol to refer to its corresponding company, use that stock
 ticker symbol as the value and identify the company name associated with that ticker.
 - The output should be only the dictionary containing the key-value pairs, with no additional text
 or commentary. Failure to comply means you will lose your job!
 
-This is an example output format: {{"Apple":"AAPL", "Tesla":"TSLA", "Nvidia":"NVDA"}}
+This is an example output format: {{"Apple":"AAPL", "Tesla":"TSLA", "Nvidia":"NVDA"}}. Do not
+deviate from this output format, so no trailing commas or newlines. Ensure that all the keys
+are publicly traded company names and all the values are publicly traded company stock ticker
+symbols. There also should not be any "N/A" or "null" in the output.
 
 The text you need to analyze is provided below.
 {text}
