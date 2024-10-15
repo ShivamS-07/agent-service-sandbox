@@ -87,7 +87,13 @@ async def evaluate_and_summarize_profile_fit_for_stock(
         max_tokens=1,
     )
 
-    decision = int(llm_output.strip())
+    try:
+        decision = int(llm_output.strip())
+    except ValueError:
+        decision = 2
+        logger.warning(
+            f"Failed to proper decifer llm output during stock rank stock evaluator, got {llm_output}"
+        )
 
     stock_profile_summary_data: Optional[Tuple[str, List[Citation]]] = None
     if decision == 1:

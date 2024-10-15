@@ -99,13 +99,21 @@ async def write_industry_impact_table(
     industries_from_db.remove("Media")  # duplicate Media
     industries = "\n".join(industries_from_db)
 
-    result = await llm.do_chat_w_sys_prompt(
-        main_prompt=PROFILE_TABLE_MAIN.format(
-            theme=theme, impacts=impacts, text_documents=text_data, industries=industries
-        ),
-        sys_prompt=PROFILE_TABLE_SYS.format(),
-    )
-    df = pd.read_csv(StringIO(result.strip("`'\"\n")), sep="\t", index_col=0)
+    # Very rare but seems that sometimes a column is skipped
+    tries = 0
+    while tries < 3:
+        result = await llm.do_chat_w_sys_prompt(
+            main_prompt=PROFILE_TABLE_MAIN.format(
+                theme=theme, impacts=impacts, text_documents=text_data, industries=industries
+            ),
+            sys_prompt=PROFILE_TABLE_SYS.format(),
+        )
+        df = pd.read_csv(StringIO(result.strip("`'\"\n")), sep="\t", index_col=0)
+
+        if set([impact["name"] for impact in impacts]) == set(df.columns):
+            break
+        else:
+            tries += 1
     return df
 
 
@@ -172,11 +180,15 @@ async def write_profiles(
     impacts_str = "\n".join([impact["name"] for impact in impacts])
     tasks = []
     for impact in impacts:
-        tasks.append(
-            write_impact_profiles(
-                theme, impact, list(impact_industry_dict[impact["name"]]), impacts_str
+        impacted_industries = impact_industry_dict.get(impact["name"])
+        if impacted_industries:
+            tasks.append(
+                write_impact_profiles(theme, impact, list(impacted_industries), impacts_str)
             )
-        )
+        else:
+            logger.warning(
+                f"Failed to find impacted industries for '{impact["name"]}' during profile generation!"
+            )
 
     all_profiles = await gather_with_concurrency(tasks)
     output = {}
