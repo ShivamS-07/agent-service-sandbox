@@ -282,13 +282,18 @@ class GetUniverseHoldingsInput(ToolArgs):
 
 @tool(
     description=(
-        "This function returns the holdings of a universe given the universe name. "
+        "This function returns a table with both the holdings and the weights for each stock"
+        " in an ETF or universe using the ETF / universe name as input. "
+        " If you only need the stockIDs you should call get_stock_universe instead. "
+        " If you need to know the smallest or largest holdings"
+        " or need to otherwise sort by or filter on holding weight"
+        " then you must call this function first. "
         "Table schema: "
         "Security: StockID, weight: float"
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
-    enabled=False,
+    enabled=True,
 )
 async def get_universe_holdings(args: GetUniverseHoldingsInput, context: PlanRunContext) -> Table:
 
@@ -296,6 +301,12 @@ async def get_universe_holdings(args: GetUniverseHoldingsInput, context: PlanRun
     etf_stock = await get_stock_info_for_universe(
         GetStockUniverseInput(universe_name=args.universe_name), context
     )
+
+    await tool_log(
+        log=f"Interpreting {args.universe_name} as {etf_stock['symbol']}: {etf_stock['name']}",
+        context=context,
+    )
+
     universe_spiq_company_id = etf_stock["spiq_company_id"]
     # For this tool we want to get the holdings for today
     start_date = datetime.date.today()

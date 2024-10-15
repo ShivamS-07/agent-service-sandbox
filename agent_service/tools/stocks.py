@@ -1463,6 +1463,8 @@ class GetStockUniverseInput(ToolArgs):
         " You can also use this tool to get the holdings of an ETF or stock."
         " But not the holdings of a user's portfolio, "
         " if you do need portfolio holdings then use get_portfolio_holdings tool instead."
+        " If you need the weights for the stocks in the universe "
+        " then you should call get_universe_holdings instead. "
         " \n - Some example phrases that imply you should use this function are:"
         " 'stocks in', 'companies in', 'holdings of'"
         " Please be careful not to confuse the r1k (Russell 1000), the r2k (Russell 2000),"
@@ -1634,7 +1636,7 @@ async def get_stock_universe_table_from_universe_company_id(
         OR
 
         -- the row's date range is
-        -- entirly more than the start date
+        -- entirely more than the start date
         -- and entirely less than the end date
         -- start date <= row_date_range <= end_date
         (%(start_date)s <= euh.from_z AND euh.to_z <= %(end_date)s)
