@@ -367,7 +367,7 @@ async def send_agent_emails(
                 AgentNotificationData(
                     agent_name=agent_name,
                     agent_id=agent_id,
-                    email_subject=email_subject,
+                    email_subject=email_subject if email_subject else agent_name,
                     plan_run_id=plan_run_id,
                     agent_owner=agent_owner if agent_owner else "",
                     notification_body=AgentNotificationBody(
@@ -386,7 +386,7 @@ async def send_agent_emails(
                 AgentNotificationData(
                     agent_name=agent_name,
                     agent_id=agent_id,
-                    email_subject=email_subject,
+                    email_subject=email_subject if email_subject else agent_name,
                     plan_run_id=plan_run_id,
                     agent_owner=agent_owner if agent_owner else "",
                     notification_body=AgentNotificationBody(
