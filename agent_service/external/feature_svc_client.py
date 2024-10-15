@@ -240,6 +240,8 @@ async def get_return_for_stocks(
     - Return: the adjusted cumulative return for the stock on the given date
 
     """
+    if start_date == end_date:
+        start_date = start_date - datetime.timedelta(days=1)
 
     def proto_cube_to_dataframe(proto_cube: ProtoCube) -> Dict[int, float]:
         # Convert ProtoCube to dictionary

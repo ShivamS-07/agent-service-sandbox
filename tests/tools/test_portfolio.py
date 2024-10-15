@@ -145,6 +145,7 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         )
         pd.testing.assert_frame_equal(result.to_df(), expected_portfolio_holdings.to_df())
 
+    @unittest.skip("Skip until DB mocks are implemented")
     @patch("agent_service.tools.portfolio.get_all_workspaces")
     @patch("agent_service.tools.portfolio.get_portfolio_holdings")
     @patch("agent_service.tools.portfolio.get_return_for_stocks")
@@ -209,6 +210,7 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
 
         pd.testing.assert_frame_equal(result.to_df(), expected_table.to_df())
 
+    @unittest.skip("Skip until DB mocks are implemented")
     @patch("agent_service.tools.portfolio.get_all_workspaces")
     @patch("agent_service.tools.portfolio.get_portfolio_holdings")
     @patch("agent_service.tools.portfolio.get_return_for_stocks")

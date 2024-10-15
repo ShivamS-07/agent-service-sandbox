@@ -1,3 +1,4 @@
+import datetime
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Union
 
@@ -75,6 +76,10 @@ from agent_service.tools.portfolio import (
     get_portfolio_holdings,
     get_portfolio_performance,
 )
+from agent_service.tools.statistics import (
+    GetStatisticDataForCompaniesInput,
+    get_statistic_data_for_companies,
+)
 from agent_service.tools.themes import (
     GetTopNThemesInput,
     get_top_N_macroeconomic_themes,
@@ -83,10 +88,8 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.tools.universe import (
     STOCK_PERFORMANCE_TABLE_NAME,
     UNIVERSE_PERFORMANCE_LEVELS,
-    GetStocksPerformanceInput,
     GetUniverseHoldingsInput,
     GetUniversePerformanceInput,
-    get_stocks_performance,
     get_universe_holdings,
     get_universe_performance,
 )
@@ -319,8 +322,8 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     logger.info(f"Length of tokens in main prompt: {main_prompt_token_length}")
 
     # save main prompt as text file for debugging
-    # with open("main_prompt.txt", "w") as f:
-    #     f.write(main_prompt.filled_prompt)
+    with open("main_prompt.txt", "w") as f:
+        f.write(main_prompt.filled_prompt)
 
     # Write the commentary
     await tool_log(
@@ -634,11 +637,22 @@ async def get_commentary_inputs(
             )
             args.stock_ids = args.stock_ids[:MAX_STOCKS_PER_COMMENTARY]
         try:
+            date_range = args.date_range
+            if args.date_range.start_date == args.date_range.end_date:
+                # change start_date to 1 day before
+                date_range.start_date = args.date_range.start_date - datetime.timedelta(days=1)
             # get stock performance tables
-            stock_performance_table: Table = await get_stocks_performance(  # type: ignore
-                GetStocksPerformanceInput(stock_ids=args.stock_ids, date_range=args.date_range),
-                context,
+            stock_performance_table: StockTable = await get_statistic_data_for_companies(  # type: ignore
+                args=GetStatisticDataForCompaniesInput(
+                    statistic_reference="cumulative return",
+                    stock_ids=args.stock_ids,
+                    date_range=date_range,
+                    is_time_series=False,
+                ),
+                context=context,
             )
+            print("stock_performance_table: ", stock_performance_table)
+
             tables.append(stock_performance_table)
             # get news developments and articles for stock ids
             stock_devs: List[StockNewsDevelopmentText] = (
