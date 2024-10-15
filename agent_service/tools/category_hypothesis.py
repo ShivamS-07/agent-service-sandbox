@@ -558,7 +558,7 @@ class DoCompetitiveAnalysisInput(ToolArgs):
     description=(
         "This is the main tool that carries out a competitive market analysis to evaluate the relative "
         "market position of a group of companies which sell comparable products or services.\n"
-        "The `prompt` is a string which is represents the question or request from the client that "
+        "The `prompt` is a string which represents the question or request from the client that "
         "forms the basis for the competitive analysis, e.g. `Is NVDA the leader in the AI chip space?` "
         "It always contains at least one of two components: the mention of a market (e.g. AI chips) or the "
         "mention of a company in that market (e.g. NVDA), and in many cases it will have both of these things.\n"
@@ -568,10 +568,11 @@ class DoCompetitiveAnalysisInput(ToolArgs):
         "`stocks` should be a list of the stocks (companies) which will be evaluated as part of the analysis. "
         "There are three potential sources of such stocks. If the client specifically lists a group of stocks "
         "to be used in the analysis, you should take them from there. Otherwise, if the market is a particular "
-        "class of product or service, you should derive the stocks using the filter_stocks_by_product_or_service"
-        "tool. Finally, if the client requests a particular sector of stocks, you use the sector filtering tool.\n"
+        "class of product or service, you should derive the stocks using the `filter_stocks_by_product_or_service`"
+        "tool. Finally, if the client requests a particular sector of stocks, you use the sector filtering tool. "
+        "You must always provide a list of stocks for the competitive analysis, this list cannot be empty!\n"
         "`all_text_data` is the output of the all_text_data retrieval tool called over the `stocks` to "
-        "be included in this competitive analysis.\n"
+        "be included in this competitive analysis. You must always provide text data for the competitive analysis.\n"
         "If a single specific company is mentioned in the user input, then an identifier for that "
         "company MUST be passed as the target stock. "
         "For example, if the question is, `Is NVDA a leader in AI chips?, you MUST pass NVDA's identifier in "
@@ -771,9 +772,10 @@ class GenerateSummaryForCompetitiveAnalysisInput(ToolArgs):
     description=(
         "Given a competitive market analysis for group of stocks, this function generates a short "
         "text summary of the conclusions of the analysis. This prompt should be the same prompt passed "
-        "to the do_competitive_analysis tool, and the competitive_analysis should be its output. In "
-        "general, this tool will always be used directly after `do_competitive_analysis`. If there "
-        "was a target stock in the analysis, this tool will also output an overall score for that stock."
+        "to the `do_competitive_analysis` tool, and the `competitive_analysis` field should be its output. "
+        "This tool can ONLY be used directly after `do_competitive_analysis`. Use the regular "
+        "`summarize_text` tool if you want to write a summary without doing competitive analysis. "
+        "If there was a target stock in the analysis, this tool will also output an overall score for that stock."
     ),
     category=ToolCategory.COMPETITIVE_ANALYSIS,
     tool_registry=ToolRegistry,

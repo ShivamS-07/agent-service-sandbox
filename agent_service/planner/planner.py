@@ -902,7 +902,18 @@ class Planner:
             # GPT isn't supposed to put Nones in the input but in case it does, we can just skip it
             # (Optional variables must always default to None!)
             if val == "None":
-                continue
+                if arg_info.default is None:
+                    # valid when type is `x: some_type = None`
+                    continue
+
+                # now, check if the type has `Optional`
+                inner_args = get_args(arg_info.annotation)
+                if not inner_args or type(None) not in inner_args:
+                    raise ExecutionPlanParsingError(
+                        f"Tool '{tool.name}' has invalid None argument for '{arg}'"
+                    )
+                else:
+                    continue
 
             # For literals, we can parse out an actual value at "compile" time
 
