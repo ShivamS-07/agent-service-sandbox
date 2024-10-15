@@ -23,7 +23,9 @@ async def get_results_for_latest_version(ch: Clickhouse, service_version: str) -
     sql = """
     SELECT SUM(CASE WHEN error_msg <> '' THEN 1 ELSE 0 END) as error_count,
     SUM(CASE WHEN error_msg = '' and warning_msg = '' THEN 1 ELSE 0 END) as success_count,
-    SUM(CASE WHEN warning_msg <> '' and error_msg = '' THEN 1 ELSE 0 END) as warning_count
+    SUM(CASE WHEN warning_msg <> '' and error_msg = '' THEN 1 ELSE 0 END) as warning_count,
+    (toUnixTimestamp64Milli(MAX(execution_finished_at_utc)) -
+    toUnixTimestamp64Milli(MIN(execution_plan_started_at_utc))) / 1000 as total_duration
     FROM agent.regression_test rt
     WHERE service_version = %(service_version)s
     """
@@ -42,6 +44,7 @@ async def main(agent_service_version: Optional[str] = None) -> None:
         f"    Success Count: {results['success_count']}\n"
         f"    Error Count: {results['error_count']}\n"
         f"    Warning Count: {results['warning_count']}\n"
+        f"    Took {results['total_duration'] // 60} minutes and {round(results['total_duration'] % 60, 3)} seconds \n"
         f"To see detailed results, visit this link: "
         f"https://agent-dev.boosted.ai/regression-test/{version_short}"
     )
