@@ -1,18 +1,13 @@
 import asyncio
-import io
 import logging
 from typing import List, Optional
-
-import requests
-from bs4 import BeautifulSoup
-from PyPDF2 import PdfReader
 
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.text import WebText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.product_comparison.brightdata_websearch import (
-    brd_request,
     brd_websearch,
+    get_web_texts_async,
 )
 from agent_service.types import PlanRunContext
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
@@ -27,7 +22,7 @@ class WebQuery(ComplexIOBase):
 
 
 class GeneralWebSearchInput(ToolArgs):
-    queries: List[str] | List[WebQuery]
+    queries: List[str]
 
 
 logger = logging.getLogger(__name__)
@@ -58,52 +53,21 @@ async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContex
         else:
             urls = brd_websearch(query, 10)
 
-        for url in urls:
-            try:
-                response = brd_request(url)
-                content_type = response.headers.get("Content-Type")
-                if "application/pdf" in content_type:
-                    pdf_binary_data = response.content
-                    pdf_file = io.BytesIO(pdf_binary_data)
-                    pdf_reader = PdfReader(pdf_file)
-                    text = ""
-                    for page in pdf_reader.pages:
-                        text += page.extract_text()
-                    title = url
-                elif "text/html" in content_type:
-                    html_content = response.text
-                    soup = BeautifulSoup(html_content, "html.parser")
-                    text = soup.get_text()
-                    title = soup.title.string if soup.title else url
-                else:
-                    logger.info(f"Unsupported content type: {content_type}")
-                    continue
-            except requests.exceptions.HTTPError as e:
-                logger.info(
-                    f"Failed to retrieve {url}. HTTPError: {e.response.status_code} - {e.response.reason}"
-                )
-                continue
-            except requests.exceptions.RequestException as e:
-                if e.response:
-                    logger.info(f"URLError: {e.response.reason}")
-                continue
-            except TimeoutError as e:
-                logger.info(f"TimeoutError: {e}")
-                continue
-            except Exception as e:
-                logger.info(f"Failed to retrieve {url}. Error: {e}")
-                continue
-
-            search_results.append(WebText(val=text, url=url, title=title))
+        # currently, this returns a list of WebTexts
+        responses = await get_web_texts_async(urls)
+        search_results.extend(responses)
 
     return search_results
 
 
 async def main() -> None:
     plan_context = PlanRunContext.get_dummy()
-    query_1 = "Nvidia latest news"
+    query_1 = (
+        "current size of Australia sports betting market Australia sports betting market growth over "
+        "past 5 years projected future growth rate of Australia sports betting market"
+    )
 
-    queries = GeneralWebSearchInput(queries=[WebQuery(query=query_1)])
+    queries = GeneralWebSearchInput(queries=[query_1])
     result = await general_web_search(queries, plan_context)
     print(result)
 
