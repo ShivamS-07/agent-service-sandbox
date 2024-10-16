@@ -2126,12 +2126,22 @@ class WebText(Text):
         output = defaultdict(list)
         for cit in texts:
             text = cast(Self, cit.source_text)
+
+            full_context = cit.citation_snippet_context
+            snippet = cit.citation_snippet
+            hl_start, hl_end = DocumentCitationOutput.get_offsets_from_snippets(
+                smaller_snippet=snippet, context=full_context
+            )
+
             output[cit].append(
                 WebCitationOutput(
                     internal_id=str(text.id),
                     name=text.title or text.url or text.to_citation_title(),
                     link=text.url,
                     inline_offset=cit.citation_text_offset,
+                    summary=full_context,
+                    snippet_highlight_start=hl_start,
+                    snippet_highlight_end=hl_end,
                 )
             )
         return output  # type: ignore

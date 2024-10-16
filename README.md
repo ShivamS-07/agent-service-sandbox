@@ -20,3 +20,10 @@ This saves a copy of the current prod table under /backups and sync's the dev ta
 
 # For running document conversion endpoint locally
 Install pandoc with homebrew: `brew install pandoc`.
+
+
+# Test End-to-End locally
+In order to test the end-to-end flow locally, you need to have the following setup:
+1. Set environment variable `export REDIS_QUEUE_HOST=boosted-redis-celery.5vekgx.ng.0001.usw2.cache.amazonaws.com`
+2. Launch the `agent-service` by running `python application.py` in the `agent-service` directory. 
+3. Launch the `agent-web` by running `npm run dev:local` in the `agent-web` directory.
