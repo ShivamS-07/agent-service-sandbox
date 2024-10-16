@@ -158,7 +158,11 @@ async def _initial_summarize_helper(
     logger = get_prefect_logger(__name__)
     if args.topic:
         texts = await topic_filter_helper(
-            args.texts, args.topic, context.agent_id, model_for_filter_to_context=GPT4_O
+            args.texts,
+            args.topic,
+            context.agent_id,
+            model_for_filter_to_context=GPT4_O,
+            no_empty=True,
         )
         if len(texts) == 0:  # filtered out all relevant texts
             if args.stock:
@@ -279,7 +283,11 @@ async def _update_summarize_helper(
     last_original_citation_count = get_original_cite_count(original_citations)
     if args.topic:
         new_texts = await topic_filter_helper(
-            new_texts, args.topic, context.agent_id, model_for_filter_to_context=GPT4_O
+            new_texts,
+            args.topic,
+            context.agent_id,
+            model_for_filter_to_context=GPT4_O,
+            no_empty=True,
         )
         if len(new_texts) == 0:
             if remaining_original_citation_count == 0:
@@ -1034,7 +1042,11 @@ async def answer_question_with_text_data(
 
 
 async def topic_filter_helper(
-    texts: List[Text], topic: str, agent_id: str, model_for_filter_to_context: Optional[str] = None
+    texts: List[Text],
+    topic: str,
+    agent_id: str,
+    model_for_filter_to_context: Optional[str] = None,
+    no_empty: bool = False,
 ) -> List[Text]:
 
     # sort first by timestamp so more likely to drop older, less relevant texts
@@ -1113,11 +1125,17 @@ async def topic_filter_helper(
                 else:
                     answers.append((False, rationale))
 
-    return [
+    output = [
         text.inject_history_entry(HistoryEntry(explanation=reason, title=f"Connection to {topic}"))
         for text, (is_relevant, reason) in zip(texts, answers)
         if is_relevant
     ]
+    if (
+        not output and no_empty
+    ):  # we filtered everything, but that's not allowed, so just return input
+        return texts
+
+    return output
 
 
 class FilterNewsByTopicInput(ToolArgs):

@@ -457,6 +457,8 @@ date range mentioned in the client's messages. If no date range is provided or c
 the client's messages, you should set `date_range` to None, and it defaults to the last quarter under \
 the hood, containing the summary for the most recent earnings call in which the clients are \
 usually interested in unless they explicitly state otherwise. \
+The output of this tool is not ordered by time. If the client needs to compare two earnings calls, you
+must call this tool twice with two 3 month time ranges, do NOT do this in a single call
 You should not pass a date_range containing dates after todays date into this function. \
 documents can only be found for dates in the past up to the present, including todays date. \
 I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!

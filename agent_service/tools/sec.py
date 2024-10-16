@@ -85,6 +85,8 @@ class GetSecFilingsInput(ToolArgs):
     "companies which may have little or no news for a given period. "
     "Any documents published within the date_range are included. Date_range will "
     "default to the last quarter, which includes the latest SEC filing."
+    "The output of this tool is not ordered by time. If the client needs to compare two filings, you "
+    "must call this tool twice with two 3 month time ranges, do NOT do this in a single call! "
     " You should not pass a date_range containing dates after todays date into this function."
     " documents can only be found for dates in the past up to the present, including todays date."
     " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!",
