@@ -108,10 +108,10 @@ async def split_transcript_into_smaller_sections(
             )
             saved_line_numbers.update(range(starting_line, ending_line + 1))
             prev_ending_line = ending_line
-        except IndexError:
+        except (IndexError, ValueError):
             logger.warning(
                 f"Failed to properly partition transcript {transcript_id}, "
-                f"got invalid line numbers {starting_line} to {ending_line}"
+                f"gpt output: {raw_partition}"
             )
             continue
 
