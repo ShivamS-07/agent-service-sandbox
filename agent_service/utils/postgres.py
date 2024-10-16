@@ -574,11 +574,12 @@ class Postgres(PostgresBase):
 
     def get_company_descriptions(self, gbi_ids: List[int]) -> Dict[int, str]:
         sql = """
-        SELECT ssm.gbi_id, cds.company_description_short
+        SELECT DISTINCT ON (ssm.gbi_id) ssm.gbi_id, cds.company_description_short, cds.last_updated
         FROM spiq_security_mapping ssm
         JOIN nlp_service.company_descriptions_short cds
         ON cds.spiq_company_id = ssm.spiq_company_id
         WHERE ssm.gbi_id = ANY(%(gbi_ids)s)
+        ORDER BY ssm.gbi_id, cds.last_updated DESC NULLS LAST;
         """
 
         # get short first since we always have that
