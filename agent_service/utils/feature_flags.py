@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Any, Dict, Optional, Union
 
 import ldclient
@@ -23,6 +24,7 @@ def __init_ld_client() -> ldclient.LDClient:
     return ldclient.get()
 
 
+@lru_cache(maxsize=128)
 def get_user_context(user_id: str) -> LDUser:
     """
     Retrieve a user context from a user id.
