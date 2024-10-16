@@ -161,7 +161,9 @@ class AsyncDB:
         async def get_output_id_from_cache(
             output_id: str,
         ) -> Tuple[str, Optional[Union[TextOutput, GraphOutput, TableOutput]]]:
-            cached_output = None
+            cached_output: Optional[Union[TextOutput, GraphOutput, TableOutput]] = None
+            if cache:
+                cached_output = await cache.get(output_id)  # type: ignore
             return output_id, cached_output
 
         async def get_output_values() -> List[Union[TextOutput, GraphOutput, TableOutput]]:
