@@ -624,6 +624,8 @@ async def get_chat_history(
     agent_id: str,
     start: Optional[datetime.datetime] = None,
     end: Optional[datetime.datetime] = None,
+    start_index: Optional[int] = 0,
+    limit_num: Optional[int] = None,
     user: User = Depends(parse_header),
 ) -> GetChatHistoryResponse:
     """Get chat history for an agent
@@ -638,7 +640,7 @@ async def get_chat_history(
         validate_user_agent_access(user.user_id, agent_id)
 
     return await application.state.agent_service_impl.get_chat_history(
-        agent_id=agent_id, start=start, end=end
+        agent_id=agent_id, start=start, end=end, start_index=start_index, limit_num=limit_num
     )
 
 

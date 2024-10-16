@@ -52,6 +52,7 @@ class Notification(BaseModel):
 
 class ChatContext(BaseModel):
     messages: List[Message] = []
+    total_message_count: Optional[int] = 0
 
     def get_gpt_input(self, client_only: bool = False) -> str:
         return "\n".join(

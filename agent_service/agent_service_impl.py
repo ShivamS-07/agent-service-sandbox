@@ -663,9 +663,16 @@ class AgentServiceImpl:
             LOGGER.warning(traceback.format_exc())
 
     async def get_chat_history(
-        self, agent_id: str, start: Optional[datetime.datetime], end: Optional[datetime.datetime]
+        self,
+        agent_id: str,
+        start: Optional[datetime.datetime],
+        end: Optional[datetime.datetime],
+        start_index: Optional[int] = 0,
+        limit_num: Optional[int] = None,
     ) -> GetChatHistoryResponse:
-        chat_context = await self.pg.get_chats_history_for_agent(agent_id, start, end)
+        chat_context = await self.pg.get_chats_history_for_agent(
+            agent_id, start, end, start_index, limit_num
+        )
 
         report_updated_message = CHAT_DIFF_TEMPLATE.split("\n")[0]
         for message in chat_context.messages:
@@ -683,7 +690,11 @@ class AgentServiceImpl:
                     report_updated_text, "```" + json.dumps(report_updated_dict) + "```"  # type: ignore
                 )
 
-        return GetChatHistoryResponse(messages=chat_context.messages)
+        return GetChatHistoryResponse(
+            messages=chat_context.messages,
+            total_message_count=chat_context.total_message_count,
+            start_index=start_index,
+        )
 
     @async_perf_logger
     async def get_agent_worklog_board(

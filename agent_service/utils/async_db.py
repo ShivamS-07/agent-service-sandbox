@@ -499,15 +499,18 @@ class AsyncDB:
         ORDER BY created_at DESC
         {limit_sql} {offset_sql}
         """
-        rows = await self.pg.generic_read(sql, params=params)
 
-        # Query to get total plan count
         total_count_sql = f"""
         SELECT COUNT(*) AS total_plan_count
         FROM agent.plan_runs
         WHERE agent_id = %(agent_id)s{start_date_filter}{end_date_filter}
         """
-        total_count_rows = await self.pg.generic_read(total_count_sql, params=params)
+
+        rows, total_count_rows = await asyncio.gather(
+            self.pg.generic_read(sql, params=params),
+            self.pg.generic_read(total_count_sql, params=params),
+        )
+
         total_plan_count = total_count_rows[0]["total_plan_count"] if total_count_rows else 0
 
         return [(row["plan_run_id"], row["plan_id"]) for row in rows], total_plan_count
@@ -587,6 +590,8 @@ class AsyncDB:
         agent_id: str,
         start: Optional[datetime.datetime] = None,
         end: Optional[datetime.datetime] = None,
+        start_index: Optional[int] = 0,
+        limit_num: Optional[int] = None,
     ) -> ChatContext:
         """
         Get chat history for an agent
@@ -601,6 +606,16 @@ class AsyncDB:
             dt_filter += " AND cm.message_time <= %(end)s"
             params["end"] = end
 
+        offset_sql = ""
+        if start_index is not None and start_index > 0:
+            offset_sql = "OFFSET %(start_index)s"
+            params["start_index"] = start_index
+
+        limit_sql = ""
+        if limit_num is not None:
+            limit_sql = "LIMIT %(limit_num)s"
+            params["limit_num"] = limit_num
+
         sql = f"""
             SELECT cm.message_id::VARCHAR, cm.message, cm.is_user_message, cm.message_time,
             cm.message_author, cm.plan_run_id::VARCHAR,
@@ -609,11 +624,24 @@ class AsyncDB:
             LEFT JOIN agent.notifications nf
             ON cm.message_id = nf.message_id
             WHERE cm.agent_id = %(agent_id)s{dt_filter}
-            ORDER BY cm.message_time ASC;
+            ORDER BY cm.message_time DESC
+            {limit_sql} {offset_sql}
         """
-        rows = await self.pg.generic_read(sql, params=params)
+        total_count_sql = f"""
+            SELECT COUNT(*) AS total_message_count
+            FROM agent.chat_messages cm
+            WHERE cm.agent_id = %(agent_id)s{dt_filter}
+        """
+        rows, total_count_rows = await asyncio.gather(
+            self.pg.generic_read(sql, params=params),
+            self.pg.generic_read(total_count_sql, params=params),
+        )
+        total_message_count = total_count_rows[0]["total_message_count"] if total_count_rows else 0
 
-        return ChatContext(messages=[Message(agent_id=agent_id, **row) for row in rows])
+        return ChatContext(
+            messages=[Message(agent_id=agent_id, **row) for row in rows],
+            total_message_count=total_message_count,
+        )
 
     async def create_agent(self, agent_metadata: AgentMetadata) -> None:
         await self.pg.multi_row_insert(

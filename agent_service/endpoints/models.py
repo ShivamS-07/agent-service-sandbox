@@ -296,6 +296,8 @@ class ChatWithAgentResponse(BaseModel):
 ####################################################################################################
 class GetChatHistoryResponse(BaseModel):
     messages: List[Message]  # sorted by message_time ASC
+    total_message_count: Optional[int] = None
+    start_index: Optional[int] = None
 
 
 ####################################################################################################
