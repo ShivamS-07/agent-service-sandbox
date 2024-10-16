@@ -11,6 +11,7 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.postgres import SyncBoostedPG
+from agent_service.utils.prefect import get_prefect_logger
 
 
 @dataclass
@@ -22,6 +23,7 @@ class PrevRunInfo:
 
 
 async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional[PrevRunInfo]:
+    logger = get_prefect_logger(__name__)
     pg_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
     previous_run_id = await pg_db.get_previous_plan_run(
         agent_id=context.agent_id,
@@ -35,12 +37,15 @@ async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional
     ch_db = Clickhouse()
     if context.task_id is None:  # shouldn't happen
         return None
+    logger.info("Checking clickhouse for prior run info")
     io = await ch_db.get_io_for_tool_run(previous_run_id, context.task_id, tool_name)
     if io is None:
+        logger.info("Checking postgres for prior run info")
         io = await pg_db.get_task_run_info(
             plan_run_id=previous_run_id, task_id=context.task_id, tool_name=tool_name
         )
     if io is None:
+        logger.info("No prior run info found")
         return None
     inputs_str, output_str, debug_str, timestamp = io
     output = load_io_type(output_str)
