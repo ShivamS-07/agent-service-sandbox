@@ -31,6 +31,7 @@ async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional
         latest_plan_run_id=context.plan_run_id,
         cutoff_dt=context.as_of_date,
     )
+    read_from_postgres = False
     if previous_run_id is None:
         return None
 
@@ -44,10 +45,14 @@ async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional
         io = await pg_db.get_task_run_info(
             plan_run_id=previous_run_id, task_id=context.task_id, tool_name=tool_name
         )
+        read_from_postgres = True
     if io is None:
         logger.info("No prior run info found")
         return None
     inputs_str, output_str, debug_str, timestamp = io
+    if read_from_postgres and not output_str:
+        # Handle the case where the output might not be populated
+        return None
     output = load_io_type(output_str)
     debug = json.loads(debug_str) if debug_str else {}
     return PrevRunInfo(inputs_str=inputs_str, output=output, debug=debug, timestamp=timestamp)

@@ -80,9 +80,14 @@ async def log_tool_call_event(context: PlanRunContext, event_data: Dict[str, Any
         debug_info = event_data.get("debug_info")
         args = event_data.get("args")
         tool_name = event_data.get("tool_name")
+        output = event_data.get("result")
         if args and tool_name:
             await async_db.insert_task_run_info(
-                context=context, args=args, debug_info=debug_info, tool_name=tool_name
+                context=context,
+                args=args,
+                debug_info=debug_info,
+                tool_name=tool_name,
+                output=output,
             )
     except Exception:
         logger.exception("Failed to store tool call in agent.task_run_info table!")

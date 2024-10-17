@@ -755,12 +755,10 @@ class AsyncDB:
         (args, result, debug info, timestamp)
         """
         sql = """
-        SELECT tri.task_args, tri.debug_info, wl.created_at, wl.log_data
+        SELECT tri.task_args, tri.debug_info, tri.created_at, tri.output
         FROM agent.task_run_info tri
-        JOIN agent.work_logs wl
-          ON (tri.plan_run_id, tri.task_id) = (wl.plan_run_id, wl.task_id)
         WHERE tri.task_id = %(task_id)s AND tri.plan_run_id = %(plan_run_id)s
-          AND tri.tool_name = %(tool_name)s AND wl.is_task_output
+          AND tri.tool_name = %(tool_name)s
         """
         rows = await self.pg.generic_read(
             sql, {"plan_run_id": plan_run_id, "task_id": task_id, "tool_name": tool_name}
@@ -768,14 +766,21 @@ class AsyncDB:
         if not rows:
             return None
         row = rows[0]
-        return (row["task_args"], row["log_data"], row["debug_info"], row["created_at"])
+        return (row["task_args"], row["output"], row["debug_info"], row["created_at"])
 
     async def insert_task_run_info(
-        self, context: PlanRunContext, tool_name: str, args: str, debug_info: Optional[str] = None
+        self,
+        context: PlanRunContext,
+        tool_name: str,
+        args: str,
+        output: Optional[str],
+        debug_info: Optional[str] = None,
     ) -> None:
         sql = """
-        INSERT INTO agent.task_run_info (task_id, agent_id, plan_run_id, tool_name, task_args, debug_info)
-        VALUES (%(task_id)s, %(agent_id)s, %(plan_run_id)s, %(tool_name)s, %(task_args)s, %(debug_info)s)
+        INSERT INTO agent.task_run_info (task_id, agent_id, plan_run_id,
+          tool_name, task_args, debug_info, output)
+        VALUES (%(task_id)s, %(agent_id)s, %(plan_run_id)s,
+          %(tool_name)s, %(task_args)s, %(debug_info)s, %(output)s)
         """
         await self.pg.generic_write(
             sql,
@@ -786,6 +791,7 @@ class AsyncDB:
                 "tool_name": tool_name,
                 "task_args": args,
                 "debug_info": debug_info,
+                "output": output,
             },
         )
 
