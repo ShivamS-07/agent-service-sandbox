@@ -630,6 +630,8 @@ class GetStockRecommendationsInput(ToolArgs):
         "If the client asks for a ranking of stocks or scores for stocks without mentioning any other specific "
         "statistic to rank on, e.g. `give me a table with stocks ranked by score` use this tool and "
         "NOT transform table and/or the statistic tool."
+        "If the client mentions Boosted rec, boosted recommendation,"
+        "boosted.Ai rec or any other variation they mean this tool"
         "You must NEVER pass the output of this tool to the transform_table function. If the user wants to filter "
         "On the top/bottom n stocks, you must use the num_stocks_to_return argument. When the list of stocks "
         "outputed by this tool are displayed it looks like a table to the client, so you do not need to take any "
