@@ -190,11 +190,11 @@ async def run_execution_plan(
     # above, but they can be used together, with this map taking precedence over
     # the above map.
     override_task_work_log_id_lookup: Optional[Dict[str, str]] = None,
-) -> List[IOType]:
+) -> Tuple[List[IOType], Optional[DefaultDict[str, List[dict]]]]:
     logger = get_prefect_logger(__name__)
     async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
     try:
-        return await _run_execution_plan_impl(
+        result_to_return = await _run_execution_plan_impl(
             plan=plan,
             context=context,
             do_chat=do_chat,
@@ -207,6 +207,7 @@ async def run_execution_plan(
             scheduled_by_automation=scheduled_by_automation,
             override_task_work_log_id_lookup=override_task_work_log_id_lookup,
         )
+        return result_to_return, execution_log
     except Exception as e:
         status = Status.ERROR
         if isinstance(e, AgentExecutionError):
@@ -1484,10 +1485,10 @@ async def run_execution_plan_local(
     replan_execution_error: bool = False,
     override_task_output_lookup: Optional[Dict[str, IOType]] = None,
     scheduled_by_automation: bool = False,
-    execution_log: Optional[DefaultDict[str, List[dict]]] = None,
-) -> List[IOType]:
+    execution_log: Optional[Dict[str, List[Dict]]] = None,
+) -> Tuple[List[IOType], Optional[Dict[str, List[Dict]]]]:
     context.run_tasks_without_prefect = True
-    return await run_execution_plan(
+    result_to_return, new_execution_log = await run_execution_plan(
         plan=plan,
         context=context,
         do_chat=do_chat,
@@ -1498,6 +1499,7 @@ async def run_execution_plan_local(
         scheduled_by_automation=scheduled_by_automation,
         execution_log=execution_log,
     )
+    return result_to_return, new_execution_log
 
 
 async def create_execution_plan_local(

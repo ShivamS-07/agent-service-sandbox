@@ -298,7 +298,7 @@ class TestExecutionPlanner(unittest.TestCase):
         context.chat = chat
         execution_started_at = get_now_utc().isoformat()
         execution_log = defaultdict(list)
-        output = self.loop.run_until_complete(
+        output, new_execution_log = self.loop.run_until_complete(
             run_execution_plan_local(
                 plan=plan,
                 context=context,

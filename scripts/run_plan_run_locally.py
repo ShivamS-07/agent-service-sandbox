@@ -102,7 +102,7 @@ async def main() -> IOType:
         adb().set_plan_run_metadata = AsyncMock()
         adb().update_plan_run = AsyncMock()
         adb().update_task_statuses = AsyncMock()
-        result = await run_execution_plan_local(
+        result, _ = await run_execution_plan_local(
             plan=plan, context=context, override_task_output_lookup=override_output_dict
         )
     return result

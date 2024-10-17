@@ -599,7 +599,7 @@ class TestPlans(IsolatedAsyncioTestCase):
         db.write_execution_plan(
             plan_id=plan_run_context.plan_id, agent_id=plan_run_context.agent_id, plan=plan
         )
-        result = await run_execution_plan_local(
+        result, _ = await run_execution_plan_local(
             plan,
             plan_run_context,
             do_chat=False,

@@ -105,7 +105,7 @@ async def gen_and_run_plan(
         run_tasks_without_prefect=True,
     )
     context.chat = chat
-    output = await run_execution_plan_local(
+    output, _ = await run_execution_plan_local(
         plan=plan,
         context=context,
         do_chat=do_chat,
@@ -168,7 +168,7 @@ async def gen_and_run_plan(
                 chat=db.get_chats_history_for_agent(agent_id),
             )
 
-            output = await run_execution_plan_local(
+            output, _ = await run_execution_plan_local(
                 plan=plan,
                 context=context,
                 do_chat=do_chat,
