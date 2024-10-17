@@ -316,7 +316,7 @@ class TestExecutionPlanner(unittest.TestCase):
             }
         )
         logger.warning(f"test completed {plan_id=}, {prompt=}")
-        return sample_plans, plan, output, execution_log
+        return sample_plans, plan, output, new_execution_log
 
     @classmethod
     def tearDownClass(cls) -> None:
