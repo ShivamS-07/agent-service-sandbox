@@ -69,15 +69,20 @@ def brd_request(url: str, headers: Dict[str, str] = HEADER, timeout: int = 5) ->
     return response
 
 
-# use aiohttp to asynchronously make URL requests and scrape using BeautifulSoup
 async def req_and_scrape(
-    session: Any, url: str, headers: Dict[str, str], proxy: str, timeout: int, ssl_context: Any
+    session: aiohttp.ClientSession,
+    url: str,
+    headers: Dict[str, str],
+    proxy: str,
+    timeout: int,
+    ssl_context: Any,
 ) -> Optional[WebText]:
+    # use aiohttp to asynchronously make URL requests and scrape using BeautifulSoup
     async with session.get(
-        url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context
+        url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context  # type: ignore
     ) as response:
         try:
-            content_type = response.headers.get("Content-Type")
+            content_type = response.headers.get("Content-Type", "")
             if "application/pdf" in content_type:
                 pdf_binary_data = await response.read()
                 pdf_file = io.BytesIO(pdf_binary_data)
@@ -89,8 +94,23 @@ async def req_and_scrape(
             elif "text/html" in content_type:
                 html_content = await response.text()
                 soup = BeautifulSoup(html_content, "html.parser")
-                text = soup.get_text()
+
                 title = soup.title.string if soup.title else url
+
+                # find all main content divs
+                main_contents = soup.find_all(name="div", attrs={"class": "content"})
+                if main_contents:
+                    # remove script, style, aside, footer tags
+                    cleaned_texts = []
+                    for main_content in main_contents:
+                        for tag in main_content(["script", "style", "aside", "footer"]):
+                            tag.decompose()
+                        cleaned_text = main_content.get_text()
+                        cleaned_texts.append(cleaned_text)
+                    text = "\n\n".join(cleaned_texts)
+                else:
+                    # fallback to extracting all text
+                    text = soup.get_text()
             else:
                 logger.info(f"Unsupported content type: {content_type}")
                 return None
