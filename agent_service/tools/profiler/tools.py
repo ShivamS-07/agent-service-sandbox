@@ -1,10 +1,12 @@
 import asyncio
 import json
-from typing import List
+from typing import List, Optional
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
+from agent_service.io_types.idea import Idea
 from agent_service.io_types.text import ProfileText, Text, TextGroup, TopicProfiles
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.news import (
     GetNewsArticlesForTopicsInput,
@@ -20,10 +22,51 @@ from agent_service.tools.profiler.prompts import (
     GENERATE_PROFILE_DESCRIPTION,
     IMPACT_MAIN,
     IMPACT_SYS,
+    PER_IDEA_GENERATE_PROFILE_DESCRIPTION,
 )
 from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.string_utils import clean_to_json_if_needed
+
+
+async def get_profiles(
+    topic: str, texts_str: str, context: PlanRunContext, idea: Optional[Idea] = None
+) -> TopicProfiles:
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(model=GPT4_O, context=gpt_context)
+
+    # Brainstorm and generate impacts
+    impacts_raw_output = await llm.do_chat_w_sys_prompt(
+        main_prompt=IMPACT_MAIN.format(theme=topic, text_documents=texts_str),
+        sys_prompt=IMPACT_SYS.format(),
+    )
+
+    impacts_json_list = json.loads(clean_to_json_if_needed(impacts_raw_output))
+
+    profile_lookup = await write_profiles(theme=topic, impacts=impacts_json_list, news=texts_str)
+    profile_texts: List[ProfileText] = []
+    for profiles in profile_lookup.values():
+        pos_profiles = profiles.get(POSITIVE, [])
+        pos_profile_scores = profiles.get(f"{POSITIVE}{IMPORTANCE_POSTFIX}", [])
+        if pos_profiles:
+            for profile, score in zip(pos_profiles, pos_profile_scores):
+                profile_texts.append(ProfileText(val=profile, importance_score=score))
+
+        neg_profiles = profiles.get(NEGATIVE, [])
+        neg_profile_scores = profiles.get(f"{NEGATIVE}{IMPORTANCE_POSTFIX}", [])
+        if neg_profiles:
+            for profile, score in zip(neg_profiles, neg_profile_scores):
+                profile_texts.append(ProfileText(val=profile, importance_score=score))
+
+    if idea:
+        return TopicProfiles(topic=topic, val=profile_texts, initial_idea=idea.title)
+    else:
+        return TopicProfiles(topic=topic, val=profile_texts)
 
 
 class GetCompanyProfilesForTopic(ToolArgs):
@@ -38,36 +81,50 @@ class GetCompanyProfilesForTopic(ToolArgs):
 async def generate_profiles(
     args: GetCompanyProfilesForTopic, context: PlanRunContext
 ) -> TopicProfiles:
-    llm = GPT(model=GPT4_O)
-
     text_group = TextGroup(val=args.relevant_text_data)
-    texts_str: str = Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)  # type: ignore
+    texts_str: str = await Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)  # type: ignore
 
-    # Brainstorm and generate impacts
-    impacts_raw_output = await llm.do_chat_w_sys_prompt(
-        main_prompt=IMPACT_MAIN.format(theme=args.topic, text_documents=texts_str),
-        sys_prompt=IMPACT_SYS.format(),
-    )
+    return await get_profiles(args.topic, texts_str, context)
 
-    impacts_json_list = json.loads(clean_to_json_if_needed(impacts_raw_output))
 
-    profile_lookup = await write_profiles(
-        theme=args.topic, impacts=impacts_json_list, news=texts_str
-    )
-    profile_texts: List[ProfileText] = []
-    for profiles in profile_lookup.values():
-        pos_profiles = profiles.get(POSITIVE, [])
-        pos_profile_scores = profiles.get(f"{POSITIVE}{IMPORTANCE_POSTFIX}", [])
-        if pos_profiles:
-            for profile, score in zip(pos_profiles, pos_profile_scores):
-                profile_texts.append(ProfileText(val=profile, importance_score=score))
+class PerIdeaGetCompanyProfilesForTopic(ToolArgs):
+    ideas: List[Idea]
+    topic_template: str
 
-        neg_profiles = profiles.get(NEGATIVE, [])
-        neg_profile_scores = profiles.get(f"{NEGATIVE}{IMPORTANCE_POSTFIX}", [])
-        if neg_profiles:
-            for profile, score in zip(neg_profiles, neg_profile_scores):
-                profile_texts.append(ProfileText(val=profile, importance_score=score))
-    return TopicProfiles(topic=args.topic, val=profile_texts)
+
+@tool(
+    description=PER_IDEA_GENERATE_PROFILE_DESCRIPTION,
+    category=ToolCategory.LLM_ANALYSIS,
+    enabled=False,
+)
+async def per_idea_generate_profiles(
+    args: PerIdeaGetCompanyProfilesForTopic, context: PlanRunContext
+) -> List[TopicProfiles]:
+    logger = get_prefect_logger(__name__)
+
+    # TODO: Remove once summarizer tool is merged
+    IDEA = "IDEA"
+
+    topic_profiles_for_ideas: List[TopicProfiles] = []
+    tasks = []
+    for idea in args.ideas:
+        try:
+            related_news_texts = await get_news_articles_for_topics(
+                GetNewsArticlesForTopicsInput(topics=[idea.title]), context=context
+            )
+
+            text_group = TextGroup(val=related_news_texts)  # type: ignore
+            texts_str: str = await Text.get_all_strs(
+                text_group, include_header=True, text_group_numbering=True
+            )  # type: ignore
+
+            topic = args.topic_template.replace(IDEA, idea.title)
+            tasks.append(get_profiles(topic, texts_str, context, idea))
+        except EmptyOutputError:
+            logger.warning(f"Couldn't generate profiles for idea: {idea.title}")
+
+    topic_profiles_for_ideas = await gather_with_concurrency(tasks, n=10)
+    return topic_profiles_for_ideas
 
 
 async def main() -> None:

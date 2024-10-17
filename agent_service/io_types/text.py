@@ -1130,6 +1130,9 @@ class StockEarningsTranscriptSectionText(StockEarningsText):
         for transcript in transcripts:
             if transcript.id not in transcripts_lookup:
                 continue
+            if transcripts_lookup[transcript.id] == "":
+                logger.warning(f"Got empty transcript for {transcript.id}")
+                continue
 
             partition_data_from_db = partition_lookup.get(str(transcript.id))
             if partition_data_from_db:
@@ -2247,6 +2250,7 @@ class EquivalentKPITexts(TextGroup):
 class TopicProfiles(TextGroup):
     val: List[ProfileText]  # type: ignore
     topic: str
+    initial_idea: Optional[str] = None  # Stores the initial idea that spawned these profiles
 
 
 class TextOutput(Output):

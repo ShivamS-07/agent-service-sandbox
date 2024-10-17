@@ -16,6 +16,7 @@ from agent_service.io_type_utils import Citation, HistoryEntry
 from agent_service.io_types.idea import Idea
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
+from agent_service.io_types.stock_groups import StockGroup, StockGroups
 from agent_service.io_types.text import (
     DEFAULT_TEXT_TYPE,
     NewsText,
@@ -59,6 +60,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     FILTER_BY_TOPIC_DESCRIPTION,
     PER_IDEA_SUMMARIZE_DESCRIPTION,
     PER_STOCK_SUMMARIZE_DESCRIPTION,
+    PER_TOPIC_FILTER_BY_PROFILE_DESCRIPTION,
     PROFILE_ADD_DIFF_MAIN_PROMPT,
     PROFILE_ADD_DIFF_SYS_PROMPT,
     PROFILE_FILTER_MAIN_PROMPT_STR_DEFAULT,
@@ -1166,23 +1168,45 @@ async def profile_filter_helper(
     is_using_complex_profile: bool,
     llm: GPT,
     profile_filter_main_prompt: Prompt,
-    simple_profile_filter_sys_prompt: Prompt,
-    complex_profile_filter_sys_prompt: Prompt,
     context: PlanRunContext,
+    simple_profile_filter_sys_prompt: Optional[Prompt] = None,
+    complex_profile_filter_sys_prompt: Optional[Prompt] = None,
     topic: str = "",
     do_citations: bool = True,
     stock_whitelist: Optional[Set[StockID]] = None,
 ) -> List[Tuple[bool, str, List[Citation]]]:
-    tokenizer = GPTTokenizer(GPT4_O)
-    used = tokenizer.get_token_length(
-        "\n".join(
-            [
-                profile_filter_main_prompt.template,
-                simple_profile_filter_sys_prompt.template,
-                profile,
-            ]
+    logger = get_prefect_logger(__name__)
+    if (simple_profile_filter_sys_prompt is None) and (complex_profile_filter_sys_prompt is None):
+        logger.error(
+            "Simple Filter System Prompt and Complex Filter System Prompt cannot both be None!"
         )
-    )
+
+    # Add a placeholder company name as a safety buffer
+    tokenizer = GPTTokenizer(GPT4_O)
+    used = 0
+    if is_using_complex_profile and isinstance(complex_profile_filter_sys_prompt, Prompt):
+        used = tokenizer.get_token_length(
+            "\n".join(
+                [
+                    profile_filter_main_prompt.template,
+                    complex_profile_filter_sys_prompt.template,
+                    topic,
+                    profile,
+                    "Placeholder Company Name",
+                ]
+            )
+        )
+    elif isinstance(simple_profile_filter_sys_prompt, Prompt):
+        used = tokenizer.get_token_length(
+            "\n".join(
+                [
+                    profile_filter_main_prompt.template,
+                    simple_profile_filter_sys_prompt.template,
+                    profile,
+                    "Placeholder Company Name",
+                ]
+            )
+        )
 
     tasks = []
     for stock in aligned_text_groups.val:
@@ -1191,7 +1215,7 @@ async def profile_filter_helper(
         if text_str == "" or (stock_whitelist is not None and stock not in stock_whitelist):
             tasks.append(identity(""))
 
-        elif is_using_complex_profile:
+        elif is_using_complex_profile and isinstance(complex_profile_filter_sys_prompt, Prompt):
             tasks.append(
                 llm.do_chat_w_sys_prompt(
                     profile_filter_main_prompt.format(
@@ -1207,7 +1231,7 @@ async def profile_filter_helper(
                     complex_profile_filter_sys_prompt.format(topic_name=topic),
                 )
             )
-        else:
+        elif isinstance(simple_profile_filter_sys_prompt, Prompt):
             tasks.append(
                 llm.do_chat_w_sys_prompt(
                     profile_filter_main_prompt.format(
@@ -1332,66 +1356,18 @@ async def profile_filter_removed_diff_info(
     }
 
 
-class FilterStocksByProfileMatch(ToolArgs):
-    stocks: List[StockID]
-    texts: List[StockText]
-    profile: Union[str, TopicProfiles]
-
-    # prompt arguments (hidden from planner)
-    profile_filter_main_prompt: str = PROFILE_FILTER_MAIN_PROMPT_STR_DEFAULT
-    simple_profile_filter_sys_prompt: str = SIMPLE_PROFILE_FILTER_SYS_PROMPT_STR_DEFAULT
-    complex_profile_filter_sys_prompt: str = COMPLEX_PROFILE_FILTER_SYS_PROMPT_STR_DEFAULT
-    profile_output_instruction: str = PROFILE_OUTPUT_INSTRUCTIONS_DEFAULT
-
-    # tool arguments metadata
-    arg_metadata = {
-        "profile_filter_main_prompt": ToolArgMetadata(hidden_from_planner=True),
-        "simple_profile_filter_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
-        "complex_profile_filter_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
-        "profile_output_instruction": ToolArgMetadata(hidden_from_planner=True),
-    }
-
-
-@tool(
-    description=FILTER_BY_PROFILE_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
-)
-async def filter_stocks_by_profile_match(
-    args: FilterStocksByProfileMatch, context: PlanRunContext
+async def run_profile_match(
+    stocks: List[StockID],
+    profile: Union[str, TopicProfiles],
+    texts: List[StockText],
+    profile_filter_main_prompt_str: str,
+    profile_filter_sys_prompt_str: str,
+    profile_output_instruction_str: str,
+    context: PlanRunContext,
 ) -> List[StockID]:
-    if len(args.stocks) == 0:
-        raise EmptyInputError("Cannot filter empty list of stocks")
-    if len(args.texts) == 0:
-        raise EmptyInputError("Cannot filter stocks with empty list of texts")
-
     logger = get_prefect_logger(__name__)
     if context.task_id is None:
         return []  # for mypy
-
-    # prepare prompts
-    profile_filter_main_prompt = Prompt(
-        name="PROFILE_FILTER_MAIN_PROMPT",
-        template=(
-            args.profile_filter_main_prompt
-            + CITATION_REMINDER
-            + " Now discuss your decision in a single paragraph, "
-            + "provide a final answer, and then an anchor mapping json:\n"
-        ),
-    )
-    simple_profile_filter_sys_prompt = Prompt(
-        name="SIMPLE_PROFILE_FILTER_SYS_PROMPT",
-        template=(
-            args.simple_profile_filter_sys_prompt
-            + args.profile_output_instruction
-            + CITATION_PROMPT
-        ),
-    )
-    complex_profile_filter_sys_prompt = Prompt(
-        name="COMPLEX_PROFILE_FILTER_SYS_PROMPT",
-        template=args.complex_profile_filter_sys_prompt
-        + args.profile_output_instruction
-        + CITATION_PROMPT,
-    )
 
     prev_run_info = None
     try:  # since everything associated with diffing is optional, put in try/except
@@ -1402,12 +1378,12 @@ async def filter_stocks_by_profile_match(
 
             # start by finding the differences in the input texts for the two runs
             prev_stock_text_lookup = get_stock_text_lookup(prev_args.texts)
-            current_stock_text_lookup = get_stock_text_lookup(args.texts)
+            current_stock_text_lookup = get_stock_text_lookup(texts)
             diff_text_stocks = []
             same_text_stocks = []
             stock_text_diff = {}
-            current_input_set = set(args.stocks)
-            for stock in args.stocks:
+            current_input_set = set(stocks)
+            for stock in stocks:
                 added_text_diff = get_text_diff(
                     current_stock_text_lookup.get(stock, []), prev_stock_text_lookup.get(stock, [])
                 )
@@ -1443,32 +1419,61 @@ async def filter_stocks_by_profile_match(
                 f"No new information for {len(same_text_stocks)} stocks, skipping filtering for these stocks",
                 context=context,
             )
-            args.stocks = diff_text_stocks
+            stocks = diff_text_stocks
 
     except Exception as e:
         logger.warning(f"Error doing text diff from previous run: {e}")
 
-    aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(args.stocks, args.texts)
+    aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(stocks, texts)
     str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
         aligned_text_groups.val, include_header=True, text_group_numbering=True
     )
 
     profile_str: str = ""
-    if isinstance(args.profile, TopicProfiles):
+    if isinstance(profile, TopicProfiles):
         is_using_complex_profile = True
         profile_str = await Text.get_all_strs(  # type: ignore
-            args.profile, include_header=False, text_group_numbering=False
+            profile, include_header=False, text_group_numbering=False
         )
-        await tool_log(f"Using advanced profile with topic: {args.profile.topic}", context=context)
-    elif isinstance(args.profile, str):
+        await tool_log(
+            f"Filtering stocks for advanced profile with topic: {profile.topic}", context=context
+        )
+    elif isinstance(profile, str):
         is_using_complex_profile = False
-        profile_str = args.profile
-        await tool_log(f"Using simple profile: {profile_str}", context=context)
+        profile_str = profile
+        await tool_log(f"Filtering stocks for simple profile: {profile_str}", context=context)
     else:
         raise ValueError(
             "profile must be either a string or a TopicProfiles object "
             "in filter_stocks_by_profile_match function!"
         )
+
+    # prepare prompts
+    profile_filter_main_prompt = Prompt(
+        name="PROFILE_FILTER_MAIN_PROMPT",
+        template=(
+            profile_filter_main_prompt_str
+            + CITATION_REMINDER
+            + " Now discuss your decision in a single paragraph, "
+            + "provide a final answer, and then an anchor mapping json:\n"
+        ),
+    )
+
+    if is_using_complex_profile:
+        profile_filter_sys_prompt = Prompt(
+            name="COMPLEX_PROFILE_FILTER_SYS_PROMPT",
+            template=profile_filter_sys_prompt_str
+            + profile_output_instruction_str
+            + CITATION_PROMPT,
+        )
+    else:
+        profile_filter_sys_prompt = Prompt(
+            name="SIMPLE_PROFILE_FILTER_SYS_PROMPT",
+            template=(
+                profile_filter_sys_prompt_str + profile_output_instruction_str + CITATION_PROMPT
+            ),
+        )
+
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
@@ -1477,6 +1482,14 @@ async def filter_stocks_by_profile_match(
     await tool_log(
         f"Starting filtering with {len(aligned_text_groups.val.keys())} stocks", context=context
     )
+
+    if is_using_complex_profile:
+        simple_profile_filter_sys_prompt = None
+        complex_profile_filter_sys_prompt = profile_filter_sys_prompt
+    else:
+        simple_profile_filter_sys_prompt = profile_filter_sys_prompt
+        complex_profile_filter_sys_prompt = None
+
     for stock, (is_relevant, reason, citations) in zip(
         aligned_text_groups.val.keys(),
         await profile_filter_helper(
@@ -1496,7 +1509,7 @@ async def filter_stocks_by_profile_match(
             stock_whitelist.add(stock)
 
     await tool_log(
-        f"First round of filtering complete. {len(stock_whitelist)} stocks remaining.",
+        f"Completed a surface level round of filtering. {len(stock_whitelist)} stocks remaining.",
         context=context,
     )
     llm = GPT(context=gpt_context, model=SONNET)
@@ -1526,17 +1539,17 @@ async def filter_stocks_by_profile_match(
     ]
 
     await tool_log(
-        f"Second round of filtering complete. {len(filtered_stocks)} stocks remaining.",
+        f"Completed a more in-depth round of filtering. {len(filtered_stocks)} stocks remaining.",
         context=context,
     )
 
     # No need for an else since we can guarantee at this point one is not None, appeases linter
-    if isinstance(args.profile, TopicProfiles):
+    if isinstance(profile, TopicProfiles):
         # TODO: Update the rubric to handle the new extensive profile data we have, for now
         # we just pass in the topic which is a short simple string similar to a profile string
-        profile_data_for_rubric = args.profile.topic
-    elif isinstance(args.profile, str):
-        profile_data_for_rubric = args.profile
+        profile_data_for_rubric = profile.topic
+    elif isinstance(profile, str):
+        profile_data_for_rubric = profile
 
     rubric_dict = await get_profile_rubric(profile_data_for_rubric, context.agent_id)
     # Assigns scores inplace
@@ -1634,19 +1647,21 @@ async def filter_stocks_by_profile_match(
     except Exception as e:
         logger.warning(f"Error duplicating output for stocks with no text changes: {e}")
 
-    if isinstance(args.profile, TopicProfiles):
+    if isinstance(profile, TopicProfiles):
         await tool_log(
-            f"{len(filtered_stocks_with_scores)} stocks passed filter for profile: {args.profile.topic}",
+            f"{len(filtered_stocks_with_scores)} stocks passed filter for profile: {profile.topic}",
             context=context,
         )
-    elif isinstance(args.profile, str):
+    elif isinstance(profile, str):
         await tool_log(
             f"{len(filtered_stocks_with_scores)} stocks passed filter stocks for profile: {profile_str}",
             context=context,
         )
 
     if not filtered_stocks_with_scores:
-        raise EmptyOutputError(message="Stock profile filter resulted in an empty list of stocks")
+        raise EmptyOutputError(
+            message=f"Stock profile filter looking for '{profile_str}' resulted in an empty list of stocks"
+        )
     # dedup stocks
     company_names = set()
     dedup_res = []
@@ -1654,7 +1669,136 @@ async def filter_stocks_by_profile_match(
         if stock.company_name not in company_names:
             company_names.add(stock.company_name)
             dedup_res.append(stock)
+    dedup_res = sorted(
+        dedup_res, key=lambda stock: stock.history[-1].score.val, reverse=True  # type: ignore
+    )
     return dedup_res
+
+
+class FilterStocksByProfileMatch(ToolArgs):
+    stocks: List[StockID]
+    texts: List[StockText]
+    profile: Union[str, TopicProfiles]
+
+    # prompt arguments (hidden from planner)
+    profile_filter_main_prompt: str = PROFILE_FILTER_MAIN_PROMPT_STR_DEFAULT
+    simple_profile_filter_sys_prompt: str = SIMPLE_PROFILE_FILTER_SYS_PROMPT_STR_DEFAULT
+    complex_profile_filter_sys_prompt: str = COMPLEX_PROFILE_FILTER_SYS_PROMPT_STR_DEFAULT
+    profile_output_instruction: str = PROFILE_OUTPUT_INSTRUCTIONS_DEFAULT
+
+    # tool arguments metadata
+    arg_metadata = {
+        "profile_filter_main_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "simple_profile_filter_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "complex_profile_filter_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "profile_output_instruction": ToolArgMetadata(hidden_from_planner=True),
+    }
+
+
+@tool(
+    description=FILTER_BY_PROFILE_DESCRIPTION,
+    category=ToolCategory.LLM_ANALYSIS,
+)
+async def filter_stocks_by_profile_match(
+    args: FilterStocksByProfileMatch, context: PlanRunContext
+) -> List[StockID]:
+    if len(args.stocks) == 0:
+        raise EmptyInputError("Cannot filter empty list of stocks")
+    if len(args.texts) == 0:
+        raise EmptyInputError("Cannot filter stocks with empty list of texts")
+
+    profile_filter_sys_prompt = ""
+    if isinstance(args.profile, str):
+        profile_filter_sys_prompt = args.simple_profile_filter_sys_prompt
+    elif isinstance(args.profile, TopicProfiles):
+        profile_filter_sys_prompt = args.complex_profile_filter_sys_prompt
+    else:
+        raise ValueError(
+            "profile must be either a string or a TopicProfiles object "
+            "in filter_stocks_by_profile_match function!"
+        )
+
+    return await run_profile_match(
+        stocks=args.stocks,
+        profile=args.profile,
+        texts=args.texts,
+        profile_filter_main_prompt_str=args.profile_filter_main_prompt,
+        profile_filter_sys_prompt_str=profile_filter_sys_prompt,
+        profile_output_instruction_str=args.profile_output_instruction,
+        context=context,
+    )
+
+
+class PerIdeaFilterStocksByProfileMatch(ToolArgs):
+    stocks: List[StockID]
+    texts: List[StockText]
+    ideas: List[Idea]
+    profiles: List[TopicProfiles]
+
+    # prompt arguments (hidden from planner)
+    profile_filter_main_prompt: str = PROFILE_FILTER_MAIN_PROMPT_STR_DEFAULT
+    simple_profile_filter_sys_prompt: str = SIMPLE_PROFILE_FILTER_SYS_PROMPT_STR_DEFAULT
+    complex_profile_filter_sys_prompt: str = COMPLEX_PROFILE_FILTER_SYS_PROMPT_STR_DEFAULT
+    profile_output_instruction: str = PROFILE_OUTPUT_INSTRUCTIONS_DEFAULT
+
+    # tool arguments metadata
+    arg_metadata = {
+        "profile_filter_main_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "simple_profile_filter_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "complex_profile_filter_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
+        "profile_output_instruction": ToolArgMetadata(hidden_from_planner=True),
+    }
+
+
+@tool(
+    description=PER_TOPIC_FILTER_BY_PROFILE_DESCRIPTION,
+    category=ToolCategory.LLM_ANALYSIS,
+    enabled=False,
+)
+async def per_idea_filter_stocks_by_profile_match(
+    args: PerIdeaFilterStocksByProfileMatch,
+    context: PlanRunContext,
+) -> StockGroups:
+    if len(args.stocks) == 0:
+        raise EmptyInputError("Cannot filter empty list of stocks")
+    if len(args.texts) == 0:
+        raise EmptyInputError("Cannot filter stocks with empty list of texts")
+    if len(args.profiles) == 0:
+        raise EmptyInputError("Cannot filter stocks with empty list of profiles")
+    if len(args.ideas) == 0:
+        raise EmptyInputError("Cannot filter stocks with empty list of ideas")
+
+    profile_filter_sys_prompt = args.complex_profile_filter_sys_prompt
+
+    profile_idea_lookup: Dict[str, Idea] = {}
+    for profile in args.profiles:
+        for idea in args.ideas:
+            if profile.initial_idea == idea.title:
+                profile_idea_lookup[profile.initial_idea] = idea
+
+    tasks = []
+    for profile in args.profiles:
+        tasks.append(
+            run_profile_match(
+                stocks=args.stocks,
+                profile=profile,
+                texts=args.texts,
+                profile_filter_main_prompt_str=args.profile_filter_main_prompt,
+                profile_filter_sys_prompt_str=profile_filter_sys_prompt,
+                profile_output_instruction_str=args.profile_output_instruction,
+                context=context,
+            )
+        )
+
+    filtered_stocks_list: List[List[StockID]] = await gather_with_concurrency(tasks, n=10)
+
+    # No need to log any of this logic, logs in run_profile_match are sufficient
+    stock_groups: List[StockGroup] = []
+    for profile, filtered_stocks in zip(args.profiles, filtered_stocks_list):
+        if len(filtered_stocks) > 0:
+            stock_groups.append(StockGroup(name=profile.topic, stocks=filtered_stocks))
+
+    return StockGroups(stock_groups=stock_groups)
 
 
 async def main() -> None:

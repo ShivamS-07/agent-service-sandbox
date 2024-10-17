@@ -115,7 +115,7 @@ async def split_transcript_into_smaller_sections(
             )
             continue
 
-    missed_line_numbers = saved_line_numbers - set(range(0, len(lines)))
+    missed_line_numbers = set(range(0, len(lines))) - saved_line_numbers
 
     # If any lines were missed somehow, we add them back in
     if missed_line_numbers:
