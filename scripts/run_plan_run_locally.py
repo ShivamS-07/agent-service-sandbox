@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import sys
 from typing import Dict, List, Tuple
 from unittest.mock import AsyncMock, patch
 
@@ -109,4 +110,6 @@ async def main() -> IOType:
 
 
 if __name__ == "__main__":
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(main())

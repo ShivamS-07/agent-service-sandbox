@@ -471,6 +471,8 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     if len(args.texts) == 0:
         raise EmptyInputError("Cannot summarize when no texts provided")
 
+    original_texts = set(args.texts)
+
     args.texts = await partition_to_smaller_text_sizes(args.texts, context)
 
     text = None
@@ -491,6 +493,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
                 citation
                 for citation in all_old_citations
                 if citation.source_text in curr_input_texts
+                or citation.source_text in original_texts
             ]
             if new_texts or (
                 remaining_citations and len(all_old_citations) > len(remaining_citations)
@@ -556,6 +559,8 @@ async def per_stock_summarize_texts(
     if len(args.texts) == 0:
         raise EmptyInputError("Cannot summarize when no texts provided")
 
+    original_texts = set(args.texts)
+
     args.texts = cast(
         List[StockText], await partition_to_smaller_text_sizes(args.texts, context)  # type:ignore
     )
@@ -602,6 +607,7 @@ async def per_stock_summarize_texts(
                     citation
                     for citation in all_old_citations
                     if citation.source_text in curr_input_texts
+                    or citation.source_text in original_texts
                 ]
                 prev_run_dict[stock] = (
                     new_texts,
