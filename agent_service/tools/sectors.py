@@ -52,9 +52,7 @@ def get_all_gics_classifications() -> Dict[str, Dict]:
     db = get_psql()
     sql = """SELECT id as sector_id, name as sector_name
             FROM    GIC_SECTOR
-            WHERE   gictype != 'FAKEGSUBIND'
-                AND id != 4040
-                AND parent_id not in (4040, 404010, 404020, 404030)
+            WHERE   active = TRUE
             ORDER BY sector_id, length(id::text)"""
     rows = db.generic_read(sql)
     return {str(r["sector_id"]): r for r in rows}
@@ -69,9 +67,7 @@ def get_all_top_level_sectors() -> Dict[str, str]:
     db = get_psql()
     sql = """SELECT id as sector_id, name as sector_name
             FROM    GIC_SECTOR
-            WHERE   parent_id = 0 AND gictype != 'FAKEGSUBIND'
-                AND id != 4040
-                AND parent_id not in (4040, 404010, 404020, 404030)
+            WHERE   parent_id = 0 AND active = TRUE
             ORDER BY sector_id, length(id::text)"""
     rows = db.generic_read(sql)
     return {str(r["sector_id"]): str(r["sector_name"]) for r in rows}
@@ -85,9 +81,7 @@ def get_child_sectors_from_parent(parent_sector_ids: List[str]) -> Dict[str, str
     db = get_psql()
     sql = """SELECT id as sector_id, name as sector_name
             FROM    GIC_SECTOR
-            WHERE   parent_id = ANY(%(parent_sector_ids)s) and gictype != 'FAKEGSUBIND'
-                AND id != 4040
-                AND parent_id not in (4040, 404010, 404020, 404030)
+            WHERE   parent_id = ANY(%(parent_sector_ids)s) and active = TRUE
             ORDER BY sector_id, length(id::text)"""
     rows = db.generic_read(sql, params={"parent_sector_ids": parent_sector_ids})
     return {str(r["sector_id"]): str(r["sector_name"]) for r in rows}
