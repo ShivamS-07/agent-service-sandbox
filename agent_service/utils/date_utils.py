@@ -5,7 +5,7 @@ import pytz
 from dateutil.parser import parse as date_parse
 from google.protobuf.timestamp_pb2 import Timestamp
 
-DAYS_LOOKUP = {"D": 1, "W": 7, "M": 30, "Y": 365}
+DAYS_LOOKUP = {"D": 1, "W": 7, "M": 30, "Q": 90, "Y": 365}
 
 
 def get_now_utc(strip_tz: bool = False) -> datetime.datetime:

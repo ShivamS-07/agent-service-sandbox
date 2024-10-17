@@ -19,9 +19,10 @@ from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
+    DateTableColumn,
+    DatetimeTableColumn,
     StockTable,
     StockTableColumn,
-    TableColumn,
     TableColumnMetadata,
 )
 from agent_service.io_types.text import (
@@ -559,13 +560,13 @@ async def get_earnings_call_dates(
     return StockTable(
         columns=[
             StockTableColumn(data=[gbi_id_stock_map[row[0]] for row in rows]),
-            TableColumn(
+            DateTableColumn(
                 data=[row[1] for row in rows],
                 metadata=TableColumnMetadata(
                     label="Earnings Call Date", col_type=TableColumnType.DATE
                 ),
             ),
-            TableColumn(
+            DatetimeTableColumn(
                 data=[row[2] for row in rows],
                 metadata=TableColumnMetadata(
                     label="Earnings Call Date and Time", col_type=TableColumnType.DATETIME

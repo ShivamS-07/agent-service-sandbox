@@ -108,7 +108,15 @@ class StockTableColumn(TableColumn):
 @io_type
 class DateTableColumn(TableColumn):
     metadata: TableColumnMetadata = TableColumnMetadata(label="Date", col_type=TableColumnType.DATE)
-    data: List[datetime.date]  # type: ignore
+    data: List[Optional[datetime.date]]  # type: ignore
+
+
+@io_type
+class DatetimeTableColumn(TableColumn):
+    metadata: TableColumnMetadata = TableColumnMetadata(
+        label="Date & Time", col_type=TableColumnType.DATETIME
+    )
+    data: List[Optional[datetime.datetime]]  # type: ignore
 
 
 def object_histories_to_columns(
@@ -131,13 +139,10 @@ def object_histories_to_columns(
                 metadata=TableColumnMetadata(
                     label=SCORE_COL_NAME_DEFAULT, col_type=TableColumnType.SCORE
                 ),
-                data=[],
+                data=[None] * len(objects),
             )
-        if stock_score and score_col:
-            score_col.data.append(stock_score)
-        elif not stock_score and score_col:
-            # If we have a score column, but this object has no score, just add None
-            score_col.data.append(None)
+        if score_col:
+            score_col.data[obj_i] = stock_score  # type: ignore
 
         # Now create a separate column for every entry type in the
         # history. Entry types are grouped by "title".
