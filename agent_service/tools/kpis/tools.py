@@ -19,6 +19,7 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
 )
 from agent_service.io_types.text import EquivalentKPITexts, KPIText
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.kpis.constants import (
     LONG_UNIT_FOR_CURRENCY,
@@ -381,14 +382,24 @@ async def get_relevant_kpis_for_stock_id(
     topic_kpi_list: List[KPIText] = []
 
     for line in result.split("\n"):
-        index_num = int(line.split(",")[0])
-        pid = company_info.kpi_index_to_pid_mapping[index_num]
-        # Check to make sure we have an actual pid that can map to data
-        pid_metadata = company_info.kpi_lookup.get(pid, None)
-        if pid_metadata:
-            topic_kpi_list.append(
-                KPIText(val=pid_metadata.name, pid=pid_metadata.pid, stock_id=stock_id)
-            )
+        try:
+            index_num = int(line.split(",")[0])
+            pid = company_info.kpi_index_to_pid_mapping[index_num]
+            # Check to make sure we have an actual pid that can map to data
+            pid_metadata = company_info.kpi_lookup.get(pid, None)
+            if pid_metadata:
+                topic_kpi_list.append(
+                    KPIText(val=pid_metadata.name, pid=pid_metadata.pid, stock_id=stock_id)
+                )
+        except (IndexError, ValueError):
+            logger.warning(f"Failed to get kpis for {stock_id.gbi_id} on the topic of '{topic}'")
+            continue
+
+    if len(topic_kpi_list) == 0:
+        raise EmptyOutputError(
+            message=f"No relevant KPIs found for  {stock_id.company_name} on the topic of '{topic}'"
+        )
+
     return topic_kpi_list
 
 

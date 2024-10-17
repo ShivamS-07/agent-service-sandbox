@@ -71,7 +71,12 @@ def get_transcript_sections_from_partitions(
     for partition in partitions:
         starting_line = min(partition)
         ending_line = max(partition)
-        partitions_dict[(starting_line, ending_line)] = "\n".join(lines[starting_line:ending_line])
+        if starting_line == ending_line:
+            partitions_dict[(starting_line, ending_line)] = lines[starting_line]
+        else:
+            partitions_dict[(starting_line, ending_line)] = "\n".join(
+                lines[starting_line:ending_line]
+            )
     return partitions_dict
 
 
@@ -97,16 +102,24 @@ async def split_transcript_into_smaller_sections(
     prev_ending_line = 0
     for raw_partition in res.split("\n"):
         try:
-            partition = list(map(int, raw_partition.strip().split(",")))
+            partition = list(map(int, raw_partition.replace(" ", "").strip().split(",")))
 
             # Subtract 1 to account for the offset we added then ensure
             # the starting line is not overlapping with the older partition
             starting_line = max(min(partition) - 1, prev_ending_line)
-            ending_line = max(partition) - 1
-            partitions_dict[(starting_line, ending_line)] = "\n".join(
-                lines[starting_line:ending_line]
-            )
-            saved_line_numbers.update(range(starting_line, ending_line + 1))
+
+            # GPT has a tendency to go over the actual line numbers
+            ending_line = min(max(partition) - 1, len(lines) - 1)
+
+            if starting_line == ending_line:
+                partitions_dict[(starting_line, ending_line)] = lines[starting_line]
+                saved_line_numbers.update([starting_line])
+            else:
+                prev_ending_line = ending_line
+                partitions_dict[(starting_line, ending_line)] = "\n".join(
+                    lines[starting_line:ending_line]
+                )
+                saved_line_numbers.update(range(starting_line, ending_line + 1))
             prev_ending_line = ending_line
         except (IndexError, ValueError):
             logger.warning(
@@ -126,9 +139,16 @@ async def split_transcript_into_smaller_sections(
             if (len(group) == 1) and (len(lines[group[0]].split(" "))) < 10:
                 continue
 
-            if len(group) == 1:
-                partitions_dict[(group[0], group[0])] = "\n".join([lines[i] for i in group])
-            else:
-                partitions_dict[(group[0], group[-1])] = "\n".join([lines[i] for i in group])
+            try:
+                if len(group) == 1:
+                    partitions_dict[(group[0], group[0])] = "\n".join([lines[i] for i in group])
+                else:
+                    partitions_dict[(group[0], group[-1])] = "\n".join([lines[i] for i in group])
+            except IndexError:
+                logger.warning(
+                    f"Failed to get index for {group} in transcript {transcript_id}, "
+                    f"which had {len(lines)} lines"
+                )
+                continue
 
     return partitions_dict

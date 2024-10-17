@@ -1162,7 +1162,7 @@ class StockEarningsTranscriptSectionText(StockEarningsText):
                     )
                 )
 
-        if cache_new_data and (len(data_to_cache) == 0):
+        if cache_new_data and (len(data_to_cache) != 0):
             await insert_transcript_partitions_to_db(data_to_cache)
 
         return transcript_section_texts
