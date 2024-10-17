@@ -108,7 +108,7 @@ class TextObject(SerializeableBase):
 
             if i in index_object_map:
                 # Simple case, just keep outputting the objects one after the other
-                text_objects = index_object_map[i]
+                text_objects = index_object_map[i][:5]  # Limit to the first 5 objects
                 output_buffer.append(text[i])
                 object_list = []
                 for obj in text_objects:
