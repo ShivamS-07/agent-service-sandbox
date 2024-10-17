@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
 from prefect import flow
+from pydantic import validate_call
 
 from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.models import GetAgentOutputResponse, Status, TaskStatus
@@ -95,6 +96,17 @@ from agent_service.utils.prefect import (
     prefect_pause_current_agent_flow,
 )
 
+plan_run_deco = (
+    validate_call
+    if get_ld_flag(flag_name="agent-svc-disable-prefect-entirely", default=False, user_context=None)
+    else flow(name=RUN_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{context.plan_run_id}")
+)
+plan_create_deco = (
+    validate_call
+    if get_ld_flag(flag_name="agent-svc-disable-prefect-entirely", default=False, user_context=None)
+    else flow(name=CREATE_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{plan_id}")
+)
+
 
 async def check_cancelled(
     db: Union[Postgres, AsyncDB],
@@ -156,7 +168,7 @@ async def send_notification_slack_message(
         )
 
 
-@flow(name=RUN_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{context.plan_run_id}")
+@plan_run_deco  # type: ignore
 async def run_execution_plan(
     plan: ExecutionPlan,
     context: PlanRunContext,
@@ -745,7 +757,7 @@ async def _run_execution_plan_impl(
     return final_outputs
 
 
-@flow(name=CREATE_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{plan_id}")
+@plan_create_deco  # type: ignore
 async def create_execution_plan(
     agent_id: str,
     plan_id: str,
@@ -1475,7 +1487,7 @@ async def run_execution_plan_local(
     execution_log: Optional[DefaultDict[str, List[dict]]] = None,
 ) -> List[IOType]:
     context.run_tasks_without_prefect = True
-    return await run_execution_plan.fn(
+    return await run_execution_plan(
         plan=plan,
         context=context,
         do_chat=do_chat,
@@ -1502,7 +1514,7 @@ async def create_execution_plan_local(
     do_chat: bool = False,
     use_sample_plans: bool = True,
 ) -> Optional[ExecutionPlan]:
-    return await create_execution_plan.fn(
+    return await create_execution_plan(
         agent_id=agent_id,
         plan_id=plan_id,
         user_id=user_id,
