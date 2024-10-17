@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import json
+import logging
 import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -13,6 +14,7 @@ from agent_service.endpoints.models import (
     AgentQC,
     AgentSchedule,
     CustomNotification,
+    HorizonCriteria,
     PlanRunStatusInfo,
     SetAgentFeedBackRequest,
     Status,
@@ -1585,7 +1587,7 @@ class AsyncDB:
                 %(cs_failed_reason)s, %(cs_attempt_reprompting)s, %(cs_expected_output)s, %(cs_notes)s,
                 %(canned_prompt_id)s, %(eng_failed_reason)s, %(eng_solution)s, %(eng_solution_difficulty)s,
                 %(jira_link)s, %(slack_link)s, %(fullstory_link)s, %(duplicate_agent)s,
-                %(created_at)s, %(last_updated)s)  -- Add the closing parentheses here
+                %(created_at)s, %(last_updated)s)
         """
         await self.pg.generic_write(
             sql,
@@ -1620,6 +1622,173 @@ class AsyncDB:
                 "last_updated": agent_qc.last_updated,
             },
         )
+
+    async def get_agent_qc_id_by_agent_id(self, agent_id: str) -> Optional[str]:
+        sql = """
+        SELECT agent_qc_id
+        FROM agent.agent_qc
+        WHERE agent_id = %(agent_id)s
+        """
+        result = await self.pg.generic_read(sql, {"agent_id": agent_id})
+
+        # Check if the result is found and return agent_qc_id, else None
+        if result:
+            return result[0]["agent_qc_id"]
+        return None
+
+    async def update_agent_qc(self, agent_qc: AgentQC) -> None:
+
+        # Build a dictionary of only the fields that are not None and not in the immutable fields
+        values_to_update = {
+            "cs_reviewer": agent_qc.cs_reviewer,
+            "eng_reviewer": agent_qc.eng_reviewer,
+            "prod_reviewer": agent_qc.prod_reviewer,
+            "follow_up": agent_qc.follow_up,
+            "score_rating": agent_qc.score_rating,
+            "priority": agent_qc.priority,
+            "use_case": agent_qc.use_case,
+            "problem_area": agent_qc.problem_area,
+            "cs_failed_reason": agent_qc.cs_failed_reason,
+            "cs_attempt_reprompting": agent_qc.cs_attempt_reprompting,
+            "cs_expected_output": agent_qc.cs_expected_output,
+            "cs_notes": agent_qc.cs_notes,
+            "canned_prompt_id": agent_qc.canned_prompt_id,
+            "eng_failed_reason": agent_qc.eng_failed_reason,
+            "eng_solution": agent_qc.eng_solution,
+            "eng_solution_difficulty": agent_qc.eng_solution_difficulty,
+            "jira_link": agent_qc.jira_link,
+            "slack_link": agent_qc.slack_link,
+            "fullstory_link": agent_qc.fullstory_link,
+            "duplicate_agent": agent_qc.duplicate_agent,
+            "last_updated": agent_qc.last_updated,
+        }
+
+        # Remove fields that are None or immutable
+        values_to_update = {
+            key: value for key, value in values_to_update.items() if value is not None
+        }
+
+        # Perform the update only with mutable fields
+        await self.pg.generic_update(
+            table_name="agent.agent_qc",
+            where={"agent_qc_id": agent_qc.agent_qc_id},
+            values_to_update=values_to_update,
+        )
+
+    async def get_agent_qc_by_id(self, ids: list[str]) -> list[AgentQC]:
+        sql = """
+        SELECT aq.agent_qc_id::TEXT, aq.agent_id::TEXT, ag.agent_name, aq.plan_id::TEXT, aq.user_id::TEXT, aq.query,
+               aq.agent_status, aq.cs_reviewer::TEXT, aq.eng_reviewer::TEXT, aq.prod_reviewer::TEXT,
+               aq.follow_up, aq.score_rating, aq.priority, aq.use_case,
+               aq.problem_area, aq.cs_failed_reason, aq.cs_attempt_reprompting, aq.cs_expected_output, aq.cs_notes,
+               aq.canned_prompt_id, aq.eng_failed_reason, aq.eng_solution, aq.eng_solution_difficulty,
+               aq.jira_link, aq.slack_link, aq.fullstory_link, aq.duplicate_agent::TEXT, aq.created_at, aq.last_updated,
+               us.cognito_username,
+               ARRAY_AGG(af.*) AS agent_feedbacks,
+               (SELECT tl.cloudwatch_url
+                FROM boosted_dag.task_log tl
+                WHERE tl.agent_id = aq.agent_id::TEXT
+                ORDER BY tl.finished_at DESC
+                LIMIT 1) AS cloudwatch_url
+        FROM agent.agent_qc aq
+        LEFT JOIN user_service.users us ON aq.user_id = us.id
+        LEFT JOIN agent.feedback af ON aq.agent_id = af.agent_id AND aq.plan_id = af.plan_id
+        LEFT JOIN agent.agents ag ON ag.agent_id = aq.agent_id
+        WHERE aq.agent_qc_id = ANY(%(ids)s)
+        GROUP BY aq.agent_qc_id, us.cognito_username, ag.agent_name
+        """
+        records = await self.pg.generic_read(sql, {"ids": ids})
+        return [AgentQC(**record) for record in records]
+
+    async def get_agent_qc_by_user(self, user_id: str) -> list[AgentQC]:
+        sql = """
+        SELECT
+            aq.agent_qc_id::TEXT, aq.agent_id::TEXT, ag.agent_name, aq.plan_id::TEXT, aq.user_id::TEXT, aq.query,
+           aq.agent_status, aq.cs_reviewer::TEXT, aq.eng_reviewer::TEXT, aq.prod_reviewer::TEXT,
+           aq.follow_up, aq.score_rating, aq.priority, aq.use_case,
+           aq.problem_area, aq.cs_failed_reason, aq.cs_attempt_reprompting, aq.cs_expected_output, aq.cs_notes,
+           aq.canned_prompt_id, aq.eng_failed_reason, aq.eng_solution, aq.eng_solution_difficulty,
+           aq.jira_link, aq.slack_link, aq.fullstory_link, aq.duplicate_agent::TEXT, aq.created_at, aq.last_updated,
+           us.cognito_username,
+            array_agg(af.*) AS agent_feedbacks,
+            (SELECT tl.cloudwatch_url
+             FROM boosted_dag.task_log tl
+             WHERE tl.agent_id = aq.agent_id::TEXT
+             ORDER BY tl.finished_at DESC
+             LIMIT 1) AS cloudwatch_url
+        FROM agent.agent_qc aq
+        LEFT JOIN user_service.users us ON aq.user_id = us.id
+        LEFT JOIN agent.feedback af ON aq.agent_id = af.agent_id AND aq.plan_id = af.plan_id
+        LEFT JOIN agent.agents ag ON aq.agent_id = ag.agent_id
+        WHERE aq.user_id = %(user_id)s
+        GROUP BY aq.agent_qc_id, us.cognito_username, ag.agent_name
+        """
+        records = await self.pg.generic_read(sql, {"user_id": user_id})
+        return [AgentQC(**record) for record in records]
+
+    async def search_agent_qc(self, criteria: List[HorizonCriteria]) -> List[AgentQC]:
+        sql = """
+        SELECT
+            aqc.agent_qc_id::TEXT, aqc.agent_id::TEXT, ag.agent_name, aqc.plan_id::TEXT, aqc.user_id::TEXT,
+            aqc.query, aqc.agent_status,
+            aqc.cs_reviewer::TEXT, aqc.eng_reviewer::TEXT, aqc.prod_reviewer::TEXT, aqc.follow_up, aqc.score_rating,
+            aqc.priority, aqc.use_case, aqc.problem_area, aqc.cs_failed_reason, aqc.cs_attempt_reprompting,
+            aqc.cs_expected_output, aqc.cs_notes, aqc.canned_prompt_id, aqc.eng_failed_reason, aqc.eng_solution,
+            aqc.eng_solution_difficulty, aqc.jira_link, aqc.slack_link, aqc.fullstory_link, aqc.duplicate_agent::TEXT,
+            aqc.created_at, aqc.last_updated,
+            cw.cloudwatch_url
+        FROM agent.agent_qc aqc
+        LEFT JOIN agent.agents ag ON aqc.agent_id = ag.agent_id
+        LEFT JOIN
+            (SELECT all_tl.agent_id, all_tl.cloudwatch_url
+                FROM (SELECT tl.agent_id, MAX(tl.finished_at) as latest
+                        FROM boosted_dag.task_log tl
+                        WHERE tl.agent_id IS NOT NULL AND tl.agent_id != '' AND tl.cloudwatch_url IS NOT NULL
+                        GROUP BY tl.agent_id)
+                AS latest_by_agent_id
+                LEFT JOIN boosted_dag.task_log all_tl
+                ON all_tl.agent_id = latest_by_agent_id.agent_id and all_tl.finished_at = latest_by_agent_id.latest)
+                AS cw ON cw.agent_id = aqc.agent_id::TEXT
+        WHERE
+        """
+        search_params = {}
+        # Dynamically add conditions based on HorizonCriteria
+        for idx, criterion in enumerate(criteria):
+            if idx != 0:
+                "AND"
+            param1 = f"arg1_{idx}"
+            param2 = f"arg2_{idx}"
+            if criterion.operator == "BETWEEN":
+                sql += f" {criterion.column} BETWEEN %({param1})s AND %({param2})s"
+                search_params[param1] = criterion.arg1
+                search_params[param2] = criterion.arg2
+            elif criterion.operator == "ILIKE":
+                sql += f" {criterion.column} ILIKE %({param1})s"
+                search_params[param1] = f"%{criterion.arg1}%"  # Add wildcards for partial matches
+            elif criterion.operator == "=":
+                sql += f" {criterion.column} = %({param1})s"
+                search_params[param1] = criterion.arg1
+            elif criterion.operator == "IN":
+                sql += f" {criterion.column} IN %({param1})s"
+                search_params[param1] = tuple(
+                    criterion.arg1
+                )  # Ensure arg1 is a tuple for IN queries
+            elif criterion.operator == ">":
+                sql += f" {criterion.column} > %({param1})s"
+                search_params[param1] = criterion.arg1
+            elif criterion.operator == "<":
+                sql += f" {criterion.column} < %({param1})s"
+                search_params[param1] = criterion.arg1
+            elif criterion.operator == "!=":
+                sql += f" {criterion.column} != %({param1})s"
+                search_params[param1] = criterion.arg1
+            else:
+                logging.warning(f"Unknown operator {criterion.operator=}")
+
+        # Always sort by latest agent ran
+        sql += " ORDER BY aqc.created_at DESC"
+        records = await self.pg.generic_read(sql, search_params)
+        return [AgentQC(**record) for record in records]
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:

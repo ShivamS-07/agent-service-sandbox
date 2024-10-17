@@ -1134,6 +1134,7 @@ class AgentQC(BaseModel):
     agent_id: str
     user_id: str
     agent_status: str
+    agent_name: Optional[str] = None
     plan_id: Optional[str] = None
     query: Optional[str] = None
     cs_reviewer: Optional[str] = None
@@ -1158,3 +1159,36 @@ class AgentQC(BaseModel):
     duplicate_agent: Optional[str] = None
     created_at: datetime.datetime
     last_updated: datetime.datetime
+
+
+class HorizonCriteriaOperator(enum.StrEnum):
+    equal = "="
+    greater_than = ">"
+    less_than = "<"
+    not_equal = "!="
+    ilike = "ILIKE"
+    between = "BETWEEN"
+    in_operator = "IN"
+
+
+class HorizonCriteria(BaseModel):
+    column: str
+    operator: HorizonCriteriaOperator
+    arg1: Any
+    arg2: Optional[Any]
+
+
+class SearchAgentQCRequest(BaseModel):
+    search_criteria: List[HorizonCriteria]
+
+
+class AgentQCResponse(BaseModel):
+    agent_qc: AgentQC
+
+
+class UpdateAgentQCRequest(BaseModel):
+    agent_qc: AgentQC
+
+
+class UpdateAgentQCResponse(BaseModel):
+    success: bool

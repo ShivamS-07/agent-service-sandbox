@@ -37,6 +37,7 @@ from agent_service.endpoints.authz_helper import (
 )
 from agent_service.endpoints.models import (
     AgentMetadata,
+    AgentQCResponse,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     ConvertMarkdownRequest,
@@ -114,6 +115,7 @@ from agent_service.endpoints.models import (
     RestoreAgentResponse,
     RunTemplatePlanRequest,
     RunTemplatePlanResponse,
+    SearchAgentQCRequest,
     SetAgentFeedBackRequest,
     SetAgentFeedBackResponse,
     SetAgentScheduleRequest,
@@ -132,6 +134,8 @@ from agent_service.endpoints.models import (
     UnsharePlanRunResponse,
     UpdateAgentDraftStatusRequest,
     UpdateAgentDraftStatusResponse,
+    UpdateAgentQCRequest,
+    UpdateAgentQCResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
     UpdateNotificationEmailsRequest,
@@ -157,6 +161,7 @@ from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.feature_flags import (
     agent_output_cache_enabled,
     is_user_agent_admin,
+    user_has_qc_tool_access,
 )
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import get_psql
@@ -1703,6 +1708,123 @@ async def get_custom_doc_details(
     except CustomDocumentException as e:
         logger.exception(f"Error while getting custom doc metadata {file_id}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.message)
+
+
+@router.get(
+    "/agent/qc/{id}",
+    response_model=List[AgentQCResponse],
+    status_code=status.HTTP_200_OK,
+)
+async def get_qc_agent_by_id(id: str, user: User = Depends(parse_header)) -> List[AgentQCResponse]:
+    """
+    Get QC Agent by ID
+
+    Args:
+        id (UUID4): The ID of the agent QC.
+
+    Returns:
+        A list of AgentQC objects.
+    """
+    # Validate user access to QC tool
+    if not user_has_qc_tool_access(user_id=user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
+        )
+
+    # Call the function to retrieve agent QC by ID
+    agent_qcs = await application.state.agent_service_impl.get_agent_qc_by_id([id])
+
+    # Return the list of AgentQC objects
+    return [AgentQCResponse(agent_qc=agent_qc) for agent_qc in agent_qcs]
+
+
+@router.get(
+    "/agent/qc/user/{user_id}",
+    response_model=List[AgentQCResponse],
+    status_code=status.HTTP_200_OK,
+)
+async def get_qc_agent_by_user(
+    user_id: str, user: User = Depends(parse_header)
+) -> List[AgentQCResponse]:
+    """
+    Get QC Agents by User ID
+
+    Args:
+        user_id (UUID4): The ID of the user whose QC agents are being requested.
+
+    Returns:
+        A list of AgentQC objects.
+    """
+    # Validate user access to QC tool
+    if not user_has_qc_tool_access(user_id=user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
+        )
+
+    # Call the function to retrieve agent QCs by user_id
+    agent_qcs = await application.state.agent_service_impl.get_agent_qc_by_user(user_id)
+
+    # Return the list of AgentQC objects
+    return [AgentQCResponse(agent_qc=agent_qc) for agent_qc in agent_qcs]
+
+
+@router.post(
+    "/agent/qc/search",
+    response_model=List[AgentQCResponse],
+    status_code=status.HTTP_200_OK,
+)
+async def search_agent_qc(
+    req: SearchAgentQCRequest, user: User = Depends(parse_header)
+) -> List[AgentQCResponse]:
+    """
+    Search Agent QC records based on various filters
+
+    Args:
+        start_date (Optional[date]): The date to filter by.
+        end_date (Optional[date]): The date to filter by.
+        use_case (Optional[str]): The use case to filter by.
+        score_rating (Optional[int]): The score rating to filter by.
+        tool_failed (Optional[bool]): Whether the tool failed.
+        problem_type (Optional[str]): The type of problem to filter by.
+
+    Returns:
+        A list of AgentQC records matching the search criteria.
+    """
+    # Validate user access to QC tool
+    if not user_has_qc_tool_access(user_id=user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
+        )
+
+    # Call the service function to search based on the filters
+    agent_qcs = await application.state.agent_service_impl.search_agent_qcs(
+        search_params=req.search_criteria,
+    )
+
+    # Return the list of AgentQC records in the response model format
+    return [AgentQCResponse(agent_qc=agent_qc) for agent_qc in agent_qcs]
+
+
+@router.post(
+    "/agent/qc/update",
+    response_model=UpdateAgentQCResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def update_agent_qc(
+    req: UpdateAgentQCRequest, user: User = Depends(parse_header)
+) -> UpdateAgentQCResponse:
+    # Validate user access to QC tool
+    if not user_has_qc_tool_access(user_id=user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
+        )
+
+    agent_qc = req.agent_qc
+    # Call the service function to search based on the filters
+    res = await application.state.agent_service_impl.update_qc_agent(agent_qc)
+
+    # Return the list of AgentQC records in the response model format
+    return UpdateAgentQCResponse(success=res)
 
 
 initialize_unauthed_endpoints(application)

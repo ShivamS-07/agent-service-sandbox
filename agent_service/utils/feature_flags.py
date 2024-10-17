@@ -95,6 +95,21 @@ def is_user_agent_admin(user_id: str, default: bool = False) -> bool:
     )
 
 
+def user_has_qc_tool_access(user_id: str, default: bool = False) -> bool:
+    """
+    Users with flag on can access some agent windows owned by other users. Currently the endpoints
+    are:
+    - `get_qc_agent_by_id`
+    - `get_qc_agent_by_user`
+    - `search_agent_qc`
+    - `update_agent_qc`
+    """
+
+    return get_ld_flag(
+        flag_name="qc_tool_flag", user_context=get_user_context(user_id), default=default
+    )
+
+
 def use_boosted_dag_for_run_execution_plan() -> bool:
     return get_ld_flag(flag_name="boosted-dag-run-execution-plan", user_context=None, default=False)
 

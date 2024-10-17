@@ -82,6 +82,7 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunsResponse,
     GetToolLibraryResponse,
     GetVariableHierarchyResponse,
+    HorizonCriteria,
     ListCustomDocumentsResponse,
     ListMemoryItemsResponse,
     LockAgentOutputRequest,
@@ -1119,6 +1120,20 @@ class AgentServiceImpl:
 
         return GetPlanRunOutputResponse(outputs=outputs, agent_name=agent_name)
 
+    async def get_agent_qc_by_id(self, agent_qc_id: List[str]) -> list[AgentQC]:
+        # Call the SQL function to retrieve agent QC by ID
+        agent_qcs = await self.pg.get_agent_qc_by_id(agent_qc_id)
+
+        # Return the list of AgentQC objects
+        return agent_qcs
+
+    async def get_agent_qc_by_user(self, user_id: str) -> list[AgentQC]:
+        # Call the SQL function to retrieve agent QCs by user_id
+        agent_qcs = await self.pg.get_agent_qc_by_user(user_id)
+
+        # Return the list of AgentQC objects
+        return agent_qcs
+
     async def get_plan_run_debug_info(
         self, agent_id: str, plan_run_id: str
     ) -> GetPlanRunDebugInfoResponse:
@@ -2021,3 +2036,19 @@ class AgentServiceImpl:
         return not is_database_access_check_enabled_for_user(user_id=user.user_id) or (
             bool(db_user[0].has_alfa_access) and bool(db_user[0].cognito_enabled)  # type: ignore
         )
+
+    async def search_agent_qcs(self, search_params: List[HorizonCriteria]) -> List[AgentQC]:
+
+        # Call the database search function
+        agent_qcs = await self.pg.search_agent_qc(search_params)
+
+        # Return the list of AgentQC objects
+        return agent_qcs
+
+    async def update_qc_agent(self, agent_qc: AgentQC) -> bool:
+        try:
+            await self.pg.update_agent_qc(agent_qc)
+            return True
+        except Exception as e:
+            logging.warning(f"Failed to update quality agent table {agent_qc.agent_qc_id=}: {e}")
+            return False

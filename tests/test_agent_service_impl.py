@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import List
 from unittest.mock import MagicMock, patch
 
@@ -6,8 +7,11 @@ from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
     AgentFeedback,
     AgentNotificationEmail,
+    AgentQC,
     ChatWithAgentRequest,
     DeleteAgentOutputRequest,
+    HorizonCriteria,
+    HorizonCriteriaOperator,
     MediaType,
     NotificationUser,
     SetAgentFeedBackRequest,
@@ -584,3 +588,89 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         self.assertEqual([node.tool_task_id for node in new_plan.nodes], EXPECTED_TASK_IDs)
         outputs = await self.pg.get_agent_outputs(agent_id=TEST_AGENT_ID)
         self.assertEqual(len(outputs), 1)
+
+    def test_agent_quality_endpoints(self):
+        # Step 1: Create and Insert mock AgentQC data
+        reviewer1 = str(uuid.uuid4())
+        reviewer2 = str(uuid.uuid4())
+        reviewer3 = str(uuid.uuid4())
+        agent_qc = AgentQC(
+            agent_qc_id=str(uuid.uuid4()),
+            agent_id=str(uuid.uuid4()),
+            plan_id=str(uuid.uuid4()),
+            user_id=str(uuid.uuid4()),
+            query="initial query",
+            agent_status="active",
+            cs_reviewer=reviewer1,
+            eng_reviewer=reviewer2,
+            prod_reviewer=reviewer3,
+            use_case="initial use case",
+            problem_area="test problem",
+            created_at=datetime.now(),
+            last_updated=datetime.now(),
+        )
+
+        # Insert the AgentQC record
+        self.loop.run_until_complete(self.pg.insert_agent_qc(agent_qc))
+
+        # Retrieve and verify the inserted record
+        inserted_qc = self.loop.run_until_complete(
+            self.pg.get_agent_qc_by_id([agent_qc.agent_qc_id])
+        )
+        self.assertEqual(inserted_qc[0].agent_qc_id, agent_qc.agent_qc_id)
+        self.assertEqual(inserted_qc[0].use_case, agent_qc.use_case)
+
+        # Step 2: Update the inserted AgentQC record
+        agent_qc.follow_up = "follow up 2"
+        agent_qc.score_rating = 5
+        agent_qc.priority = "high"
+        agent_qc.use_case = "updated use case"
+
+        # Update the record
+        self.loop.run_until_complete(self.pg.update_agent_qc(agent_qc=agent_qc))
+
+        # Retrieve and verify the updated record
+        updated_qc = self.loop.run_until_complete(
+            self.pg.get_agent_qc_by_id([agent_qc.agent_qc_id])
+        )
+        self.assertEqual(updated_qc[0].follow_up, "follow up 2")
+        self.assertEqual(updated_qc[0].score_rating, 5)
+        self.assertEqual(updated_qc[0].priority, "high")
+        self.assertEqual(updated_qc[0].use_case, "updated use case")
+
+        # Step 3: Insert additional records for the same user
+        user_id = agent_qc.user_id
+        for _ in range(2):
+            new_agent_qc = AgentQC(
+                agent_qc_id=str(uuid.uuid4()),
+                agent_id=str(uuid.uuid4()),
+                plan_id=str(uuid.uuid4()),
+                user_id=user_id,
+                query="user-specific query",
+                agent_status="inactive",
+                score_rating=2,
+                created_at=datetime.now(),
+                last_updated=datetime.now(),
+            )
+            self.loop.run_until_complete(self.pg.insert_agent_qc(new_agent_qc))
+
+        # Retrieve all records by user_id and verify count
+        retrieved_qcs_by_user = self.loop.run_until_complete(
+            self.pg.get_agent_qc_by_user(user_id=user_id)
+        )
+        self.assertEqual(len(retrieved_qcs_by_user), 3)
+        self.assertEqual(retrieved_qcs_by_user[0].user_id, user_id)
+
+        criteria = [
+            HorizonCriteria(
+                column="use_case",
+                operator=HorizonCriteriaOperator.ilike.value,
+                arg1="updated use case",
+                arg2=None,
+            )
+        ]
+        search_results = self.loop.run_until_complete(self.pg.search_agent_qc(criteria))
+
+        # Verify the search results
+        self.assertEqual(len(search_results), 1)
+        self.assertEqual(search_results[0].use_case, "updated use case")
