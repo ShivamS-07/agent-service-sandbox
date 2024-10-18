@@ -208,10 +208,16 @@ async def statistic_identifier_lookup(
 
     if rows[0]["ws"] > 0.9:
         row = rows[0]
-        logger.info(f"searched  '{args.statistic_name}' and found best match: {str(row)[:250]}")
-        await tool_log(
-            log=f"Interpreting '{args.statistic_name}' as {row['name']}", context=context
-        )
+        if rows[0]["name"] == args.statistic_name:
+            logger.info(f"searched  '{args.statistic_name}' and found EXACT match: {str(row)}")
+            await tool_log(
+                log=f"Exact match of '{args.statistic_name}' with {row['name']}", context=context
+            )
+        else:
+            logger.info(f"searched  '{args.statistic_name}' and found best match: {str(row)[:250]}")
+            await tool_log(
+                log=f"Interpreting '{args.statistic_name}' as {row['name']}", context=context
+            )
         return StatisticId(stat_id=row["id"], stat_name=row["name"])
 
     tasks = [

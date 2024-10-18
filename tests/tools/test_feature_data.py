@@ -1,4 +1,5 @@
 import datetime
+import time
 import unittest
 
 from agent_service.io_type_utils import TableColumnType
@@ -10,6 +11,7 @@ from agent_service.tools.feature_data import (
     StatisticId,
     StatisticsIdentifierLookupInput,
     get_latest_date,
+    get_statistic_data,
     get_statistic_data_for_companies,
     statistic_identifier_lookup,
 )
@@ -25,6 +27,13 @@ PE_RATIO = StatisticId(stat_id="pe_ratio", stat_name="P/E Ratio")
 SPIQ_DIV_AMOUNT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount")
 GROSS_PROFIT = StatisticId(stat_id="spiq_div_amount", stat_name="Dividend Amount")
 GLOBAL_CAN_TO_USD_EXCH_RATE = StatisticId(stat_id="FRED_DEXCAUS", stat_name="CAD to USD")
+GLOBAL_FRED_WTI1 = StatisticId(
+    stat_id="FRED_DCOILWTICO",
+    stat_name="Crude Oil Prices: West Texas Intermediate (WTI) - Cushing, Oklahoma",
+)
+GLOBAL_FRED_WTI2 = StatisticId(
+    stat_id="FRED_WTISPLC", stat_name="Spot Crude Oil Price: West Texas Intermediate (WTI)"
+)
 
 
 class TestFeatureDataLookup1(unittest.IsolatedAsyncioTestCase):
@@ -39,6 +48,32 @@ class TestFeatureDataLookup1(unittest.IsolatedAsyncioTestCase):
         result = await get_statistic_data_for_companies(args, self.context)
         df = result.to_df()
         self.assertEqual(len(df["Date"].unique()), 1)  # num_dates
+
+    async def test_feature_data_global2(self):
+        tic = time.perf_counter()
+        end_date = datetime.datetime.now(datetime.UTC).date()
+        start_date = end_date - datetime.timedelta(days=365.25 * 5)
+        # This is daily.
+        result = await get_statistic_data(self.context, GLOBAL_FRED_WTI1, start_date, end_date)
+        df = result.to_df().dropna()
+        toc = time.perf_counter()
+        time_total = toc - tic
+        print(f"{time_total=}.")
+        self.assertTrue(time_total < 30.0)
+        self.assertTrue(len(df) > 240)
+
+    async def test_feature_data_global3(self):
+        tic = time.perf_counter()
+        end_date = datetime.datetime.now(datetime.UTC).date()
+        start_date = end_date - datetime.timedelta(days=365.25 * 5)
+        # This is monthly.
+        result = await get_statistic_data(self.context, GLOBAL_FRED_WTI2, start_date, end_date)
+        df = result.to_df().dropna()
+        toc = time.perf_counter()
+        time_total = toc - tic
+        print(f"{time_total=}.")
+        self.assertTrue(time_total < 30.0)
+        self.assertTrue(len(df) > 50)
 
     async def test_preset_feature_data_3_stock(self):
         args = FeatureDataInput(
