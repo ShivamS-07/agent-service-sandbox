@@ -29,8 +29,8 @@ from agent_service.utils.sentry_utils import init_sentry
 
 SCHEDULE_UPDATE_DELAY = 60 * 5  # Check for new schedules every 5 min
 # If the scheduler was disabled, kick off jobs that are up to 10 minutes late
-MISFIRE_GRACE_PERIOD = 60 * 10
-AGENT_LOCK_PERIOD = 60
+MISFIRE_GRACE_PERIOD = 60 * 30  # allow runs up to 30 minutes late
+AGENT_LOCK_PERIOD = 60 * 35  # prevent duplicate runs for 35 min
 
 logger = logging.getLogger("cron_scheduler_worker")
 
