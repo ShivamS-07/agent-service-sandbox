@@ -95,6 +95,10 @@ class TextObject(SerializeableBase):
 
         i = 0
         output_buffer = []
+        if not text:
+            # Handle texts with ONLY text objects by making sure there's at
+            # least one character.
+            text = " "
         while i < len(text):
             if i not in index_object_map and i not in index_replacement_object_map:
                 output_buffer.append(text[i])
