@@ -1,4 +1,3 @@
-import html
 import json
 import logging
 import re
@@ -21,6 +20,10 @@ CLEAN_JSON_RE = re.compile(
 )
 BOLD_TAGS = ["<b>", "</b>"]
 START_HEADER = "__START__"
+
+# Precompiled regex patterns
+STYLE_TAG_CLEANUP_PATTERN = re.compile(r"<style.*?>.*?</style>", re.DOTALL | re.IGNORECASE)
+NEWLINE_CLEANUP_PATTERN = re.compile(r"\n\s*\n\s*\n+")
 
 
 def clean_to_json_if_needed(json: str, repair: bool = True) -> str:
@@ -170,9 +173,25 @@ class HTMLFilter(HTMLParser):
 
 
 def html_to_text(html_str: str) -> str:
+    """
+    Transforms HTML to plain text
+    First runs preprocessing, where we manually strip out the <style ... style> and <script ... script> contents
+    Then parses out the rest of the HTML
+    Finally runs postprocessing, reducing the number of newlines by replacing any instances of more than 2 \n with
+    just \n\n
+    """
+    # Preprocessing - clean up the <style> tag which the parser misses consistently
+    html_str = re.sub(STYLE_TAG_CLEANUP_PATTERN, "", html_str)
+
+    # Parsing
     parser = HTMLFilter()
-    parser.feed(html.escape(html_str))
-    return parser.text
+    parser.feed(html_str)
+    plaintext_str = parser.text
+
+    # Post-processing - Clean up extra newlines as a result of HTML nesting, maintaining indents for readability
+    plaintext_str = re.sub(NEWLINE_CLEANUP_PATTERN, "\n\n", plaintext_str)
+
+    return plaintext_str
 
 
 if __name__ == "__main__":
