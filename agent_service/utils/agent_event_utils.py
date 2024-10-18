@@ -135,6 +135,7 @@ async def publish_agent_output(
     live_plan_output: bool = False,
     is_intermediate: bool = False,
     db: Optional[Postgres] = None,
+    is_locked: bool = False,
 ) -> None:
     if not db:
         db = get_psql()
@@ -167,6 +168,7 @@ async def publish_agent_output(
                     live_plan_output=live_plan_output,
                     task_id=o.task_id,
                     dependent_task_ids=o.dependent_task_ids,
+                    is_locked=is_locked,
                 )
                 for (rich_output, o) in zip(results, outputs_with_ids)
             ]

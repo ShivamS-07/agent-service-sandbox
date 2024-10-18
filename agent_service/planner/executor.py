@@ -283,6 +283,8 @@ async def _run_execution_plan_impl(
     override_task_output_lookup = clickhouse_task_id_output_map
     override_task_output_lookup.update(worklog_task_id_output_map)
 
+    locked_task_ids = set(plan.locked_task_ids)
+
     final_outputs = []
     final_outputs_with_ids: List[OutputWithID] = []
     tool_output = None
@@ -506,6 +508,7 @@ async def _run_execution_plan_impl(
                 live_plan_output=live_plan_output,
                 context=context,
                 db=db,
+                is_locked=step.tool_task_id in locked_task_ids,
             )
 
             final_outputs.extend(split_outputs)
@@ -1208,7 +1211,9 @@ async def rewrite_execution_plan(
     logger.info(f"Starting rewrite of execution plan for {agent_id=}...")
     chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
     automation_enabled = await db.get_agent_automation_enabled(agent_id=agent_id)
-    old_plan_id, old_plan, plan_timestamp, _, _ = await db.get_latest_execution_plan(agent_id)
+    old_plan_id, old_plan, plan_timestamp, _, _ = await db.get_latest_execution_plan(
+        agent_id, only_finished_plans=True
+    )
     if automation_enabled and action == FollowupAction.APPEND:
         pg = get_psql()
         old_plan_id, live_plan = pg.get_agent_live_execution_plan(agent_id=agent_id)

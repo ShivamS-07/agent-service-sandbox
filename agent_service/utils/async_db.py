@@ -406,19 +406,24 @@ class AsyncDB:
         return load_io_type(rows[0]["log_data"])
 
     @async_perf_logger
-    async def get_latest_execution_plan(self, agent_id: str) -> Tuple[
+    async def get_latest_execution_plan(
+        self, agent_id: str, only_finished_plans: bool = False
+    ) -> Tuple[
         Optional[str],
         Optional[ExecutionPlan],
         Optional[datetime.datetime],
         Optional[str],
         Optional[str],
     ]:
-        sql = """
+        extra_where = ""
+        if only_finished_plans:
+            extra_where = "AND status = 'READY'"
+        sql = f"""
             SELECT ep.plan_id::VARCHAR, ep.plan, COALESCE(pr.created_at, ep.created_at) AS created_at,
                 ep.status, pr.plan_run_id::VARCHAR AS upcoming_plan_run_id, ep.locked_tasks
             FROM agent.execution_plans ep
             LEFT JOIN agent.plan_runs pr ON ep.plan_id = pr.plan_id
-            WHERE ep.agent_id = %(agent_id)s
+            WHERE ep.agent_id = %(agent_id)s {extra_where}
             ORDER BY ep.last_updated DESC, pr.created_at DESC
             LIMIT 1;
         """
