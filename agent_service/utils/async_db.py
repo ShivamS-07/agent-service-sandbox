@@ -417,7 +417,7 @@ class AsyncDB:
     ]:
         extra_where = ""
         if only_finished_plans:
-            extra_where = "AND status = 'READY'"
+            extra_where = "AND ep.status = 'READY'"
         sql = f"""
             SELECT ep.plan_id::VARCHAR, ep.plan, COALESCE(pr.created_at, ep.created_at) AS created_at,
                 ep.status, pr.plan_run_id::VARCHAR AS upcoming_plan_run_id, ep.locked_tasks
