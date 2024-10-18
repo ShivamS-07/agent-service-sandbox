@@ -27,14 +27,14 @@ async def partition_to_smaller_text_sizes(texts: List[Text], context: PlanRunCon
     partitioned_texts: List[Text] = []
 
     for text in texts:
-        if isinstance(text, StockSecFilingText):
+        if isinstance(text, StockOtherSecFilingText):
+            other_sec_filing_texts.append(text)
+        elif isinstance(text, StockSecFilingText):
             sec_filing_texts.append(text)
         elif isinstance(text, StockEarningsSummaryText):
             earning_summary_texts.append(text)
         elif isinstance(text, StockEarningsTranscriptText):
             earning_transcript_texts.append(text)
-        elif isinstance(text, StockOtherSecFilingText):
-            other_sec_filing_texts.append(text)
         elif isinstance(text, StockDescriptionText):
             company_description_texts.append(text)
 
