@@ -381,7 +381,7 @@ class ComplexIOBase(SerializeableBase, ABC):
         """
         raise NotImplementedError("This type does not have a rich output")
 
-    async def split_into_components(self) -> List["IOType"]:
+    async def split_into_components(self, main_title: Optional[str] = None) -> List["IOType"]:
         """
         Some types might want to split themselves to be displayed or stored
         separately. By default, just return a list with one item.
@@ -522,13 +522,15 @@ def load_io_type_dict(val: Any) -> IOTypeBase:
     return IOTypeAdapter.validate_python(val)
 
 
-async def split_io_type_into_components(val: IOType) -> List[IOType]:
+async def split_io_type_into_components(
+    val: IOType, main_title: Optional[str] = None
+) -> List[IOType]:
     """
     Some IOType's are composed of other IOTypes that need to be split out
     sometimes. This function handles all IOTypes.
     """
     if isinstance(val, ComplexIOBase):
-        return await val.split_into_components()
+        return await val.split_into_components(main_title)
     return [val]
 
 

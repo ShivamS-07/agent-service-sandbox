@@ -7,7 +7,7 @@ import sys
 import tempfile
 from itertools import chain
 from json.decoder import JSONDecodeError
-from typing import Any, Dict, List, Optional, Set, Tuple, cast
+from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 import pandas as pd
 from pydantic import ValidationError
@@ -21,6 +21,7 @@ from agent_service.io_type_utils import (
     load_io_type,
 )
 from agent_service.io_types.stock import StockID
+from agent_service.io_types.stock_groups import StockGroups
 from agent_service.io_types.table import (
     StockTable,
     StockTableColumn,
@@ -31,6 +32,11 @@ from agent_service.io_types.table import (
 )
 from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import TOOL_DEBUG_INFO, ToolArgs, ToolCategory, tool
+from agent_service.tools.stock_groups.utils import (
+    add_stock_group_column,
+    get_stock_group_input_tables,
+    remove_stock_group_columns,
+)
 from agent_service.tools.table_utils.prompts import (
     DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT,
     DATAFRAME_SCHEMA_GENERATOR_SYS_PROMPT,
@@ -265,11 +271,12 @@ If you are filtering stocks, the transformation description must begin with the 
 """,
     category=ToolCategory.TABLE,
 )
-async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> Table:
+async def transform_table(
+    args: TransformTableArgs, context: PlanRunContext
+) -> Union[Table, StockTable]:
     logger = get_prefect_logger(__name__)
-
     old_schema: Optional[List[TableColumnMetadata]] = None
-    old_code = None
+    old_code: Optional[str] = None
     prev_args = None
     prev_output = None
     try:  # since everything here is optional, put in try/except
@@ -291,110 +298,16 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
 
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)
-    input_col_metadata = [col.metadata for col in args.input_table.columns]
-    labels = [metadata.label for metadata in input_col_metadata]
-    gpt_context = create_gpt_context(
-        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+
+    list_of_one_table = await transform_tables_helper(
+        args.transformation_description,
+        [args.input_table],
+        context,
+        old_code=old_code,
+        old_schema=old_schema,
+        debug_info=debug_info,
     )
-    old_gpt = GPT(context=gpt_context)  # keep using turbo for the schema generation
-    medium_gpt = GPT(model=GPT4_O, context=gpt_context)
-    challenge = await medium_gpt.do_chat_w_sys_prompt(
-        PICK_GPT_MAIN_PROMPT.format(task=args.transformation_description, labels=labels), NO_PROMPT
-    )
-
-    if challenge.lower().strip() == "easy":
-        gpt = GPT(model=GPT4_O, context=gpt_context)
-        await tool_log("Using fast LLM to write calculation code", context)
-    else:
-        gpt = GPT(model=O1, context=gpt_context)
-        await tool_log("Using smartest LLM to write calculation code", context)
-    if old_schema:
-        await tool_log(log="Using table schema from previous run", context=context)
-        new_col_schema = old_schema
-
-    else:
-        await tool_log(log="Computing new table schema", context=context)
-        new_col_schema = await gen_new_column_schema(
-            old_gpt,
-            transformation_description=args.transformation_description,
-            current_table_cols=input_col_metadata,
-        )
-
-    debug_info["table_schema"] = dump_io_type(new_col_schema)
-    logger.info(f"Table Schema: {debug_info['table_schema']}")
-    await tool_log(log="Transforming table", context=context)
-    data_df = args.input_table.to_df(stocks_as_hashables=True)
-    if old_code:
-        old_code_section = DATAFRAME_TRANSFORMER_OLD_CODE_TEMPLATE.format(old_code=old_code)
-    else:
-        old_code_section = ""
-
-    code = await gpt.do_chat_w_sys_prompt(
-        main_prompt=DATAFRAME_TRANSFORMER_MAIN_PROMPT.format(
-            col_schema=_dump_cols(input_col_metadata),
-            output_schema=_dump_cols(new_col_schema),
-            info=_get_df_info(data_df),
-            transform=args.transformation_description,
-            col_type_explain=TableColumnType.get_type_explanations(),
-            today=datetime.date.today(),
-            error="",
-            old_code=old_code_section,
-        ),
-        temperature=1.0,
-        # sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
-        sys_prompt=NO_PROMPT,
-    )
-    debug_info["code_first_attempt"] = code
-    logger.info(f"Running transform code:\n{code}")
-    output_df, error = _run_transform_code(df=data_df, code=code)
-    if output_df is not None:
-        for col_meta in new_col_schema:
-            df_col = col_meta.label
-            if df_col not in output_df.columns:
-                error = (
-                    f"Output DF schema not correct! Requested column: "
-                    f"'{df_col}' not in dataframe cols: {output_df.columns}"
-                )
-    if output_df is None or error:
-        logger.warning("Failed when transforming dataframe... trying again")
-        logger.warning(f"Failing code:\n{code}")
-        code = await gpt.do_chat_w_sys_prompt(
-            main_prompt=DATAFRAME_TRANSFORMER_MAIN_PROMPT.format(
-                col_schema=_dump_cols(input_col_metadata),
-                output_schema=_dump_cols(new_col_schema),
-                info=_get_df_info(data_df),
-                transform=args.transformation_description,
-                col_type_explain=TableColumnType.get_type_explanations(),
-                today=datetime.date.today(),
-                error=(
-                    "Your last code failed with this error, please correct it:\n"
-                    f"Last Code:\n\n{code}\n\n"
-                    f"Error:\n{error}"
-                ),
-                old_code=old_code_section,
-            ),
-            # sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
-            sys_prompt=NO_PROMPT,
-            temperature=1.0,
-        )
-        debug_info["code_second_attempt"] = code
-        logger.info(f"Running transform code:\n{code}")
-        output_df, error = _run_transform_code(df=data_df, code=code)
-        if output_df is None:
-            raise RuntimeError(f"Table transformation subprocess failed with:\n{error}")
-
-    # ensure date-derived columns are actually strings (2024Q1, etc)
-    for col in new_col_schema:
-        if col.col_type == TableColumnType.QUARTER:
-            output_df[col.label] = (
-                pd.to_datetime(output_df[col.label]).dt.to_period("Q").astype(str)
-            )
-        if col.col_type == TableColumnType.YEAR or col.col_type == TableColumnType.MONTH:
-            output_df[col.label] = output_df[col.label].astype(str)
-
-    output_table = Table.from_df_and_cols(
-        columns=new_col_schema, data=output_df, stocks_are_hashable_objs=True
-    )
+    output_table = list_of_one_table[0]
 
     await tool_log(
         log=f"Transformed table has {len(output_table.columns[0].data)} rows", context=context
@@ -454,6 +367,221 @@ async def transform_table(args: TransformTableArgs, context: PlanRunContext) -> 
                 logger.warning(f"Error doing diff from previous run: {e}")
 
     return output_table
+
+
+async def transform_tables_helper(
+    description: str,
+    tables: List[Table],
+    context: PlanRunContext,
+    old_code: Optional[str] = None,
+    old_schema: Optional[List[TableColumnMetadata]] = None,
+    debug_info: Dict[str, Any] = {},
+) -> List[Table]:
+    logger = get_prefect_logger(__name__)
+
+    input_col_metadata = [col.metadata for col in tables[0].columns]
+    labels = [metadata.label for metadata in input_col_metadata]
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    old_gpt = GPT(context=gpt_context)  # keep using turbo for the schema generation
+    medium_gpt = GPT(model=GPT4_O, context=gpt_context)
+    challenge = await medium_gpt.do_chat_w_sys_prompt(
+        PICK_GPT_MAIN_PROMPT.format(task=description, labels=labels), NO_PROMPT
+    )
+
+    if challenge.lower().strip() == "easy":
+        gpt = GPT(model=GPT4_O, context=gpt_context)
+        await tool_log("Using fast LLM to write calculation code", context)
+    else:
+        gpt = GPT(model=O1, context=gpt_context)
+        await tool_log("Using smartest LLM to write calculation code", context)
+    if old_schema:
+        await tool_log(log="Using table schema from previous run", context=context)
+        new_col_schema = old_schema
+
+    else:
+        await tool_log(log="Computing new table schema", context=context)
+        new_col_schema = await gen_new_column_schema(
+            old_gpt,
+            transformation_description=description,
+            current_table_cols=input_col_metadata,
+        )
+
+    debug_info["table_schema"] = dump_io_type(new_col_schema)
+    logger.info(f"Table Schema: {debug_info['table_schema']}")
+    await tool_log(log="Transforming table", context=context)
+    data_dfs = [input_table.to_df(stocks_as_hashables=True) for input_table in tables]
+    if old_code:
+        old_code_section = DATAFRAME_TRANSFORMER_OLD_CODE_TEMPLATE.format(old_code=old_code)
+    else:
+        old_code_section = ""
+
+    code = await gpt.do_chat_w_sys_prompt(
+        main_prompt=DATAFRAME_TRANSFORMER_MAIN_PROMPT.format(
+            col_schema=_dump_cols(input_col_metadata),
+            output_schema=_dump_cols(new_col_schema),
+            info=_get_df_info(data_dfs[0]),
+            transform=description,
+            col_type_explain=TableColumnType.get_type_explanations(),
+            today=datetime.date.today(),
+            error="",
+            old_code=old_code_section,
+        ),
+        temperature=1.0,
+        # sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
+        sys_prompt=NO_PROMPT,
+    )
+    debug_info["code_first_attempt"] = code
+    logger.info(f"Running transform code:\n{code}")
+    output_dfs = []
+    for data_df in data_dfs:
+        output_df, error = _run_transform_code(df=data_df, code=code)
+
+        if output_df is not None:
+            for col_meta in new_col_schema:
+                df_col = col_meta.label
+                if df_col not in output_df.columns:
+                    error = (
+                        f"Output DF schema not correct! Requested column: "
+                        f"'{df_col}' not in dataframe cols: {output_df.columns}"
+                    )
+        if output_df is None or error:
+            break
+        output_dfs.append(output_df)
+    if output_df is None or error:
+        output_dfs = []
+        logger.warning("Failed when transforming dataframe... trying again")
+        logger.warning(f"Failing code:\n{code}")
+        code = await gpt.do_chat_w_sys_prompt(
+            main_prompt=DATAFRAME_TRANSFORMER_MAIN_PROMPT.format(
+                col_schema=_dump_cols(input_col_metadata),
+                output_schema=_dump_cols(new_col_schema),
+                info=_get_df_info(data_dfs[0]),
+                transform=description,
+                col_type_explain=TableColumnType.get_type_explanations(),
+                today=datetime.date.today(),
+                error=(
+                    "Your last code failed with this error, please correct it:\n"
+                    f"Last Code:\n\n{code}\n\n"
+                    f"Error:\n{error}"
+                ),
+                old_code=old_code_section,
+            ),
+            # sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
+            sys_prompt=NO_PROMPT,
+            temperature=1.0,
+        )
+        debug_info["code_second_attempt"] = code
+        logger.info(f"Running transform code:\n{code}")
+        for data_df in data_dfs:
+            output_df, error = _run_transform_code(df=data_df, code=code)
+            if output_df is None:
+                raise RuntimeError(f"Table transformation subprocess failed with:\n{error}")
+            output_dfs.append(output_df)
+
+    # ensure date-derived columns are actually strings (2024Q1, etc)
+    output_tables = []
+    for output_df in output_dfs:
+        for col in new_col_schema:
+            if col.col_type == TableColumnType.QUARTER:
+                output_df[col.label] = (
+                    pd.to_datetime(output_df[col.label]).dt.to_period("Q").astype(str)
+                )
+            if col.col_type == TableColumnType.YEAR or col.col_type == TableColumnType.MONTH:
+                output_df[col.label] = output_df[col.label].astype(str)
+
+        output_table = Table.from_df_and_cols(
+            columns=new_col_schema, data=output_df, stocks_are_hashable_objs=True
+        )
+        output_tables.append(output_table)
+
+    return output_tables
+
+
+class PerStockGroupTransformTableInput(ToolArgs):
+    input_table: StockTable
+    stock_groups: StockGroups
+    transformation_description: str
+
+
+@tool(
+    description="""This is a tool that allows you to apply an arbitrary table transformation
+    as described in tranformation_description on each group in the input stock_groups. The data
+    for all stocks is found in the input_table, the tool will extract the relevant rows from input_table
+    for each stock, apply the transformation, and then build a new table with the results,
+    including a new column which indicates the stock group(usually but not always replacing the Stock column).
+    In terms of the properties of this tool, most of the instructions for the transform_table tool applies
+    equally to this tool, please read them carefully.
+    There is one important thing to note in the transformation_description: the transformation must
+    not mention the stock groups directly or indirectly, and instead must simply describe the transformation
+    applied to a single stock group. For example, if the client has asked for 'the average market cap
+    of each sector in the S&P 500' and you have already created a StockGroup object which groups the stocks
+    by sectors, you will NOT mention sectors or stock groups in your transformation_description passed to
+    this tool, instead the transformation should simply describe what you will do for each group, e.g.
+    'calculate the average market cap for the input stocks'. Again, it is extremely important that your
+    transformation description does not reflect that you are applying this operation iteratively across
+    stock groups, you must describe only the transformation that will be applied to each stock group.
+    This is the single most important thing you must pay attention to! Also, when preparing data for this
+    tool, you should not include the data used to create the stock groups (e.g. sector data) unless
+    otherwise required for the calculation, the StockGroups object already contains that information,
+    to have it in the input table too is entirely redundant and may result in duplicate columns.
+    Otherwise, follow the instructions for transform_table.
+""",
+    category=ToolCategory.TABLE,
+)
+async def per_stock_group_transform_table(
+    args: PerStockGroupTransformTableInput, context: PlanRunContext
+) -> Union[Table, StockTable]:
+    logger = get_prefect_logger(__name__)
+    old_schema: Optional[List[TableColumnMetadata]] = None
+    old_code: Optional[str] = None
+    # TODO: Consider doing stock list diffing for stock group filtering
+    # prev_args = None
+    # prev_output = None
+    try:  # since everything here is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context, "per_stock_group transform_table")
+        if prev_run_info is not None:
+            # prev_args = TransformTableArgs.model_validate_json(prev_run_info.inputs_str)
+            # prev_output = prev_run_info.output  # type:ignore
+            prev_other: Dict[str, str] = prev_run_info.debug  # type:ignore
+            if prev_other:
+                old_code = (
+                    prev_other["code_second_attempt"]
+                    if "code_second_attempt" in prev_other
+                    else prev_other["code_first_attempt"]
+                )
+                old_schema = load_io_type(prev_other["table_schema"])  # type:ignore
+
+    except Exception as e:
+        logger.warning(f"Error getting info from previous run: {e}")
+
+    debug_info: Dict[str, Any] = {}
+    TOOL_DEBUG_INFO.set(debug_info)
+
+    stock_group_input_tables = get_stock_group_input_tables(args.input_table, args.stock_groups)
+
+    stock_group_output_tables = await transform_tables_helper(
+        args.transformation_description,
+        stock_group_input_tables,  # type:ignore
+        context,
+        old_code=old_code,
+        old_schema=old_schema,
+        debug_info=debug_info,
+    )
+
+    for table, group in zip(stock_group_output_tables, args.stock_groups.stock_groups):
+        remove_stock_group_columns(table, args.stock_groups.header)
+        add_stock_group_column(table, args.stock_groups.header, group.name)
+
+    joined_table = stock_group_output_tables[0]
+    for table in stock_group_output_tables[1:]:
+        joined_table = _join_two_tables_vertically(joined_table, table)
+
+    if joined_table.get_stock_column():
+        return StockTable(columns=joined_table.columns)
+
+    return joined_table
 
 
 class JoinTableArgs(ToolArgs):
@@ -602,7 +730,7 @@ def _join_two_tables(first: Table, second: Table) -> Table:
 """,
     category=ToolCategory.TABLE,
 )
-async def join_tables(args: JoinTableArgs, context: PlanRunContext) -> Table:
+async def join_tables(args: JoinTableArgs, context: PlanRunContext) -> Union[Table, StockTable]:
     if len(args.input_tables) == 0:
         raise RuntimeError("Cannot join an empty list of tables!")
     if len(args.input_tables) == 1:

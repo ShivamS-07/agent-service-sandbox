@@ -1,0 +1,2 @@
+COLUMN = "column"
+THRESHOLDS = "thresholds"

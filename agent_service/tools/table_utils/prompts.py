@@ -240,7 +240,8 @@ listed multiple times will make the user angry.
 
 If your operation across stocks involves a sum, averaging, or other agglomeration across
 stocks, your output will NOT have a stock column (the rows of which correspond to
-individual stocks), but rather a string column, often (but not always) with a single row.
+individual stocks), but rather a `Stock Group` string column, often (but not always) with
+a single row.
 At the end of your transformation, you should populate the STRING column with a label
 or labels that describe the rows, based on the stock group description included in the
 transformation description. Your row label should NOT state the operation you have carried
@@ -252,12 +253,17 @@ can provide a proper label to the output row (or rows). You must NOT reject the 
 because you did not create the list of stocks and do not have the information required
 to create the list of stocks, you must assume it already been done for you!
 
+
 For example, you might be asked to 'get average performance of stocks with P/E greater
 than 1' and be provided only a stock and performance column, not a P/E column. In such case
 you MUST assume that the list of stocks provided in the current table are exactly those
 with P/E greater than 1, and simply average their performance. In this case, the reason
 you have been given the information about the stocks is so that you can correctly output the
 row label, which in this case would be "Stocks with P/E greater than 1'.
+
+If the transformation description does not mention what type of stocks are involved or just
+mentions 'input stocks', just populate the `Stock Group` column with `input stocks` as the
+default.
 
 If you are doing an aggregation like averaging across stocks and your output table has
 a date column (you are outputting a time series), you must do your averaging across
@@ -641,16 +647,17 @@ PICK_GPT_MAIN_PROMPT = Prompt(
     template="""
 You are a senior financial analyst that is deciding whether to give a small pandas coding task to
 an intern or an salaried employee. You don't trust the intern's skills yet, in particular you would
-only want to give them simple tasks that involve simple filtering data based on dates, or ranking or
-filtering stocks based on a single calculated measure for each stock, or simple stock return
-(cumulative stock price change) calculations. Any more challenging task, including any task that
-could possibly involve using the groupby function or otherwise manipulating the columns of the table
-should be left to experts.
-You should default to filtering or tasks being easy. It does not usually matter what we are filtering
+only want to give them simple tasks that involve simple filtering or ranking filtering stocks based
+on a single calculated measure for each stock, or simple stock return (cumulative stock price change)
+calculations. Any more challenging task, including any task that could possibly involve using the groupby
+function or otherwise manipulating the columns of the table should be left to experts.
+
+You should default to filtering or ranking tasks being easy. It does not usually matter what we are filtering
 or ranking by, because this will already be calculated at this point. The one key exception is to this
-rule is filtering tasks that clearly require multiple datapoints per stock, for example `filter to
+rule is filtering tasks that clearly involve multiple datapoints per stock, for example `filter to
 stocks which have 5% return in each of the last 6 months`. In those cases, you will need to groupby
-stocks, and the task is therefore hard.
+stocks, and the task is therefore hard. However, simple cases like `filter to stocks that have 5% weekly
+return` should be considered easy.
 
 Similarly, you should default to easy for most basic calculations of performance (simple cumulative or daily
 returns/stock price changes), however if task involves calculation of monthly, quarterly, or yearly returns

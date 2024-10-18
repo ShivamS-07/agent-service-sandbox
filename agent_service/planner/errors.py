@@ -40,6 +40,15 @@ class EmptyInputError(NonRetriableError):
     result_status = Status.NO_RESULTS_FOUND
 
 
+class BadInputError(NonRetriableError):
+    """
+    Use this error if a tool is has some significant problem with their input that prevents
+    further processing
+    """
+
+    result_status = Status.ERROR
+
+
 class EmptyOutputError(NonRetriableError):
     """
     NOTE: Read above exception description before using this one

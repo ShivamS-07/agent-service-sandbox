@@ -1,6 +1,6 @@
 from collections import defaultdict
 from copy import deepcopy
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 from agent_service.io_type_utils import (
     ComplexIOBase,
@@ -189,8 +189,8 @@ class PreparedOutput(ComplexIOBase):
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         return await io_type_to_gpt_input(self.val, use_abbreviated_output=use_abbreviated_output)
 
-    async def split_into_components(self) -> List["IOType"]:
-        split_vals = await split_io_type_into_components(self.val)
+    async def split_into_components(self, main_title: Optional[str] = None) -> List["IOType"]:
+        split_vals = await split_io_type_into_components(self.val, main_title=self.title)
         if len(split_vals) == 1:
             return [PreparedOutput(val=split_vals[0], title=self.title)]
 

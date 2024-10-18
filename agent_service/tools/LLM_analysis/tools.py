@@ -26,7 +26,11 @@ from agent_service.io_types.text import (
     TextGroup,
     TopicProfiles,
 )
-from agent_service.planner.errors import EmptyInputError, EmptyOutputError
+from agent_service.planner.errors import (
+    BadInputError,
+    EmptyInputError,
+    EmptyOutputError,
+)
 from agent_service.tool import ToolArgMetadata, ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.LLM_analysis.constants import (
@@ -41,6 +45,7 @@ from agent_service.tools.LLM_analysis.constants import (
     NO_CITATIONS_DIFF,
     NO_SUMMARY,
     NO_SUMMARY_FOR_STOCK,
+    STOCK_TYPE,
     SUMMARIZE_CITATION_INCREASE_LIMIT,
 )
 from agent_service.tools.LLM_analysis.prompts import (
@@ -59,6 +64,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     FILTER_BY_PROFILE_DESCRIPTION,
     FILTER_BY_TOPIC_DESCRIPTION,
     PER_IDEA_SUMMARIZE_DESCRIPTION,
+    PER_STOCK_GROUP_SUMMARIZE_DESCRIPTION,
     PER_STOCK_SUMMARIZE_DESCRIPTION,
     PER_TOPIC_FILTER_BY_PROFILE_DESCRIPTION,
     PROFILE_ADD_DIFF_MAIN_PROMPT,
@@ -717,7 +723,7 @@ async def per_idea_summarize_texts(
         raise EmptyInputError("Cannot summarize when no texts provided")
 
     if IDEA not in args.topic_template:
-        raise EmptyInputError("Input topic template missing IDEA placeholder")
+        raise BadInputError("Input topic template missing IDEA placeholder")
 
     args.texts = await partition_to_smaller_text_sizes(args.texts, context)
 
@@ -813,6 +819,146 @@ async def per_idea_summarize_texts(
         output.append(text)
 
     return output
+
+
+class PerStockGroupSummarizeTextInput(ToolArgs):
+    stock_groups: StockGroups
+    texts: List[StockText]
+    topic_template: str
+
+
+@tool(
+    description=PER_STOCK_GROUP_SUMMARIZE_DESCRIPTION,
+    category=ToolCategory.LLM_ANALYSIS,
+    reads_chat=True,
+)
+async def per_stock_group_summarize_texts(
+    args: PerStockGroupSummarizeTextInput, context: PlanRunContext
+) -> StockGroups:
+    logger = get_prefect_logger(__name__)
+    # TODO we need guardrails on this
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=DEFAULT_LLM)
+
+    if len(args.texts) == 0:
+        raise EmptyInputError("Cannot summarize when no texts provided")
+
+    if f"for {STOCK_TYPE} stocks" not in args.topic_template:
+        raise BadInputError("Input topic template missing STOCK_TYPE placeholder")
+
+    args.texts = cast(
+        List[StockText],
+        await partition_to_smaller_text_sizes(cast(List[Text], args.texts), context),
+    )
+
+    new_groups = args.stock_groups.stock_groups  # default to redoing everything
+
+    old_groups = []
+
+    prev_run_dict: Dict[StockGroup, Tuple[List[TextCitation], List[TextCitation], str]] = (
+        defaultdict()
+    )
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context, "per_stock_group_summarize_texts")
+        if prev_run_info is not None:
+            prev_args = PerStockGroupSummarizeTextInput.model_validate_json(
+                prev_run_info.inputs_str
+            )
+            prev_input_texts: List[StockText] = prev_args.texts
+            prev_input_texts = cast(
+                List[StockText],
+                await partition_to_smaller_text_sizes(cast(List[Text], prev_input_texts), context),
+            )
+            prev_output_groups: StockGroups = prev_run_info.output.stock_group  # type:ignore
+            old_output_groups_lookup: Dict[str, StockGroup] = {
+                group.name: group for group in prev_output_groups.stock_groups
+            }
+            curr_input_texts = set(args.texts)
+            old_input_texts = set(prev_input_texts)
+            new_texts = list(curr_input_texts - old_input_texts)
+            prelim_new_groups = []
+            for stock_group in args.stock_groups.stock_groups:
+                if stock_group.name not in old_output_groups_lookup:
+                    prelim_new_groups.append(stock_group)
+                    continue
+                old_output_group = old_output_groups_lookup[stock_group.name]
+                old_summary: str = cast(str, old_output_group.history[-1].explanation)
+                all_old_citations = cast(List[TextCitation], old_output_group.history[-1].citations)
+                for citation in all_old_citations:
+                    citation.source_text.reset_id()  # need to do this so we can match them
+                remaining_citations = [
+                    citation
+                    for citation in all_old_citations
+                    if citation.source_text in curr_input_texts
+                ]
+                prev_run_dict[stock_group] = (
+                    remaining_citations,
+                    all_old_citations,
+                    old_summary,
+                )
+            new_groups = prelim_new_groups
+
+    except Exception as e:
+        logger.warning(
+            f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
+        )
+
+    tasks = []
+    for group in new_groups:
+        group_set = set(group.stocks)
+        topic = args.topic_template.replace(STOCK_TYPE, group.name)
+        group_texts = [text for text in args.texts if text.stock_id and text.stock_id in group_set]
+        tasks.append(
+            _initial_summarize_helper(
+                SummarizeTextInput(texts=cast(List[Text], group_texts), topic=topic), context, llm
+            )
+        )
+
+    if prev_run_dict:
+        for group, (remaining_citations, all_old_citations, old_summary) in prev_run_dict.items():
+            group_set = set(group.stocks)
+            group_new_texts = [
+                text for text in new_texts if text.stock_id and text.stock_id in group_set
+            ]
+            old_texts = list(set([citation.source_text for citation in remaining_citations]))
+            if group_new_texts or (
+                remaining_citations and len(remaining_citations) < len(all_old_citations)
+            ):
+                topic = args.topic_template.replace(STOCK_TYPE, group.name)
+                tasks.append(
+                    _update_summarize_helper(
+                        SummarizeTextInput(texts=group_new_texts, topic=topic),  # type: ignore
+                        context,
+                        llm,
+                        new_texts,  # type: ignore
+                        old_texts,
+                        old_summary,
+                        all_old_citations,
+                        get_original_cite_count(remaining_citations),
+                    )
+                )
+            else:
+                if remaining_citations:  # no new texts, just use old summary
+                    tasks.append(identity((old_summary, remaining_citations)))
+                else:  # unless there is nothing to cite, at which point use default
+                    tasks.append(identity((NO_SUMMARY, [])))
+            old_groups.append(group)
+
+    results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
+    output = []
+
+    column_title = args.topic_template.replace(f"for {STOCK_TYPE} stocks", "").strip()
+
+    for group, (summary, citations) in zip(new_groups + old_groups, results):
+        group = group.inject_history_entry(
+            HistoryEntry(explanation=summary, title=column_title, citations=citations)
+        )
+        output.append(group)
+
+    return StockGroups(header=args.stock_groups.header, stock_groups=output)
 
 
 class CompareTextInput(ToolArgs):

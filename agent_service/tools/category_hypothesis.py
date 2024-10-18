@@ -463,7 +463,7 @@ class CompetitiveAnalysis(ComplexIOBase):
     category_idx_to_result: Dict[int, RankingList]
     val: List[Text] = []
 
-    async def split_into_components(self) -> List[IOType]:
+    async def split_into_components(self, main_title: Optional[str] = None) -> List[IOType]:
         if not self.val:
             self.prepare_categorical_hypothesis_outputs()
         return self.val  # type: ignore
