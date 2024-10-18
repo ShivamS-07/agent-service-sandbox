@@ -1754,13 +1754,14 @@ class AsyncDB:
                 LEFT JOIN boosted_dag.task_log all_tl
                 ON all_tl.agent_id = latest_by_agent_id.agent_id and all_tl.finished_at = latest_by_agent_id.latest)
                 AS cw ON cw.agent_id = aqc.agent_id::TEXT
-        WHERE
         """
         search_params = {}
         # Dynamically add conditions based on HorizonCriteria
         for idx, criterion in enumerate(criteria):
+            if idx == 0:
+                sql += "\nWHERE"
             if idx != 0:
-                "AND"
+                sql += " AND"
             param1 = f"arg1_{idx}"
             param2 = f"arg2_{idx}"
             if criterion.operator == "BETWEEN":
