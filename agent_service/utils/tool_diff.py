@@ -23,8 +23,8 @@ class PrevRunInfo:
     timestamp: datetime.datetime
 
 
-UPDATE_START = datetime.datetime.fromisoformat("2024-10-17T22:00:00Z")
-UPDATE_END = datetime.datetime.fromisoformat("2024-10-18T23:00:00Z")
+UPDATE_START = datetime.datetime.fromisoformat("2024-10-18T22:00:00Z")
+UPDATE_END = datetime.datetime.fromisoformat("2024-10-19T23:00:00Z")
 PROBLEM_START = datetime.datetime.fromisoformat("2024-10-15T21:00:00Z")
 
 

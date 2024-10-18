@@ -8,6 +8,8 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
     object_histories_to_columns,
 )
+from agent_service.io_types.text import Text
+from agent_service.io_types.text_objects import StockTextObject
 from agent_service.utils.output_utils.output_construction import PreparedOutput
 
 
@@ -23,20 +25,42 @@ class StockGroups(ComplexIOBase):
     header: str = "Stock Group"
 
     async def split_into_components(self, main_title: Optional[str] = None) -> List[IOType]:
-        output = [
-            PreparedOutput(val=stock_group.stocks, title=stock_group.name)
-            for stock_group in self.stock_groups
-        ]
         # This will display summaries added using per_stock_group_summarize_text
+        columns = []
+
+        name_column = TableColumn(
+            metadata=TableColumnMetadata(label=self.header, col_type=TableColumnType.STRING),
+            data=[group.name for group in self.stock_groups],
+        )
+
+        columns.append(name_column)
+
         extra_columns = object_histories_to_columns(
             objects=cast(List[ComplexIOBase], self.stock_groups)
         )
-        if extra_columns and main_title:
-            name_column = TableColumn(
-                metadata=TableColumnMetadata(label=self.header, col_type=TableColumnType.STRING),
-                data=[group.name for group in self.stock_groups],
-            )
-            output.append(
-                PreparedOutput(val=Table(columns=[name_column] + extra_columns), title=main_title)
-            )
+
+        columns.extend(extra_columns)
+
+        stock_column_texts = []
+        for stock_group in self.stock_groups:
+            stock_objs = []
+            for stock in stock_group.stocks:
+                stock_objs.append(
+                    StockTextObject(
+                        gbi_id=stock.gbi_id,
+                        symbol=stock.symbol,
+                        company_name=stock.company_name,
+                        isin=stock.isin,
+                        index=0,
+                    )
+                )
+            stock_column_texts.append(Text(text_objects=stock_objs))  # type:ignore
+
+        stocks_column = TableColumn(
+            metadata=TableColumnMetadata(label="Stocks", col_type=TableColumnType.STRING),
+            data=stock_column_texts,  # type:ignore
+        )
+        columns.append(stocks_column)
+
+        output = [PreparedOutput(val=Table(columns=columns), title=main_title or self.header)]
         return output  # type: ignore
