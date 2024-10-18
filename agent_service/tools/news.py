@@ -210,19 +210,21 @@ async def get_all_news_developments_about_companies(
     output: List[StockNewsDevelopmentText] = []
     for topic_list in topic_lookup.values():
         output.extend(topic_list)
+    start = start_date.strftime("%Y-%m-%d")
+    end = end_date.strftime("%Y-%m-%d")
     if len(output) == 0:
         stock_info = f"{len(args.stock_ids)} stocks"
         if len(args.stock_ids) < 10:
             stock_info = f"stocks: {", ".join([stock.company_name for stock in args.stock_ids])}"
         await tool_log(
             log=f"Did not get any news developments for {stock_info}"
-            f" over the time period: {start_date=}, {end_date=}",
+            f" over the time period: {start=}, {end=}",
             context=context,
         )
     else:
         await tool_log(
             log=f"Found {len(output)} news developments for the provided stocks"
-            f" over the time period: {start_date=}, {end_date=}",
+            f" over the time period: {start=}, {end=}",
             context=context,
         )
 
