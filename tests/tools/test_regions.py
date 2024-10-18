@@ -27,6 +27,12 @@ SIE = StockID(
     gbi_id=194452, isin="", symbol="SIE", company_name="Siemens Aktiengesellschaft"
 )  # DEU
 ES = StockID(gbi_id=193085, isin="", symbol="ES", company_name="Esso S.A.F.")  # FRA
+RTWP = StockID(
+    gbi_id=216296,
+    isin="",
+    symbol="RTWP",
+    company_name="Legal & General UCITS ETF Plc - L&G Russell 2000 US Small Cap UCITS ETF",
+)  # UK
 
 
 class TestRegions(unittest.IsolatedAsyncioTestCase):
@@ -55,7 +61,7 @@ class TestRegions(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(stocks[1].gbi_id, RBC.gbi_id)
 
     async def test_region_filter_with_region_names(self):
-        stock_ids = [MSFT, FORD, RBC, CHN, TOY, TCS, SIE, ES]
+        stock_ids = [MSFT, FORD, RBC, CHN, TOY, TCS, SIE, ES, RTWP]
 
         # Test NORTHERN_AMERICA region
         args = FilterStockRegionInput(region_name="NORTH_AMERICA", stock_ids=stock_ids)
@@ -84,9 +90,16 @@ class TestRegions(unittest.IsolatedAsyncioTestCase):
         # Test EUROPE region
         args = FilterStockRegionInput(region_name="EUROPE", stock_ids=stock_ids)
         stocks = await filter_stocks_by_region(args=args, context=self.context)
-        self.assertEqual(2, len(stocks))
+        self.assertEqual(3, len(stocks))
         self.assertTrue(any(stock.symbol == "SIE" for stock in stocks))
         self.assertTrue(any(stock.symbol == "ES" for stock in stocks))
+        self.assertTrue(any(stock.symbol == "RTWP" for stock in stocks))
+
+        # Test UK region
+        args = FilterStockRegionInput(region_name="UK", stock_ids=stock_ids)
+        stocks = await filter_stocks_by_region(args=args, context=self.context)
+        self.assertEqual(1, len(stocks))
+        self.assertTrue(any(stock.symbol == "RTWP" for stock in stocks))
 
     async def test_region_filter_with_subregions(self):
         stock_ids = [MSFT, FORD, RBC, CHN, TOY, TCS, SIE, ES]
