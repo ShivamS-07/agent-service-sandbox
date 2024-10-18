@@ -314,6 +314,7 @@ class Planner:
         action: FollowupAction,
         plan_id: str,
         use_sample_plans: bool = True,
+        replan_with_locked_tasks: bool = False,
     ) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
         if use_sample_plans:
@@ -340,6 +341,7 @@ class Planner:
                 sample_plans_str,
                 action=action,
                 plan_id=plan_id,
+                replan_with_locked_tasks=replan_with_locked_tasks,
             )
             for _ in range(INITIAL_PLAN_TRIES)
         ]
@@ -360,11 +362,9 @@ class Planner:
         return None
 
     @staticmethod
-    def replicate_plan_set_for_automated_run(
-        last_plan: ExecutionPlan, new_plan: ExecutionPlan
-    ) -> List[str]:
+    def copy_task_ids_to_new_plan(last_plan: ExecutionPlan, new_plan: ExecutionPlan) -> List[str]:
         task_ids = []
-        for i, node in enumerate(last_plan.nodes):
+        for i, _ in enumerate(last_plan.nodes):
             new_plan.nodes[i].tool_task_id = last_plan.nodes[i].tool_task_id
             task_ids.append(new_plan.nodes[i].tool_task_id)
         return task_ids
@@ -378,6 +378,7 @@ class Planner:
         sample_plans_str: str,
         action: FollowupAction,
         plan_id: str,
+        replan_with_locked_tasks: bool = False,
     ) -> Optional[ExecutionPlan]:
         # for now, just assume last step is what is new
         # TODO: multiple old plans, flexible chat cutoff
@@ -386,21 +387,6 @@ class Planner:
         logger = get_prefect_logger(__name__)
         main_chat_str = chat_context.get_gpt_input()
         new_messages = "\n".join([message.get_gpt_input() for message in latest_messages])
-        append = action == FollowupAction.APPEND
-        replan_with_locked_tasks = False
-
-        # Handle locked tasks, which should ALWAYS be included
-        if last_plan.locked_task_ids and action == FollowupAction.REPLAN:
-            replan_with_locked_tasks = True
-            # When a replan is going to happen, but we have locked widgets, we
-            # retain then by doing the following:
-            # 1. Remove ALL outputs nodes that are NOT locked
-            # 2. Switch into APPEND mode and create a new plan
-            # This ensures we retain locked widgets while potentially recreating
-            # non-locked ones.
-            last_plan = last_plan.remove_non_locked_output_nodes()
-            action = FollowupAction.APPEND
-
         append = action == FollowupAction.APPEND
         old_plan_str = last_plan.get_formatted_plan()
         new_plan_str = await self._query_GPT_for_new_plan_after_input(

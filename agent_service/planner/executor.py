@@ -1239,6 +1239,24 @@ async def rewrite_execution_plan(
             plan_id=plan_id,
         )
     else:
+        replan_with_locked_tasks = False
+        if old_plan.locked_task_ids and action == FollowupAction.REPLAN:
+            # When a replan is going to happen, but we have locked widgets, we
+            # retain then by doing the following:
+            # 1. Remove ALL outputs nodes that are NOT locked
+            # 2. Switch into APPEND mode and create a new plan
+            # This ensures we retain locked widgets while potentially recreating
+            # non-locked ones.
+            logger.info(
+                (
+                    "Switching from REPLAN mode to APPEND mode because of locked tasks in old plan."
+                    f"{old_plan.locked_task_ids=}"
+                )
+            )
+            replan_with_locked_tasks = True
+            old_plan = old_plan.remove_non_locked_output_nodes()
+            action = FollowupAction.APPEND
+
         new_plan = await planner.rewrite_plan_after_input(
             chat_context,
             old_plan,
@@ -1246,6 +1264,7 @@ async def rewrite_execution_plan(
             action=action,
             use_sample_plans=use_sample_plans,
             plan_id=plan_id,
+            replan_with_locked_tasks=replan_with_locked_tasks,
         )
 
         if new_plan:
@@ -1254,12 +1273,7 @@ async def rewrite_execution_plan(
                 # If we're appending to an existing plan, we want to re-use the
                 # outputs from the old plan so that the new results will appear
                 # faster (and more efficiently).
-                task_ids = planner.replicate_plan_set_for_automated_run(old_plan, new_plan)
-            elif old_plan.locked_task_ids:
-                # If we had locked nodes, we want to quickly redisplay them
-                # without recomputing. We should fetch all data from the old
-                # plan just in case the task is also in the new plan.
-                task_ids = [node.tool_task_id for node in old_plan.nodes]
+                task_ids = planner.copy_task_ids_to_new_plan(old_plan, new_plan)
             if task_ids:
                 # These maps will be used to look up prior outputs when the plan
                 # runs. (Eventually will remove this clickhouse part, leaving it in
