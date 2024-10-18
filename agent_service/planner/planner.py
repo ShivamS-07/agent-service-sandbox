@@ -3,7 +3,6 @@ import asyncio
 import datetime
 import json
 import traceback
-from collections import deque
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
 from uuid import uuid4
 
@@ -390,8 +389,6 @@ class Planner:
         append = action == FollowupAction.APPEND
         replan_with_locked_tasks = False
 
-        # Store this before potentially removing non-locked widgets
-        original_last_plan = last_plan
         # Handle locked tasks, which should ALWAYS be included
         if last_plan.locked_task_ids and action == FollowupAction.REPLAN:
             replan_with_locked_tasks = True
@@ -457,48 +454,6 @@ class Planner:
                 f"\nException: {e}"
             )
             return None
-
-        if replan_with_locked_tasks:
-            # If the replan involved locked tasks, we want to make sure that the
-            # locked tasks in the NEW plan are in the same relative positions as
-            # they were in the old plan.
-            original_output_nodes = original_last_plan.get_output_nodes()
-            original_output_positions = {i: node for i, node in enumerate(original_output_nodes)}
-            original_output_nodes_set = set(original_output_nodes)
-            # Output nodes that were not in the prior plan
-            new_output_nodes = deque(
-                (
-                    node
-                    for node in new_plan.get_output_nodes()
-                    if node not in original_output_nodes_set
-                )
-            )
-            desired_output_node_ordering = []
-            # Example case (letters represent widgets, ! = locked widget):
-            # Old plan:
-            # A B! C D! E
-
-            # New plan (pre-reorder):
-            # B! D! W X Y Z
-
-            # New plan (post-reorder):
-            # W B! X D! Y Z
-
-            # This ensures that locked widgets maintain both their contents AND
-            # their position.
-
-            for i in range(len(new_plan.get_output_nodes())):
-                if i in original_output_positions:
-                    # If the old plan had a locked widget at this index, keep it there
-                    desired_output_node_ordering.append(original_output_positions[i])
-                else:
-                    # The widget at this index was not locked, use the next new widget
-                    desired_output_node_ordering.append(new_output_nodes[0])
-                    new_output_nodes.popleft()
-
-            new_plan = new_plan.reorder_plan_with_output_task_ordering(
-                output_task_ordering=desired_output_node_ordering
-            )
 
         return new_plan
 

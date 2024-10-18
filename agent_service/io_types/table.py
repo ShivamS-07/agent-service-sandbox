@@ -64,7 +64,7 @@ class TableColumnMetadata(ComplexIOBase):
 @io_type
 class TableColumn(ComplexIOBase):
     metadata: TableColumnMetadata
-    data: List[Optional[IOType]]
+    data: List[Optional[IOType] | ScoreOutput]
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         if use_abbreviated_output:
