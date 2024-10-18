@@ -1152,6 +1152,7 @@ class StockEarningsTranscriptSectionText(StockEarningsText):
                 transcript_section_texts.append(
                     cls(
                         id=hash((transcript.id, starting_line_num, ending_line_num)),
+                        stock_id=transcript.stock_id,
                         val=content,
                         transcript_id=str(transcript.id),
                         year=transcript.year,
