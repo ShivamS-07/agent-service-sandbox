@@ -1717,7 +1717,7 @@ async def get_stock_universe_table_from_universe_company_id(
         data=df,
         columns=[
             TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
-            TableColumnMetadata(label="Weight", col_type=TableColumnType.FLOAT),
+            TableColumnMetadata(label="Weight", col_type=TableColumnType.PERCENT),
         ],
     )
 

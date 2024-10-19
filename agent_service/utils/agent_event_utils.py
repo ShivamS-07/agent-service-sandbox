@@ -25,6 +25,7 @@ from agent_service.endpoints.models import (
     TaskStatus,
     TaskStatusEvent,
 )
+from agent_service.endpoints.utils import get_plan_preview
 from agent_service.io_type_utils import load_io_type
 from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, OutputWithID, PlanStatus
@@ -204,6 +205,7 @@ async def publish_agent_execution_plan(
                     PlanTemplateTask(task_id=node.tool_task_id, task_name=node.description)
                     for node in plan.nodes
                 ],
+                preview=get_plan_preview(plan),
             ),
         ),
     )

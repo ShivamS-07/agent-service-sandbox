@@ -12,7 +12,7 @@ from agent_service.io_types.text import TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
 from agent_service.types import Message
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.prompt_template import OutputType, PromptTemplate
+from agent_service.utils.prompt_template import OutputPreview, PromptTemplate
 from agent_service.utils.scheduling import AgentSchedule
 from agent_service.utils.sidebar_sections import SidebarSection
 
@@ -374,6 +374,7 @@ class PlanRun(BaseModel):
     tasks: List[PlanRunTask]  # sorted by start_time ASC
     shared: bool = False
     run_description: Optional[str] = None
+    preview: Optional[List[OutputPreview]] = None
 
 
 class PlanTemplateTask(BaseModel):
@@ -387,6 +388,7 @@ class ExecutionPlanTemplate(BaseModel):
     plan_id: str
     upcoming_plan_run_id: Optional[str] = None
     tasks: List[PlanTemplateTask]
+    preview: Optional[List[OutputPreview]] = None
 
 
 class GetAgentWorklogBoardResponse(BaseModel):
@@ -1101,7 +1103,7 @@ class CopyAgentToUsersResponse(BaseModel):
 
 class GenTemplatePlanResponse(BaseModel):
     plan: Optional[ExecutionPlan] = None
-    output_types: Optional[List[OutputType]] = None
+    preview: Optional[List[OutputPreview]] = None
 
 
 class GenTemplatePlanRequest(BaseModel):

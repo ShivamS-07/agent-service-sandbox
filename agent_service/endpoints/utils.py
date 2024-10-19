@@ -12,6 +12,8 @@ from agent_service.endpoints.models import (
     TaskRunStatusInfo,
 )
 from agent_service.io_type_utils import load_io_type
+from agent_service.io_types.graph import BarGraph, LineGraph, PieGraph
+from agent_service.io_types.table import Table
 from agent_service.io_types.text import Text
 from agent_service.planner.planner_types import (
     ExecutionPlan,
@@ -23,6 +25,7 @@ from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
+from agent_service.utils.prompt_template import OutputPreview, OutputType
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +188,7 @@ async def get_agent_hierarchical_worklogs(
                 tasks=full_tasks,
                 shared=plan_run_share_status,
                 run_description=run_description,
+                preview=get_plan_preview(plan),
             )
         )
 
@@ -368,3 +372,43 @@ def reset_plan_run_status_if_needed(
     elif any(task.status == Status.RUNNING for task in full_tasks):
         plan_run_status = Status.RUNNING
     return plan_run_status
+
+
+def get_plan_preview(plan: ExecutionPlan) -> List[OutputPreview]:
+    """returns the preview which is a list of OutputPreview objects"""
+    from agent_service.tool import ToolRegistry
+
+    preview = []
+    output_nodes = [node for node in plan.nodes if node.is_output_node]
+
+    output_type_mapping = {
+        Table: OutputType.TABLE,
+        LineGraph: OutputType.LINE_GRAPH,
+        BarGraph: OutputType.BAR_GRAPH,
+        PieGraph: OutputType.PIE_GRAPH,
+    }
+
+    for node in output_nodes:
+        title: str = node.args.get("title", "")  # type: ignore
+        try:
+            var_name = node.args.get("object_to_output").var_name  # type: ignore
+            matching_node = next(
+                (n for n in plan.nodes if n.output_variable_name == var_name), None
+            )
+
+            if matching_node:
+                tool_name = matching_node.tool_name
+                tool_out_type = ToolRegistry.get_tool(tool_name).return_type
+                # default to TEXT
+                output_type = OutputType.TEXT
+                # Find the corresponding output type or default to TEXT
+                for tool_class, out_type in output_type_mapping.items():
+                    if issubclass(tool_out_type, tool_class):
+                        output_type = out_type
+                        continue
+
+                preview.append(OutputPreview(output_type=output_type, title=title))
+        except Exception:
+            preview.append(OutputPreview(output_type=OutputType.TEXT, title=title))
+
+    return preview

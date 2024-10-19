@@ -322,8 +322,8 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     logger.info(f"Length of tokens in main prompt: {main_prompt_token_length}")
 
     # save main prompt as text file for debugging
-    with open("main_prompt.txt", "w") as f:
-        f.write(main_prompt.filled_prompt)
+    # with open("main_prompt.txt", "w") as f:
+    #     f.write(main_prompt.filled_prompt)
 
     # Write the commentary
     await tool_log(
@@ -651,7 +651,11 @@ async def get_commentary_inputs(
                 ),
                 context=context,
             )
-            print("stock_performance_table: ", stock_performance_table)
+            await tool_log(
+                log=f"Retrieved stock performance table for {len(args.stock_ids)} stocks",
+                context=context,
+                associated_data=stock_performance_table,
+            )
 
             tables.append(stock_performance_table)
             # get news developments and articles for stock ids

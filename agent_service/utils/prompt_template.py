@@ -1,6 +1,6 @@
 import datetime
 import enum
-from typing import Optional
+from typing import List, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -17,6 +17,11 @@ class OutputType(enum.StrEnum):
     BAR_GRAPH = GraphType.BAR
 
 
+class OutputPreview(BaseModel):
+    title: str
+    output_type: OutputType
+
+
 class PromptTemplate(BaseModel):
     template_id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
@@ -26,4 +31,4 @@ class PromptTemplate(BaseModel):
     created_at: datetime.datetime
     plan: ExecutionPlan
     is_visible: bool = False
-    output_types: Optional[list[OutputType]] = None
+    preview: Optional[List[OutputPreview]] = None

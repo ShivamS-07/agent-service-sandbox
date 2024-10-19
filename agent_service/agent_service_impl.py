@@ -95,7 +95,6 @@ from agent_service.endpoints.models import (
     ModifyPlanRunArgsResponse,
     NotificationEmailsResponse,
     NotificationEvent,
-    OutputType,
     PlanRunToolDebugInfo,
     PlanTemplateTask,
     RenameMemoryResponse,
@@ -124,7 +123,10 @@ from agent_service.endpoints.models import (
     ValidateArgError,
     VariableHierarchyNode,
 )
-from agent_service.endpoints.utils import get_agent_hierarchical_worklogs
+from agent_service.endpoints.utils import (
+    get_agent_hierarchical_worklogs,
+    get_plan_preview,
+)
 from agent_service.external.custom_data_svc_client import (
     document_listing_status_to_str,
     get_custom_doc_file_contents,
@@ -143,8 +145,6 @@ from agent_service.external.user_svc_client import (
 )
 from agent_service.io_type_utils import get_clean_type_name, load_io_type
 from agent_service.io_types.citations import CitationDetailsType, CitationType
-from agent_service.io_types.graph import BarGraph, LineGraph, PieGraph
-from agent_service.io_types.table import Table
 from agent_service.planner.action_decide import FirstActionDecider
 from agent_service.planner.constants import CHAT_DIFF_TEMPLATE, FirstAction
 from agent_service.planner.planner import Planner
@@ -710,7 +710,7 @@ class AgentServiceImpl:
         Except `agent_id`, all other arguments are optional and can be used to filter the work log, but
         strongly recommend to have at least 1 filter to avoid returning too many entries.
         NOTE: If any of `start_date` or `end_date` is provided, and `limit_num` is also provided,
-        it will be most recent N entries within the date range.
+        it will be most recent N entries within the date range
 
         Args:
             agent_id (str): agent ID
@@ -747,6 +747,7 @@ class AgentServiceImpl:
                     PlanTemplateTask(task_id=node.tool_task_id, task_name=node.description)
                     for node in execution_plan.nodes
                 ],
+                preview=get_plan_preview(execution_plan),
             )
 
         return GetAgentWorklogBoardResponse(
@@ -1835,8 +1836,9 @@ class AgentServiceImpl:
     async def get_prompt_templates(self) -> List[PromptTemplate]:
         prompt_templates = await self.pg.get_prompt_templates()
         for template in prompt_templates:
+            preview = get_plan_preview(template.plan)
             if template.plan is not None:
-                template.output_types = self._output_types_from_plan(template.plan)
+                template.preview = preview
         return prompt_templates
 
     async def update_prompt_template(
@@ -1901,44 +1903,6 @@ class AgentServiceImpl:
             is_visible=is_visible,
         )
 
-    def _output_types_from_plan(self, plan: ExecutionPlan) -> List[OutputType]:
-        output_types = []
-        output_nodes = [node for node in plan.nodes if node.is_output_node]
-
-        output_type_mapping = {
-            Table: OutputType.TABLE,
-            LineGraph: OutputType.LINE_GRAPH,
-            BarGraph: OutputType.BAR_GRAPH,
-            PieGraph: OutputType.PIE_GRAPH,
-        }
-
-        for node in output_nodes:
-            try:
-                var_name = node.args.get("object_to_output").var_name  # type: ignore
-                matching_node = next(
-                    (n for n in plan.nodes if n.output_variable_name == var_name), None
-                )
-
-                if matching_node:
-                    tool_name = matching_node.tool_name
-                    output_type = ToolRegistry.get_tool(tool_name).return_type
-
-                    # Find the corresponding output type or default to TEXT
-                    output_types.append(
-                        next(
-                            (
-                                out_type
-                                for tool_class, out_type in output_type_mapping.items()
-                                if issubclass(output_type, tool_class)
-                            ),
-                            OutputType.TEXT,
-                        )
-                    )
-            except Exception:
-                output_types.append(OutputType.TEXT)
-
-        return output_types
-
     async def gen_template_plan(self, template_prompt: str, user: User) -> GenTemplatePlanResponse:
 
         LOGGER.info("Generating template plan...")
@@ -1950,10 +1914,7 @@ class AgentServiceImpl:
         if plan is None:
             raise HTTPException(status_code=400, detail="Plan generation failed: no plan created.")
 
-        return GenTemplatePlanResponse(
-            plan=plan,
-            output_types=self._output_types_from_plan(plan),
-        )
+        return GenTemplatePlanResponse(plan=plan, preview=get_plan_preview(plan))
 
     async def create_agent_and_run_template_plan(
         self, template_prompt: str, plan: ExecutionPlan, is_draft: bool, user: User
