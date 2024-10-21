@@ -1635,8 +1635,6 @@ class AgentServiceImpl:
         # preprocess
         # remove in-line citations
         content = re.sub(r" *```\{ [\s\S]*? \}``` ?", "", content)
-        # gpt outputs only separate by one new line character, markdown needs two
-        content = content.replace("\n", "\n\n")
 
         doc = pandoc.read(content, format="markdown")
         if new_type == MediaType.DOCX:
