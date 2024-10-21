@@ -315,6 +315,8 @@ class Table(ComplexIOBase):
                 val = val.to_pydatetime() if not convert_to_date else val.date()
             return val
 
+        if data.empty:
+            data = pd.DataFrame({col.label: [] for col in columns})
         out_columns: List[TableColumn] = []
         data = data.replace({np.nan: None})
         # this was accidentally? enforcing the column labels to line up with

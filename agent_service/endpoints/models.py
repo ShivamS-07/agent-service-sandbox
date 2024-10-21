@@ -652,6 +652,7 @@ class Debug(BaseModel):
     cost_info: Dict[str, Any]
     agent_owner_id: Optional[str]
     gpt_service_info: Dict[str, Any]
+    cloudwatch_url: str = ""
 
 
 class GetAgentDebugInfoResponse(BaseModel):

@@ -22,6 +22,11 @@ from uuid import uuid4
 
 import pandoc
 from fastapi import HTTPException, Request, UploadFile, status
+from gbi_common_py_utils.utils.environment import (
+    PROD_TAG,
+    STAGING_TAG,
+    get_environment_tag,
+)
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 from grpclib import GRPCError
 from stock_universe_service_proto_v1.custom_data_service_pb2 import (
@@ -720,8 +725,9 @@ class AgentServiceImpl:
             limit_num (Optional[int]): number of plan runs to return
         """
         LOGGER.info("Creating a future to get latest execution plan")
-        # TODO: For now just get the latest plan. Later we can switch to LIVE plan
-        future_task = run_async_background(self.pg.get_latest_execution_plan(agent_id))
+        future_task = run_async_background(
+            self.pg.get_latest_execution_plan(agent_id, only_running_plans=True)
+        )
 
         LOGGER.info("Getting agent worklogs")
         run_history, total_plan_count = await get_agent_hierarchical_worklogs(
@@ -1403,10 +1409,13 @@ class AgentServiceImpl:
             plan_selections,
             all_generated_plans,
             worker_sqs_log,
-            tool_calls,
+            (tool_calls, pod_name),
             cost_info,
             gpt_service_info,
         ) = await gather_with_concurrency(tasks, n=len(tasks))
+
+        env = "prod" if get_environment_tag() in [STAGING_TAG, PROD_TAG] else "dev"
+        cloudwatch_url_template = f"https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#logsV2:log-groups/log-group/eks-{env}-jobs/log-events/agent$252F{pod_name}"  # noqa
 
         tool_tips = Tooltips(
             create_execution_plans="Contains one entry for every 'create_execution_plan' SQS "
@@ -1477,6 +1486,7 @@ class AgentServiceImpl:
             agent_owner_id=agent_owner_id,
             cost_info=cost_info,
             gpt_service_info=gpt_service_info,
+            cloudwatch_url=cloudwatch_url_template,
         )
         return GetAgentDebugInfoResponse(tooltips=tool_tips, debug=debug)
 

@@ -407,7 +407,7 @@ class AsyncDB:
 
     @async_perf_logger
     async def get_latest_execution_plan(
-        self, agent_id: str, only_finished_plans: bool = False
+        self, agent_id: str, only_finished_plans: bool = False, only_running_plans: bool = False
     ) -> Tuple[
         Optional[str],
         Optional[ExecutionPlan],
@@ -418,6 +418,8 @@ class AsyncDB:
         extra_where = ""
         if only_finished_plans:
             extra_where = "AND ep.status = 'READY'"
+        elif only_running_plans:
+            extra_where = "AND ep.status IN ('RUNNING', 'NOT_STARTED')"
         sql = f"""
             SELECT ep.plan_id::VARCHAR, ep.plan, COALESCE(pr.created_at, ep.created_at) AS created_at,
                 ep.status, pr.plan_run_id::VARCHAR AS upcoming_plan_run_id, ep.locked_tasks
