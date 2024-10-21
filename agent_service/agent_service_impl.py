@@ -725,9 +725,7 @@ class AgentServiceImpl:
             limit_num (Optional[int]): number of plan runs to return
         """
         LOGGER.info("Creating a future to get latest execution plan")
-        future_task = run_async_background(
-            self.pg.get_latest_execution_plan(agent_id, only_running_plans=True)
-        )
+        future_task = run_async_background(self.pg.get_latest_execution_plan(agent_id))
 
         LOGGER.info("Getting agent worklogs")
         run_history, total_plan_count = await get_agent_hierarchical_worklogs(
@@ -1409,13 +1407,13 @@ class AgentServiceImpl:
             plan_selections,
             all_generated_plans,
             worker_sqs_log,
-            (tool_calls, pod_name),
+            tool_calls,
             cost_info,
             gpt_service_info,
         ) = await gather_with_concurrency(tasks, n=len(tasks))
 
         env = "prod" if get_environment_tag() in [STAGING_TAG, PROD_TAG] else "dev"
-        cloudwatch_url_template = f"https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#logsV2:log-groups/log-group/eks-{env}-jobs/log-events/agent$252F{pod_name}"  # noqa
+        cloudwatch_url_template = "https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#logsV2:log-groups/log-group/eks-{env}-jobs/log-events/agent$252F{pod_name}"  # noqa
 
         tool_tips = Tooltips(
             create_execution_plans="Contains one entry for every 'create_execution_plan' SQS "
@@ -1440,8 +1438,10 @@ class AgentServiceImpl:
             del value["plan_run_id"]
         for tool_plan_run_id, tool_value in tool_calls.items():
             plan_id = ""
+            pod_name = None
             for tool_name, tool_call_dict in tool_value.items():
                 plan_id = tool_call_dict["plan_id"]
+                pod_name = tool_call_dict.get("pod_name")
                 del tool_call_dict["plan_id"]
                 del tool_call_dict["plan_run_id"]
             top_level_key = f"plan_id={plan_id}"
@@ -1451,6 +1451,9 @@ class AgentServiceImpl:
                 run_execution_plans[top_level_key][inner_key] = {}
             if tool_plan_run_id == plan_run_id:
                 run_execution_plans[top_level_key][inner_key]["tool_calls"] = tool_value
+                run_execution_plans[top_level_key][inner_key]["cloudwatch_url"] = (
+                    cloudwatch_url_template.format(env=env, pod_name=pod_name)
+                )
         create_execution_plans: Dict[Any, Any] = defaultdict(dict)
         for _, value in worker_sqs_log["create_execution_plan"].items():
             plan_id = value["plan_id"]
@@ -1486,7 +1489,6 @@ class AgentServiceImpl:
             agent_owner_id=agent_owner_id,
             cost_info=cost_info,
             gpt_service_info=gpt_service_info,
-            cloudwatch_url=cloudwatch_url_template,
         )
         return GetAgentDebugInfoResponse(tooltips=tool_tips, debug=debug)
 

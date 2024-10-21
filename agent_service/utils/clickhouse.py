@@ -634,7 +634,7 @@ class Clickhouse(AsyncClickhouseBase):
         return rows
 
     @async_perf_logger
-    async def get_agent_debug_tool_calls(self, agent_id: str) -> Tuple[Dict[str, Any], str]:
+    async def get_agent_debug_tool_calls(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         SELECT  plan_id, plan_run_id, task_id, tool_name, start_time_utc,
         end_time_utc, service_version, duration_seconds, error_msg, replay_id, debug_info,
@@ -646,11 +646,8 @@ class Clickhouse(AsyncClickhouseBase):
         rows = await self.generic_read(sql, {"agent_id": agent_id})
         res: Dict[str, Any] = OrderedDict()
         tz = datetime.timezone.utc
-        pod_name = ""
         for row in rows:
             plan_run_id = row["plan_run_id"]
-            if not pod_name:
-                pod_name = row["pod_name"]
             if plan_run_id not in res:
                 res[plan_run_id] = OrderedDict()
             tool_name = row["tool_name"]
@@ -666,7 +663,7 @@ class Clickhouse(AsyncClickhouseBase):
             if row["debug_info"]:
                 row["debug_info"] = json.loads(row["debug_info"])
             res[plan_run_id][f"{tool_name}_{row['task_id']}"] = row
-        return (res, pod_name)
+        return res
 
     @async_perf_logger
     async def get_plan_run_debug_tool_calls(self, plan_run_id: str) -> List[Dict]:
