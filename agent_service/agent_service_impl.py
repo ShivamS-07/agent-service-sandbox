@@ -111,6 +111,7 @@ from agent_service.endpoints.models import (
     SetAgentScheduleResponse,
     SetPromptTemplateVisibilityResponse,
     SharePlanRunResponse,
+    Status,
     TerminateAgentResponse,
     ToolArgInfo,
     ToolMetadata,
@@ -741,7 +742,13 @@ class AgentServiceImpl:
             upcoming_plan_run_id,
         ) = await future_task
 
-        if plan_id is None or execution_plan is None:
+        if (
+            plan_id is None
+            or execution_plan is None
+            or status not in (Status.RUNNING.value, Status.NOT_STARTED.value)
+        ):
+            # Only set the execution plan template if the current status is
+            # NOT_STARTED or RUNNING
             execution_plan_template = None
         else:
             execution_plan_template = ExecutionPlanTemplate(
