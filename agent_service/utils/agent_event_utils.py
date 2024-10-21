@@ -3,6 +3,9 @@ from typing import List, Optional, Union
 
 import boto3
 
+from agent_service.agent_quality_worker.ingestion_worker import (
+    send_agent_quality_message,
+)
 from agent_service.endpoints.models import (
     AgentEvent,
     AgentNameEvent,
@@ -260,6 +263,16 @@ async def publish_agent_execution_status(
         await db.update_plan_run(
             agent_id=agent_id, plan_id=plan_id, plan_run_id=plan_run_id, status=status
         )
+        user_id = await db.get_agent_owner(agent_id=agent_id)
+        if get_ld_flag(
+            flag_name="qc_tool_flag",
+            default=False,
+            user_context=get_user_context(user_id=user_id),
+        ):
+            # Send a message to update the agent quality
+            await send_agent_quality_message(
+                agent_id=agent_id, plan_id=plan_id, status=status, db=db
+            )
     except Exception as e:
         if logger:
             logger.exception(

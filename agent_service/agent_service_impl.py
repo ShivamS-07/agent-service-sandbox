@@ -495,24 +495,30 @@ class AgentServiceImpl:
         ]
 
     @async_perf_logger
-    async def agent_quality_ingestion(self, req: ChatWithAgentRequest, user: User) -> None:
+    async def agent_quality_ingestion(
+        self,
+        agent_id: str,
+        prompt: str,
+        user: User,
+        plan_id: str,
+    ) -> None:
         agent_quality_id = str(uuid4())
         try:
             agent_qc = AgentQC(
                 agent_qc_id=agent_quality_id,
-                agent_id=req.agent_id,
-                query=req.prompt,
+                agent_id=agent_id,
+                query=prompt,
                 user_id=user.user_id,
-                fullstory_link=user.fullstory_link.replace("https://", ""),
-                canned_prompt_id=req.canned_prompt_id,
                 created_at=datetime.datetime.now(),
                 last_updated=datetime.datetime.now(),
                 agent_status="CS",
+                query_order=0,
+                plan_id=plan_id,
+                fullstory_link=user.fullstory_link.replace("https://", ""),
             )
             await self.pg.insert_agent_qc(agent_qc=agent_qc)
         except Exception:
-            LOGGER.warning(f"Unable to insert in agent quality db for  {req.agent_id=}")
-            LOGGER.warning(traceback.format_exc())
+            LOGGER.exception(f"Unable to insert in agent quality db for  {agent_id=}")
 
     @async_perf_logger
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
@@ -541,16 +547,8 @@ class AgentServiceImpl:
                 LOGGER.info(
                     "Creating future tasks to generate initial response and send slack message"
                 )
-                run_async_background(
-                    self._create_initial_response(user.user_id, agent_id, user_msg)  # 2s
-                )
+                run_async_background(self._create_initial_response(user, agent_id, user_msg))  # 2s
                 run_async_background(self._slack_chat_msg(req, user))  # 0.1s
-                if get_ld_flag(
-                    flag_name="qc_tool_flag",
-                    default=False,
-                    user_context=get_user_context(user_id=user.user_id),
-                ):
-                    run_async_background(self.agent_quality_ingestion(req, user))
 
             if req.canned_prompt_id:
                 log_event(
@@ -599,9 +597,7 @@ class AgentServiceImpl:
         return name
 
     @async_perf_logger
-    async def _create_initial_response(
-        self, user_id: str, agent_id: str, user_msg: Message
-    ) -> None:
+    async def _create_initial_response(self, user: User, agent_id: str, user_msg: Message) -> None:
         LOGGER.info("Generating initial response from GPT (first prompt)")
         chatbot = Chatbot(agent_id, gpt_service_stub=self.gpt_service_stub)
         chat_context = ChatContext(messages=[user_msg])
@@ -635,10 +631,22 @@ class AgentServiceImpl:
                 self.task_executor.create_execution_plan(  # this isn't async
                     agent_id=agent_id,
                     plan_id=plan_id,
-                    user_id=user_id,
+                    user_id=user.user_id,
                     run_plan_in_prefect_immediately=True,
                 )
             )
+            if get_ld_flag(
+                flag_name="qc_tool_flag",
+                default=False,
+                user_context=get_user_context(user_id=user.user_id),
+            ):
+                prompt: str = str(user_msg.message)
+
+                run_async_background(
+                    self.agent_quality_ingestion(
+                        agent_id=agent_id, prompt=prompt, user=user, plan_id=plan_id
+                    )
+                )
 
         await asyncio.gather(*tasks)
 

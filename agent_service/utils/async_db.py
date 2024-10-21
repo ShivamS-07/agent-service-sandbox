@@ -1587,14 +1587,14 @@ class AsyncDB:
            prod_reviewer, follow_up, score_rating, priority, use_case, problem_area,
            cs_failed_reason, cs_attempt_reprompting, cs_expected_output, cs_notes,
            canned_prompt_id, eng_failed_reason, eng_solution, eng_solution_difficulty,
-           jira_link, slack_link, fullstory_link, duplicate_agent, created_at, last_updated)
+           jira_link, slack_link, fullstory_link, duplicate_agent, created_at, last_updated, query_order)
         VALUES (%(agent_qc_id)s, %(agent_id)s, %(plan_id)s, %(user_id)s, %(query)s, %(agent_status)s,
                 %(cs_reviewer)s, %(eng_reviewer)s, %(prod_reviewer)s, %(follow_up)s,
                 %(score_rating)s, %(priority)s, %(use_case)s, %(problem_area)s,
                 %(cs_failed_reason)s, %(cs_attempt_reprompting)s, %(cs_expected_output)s, %(cs_notes)s,
                 %(canned_prompt_id)s, %(eng_failed_reason)s, %(eng_solution)s, %(eng_solution_difficulty)s,
                 %(jira_link)s, %(slack_link)s, %(fullstory_link)s, %(duplicate_agent)s,
-                %(created_at)s, %(last_updated)s)
+                %(created_at)s, %(last_updated)s, %(query_order)s )
         """
         await self.pg.generic_write(
             sql,
@@ -1627,16 +1627,18 @@ class AsyncDB:
                 "duplicate_agent": agent_qc.duplicate_agent,
                 "created_at": agent_qc.created_at,
                 "last_updated": agent_qc.last_updated,
+                "query_order": agent_qc.query_order,
             },
         )
 
-    async def get_agent_qc_id_by_agent_id(self, agent_id: str) -> Optional[str]:
+    async def get_agent_qc_id_by_agent_id(self, agent_id: str, plan_id: str) -> Optional[str]:
         sql = """
-        SELECT agent_qc_id
+        SELECT agent_qc_id::TEXT
         FROM agent.agent_qc
-        WHERE agent_id = %(agent_id)s
+        WHERE agent_id::TEXT = %(agent_id)s
+        AND plan_id::TEXT = %(plan_id)s
         """
-        result = await self.pg.generic_read(sql, {"agent_id": agent_id})
+        result = await self.pg.generic_read(sql, {"agent_id": agent_id, "plan_id": plan_id})
 
         # Check if the result is found and return agent_qc_id, else None
         if result:
@@ -1762,7 +1764,7 @@ class AsyncDB:
         for idx, criterion in enumerate(criteria):
             if idx == 0:
                 sql += "\nWHERE"
-            if idx != 0:
+            else:
                 sql += " AND"
             param1 = f"arg1_{idx}"
             param2 = f"arg2_{idx}"

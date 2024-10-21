@@ -1136,6 +1136,7 @@ class AgentQC(BaseModel):
     agent_id: str
     user_id: str
     agent_status: str
+    query_order: Optional[int] = 0
     agent_name: Optional[str] = None
     plan_id: Optional[str] = None
     query: Optional[str] = None
@@ -1159,7 +1160,7 @@ class AgentQC(BaseModel):
     slack_link: Optional[str] = None
     fullstory_link: Optional[str] = None
     duplicate_agent: Optional[str] = None
-    created_at: datetime.datetime
+    created_at: Optional[datetime.datetime] = None
     last_updated: datetime.datetime
 
 

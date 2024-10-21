@@ -106,7 +106,7 @@ def user_has_qc_tool_access(user_id: str, default: bool = False) -> bool:
     """
 
     return get_ld_flag(
-        flag_name="qc_tool_flag", user_context=get_user_context(user_id), default=default
+        flag_name="horizon-qc-tool", user_context=get_user_context(user_id), default=default
     )
 
 

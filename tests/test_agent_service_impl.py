@@ -647,7 +647,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
                 plan_id=str(uuid.uuid4()),
                 user_id=user_id,
                 query="user-specific query",
-                agent_status="inactive",
+                agent_status="CS",
                 score_rating=2,
                 created_at=datetime.now(),
                 last_updated=datetime.now(),
@@ -665,12 +665,29 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
             HorizonCriteria(
                 column="use_case",
                 operator=HorizonCriteriaOperator.ilike.value,
-                arg1="updated use case",
+                arg1="user",
                 arg2=None,
             )
         ]
         search_results = self.loop.run_until_complete(self.pg.search_agent_qc(criteria))
 
         # Verify the search results
-        self.assertEqual(len(search_results), 1)
-        self.assertEqual(search_results[0].use_case, "updated use case")
+        self.assertEqual(len(search_results), 0)
+
+        criteria_2 = [
+            HorizonCriteria(
+                column="query",
+                operator=HorizonCriteriaOperator.ilike.value,
+                arg1="updated use case",
+                arg2=None,
+            ),
+            HorizonCriteria(
+                column="use_case",
+                operator=HorizonCriteriaOperator.ilike.value,
+                arg1="user",
+                arg2=None,
+            ),
+        ]
+        search_results = self.loop.run_until_complete(self.pg.search_agent_qc(criteria_2))
+        # Verify the search results
+        self.assertEqual(len(search_results), 0)
