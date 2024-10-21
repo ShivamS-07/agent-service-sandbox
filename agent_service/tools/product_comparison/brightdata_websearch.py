@@ -4,6 +4,7 @@ import logging
 import ssl
 from typing import Any, Dict, List, Optional
 
+import aioboto3
 import aiohttp
 import requests
 from bs4 import BeautifulSoup
@@ -17,7 +18,12 @@ from agent_service.tools.product_comparison.constants import (
     BRIGHTDATA_SERP_PASSWORD,
     BRIGHTDATA_SERP_USERNAME,
     HEADER,
+    S3_BUCKET_BOOSTED_WEBSEARCH,
+    URL_CACHE_TTL_HOURS,
 )
+from agent_service.utils.logs import async_perf_logger
+from agent_service.utils.postgres import get_psql
+from agent_service.utils.prefect import get_prefect_logger
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +75,10 @@ def brd_request(url: str, headers: Dict[str, str] = HEADER, timeout: int = 5) ->
     return response
 
 
+@async_perf_logger
 async def req_and_scrape(
     session: aiohttp.ClientSession,
+    s3_client: Any,
     url: str,
     headers: Dict[str, str],
     proxy: str,
@@ -82,6 +90,8 @@ async def req_and_scrape(
         url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context  # type: ignore
     ) as response:
         try:
+            title: Optional[str] = None
+
             content_type = response.headers.get("Content-Type", "")
             if "application/pdf" in content_type:
                 pdf_binary_data = await response.read()
@@ -90,12 +100,15 @@ async def req_and_scrape(
                 text = ""
                 for page in pdf_reader.pages:
                     text += page.extract_text()
-                title = url
+
+                if pdf_reader.metadata:
+                    title = pdf_reader.metadata.title
             elif "text/html" in content_type:
                 html_content = await response.text()
                 soup = BeautifulSoup(html_content, "html.parser")
 
-                title = soup.title.string if soup.title else url
+                if soup.title:
+                    title = soup.title.string
 
                 # find all main content divs
                 main_contents = soup.find_all(name="div", attrs={"class": "content"})
@@ -131,29 +144,81 @@ async def req_and_scrape(
             logger.info(f"Failed to retrieve {url}. Error: {e}")
             return None
 
+        obj = WebText(url=url, title=title)  # we don't save `text` in the obj and pass around
+
+        # upload to s3
+        await s3_client.upload_fileobj(
+            Fileobj=io.BytesIO(text.encode("utf-8")), Bucket=S3_BUCKET_BOOSTED_WEBSEARCH, Key=obj.id
+        )
+
         # Return the response object
-        return WebText(val=text, url=url, title=title)
+        return obj
 
 
 # takes in URLs, returns a list of WebTexts
+@async_perf_logger
 async def get_web_texts_async(
     urls: List[str], headers: Dict[str, str] = HEADER, timeout: int = 60
 ) -> Any:
+    logger = get_prefect_logger(__name__)
+
     ssl_context = ssl.create_default_context()
     ssl_context.load_verify_locations(
         cafile="agent_service/tools/product_comparison/brd_certificate.crt"
     )
 
-    # Create a ClientSession with proxy support
-    async with aiohttp.ClientSession(max_line_size=8190 * 5, max_field_size=8190 * 5) as session:
-        tasks = []
-        for url in urls:
-            tasks.append(
-                req_and_scrape(session, url, headers, req_proxies["http"], timeout, ssl_context)
-            )
+    sql1 = """
+        SELECT DISTINCT ON (url) id::VARCHAR, url, title
+        FROM agent.websearch_metadata
+        WHERE url = ANY(%(urls)s) AND inserted_at > NOW() - INTERVAL '%(num_hours)s hours'
+        ORDER BY url, inserted_at DESC
+    """
+    pg = get_psql()
+    rows = pg.generic_read(sql1, params={"urls": urls, "num_hours": URL_CACHE_TTL_HOURS})
 
-        results = await asyncio.gather(*tasks)
-        return [result for result in results if result is not None]
+    logger.info(f"Cache hit! Found {len(rows)} cached URLs out of {len(urls)}!")
+
+    url_to_obj = {
+        row["url"]: WebText(id=row["id"], url=row["url"], title=row["title"]) for row in rows
+    }
+    results: list[WebText] = list(url_to_obj.values())
+
+    uncached_urls = [url for url in urls if url not in url_to_obj]
+    if uncached_urls:
+        logger.info(f"Scrapping {len(uncached_urls)} uncached URLs out of {len(urls)}")
+
+        # Create a ClientSession with proxy support
+        async with aiohttp.ClientSession(
+            max_line_size=8190 * 5, max_field_size=8190 * 5
+        ) as session, aioboto3.Session().client("s3") as s3_client:
+            tasks = [
+                req_and_scrape(
+                    session, s3_client, url, headers, req_proxies["http"], timeout, ssl_context
+                )
+                for url in uncached_urls
+            ]
+            uncached_res = await asyncio.gather(*tasks)
+            uncached_res = [res for res in uncached_res if res is not None]
+
+            if uncached_res:
+                logger.info(
+                    f"Succesfully scrapped {len(uncached_res)} results "
+                    f"out of {len(uncached_urls)} URLs. Inserting metadata into DB"
+                )
+
+                results.extend(uncached_res)
+
+                # Once the contents are on S3, insert the metadata into the database
+                sql2 = """
+                    INSERT INTO agent.websearch_metadata (id, url, title)
+                    VALUES (
+                        %(id)s, %(url)s, %(title)s
+                    )
+                """
+                with pg.transaction_cursor() as cursor:
+                    cursor.executemany(sql2, [res.to_db_dict() for res in uncached_res])
+
+    return results
 
 
 async def main() -> None:

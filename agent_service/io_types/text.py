@@ -4,6 +4,7 @@ import datetime
 import json
 import logging
 from collections import defaultdict
+from io import BytesIO
 from typing import (
     Any,
     ClassVar,
@@ -19,6 +20,7 @@ from typing import (
 )
 from uuid import uuid4
 
+import aioboto3
 import mdutils
 from pydantic import Field, field_serializer
 from typing_extensions import Self
@@ -2124,6 +2126,23 @@ class WebText(Text):
     title: Optional[str] = ""
 
     @classmethod
+    async def _get_strs_lookup(cls, texts: List[WebText]) -> Dict[TextIDType, str]:
+        outputs = {}
+
+        async with aioboto3.Session().client("s3") as s3:
+            fileobjs = [BytesIO() for _ in texts]
+            tasks = [
+                s3.download_fileobj(Bucket="boosted-websearch", Key=text.id, Fileobj=fileobj)
+                for text, fileobj in zip(texts, fileobjs)
+            ]
+            _ = await gather_with_concurrency(tasks, n=10)
+
+            for text, fileobj in zip(texts, fileobjs):
+                outputs[text.id] = fileobj.getvalue().decode("utf-8")
+
+        return outputs
+
+    @classmethod
     async def get_citations_for_output(
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Dict[TextCitation, Sequence[CitationOutput]]:
@@ -2149,6 +2168,9 @@ class WebText(Text):
                 )
             )
         return output  # type: ignore
+
+    def to_db_dict(self) -> dict:
+        return {"id": self.id, "url": self.url, "title": self.title}
 
 
 @io_type

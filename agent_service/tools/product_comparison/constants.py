@@ -8,3 +8,6 @@ BRIGHTDATA_SERP_PASSWORD = "/brightdata/password"
 
 BRIGHTDATA_REQ_USERNAME = "/brightdata/req/username"
 BRIGHTDATA_REQ_PASSWORD = "/brightdata/req/password"
+
+S3_BUCKET_BOOSTED_WEBSEARCH = "boosted-websearch"
+URL_CACHE_TTL_HOURS = 4  # 4 hours as the time for the website content unchanged
