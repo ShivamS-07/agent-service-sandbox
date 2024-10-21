@@ -101,16 +101,7 @@ async def publish_agent_event(agent_id: str, serialized_event: str) -> None:
     env = get_environment_tag().lower()
     channel = CHANNEL_TEMPLATE.format(env=env, agent_id=agent_id)
     try:
-        subscriber_num = await redis.publish(channel, serialized_event)
-        log_event(
-            event_name="agent-event-published",
-            event_data={
-                "agent_id": agent_id,
-                "data": serialized_event,
-                "channel": channel,
-                "subscribers": subscriber_num,
-            },
-        )
+        await redis.publish(channel, serialized_event)
     except Exception as e:
         log_event(
             event_name="agent-event-published",

@@ -867,14 +867,6 @@ async def stream_agent_events(
                     to_send = event.model_dump_json()
                 except Exception:
                     logger.exception(f"Error while sending agent event {agent_id=}")
-                    log_event(
-                        event_name="agent-event-sent",
-                        event_data={
-                            "agent_id": agent_id,
-                            "user_id": user.user_id,
-                            "error_msg": traceback.format_exc(),
-                        },
-                    )
                     continue
 
                 yield ServerSentEvent(data=to_send, event="agent-event")
@@ -883,14 +875,6 @@ async def stream_agent_events(
                     event_data={"agent_id": agent_id, "user_id": user.user_id, "data": to_send},
                 )
         except Exception as e:
-            log_event(
-                event_name="agent-event-sent",
-                event_data={
-                    "agent_id": agent_id,
-                    "user_id": user.user_id,
-                    "error_msg": traceback.format_exc(),
-                },
-            )
             logger.info(f"Event stream client disconnected for {agent_id=}")
             raise e
 
