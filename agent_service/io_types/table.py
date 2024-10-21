@@ -306,8 +306,17 @@ class Table(ComplexIOBase):
         stocks_are_hashable_objs: bool = False,
         ignore_extra_cols: bool = False,
     ) -> Self:
+        def _val_to_dt(
+            val: Any, convert_to_date: bool = False
+        ) -> Optional[Union[datetime.date, datetime.datetime]]:
+            if val is None:
+                return None
+            if isinstance(val, pd.Timestamp):
+                val = val.to_pydatetime() if not convert_to_date else val.date()
+            return val
+
         out_columns: List[TableColumn] = []
-        data = data.replace(np.nan, None)
+        data = data.replace({np.nan: None})
         # this was accidentally? enforcing the column labels to line up with
         # the physical column layout, even though we grab the data by column name/label instead
         for col_meta in columns:
@@ -320,15 +329,11 @@ class Table(ComplexIOBase):
                 )
 
             if col_meta.col_type == TableColumnType.DATE:
-                data[df_col] = data[df_col].apply(
-                    func=lambda val: val.date() if isinstance(val, pd.Timestamp) else val
-                )
-                out_columns.append(DateTableColumn(metadata=col_meta, data=data[df_col].to_list()))
+                vals = [_val_to_dt(ts, convert_to_date=True) for ts in data[df_col].to_list()]
+                out_columns.append(DateTableColumn(metadata=col_meta, data=vals))
             elif col_meta.col_type == TableColumnType.DATETIME:
-                data[df_col] = data[df_col].apply(
-                    func=lambda val: val.to_pydatetime() if isinstance(val, pd.Timestamp) else val
-                )
-                out_columns.append(DateTableColumn(metadata=col_meta, data=data[df_col].to_list()))
+                vals = [_val_to_dt(ts) for ts in data[df_col].to_list()]
+                out_columns.append(DatetimeTableColumn(metadata=col_meta, data=vals))  # type: ignore
             elif col_meta.col_type == TableColumnType.STOCK:
                 stocks = data[df_col].to_list()
                 if stocks_are_hashable_objs:
