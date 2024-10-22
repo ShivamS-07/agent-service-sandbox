@@ -913,6 +913,51 @@ class GetCustomDocumentFileInfoResponse(BaseModel):
 
 
 ####################################################################################################
+# Stock Search
+####################################################################################################
+class GetOrderedSecuritiesRequest(BaseModel):
+    # use camelCase to match the GQL definition
+    searchText: str
+    preferEtfs: bool = False
+    includeDepositary: bool = False
+    includeForeign: bool = False
+    order: List[str] = ["volume"]
+    priorityCountry: Optional[str] = None
+    priorityExchange: Optional[str] = None
+    priorityCurrency: Optional[str] = None
+    maxItems: int = 0
+
+
+class MasterSecuritySector(BaseModel):
+    id: int
+    name: str
+    topParentName: Optional[str]
+
+
+class MasterSecurity(BaseModel):
+    # use camelCase to match the GQL definition
+    gbiId: int
+    symbol: Optional[str]
+    isin: Optional[str]
+    name: Optional[str]
+    currency: Optional[str]
+    country: Optional[str]
+    primaryExchange: Optional[str]
+    gics: Optional[int]
+    assetType: Optional[str]
+    securityType: Optional[str]
+    from_: Optional[str] = Field(alias="from")  # `from` is a reserved keyword -> `from x import y`
+    to: Optional[str]
+    sector: Optional[MasterSecuritySector]
+    isPrimaryTradingItem: Optional[bool]
+    hasRecommendations: Optional[bool]
+
+
+class GetOrderedSecuritiesResponse(BaseModel):
+    securities: List[MasterSecurity]
+
+
+####################################################################################################
 # User
 ####################################################################################################
 

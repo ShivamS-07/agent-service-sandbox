@@ -78,6 +78,8 @@ from agent_service.endpoints.models import (
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
     GetMemoryContentResponse,
+    GetOrderedSecuritiesRequest,
+    GetOrderedSecuritiesResponse,
     GetPlanRunDebugInfoResponse,
     GetPlanRunOutputResponse,
     GetSecureUserResponse,
@@ -94,6 +96,7 @@ from agent_service.endpoints.models import (
     LockAgentOutputResponse,
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadResponse,
+    MasterSecurity,
     MediaType,
     MemoryItem,
     ModifyPlanRunArgsRequest,
@@ -149,6 +152,7 @@ from agent_service.external.user_svc_client import (
     list_team_members,
     update_user,
 )
+from agent_service.external.webserver import get_ordered_securities
 from agent_service.io_type_utils import get_clean_type_name, load_io_type
 from agent_service.io_types.citations import CitationDetailsType, CitationType
 from agent_service.planner.action_decide import FirstActionDecider
@@ -2021,6 +2025,14 @@ class AgentServiceImpl:
         # Check if feature flag has been disabled for user (giving them access) or check their db permission
         return not is_database_access_check_enabled_for_user(user_id=user.user_id) or (
             bool(db_user[0].has_alfa_access) and bool(db_user[0].cognito_enabled)  # type: ignore
+        )
+
+    async def get_ordered_securities(
+        self, req: GetOrderedSecuritiesRequest, user: User
+    ) -> GetOrderedSecuritiesResponse:
+        securities = await get_ordered_securities(user_id=user.user_id, **(req.model_dump()))
+        return GetOrderedSecuritiesResponse(
+            securities=[MasterSecurity(**security) for security in securities]
         )
 
     async def search_agent_qcs(self, search_params: List[HorizonCriteria]) -> List[AgentQC]:

@@ -30,7 +30,7 @@ def get_default_grpc_metadata(
 def create_jwt(
     user_id: str,
     cognito_groups: Optional[List[str]] = None,
-    expiry_hours: Optional[int] = None,
+    expiry_hours: int = 1,
 ) -> str:
     tag = get_environment_tag()
     param_name = "/dev/token/webserver/jwk"

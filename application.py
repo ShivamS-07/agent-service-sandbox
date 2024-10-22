@@ -82,6 +82,8 @@ from agent_service.endpoints.models import (
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
     GetMemoryContentResponse,
+    GetOrderedSecuritiesRequest,
+    GetOrderedSecuritiesResponse,
     GetPlanRunDebugInfoResponse,
     GetPromptTemplatesResponse,
     GetSecureUserResponse,
@@ -211,7 +213,7 @@ class CustomGZipMiddleware(GZipMiddleware):
 
 
 # compress responses that >1MB (level 1 to 9, the higher the level, the smaller size is)
-application.add_middleware(CustomGZipMiddleware, minimum_size=1000 * 1000, compresslevel=5)
+application.add_middleware(CustomGZipMiddleware, minimum_size=100 * 1000, compresslevel=5)
 
 REQUEST_COUNTER = int(time.time())
 
@@ -1692,6 +1694,17 @@ async def get_custom_doc_details(
     except CustomDocumentException as e:
         logger.exception(f"Error while getting custom doc metadata {file_id}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.message)
+
+
+@router.post(
+    "/stock/get-ordered-securities",
+    response_model=GetOrderedSecuritiesResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_ordered_securities(
+    req: GetOrderedSecuritiesRequest, user: User = Depends(parse_header)
+) -> GetOrderedSecuritiesResponse:
+    return await application.state.agent_service_impl.get_ordered_securities(req, user)
 
 
 @router.get(
