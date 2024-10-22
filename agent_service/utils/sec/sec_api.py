@@ -5,7 +5,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import backoff
 from gbi_common_py_utils.utils.ssm import get_param
@@ -269,6 +269,8 @@ class SecFiling:
         start_date: Optional[datetime.date] = None,
         end_date: Optional[datetime.date] = None,
     ) -> Tuple[List[Tuple[str, int]], Dict[str, str]]:
+        from agent_service.utils.feature_flags import get_ld_flag
+
         """
         Given a list of GBI IDs, and a date range, return 2 things:
         1. A list of pairs (10K/Q filing string, GBI ID)
@@ -281,7 +283,7 @@ class SecFiling:
         if not form_types:
             raise Exception("Couldn't find any supported SEC filing types in the request.")
 
-        filing_to_db_id = await cls._get_db_ids_for_filings(
+        filing_to_db_id, gbi_id_found_set, filing_gbi_pairs = await cls._get_db_ids_for_filings(
             gbi_ids, form_types=form_types, start_date=start_date, end_date=end_date
         )  # default to search for last quarter in DB cache
 
@@ -294,9 +296,13 @@ class SecFiling:
         logger.info(
             f"Found {len(gbi_cik_mapping)} out of {len(gbi_ids)} CIKs cached in the database."
         )
-
-        filing_gbi_pairs: List[Tuple[str, int]] = []
+        ch_caching = get_ld_flag("sec-ch-caching", default=False, user_context=None)
         for gbi_id in gbi_ids:
+            if ch_caching and gbi_id in gbi_id_found_set:
+                logger.debug(f"Already ingested SEC data for gbi_id={gbi_id}. Skipping SEC calls")
+                continue
+            else:
+                logger.info(f"Could not find SEC data for gbi_id={gbi_id}. Using SEC API....")
             if gbi_id in gbi_cik_mapping:
                 cik = gbi_cik_mapping[gbi_id]
             else:
@@ -383,17 +389,16 @@ class SecFiling:
                             # If there are fewer than the max number of allowed
                             # responses for this query, we're done.
                             break
-                time.sleep(0.5)  # avoid rate limit
             except Exception as e:
                 logger.exception(f"Failed to get filings for {gbi_id=}: {e}")
                 time.sleep(10)
 
         logger.info(
-            f"Found {len(filing_gbi_pairs)} filings for {len(gbi_ids)} stocks."
+            f"Found {len(filing_gbi_pairs)} filings for {len(gbi_ids)} stocks. "
             f"Found {len(filing_to_db_id)} filings cached in the database."
         )
 
-        return filing_gbi_pairs, filing_to_db_id
+        return list(set(filing_gbi_pairs)), filing_to_db_id
 
     @classmethod
     def _build_queries_for_filings(
@@ -461,7 +466,7 @@ class SecFiling:
         form_types: List[str],
         start_date: Optional[datetime.date] = None,  # inclusive
         end_date: Optional[datetime.date] = None,  # inclusive
-    ) -> Dict[str, str]:
+    ) -> Tuple[Dict[str, str], Set[int], List[Tuple[str, int]]]:
         """
         Given a list of SEC filings, return a list of database table IDs for the available filings.
         Default date range will be the last 100 days.
@@ -474,7 +479,7 @@ class SecFiling:
 
         sql = """
             SELECT DISTINCT ON (formType, gbi_id, filedAt)
-                id::TEXT AS id, filing
+                id::TEXT AS id, filing, gbi_id
             FROM sec.sec_filings
             WHERE gbi_id IN %(gbi_ids)s AND formType IN %(form_types)s
                 AND filedAt >= %(start_date)s AND filedAt <= %(end_date)s
@@ -489,7 +494,15 @@ class SecFiling:
                 "end_date": end_date,
             },
         )
-        return {row["filing"]: row["id"] for row in result}
+        gbi_id_found_set = set()
+        return_dict = {}
+        filing_gbi_id_pairs = []
+        for row in result:
+            return_dict[row["filing"]] = row["id"]
+            gbi_id_found_set.add(row["gbi_id"])
+            filing_gbi_id_pairs.append((row["filing"], row["gbi_id"]))
+
+        return return_dict, gbi_id_found_set, filing_gbi_id_pairs
 
     ################################################################################################
     # Get sections for 10K/10Q filings
@@ -568,11 +581,20 @@ class SecFiling:
     @classmethod
     async def get_concat_10k_10q_sections_from_api(
         cls, filing_gbi_pairs: List[Tuple[str, int]], insert_to_db: bool = True
-    ) -> Dict[str, str]:
+    ) -> Tuple[Dict[str, str], List[Dict]]:
+        """
+        Returns Tuple[Dict[str, str], List[Dict]]:
+        - Dict[str, str]: A dictionary where the key is the filing information (JSON string) and the
+            value is the concatenated filing text.
+        - List[Dict]: A list of dictionaries representing the rows to be inserted into the database.
+        """
         if not filing_gbi_pairs:
-            return {}
+            return {}, []
 
-        ch = Clickhouse()
+        rows_to_insert = []
+
+        if insert_to_db:
+            ch = Clickhouse()
 
         output = {}
         for filing_info_str, gbi_id in filing_gbi_pairs:
@@ -619,25 +641,23 @@ class SecFiling:
                     output[filing_info_str] = text
                 else:
                     output[filing_info_str] = processed_full_content
+                row_to_insert = {
+                    "gbi_id": gbi_id,
+                    CIK: filing_info[CIK],
+                    FORM_TYPE: filing_info[FORM_TYPE],  # '10-Q' or '10-K
+                    FILED_TIMESTAMP: parse_date_str_in_utc(filing_info[FILED_TIMESTAMP]),
+                    "filing": filing_info_str,
+                    "content": processed_full_content,
+                    MANAGEMENT_SECTION: management_section,
+                    RISK_FACTORS: risk_factor_section,
+                }
 
+                rows_to_insert.append(row_to_insert)
                 if insert_to_db:
                     try:
                         await ch.multi_row_insert(
                             table_name="sec.sec_filings",
-                            rows=[
-                                {
-                                    "gbi_id": gbi_id,
-                                    CIK: filing_info[CIK],
-                                    FORM_TYPE: filing_info[FORM_TYPE],  # '10-Q' or '10-K
-                                    FILED_TIMESTAMP: parse_date_str_in_utc(
-                                        filing_info[FILED_TIMESTAMP]
-                                    ),
-                                    "filing": filing_info_str,
-                                    "content": processed_full_content,
-                                    MANAGEMENT_SECTION: management_section,
-                                    RISK_FACTORS: risk_factor_section,
-                                }
-                            ],
+                            rows=[row_to_insert],
                         )
                     except Exception as e:
                         # FIXME: there seems to be some size-limitation issue (2MB), right now just
@@ -647,7 +667,7 @@ class SecFiling:
                 logger.exception(f"Failed to get 10K/10Q filing sections for {gbi_id=}: {e}")
                 time.sleep(10)
 
-        return output
+        return output, rows_to_insert
 
     @classmethod
     def _download_10k_10q_section(cls, filing: Dict, section: str) -> Optional[str]:

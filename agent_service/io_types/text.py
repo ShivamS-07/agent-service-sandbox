@@ -1672,9 +1672,10 @@ class StockSecFilingText(StockText):
             for filing in sec_filing_list
             if not filing.db_id and filing.stock_id
         ]
-        output.update(
-            await SecFiling.get_concat_10k_10q_sections_from_api(filing_gbi_pairs, insert_to_db=True)  # type: ignore
+        sec_output_docs, _ = await SecFiling.get_concat_10k_10q_sections_from_api(
+            filing_gbi_pairs, insert_to_db=True
         )
+        output.update(sec_output_docs)  # type: ignore
 
         return output
 
