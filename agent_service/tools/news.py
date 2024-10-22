@@ -308,20 +308,12 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
     )
 
 
-def web_search_enabled(user_id: str) -> bool:
-    ld_user = get_user_context(user_id)
-    result = get_ld_flag("web-search-tool", default=False, user_context=ld_user)
-    return result
-
-
 @tool(
     description=(
         "This function takes a list of topics and returns a "
         "list of news articles related to at least one of the given topics. (OR logic)"
         "If you need something which is about multiple topics at the same time (AND logic) "
         "Include it as a single topic joined by `and`"
-        "If someone wants general information about a topic that is NOT a company/stock"
-        "this is the best tool to call. "
         "If you do not set max_num_articles_per_topic, all are returned. "
         "This function must NEVER be used if you intend to filter stocks, the news articles do not "
         "contain information about which stocks they are relevant to. "
@@ -335,7 +327,6 @@ def web_search_enabled(user_id: str) -> bool:
         "ever use this tool, you must get the news for that company."
     ),
     category=ToolCategory.NEWS,
-    enabled_checker_func=lambda user_id: not web_search_enabled(user_id),
     tool_registry=ToolRegistry,
 )
 async def get_news_articles_for_topics(
@@ -419,18 +410,28 @@ class GetNewsAndWebPagesForTopicsInput(ToolArgs):
     max_num_articles_per_topic: Optional[int] = None
 
 
+def web_search_enabled(user_id: str) -> bool:
+    ld_user = get_user_context(user_id)
+    result = get_ld_flag("web-search-tool", default=False, user_context=ld_user)
+    return result
+
+
 @tool(
     description=(
         "This function takes a list of topics and returns a "
         "list of news articles supplemented by web searches related to at least one of the given topics. (OR logic)"
         "If you need something which is about multiple topics at the same time (AND logic) "
         "Include it as a single topic joined by `and`"
-        "If someone wants general information about a topic that is NOT a company/stock, "
+        "If someone wants general information about a topic that is NOT a company/stock, this is the best tool to call"
         "Please call the summarize_texts tool before outputting the text from this tool. "
         "If you do not set max_num_articles_per_topic, all are returned. "
         "This function must NEVER be used if you intend to filter stocks, the news articles do not "
         "contain information about which stocks they are relevant to. "
         "The default date range is the previous month. "
+        "If the user wants information about a (non-stock) topic and does not specify a source of that information, "
+        "use this tool. "
+        "If the client asks for only news, use the get_news_articles_for_topics tool instead"
+        "If the client asks for only web results, use the general_web_search tool instead"
         "Never use this function to collect news for writing a commentary, instead use the "
         "get_commentary_inputs. "
         "Never use this tool together with write_commentary tool or get_commentary_inputs. "
