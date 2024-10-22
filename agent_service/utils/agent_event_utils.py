@@ -369,17 +369,26 @@ async def send_agent_emails(
     if agent_subs:
         # share the plan
         await pg.set_plan_run_share_status(plan_run_id=plan_run_id, status=True)
-        user_ids = set([agent_sub.user_id for agent_sub in agent_subs])
 
         # create a subscription message
-        detailed_emails_user_ids = [
-            id
-            for id in user_ids
-            if get_ld_flag("whats-new-in-email", default=False, user_context=get_user_context(id))
-        ]
+        detailed_email_user_id_pairs = set()
+        simple_email_user_id_pairs = set()
+        for agent_sub in agent_subs:
+            if agent_sub.user_id:
+                if get_ld_flag(
+                    "whats-new-in-email",
+                    default=False,
+                    user_context=get_user_context(agent_sub.user_id),
+                ):
+                    detailed_email_user_id_pairs.add((agent_sub.user_id, agent_sub.email))
+                else:
+                    simple_email_user_id_pairs.add((agent_sub.user_id, agent_sub.email))
+            else:
+                # non-user email addresses will get the "whats-new-in-email" feature flag
+                detailed_email_user_id_pairs.add(("", agent_sub.email))
 
         detailed_message = AgentSubscriptionMessage(
-            user_ids=detailed_emails_user_ids,
+            user_id_email_pairs=list(detailed_email_user_id_pairs),
             agent_data=[
                 AgentNotificationData(
                     agent_name=agent_name,
@@ -396,9 +405,8 @@ async def send_agent_emails(
         )
 
         # this list contains the users who do not have the "whats-new-in-email" feature flag enabled
-        simple_emails_user_ids = [id for id in user_ids if id not in detailed_emails_user_ids]
         simple_message = AgentSubscriptionMessage(
-            user_ids=simple_emails_user_ids,
+            user_id_email_pairs=list(simple_email_user_id_pairs),
             agent_data=[
                 AgentNotificationData(
                     agent_name=agent_name,

@@ -184,7 +184,7 @@ email subject line that focuses solely on the most important fact or key informa
 words. If the email contains any stats, make sure to include the relevant timeframe (e.g., year-over-year
 or quarterly). Avoid vague phrases, labels, or analysis terms like "impact," "alert," or "analysis." Only
 output the subject line and nothing else, or else you will be fired. If the content of the email is not
-provided, simply return an empty string and nothing else.
+provided, simply return nothing.
 Here is the content of the email:
 {email_content}
 Now, output your subject line:

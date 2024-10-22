@@ -201,7 +201,7 @@ class RemoveNotificationEmailsResponse(BaseModel):
 
 class AgentNotificationEmail(BaseModel):
     email: str
-    user_id: str
+    user_id: str | None
     agent_id: str
 
 
@@ -229,7 +229,7 @@ class AgentNotificationData(BaseModel):
 
 class AgentSubscriptionMessage(BaseModel):
     message_type: str = "agent_notification_event"
-    user_ids: List[str]
+    user_id_email_pairs: List[tuple[str, str]]
     agent_data: List[AgentNotificationData]
 
 
