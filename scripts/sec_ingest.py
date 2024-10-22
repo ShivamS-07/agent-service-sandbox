@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import datetime
 import json
@@ -14,7 +15,13 @@ from agent_service.utils.sec.sec_api import SecFiling
 LOGGER = logging.getLogger(__name__)
 
 
-async def main(gbi_ids: List[int] = []) -> None:
+async def main(
+    gbi_ids: List[int] = [],
+    num_workers: int = 1,
+    worker: int = 0,
+    start_date: datetime.date = datetime.date(1900, 1, 1),
+    end_date: datetime.date = datetime.date.today() + datetime.timedelta(days=30),
+) -> None:
     ch = Clickhouse()
     sql = """
     select gbi_id, cik, filing from sec.sec_filings
@@ -28,6 +35,8 @@ async def main(gbi_ids: List[int] = []) -> None:
     cik_gbi_map = {}
     filing_set = set()
     for row in rows:
+        if row["gbi_id"] % num_workers != worker:
+            continue
         cik_gbi_map[row["cik"]] = row["gbi_id"]
         filing_set.add(row["filing"])
 
@@ -38,8 +47,8 @@ async def main(gbi_ids: List[int] = []) -> None:
         start = time.time()
         total_inserted = 0
         gbi_id = cik_gbi_map[cik]
-        query_start_date = datetime.datetime(1900, 1, 1)
-        query_end_date = datetime.datetime(2025, 1, 1)
+        query_start_date = start_date
+        query_end_date = end_date
         try:
 
             LOGGER.info(f"Working on gbi_id={gbi_id}")
@@ -123,10 +132,43 @@ async def main(gbi_ids: List[int] = []) -> None:
             pass
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Ingest SEC filings data.")
+    parser.add_argument(
+        "--gbi-ids", nargs="+", type=int, default=[], help="List of gbi_ids to process"
+    )
+    parser.add_argument(
+        "--num-workers", type=int, default=1, help="Number of workers to run the process"
+    )
+    parser.add_argument(
+        "--worker", type=int, default=0, help="ID of the worker running the process"
+    )
+    parser.add_argument(
+        "--start-date",
+        type=lambda x: datetime.date.fromisoformat(x),
+        default=datetime.date(1900, 1, 1),
+    )
+    parser.add_argument(
+        "--end-date",
+        type=lambda x: datetime.date.fromisoformat(x),
+        default=datetime.date.today() + datetime.timedelta(days=30),
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s.%(funcName)s:%(lineno)d - %(levelname)s - %(message)s",
         force=True,
     )
-    asyncio.run(main(gbi_ids=[714]))
+    args = parse_args()
+    asyncio.run(
+        main(
+            gbi_ids=args.gbi_ids,
+            num_workers=args.num_workers,
+            worker=args.worker,
+            start_date=args.start_date,
+            end_date=args.end_date,
+        )
+    )
