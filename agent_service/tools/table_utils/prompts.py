@@ -208,10 +208,12 @@ interest directly, and, if required, take the top/bottom n. In most case you
 should not need to add a column, and you must NEVER include a column which
 indicates the rank in your output table unless the user is asking for it explicitly.
 
-In cases where the user clearly wants some kind of filtering (not just ranking!!!!)
-but just asks for an undefined number of stocks (e.g. `give me the stocks with the best
-P/E`), output at least 10 stocks. If the user specifies a number, make
-sure to output that specific number! Don't forget to rank before you apply any filter!
+In cases where the user indicates they want some kind of filtering (not just ranking!!!!)
+but do not provide an explicit formula, instead asking for stocks that are the
+best/worst/largest/smallest/etc. for a statistic (e.g. `give me the stocks with the best
+P/E`), output at least 10 stocks. If the user specifies a number of outputs that they
+want, make sure to output that specific number! Don't forget to rank before you apply
+any such filter!
 
 If the user just asks for a ranking without saying anything that suggests a filter,
 then you should just rank and return all the stocks. You must not filter unless it is

@@ -63,4 +63,21 @@ class StockGroups(ComplexIOBase):
         columns.append(stocks_column)
 
         output = [PreparedOutput(val=Table(columns=columns), title=main_title or self.header)]
+
+        try:  # display table for each stock group if they were selected by profile filtering
+            if any(
+                [
+                    history_entry.title.startswith("Connection to")
+                    for history_entry in self.stock_groups[0].stocks[0].history
+                    if history_entry.title
+                ]
+            ):
+                output.extend(
+                    [
+                        PreparedOutput(val=stock_group.stocks, title=stock_group.name)
+                        for stock_group in self.stock_groups
+                    ]
+                )
+        except IndexError:
+            pass
         return output  # type: ignore

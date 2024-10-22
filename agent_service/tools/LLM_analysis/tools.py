@@ -33,6 +33,7 @@ from agent_service.planner.errors import (
 )
 from agent_service.tool import ToolArgMetadata, ToolArgs, ToolCategory, tool
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
+from agent_service.tools.ideas.utils import ideas_enabled
 from agent_service.tools.LLM_analysis.constants import (
     BRAINSTORM_DELIMITER,
     DEFAULT_LLM,
@@ -52,6 +53,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     ANSWER_QUESTION_DESCRIPTION,
     ANSWER_QUESTION_MAIN_PROMPT_STR_DEFAULT,
     ANSWER_QUESTION_SYS_PROMPT_STR_DEFAULT,
+    BRAINSTORM_MAIN_REMINDER,
     BRAINSTORM_REMINDER,
     CITATION_PROMPT,
     CITATION_REMINDER,
@@ -66,6 +68,8 @@ from agent_service.tools.LLM_analysis.prompts import (
     PER_IDEA_SUMMARIZE_DESCRIPTION,
     PER_STOCK_GROUP_SUMMARIZE_DESCRIPTION,
     PER_STOCK_SUMMARIZE_DESCRIPTION,
+    PER_SUMMARIZE_INSTRUCTIONS,
+    PER_SUMMARIZE_REMINDER,
     PER_TOPIC_FILTER_BY_PROFILE_DESCRIPTION,
     PROFILE_ADD_DIFF_MAIN_PROMPT,
     PROFILE_ADD_DIFF_SYS_PROMPT,
@@ -144,7 +148,7 @@ class SummarizeTextInput(ToolArgs):
 
 
 async def _initial_summarize_helper(
-    args: SummarizeTextInput, context: PlanRunContext, llm: GPT
+    args: SummarizeTextInput, context: PlanRunContext, llm: GPT, single_summary: bool = True
 ) -> Tuple[str, List[TextCitation]]:
     # create prompts
     summarize_sys_prompt = Prompt(
@@ -180,7 +184,7 @@ async def _initial_summarize_helper(
     else:
         texts = args.texts
 
-    text_group = TextGroup(val=args.texts)
+    text_group = TextGroup(val=texts)
     texts_str: str = await Text.get_all_strs(  # type: ignore
         text_group, include_header=True, text_group_numbering=True, include_symbols=True
     )
@@ -195,11 +199,19 @@ async def _initial_summarize_helper(
             .get_execution_plan_for_run(context.plan_run_id)
             .get_formatted_plan(numbered=True)
         )
+        if single_summary:
+            brainstorm_str = summarize_brainstorm_instruction.format(
+                brainstorm_delimiter=BRAINSTORM_DELIMITER
+            )
+            brainstorm_reminder = BRAINSTORM_REMINDER
+            brainstorm_main_reminder = BRAINSTORM_MAIN_REMINDER
+        else:
+            brainstorm_str = PER_SUMMARIZE_INSTRUCTIONS.format(no_summary=NO_SUMMARY)
+            brainstorm_reminder = ""
+            brainstorm_main_reminder = PER_SUMMARIZE_REMINDER
+
         topic_str = topic_phrase.format(
-            topic=topic, plan_str=plan_str, brainstorm_reminder=BRAINSTORM_REMINDER
-        )
-        brainstorm_str = summarize_brainstorm_instruction.format(
-            brainstorm_delimiter=BRAINSTORM_DELIMITER
+            topic=topic, plan_str=plan_str, brainstorm_reminder=brainstorm_reminder
         )
     else:
         topic_str = ""
@@ -226,6 +238,7 @@ async def _initial_summarize_helper(
         chat_context=chat_str,
         topic_phrase=topic_str,
         stock_phrase=stock_str,
+        brainstorm_reminder=brainstorm_main_reminder,
         today=(
             context.as_of_date.date().isoformat()
             if context.as_of_date
@@ -251,9 +264,10 @@ async def _initial_summarize_helper(
     # not get to get citations in this round, otherwise we would always expect some
     tries = 0
     while (
-        citations is None or (not has_gpt_generated_sources and len(citations) == 0)
+        text.strip() != NO_SUMMARY
+        and (citations is None or (not has_gpt_generated_sources and len(citations) == 0))
     ) and tries < MAX_CITATION_TRIES:  # failed to load citations, retry
-        logger.warning(f"Retrying after no citations after  {result}")
+        logger.warning(f"Retrying after no citations after {result}")
         result = await llm.do_chat_w_sys_prompt(
             main_prompt, sys_prompt, no_cache=True, temperature=0.1 * (tries + 1)
         )
@@ -286,6 +300,7 @@ async def _update_summarize_helper(
     old_summary: str,
     original_citations: List[TextCitation],
     remaining_original_citation_count: int,
+    single_summary: bool = True,
 ) -> Tuple[str, List[TextCitation]]:
     logger = get_prefect_logger(__name__)
     last_original_citation_count = get_original_cite_count(original_citations)
@@ -333,6 +348,11 @@ async def _update_summarize_helper(
     else:
         topic_str = ""
 
+    if single_summary:
+        brainstorm_instructions = ""
+    else:
+        brainstorm_instructions = PER_SUMMARIZE_INSTRUCTIONS
+
     stock = args.stock
     if stock:
         stock_str = STOCK_PHRASE_STR_DEFAULT.format(stock=stock.company_name)
@@ -369,7 +389,7 @@ async def _update_summarize_helper(
 
     sys_prompt = UPDATE_SUMMARIZE_SYS_PROMPT.format(
         plan_delimiter=BRAINSTORM_DELIMITER,
-        brainstorm_instructions="",
+        brainstorm_instructions=brainstorm_instructions,
         remaining_citations=remaining_original_citation_count,
     )
 
@@ -386,19 +406,23 @@ async def _update_summarize_helper(
 
     tries = 0
     while (
-        citations is None
-        or (
-            remaining_original_citation_count > 0
-            and not (
-                max(
-                    remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
-                    remaining_original_citation_count - tries,
+        text.strip() != NO_SUMMARY
+        and (
+            citations is None
+            or (
+                remaining_original_citation_count > 0
+                and not (
+                    max(
+                        remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
+                        remaining_original_citation_count - tries,
+                    )
+                    <= len(citations)
+                    <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
                 )
-                <= len(citations)
-                <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
             )
         )
-    ) and tries < MAX_CITATION_TRIES:
+        and tries < MAX_CITATION_TRIES
+    ):
         logger.warning(f"Retrying after bad citation count for {result}")
         if citations:
             min_value = max(
@@ -431,7 +455,7 @@ async def _update_summarize_helper(
 
         tries += 1
 
-    if (
+    if text.strip() != NO_SUMMARY and (
         not text
         or citations is None
         or (
@@ -449,6 +473,9 @@ async def _update_summarize_helper(
         # if the retries failed and we still ended up with a bad result, just try a new regular summarization
         logger.warning("Failed to do summary update, falling back to from-scratch summary")
         return await _initial_summarize_helper(args, context, llm)
+
+    if citations is None:
+        citations = []
 
     try:
         citations += await get_second_order_citations(
@@ -650,6 +677,7 @@ async def per_stock_summarize_texts(
                             old_summary,
                             all_old_citations,
                             get_original_cite_count(remaining_citations),
+                            single_summary=False,
                         )
                     )
                 else:
@@ -665,6 +693,7 @@ async def per_stock_summarize_texts(
                             SummarizeTextInput(texts=text_dict[stock], topic=args.topic, stock=stock),  # type: ignore
                             context,
                             llm,
+                            single_summary=False,
                         )
                     )
                 else:
@@ -704,7 +733,8 @@ class PerIdeaSummarizeTextInput(ToolArgs):
     description=PER_IDEA_SUMMARIZE_DESCRIPTION,
     category=ToolCategory.LLM_ANALYSIS,
     reads_chat=True,
-    enabled=False,
+    enabled=True,
+    enabled_checker_func=ideas_enabled,
 )
 async def per_idea_summarize_texts(
     args: PerIdeaSummarizeTextInput, context: PlanRunContext
@@ -777,10 +807,13 @@ async def per_idea_summarize_texts(
 
     tasks = []
     for idea in new_ideas:
-        topic = args.topic_template.replace(IDEA, idea.title)
+        topic = args.topic_template.replace(IDEA, f"'{idea.title}'")
         tasks.append(
             _initial_summarize_helper(
-                SummarizeTextInput(texts=args.texts, topic=topic), context, llm
+                SummarizeTextInput(texts=args.texts, topic=topic),
+                context,
+                llm,
+                single_summary=False,
             )
         )
 
@@ -801,6 +834,7 @@ async def per_idea_summarize_texts(
                         old_summary,
                         all_old_citations,
                         get_original_cite_count(remaining_citations),
+                        single_summary=False,
                     )
                 )
             else:
@@ -913,7 +947,10 @@ async def per_stock_group_summarize_texts(
         group_texts = [text for text in args.texts if text.stock_id and text.stock_id in group_set]
         tasks.append(
             _initial_summarize_helper(
-                SummarizeTextInput(texts=cast(List[Text], group_texts), topic=topic), context, llm
+                SummarizeTextInput(texts=cast(List[Text], group_texts), topic=topic),
+                context,
+                llm,
+                single_summary=False,
             )
         )
 
@@ -938,6 +975,7 @@ async def per_stock_group_summarize_texts(
                         old_summary,
                         all_old_citations,
                         get_original_cite_count(remaining_citations),
+                        single_summary=False,
                     )
                 )
             else:
@@ -1516,14 +1554,20 @@ async def run_profile_match(
     profile_filter_sys_prompt_str: str,
     profile_output_instruction_str: str,
     context: PlanRunContext,
+    use_cache: bool = True,
+    crash_on_empty: bool = True,
 ) -> List[StockID]:
     logger = get_prefect_logger(__name__)
     if context.task_id is None:
         return []  # for mypy
 
+    # TODO: This needs to be moved outside the profile match helper function
     prev_run_info = None
     try:  # since everything associated with diffing is optional, put in try/except
-        prev_run_info = await get_prev_run_info(context, "filter_stocks_by_profile_match")
+        if use_cache:
+            prev_run_info = await get_prev_run_info(context, "filter_stocks_by_profile_match")
+        else:
+            prev_run_info = None
         if prev_run_info is not None:
             prev_args = FilterStocksByProfileMatch.model_validate_json(prev_run_info.inputs_str)
             prev_output: List[StockID] = prev_run_info.output  # type:ignore
@@ -1810,7 +1854,7 @@ async def run_profile_match(
             context=context,
         )
 
-    if not filtered_stocks_with_scores:
+    if not filtered_stocks_with_scores and crash_on_empty:
         raise EmptyOutputError(
             message=f"Stock profile filter looking for '{profile_str}' resulted in an empty list of stocks"
         )
@@ -1878,6 +1922,7 @@ async def filter_stocks_by_profile_match(
         profile_filter_sys_prompt_str=profile_filter_sys_prompt,
         profile_output_instruction_str=args.profile_output_instruction,
         context=context,
+        use_cache=True,
     )
 
 
@@ -1905,12 +1950,14 @@ class PerIdeaFilterStocksByProfileMatch(ToolArgs):
 @tool(
     description=PER_TOPIC_FILTER_BY_PROFILE_DESCRIPTION,
     category=ToolCategory.LLM_ANALYSIS,
-    enabled=False,
+    enabled=True,
+    enabled_checker_func=ideas_enabled,
 )
 async def per_idea_filter_stocks_by_profile_match(
     args: PerIdeaFilterStocksByProfileMatch,
     context: PlanRunContext,
 ) -> StockGroups:
+    logger = get_prefect_logger(__name__)
     if len(args.stocks) == 0:
         raise EmptyInputError("Cannot filter empty list of stocks")
     if len(args.texts) == 0:
@@ -1928,8 +1975,76 @@ async def per_idea_filter_stocks_by_profile_match(
             if profile.initial_idea == idea.title:
                 profile_idea_lookup[profile.initial_idea] = idea
 
+    prev_run_info = None
+
+    todo_profiles = args.profiles
+
+    removed_stocks: Set[StockID] = set()
+    cached_profiles: List[TopicProfiles] = []
+    cached_filtered_stocks = {}
+
     tasks = []
-    for profile in args.profiles:
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context, "per_idea_filter_stocks_by_profile_match")
+        if prev_run_info is not None:
+            prev_args = PerIdeaFilterStocksByProfileMatch.model_validate_json(
+                prev_run_info.inputs_str
+            )
+            old_ideas = set(prev_args.ideas)
+            old_stocks = set(prev_args.stocks)
+            new_stocks = set(args.stocks)
+            added_stocks = new_stocks - old_stocks
+            removed_stocks = old_stocks - new_stocks
+            all_texts = set(args.texts)
+            prev_output: StockGroups = prev_run_info.output  # type:ignore
+            prev_group_lookup = {group.name: group for group in prev_output.stock_groups}
+            for profile in args.profiles:
+                if (
+                    profile.initial_idea
+                    and profile_idea_lookup[profile.initial_idea] in old_ideas
+                    and profile.topic
+                    and profile.topic in prev_group_lookup
+                ):
+                    must_do_stocks = list(added_stocks)
+                    for stock in prev_group_lookup[profile.topic].stocks:
+                        for citation in stock.history[-1].citations:
+                            if (
+                                isinstance(citation, TextCitation)
+                                and citation.source_text not in all_texts
+                            ):
+                                must_do_stocks.append(stock)
+
+                    if must_do_stocks:
+                        tasks.append(
+                            run_profile_match(
+                                stocks=must_do_stocks,
+                                profile=profile,
+                                texts=args.texts,
+                                profile_filter_main_prompt_str=args.profile_filter_main_prompt,
+                                profile_filter_sys_prompt_str=profile_filter_sys_prompt,
+                                profile_output_instruction_str=args.profile_output_instruction,
+                                context=context,
+                                use_cache=False,
+                                crash_on_empty=False,
+                            )
+                        )
+                    else:
+                        tasks.append(identity([]))
+
+                    old_group = prev_group_lookup[profile.topic]
+                    cached_filtered_stocks[profile.initial_idea] = [
+                        stock
+                        for stock in old_group.stocks
+                        if stock not in removed_stocks and stock not in must_do_stocks
+                    ]
+                    todo_profiles.remove(profile)
+                    cached_profiles.append(profile)
+
+    except Exception as e:
+        logger.warning(f"Error doing text diff from previous run: {e}")
+
+    for profile in todo_profiles:
         tasks.append(
             run_profile_match(
                 stocks=args.stocks,
@@ -1939,6 +2054,8 @@ async def per_idea_filter_stocks_by_profile_match(
                 profile_filter_sys_prompt_str=profile_filter_sys_prompt,
                 profile_output_instruction_str=args.profile_output_instruction,
                 context=context,
+                use_cache=False,
+                crash_on_empty=False,
             )
         )
 
@@ -1946,9 +2063,17 @@ async def per_idea_filter_stocks_by_profile_match(
 
     # No need to log any of this logic, logs in run_profile_match are sufficient
     stock_groups: List[StockGroup] = []
-    for profile, filtered_stocks in zip(args.profiles, filtered_stocks_list):
+    for profile, filtered_stocks in zip(cached_profiles + todo_profiles, filtered_stocks_list):
         if len(filtered_stocks) > 0:
-            stock_groups.append(StockGroup(name=profile.topic, stocks=filtered_stocks))
+            if profile.initial_idea in cached_filtered_stocks:
+                stock_groups.append(
+                    StockGroup(
+                        name=profile.topic,
+                        stocks=filtered_stocks + cached_filtered_stocks[profile.initial_idea],
+                    )
+                )
+            else:
+                stock_groups.append(StockGroup(name=profile.topic, stocks=filtered_stocks))
 
     return StockGroups(stock_groups=stock_groups)
 

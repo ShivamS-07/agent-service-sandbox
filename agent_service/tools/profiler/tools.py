@@ -8,6 +8,7 @@ from agent_service.io_types.idea import Idea
 from agent_service.io_types.text import ProfileText, Text, TextGroup, TopicProfiles
 from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, tool
+from agent_service.tools.ideas.utils import ideas_enabled
 from agent_service.tools.news import (
     GetNewsArticlesForTopicsInput,
     get_news_articles_for_topics,
@@ -25,11 +26,12 @@ from agent_service.tools.profiler.prompts import (
     PER_IDEA_GENERATE_PROFILE_DESCRIPTION,
 )
 from agent_service.types import ChatContext, Message, PlanRunContext
-from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.string_utils import clean_to_json_if_needed
+from agent_service.utils.tool_diff import get_prev_run_info
 
 
 async def get_profiles(
@@ -95,7 +97,8 @@ class PerIdeaGetCompanyProfilesForTopic(ToolArgs):
 @tool(
     description=PER_IDEA_GENERATE_PROFILE_DESCRIPTION,
     category=ToolCategory.LLM_ANALYSIS,
-    enabled=False,
+    enabled=True,
+    enabled_checker_func=ideas_enabled,
 )
 async def per_idea_generate_profiles(
     args: PerIdeaGetCompanyProfilesForTopic, context: PlanRunContext
@@ -105,9 +108,34 @@ async def per_idea_generate_profiles(
     # TODO: Remove once summarizer tool is merged
     IDEA = "IDEA"
 
+    existing_profile_lookup = {}
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context, "per_idea_generate_profiles")
+        if prev_run_info is not None:
+            prev_args = PerIdeaGetCompanyProfilesForTopic.model_validate_json(
+                prev_run_info.inputs_str
+            )
+            prev_output: List[TopicProfiles] = prev_run_info.output  # type:ignore
+            old_profile_lookup = {profile.initial_idea: profile for profile in prev_output}
+            existing_profile_lookup = {
+                idea: old_profile_lookup[idea.title]
+                for idea in prev_args.ideas
+                if idea.title in old_profile_lookup
+            }
+
+    except Exception as e:
+        logger.warning(
+            f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
+        )
+
     topic_profiles_for_ideas: List[TopicProfiles] = []
     tasks = []
+
     for idea in args.ideas:
+        if idea in existing_profile_lookup:
+            tasks.append(identity(existing_profile_lookup[idea]))
+            continue
         try:
             related_news_texts = await get_news_articles_for_topics(
                 GetNewsArticlesForTopicsInput(topics=[idea.title]), context=context

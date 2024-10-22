@@ -10,7 +10,6 @@ from agent_service.io_types.text import StockText, TextCitation
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.clickhouse import Clickhouse
-from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import SyncBoostedPG
 from agent_service.utils.prefect import get_prefect_logger
 
@@ -23,11 +22,6 @@ class PrevRunInfo:
     timestamp: datetime.datetime
 
 
-UPDATE_START = datetime.datetime.fromisoformat("2024-10-18T22:00:00Z")
-UPDATE_END = datetime.datetime.fromisoformat("2024-10-19T23:00:00Z")
-PROBLEM_START = datetime.datetime.fromisoformat("2024-10-15T21:00:00Z")
-
-
 async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional[PrevRunInfo]:
     logger = get_prefect_logger(__name__)
     pg_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
@@ -38,16 +32,6 @@ async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional
         latest_plan_run_id=context.plan_run_id,
         cutoff_dt=context.as_of_date,
     )
-
-    if tool_name.endswith("summarize_texts") and UPDATE_START < get_now_utc() < UPDATE_END:
-        last_good_run_id = await pg_db.get_previous_plan_run(
-            agent_id=context.agent_id,
-            plan_id=context.plan_id,
-            latest_plan_run_id=context.plan_run_id,
-            cutoff_dt=PROBLEM_START,
-        )
-        if last_good_run_id:
-            previous_run_id = last_good_run_id
 
     read_from_postgres = False
     if previous_run_id is None:

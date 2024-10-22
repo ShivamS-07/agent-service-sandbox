@@ -392,10 +392,9 @@ async def transform_tables_helper(
 
     if challenge.lower().strip() == "easy":
         gpt = GPT(model=GPT4_O, context=gpt_context)
-        await tool_log("Using fast LLM to write calculation code", context)
     else:
         gpt = GPT(model=O1, context=gpt_context)
-        await tool_log("Using smartest LLM to write calculation code", context)
+        await tool_log("Brainstorming in advance of calculation", context)
     if old_schema:
         await tool_log(log="Using table schema from previous run", context=context)
         new_col_schema = old_schema

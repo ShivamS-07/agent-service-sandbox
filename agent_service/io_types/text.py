@@ -1155,7 +1155,6 @@ class StockEarningsTranscriptSectionText(StockEarningsText):
                     cls(
                         id=hash((transcript.id, starting_line_num, ending_line_num)),
                         stock_id=transcript.stock_id,
-                        val=content,
                         transcript_id=str(transcript.id),
                         year=transcript.year,
                         quarter=transcript.quarter,
@@ -1534,7 +1533,6 @@ class StockDescriptionSectionText(StockText):
                 all_sections.append(
                     cls(
                         id=hash((description.id, header)),
-                        val=content,
                         description_id=description.id,
                         header=header,
                         stock_id=description.stock_id,
@@ -1755,7 +1753,6 @@ class StockSecFilingSectionText(StockText):
                 sections.append(
                     cls(
                         id=hash((filing.id, header)),
-                        val=content,
                         filing_id=filing.id,
                         header=header,
                         stock_id=filing.stock_id,
@@ -2031,7 +2028,6 @@ class StockOtherSecFilingSectionText(StockText):
                 sections.append(
                     cls(
                         id=hash((filing.id, header)),
-                        val=content,
                         filing_id=str(filing.id),
                         header=header,
                         stock_id=filing.stock_id,

@@ -8,6 +8,7 @@ from agent_service.tools.ideas.constants import (
     MAX_TEXT_GROUP_TOKENS,
     MIN_TEXT_GROUP_TOKENS,
 )
+from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 
 
 async def create_small_text_groups(input_texts: List[Text]) -> List[List[Text]]:
@@ -31,6 +32,7 @@ async def create_small_text_groups(input_texts: List[Text]) -> List[List[Text]]:
             curr_texts.append(text_obj)
             curr_token_count += text_token_count
 
+    output_text_groups.append(curr_texts)
     # get rid of the last group if it is too small, better to have a slightly oversized group then
     # a super small one
     if len(output_text_groups) > 1 and curr_token_count < MIN_TEXT_GROUP_TOKENS:
@@ -38,3 +40,9 @@ async def create_small_text_groups(input_texts: List[Text]) -> List[List[Text]]:
         del output_text_groups[-1]
 
     return output_text_groups
+
+
+def ideas_enabled(user_id: str) -> bool:
+    ld_user = get_user_context(user_id)
+    result = get_ld_flag("agent-svc-ideas-tools-enabled", default=False, user_context=ld_user)
+    return result
