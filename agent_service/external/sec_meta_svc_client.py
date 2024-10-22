@@ -2,7 +2,7 @@ import logging
 import os
 from contextlib import contextmanager
 from functools import lru_cache
-from typing import Generator, Tuple
+from typing import Generator, List, Tuple
 
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
@@ -17,6 +17,8 @@ from stock_universe_service_proto_v1.security_metadata_service_grpc import (
 from stock_universe_service_proto_v1.security_metadata_service_pb2 import (
     GetEtfHoldingsForDateRequest,
     GetEtfHoldingsForDateResponse,
+    GetRolledUpSecuritySectorsRequest,
+    GetRolledUpSecuritySectorsResponse,
 )
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
@@ -72,4 +74,21 @@ async def get_etf_holdings(etf_id: int, user_id: str) -> GetEtfHoldingsForDateRe
         #        status_code=500,
         #        detail=f"Failed to get etf holdings: {resp.status.message}",
         #    )
+        return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def get_rolled_up_security_sectors(
+    gbi_ids: List[int], user_id: str
+) -> GetRolledUpSecuritySectorsResponse:
+    with _get_service_stub() as stub:
+        req = GetRolledUpSecuritySectorsRequest(
+            gbi_ids=gbi_ids,
+            flatten_fund_of_funds=True,
+        )
+        resp: GetRolledUpSecuritySectorsResponse = await stub.GetRolledUpSecuritySectors(
+            req,
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
         return resp

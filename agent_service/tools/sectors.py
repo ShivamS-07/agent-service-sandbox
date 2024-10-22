@@ -258,6 +258,7 @@ async def get_default_stock_list(user_id: str) -> List[StockID]:
 class SectorFilterInput(ToolArgs):
     sector_id: SectorID
     stock_ids: Optional[List[StockID]] = None
+    etf_min_sector_threshold: Optional[float] = 25.0
 
 
 @tool(
@@ -287,6 +288,10 @@ refer to things which do not correspond to GICS sectors, in such a case you will
 The client may use words such as `institutions`, `firms`, `companies`, or `stocks` to refer to
 sectors and this tool should be used filter stocks.
 If client mentions specific stock names, be sure to include them in the list of stocks.
+This tool can be used to filter both stocks and ETFs, only try to filter for ETFs if the user specifically
+mentions ETFs or funds.
+For ETFs, an optional sector threshold can be passed in which specifies the amount of holdings
+for an ETF that should match to the specified sector.
 """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
@@ -309,11 +314,46 @@ async def gics_sector_industry_filter(
     if stock_ids is None:
         stock_ids = await get_default_stock_list(user_id=context.user_id)
 
+    if not args.etf_min_sector_threshold:
+        args.etf_min_sector_threshold = 25.0  # set default
+
+    sector_id_str = str(args.sector_id.sec_id)
+    included_gbi_ids = set()
+
     db = get_psql()
+
+    # First, take out all the gbi_ids that are ETFs for a separate sector filter
+    etf_sql = """
+        SELECT ms.gbi_security_id
+        FROM master_security ms
+        WHERE ms.security_type LIKE %(etf_type)s
+        AND ms.gbi_security_id = ANY(%(stock_ids)s)
+    """
+    etf_rows = db.generic_read(
+        etf_sql,
+        params={"stock_ids": [stock.gbi_id for stock in stock_ids], "etf_type": "%ETF%"},
+    )
+    etf_stock_ids = {etf["gbi_security_id"] for etf in etf_rows}
+
+    if etf_stock_ids:
+        etf_sectors = await sec_meta_svc_client.get_rolled_up_security_sectors(
+            gbi_ids=list(etf_stock_ids),
+            user_id=context.user_id,
+        )
+        for security in etf_sectors.security_sectors:
+            matching_sector = next(
+                (
+                    sector
+                    for sector in security.sector_weights
+                    if sector.sector_id == int(sector_id_str[0:2])
+                ),
+                None,
+            )
+            if matching_sector and matching_sector.weight >= (args.etf_min_sector_threshold * 0.01):
+                included_gbi_ids.add(security.gbi_id)
 
     # Add a fallback here if sector ID is too specific?
     sector_filter_clause = "ms.gics = %(sector_id)s"
-    sector_id_str = str(args.sector_id.sec_id)
     if len(sector_id_str) == 2:
         sector_filter_clause = "CAST(SUBSTRING(CAST(ms.gics AS TEXT), 1, 2) AS INT) = %(sector_id)s"
     elif len(sector_id_str) == 4:
@@ -331,11 +371,12 @@ async def gics_sector_industry_filter(
     rows = db.generic_read(
         sql,
         params={
-            "stock_ids": [stock.gbi_id for stock in stock_ids],
+            "stock_ids": [stock.gbi_id for stock in stock_ids if stock.gbi_id not in etf_stock_ids],
             "sector_id": args.sector_id.sec_id,
         },
     )
-    included_gbi_ids = {row["gbi_security_id"] for row in rows}
+    for row in rows:
+        included_gbi_ids.add(row["gbi_security_id"])
     stock_list = [stock for stock in stock_ids if stock.gbi_id in included_gbi_ids]
     if not stock_list:
         raise EmptyOutputError(message="Stock Sector filter resulted in an empty list of stocks")
