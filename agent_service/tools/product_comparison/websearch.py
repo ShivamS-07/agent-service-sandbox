@@ -16,7 +16,7 @@ from agent_service.io_types.table import Table
 from agent_service.io_types.text import KPIText, TextCitation
 from agent_service.tools.product_comparison.brightdata_websearch import (
     brd_request,
-    brd_websearch,
+    get_urls_async,
 )
 from agent_service.tools.product_comparison.constants import CHUNK_SIZE
 from agent_service.tools.product_comparison.helpers import update_dataframe
@@ -138,13 +138,14 @@ FINAL_VALIDATION_SYS_PROMPT_OBJ = Prompt(
 logger = logging.getLogger(__name__)
 
 
-def get_specifications(company_name: str, product: str, important_specs: List[str]) -> List[str]:
-    result = set()
-    result.update(brd_websearch(f"{product} release date", 2))
-    result.update(brd_websearch(f"{product} specs", 2))
+async def get_specifications(
+    company_name: str, product: str, important_specs: List[str]
+) -> List[str]:
+    queries = [f"{product} release date", f"{product} specs"]
     for spec in important_specs:
-        result.update(brd_websearch(f"{company_name} {product} {spec}", 1))
-    return list(result)
+        queries.append(f"{company_name} {product} {spec}")
+
+    return await get_urls_async(queries, 2)
 
 
 class WebScraper:
@@ -159,7 +160,7 @@ class WebScraper:
     ) -> Table:
         df = product_table.to_df()
         company_urls = {
-            stock_id: (get_specifications(stock_id.company_name, product, important_specs))
+            stock_id: (await get_specifications(stock_id.company_name, product, important_specs))
             for stock_id, product in zip(df["stock_id"], df["product_name"])
         }
 
@@ -295,7 +296,7 @@ class WebScraper:
         if not company_name:
             return "n/a"
 
-        urls = brd_websearch(f"latest released {company_name} {product}", 2)
+        urls = await get_urls_async([f"latest released {company_name} {product}"], 2)
         tasks = []
 
         for url in urls:

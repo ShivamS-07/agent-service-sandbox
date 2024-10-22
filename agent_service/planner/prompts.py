@@ -92,7 +92,7 @@ ERROR_REPLAN_GUIDELINES = """The top priority of a replan is to satisfy the info
 - To show you are reading this, please start of your discussion output with the phrase "Action Plan for X task: "for example, your output might be:
 Action Plan for summary task: I will summarize the news about Apple
 Replan
-- One major type of task is a stock filter task, where the goal is a list of stocks (i.e. "Give me companies that..."), please mention that in your discussion explicitly, begin your discussion with `This is a stock filter task..` and if so then you MUST mention intending to use `filter_stocks_by_profile_match` which is the main stock filtering function. If your goal is stock filtering, you absolutely MUST NOT mention the `get_news_articles_for_topics` function . This is very important, you must listen to this or you will write a plan that will fail. Against, if it is a stock filter task, do not use `get_news_articles_for_topics`
+- One major type of task is a stock filter task, where the goal is a list of stocks (i.e. "Give me companies that..."), please mention that in your discussion explicitly, begin your discussion with `This is a stock filter task..` and if so then you MUST mention intending to use `filter_stocks_by_profile_match` which is the main stock filtering function. If your goal is stock filtering, you absolutely MUST NOT mention the `get_news_articles_for_topics` or `get_news_and_web_pages_for_topics` function . This is very important, you must listen to this or you will write a plan that will fail. Against, if it is a stock filter task, do not use `get_news_articles_for_topics`
 """
 
 PLAN_SAMPLE_TEMPLATE = (

@@ -6,11 +6,13 @@ from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.text import WebText
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.product_comparison.brightdata_websearch import (
-    brd_websearch,
+    get_urls_async,
     get_web_texts_async,
 )
 from agent_service.types import PlanRunContext
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
+
+URLS_TO_SCRAPE = 10
 
 
 @io_type
@@ -18,7 +20,7 @@ class WebQuery(ComplexIOBase):
     query: str
     browser: Optional[str] = None
     widget_focus: Optional[str] = None
-    top_x_results: Optional[int] = 10
+    top_x_results: Optional[int] = URLS_TO_SCRAPE
 
 
 class GeneralWebSearchInput(ToolArgs):
@@ -38,36 +40,37 @@ def enabler_function(user_id: str) -> bool:
 @tool(
     description=(
         "This function takes in a list WebQuery objects which contain search details and returns text entries "
-        "of the top search results when such queries are made on the web."
+        "of the top search results when such queries are made on the web. Unless not specified within a sample plan,"
+        "always call the summarize_texts tool sometime after this tool. Again, it is VERY important that the "
+        "summarize_texts tool is called before the end of a plan containing this tool!"
     ),
     category=ToolCategory.WEB,
     tool_registry=ToolRegistry,
     enabled_checker_func=enabler_function,
 )
 async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContext) -> List[WebText]:
-    queries = args.queries
-    search_results = []
-    for query in queries:
+    queries = []
+    for query in args.queries:
         if isinstance(query, WebQuery):
-            urls = brd_websearch(query.query, 10)
+            queries.append(query.query)
         else:
-            urls = brd_websearch(query, 10)
+            queries.append(query)
 
-        # currently, this returns a list of WebTexts
-        responses = await get_web_texts_async(urls)
-        search_results.extend(responses)
+    urls = await get_urls_async(queries, URLS_TO_SCRAPE)
 
+    # currently, this returns a list of WebTexts
+    search_results = await get_web_texts_async(urls)
     return search_results
 
 
 async def main() -> None:
     plan_context = PlanRunContext.get_dummy()
-    query_1 = (
-        "current size of Australia sports betting market Australia sports betting market growth over "
-        "past 5 years projected future growth rate of Australia sports betting market"
-    )
+    query_1 = "nintendo switch 2 news"
+    query_2 = "Australia betting news"
+    query_3 = "top legal tech stocks"
+    query_4 = "countries which have prominent effects on the stock market"
 
-    queries = GeneralWebSearchInput(queries=[query_1])
+    queries = GeneralWebSearchInput(queries=[query_1, query_2, query_3, query_4])
     result = await general_web_search(queries, plan_context)
     print(result)
 

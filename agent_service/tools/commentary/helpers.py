@@ -29,8 +29,8 @@ from agent_service.tools.commentary.constants import (
 )
 from agent_service.tools.commentary.prompts import CHOOSE_STATISTICS_PROMPT
 from agent_service.tools.news import (
-    GetNewsArticlesForTopicsInput,
-    get_news_articles_for_topics,
+    GetNewsAndWebPagesForTopicsInput,
+    get_news_and_web_pages_for_topics,
 )
 from agent_service.tools.portfolio import (
     BENCHMARK_HOLDING_TABLE_NAME_EXPANDED,
@@ -287,8 +287,8 @@ async def get_texts_for_topics(
                 context=context,
             )
             try:
-                matched_articles = await get_news_articles_for_topics(
-                    GetNewsArticlesForTopicsInput(
+                matched_articles = await get_news_and_web_pages_for_topics(
+                    GetNewsAndWebPagesForTopicsInput(
                         topics=[topic],
                         date_range=date_range,
                         max_num_articles_per_topic=MAX_MATCHED_ARTICLES_PER_TOPIC,

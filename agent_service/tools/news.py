@@ -11,13 +11,19 @@ from agent_service.io_types.text import (
     NewsPoolArticleText,
     StockNewsDevelopmentArticlesText,
     StockNewsDevelopmentText,
+    Text,
 )
 from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.general_websearch import (
+    GeneralWebSearchInput,
+    general_web_search,
+)
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc, parse_date_str_in_utc
+from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.postgres import Postgres, get_psql
 from agent_service.utils.prompt_utils import Prompt
 
@@ -41,7 +47,6 @@ async def _get_news_developments_helper(
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
 ) -> Dict[StockID, List[StockNewsDevelopmentText]]:
-
     # Response now has a list of topics. Build an association dict to ensure correct ordering.
     stock_to_topics_map: Dict[StockID, List[NewsTopic]] = defaultdict(list)
     gbi_id_to_stock_map: Dict[int, StockID] = {stock.gbi_id: stock for stock in stock_ids}
@@ -160,7 +165,7 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         "The default date_range is the last week. "
         "Never, ever pass an empty list of stocks to this function, you must only use this "
         "function when you have a specific list of stocks you want news for. If you have a general "
-        "topic you want news about, use get_news_articles_for_topics. "
+        "topic you want news about, use get_news_and_web_pages_for_topics. "
         "If the user asks about news sentiment, do NOT use this function, use the recommendation "
         "tool."
         "Never use this function to collect news for writing a commentary, instead use the "
@@ -298,6 +303,15 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
     topics: List[str]
     date_range: Optional[DateRange] = None
     max_num_articles_per_topic: Optional[int] = None
+    suppress_no_article_error: bool = (
+        False  # suppress exceptions within get_news_articles_for_topics
+    )
+
+
+def web_search_enabled(user_id: str) -> bool:
+    ld_user = get_user_context(user_id)
+    result = get_ld_flag("web-search-tool", default=False, user_context=ld_user)
+    return result
 
 
 @tool(
@@ -321,6 +335,7 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
         "ever use this tool, you must get the news for that company."
     ),
     category=ToolCategory.NEWS,
+    enabled_checker_func=lambda user_id: not web_search_enabled(user_id),
     tool_registry=ToolRegistry,
 )
 async def get_news_articles_for_topics(
@@ -387,14 +402,87 @@ async def get_news_articles_for_topics(
             relevant_news = relevant_news[: args.max_num_articles_per_topic]
         news_articles.extend(relevant_news)
 
-    if len(news_articles) == 0:
+    if not args.suppress_no_article_error and len(news_articles) == 0:
         if args.date_range:
             raise EmptyOutputError(
                 "Found no news articles for provided topic(s) within specified date range"
             )
         else:
             raise EmptyOutputError("Found no news articles for provided topic(s)")
+
     return news_articles
+
+
+class GetNewsAndWebPagesForTopicsInput(ToolArgs):
+    topics: List[str]
+    date_range: Optional[DateRange] = None
+    max_num_articles_per_topic: Optional[int] = None
+
+
+@tool(
+    description=(
+        "This function takes a list of topics and returns a "
+        "list of news articles supplemented by web searches related to at least one of the given topics. (OR logic)"
+        "If you need something which is about multiple topics at the same time (AND logic) "
+        "Include it as a single topic joined by `and`"
+        "If someone wants general information about a topic that is NOT a company/stock, "
+        "Please call the summarize_texts tool before outputting the text from this tool. "
+        "If you do not set max_num_articles_per_topic, all are returned. "
+        "This function must NEVER be used if you intend to filter stocks, the news articles do not "
+        "contain information about which stocks they are relevant to. "
+        "The default date range is the previous month. "
+        "Never use this function to collect news for writing a commentary, instead use the "
+        "get_commentary_inputs. "
+        "Never use this tool together with write_commentary tool or get_commentary_inputs. "
+        "Never use this tool with a stock/company/ticker in the topic, you MUST always use"
+        "get_all_news_developments_about_companies to get news if the topic is a stock."
+        "Never use this tool together with general_web_search as this tool calls that tool. "
+        "Again, if the client is interested in news about a particular stock, you must never, "
+        "ever use this tool, you must get the news for that company. Unless not specified within a sample plan,"
+        "always call the summarize_texts tool sometime after this tool. Again, it is VERY important that the "
+        "summarize_texts tool is called before the end of a plan containing this tool!"
+    ),
+    category=ToolCategory.NEWS,
+    tool_registry=ToolRegistry,
+    enabled_checker_func=web_search_enabled,
+)
+async def get_news_and_web_pages_for_topics(
+    args: GetNewsAndWebPagesForTopicsInput, context: PlanRunContext
+) -> List[Text]:
+    tasks = [
+        get_news_articles_for_topics(  # type: ignore
+            GetNewsArticlesForTopicsInput(
+                topics=args.topics,
+                date_range=args.date_range,
+                max_num_articles_per_topic=args.max_num_articles_per_topic,
+                suppress_no_article_error=True,
+            ),
+            context,
+        )
+    ]
+
+    if get_ld_flag(
+        flag_name="web-search-tool",
+        default=False,
+        user_context=get_user_context(user_id=context.user_id),
+    ):
+        tasks.append(
+            general_web_search(
+                GeneralWebSearchInput(queries=["news on " + topic for topic in args.topics]),
+                context=context,
+            )
+        )
+
+    results = await gather_with_concurrency(tasks)
+
+    texts: List[Text] = []
+    for result in results:
+        texts.extend(result)
+
+    if len(texts) == 0:
+        raise EmptyOutputError("Found no news or web articles for provided topic(s)")
+
+    return texts
 
 
 def _get_similar_news_to_embedding(

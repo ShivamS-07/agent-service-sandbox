@@ -37,20 +37,52 @@ proxy_url = f"http://{username}:{password}@{host}:{port}"
 proxies = {"http": proxy_url, "https": proxy_url}
 
 
-def brd_websearch(query: str, num_results: int) -> List[str]:
-    query = query.replace(" ", "+")
-    url = f"https://www.google.com/search?q={query}&brd_json=1&num={num_results}"
-    response = requests.get(
-        url, proxies=proxies, verify="agent_service/tools/product_comparison/brd_certificate.crt"
+async def async_fetch_json(
+    session: aiohttp.ClientSession,
+    url: str,
+    headers: Dict[str, str],
+    proxy: str,
+    timeout: int,
+    ssl_context: Any,
+) -> Dict[str, Any]:
+    async with session.get(
+        url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context  # type: ignore
+    ) as response:
+        return await response.json()
+
+
+async def get_urls_async(
+    queries: List[str], num_results: int, headers: Dict[str, str] = HEADER, timeout: int = 60
+) -> List[Any]:
+    ssl_context = ssl.create_default_context()
+    ssl_context.load_verify_locations(
+        cafile="agent_service/tools/product_comparison/brd_certificate.crt"
     )
 
-    try:
-        data = response.json()
-        items = [item for item in data.get("organic", [])]
-        urls = [item["link"] for item in items]
-        return urls
-    except requests.JSONDecodeError:
-        return []
+    queries = [query.replace(" ", "+") for query in queries]
+    urls = [
+        f"https://www.google.com/search?q={query}&brd_json=1&num={num_results}" for query in queries
+    ]
+    async with aiohttp.ClientSession(max_line_size=8190 * 5, max_field_size=8190 * 5) as session:
+        tasks = []
+        for url in urls:
+            tasks.append(
+                async_fetch_json(session, url, headers, req_proxies["http"], timeout, ssl_context)
+            )
+
+        results = await asyncio.gather(*tasks)
+        results = [result for result in results if result is not None]
+
+    result_urls = set()
+    for result in results:
+        try:
+            # this line parses the returned result from Brightdata's SERP service to get the URLS to search
+            items = [item for item in result.get("organic", [])]  # type: ignore
+            result_urls.update([item["link"] for item in items])
+        except requests.JSONDecodeError:
+            logger.info(f"JSON decoding error for {url}")
+
+    return list(result_urls)
 
 
 req_user = get_param(BRIGHTDATA_REQ_USERNAME)
@@ -86,12 +118,11 @@ async def req_and_scrape(
     ssl_context: Any,
 ) -> Optional[WebText]:
     # use aiohttp to asynchronously make URL requests and scrape using BeautifulSoup
-    async with session.get(
-        url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context  # type: ignore
-    ) as response:
-        try:
+    try:
+        async with session.get(
+            url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context  # type: ignore
+        ) as response:
             title: Optional[str] = None
-
             content_type = response.headers.get("Content-Type", "")
             if "application/pdf" in content_type:
                 pdf_binary_data = await response.read()
@@ -128,37 +159,33 @@ async def req_and_scrape(
                 logger.info(f"Unsupported content type: {content_type}")
                 return None
 
-        except requests.exceptions.HTTPError as e:
-            logger.info(
-                f"Failed to retrieve {url}. HTTPError: {e.response.status} - {e.response.reason}"
-            )
-            return None
-        except requests.exceptions.RequestException as e:
-            if e.response:
-                logger.info(f"URLError: {e.response.reason}")
-            return None
-        except TimeoutError as e:
-            logger.info(f"TimeoutError: {e}")
-            return None
-        except Exception as e:
-            logger.info(f"Failed to retrieve {url}. Error: {e}")
-            return None
+    except aiohttp.ClientResponseError as e:
+        logger.info(f"HTTP error for {url}: {e.status} - {e.message}")
+        return None
 
-        obj = WebText(url=url, title=title)  # we don't save `text` in the obj and pass around
+    except aiohttp.ClientConnectionError as e:
+        logger.info(f"Connection error for {url}: {e}")
+        return None
 
-        # upload to s3
-        await s3_client.upload_fileobj(
-            Fileobj=io.BytesIO(text.encode("utf-8")), Bucket=S3_BUCKET_BOOSTED_WEBSEARCH, Key=obj.id
-        )
+    except Exception as e:
+        logger.info(f"An unexpected error occurred: {e}")
+        return None
 
-        # Return the response object
-        return obj
+    obj = WebText(url=url, title=title)  # we don't save `text` in the obj and pass around
+
+    # upload to s3
+    await s3_client.upload_fileobj(
+        Fileobj=io.BytesIO(text.encode("utf-8")), Bucket=S3_BUCKET_BOOSTED_WEBSEARCH, Key=obj.id
+    )
+
+    # Return the response object
+    return obj
 
 
 # takes in URLs, returns a list of WebTexts
 @async_perf_logger
 async def get_web_texts_async(
-    urls: List[str], headers: Dict[str, str] = HEADER, timeout: int = 60
+    urls: List[str], headers: Dict[str, str] = HEADER, timeout: int = 300
 ) -> Any:
     logger = get_prefect_logger(__name__)
 
