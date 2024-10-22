@@ -1,6 +1,6 @@
 from collections import defaultdict
 from copy import deepcopy
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, cast
 
 from agent_service.io_type_utils import (
     ComplexIOBase,
@@ -18,6 +18,7 @@ from agent_service.io_types.table import (
     Table,
     TableColumn,
     TableColumnMetadata,
+    object_histories_to_columns,
 )
 from agent_service.io_types.text import StockText, Text, TextCitation
 from agent_service.utils.async_utils import gather_with_concurrency
@@ -46,6 +47,9 @@ def prepare_list_of_ideas(ideas: List[Idea]) -> Table:
             data=descriptions,  # type: ignore
         )
     )
+
+    columns.extend(object_histories_to_columns(objects=cast(List[ComplexIOBase], ideas)))
+
     return Table(columns=columns)
 
 

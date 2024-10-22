@@ -727,6 +727,7 @@ class PerIdeaSummarizeTextInput(ToolArgs):
     ideas: List[Idea]
     texts: List[Text]
     topic_template: str
+    column_header: str
 
 
 @tool(
@@ -738,7 +739,7 @@ class PerIdeaSummarizeTextInput(ToolArgs):
 )
 async def per_idea_summarize_texts(
     args: PerIdeaSummarizeTextInput, context: PlanRunContext
-) -> List[Text]:
+) -> List[Idea]:
     logger = get_prefect_logger(__name__)
     # TODO we need guardrails on this
     gpt_context = create_gpt_context(
@@ -845,14 +846,17 @@ async def per_idea_summarize_texts(
             old_ideas.append(idea)
 
     results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
-    output = []
+
+    final_ideas = []
 
     for idea, (summary, citations) in zip(new_ideas + old_ideas, results):
-        text = Text(val=summary, title=idea.title)
-        text = text.inject_history_entry(HistoryEntry(citations=citations))
-        output.append(text)
+        final_ideas.append(
+            idea.inject_history_entry(
+                HistoryEntry(explanation=summary, title=args.column_header, citations=citations)
+            )
+        )
 
-    return output
+    return final_ideas
 
 
 class PerStockGroupSummarizeTextInput(ToolArgs):
