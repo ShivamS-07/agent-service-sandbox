@@ -1,7 +1,7 @@
 import re
 from enum import StrEnum
 
-ASSIGNMENT_RE = re.compile(r"^([^=]+) = ([^\(]+)\(([^)]*)\)  \# (.+)$")
+ASSIGNMENT_RE = re.compile(r"^([^=]+) = ([^\(]+)\((.*)\)  \# (.+)$")
 ARGUMENT_RE = re.compile(r", [^=,]+=")
 
 RUN_EXECUTION_PLAN_FLOW_NAME = "run_execution_plan"

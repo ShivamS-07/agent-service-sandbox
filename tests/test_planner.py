@@ -655,7 +655,7 @@ class TestPlanConstructionValidation(IsolatedAsyncioTestCase):
     def test_step_parse(self):
         planner = Planner(agent_id="TEST")
         example_input = """start_date = get_date_from_date_str(time_str="1 month ago")  # Convert "1 month ago" to a date to use as the start date for news search
-stock_ids = stock_identifier_lookup_multi(stock_names=["Meta", "Apple", "Microsoft"])  # Look up stock identifiers for Meta, Apple, and Microsoft
+stock_ids = stock_identifier_lookup_multi(stock_names=["Meta", "Apple", "Microsoft)"])  # Look up stock identifiers for Meta, Apple, and Microsoft
 news_developments = get_news_developments_about_companies(stock_ids=stock_ids, start_date=start_date)  # Get news developments in the last month for Meta, Apple, and Microsoft
 collapsed_news_developments = collapse_lists(lists_of_lists=news_developments)  # Collapse the list of lists of news development IDs into a single list
 filtered_news = filter_texts_by_topic(topic="machine learning", texts=collapsed_news_developments)  # Filter news descriptions to only those related to machine learning
@@ -672,7 +672,8 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
             ParsedStep(
                 output_var="stock_ids",
                 function="stock_identifier_lookup_multi",
-                arguments={"stock_names": '["Meta", "Apple", "Microsoft"]'},
+                # Add a parenthesis to test the regex
+                arguments={"stock_names": '["Meta", "Apple", "Microsoft)"]'},
                 description="Look up stock identifiers for Meta, Apple, and Microsoft",
             ),
             ParsedStep(
