@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
+from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_types.idea import Idea
 from agent_service.io_types.text import ProfileText, Text, TextGroup, TopicProfiles
 from agent_service.planner.errors import EmptyOutputError
@@ -43,8 +44,17 @@ async def get_profiles(
     llm = GPT(model=GPT4_O, context=gpt_context)
 
     # Brainstorm and generate impacts
+    chopped_texts_str = GPTTokenizer(model=llm.model).do_truncation_if_needed(
+        truncate_str=texts_str,
+        other_prompt_strs=[
+            IMPACT_MAIN.template,
+            IMPACT_SYS.template,
+            topic,
+        ],
+    )
+
     impacts_raw_output = await llm.do_chat_w_sys_prompt(
-        main_prompt=IMPACT_MAIN.format(theme=topic, text_documents=texts_str),
+        main_prompt=IMPACT_MAIN.format(theme=topic, text_documents=chopped_texts_str),
         sys_prompt=IMPACT_SYS.format(),
     )
 

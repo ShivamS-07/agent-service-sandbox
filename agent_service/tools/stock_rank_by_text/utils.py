@@ -504,17 +504,25 @@ async def stocks_rubric_score_assignment(
 
     final_scoring_stocks = []
     for stock, score in zip(stocks_evaluated, scores):
-        level_score, _ = score.split(SCORE_OUTPUT_DELIMITER)
+        try:
+            level_score, _ = score.split(SCORE_OUTPUT_DELIMITER)
+        except ValueError:
+            logger.warning(f"Failed to extract score for from rubric, got {score}")
+            level_score = "0"
+
         if drop_zeros and (level_score == "0"):
             continue
         else:
+            stock_citations = stock_text_lookup[stock][1]
+            if stock_citations is None:
+                stock_citations = []
             final_scoring_stocks.append(
                 stock.inject_history_entry(
                     HistoryEntry(
                         explanation=stock_text_lookup[stock][0],
                         title=f"Connection to '{profile}'",
                         score=Score(val=SCORE_MAPPING[level_score]),
-                        citations=stock_text_lookup[stock][1],
+                        citations=stock_citations,
                         task_id=context.task_id,
                     )
                 )

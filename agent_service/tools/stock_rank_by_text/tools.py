@@ -75,6 +75,7 @@ async def rank_stocks_by_profile(
         logger.info(f"Determined the top {args.top_n}")
         top_stocks = fully_ranked_stocks[: args.top_n]
         non_zero_top_stocks = [stock for stock in top_stocks if stock.history[-1].score.val != 0]  # type: ignore
+
         if len(non_zero_top_stocks) == 0:
             await tool_log(
                 f"Could not find any relavent stocks from the given set relevant to '{args.profile}'",
@@ -104,4 +105,7 @@ async def rank_stocks_by_profile(
         )
         return truncated_stock_list
     else:
-        return fully_ranked_stocks
+        non_zero_ranked_stocks = [
+            stock for stock in fully_ranked_stocks if stock.history[-1].score.val != 0  # type: ignore
+        ]
+        return non_zero_ranked_stocks
