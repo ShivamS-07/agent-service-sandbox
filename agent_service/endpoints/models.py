@@ -843,6 +843,24 @@ class GetAvailableVariablesResponse(BaseModel):
     variables: List[AvailableVariable]
 
 
+class GetVariableCoverageRequest(BaseModel):
+    """
+    Request model for getting variable coverage
+    """
+
+    universe_id: Optional[str] = None
+    feature_ids: Optional[List[str]] = None
+
+
+class GetVariableCoverageResponse(BaseModel):
+    """
+    Response model for getting feature coverage
+    feature_id -> coverage
+    """
+
+    coverages: Dict[str, float]
+
+
 class VariableHierarchyNode(BaseModel):
     """
     Flat representation of the hierarchy tree view.

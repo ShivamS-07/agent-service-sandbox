@@ -96,6 +96,8 @@ from agent_service.endpoints.models import (
     GetToolLibraryResponse,
     GetUsersRequest,
     GetUsersResponse,
+    GetVariableCoverageRequest,
+    GetVariableCoverageResponse,
     GetVariableHierarchyResponse,
     ListCustomDocumentsResponse,
     ListMemoryItemsResponse,
@@ -1673,6 +1675,24 @@ async def get_all_variable_hierarchy(
     Retrieves all variable display hierarchies in a flat format.
     """
     return await application.state.agent_service_impl.get_variable_hierarchy(user=user)
+
+
+@router.post(
+    "/data/variables/coverage",
+    response_model=GetVariableCoverageResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_variable_coverage(
+    req: GetVariableCoverageRequest,
+    user: User = Depends(parse_header),
+) -> GetVariableCoverageResponse:
+    """
+    Retrieves coverage information for all available variables.
+    Default universe SPY
+    """
+    return await application.state.agent_service_impl.get_variable_coverage(
+        user=user, feature_ids=req.feature_ids, universe_id=req.universe_id
+    )
 
 
 # custom doc endpoints

@@ -88,6 +88,7 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
     GetToolLibraryResponse,
+    GetVariableCoverageResponse,
     GetVariableHierarchyResponse,
     HorizonCriteria,
     ListCustomDocumentsResponse,
@@ -141,6 +142,10 @@ from agent_service.external.custom_data_svc_client import (
     get_custom_doc_file_contents,
     get_custom_doc_file_info,
     list_custom_docs,
+)
+from agent_service.external.feature_coverage_svc_client import (
+    FeatureCoverageServiceError,
+    get_feature_coverage_client,
 )
 from agent_service.external.feature_svc_client import (
     get_all_variable_hierarchy,
@@ -1775,6 +1780,48 @@ class AgentServiceImpl:
             )
         except GRPCError as e:
             raise CustomDocumentException.from_grpc_error(e) from e
+
+    async def get_variable_coverage(
+        self,
+        user: User,
+        feature_ids: Optional[List[str]] = None,
+        universe_id: Optional[str] = None,
+    ) -> GetVariableCoverageResponse:
+        """Get coverage data for specified variables."""
+        # Set up universe ID based on environment if not provided
+        SPY_UNIVERSE_ID_PROD = "4e5f2fd3-394e-4db9-aad3-5c20abf9bf3c"
+        SPY_UNIVERSE_ID_DEV = "249a293b-d9e2-4905-94c1-c53034f877c9"
+        default_universe_id = (
+            SPY_UNIVERSE_ID_PROD
+            if get_environment_tag() in [PROD_TAG, STAGING_TAG]
+            else SPY_UNIVERSE_ID_DEV
+        )
+
+        # Initialize feature coverage client
+        feat_coverage_client = get_feature_coverage_client()
+
+        if not feature_ids:
+            available_vars = await self.get_all_available_variables(user=user)
+            feature_ids = [var.id for var in available_vars.variables]
+
+        # Use provided universe_id or default
+        universe_id = universe_id or default_universe_id
+
+        try:
+            coverage_response = await feat_coverage_client.get_latest_universe_coverage(
+                universe_id=universe_id,
+                feature_ids=feature_ids,
+            )
+
+            coverage_dict = {item.feature_id: item.coverage for item in coverage_response.features}
+
+            return GetVariableCoverageResponse(coverages=coverage_dict)
+
+        except FeatureCoverageServiceError as e:
+            LOGGER.error(f"Feature coverage service error: {e.message}")
+            raise CustomDocumentException(
+                message=f"Failed to fetch feature coverage: {e.message}"
+            ) from e
 
     # Custom Documents
     async def list_custom_documents(self, user: User) -> ListCustomDocumentsResponse:
