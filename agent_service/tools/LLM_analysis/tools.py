@@ -216,6 +216,8 @@ async def _initial_summarize_helper(
     else:
         topic_str = ""
         brainstorm_str = ""
+        brainstorm_reminder = ""
+        brainstorm_main_reminder = ""
     stock = args.stock
     if stock:
         stock_str = stock_phrase.format(stock=stock.company_name)
