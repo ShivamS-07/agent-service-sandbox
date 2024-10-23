@@ -6,8 +6,13 @@ import resource
 import time
 import traceback
 
+from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
+
 from agent_service.planner.errors import AgentExecutionError
+from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.sqs_serve.message_handler import MessageHandler
+from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.s3_upload import download_json_from_s3
@@ -35,6 +40,7 @@ async def main() -> None:
     start_time_utc = get_now_utc().isoformat()
     start_time = time.time()
     converted_message_str = ""
+    message_dict = None
     try:
         parser = argparse.ArgumentParser()
 
@@ -79,6 +85,34 @@ async def main() -> None:
             f.write(str(total_mem))
 
     except Exception as e:
+        if message_dict and "arguments" in message_dict:
+            if "scheduled_by_automation" in message_dict["arguments"]:
+                message_context = message_dict["arguments"]["context"]
+                agent_id = message_context["agent_id"]
+                user_id = message_context["user_id"]
+                env = get_environment_tag()
+                channel = f"client-live-agent-failures-{'prod' if env == PROD_TAG else 'dev'}"
+                base_url = f"https://{'alfa' if env == PROD_TAG else 'agent-dev'}.boosted.ai"
+                pg = AsyncPostgresBase()
+                async_db = AsyncDB(pg)
+                user_email, user_info_slack_string = await get_user_info_slack_string(
+                    async_db, user_id
+                )
+                agent_name = await async_db.get_agent_name(agent_id=agent_id)
+                if env != PROD_TAG or (
+                    not user_email.endswith("@boosted.ai")
+                    and not user_email.endswith("@gradientboostedinvestments.com")
+                ):
+                    message_text = (
+                        f"LIVE AGENT FAILURE\n"
+                        f"Agent Name: {agent_name}\n"
+                        f"link: {base_url}/chat/{agent_id}\n"
+                        f"{user_info_slack_string}"
+                    )
+                    slack_sender = SlackSender(channel=channel)
+                    slack_sender.send_message_at(
+                        message_text=message_text, send_at=int(time.time()) + 60
+                    )
         log_event(
             event_name="agent_worker_message_processed",
             event_data={
