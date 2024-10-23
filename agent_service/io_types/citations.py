@@ -80,6 +80,7 @@ class NewsDevelopmentCitationDetails(CitationDetails):
     last_updated: datetime.datetime
     summary: Optional[str] = None
     articles: List[ArticleInfo] = Field(default_factory=list)
+    development_start: Optional[datetime.datetime] = None
 
 
 class CustomDocumentCitationDetails(CitationDetails):
@@ -301,6 +302,7 @@ class CompanyFilingCitationOutput(DocumentCitationOutput):
 class NewsDevelopmentCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.NEWS_DEVELOPMENT
     num_articles: Optional[int] = None
+    development_start: Optional[datetime.datetime] = None
 
     @classmethod
     async def get_citation_details(
@@ -345,6 +347,7 @@ class NewsDevelopmentCitationOutput(CitationOutput):
         if not news_rows:
             return None
         last_updated = max((row["published_at"] for row in news_rows))
+        first_article = min((row["published_at"] for row in news_rows))
 
         return NewsDevelopmentCitationDetails(
             title=rows[0]["title"],
@@ -354,6 +357,7 @@ class NewsDevelopmentCitationOutput(CitationOutput):
             num_articles=len(news_rows),
             last_updated=last_updated,
             articles=[NewsDevelopmentCitationDetails.ArticleInfo(**row) for row in news_rows],
+            development_start=first_article,
         )
 
 

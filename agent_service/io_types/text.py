@@ -488,7 +488,8 @@ class StockNewsDevelopmentText(NewsText, StockText):
         text_id_map = {text.source_text.id: text for text in texts}
         sql = """
         SELECT snt.topic_id::TEXT, topic_label, (topic_descriptions->-1->>0)::TEXT AS summary,
-               COUNT(sn.news_id) AS num_articles, MAX(sn.published_at) AS last_updated
+               COUNT(sn.news_id) AS num_articles, MAX(sn.published_at) AS last_updated,
+               MIN(sn.published_at) AS first_article_dt
         FROM nlp_service.stock_news_topics snt
         JOIN nlp_service.stock_news sn ON sn.topic_id = snt.topic_id
         WHERE sn.topic_id = ANY(%(topic_ids)s)
@@ -505,6 +506,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
                     last_updated_at=row["last_updated"],
                     num_articles=row["num_articles"],
                     inline_offset=text_id_map[row["topic_id"]].citation_text_offset,
+                    development_start=row["first_article_dt"],
                 )
             ]
             for row in rows
