@@ -6,11 +6,12 @@ import resource
 import time
 import traceback
 
-from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
+from gbi_common_py_utils.utils.environment import DEV_TAG, PROD_TAG, get_environment_tag
 
 from agent_service.planner.errors import AgentExecutionError
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.sqs_serve.message_handler import MessageHandler
+from agent_service.tools.output import EMPTY_OUTPUT_FLAG
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.date_utils import get_now_utc
@@ -33,6 +34,10 @@ async def process_message_string(message_string: str) -> None:
 def wait_if_needed(start_time: float) -> None:
     while (time.time() - start_time) < 75:
         time.sleep(5)
+
+
+class NoOutputException(Exception):
+    pass
 
 
 async def main() -> None:
@@ -76,6 +81,8 @@ async def main() -> None:
                 "message": converted_message_str,
             },
         )
+        if EMPTY_OUTPUT_FLAG.get():
+            raise NoOutputException()
         wait_if_needed(start_time=start_time)
         with open("/exit_script/memory.txt", "w") as f:
             total_mem = (
@@ -98,14 +105,16 @@ async def main() -> None:
                 user_email, user_info_slack_string = await get_user_info_slack_string(
                     async_db, user_id
                 )
+                top_level_message = "LIVE AGENT FAILURE\n"
+                if isinstance(e, NoOutputException):
+                    top_level_message = "EMPTY OUTPUT FOR LIVE AGENT:\n"
                 agent_name = await async_db.get_agent_name(agent_id=agent_id)
-                if env != PROD_TAG or (
+                if env == DEV_TAG or (
                     not user_email.endswith("@boosted.ai")
                     and not user_email.endswith("@gradientboostedinvestments.com")
                 ):
                     message_text = (
-                        f"LIVE AGENT FAILURE\n"
-                        f"Agent Name: {agent_name}\n"
+                        f"{top_level_message}Agent Name: {agent_name}\n"
                         f"link: {base_url}/chat/{agent_id}\n"
                         f"{user_info_slack_string}"
                     )

@@ -1,9 +1,11 @@
+import contextvars
 from typing import List
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import HistoryEntry, IOType, dump_io_type
+from agent_service.io_types.table import Table
 from agent_service.io_types.text import Text
 from agent_service.io_types.text_objects import TextObject
 from agent_service.tool import ToolArgs, ToolCategory, tool
@@ -24,6 +26,10 @@ ANALYZE_OUTPUT_MAIN_PROMPT_STR = "Based on a client request or question, pull in
 
 ANALYZE_OUTPUT_SYS_PROMPT = Prompt(ANALYZE_OUTPUT_SYS_PROMPT_STR, "ANALYZE_OUTPUT_SYS_PROMPT")
 ANALYZE_OUTPUT_MAIN_PROMPT = Prompt(ANALYZE_OUTPUT_MAIN_PROMPT_STR, "ANALYZE_OUTPUT_MAIN_PROMPT")
+
+EMPTY_OUTPUT_FLAG: contextvars.ContextVar = contextvars.ContextVar(
+    "empty_output_flag", default=False
+)
 
 
 class OutputArgs(ToolArgs):
@@ -53,6 +59,29 @@ assign this function call to a variable!!
     store_output=False,
 )
 async def prepare_output(args: OutputArgs, context: PlanRunContext) -> PreparedOutput:
+    async def output_is_empty(output_object: IOType) -> bool:
+        if isinstance(output_object, Text):
+            text_to_check = await output_object.get()
+            if not text_to_check.val:
+                return True
+            return False
+
+        if isinstance(output_object, Table):
+            if not output_object.columns:
+                return True
+            for column in output_object.columns:
+                if column.data:  # If any column has data, then it's NOT empty
+                    return False
+            return True
+        if isinstance(output_object, list):
+            if not output_object:
+                return True
+            return False
+        return False
+
+    output_is_empty_result = await output_is_empty(args.object_to_output)
+    if output_is_empty_result:
+        EMPTY_OUTPUT_FLAG.set(True)
     if type(args.object_to_output) is Text and context.stock_info:
         # Handle text object resolution.
         text_val = (await args.object_to_output.get()).val
