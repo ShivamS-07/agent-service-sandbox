@@ -42,7 +42,8 @@ def enabler_function(user_id: str) -> bool:
         "This function takes in a list WebQuery objects which contain search details and returns text entries "
         "of the top search results when such queries are made on the web. Unless not specified within a sample plan,"
         "always call the summarize_texts tool sometime after this tool. Again, it is VERY important that the "
-        "summarize_texts tool is called before the end of a plan containing this tool!"
+        "summarize_texts tool is called before the end of a plan containing this tool! DO not EVER directly output "
+        "the returned text from this tool! AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
     ),
     category=ToolCategory.WEB,
     tool_registry=ToolRegistry,
