@@ -8,7 +8,8 @@ import os
 import time
 import traceback
 import uuid
-from typing import Any, Dict, List, Optional
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile, status
@@ -187,7 +188,58 @@ class FastAPIExtended(FastAPI):
     state: AgentServiceState
 
 
-application = FastAPIExtended(title="Agent Service")
+@asynccontextmanager
+async def lifespan(application: FastAPIExtended) -> AsyncGenerator:
+    init_stdout_logging()
+    init_sentry(disable_sentry=not EnvironmentUtils.is_deployed)
+
+    logger.info("Warming up DB connection and JWT key map...")
+    get_psql()
+    get_keyid_to_key_map()
+
+    logger.info("Starting server...")
+    env = get_environment_tag()
+    base_url = "alfa.boosted.ai" if env == "ALPHA" else "agent-dev.boosted.ai"
+    channel = "alfa-client-queries" if env == "ALPHA" else "alfa-client-queries-dev"
+
+    def serialize_func(raw_output: Any) -> Any:
+        to_write = OutputWrapper(output=raw_output)
+        res = to_write.model_dump_json(serialize_as_any=True)
+        return res
+
+    def deserialize_func(raw_input: Any) -> Any:
+        agent_output = OutputWrapper.model_validate_json(raw_input)
+        return agent_output.output
+
+    cache = None
+    if agent_output_cache_enabled() and os.getenv("REDIS_HOST"):
+        logger.info(f"Using redis output cache. Connecting to {os.getenv('REDIS_HOST')}")
+        cache = RedisCacheBackend(
+            namespace="agent-output-cache-new",
+            serialize_func=serialize_func,
+            deserialize_func=deserialize_func,
+        )
+
+    logger.info("Warming up AsyncDB connection")
+    async_db = AsyncDB(pg=AsyncPostgresBase(min_pool_size=1, max_pool_size=3))
+    await async_db.pg.generic_read("SELECT * FROM agent.agents LIMIT 1")
+
+    application.state.agent_service_impl = AgentServiceImpl(
+        task_executor=PrefectTaskExecutor(),
+        gpt_service_stub=_get_gpt_service_stub()[0],
+        async_db=async_db,
+        clickhouse_db=Clickhouse(),
+        slack_sender=SlackSender(channel=channel),
+        base_url=base_url,
+        cache=cache,
+    )
+
+    yield
+
+
+application = FastAPIExtended(title="Agent Service", lifespan=lifespan)
+
+
 router = APIRouter(prefix="/api")
 application.add_middleware(
     CORSMiddleware,  # Add CORS middleware
@@ -1846,57 +1898,41 @@ def parse_args() -> argparse.Namespace:
         default="0.0.0.0",
         help="Address to bind the server to.",
     )
+    parser.add_argument(
+        "-w",
+        "--workers",
+        type=int,
+        required=False,
+        default=1,
+        help="Number of workers to run the server with.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
 
-    init_stdout_logging()
-    init_sentry(disable_sentry=not EnvironmentUtils.is_deployed)
-
-    logger.info("Warming up DB connection and JWT key map...")
-    get_psql()
-    get_keyid_to_key_map()
-
-    logger.info("Starting server...")
-    env = get_environment_tag()
-    base_url = "alfa.boosted.ai" if env == "ALPHA" else "agent-dev.boosted.ai"
-    channel = "alfa-client-queries" if env == "ALPHA" else "alfa-client-queries-dev"
-
-    def serialize_func(raw_output: Any) -> Any:
-        to_write = OutputWrapper(output=raw_output)
-        res = to_write.model_dump_json(serialize_as_any=True)
-        return res
-
-    def deserialize_func(raw_input: Any) -> Any:
-        agent_output = OutputWrapper.model_validate_json(raw_input)
-        return agent_output.output
-
-    cache = None
-    if agent_output_cache_enabled() and os.getenv("REDIS_HOST"):
-        logger.info(f"Using redis output cache. Connecting to {os.getenv('REDIS_HOST')}")
-        cache = RedisCacheBackend(
-            namespace="agent-output-cache-new",
-            serialize_func=serialize_func,
-            deserialize_func=deserialize_func,
-        )
-    application.state.agent_service_impl = AgentServiceImpl(
-        task_executor=PrefectTaskExecutor(),
-        gpt_service_stub=_get_gpt_service_stub()[0],
-        async_db=AsyncDB(pg=AsyncPostgresBase()),
-        clickhouse_db=Clickhouse(),
-        slack_sender=SlackSender(channel=channel),
-        base_url=base_url,
-        cache=cache,
-    )
+    num_cpu = os.cpu_count() or 1
+    num_workers = min(args.workers, num_cpu + 1)
+    print(f"########## Found {num_cpu} CPUs - Thus running with {num_workers} workers ##########")
 
     try:
-        logger.info("Using uvloop for faster event loop.")
-        uvicorn.run(application, host=args.address, port=args.port, loop="uvloop")
+        print("Using uvloop for faster event loop.")
+        uvicorn.run(
+            app="application:application",
+            host=args.address,
+            port=args.port,
+            loop="uvloop",
+            workers=num_workers,
+        )
     except ImportError:
-        logger.info(
+        print(
             "Failed to use uvloop (either not installed or you're on Windows). "
             "Using default event loop."
         )
-        uvicorn.run(application, host=args.address, port=args.port)
+        uvicorn.run(
+            app="application:application",
+            host=args.address,
+            port=args.port,
+            workers=num_workers,
+        )
