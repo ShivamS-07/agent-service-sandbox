@@ -20,7 +20,6 @@ from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
     CustomDocumentSummaryText,
-    StockDescriptionText,
     StockEarningsSummaryPointText,
     StockEarningsSummaryText,
     StockNewsDevelopmentText,
@@ -632,7 +631,7 @@ async def do_competitive_analysis(
     # Step: Download content for text data
     logger.info("Downloading content for text data")
     gbi_id_to_short_description, topic_group = await download_content_for_text_data(
-        context=context, all_text_data=args.all_text_data
+        context=context, stocks=args.stocks, all_text_data=args.all_text_data
     )
 
     debug_info["input_topics"] = dump_io_type(topic_group.val)
@@ -836,6 +835,7 @@ async def generate_summary_for_competitive_analysis(
 @check_cancelled_decorator
 async def download_content_for_text_data(
     context: PlanRunContext,
+    stocks: List[StockID],
     all_text_data: List[StockText],
 ) -> Tuple[Dict[int, str], TopicGroup]:
     """
@@ -846,7 +846,6 @@ async def download_content_for_text_data(
     logger = get_prefect_logger(__name__)
 
     logger.info("Separate text data by sources")
-    company_descriptions = [t for t in all_text_data if isinstance(t, StockDescriptionText)]
     news_developments = [t for t in all_text_data if isinstance(t, StockNewsDevelopmentText)]
     earnings_summaries: List[StockEarningsSummaryText] = [
         t for t in all_text_data if isinstance(t, StockEarningsSummaryText)
@@ -855,7 +854,7 @@ async def download_content_for_text_data(
     custom_doc_summaries = [t for t in all_text_data if isinstance(t, CustomDocumentSummaryText)]
 
     logger.info("Downloading content for company descriptions")
-    gbi_ids = [t.stock_id.gbi_id for t in company_descriptions if t.stock_id]
+    gbi_ids = [stock.gbi_id for stock in stocks]
     descriptions = get_psql().get_short_company_descriptions_for_gbi_ids(gbi_ids)
     gbi_id_to_short_description = {
         gbi_id: desc for gbi_id, (desc, _) in descriptions.items() if desc
@@ -1214,7 +1213,7 @@ async def _rank_by_gpt_and_post_process(
             COMPANY_DESCRIPTION_TEMPLATE.format(
                 company_name=stock.company_name,
                 symbol=stock.symbol,
-                description=gbi_id_to_description[stock.gbi_id],
+                description=gbi_id_to_description.get(stock.gbi_id, "NOT FOUND"),
             )
             for stock in involved_stocks
         )
@@ -1311,7 +1310,7 @@ async def _update_rank_by_gpt_and_post_process(
             COMPANY_DESCRIPTION_TEMPLATE.format(
                 company_name=stock.company_name,
                 symbol=stock.symbol,
-                description=gbi_id_to_description[stock.gbi_id],
+                description=gbi_id_to_description.get(stock.gbi_id, "NOT FOUND"),
             )
             for stock in involved_stocks
         )
