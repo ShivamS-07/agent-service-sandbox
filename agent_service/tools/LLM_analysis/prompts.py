@@ -27,21 +27,8 @@ SUMMARIZE_SYS_PROMPT_STR_DEFAULT = (
     + "Unless the user says otherwise, your output should be significantly smaller (a small fraction) of all the text provided. For example, if the input involves several news summaries, a single sentence or two would be appropriate. "
 )
 
-SUMMARIZE_SYS_PROMPT_STR = (
-    "You are a financial analyst tasked with summarizing one or more source documents according to the instructions of an important client. You will be provided with the these documents as well as transcript of your conversation with the client. "
-    + SUMMARIZE_INSTRUCTIONS
-    + "Unless the user says otherwise, your output should be significantly smaller (a small fraction) of all the text provided. For example, if the input involves several news summaries, a single sentence or two would be appropriate. "
-    + CITATION_PROMPT
-)
 
 SUMMARIZE_MAIN_PROMPT_STR_DEFAULT = "Summarize the following text(s) based on the needs of the client. Here are the documents, delimited by -----:\n-----\n{texts}\n-----\nHere is the transcript of your interaction with the client, delimited by ----:\n----\n{chat_context}\n----\n{topic_phrase}{stock_phrase}For reference, today's date is {today}. "
-
-SUMMARIZE_MAIN_PROMPT_STR = (
-    "Summarize the following text(s) based on the needs of the client. Here are the documents, delimited by -----:\n-----\n{texts}\n-----\nHere is the transcript of your interaction with the client, delimited by ----:\n----\n{chat_context}\n----\n{topic_phrase}{stock_phrase}For reference, today's date is {today}. "
-    + CITATION_REMINDER
-    + " Pay specific attention to the way that the client wants you to output the summary, YOU MUST comply with this format"
-    + " Now proceed with your summary writing.{brainstorming_reminder}:\n"
-)
 
 
 UPDATE_SUMMARIZE_SYS_PROMPT_STR = (
