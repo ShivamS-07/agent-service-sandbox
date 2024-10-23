@@ -79,9 +79,17 @@ async def get_user_custom_documents(
         for document in custom_doc_summaries.documents
     ]
     if len(output) == 0:
-        raise EmptyOutputError(
-            "No user uploaded documents found for these stocks over the specified time period"
-        )
+        if start_date is not None and end_date is not None:
+            start, end = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
+            await tool_log(
+                f"No user uploaded documents found for these stocks between {start=}, {end=}",
+                context=context,
+            )
+        else:
+            await tool_log(
+                "No user uploaded documents found for these stocks",
+                context=context,
+            )
     return output
 
 

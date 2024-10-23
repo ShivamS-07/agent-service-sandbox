@@ -502,7 +502,8 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     llm = GPT(context=gpt_context, model=DEFAULT_LLM)
 
     if len(args.texts) == 0:
-        raise EmptyInputError("Cannot summarize when no texts provided")
+        await tool_log(log="No text data provided for summarization, skipping", context=context)
+        return Text(val=NO_SUMMARY)
 
     original_texts = set(args.texts)
 
