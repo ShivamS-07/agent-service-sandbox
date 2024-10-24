@@ -527,8 +527,23 @@ class TableOutputColumn(BaseModel):
     citation_refs: List[CitationID] = []
 
 
+# We need to redefine and reorder PrimitiveType to correctly parse
+# strings. Otherwise, a string representing a year ("2022") will be converted to
+# some weird datetime. This only impacts cases where we serialize and
+# deserialize TableOutput specifically, which is really only done when caching.
+CellPrimitiveType = Union[
+    int,
+    str,
+    bool,
+    float,
+    datetime.date,
+    datetime.datetime,
+]
+OutputCellType = Union[CellPrimitiveType, StockMetadata, ScoreOutput]
+
+
 class TableOutput(Output):
     output_type: Literal[OutputType.TABLE] = OutputType.TABLE
     title: str = ""
     columns: List[TableOutputColumn] = []
-    rows: List[List[Optional[CellType]]]
+    rows: List[List[Optional[OutputCellType]]]
