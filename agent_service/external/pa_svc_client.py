@@ -50,6 +50,7 @@ from pa_portfolio_service_proto_v1.workspace_pb2 import (
     RenameWorkspaceRequest,
     RenameWorkspaceResponse,
     StockAndWeight,
+    WorkspaceAuth,
     WorkspaceMetadata,
     WorkspaceTrade,
 )
@@ -217,7 +218,8 @@ async def get_all_workspaces(
                     None
                     if not workspace_ids
                     else [UUID(id=workspace_id) for workspace_id in workspace_ids]
-                )
+                ),
+                min_auth_level=WorkspaceAuth.WORKSPACE_AUTH_READ,
             ),
             metadata=get_default_grpc_metadata(user_id=user_id),
         )

@@ -97,6 +97,13 @@ async def main() -> IOType:
         patch(target="agent_service.planner.executor.AsyncDB") as adb,
         patch(target="agent_service.planner.executor.get_agent_output"),
         patch(target="agent_service.planner.executor.check_cancelled") as cc,
+        patch(target="agent_service.planner.executor.publish_agent_execution_plan"),  # noqa
+        patch(target="agent_service.planner.executor.publish_agent_execution_status"),  # noqa
+        patch(target="agent_service.planner.executor.publish_agent_task_status"),  # noqa
+        patch(target="agent_service.planner.executor.publish_agent_plan_status"),  # noqa
+        patch(target="agent_service.planner.executor.publish_agent_output"),  # noqa
+        patch(target="agent_service.planner.executor.send_agent_emails"),  # noqa
+        patch(target="agent_service.planner.executor.send_chat_message"),  # noqa
     ):
 
         cc.return_value = False

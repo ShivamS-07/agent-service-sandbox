@@ -327,7 +327,8 @@ async def get_statistic_data_for_companies(
         if len(stat_list) == 0 or any([stat not in all_statistic_lookup for stat in stat_list]):
             raise EmptyOutputError(
                 (
-                    "No decomposition found for client statistic using supported component statistics,"
+                    "No decomposition found for client statistic '{stat_ref}'"
+                    " using supported component statistics,"
                     " cannot figure out how to calculate the requested value!"
                 )
             )

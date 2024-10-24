@@ -34,7 +34,7 @@ from agent_service.io_types.table import (
     TableColumnType,
 )
 from agent_service.io_types.text import Text
-from agent_service.planner.errors import EmptyOutputError
+from agent_service.planner.errors import NotFoundError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -125,7 +125,7 @@ async def is_statistic_correct(context: PlanRunContext, search: str, match: str)
             if str(answer).lower() in ["yes", "true"]:
                 return True
         except Exception as e:
-            print(f"json parse: {repr(e)} : {result=}")
+            logger.exception(f"json parse: {repr(e)} : {result=}")
         return False
 
     answer = convert_result(result)
@@ -201,7 +201,7 @@ async def statistic_identifier_lookup(
     logger.info(f"found {len(rows)} potential matches for '{args.statistic_name}'")
 
     if not rows:
-        raise ValueError(f"Could not find a stock data field related to: {args.statistic_name}")
+        raise NotFoundError(f"Could not find a data field related to: {args.statistic_name}")
 
     for r in rows:
         logger.info(f"searched  '{args.statistic_name}' and found potential match: {str(r)[:250]}")
@@ -238,7 +238,7 @@ async def statistic_identifier_lookup(
 
         return StatisticId(stat_id=row["id"], stat_name=row["name"])
 
-    raise EmptyOutputError(
+    raise NotFoundError(
         f"Could not find a statistical data field related to: {args.statistic_name}"
     )
 

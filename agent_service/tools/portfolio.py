@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import difflib
+import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
@@ -30,6 +31,7 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
     TableColumnType,
 )
+from agent_service.planner.errors import NotFoundError
 from agent_service.tool import (
     ToolArgMetadata,
     ToolArgs,
@@ -294,11 +296,7 @@ async def convert_portfolio_mention_to_portfolio_id(
     # TODO we could add a fallback for matching by portfolio_id if str looks like a UUID
     partial_matches = []
     # if generically talking about a portfolio revert to the default most recent portfolio
-    if len(perfect_matches) == 0 and str(args.portfolio_name).lower() not in [
-        "my portfolio",
-        "portfolio",
-        "the portfolio",
-    ]:
+    if len(perfect_matches) == 0 and not is_generic_portfolio_search(args.portfolio_name):
         # find a close textual match
         search_str = str(args.portfolio_name).lower()
         cutoff = STD_MATCH_SIMILARITY
@@ -373,29 +371,71 @@ async def convert_portfolio_mention_to_portfolio_id(
 
         portfolio = sorted_matches[0]
 
-    # If no perfect matches, return the user owned portfolio which edited most recently
-    elif len(user_owned_portfolios) > 0:
-        sorted_user_owned_portfolios = sorted(
-            user_owned_portfolios,
-            key=lambda x: x.last_updated.seconds if x.last_updated else x.created_at.seconds,
-            reverse=True,
-        )
-        logger.info(f"no perfect matches, most recent: {sorted_user_owned_portfolios[0]}")
-        portfolio = sorted_user_owned_portfolios[0]
+    elif is_generic_portfolio_search(args.portfolio_name):
+        if len(user_owned_portfolios) > 0:
+            # If no partial matches, return the user owned portfolio which was edited most recently
+            sorted_user_owned_portfolios = sorted(
+                user_owned_portfolios,
+                key=lambda x: x.last_updated.seconds if x.last_updated else x.created_at.seconds,
+                reverse=True,
+            )
+            logger.info(f"no partial matches, most recent: {sorted_user_owned_portfolios[0]}")
+            portfolio = sorted_user_owned_portfolios[0]
+        elif len(workspaces) > 0:
+            # If no partial matches and no user owned portfolios, return first portfolio id
+            logger.info(
+                "no partial matches and no user owned portfolios,"
+                f" return first portfolio id: {workspaces[0]}"
+            )
+            portfolio = workspaces[0]
+        else:
+            raise NotFoundError("User does not have access to any portfolios")
     else:
-        # If no perfect matches and no user owned portfolios, return first portfolio id
-        logger.info(
-            "no partial matches and no user owned portfolios,"
-            f" return first portfolio id: {workspaces[0]}"
-        )
-        portfolio = workspaces[0]
+        raise NotFoundError(f"No portfolio found matching: '{args.portfolio_name}'")
 
     base_url = f"{get_B3_prefix()}/dashboard/portfolios/summary"
     portfolio_name_with_link_markdown = (
         f"[{portfolio.name}]({base_url}/{portfolio.workspace_id.id})"
     )
-    await tool_log(log=f"Portfolio found: {portfolio_name_with_link_markdown}", context=context)
+
+    if portfolio.name.lower() == args.portfolio_name.lower():
+        await tool_log(log=f"Portfolio found: {portfolio_name_with_link_markdown}", context=context)
+    else:
+        await tool_log(
+            log=f"Intepreting '{args.portfolio_name}' as: {portfolio_name_with_link_markdown}",
+            context=context,
+        )
+
     return portfolio.workspace_id.id
+
+
+def is_generic_portfolio_search(search_str: Optional[str]) -> bool:
+    """
+    return true if search str generically refers to a portfolio an not a specific name
+    """
+
+    if not search_str:
+        return True
+    search_str = search_str.lower()
+    search_str = re.sub(r"\bmy\b", " ", search_str)
+    search_str = re.sub(r"\byour\b", " ", search_str)
+    search_str = re.sub(r"\bour\b", " ", search_str)
+    search_str = re.sub(r"\ba\b", " ", search_str)
+    search_str = re.sub(r"\ban\b", " ", search_str)
+    search_str = re.sub(r"\bany\b", " ", search_str)
+    search_str = re.sub(r"\bthe\b", " ", search_str)
+    search_str = re.sub(r"\bthat\b", " ", search_str)
+    search_str = re.sub(r"\bthis\b", " ", search_str)
+    search_str = re.sub(r"\bsome\b", " ", search_str)
+    search_str = re.sub(r"\bportfolios\b", " ", search_str)
+    search_str = re.sub(r"\bportfolio\b", " ", search_str)
+    search_str = re.sub(r"\bport\b", " ", search_str)
+
+    # remove any non alphanumeric chars
+    search_str = re.sub(r"\W+", "", search_str, flags=re.MULTILINE)
+    search_str = search_str.replace("_", "")
+
+    return not search_str
 
 
 class GetPortfolioPerformanceInput(ToolArgs):
@@ -688,7 +728,7 @@ async def get_portfolio_trades(
         user_id=context.user_id, workspace_ids=[args.portfolio_id]
     )
     if len(workspaces) == 0:
-        raise ValueError(f"Workspace doesn't exist for id: {args.portfolio_id}")
+        raise NotFoundError(f"Workspace doesn't exist for id: {args.portfolio_id}")
     workspace = workspaces[0]
 
     # Logic used in web-server

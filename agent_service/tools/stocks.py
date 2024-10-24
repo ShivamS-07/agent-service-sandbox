@@ -21,7 +21,7 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
     TableColumnType,
 )
-from agent_service.planner.errors import EmptyInputError
+from agent_service.planner.errors import EmptyInputError, NotFoundError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.lists import CombineListsInput, add_lists
 from agent_service.tools.tool_log import tool_log
@@ -277,7 +277,7 @@ async def stock_identifier_lookup_helper(
     # if this is an ISIN, we should not allow partial matches on non-ISIN company text
     if is_isin(args.stock_name):
         logger.info(f"No acceptable stock found with isin match: {args.stock_name}")
-        raise ValueError(f"Could not find any stocks related to: '{args.stock_name}'")
+        raise NotFoundError(f"Could not find any stocks related to: '{args.stock_name}'")
 
     # next we check for best matches by text similarity
     rows = await stock_lookup_by_text_similarity(args, context)
@@ -392,7 +392,7 @@ async def stock_identifier_lookup_helper(
     elif orig_stocks_sorted_by_match:
         stock = orig_stocks_sorted_by_match[0]
     else:
-        raise ValueError(f"Could not find any stocks related to: '{args.stock_name}'")
+        raise NotFoundError(f"Could not find any stocks related to: '{args.stock_name}'")
 
     logger.info(f"found stock: {stock} from '{args.stock_name}'")
     await tool_log(
@@ -856,7 +856,7 @@ async def raw_stock_identifier_lookup(
             )
             return similar_rows
 
-    raise ValueError(f"Could not find any stocks related to: '{args.stock_name}'")
+    raise NotFoundError(f"Could not find any stocks related to: '{args.stock_name}'")
 
 
 class MultiStockIdentifierLookupInput(ToolArgs):
@@ -1589,7 +1589,7 @@ async def get_stock_info_for_universe(args: GetStockUniverseInput, context: Plan
         if gbi_uni_row:
             stock = gbi_uni_row
         else:
-            raise ValueError(
+            raise NotFoundError(
                 f"Could not find any stock universe related to: '{args.universe_name}'"
             )
 
@@ -1696,13 +1696,15 @@ async def get_stock_universe_table_from_universe_company_id(
 
     if dedup_companies:
         await tool_log(
-            f"Retrieving unique companies, ignoring {len(full_rows) - len(deduped_rows_by_company)} redundant stocks",
+            f"Retrieved {len(deduped_rows_by_company)} unique companies,"
+            f" ignoring {len(full_rows) - len(deduped_rows_by_company)} redundant stocks",
             context,
         )
         rows = deduped_rows_by_company
     else:
         await tool_log(
-            "Retrieving unique stocks, may contain multiple stocks for the same company", context
+            f"Retrieved {len(full_rows)} stocks, may contain multiple stocks for the same company",
+            context,
         )
         rows = full_rows
 
@@ -2178,6 +2180,8 @@ async def get_stock_universe_from_etf_stock_match(
         }
         stock_rows.append(stock_row)
     except ValueError as e:
+        logger.info(e)
+    except NotFoundError as e:
         logger.info(e)
 
     if not stock_rows:

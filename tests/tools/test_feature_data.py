@@ -5,7 +5,7 @@ import unittest
 from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT
-from agent_service.planner.errors import EmptyOutputError
+from agent_service.planner.errors import NotFoundError
 from agent_service.tools.feature_data import (
     FeatureDataInput,
     StatisticId,
@@ -224,7 +224,7 @@ class TestStatisticsIdentifierLookup2(unittest.IsolatedAsyncioTestCase):
 
     async def test_statistic_identifier_lookup_doesnt_exist(self):
         self.args = StatisticsIdentifierLookupInput(statistic_name="Foo bar ratio")
-        with self.assertRaises(EmptyOutputError):
+        with self.assertRaises(NotFoundError):
             await statistic_identifier_lookup(self.args, self.context)
 
     async def test_statistic_identifier_lookup_pe(self):

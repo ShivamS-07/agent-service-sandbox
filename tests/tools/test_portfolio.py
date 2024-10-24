@@ -21,6 +21,7 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
     TableColumnType,
 )
+from agent_service.planner.errors import NotFoundError
 from agent_service.tools.dates import DateRange
 from agent_service.tools.portfolio import (
     GetPortfolioHoldingsInput,
@@ -82,7 +83,11 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         result = await convert_portfolio_mention_to_portfolio_id(args, self.context)
         self.assertEqual(result, rows[1]["id"])
 
-        args = GetPortfolioInput(portfolio_name="NonExistant Portfolio")
+        with self.assertRaises(NotFoundError):
+            args = GetPortfolioInput(portfolio_name="NonExistant Portfolio")
+            result = await convert_portfolio_mention_to_portfolio_id(args, self.context)
+
+        args = GetPortfolioInput(portfolio_name="")
         result = await convert_portfolio_mention_to_portfolio_id(args, self.context)
         self.assertEqual(result, rows[0]["id"])
 

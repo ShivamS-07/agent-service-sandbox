@@ -49,6 +49,14 @@ class BadInputError(NonRetriableError):
     result_status = Status.ERROR
 
 
+class NotFoundError(NonRetriableError):
+    """
+    Nothing was found that matches the input
+    """
+
+    result_status = Status.ERROR
+
+
 class EmptyOutputError(NonRetriableError):
     """
     NOTE: Read above exception description before using this one
