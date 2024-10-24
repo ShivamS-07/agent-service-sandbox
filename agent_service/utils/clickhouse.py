@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import backoff
 import clickhouse_connect
+import pytz
 from clickhouse_connect.driver.asyncclient import AsyncClient
 from clickhouse_connect.driver.query import QueryResult
 from gbi_common_py_utils.utils.clickhouse_base import (
@@ -149,6 +150,21 @@ class Clickhouse(AsyncClickhouseBase):
         res = await self.generic_read(sql, {"gbi_ids": gbi_ids})
         output = {item["gbi_id"]: str(item["cid"]) for item in res}
         return output
+
+    async def get_last_login_for_user(self, user_id: str) -> Optional[datetime.datetime]:
+        sql = """
+select max(timestamp) as last_login
+from agent.agent_service_requests_completed asrc
+where user_id  = real_user_id
+and user_id = %(user_id)s
+        """
+
+        rows = await self.generic_read(sql, {"user_id": user_id})
+        if rows:
+            last_login = rows[0]["last_login"].replace(tzinfo=pytz.utc)
+            nyc_timezone = pytz.timezone("America/New_York")
+            return last_login.astimezone(nyc_timezone)
+        return None
 
     async def get_company_data_kpis(
         self, cid: str, vid: Optional[str] = None, pids: Optional[List[str]] = None

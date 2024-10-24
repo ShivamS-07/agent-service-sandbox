@@ -14,6 +14,7 @@ from agent_service.sqs_serve.message_handler import MessageHandler
 from agent_service.tools.output import EMPTY_OUTPUT_FLAG
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
+from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.s3_upload import download_json_from_s3
@@ -105,6 +106,7 @@ async def main() -> None:
                 user_email, user_info_slack_string = await get_user_info_slack_string(
                     async_db, user_id
                 )
+
                 top_level_message = "LIVE AGENT FAILURE\n"
                 if isinstance(e, NoOutputException):
                     top_level_message = "EMPTY OUTPUT FOR LIVE AGENT:\n"
@@ -113,10 +115,13 @@ async def main() -> None:
                     not user_email.endswith("@boosted.ai")
                     and not user_email.endswith("@gradientboostedinvestments.com")
                 ):
+                    ch = Clickhouse()
+                    last_login = await ch.get_last_login_for_user(user_id=user_id)
                     message_text = (
                         f"{top_level_message}Agent Name: {agent_name}\n"
                         f"link: {base_url}/chat/{agent_id}\n"
-                        f"{user_info_slack_string}"
+                        f"{user_info_slack_string}\n"
+                        f"Last Login (NYC Time): {last_login.isoformat() if last_login else 'N/A'}"
                     )
                     slack_sender = SlackSender(channel=channel)
                     slack_sender.send_message_at(
