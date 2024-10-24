@@ -858,7 +858,14 @@ class AgentServiceImpl:
     async def lock_agent_output(
         self, agent_id: str, req: LockAgentOutputRequest
     ) -> LockAgentOutputResponse:
-        await self.pg.lock_plan_tasks(agent_id=agent_id, plan_id=req.plan_id, task_ids=req.task_ids)
+        old_plan_id, _, _, _, _ = await self.pg.get_latest_execution_plan(
+            agent_id=agent_id, only_finished_plans=True
+        )
+        if not old_plan_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot lock output without plan"
+            )
+        await self.pg.lock_plan_tasks(agent_id=agent_id, plan_id=old_plan_id, task_ids=req.task_ids)
 
         await send_chat_message(
             db=self.pg,
@@ -875,8 +882,15 @@ class AgentServiceImpl:
     async def unlock_agent_output(
         self, agent_id: str, req: UnlockAgentOutputRequest
     ) -> UnlockAgentOutputResponse:
+        old_plan_id, _, _, _, _ = await self.pg.get_latest_execution_plan(
+            agent_id=agent_id, only_finished_plans=True
+        )
+        if not old_plan_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot unlock output without plan"
+            )
         await self.pg.unlock_plan_tasks(
-            agent_id=agent_id, plan_id=req.plan_id, task_ids=req.task_ids
+            agent_id=agent_id, plan_id=old_plan_id, task_ids=req.task_ids
         )
 
         await send_chat_message(
