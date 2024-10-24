@@ -58,9 +58,7 @@ async def get_agent_output(
                     "- " + widget_title, summary_title_anchor, run_summary_long.val, count=1
                 )
 
-        # regex removes all the spaces between any "\n" and "-"" so bullet points
-        # can be displayed properly
-        run_summary_long.val = re.sub(r"(?<=\n)\s+(?=-)", "", run_summary_long.val)
+        run_summary_long.val = run_summary_long.val.replace("\n  ", "\n")
 
     LOGGER.info(f"total time to get output for {agent_id} {time.perf_counter() - t}")
 

@@ -213,7 +213,7 @@ class OutputDiffer:
                 continue
             topic, sentence = topic_and_sentence.split(": ")
             if topic in citable_changes and citable_changes[topic]:
-                diff_text_bits.append("\n    - ")
+                diff_text_bits.append("\n  - ")
                 diff_text_bits.append(sentence)
                 offset = sum([len(S) for S in diff_text_bits])
                 sent_citations = []
