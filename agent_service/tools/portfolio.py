@@ -251,14 +251,20 @@ async def get_portfolio_holdings(
 
 class GetPortfolioInput(ToolArgs):
     portfolio_name: str
+    portfolio_uuid: Optional[str] = None
 
 
 @tool(
     description=(
-        "This function returns a portfolio id given a portfolio name or mention (e.g. my portfolio). "
+        "This function returns a portfolio id object given a portfolio name "
+        "or mention (e.g. my portfolio) as well as a portfolio's UUID if available. "
         "It MUST be used when the client mentions any 'portfolio' in the request. "
         "This function will try to match the given name with the portfolio names for that clients "
         "and return the closest match. "
+        "portfolio_id should be included in addition to the name ONLY if a portfolio's "
+        "UUID is explicitly mentioned in user input! "
+        "In that case, you still MUST call this function to resolve the ID to an object. "
+        "E.g. 'My portfolio' (Portfolio ID: <some UUID>)."
     ),
     category=ToolCategory.PORTFOLIO,
     tool_registry=ToolRegistry,
@@ -275,6 +281,8 @@ async def convert_portfolio_mention_to_portfolio_id(
     user_owned_portfolios = []
     all_portfolios = defaultdict(list)
     for workspace in workspaces:
+        if args.portfolio_uuid and workspace.workspace_id.id == args.portfolio_uuid:
+            return args.portfolio_uuid
         if str(args.portfolio_name).lower() == str(workspace.name).lower():
             perfect_matches.append(workspace)
 

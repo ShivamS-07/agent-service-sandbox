@@ -25,8 +25,11 @@ class Message(BaseModel):
     plan_run_id: Optional[str] = None
 
     def get_gpt_input(self) -> str:
+        from agent_service.io_types.text_objects import extract_text_objects_from_text
+
+        stripped_message, _ = extract_text_objects_from_text(str(self.message))
         tag = GPT_USER_TAG if self.is_user_message else GPT_AGENT_TAG
-        return f"{tag}: {self.message}"
+        return f"{tag}: {stripped_message}"
 
     def to_message_row(self) -> Dict[str, Any]:
         return {

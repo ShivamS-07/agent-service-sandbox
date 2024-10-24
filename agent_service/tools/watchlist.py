@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from agent_service.external.pa_svc_client import (
     get_all_stocks_in_all_watchlists,
@@ -19,6 +19,7 @@ from agent_service.utils.tool_diff import (
 
 class GetUserWatchlistStocksInput(ToolArgs):
     watchlist_name: str
+    watchlist_id: Optional[str] = None
 
 
 class GetStocksForUserAllWatchlistsInput(ToolArgs):
@@ -31,8 +32,12 @@ WATCHLIST_REMOVE_STOCK_DIFF = "{company} was removed from the watchlist: {watchl
 
 @tool(
     description=(
-        "Given a watchlist name, this tool returns the list of stock identifiers that are inside "
+        "Given a watchlist name, and optionally a watchlist ID, this tool "
+        "returns the list of stock identifiers that are inside "
         "the watchlist. It MUST be used when the client mentions 'watchlist' in the request. "
+        "Watchlist ID should be included as well as name, but ONLY if the UUID of the "
+        "watchlist is included in chat! "
+        "E.g. 'My watchlist' (Watchlist ID: <some UUID>)."
     ),
     category=ToolCategory.USER,
     tool_registry=ToolRegistry,
@@ -54,14 +59,19 @@ async def get_user_watchlist_stocks(
         [w for w in resp.watchlists], key=lambda x: x.last_updated.ToDatetime(), reverse=True
     )
     watchlist_names = [watchlist.name for watchlist in all_watchlists]
+    watchlist_ids = {watchlist.watchlist_id.id for watchlist in all_watchlists}
 
     name_to_id = {}
     for watchlist in all_watchlists:
         if watchlist.name not in name_to_id:  # only keep the first occurrence
             name_to_id[watchlist.name] = watchlist.watchlist_id.id
 
-    # exact match
-    if args.watchlist_name in name_to_id:
+    if args.watchlist_id and args.watchlist_id in watchlist_ids:
+        # ID passed in
+        watchlist_id = args.watchlist_id
+        watchlist_name = args.watchlist_name
+    elif args.watchlist_name in name_to_id:
+        # exact name match
         watchlist_id = name_to_id[args.watchlist_name]
         watchlist_name = args.watchlist_name
     else:

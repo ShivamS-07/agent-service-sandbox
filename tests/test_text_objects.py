@@ -10,9 +10,12 @@ from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import Text
 from agent_service.io_types.text_objects import (
     CitationTextObject,
+    PortfolioTextObject,
     StockTextObject,
     TextObject,
     TextObjectType,
+    WatchlistTextObject,
+    extract_text_objects_from_text,
 )
 from agent_service.utils.postgres import SyncBoostedPG
 
@@ -252,3 +255,42 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
 - **delta**: ```{"type": "delta", "value": 43.35, "unit": null}```
 - **pct_delta**: ```{"type": "pct_delta", "value": 0.35, "unit": null}```"""
         self.assertEqual(result, expected)
+
+    @parameterized.expand(
+        [
+            param(
+                text="Testing testing",
+                expected_result="Testing testing",
+                expected_text_objects=[],
+            ),
+            param(
+                text="Testing testing {one test} another",
+                expected_result="Testing testing {one test} another",
+                expected_text_objects=[],
+            ),
+            param(
+                text="Testing testing ```{one test}``` another",
+                expected_result="Testing testing {one test} another",
+                expected_text_objects=[],
+            ),
+            param(
+                text="""This is a test of ```{"type": "portfolio", "id": "aaa", "label": "best portfolio"}``` stuff and other things.""",
+                expected_result="""This is a test of "best portfolio" (Portfolio ID: aaa) stuff and other things.""",
+                expected_text_objects=[PortfolioTextObject(id="aaa", label="best portfolio")],
+            ),
+            param(
+                text="""This is a test of ```{"type": "watchlist", "id": "aaa", "label": "best watchlist"}``` stuff and other ```{"type": "watchlist", "id": "aaa", "label": "best watchlist"}``` things.""",
+                expected_result="""This is a test of "best watchlist" (Watchlist ID: aaa) stuff and other "best watchlist" (Watchlist ID: aaa) things.""",
+                expected_text_objects=[
+                    WatchlistTextObject(id="aaa", label="best watchlist"),
+                    WatchlistTextObject(id="aaa", label="best watchlist"),
+                ],
+            ),
+        ]
+    )
+    async def test_extract_text_objects_from_text(
+        self, text: str, expected_result: str, expected_text_objects: List[TextObject]
+    ):
+        actual_result, actual_objects = extract_text_objects_from_text(text)
+        self.assertEqual(actual_result, expected_result)
+        self.assertEqual(actual_objects, expected_text_objects)

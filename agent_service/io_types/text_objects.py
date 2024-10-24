@@ -3,7 +3,9 @@ import json
 import logging
 import re
 from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional, Tuple
+
+from pydantic import BaseModel, Field
 
 from agent_service.GPT.constants import GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
@@ -28,6 +30,9 @@ logger = logging.getLogger(__name__)
 class TextObjectType(enum.StrEnum):
     STOCK = "stock"
     CITATION = "citation"
+    WATCHLIST = "watchlist"
+    PORTFOLIO = "portfolio"
+    VARIABLE = "variable"
 
 
 @io_type
@@ -36,16 +41,19 @@ class TextObject(SerializeableBase):
     Represents an 'object' in a text.
     """
 
-    type: TextObjectType | TableColumnType
+    type: TextObjectType | TableColumnType = Field(frozen=True)
 
     # Index into the text
-    index: int
+    index: Optional[int] = None
 
     # For text objects that are 'link-like', store an end index. The text
     # between the start and end index will be "converted" into the object. Note
     # that this index is INCLUSIVE, and so is the final index of the string that
     # should be included in the text object.
     end_index: Optional[int] = None
+
+    def format_for_gpt(self) -> str:
+        return str(self)
 
     @staticmethod
     def render_object_to_json(obj: "TextObject", replaced_text: Optional[str] = None) -> str:
@@ -87,10 +95,10 @@ class TextObject(SerializeableBase):
         # that ends up in index_replacement_object_map is the longest span for
         # that index (in the very strange/rare case there are duplicates)
         # E.g. "Apple Inc." should be highlighted over just "Apple".
-        for obj in sorted(objects, key=lambda o: (o.end_index or 0) - o.index):
-            if obj.end_index:
+        for obj in sorted(objects, key=lambda o: (o.end_index or 0) - (o.index or 0)):
+            if obj.end_index and obj.index:
                 index_replacement_object_map[obj.index] = obj
-            else:
+            elif obj.index:
                 index_object_map[obj.index].append(obj)
 
         i = 0
@@ -294,13 +302,49 @@ The text you need to analyze is provided below.
 
 @io_type
 class StockTextObject(TextObject, StockMetadata):
-    type: TextObjectType | TableColumnType = TextObjectType.STOCK
+    type: Literal[TextObjectType.STOCK] = TextObjectType.STOCK
+
+    def format_for_gpt(self) -> str:
+        # TODO
+        if self.symbol:
+            return f"{self.company_name} ({self.symbol})"
+        return self.company_name
 
 
 @io_type
 class CitationTextObject(TextObject):
-    type: TextObjectType | TableColumnType = TextObjectType.CITATION
+    type: Literal[TextObjectType.CITATION] = TextObjectType.CITATION
     citation_id: str
+
+
+@io_type
+class WatchlistTextObject(TextObject):
+    type: Literal[TextObjectType.WATCHLIST] = TextObjectType.WATCHLIST
+    id: str
+    label: Optional[str] = None
+
+    def format_for_gpt(self) -> str:
+        return f'"{self.label}" (Watchlist ID: {self.id})'
+
+
+@io_type
+class PortfolioTextObject(TextObject):
+    type: Literal[TextObjectType.PORTFOLIO] = TextObjectType.PORTFOLIO
+    id: str
+    label: Optional[str] = None
+
+    def format_for_gpt(self) -> str:
+        return f'"{self.label}" (Portfolio ID: {self.id})'
+
+
+@io_type
+class VariableTextObject(TextObject):
+    type: Literal[TextObjectType.VARIABLE] = TextObjectType.VARIABLE
+    id: str
+    label: Optional[str] = None
+
+    def format_for_gpt(self) -> str:
+        return f'"{self.label}"'
 
 
 @io_type
@@ -310,6 +354,50 @@ class BasicTextObject(TextObject):
     the frontend. E.g. floats, percents, etc.
     """
 
-    type: TextObjectType | TableColumnType
+    type: TableColumnType
     value: PrimitiveType | ScoreOutput
     unit: Optional[str] = None
+
+    def format_for_gpt(self) -> str:
+        return str(self.value)
+
+
+TextObjUnion = (
+    StockTextObject
+    | WatchlistTextObject
+    | PortfolioTextObject
+    | VariableTextObject
+    | CitationTextObject
+)
+
+
+class TextObjWrapper(BaseModel):
+    obj: TextObjUnion = Field(discriminator="type")
+
+
+TEXT_OBJECT_REGEX = re.compile(r"```([^\`]*)```")
+
+
+def extract_text_objects_from_text(text: str) -> Tuple[str, List[TextObjUnion]]:
+    """
+    Given a text with embedded text objects like:
+    ```{"type": "portfolio", "id": "aaa...", "label": "best portfolio"}```
+    Extract the text objects, producing a new text with text objects replaced
+    with some readable string, and a list of the extracted text objects.
+    """
+    new_text_list = []
+    text_obj_list = []
+    for part in re.split(TEXT_OBJECT_REGEX, text):
+        if part.startswith("{") and part.endswith("}"):
+            try:
+                obj_dict = json.loads(part)
+                text_obj = TextObjWrapper.model_validate({"obj": obj_dict}).obj
+                text_obj_list.append(text_obj)
+                new_text_list.append(text_obj.format_for_gpt())
+            except Exception:
+                new_text_list.append(part)
+        else:
+            new_text_list.append(part)
+
+    new_text = "".join(new_text_list)
+    return new_text, text_obj_list
