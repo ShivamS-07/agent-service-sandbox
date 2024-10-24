@@ -27,11 +27,13 @@ from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 # Make sure all io_types are registered
 from agent_service.io_types import *  # noqa
 from agent_service.io_types.graph import GraphOutput
+from agent_service.io_types.output import Output
 from agent_service.io_types.table import TableOutput
 from agent_service.io_types.text import TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
 from agent_service.types import ChatContext, Message, Notification, PlanRunContext
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
+from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.cache_utils import CacheBackend
 from agent_service.utils.date_utils import get_now_utc
@@ -126,6 +128,17 @@ class AsyncDB:
         """
         if `plan_run_id` is None, get the latest run's outputs
         """
+        if cache:
+            return await self.get_agent_outputs_cache(cache, agent_id, plan_run_id)
+        else:
+            return await self.get_agent_outputs_no_cache(agent_id, plan_run_id)
+
+    async def get_agent_outputs_no_cache(
+        self, agent_id: str, plan_run_id: Optional[str] = None
+    ) -> List[AgentOutput]:
+        """
+        if `plan_run_id` is None, get the latest run's outputs
+        """
 
         if plan_run_id:
             where_clause = """
@@ -150,7 +163,7 @@ class AsyncDB:
                     ao.task_id::VARCHAR,
                     ao.is_intermediate, ao.live_plan_output,
                     ao.output, ao.created_at, pr.shared, pr.run_metadata,
-                    ao.plan_id::TEXT, ep.plan, ep.locked_tasks
+                    ep.plan, ep.locked_tasks
                 FROM agent.agent_outputs ao
                 LEFT JOIN agent.plan_runs pr
                   ON ao.plan_run_id = pr.plan_run_id
@@ -162,51 +175,25 @@ class AsyncDB:
         start = time.perf_counter()
         rows = await self.pg.generic_read(sql, params)
         end = time.perf_counter()
-        logger.info(f"Fetched outputs from DB for {agent_id=} in {end - start}s")
+        logger.info(f"Fetched outputs from DB for {agent_id=} in {(end - start):.2f}s")
         if not rows:
             return []
 
-        @async_perf_logger
-        async def get_output_id_from_cache(
-            output_id: str,
-        ) -> Tuple[str, Optional[Union[TextOutput, GraphOutput, TableOutput]]]:
-            cached_output: Optional[Union[TextOutput, GraphOutput, TableOutput]] = None
-            if cache:
-                cached_output = await cache.get(output_id)  # type: ignore
-            return output_id, cached_output
+        start = end
+        io_outputs = [
+            load_io_type(row["output"]) if row["output"] else row["output"] for row in rows
+        ]
+        end = time.perf_counter()
+        logger.info(f"`load_io_type` for {agent_id=} in {(end - start):.2f}s")
 
-        @async_perf_logger
-        async def get_output_values() -> List[Union[TextOutput, GraphOutput, TableOutput]]:
-            cached_output_ids = set()
-            to_return = []
-            if cache:
-                output_get_tasks = [get_output_id_from_cache(row["output_id"]) for row in rows]
-                outputs_with_ids = await asyncio.gather(*output_get_tasks)
-                for cached_output_id, cached_output in outputs_with_ids:
-                    if cached_output:
-                        cached_output_ids.add(cached_output_id)
-                        to_return.append(cached_output)
+        start = end
+        tasks = [get_output_from_io_type(output, pg=self.pg) for output in io_outputs]
+        output_values = await asyncio.gather(*tasks)
+        logger.info(
+            f"`get_output_from_io_type` for {agent_id=} in {time.perf_counter() - start:.2f}s"
+        )
 
-            non_cached_output_tasks = []
-            for row in rows:
-
-                async def get_non_cached(output_id: str, a_io_output: IOType) -> Any:
-                    res = await get_output_from_io_type(a_io_output, pg=self.pg)
-                    if cache:
-                        await cache.set(key=output_id, val=res)
-                    return res
-
-                if row["output_id"] not in cached_output_ids:
-                    io_output = load_io_type(row["output"]) if row["output"] else row["output"]
-                    non_cached_output_tasks.append(get_non_cached(row["output_id"], io_output))
-            if non_cached_output_tasks:
-                results = await asyncio.gather(*non_cached_output_tasks)
-                to_return.extend(results)
-            return to_return
-
-        output_values = await get_output_values()
-
-        outputs = []
+        outputs: List[AgentOutput] = []
         for row, output_value in zip(rows, output_values):
             row["output"] = output_value
             row["shared"] = row["shared"] or False
@@ -235,6 +222,164 @@ class AsyncDB:
             output = AgentOutput(agent_id=agent_id, **row)
             outputs.append(output)
 
+        return outputs
+
+    async def get_agent_outputs_cache(
+        self, cache: CacheBackend, agent_id: str, plan_run_id: Optional[str] = None
+    ) -> List[AgentOutput]:
+        """
+        if `plan_run_id` is None, get the latest run's outputs
+        """
+        # download metadata for all outputs (no values)
+        if plan_run_id:
+            where_clause = """
+            ao.plan_run_id = %(plan_run_id)s
+            AND NOT ao.deleted
+            AND ao.output NOTNULL AND ao.is_intermediate = FALSE
+            """
+            params = {"plan_run_id": plan_run_id}
+        else:
+            where_clause = """
+                ao.plan_run_id IN (
+                        SELECT plan_run_id FROM agent.agent_outputs
+                        WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
+                        ORDER BY created_at DESC LIMIT 1
+                    )
+                AND NOT ao.deleted
+            """
+            params = {"agent_id": agent_id}
+
+        sql = f"""
+            SELECT ao.plan_id::VARCHAR, ao.output_id::VARCHAR, ao.plan_run_id::VARCHAR,
+                ao.task_id::VARCHAR,
+                ao.is_intermediate, ao.live_plan_output,
+                ao.created_at, pr.shared, pr.run_metadata,
+                ep.plan, ep.locked_tasks
+            FROM agent.agent_outputs ao
+            LEFT JOIN agent.plan_runs pr
+                ON ao.plan_run_id = pr.plan_run_id
+            LEFT JOIN agent.execution_plans ep
+                ON ao.plan_id = ep.plan_id
+            WHERE {where_clause}
+            ORDER BY created_at ASC;
+        """
+        start = time.perf_counter()
+        rows_without_output = await self.pg.generic_read(sql, params)
+        end = time.perf_counter()
+        logger.info(
+            f"Total time to get output METADATA for {agent_id} from DB "
+            f"is {(end - start):.2f} seconds"
+        )
+
+        if not rows_without_output:
+            return []
+
+        # Download output values from cache
+        async def get_output_from_cache(
+            output_id: str,
+        ) -> Tuple[str, Optional[Union[TextOutput, GraphOutput, TableOutput]]]:
+            cached_output: Optional[Union[TextOutput, GraphOutput, TableOutput]] = await cache.get(output_id)  # type: ignore  # noqa
+            return output_id, cached_output
+
+        async def get_non_cached(output_id: str, a_io_output: IOType) -> Any:
+            res = await get_output_from_io_type(a_io_output, pg=self.pg)
+
+            # DO NOT await this - run in background
+            run_async_background(cache.set(key=output_id, val=res))
+
+            return res
+
+        start = end
+        output_id_to_row = {row["output_id"]: row for row in rows_without_output}
+        uncached_output_ids = set(output_id_to_row.keys())
+        output_values: List[Tuple[str, Output]] = []
+        output_get_tasks = [get_output_from_cache(row["output_id"]) for row in rows_without_output]
+        outputs_with_ids = await asyncio.gather(*output_get_tasks)
+        for cached_output_id, cached_output in outputs_with_ids:
+            if cached_output:
+                uncached_output_ids.discard(cached_output_id)
+                output_values.append((cached_output_id, cached_output))
+
+        end = time.perf_counter()
+        logger.info(
+            f"Total time to get output VALUES for {agent_id} from CACHE "
+            f"is {(end - start):.2f} seconds"
+        )
+
+        if uncached_output_ids:
+            start = end
+
+            # meaning we need to download the output values from the database
+            sql = """
+                SELECT output_id::VARCHAR, output
+                FROM agent.agent_outputs
+                WHERE output_id = ANY(%(output_ids)s)
+            """
+            output_rows = await self.pg.generic_read(sql, {"output_ids": list(uncached_output_ids)})
+
+            end = time.perf_counter()
+            logger.info(
+                f"Total time to get uncached output VALUES for {agent_id} from DB is "
+                f"{(end - start):.2f} seconds"
+            )
+            start = end
+
+            non_cached_output_tasks = []
+            for row in output_rows:
+                output_id = row["output_id"]
+                io_output = load_io_type(row["output"]) if row["output"] else row["output"]
+                non_cached_output_tasks.append(get_non_cached(output_id, io_output))
+
+            end = time.perf_counter()
+            logger.info(
+                f"Total time to `load_io_type` for uncached output VALUES for {agent_id} is "
+                f"{(end - start):.2f} seconds"
+            )
+            start = end
+
+            results = await asyncio.gather(*non_cached_output_tasks)
+            for output_row, non_cached_output in zip(output_rows, results):
+                output_id = output_row["output_id"]
+                output_values.append((output_id, non_cached_output))
+
+            end = time.perf_counter()
+            logger.info(
+                f"Total time to `get_output_from_io_type` for uncached output VALUES for {agent_id}"
+                f" is {(end - start):.2f} seconds"
+            )
+
+        outputs: List[AgentOutput] = []
+        for output_id, output_value in output_values:
+            row = output_id_to_row[output_id]
+
+            row["output"] = output_value
+            row["shared"] = row["shared"] or False
+            row["run_metadata"] = (
+                RunMetadata.model_validate(row["run_metadata"]) if row["run_metadata"] else None
+            )
+            locked_tasks = row["locked_tasks"] if row["locked_tasks"] else set()
+            row["is_locked"] = row["task_id"] in locked_tasks
+            if row["plan"]:
+                # Might be slightly inefficient, but in the scheme of things
+                # probably not noticeable. We can revisit if needed. Need to do
+                # this so that frontend knows which outputs depend on other
+                # outputs in case of deleting.
+                plan = ExecutionPlan.model_validate(row["plan"])
+                node_dependency_map = plan.get_node_dependency_map()
+                node_parent_map = plan.get_node_parent_map()
+                for node, children in node_dependency_map.items():
+                    if node.tool_task_id == row["task_id"]:
+                        parents = node_parent_map.get(node, set())
+                        row["dependent_task_ids"] = [node.tool_task_id for node in children]
+                        # Only include parents if they are also outputs
+                        row["parent_task_ids"] = [
+                            node.tool_task_id for node in parents if node.is_output_node
+                        ]
+
+            output = AgentOutput(agent_id=agent_id, **row)
+            outputs.append(output)
+
+        outputs.sort(key=lambda x: x.created_at)
         return outputs
 
     async def delete_agent_outputs(self, agent_id: str, output_ids: List[str]) -> None:
@@ -1801,7 +1946,7 @@ class AsyncDB:
                 sql += f" {criterion.column} != %({param1})s"
                 search_params[param1] = criterion.arg1
             else:
-                logging.warning(f"Unknown operator {criterion.operator=}")
+                logger.warning(f"Unknown operator {criterion.operator=}")
 
         # Always sort by latest agent ran
         sql += " ORDER BY aqc.created_at DESC"

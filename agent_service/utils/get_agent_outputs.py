@@ -25,17 +25,7 @@ async def get_agent_output(
     If `plan_run_id` is None, default to get the outputs of the latest run
     """
     t = time.perf_counter()
-    if not plan_run_id:
-        sql = """SELECT plan_run_id FROM agent.agent_outputs
-               WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
-               ORDER BY created_at DESC LIMIT 1"""
-        rows = await pg.pg.generic_read(sql, params={"agent_id": agent_id})
-        if not rows:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No output found for {agent_id=} and {plan_run_id=}",
-            )
-        plan_run_id = rows[0]["plan_run_id"]
+
     outputs = await pg.get_agent_outputs(agent_id=agent_id, plan_run_id=plan_run_id, cache=cache)
     if not outputs:
         raise HTTPException(
@@ -72,19 +62,12 @@ async def get_agent_output(
         # can be displayed properly
         run_summary_long.val = re.sub(r"(?<=\n)\s+(?=-)", "", run_summary_long.val)
 
+    LOGGER.info(f"total time to get output for {agent_id} {time.perf_counter() - t}")
+
     final_outputs = [output for output in outputs if not output.is_intermediate]
-    result = GetAgentOutputResponse(
-        outputs=outputs,
+    return GetAgentOutputResponse(
+        outputs=final_outputs or outputs,
         run_summary_long=run_summary_long,
         run_summary_short=run_summary_short,
         newly_updated_outputs=newly_updated_outputs,
     )
-    if final_outputs:
-        result = GetAgentOutputResponse(
-            outputs=final_outputs,
-            run_summary_long=run_summary_long,
-            run_summary_short=run_summary_short,
-            newly_updated_outputs=newly_updated_outputs,
-        )
-    LOGGER.info(f"total time to get output for {agent_id} {time.perf_counter() - t}")
-    return result

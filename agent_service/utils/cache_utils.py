@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
@@ -31,10 +32,10 @@ class RedisCacheBackend(CacheBackend):
 
     async def get(self, key: str, ttl: Optional[int] = None) -> Optional[IOType]:
         # redis implements ttl on insert, so ignored here
-        return self.client.get(key=key)
+        return await asyncio.to_thread(self.client.get, key=key)
 
     async def set(self, key: str, val: IOType, ttl: Optional[int] = None) -> None:
-        self.client.set(key=key, val=val, ttl=ttl)
+        await asyncio.to_thread(self.client.set, key=key, val=val, ttl=ttl)
 
 
 class PostgresCacheBackend(CacheBackend):
