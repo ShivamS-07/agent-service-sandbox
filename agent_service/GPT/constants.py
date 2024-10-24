@@ -29,9 +29,19 @@ DEFAULT_OUTPUT_LEN = 4096
 OPENAI_ORG_PARAM = "/openai/organization"
 OPENAI_API_PARAM = "/openai/api_key"
 
-# 20 minutes, worker does its own retries so we should wait for longer
-MAX_GPT_WORKER_TIMEOUT = 20 * 60
-TIMEOUTS = {GPT4_O: 90, GPT4_TURBO: 90, GPT35_TURBO: 60}
+# 5 minutes, worker does its own retries so we should wait for longer
+MAX_GPT_WORKER_TIMEOUT = 5 * 60
+TIMEOUTS = {
+    GPT4_O: 90,
+    GPT4_TURBO: 90,
+    GPT35_TURBO: 60,
+    GPT4_O_MINI: 60,
+    SONNET: 90,
+    HAIKU: 60,
+    ADA_2: 30,
+    TEXT_3_LARGE: 30,
+    O1: 60 * 5,
+}
 
 JSON_RESPONSE_FORMAT = {"type": "json_object"}
 TEXT_RESPONSE_FORMAT = {"type": "text"}

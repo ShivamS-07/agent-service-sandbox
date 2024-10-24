@@ -33,6 +33,7 @@ from agent_service.GPT.constants import (
     JSON_RESPONSE_FORMAT,
     MAX_GPT_WORKER_TIMEOUT,
     TEXT_RESPONSE_FORMAT,
+    TIMEOUTS,
 )
 from agent_service.types import PlanRunContext
 from agent_service.unit_test_util import RUNNING_IN_UNIT_TEST
@@ -224,7 +225,7 @@ async def _query_gpt_worker(
         metadata.append(("nocache", "true"))
 
     result: QueryGPTResponse = await stub.QueryGPT(
-        request, timeout=MAX_GPT_WORKER_TIMEOUT, metadata=metadata
+        request, timeout=TIMEOUTS.get(model, MAX_GPT_WORKER_TIMEOUT), metadata=metadata
     )
 
     if not use_global_stub() and channel:
@@ -315,7 +316,7 @@ async def _get_embedding(
 
     stub, channel = _get_gpt_service_stub()
     result: EmbedTextResponse = await stub.EmbedText(
-        request, timeout=MAX_GPT_WORKER_TIMEOUT, metadata=metadata
+        request, timeout=TIMEOUTS.get(model, MAX_GPT_WORKER_TIMEOUT), metadata=metadata
     )
 
     if not use_global_stub():

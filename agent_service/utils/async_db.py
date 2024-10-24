@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
+import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -39,6 +40,8 @@ from agent_service.utils.output_utils.output_construction import get_output_from
 from agent_service.utils.postgres import Postgres, SyncBoostedPG
 from agent_service.utils.prompt_template import PromptTemplate
 from agent_service.utils.sidebar_sections import SidebarSection
+
+logger = logging.getLogger(__name__)
 
 
 class AsyncDB:
@@ -156,10 +159,14 @@ class AsyncDB:
                 WHERE {where_clause}
                 ORDER BY created_at ASC;
                 """
+        start = time.perf_counter()
         rows = await self.pg.generic_read(sql, params)
+        end = time.perf_counter()
+        logger.info(f"Fetched outputs from DB for {agent_id=} in {end - start}s")
         if not rows:
             return []
 
+        @async_perf_logger
         async def get_output_id_from_cache(
             output_id: str,
         ) -> Tuple[str, Optional[Union[TextOutput, GraphOutput, TableOutput]]]:
@@ -168,6 +175,7 @@ class AsyncDB:
                 cached_output = await cache.get(output_id)  # type: ignore
             return output_id, cached_output
 
+        @async_perf_logger
         async def get_output_values() -> List[Union[TextOutput, GraphOutput, TableOutput]]:
             cached_output_ids = set()
             to_return = []
