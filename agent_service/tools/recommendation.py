@@ -94,7 +94,11 @@ SETTINGS_TEMPLATE: Dict[str, Any] = {
     "block_type": "stock",
     "universe_ids": [],
     "sector_settings": {"sector_ids": []},
-    "rating_settings": {"boundary": {"lb": None, "ub": None}, "weight": 1.0},
+    "rating_settings": {
+        "boundary": {"lb": None, "ub": None},
+        "weight": 1.0,
+        "filter_by_ratings": True,
+    },
     "strategy_settings": {  # these are exclusive
         "all_strategies": False,
         "subscribed_strategies": True,
@@ -732,6 +736,7 @@ async def get_stock_recommendations(
 
     if not args.filter or args.news_only:  # don't want ism filter or news only requests
         settings_blob["ism_settings"]["match_labels"].extend(["Weak Match", "Poor Match"])
+        settings_blob["rating_settings"]["filter_by_ratings"] = False
 
     if args.buy is None or args.buy:
         settings_blob["rating_settings"]["boundary"]["lb"] = 0.0001
@@ -760,7 +765,8 @@ async def get_stock_recommendations(
         rec_scores = RecommendationScores()
         rec_scores.news_score = get_news_sentiment_score(row)
         if not args.news_only:
-            rec_scores.rating_score = get_rating_score(row)
+            rating_score = get_rating_score(row)
+            rec_scores.rating_score = rating_score if rating_score.val > 0.0 else None
         score_dict[stock_id] = rec_scores
 
     debug_info["score_dict"] = dump_io_type(
