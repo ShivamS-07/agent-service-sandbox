@@ -1,6 +1,7 @@
 import asyncio
 import io
 import logging
+import re
 import ssl
 from typing import Any, Dict, List, Optional
 
@@ -107,6 +108,12 @@ def brd_request(url: str, headers: Dict[str, str] = HEADER, timeout: int = 5) ->
     return response
 
 
+def remove_excess_formatting(text: str) -> str:
+    # Remove tabs and replace three or more newlines with two newlines
+    text = text.replace("\t", "")
+    return re.sub(r"\n{3,}", "\n\n", text)
+
+
 @async_perf_logger
 async def req_and_scrape(
     session: aiohttp.ClientSession,
@@ -172,10 +179,13 @@ async def req_and_scrape(
         return None
 
     obj = WebText(url=url, title=title)  # we don't save `text` in the obj and pass around
+    clean_text = remove_excess_formatting(text)
 
     # upload to s3
     await s3_client.upload_fileobj(
-        Fileobj=io.BytesIO(text.encode("utf-8")), Bucket=S3_BUCKET_BOOSTED_WEBSEARCH, Key=obj.id
+        Fileobj=io.BytesIO(clean_text.encode("utf-8")),
+        Bucket=S3_BUCKET_BOOSTED_WEBSEARCH,
+        Key=obj.id,
     )
 
     # Return the response object
