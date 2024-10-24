@@ -20,7 +20,7 @@ from agent_service.utils.postgres import Postgres, SyncBoostedPG
 
 logger = logging.getLogger(__name__)
 
-ch = ClickhouseBase(environment="DEV")
+ch = ClickhouseBase()
 
 
 def build_plan_object(agent_id: str, plan_id: str) -> ExecutionPlan:

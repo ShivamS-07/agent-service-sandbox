@@ -35,7 +35,7 @@ from agent_service.utils.postgres import Postgres
 
 logger = logging.getLogger(__name__)
 
-ch = ClickhouseBase(environment="DEV")
+ch = ClickhouseBase()
 
 
 def get_origin_hypothesis_and_target_stock(
@@ -83,9 +83,9 @@ def insert_fake_past_run_entry(context: PlanRunContext, created_at: datetime.dat
 
     # create a `plan_run` record and insert, fake `created_at`
     sql = """
-        INSERT INTO agent.plan_runs (plan_run_id, agent_id, plan_id, created_at)
+        INSERT INTO agent.plan_runs (plan_run_id, agent_id, plan_id, status, created_at, last_updated)
         VALUES (
-            %(plan_run_id)s, %(agent_id)s, %(plan_id)s, %(created_at)s
+            %(plan_run_id)s, %(agent_id)s, %(plan_id)s, 'COMPLETE', %(created_at)s, %(last_updated)s
         )
     """
     db.generic_write(
@@ -95,8 +95,36 @@ def insert_fake_past_run_entry(context: PlanRunContext, created_at: datetime.dat
             "agent_id": context.agent_id,
             "plan_id": context.plan_id,
             "created_at": created_at,
+            "last_updated": created_at,
         },
     )
+
+
+def insert_fake_past_task_statuses(
+    context: PlanRunContext, latest_run_id: str, created_at: datetime.datetime
+) -> None:
+    db = Postgres()
+
+    # get the existing worklogs
+    sql1 = """
+        SELECT agent_id::VARCHAR, task_id::VARCHAR
+        FROM agent.task_runs
+        WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s
+        ORDER BY created_at ASC
+    """
+    rows = db.generic_read(sql1, {"agent_id": context.agent_id, "plan_run_id": latest_run_id})
+
+    # replace the plan_run_id with the fake one
+    ts = created_at
+    for row in rows:
+        ts += datetime.timedelta(seconds=1)
+
+        row["plan_run_id"] = context.plan_run_id
+        row["status"] = "COMPLETE"
+        row["created_at"] = ts
+        row["last_updated"] = ts
+
+    db.multi_row_insert("agent.task_runs", rows)
 
 
 def build_plan_object(agent_id: str, plan_id: str) -> ExecutionPlan:
@@ -214,10 +242,15 @@ def drop_plan_run(agent_id: str, plan_run_id: str) -> None:
         DELETE FROM agent.work_logs
         WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s
     """
+    sql4 = """
+        DELETE FROM agent.task_runs
+        WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s
+    """
     db = Postgres()
     db.generic_write(sql1, {"agent_id": agent_id, "plan_run_id": plan_run_id})
     db.generic_write(sql2, {"agent_id": agent_id, "plan_run_id": plan_run_id})
     db.generic_write(sql3, {"agent_id": agent_id, "plan_run_id": plan_run_id})
+    db.generic_write(sql4, {"agent_id": agent_id, "plan_run_id": plan_run_id})
 
 
 async def create_fake_past_run(
@@ -280,7 +313,7 @@ async def create_fake_past_run(
     # write outputs
 
     insert_fake_past_run_entry(context, created_at=end_date)
-
+    insert_fake_past_task_statuses(context, latest_plan_run_id, created_at=end_date)
     insert_fake_past_run_worklogs(context, latest_plan_run_id, created_at=end_date)
 
     summary_output = await prepare_output(
