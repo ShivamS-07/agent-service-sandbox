@@ -22,7 +22,13 @@ from agent_service.io_types.table import (
     TableColumnType,
 )
 from agent_service.planner.errors import EmptyInputError, NotFoundError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import (
+    TOOL_DEBUG_INFO,
+    ToolArgs,
+    ToolCategory,
+    ToolRegistry,
+    tool,
+)
 from agent_service.tools.lists import CombineListsInput, add_lists
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -91,10 +97,9 @@ class StockIdentifierLookupInput(ToolArgs):
     prefer_etfs: Optional[bool] = False
 
 
-STOCK_CONFIRMATION_PROMPT = Prompt(
-    name="STOCK_CONFIRMATION_PROMPT",
-    template="""
-Your task is to determine which company, stock, ETF the search term refers to,
+DEFAULT_CONFIRMATION_TARGET_TYPE = "company, stock, or ETF"
+STOCK_CONFIRMATION_PROMPT_STR = """
+Your task is to determine which {target_type} the search term refers to,
  the search term might be a common word,
  but in this case you should try really hard to associate it with a stock or etf
  If the search term does NOT refer to a company, stock, ETF,
@@ -137,18 +142,21 @@ Your task is to determine which company, stock, ETF the search term refers to,
  The potential search results in json are:
  {results}
  The search term is: '{search}'
+ Remember you are looking only for results of these types: {target_type}
  REMEMBER! If your reason is something like: "the search term closely resembles the ticker symbol"
  then you should reconsider as ticker typos are not common, and your answer is
  extremely likely to be wrong.
  In that case you should find a different answer with a better reason.
  You will be fired if your reason is close to: "the search term closely resembles the ticker symbol"
-""",
-)
+"""
 
 
 @async_perf_logger
 async def stock_confirmation_by_gpt(
-    context: PlanRunContext, search: str, results: List[Dict]
+    context: PlanRunContext,
+    search: str,
+    results: List[Dict],
+    target_type: str = DEFAULT_CONFIRMATION_TARGET_TYPE,
 ) -> Optional[Dict[str, Any]]:
     logger = get_prefect_logger(__name__)
     gpt_context = create_gpt_context(
@@ -156,9 +164,15 @@ async def stock_confirmation_by_gpt(
     )
     # we can try different models
     # HAIKU, SONNET, GPT4_TURBO,
+    # should we switch this to 40mini?
     llm = GPT(context=gpt_context, model=GPT35_TURBO)
 
-    prompt = STOCK_CONFIRMATION_PROMPT.format(search=search, results=json.dumps(results))
+    STOCK_CONFIRMATION_PROMPT = Prompt(
+        name="STOCK_CONFIRMATION_PROMPT", template=STOCK_CONFIRMATION_PROMPT_STR
+    )
+    prompt = STOCK_CONFIRMATION_PROMPT.format(
+        search=search, target_type=target_type, results=json.dumps(results)
+    )
 
     result_str = await llm.do_chat_w_sys_prompt(
         main_prompt=prompt,
@@ -245,6 +259,10 @@ async def stock_identifier_lookup_helper(
     args: StockIdentifierLookupInput, context: PlanRunContext
 ) -> StockID:
     logger = get_prefect_logger(__name__)
+
+    debug_info: Dict[str, Any] = {}
+    debug_info = TOOL_DEBUG_INFO.get()
+
     try:  # since everything associated with diffing/rerun cache is optional, put in try/except
         logger.info("Checking previous run info...")
         prev_run_info = await get_prev_run_info(context, "stock_identifier_lookup")
@@ -309,9 +327,17 @@ async def stock_identifier_lookup_helper(
     logger.info(
         f"{search=} , sending these possible matches to gpt: " f"{json.dumps(ask_gpt, indent=4)}"
     )
+
+    debug_info["matches_for_confirmation"] = ask_gpt
+
+    target_type = DEFAULT_CONFIRMATION_TARGET_TYPE
+    if args.prefer_etfs:
+        target_type = "ETF"
     gpt_answer = await stock_confirmation_by_gpt(
-        context, search=args.stock_name, results=list(ask_gpt.values())
+        context, search=args.stock_name, results=list(ask_gpt.values()), target_type=target_type
     )
+
+    debug_info["stock_confirmation_gpt_answer"] = gpt_answer
 
     if gpt_answer and gpt_answer.get("full_name"):
         # map the GPT answer back to a gbi_id
