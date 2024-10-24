@@ -3,13 +3,14 @@ import datetime
 import json
 import logging
 from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 from pydantic.main import BaseModel
 
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT
+from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import Citation, HistoryEntry, IOType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTable
@@ -39,7 +40,7 @@ from agent_service.utils.string_utils import clean_to_json_if_needed
 
 logger = logging.getLogger(__name__)
 
-NO_CHANGE_STOCK_LIST_DIFF = "Nothing added or removed from the stock list."
+NO_CHANGE_STOCK_LIST_DIFF = "No significant changes to the list of stocks."
 NO_UPDATE_MESSAGE = "No new updates."
 
 
@@ -106,7 +107,7 @@ class OutputDiffer:
 
     async def _compute_diff_for_texts(
         self, latest_output: Text, prev_output: Text, prev_run_time: datetime.datetime
-    ) -> OutputDiff:
+    ) -> Tuple[OutputDiff, List[Tuple[str, List[TextCitation]]]]:
         old_citation_texts = [
             citation.source_text
             for citation in prev_output.get_all_citations()
@@ -126,7 +127,7 @@ class OutputDiffer:
         ]  # add an extra day here in case there's lag between publication and availability in db
 
         if not recent_citations:
-            return OutputDiff(diff_summary_message=NO_UPDATE_MESSAGE, should_notify=False)
+            return OutputDiff(diff_summary_message=NO_UPDATE_MESSAGE, should_notify=False), []
 
         citation_group = TextCitationGroup(val=recent_citations)
         citation_str = await citation_group.convert_to_str()
@@ -167,7 +168,7 @@ class OutputDiffer:
             ]
 
         if not changes:
-            return OutputDiff(diff_summary_message=NO_UPDATE_MESSAGE, should_notify=False)
+            return OutputDiff(diff_summary_message=NO_UPDATE_MESSAGE, should_notify=False), []
 
         cite_prompt = TEXT_GENERATE_CITE_DIFF_PROMPT.format(
             output=latest_output_text, citations=citation_str, topics="\n".join(changes)
@@ -187,7 +188,7 @@ class OutputDiffer:
             citable_changes = get_citable_changes(result)
 
         if not citable_changes:
-            return OutputDiff(diff_summary_message=NO_UPDATE_MESSAGE, should_notify=False)
+            return OutputDiff(diff_summary_message=NO_UPDATE_MESSAGE, should_notify=False), []
 
         final_prompt = TEXT_GENERATE_FINAL_DIFF_PROMPT.format(
             changes="\n".join(citable_changes.keys()),
@@ -204,37 +205,49 @@ class OutputDiffer:
         diff_sents, notify = result.split("!!!")
 
         diff_text_bits = []
-        citations = []
+        all_citations = []
+        # save sentence/citation pairs for use in constructing larger outputs
+        citation_sentence_pairs = []
         for topic_and_sentence in diff_sents.split("\n"):
             if not topic_and_sentence.strip() or topic_and_sentence.count(": ") != 1:
                 continue
             topic, sentence = topic_and_sentence.split(": ")
-            if topic in citable_changes:
+            if topic in citable_changes and citable_changes[topic]:
                 diff_text_bits.append("\n    - ")
                 diff_text_bits.append(sentence)
                 offset = sum([len(S) for S in diff_text_bits])
+                sent_citations = []
                 for citation_num in citable_changes[topic]:
                     citation = citation_group.convert_citation_num_to_citation(citation_num)
                     if citation:
                         citation = copy.deepcopy(citation)
                         citation.citation_text_offset = offset - 1
-                        citations.append(citation)
+                        sent_citations.append(citation)
+                all_citations.extend(sent_citations)
+                citation_sentence_pairs.append((sentence, sent_citations))
 
         diff_text = "".join(diff_text_bits)
 
-        return OutputDiff(
-            diff_summary_message=diff_text,
-            should_notify="yes" in notify.lower(),
-            citations=citations,
+        return (
+            OutputDiff(
+                diff_summary_message=diff_text,
+                should_notify="yes" in notify.lower(),
+                citations=all_citations,
+            ),
+            citation_sentence_pairs,
         )
 
     async def _compute_diff_for_io_types(
         self, latest_output: IOType, prev_output: IOType, prev_run_time: datetime.datetime
     ) -> OutputDiff:
         if isinstance(latest_output, Text) and isinstance(prev_output, Text):
-            return await self._compute_diff_for_texts(
-                latest_output=latest_output, prev_output=prev_output, prev_run_time=prev_run_time
-            )
+            return (
+                await self._compute_diff_for_texts(
+                    latest_output=latest_output,
+                    prev_output=prev_output,
+                    prev_run_time=prev_run_time,
+                )
+            )[0]
         elif (
             isinstance(latest_output, List)
             and isinstance(prev_output, List)
@@ -244,12 +257,16 @@ class OutputDiffer:
             )
         ):
             return await self._compute_diff_for_stock_lists(
-                curr_stock_list=latest_output, prev_stock_list=prev_output
+                curr_stock_list=latest_output,
+                prev_stock_list=prev_output,
+                prev_run_time=prev_run_time,
             )
         elif isinstance(latest_output, StockTable) and isinstance(prev_output, StockTable):
             # try do to a stock list diff first
             stock_list_diff = await self._compute_diff_for_stock_lists(
-                curr_stock_list=latest_output.get_stocks(), prev_stock_list=prev_output.get_stocks()
+                curr_stock_list=latest_output.get_stocks(),
+                prev_stock_list=prev_output.get_stocks(),
+                prev_run_time=prev_run_time,
             )
             if stock_list_diff.diff_summary_message is not NO_CHANGE_STOCK_LIST_DIFF:
                 return stock_list_diff
@@ -284,16 +301,18 @@ class OutputDiffer:
         )
 
     async def _compute_diff_for_stock_lists(
-        self, curr_stock_list: List[StockID], prev_stock_list: List[StockID]
+        self,
+        curr_stock_list: List[StockID],
+        prev_stock_list: List[StockID],
+        prev_run_time: datetime.datetime,
     ) -> OutputDiff:
-        if not self.context.diff_info:
-            return OutputDiff(diff_summary_message="", should_notify=False)
+
         curr_stock_set = set(curr_stock_list)
         prev_stock_set = set(prev_stock_list)
         added_stocks = curr_stock_set - prev_stock_set
         removed_stocks = prev_stock_set - curr_stock_set
-        final_output = []
-        if added_stocks:
+        add_remove_output = []
+        if added_stocks and self.context.diff_info:
             added_output = []
             for stock in added_stocks:
                 found = True
@@ -312,10 +331,10 @@ class OutputDiffer:
                 if not found:
                     added_output.append(f"    - {stock.company_name}")
             if added_output:
-                final_output.append("\n".join(["  - Added stocks"] + added_output))
+                add_remove_output.append("\n".join(["  - Added stocks"] + added_output))
 
         final_str = None
-        if removed_stocks:
+        if removed_stocks and self.context.diff_info:
             removed_output = []
             for stock in removed_stocks:
                 found = False
@@ -333,12 +352,11 @@ class OutputDiffer:
                 if not found:
                     removed_output.append(f"    - {stock.company_name}")
             if removed_output:
-                final_output.append("\n".join(["  - Removed stocks"] + removed_output))
+                add_remove_output.append("\n".join(["  - Removed stocks"] + removed_output))
 
-        if final_output:
-            final_str = "\n" + "\n".join(final_output)
+        if add_remove_output:
+            final_str = f"\n{'\n'.join(add_remove_output)}\n"
 
-        if final_str:
             latest_output_str = await io_type_to_gpt_input(
                 curr_stock_list, use_abbreviated_output=False
             )
@@ -352,6 +370,11 @@ class OutputDiffer:
                 )
             else:
                 notification_instructions_str = BASIC_NOTIFICATION_TEMPLATE
+
+            latest_output_str, prev_output_str = GPTTokenizer(GPT4_O).do_multi_truncation_if_needed(
+                [latest_output_str, prev_output_str],
+                [DECIDE_NOTIFICATION_MAIN_PROMPT.template, notification_instructions_str],
+            )
 
             result = await self.llm.do_chat_w_sys_prompt(
                 main_prompt=DECIDE_NOTIFICATION_MAIN_PROMPT.format(
@@ -367,7 +390,75 @@ class OutputDiffer:
             else:
                 notify = False
 
-            return OutputDiff(diff_summary_message=final_str, should_notify=notify)
+            curr_offset = len(final_str)
+        else:
+            final_str = "\n"
+            notify = False
+            curr_offset = 1
+
+        prev_stock_lookup = {stock: stock for stock in prev_stock_set}
+
+        if len(curr_stock_set) > len(added_stocks):  # there are some shared stocks
+            change_output = ["  - Modified stocks\n"]
+            curr_offset += len(change_output[0])
+            all_citations: List[TextCitation] = []
+            for stock in curr_stock_list:
+                if stock in added_stocks:
+                    continue
+                temp_change_output = [f"    - {stock.company_name}\n"]
+                temp_offset = curr_offset + len(temp_change_output[0])
+                for new_history_entry in stock.history:
+                    # we are only interested in the output of per stock summary
+                    # recommendation and filter output NOT properly updated (yet)
+                    if (
+                        isinstance(new_history_entry.explanation, str)
+                        and new_history_entry.citations
+                        and new_history_entry.title
+                        and "Recommendation" not in new_history_entry.title
+                        and "Connection to" not in new_history_entry.title
+                    ):
+                        for old_history_entry in prev_stock_lookup[stock].history:
+                            if (
+                                old_history_entry.title == new_history_entry.title
+                                and isinstance(old_history_entry.explanation, str)
+                                and old_history_entry.explanation != new_history_entry.explanation
+                            ):
+                                new_text = Text(val=new_history_entry.explanation)
+                                new_text = new_text.inject_history_entry(
+                                    HistoryEntry(citations=new_history_entry.citations)
+                                )
+                                old_text = Text(val=old_history_entry.explanation)
+                                old_text = old_text.inject_history_entry(
+                                    HistoryEntry(citations=old_history_entry.citations)
+                                )
+                                output_diff, sentence_citation_pairs = (
+                                    await self._compute_diff_for_texts(
+                                        latest_output=new_text,
+                                        prev_output=old_text,
+                                        prev_run_time=prev_run_time,
+                                    )
+                                )
+                                notify |= output_diff.should_notify
+                                for sentence, citations in sentence_citation_pairs:
+                                    bullet = f"      - {sentence}\n"
+                                    temp_offset += len(bullet)
+                                    for citation in citations:
+                                        citation.citation_text_offset = temp_offset - 2
+                                    all_citations.extend(citations)
+                                    temp_change_output.append(bullet)
+                if len(temp_change_output) > 1:
+                    curr_offset = temp_offset
+                    change_output.extend(temp_change_output)
+
+            if len(change_output) > 1:
+                final_str += "".join(change_output)
+
+        if final_str:
+            return OutputDiff(
+                diff_summary_message=final_str.rstrip(),
+                citations=all_citations,
+                should_notify=notify,
+            )
         return OutputDiff(diff_summary_message=NO_CHANGE_STOCK_LIST_DIFF, should_notify=False)
 
     async def diff_outputs(

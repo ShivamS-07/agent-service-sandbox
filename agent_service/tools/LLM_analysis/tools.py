@@ -53,7 +53,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     ANSWER_QUESTION_DESCRIPTION,
     ANSWER_QUESTION_MAIN_PROMPT_STR_DEFAULT,
     ANSWER_QUESTION_SYS_PROMPT_STR_DEFAULT,
-    BRAINSTORM_MAIN_REMINDER,
+    BRAINSTORM_FINAL_REMINDER,
     BRAINSTORM_REMINDER,
     CITATION_PROMPT,
     CITATION_REMINDER,
@@ -68,6 +68,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     PER_IDEA_SUMMARIZE_DESCRIPTION,
     PER_STOCK_GROUP_SUMMARIZE_DESCRIPTION,
     PER_STOCK_SUMMARIZE_DESCRIPTION,
+    PER_SUMMARIZE_BRAINSTORMING,
     PER_SUMMARIZE_INSTRUCTIONS,
     PER_SUMMARIZE_REMINDER,
     PER_TOPIC_FILTER_BY_PROFILE_DESCRIPTION,
@@ -160,9 +161,8 @@ async def _initial_summarize_helper(
         template=args.summarize_main_prompt
         + CITATION_REMINDER
         + " Pay specific attention to the way that the client wants you to output the summary, "
-        + "YOU MUST comply with this format"
-        + " Now proceed with your summary writing, do not forget that you must carry out a brainstorming session "
-        + "if you have been provided with a specific topic:\n",
+        + "YOU MUST comply with this format."
+        + " Now proceed with your summary writing{final_reminder}:\n",
     )
     summarize_brainstorm_instruction = args.summarize_brainstorm_instruction
     topic_phrase = args.topic_phrase
@@ -192,6 +192,20 @@ async def _initial_summarize_helper(
         chat_str = context.chat.get_gpt_input()
     else:
         chat_str = ""
+
+    if single_summary:
+        brainstorm_str = summarize_brainstorm_instruction.format(
+            brainstorm_delimiter=BRAINSTORM_DELIMITER
+        )
+        brainstorm_reminder = BRAINSTORM_REMINDER
+        final_reminder = BRAINSTORM_FINAL_REMINDER
+    else:
+        brainstorm_str = (
+            PER_SUMMARIZE_INSTRUCTIONS.format(no_summary=NO_SUMMARY) + PER_SUMMARIZE_BRAINSTORMING
+        )
+        brainstorm_reminder = ""
+        final_reminder = PER_SUMMARIZE_REMINDER
+
     topic = args.topic
     if topic:
         plan_str = (
@@ -199,25 +213,13 @@ async def _initial_summarize_helper(
             .get_execution_plan_for_run(context.plan_run_id)
             .get_formatted_plan(numbered=True)
         )
-        if single_summary:
-            brainstorm_str = summarize_brainstorm_instruction.format(
-                brainstorm_delimiter=BRAINSTORM_DELIMITER
-            )
-            brainstorm_reminder = BRAINSTORM_REMINDER
-            brainstorm_main_reminder = BRAINSTORM_MAIN_REMINDER
-        else:
-            brainstorm_str = PER_SUMMARIZE_INSTRUCTIONS.format(no_summary=NO_SUMMARY)
-            brainstorm_reminder = ""
-            brainstorm_main_reminder = PER_SUMMARIZE_REMINDER
 
         topic_str = topic_phrase.format(
             topic=topic, plan_str=plan_str, brainstorm_reminder=brainstorm_reminder
         )
     else:
         topic_str = ""
-        brainstorm_str = ""
-        brainstorm_reminder = ""
-        brainstorm_main_reminder = ""
+
     stock = args.stock
     if stock:
         stock_str = stock_phrase.format(stock=stock.company_name)
@@ -240,7 +242,7 @@ async def _initial_summarize_helper(
         chat_context=chat_str,
         topic_phrase=topic_str,
         stock_phrase=stock_str,
-        brainstorm_reminder=brainstorm_main_reminder,
+        final_reminder=final_reminder,
         today=(
             context.as_of_date.date().isoformat()
             if context.as_of_date
@@ -344,6 +346,7 @@ async def _update_summarize_helper(
             .get_execution_plan_for_run(context.plan_run_id)
             .get_formatted_plan(numbered=True)
         )
+
         topic_str = TOPIC_PHRASE_STR_DEFAULT.format(
             topic=topic, plan_str=plan_str, brainstorm_reminder=""
         )
@@ -353,7 +356,7 @@ async def _update_summarize_helper(
     if single_summary:
         brainstorm_instructions = ""
     else:
-        brainstorm_instructions = PER_SUMMARIZE_INSTRUCTIONS
+        brainstorm_instructions = PER_SUMMARIZE_INSTRUCTIONS.format(no_summary=NO_SUMMARY)
 
     stock = args.stock
     if stock:
