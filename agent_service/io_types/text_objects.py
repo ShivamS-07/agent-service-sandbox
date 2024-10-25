@@ -305,10 +305,10 @@ class StockTextObject(TextObject, StockMetadata):
     type: Literal[TextObjectType.STOCK] = TextObjectType.STOCK
 
     def format_for_gpt(self) -> str:
-        # TODO
+        # We call it "Company Integer ID" here to prevent confusion in GPT with StockID's
         if self.symbol:
-            return f"{self.company_name} ({self.symbol})"
-        return self.company_name
+            return f"{self.company_name} (Symbol: {self.symbol}, Company Integer ID: {self.gbi_id})"
+        return f"{self.company_name} (Company Integer ID: {self.gbi_id})"
 
 
 @io_type

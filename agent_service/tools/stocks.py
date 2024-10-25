@@ -93,7 +93,8 @@ MIN_GPT_NAME_MATCH = 0.7
 
 class StockIdentifierLookupInput(ToolArgs):
     # name or symbol of the stock to lookup
-    stock_name: str
+    company_integer_id: Optional[int] = None
+    stock_name: Optional[str] = None
     prefer_etfs: Optional[bool] = False
 
 
@@ -201,7 +202,7 @@ def get_stock_identifier_lookup_cache_key(
             "TOOL",
             tool_name,
             "ARGS",
-            args.stock_name.lower(),
+            args.stock_name.lower() if args.stock_name else str(args.company_integer_id),
             str(args.prefer_etfs),
         ]
     )
@@ -211,11 +212,17 @@ def get_stock_identifier_lookup_cache_key(
 @tool(
     description=(
         "This function takes a string (microsoft, apple, AAPL, TESLA, META, SP 500, e.g.) "
-        "which refers to a stock or ETF, and converts it to an integer identifier."
-        " other than simple spelling fixes you should try to take the stock_name field"
-        " input directly from the original input text"
+        "which refers to a stock or ETF, and converts it to an identifier object. "
+        "If the user has mentioned a stock with a Company Integer ID defined, "
+        "pass that in instead. DO NOT PASS BOTH. One of stock_name or company_integer_id "
+        "absolutely MUST be defined. If using the string lookup, pass as stock_name. "
+        "If using the company integer ID lookup, pass as company_integer_id."
+        "This tool MUST still be used even if the int ID is provided it may NOT be"
+        " passed as a literal to other tools."
+        " Other than simple spelling fixes you should try to take the stock_name field"
+        " input directly from the original input text."
         " You MUST let this function interpret the meaning of the input text,"
-        " the stock_name  passed to this function should"
+        " the stock_name passed to this function should"
         " usually be copied verbatim from the client input, avoid"
         " paraphrasing or copying from a sample plan."
         " If the original input text contains a 2, 3, or 4 character stock ticker symbol,"
@@ -238,7 +245,7 @@ async def stock_identifier_lookup(
     args: StockIdentifierLookupInput, context: PlanRunContext
 ) -> StockID:
     """
-    Returns the integer identifier of a stock given its name or symbol (microsoft, apple, AAPL, TESLA, META, e.g.).
+    Returns the stock ID obj of a stock given its name or symbol (microsoft, apple, AAPL, TESLA, META, e.g.).
 
     This function performs a series of queries to find the stock's identifier. It starts with an exact symbol match,
     followed by a word similarity name match, and finally a word similarity symbol match. It only
@@ -259,6 +266,8 @@ async def stock_identifier_lookup_helper(
     args: StockIdentifierLookupInput, context: PlanRunContext
 ) -> StockID:
     logger = get_prefect_logger(__name__)
+    if not args.stock_name and not args.company_integer_id:
+        raise ValueError("Must pass either a stock name or company integer id!!")
 
     debug_info: Dict[str, Any] = {}
     debug_info = TOOL_DEBUG_INFO.get()
@@ -276,6 +285,22 @@ async def stock_identifier_lookup_helper(
         logger.warning(f"Error using previous run cache: {e}")
 
     logger.info(f"Attempting to map '{args.stock_name}' to a stock")
+
+    # If a GBI ID has been entered, use that as long as it's valid
+    if args.company_integer_id:
+        gbi_id_row = await stock_lookup_by_gbi_id(gbi_id=args.company_integer_id)
+        if gbi_id_row:
+            logger.info(f"Found exact DB match for {args.company_integer_id=}")
+            return StockID(
+                gbi_id=gbi_id_row["gbi_security_id"],
+                symbol=gbi_id_row["symbol"],
+                isin=gbi_id_row["isin"],
+                company_name=gbi_id_row["company_name"],
+            )
+
+    # We only get here if the GBI ID is invalid or not included
+    if not args.stock_name:
+        raise ValueError(f"Could not find stock with ID={args.company_integer_id}")
     # first we check if the search string is in a format that leads to an unambiguous match
     exact_rows = await stock_lookup_exact(args, context)
     if exact_rows:
@@ -494,6 +519,8 @@ async def stock_lookup_by_isin(
     """
     logger = get_prefect_logger(__name__)
     db = get_psql()
+    if not args.stock_name:
+        raise ValueError("Cannot look up by ISIN if no stock name present")
 
     # ISINs are 12 chars long, 2 chars, 10 digits
     if is_isin(args.stock_name):
@@ -592,6 +619,8 @@ async def stock_lookup_by_text_similarity(
     """
     logger = get_prefect_logger(__name__)
     db = get_psql()
+    if not args.stock_name:
+        raise ValueError("Cannot look up by text similarity if no stock name present")
 
     prefix = args.stock_name.split()[0]
     # often the most important word in a company name is the first word,
@@ -805,6 +834,20 @@ async def stock_lookup_by_text_similarity(
     return []
 
 
+async def stock_lookup_by_gbi_id(gbi_id: int) -> Optional[Dict[str, Any]]:
+    db = get_psql()
+    sql = """
+    SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
+    ms.name AS company_name
+    FROM master_security ms
+    WHERE gbi_security_id = %(gbi_id)s
+    """
+    rows = db.generic_read(sql, {"gbi_id": gbi_id})
+    if not rows:
+        return None
+    return rows[0]
+
+
 async def stock_lookup_exact(
     args: StockIdentifierLookupInput, context: PlanRunContext
 ) -> List[Dict[str, Any]]:
@@ -819,6 +862,8 @@ async def stock_lookup_exact(
     """
     logger = get_prefect_logger(__name__)
 
+    if not args.stock_name:
+        raise ValueError("Cannot run stock lookup exact without stock name")
     bloomberg_rows = await stock_lookup_by_bloomberg_parsekey(args, context)
     if bloomberg_rows:
         logger.info("found bloomberg parsekey")
@@ -867,6 +912,8 @@ async def raw_stock_identifier_lookup(
     Returns:
         List[Dict[str, Any]]: DB rows representing the potentially matching stocks.
     """
+    if not args.stock_name:
+        raise ValueError("Cannot look up by raw if no stock name present")
     logger = get_prefect_logger(__name__)
 
     exact_rows = await stock_lookup_exact(args, context)
@@ -886,14 +933,25 @@ async def raw_stock_identifier_lookup(
 
 
 class MultiStockIdentifierLookupInput(ToolArgs):
+    company_integer_ids: List[int] = []
     # name or symbol of the stock to lookup
-    stock_names: List[str]
+    stock_names: List[str] = []
 
 
 @tool(
     description=(
         "This function takes a list of strings e.g. ['microsoft', 'apple', 'TESLA', 'META'] "
-        "which refer to stocks, and converts them to a list of integer identifiers. "
+        "which refer to stocks, and converts them to a list of identifier objects. "
+        "It may also take a list of Company Integer ID's, if present for some or all of the stocks."
+        " ONLY pass in integer ID's when the Company Integer ID is EXPLICITLY given by the user."
+        " If the Company Integer ID is given, ONLY USE THAT. DO NOT USE THE NAME ALSO."
+        " For example, if the user inputs 'Microsoft (Company Integer ID: 123), ONLY 123 should be used."
+        " Each stock should be present once, EITHER as a name OR an integer ID."
+        " For stocks to be looked up by name, make sure you use the stock_names list."
+        " For stocks to be looked up by integer ID, make sure you use the company_integer_ids list."
+        " Make sure there is at least one value in either of these lists."
+        "This tool MUST still be used even if int ID's are provided, they may NOT be"
+        " passed as literals to other tools."
         "Since most other tools take lists of stocks, you should generally use this function "
         "to look up stocks mentioned by the client (instead of stock_identifier_lookup), "
         "even when there is only one stock."
@@ -937,16 +995,23 @@ async def multi_stock_identifier_lookup(
     except Exception as e:
         logger.warning(f"Error using previous run cache: {e}")
 
+    tasks = [
+        stock_identifier_lookup_helper(
+            (StockIdentifierLookupInput(stock_name=stock_name)),
+            context,
+        )
+        for stock_name in args.stock_names
+    ] + [
+        stock_identifier_lookup_helper(
+            StockIdentifierLookupInput(company_integer_id=gbi_id), context
+        )
+        for gbi_id in args.company_integer_ids
+    ]
     output: List[StockID] = await gather_with_concurrency(
-        [
-            stock_identifier_lookup_helper(
-                StockIdentifierLookupInput(stock_name=stock_name), context
-            )
-            for stock_name in args.stock_names
-        ],
-        n=len(args.stock_names),
+        tasks,
+        n=len(args.stock_names) + len(args.company_integer_ids),
     )
-    return output
+    return list(set(output))
 
 
 class GetETFUniverseInput(ToolArgs):
@@ -2278,6 +2343,8 @@ async def stock_lookup_by_bloomberg_parsekey(
     Returns:
         List of potential db matches
     """
+    if not args.stock_name:
+        raise ValueError("Cannot look up by BBG parsekey if no stock name present")
     logger = get_prefect_logger(__name__)
     db = get_psql()
 
@@ -2350,9 +2417,12 @@ async def stock_lookup_by_ric_yahoo_codes(
     Returns:
         List of potential db matches
     """
+
     logger = get_prefect_logger(__name__)
     db = AsyncPostgresBase()
 
+    if not args.stock_name:
+        raise ValueError("Cannot look up by RIC Yahoo if no stock name present")
     search_term = args.stock_name
     search_term = search_term.strip()
 
