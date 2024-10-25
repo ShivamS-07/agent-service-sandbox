@@ -1,9 +1,9 @@
-import random
-from typing import List
+from typing import List, Set
 
 from agent_service.GPT.constants import GPT4_O_MINI
 from agent_service.GPT.tokens import GPTTokenizer
-from agent_service.io_types.text import Text
+from agent_service.io_types.idea import Idea
+from agent_service.io_types.text import StockText, Text, TextCitation
 from agent_service.tools.ideas.constants import (
     MAX_TEXT_GROUP_TOKENS,
     MIN_TEXT_GROUP_TOKENS,
@@ -12,10 +12,11 @@ from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 
 
 async def create_small_text_groups(input_texts: List[Text]) -> List[List[Text]]:
-    # this randomly splits up a potentially large group of texts into smaller groups of text which
+    # this splits up a potentially large group of texts into smaller groups of text which
     # are bounded to having a token length of no more than MAX_TEXT_GROUP_TOKENS + MIN_TEXT_GROUP_TOKENS
     tokenizer = GPTTokenizer(GPT4_O_MINI)
-    random.shuffle(input_texts)
+    # TODO: more testing whether randomness is good or not, maybe a better solution with embeddings
+    # random.shuffle(input_texts)
     output_text_groups = []
     curr_texts: List[Text] = []
     curr_token_count = 0
@@ -46,3 +47,30 @@ def ideas_enabled(user_id: str) -> bool:
     ld_user = get_user_context(user_id)
     result = get_ld_flag("agent-svc-ideas-tools-enabled", default=False, user_context=ld_user)
     return result
+
+
+def distinct_stock_count(source_texts: List[Text]) -> int:
+    stocks = set()
+    for text in source_texts:
+        if isinstance(text, StockText) and text.stock_id:
+            stocks.add(text.stock_id)
+    return len(stocks)
+
+
+def distinct_text_count(source_texts: List[Text]) -> int:
+    text_ids = set()
+    for text in source_texts:
+        text_ids.add(text.get_original_text_id())
+    return len(text_ids)
+
+
+def get_source_texts(idea: Idea) -> Set[Text]:
+    old_source_texts = [
+        citation.source_text
+        for citation in idea.description.history[-1].citations
+        if isinstance(citation, TextCitation)
+    ]
+    for old_source_text in old_source_texts:
+        old_source_text.reset_id()
+
+    return set(old_source_texts)

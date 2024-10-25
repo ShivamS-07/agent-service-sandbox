@@ -375,6 +375,7 @@ class GetEndOfDateRangeInput(ToolArgs):
     category=ToolCategory.DATES,
     tool_registry=ToolRegistry,
     is_visible=False,
+    enabled=False,
 )
 async def get_end_of_date_range(args: GetEndOfDateRangeInput, context: PlanRunContext) -> DateRange:
     await tool_log(

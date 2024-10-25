@@ -2019,11 +2019,10 @@ async def per_idea_filter_stocks_by_profile_match(
                     must_do_stocks = list(added_stocks)
                     for stock in prev_group_lookup[profile.topic].stocks:
                         for citation in stock.history[-1].citations:
-                            if (
-                                isinstance(citation, TextCitation)
-                                and citation.source_text not in all_texts
-                            ):
-                                must_do_stocks.append(stock)
+                            if isinstance(citation, TextCitation):
+                                citation.source_text.reset_id()
+                                if citation.source_text not in all_texts:
+                                    must_do_stocks.append(stock)
 
                     if must_do_stocks:
                         tasks.append(

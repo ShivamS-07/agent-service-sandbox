@@ -100,6 +100,9 @@ class Text(ComplexIOBase):
     def reset_id(self) -> None:
         pass
 
+    def get_original_text_id(self) -> TextIDType:
+        return self.id
+
     @staticmethod
     async def multi_text_rich_output(pg: BoostedPG, texts: List[Text]) -> List[TextOutput]:
         all_citations = []
@@ -1115,6 +1118,9 @@ class StockEarningsTranscriptSectionText(StockEarningsText):
     def reset_id(self) -> None:
         self.id = hash((self.transcript_id, self.starting_line_num, self.ending_line_num))
 
+    def get_original_text_id(self) -> TextIDType:
+        return self.transcript_id
+
     @classmethod
     async def init_from_full_text_data(
         cls,
@@ -1242,6 +1248,9 @@ class StockEarningsSummaryPointText(StockEarningsText):
 
     def reset_id(self) -> None:
         self.id = hash(((self.summary_id, self.summary_type, self.summary_idx)))
+
+    def get_original_text_id(self) -> TextIDType:
+        return self.summary_id
 
     @classmethod
     async def _get_strs_lookup(cls, earnings_summary_points: List[Self]) -> Dict[TextIDType, str]:
@@ -1519,6 +1528,12 @@ class StockDescriptionSectionText(StockText):
         # Make sure we don't serialize unnecessary data, we only want to serialize the ID.
         return ""
 
+    def reset_id(self) -> None:
+        self.id = hash((self.description_id, self.header))
+
+    def get_original_text_id(self) -> TextIDType:
+        return self.description_id
+
     @classmethod
     async def init_from_full_text_data(
         cls, descriptions: List[StockDescriptionText]
@@ -1739,6 +1754,9 @@ class StockSecFilingSectionText(StockText):
     # For identifying the same texts across runs (different hash seeds)
     def reset_id(self) -> None:
         self.id = hash((self.filing_id, self.header))
+
+    def get_original_text_id(self) -> TextIDType:
+        return self.db_id if self.db_id is not None else ""
 
     @classmethod
     async def init_from_full_text_data(
@@ -2014,6 +2032,9 @@ class StockOtherSecFilingSectionText(StockText):
     # For identifying the same texts across runs (different hash seeds)
     def reset_id(self) -> None:
         self.id = hash((self.filing_id, self.header))
+
+    def get_original_text_id(self) -> TextIDType:
+        return self.db_id if self.db_id is not None else ""
 
     @classmethod
     async def init_from_full_text_data(

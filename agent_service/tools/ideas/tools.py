@@ -6,7 +6,7 @@ from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.idea import Idea
-from agent_service.io_types.text import Text, TextCitation, TextGroup
+from agent_service.io_types.text import Text, TextGroup
 from agent_service.planner.errors import EmptyInputError
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.ideas.constants import (
@@ -26,7 +26,13 @@ from agent_service.tools.ideas.prompts import (
     IDEA_CLUSTER_SYS_PROMPT_STR,
     INITIAL_BRAINSTORM_PROMPT,
 )
-from agent_service.tools.ideas.utils import create_small_text_groups, ideas_enabled
+from agent_service.tools.ideas.utils import (
+    create_small_text_groups,
+    distinct_stock_count,
+    distinct_text_count,
+    get_source_texts,
+    ideas_enabled,
+)
 from agent_service.tools.LLM_analysis.constants import MAX_CITATION_TRIES
 from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.tools.tool_log import tool_log
@@ -233,7 +239,7 @@ async def brainstorm_ideas_from_text(
             prev_texts = await partition_to_smaller_text_sizes(prev_args.texts, context)
             prev_output = prev_run_info.output  # type:ignore
             if prev_output is not None and len(set(prev_texts) | set(partitioned_texts)) == len(
-                partitioned_texts
+                prev_texts
             ):
                 # if exactly the same texts, just return the old output
                 return prev_output
@@ -264,29 +270,32 @@ async def brainstorm_ideas_from_text(
     two_citation_clustered_ideas = [idea for idea in clustered_ideas if len(idea[1]) > 1]
     if len(two_citation_clustered_ideas) >= MIN_IDEAS:
         clustered_ideas = two_citation_clustered_ideas
-    # sort ideas by sum of num citations and sum of inverse rank and chop to max
-    clustered_ideas.sort(key=lambda x: -(len(x[1]) + x[2]))
+    # sort ideas by distinct relevent stocks, then distinct texts plus inverse rank and chop to max
+    clustered_ideas.sort(
+        key=lambda x: (distinct_stock_count(x[1]), distinct_text_count(x[1]) + x[2]), reverse=True
+    )
 
     if prev_output and prev_texts:  # updating
         curr_texts = set(partitioned_texts)
         new_texts = curr_texts - set(prev_texts)
-        new_idea_strs = [idea_formulations[0] for idea_formulations, _, _ in clustered_ideas]
+        new_ideas_strs = [str(idea_formulations) for idea_formulations, _, _ in clustered_ideas]
 
         new_idea_mapping = await classify_new_to_old_ideas(
-            args.idea_definition, new_idea_strs, prev_output
+            args.idea_definition, new_ideas_strs, prev_output
         )
         final_tasks: List[Coroutine] = []
         used_old_ideas: Set[Idea] = set()  # just in case a new idea gets mapped to multiple old one
         replace_dict = {}  # store old idea names to use
         # Basic idea here: We iterate over the new ideas generated in this pass, for the top few
         # we include them even if we don't have a mapping to the old idea (which means they'll be
-        # totally new and will require new stuff downstream). After that point, we only include new
-        # ideas that are also old ideas, to avoid major shifts in ideas from run to run, though we
-        # may end up rewriting their description if indicated
+        # totally new and will require new stuff downstream). After that point, we try only to include
+        # new ideas that are also old ideas, to avoid major shifts in ideas from run to run, though we
+        # may end up rewriting their description if indicated. If there's space left, include old
+        # ideas that haven't changed
         i = 0
         while i < len(clustered_ideas) and len(final_tasks) < args.max_ideas:
             idea_formulations, idea_relevant_texts, _ = clustered_ideas[i]
-            if new_idea_mapping[idea_formulations[0]] is None:
+            if new_idea_mapping[str(idea_formulations)] is None:
                 if len(final_tasks) < MIN_TOP_NEW_IDEA:
                     final_tasks.append(
                         create_final_idea(
@@ -294,39 +303,48 @@ async def brainstorm_ideas_from_text(
                         )
                     )
                 else:  # low ranked new idea that doesn't have old idea, skip
-                    continue
+                    pass
             else:
-                old_idea = new_idea_mapping[idea_formulations[0]]
+                old_idea = new_idea_mapping[str(idea_formulations)]
                 if old_idea is None or old_idea in used_old_ideas:
+                    i += 1
                     continue  # can't add the same idea twice
-                old_source_texts = set(
-                    [
-                        citation.source_text
-                        for citation in old_idea.description.history[-1].citations
-                        if isinstance(citation, TextCitation)
-                    ]
-                )
+                old_source_texts = get_source_texts(old_idea)
+
                 # we rewrite the idea if there are new relevant sources OR old sources are no longer in our input
                 if any(
                     [idea_relevant_text in new_texts for idea_relevant_text in idea_relevant_texts]
                 ) or any(
                     [old_source_text not in curr_texts for old_source_text in old_source_texts]
                 ):
+                    replace_dict[len(final_tasks)] = old_idea
                     final_tasks.append(
                         create_final_idea(
                             args.idea_definition, idea_formulations, idea_relevant_texts, context
                         )
                     )
                     used_old_ideas.add(old_idea)
-                    replace_dict[i] = old_idea
                 else:  # can just use the old idea as is
                     final_tasks.append(identity(old_idea))
+                    used_old_ideas.add(old_idea)
 
             i += 1
 
         final_ideas = await gather_with_concurrency(final_tasks, n=len(clustered_ideas))
         for i, idea in replace_dict.items():
             final_ideas[i].title = idea.title  # use the old title so it is considered same idea
+
+        # if we've still got space, add in old ideas that haven't been used and still have all their citations
+        i = 0
+        while len(final_ideas) < args.max_ideas and i < len(prev_output):
+            old_idea = prev_output[i]
+            if old_idea not in used_old_ideas:
+                old_source_texts = get_source_texts(old_idea)
+                if not any(
+                    [old_source_text not in curr_texts for old_source_text in old_source_texts]
+                ):
+                    final_ideas.append(old_idea)
+            i += 1
 
     else:
         # generate final ideas with references
