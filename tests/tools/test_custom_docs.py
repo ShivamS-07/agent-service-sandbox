@@ -1,13 +1,14 @@
 import datetime
 import logging
-import unittest
 from unittest import IsolatedAsyncioTestCase
 
 from agent_service.io_types.stock import StockID
 from agent_service.tools.custom_documents import (
+    GetCustomDocsByFileInput,
     GetCustomDocsByTopicInput,
     GetCustomDocsInput,
     get_user_custom_documents,
+    get_user_custom_documents_by_filename,
     get_user_custom_documents_by_topic,
 )
 from agent_service.types import PlanRunContext
@@ -28,7 +29,6 @@ class TestCustomDocuments(IsolatedAsyncioTestCase):
             user_id=CUSTOM_DOC_DEV_TEST_USER,
         )
 
-    @unittest.skip("failing")
     async def test_get_custom_doc_by_stock(self):
         # these are well covered in the service itself, so just test for
         # integration here.
@@ -40,7 +40,6 @@ class TestCustomDocuments(IsolatedAsyncioTestCase):
         all_data = await get_user_custom_documents(input, self.context)
         self.assertGreater(len(all_data), 0)
 
-    @unittest.skip("failing")
     async def test_get_custom_doc_by_topic(self):
         # these are well covered in the service itself, so just test for
         # integration here.
@@ -50,4 +49,13 @@ class TestCustomDocuments(IsolatedAsyncioTestCase):
             start_date=datetime.date(2020, 1, 1),
         )
         all_data = await get_user_custom_documents_by_topic(input, self.context)
+        self.assertGreater(len(all_data), 0)
+
+    async def test_get_custom_doc_by_exact_file_name(self):
+        # these are well covered in the service itself, so just test for
+        # integration here.
+        input = GetCustomDocsByFileInput(
+            file_names=["20230808_Wells_Fargo_TAP_TAP-_Peak_Debate_Forms (1).pdf"],
+        )
+        all_data = await get_user_custom_documents_by_filename(input, self.context)
         self.assertGreater(len(all_data), 0)

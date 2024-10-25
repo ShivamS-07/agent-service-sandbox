@@ -1,6 +1,8 @@
+from collections import defaultdict
 from typing import List, Optional
 
 from agent_service.external.custom_data_svc_client import (
+    get_custom_docs_by_file_names,
     get_custom_docs_by_security,
     get_custom_docs_by_topic,
 )
@@ -166,4 +168,72 @@ async def get_user_custom_documents_by_topic(
         raise EmptyOutputError(
             f"No user uploaded documents found for {args.topic=} over the specified time period"
         )
+    return output
+
+
+class GetCustomDocsByFileInput(ToolArgs):
+    file_names: List[str]
+
+
+@tool(
+    description=(
+        "This function takes in a list of file names and returns all uploaded document"
+        " summaries associated with the exact file name. A file name can be any quoted string"
+        " that is specifically used in the context of identifying a file that the user"
+        " is interested in. File names usually end in an extension like '.pdf' or '.docx'."
+        " Make sure to never truncate or otherwise modify the file name - we will only match "
+        " exact file names from the user."
+        " If someone explicitly specifies a document name in the context of custom"
+        " documents or uploaded documents, this is the best tool to use."
+        " Do not use this tool if the user has not"
+        " specifically asked for custom documents or uploaded documents."
+        " Do not use this tool under any circumstances with an empty list of file names."
+        " Do not use the output of this function for in a stock filter function, the documents"
+        " do not contain information about associated stocks."
+    ),
+    category=ToolCategory.TEXT,
+    tool_registry=ToolRegistry,
+)
+async def get_user_custom_documents_by_filename(
+    args: GetCustomDocsByFileInput, context: PlanRunContext
+) -> List[CustomDocumentSummaryText]:
+    """
+    NOTE: for the initial version, we are looking for something quick and dirty.
+    i.e. no integration with the portfolio picker as of now - just give it our best shot
+    to parse out the file name as a string and do some basic matching.
+    """
+    file_names = args.file_names
+    if len(file_names) == 0:
+        raise ValueError("No file names provided to query by custom doc name tool.")
+
+    custom_doc_summaries = await get_custom_docs_by_file_names(
+        context.user_id,
+        file_names=file_names,
+    )
+
+    # fill worklog by document name
+    docs_for_file_name = defaultdict(list)
+    for doc in custom_doc_summaries.documents:
+        docs_for_file_name[doc.file_name].append(doc)
+    for file in file_names:
+        num_chunks = len(docs_for_file_name.get(file, []))
+        await tool_log(
+            log=f'Got {num_chunks} document chunks for file: "{file}"',
+            context=context,
+        )
+
+    # get stocks and return the output format
+    cids = [document.spiq_company_id for document in custom_doc_summaries.documents]
+    cid_to_stock = await get_stock_ids_from_company_ids(context, cids)
+    output: List[CustomDocumentSummaryText] = [
+        CustomDocumentSummaryText(
+            requesting_user=context.user_id,
+            stock_id=cid_to_stock.get(document.spiq_company_id),
+            id=document.article_id,
+            timestamp=timestamp_to_datetime(document.publication_time),
+        )
+        for document in custom_doc_summaries.documents
+    ]
+    if len(output) == 0:
+        raise EmptyOutputError(f"No user uploaded documents found for {file_names}.")
     return output

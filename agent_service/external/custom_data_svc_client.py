@@ -20,6 +20,8 @@ from stock_universe_service_proto_v1.custom_data_service_pb2 import (
     CheckDocumentUploadQuotaResponse,
     GetCitationContextRequest,
     GetCitationContextResponse,
+    GetDocsByFileNamesRequest,
+    GetDocsByFileNamesResponse,
     GetDocsBySecurityRequest,
     GetDocsBySecurityResponse,
     GetFileChunkInfoRequest,
@@ -85,22 +87,6 @@ def _get_service_stub() -> Generator[CustomDataServiceStub, None, None]:
         channel.close()
 
 
-def get_doc_version(user_id: str) -> str:
-    # FIXME: unfortunately this causes a circular import at the module level.
-    # Postgres -> Text -> This -> LD -> Postgres
-    # so eat this cost here. I think the biggest issue is that the Postgres base class
-    # imports a ton of agent modules transitively - should be refactored so that the postgres
-    # methods are in some other file and are module methods instead of class methods, but
-    # leaving that for now.
-    from agent_service.utils.feature_flags import get_ld_flag, get_user_context
-
-    return (
-        "v2"
-        if get_ld_flag("use-custom-doc-v2", default=False, user_context=get_user_context(user_id))
-        else "v1"
-    )
-
-
 @grpc_retry
 @async_perf_logger
 async def get_custom_docs_by_security(
@@ -116,7 +102,7 @@ async def get_custom_docs_by_security(
             limit=limit,
             from_publication_time=date_to_timestamp(publish_date_start),
             to_publication_time=date_to_timestamp(publish_date_end),
-            version=get_doc_version(user_id),
+            version="v2",
         )
         resp: GetDocsBySecurityResponse = await stub.GetDocsBySecurity(
             req,
@@ -140,9 +126,27 @@ async def get_custom_docs_by_topic(
             limit=limit,
             from_publication_time=date_to_timestamp(publish_date_start),
             to_publication_time=date_to_timestamp(publish_date_end),
-            version=get_doc_version(user_id),
+            version="v2",
         )
         resp: SemanticSearchDocsResponse = await stub.SemanticSearchDocs(
+            req,
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def get_custom_docs_by_file_names(
+    user_id: str,
+    file_names: List[str],
+) -> GetDocsByFileNamesResponse:
+    with _get_service_stub() as stub:
+        req = GetDocsByFileNamesRequest(
+            file_names=file_names,
+            version="v2",
+        )
+        resp: GetDocsByFileNamesResponse = await stub.GetDocsByFileNames(
             req,
             metadata=get_default_grpc_metadata(user_id=user_id),
         )
@@ -158,7 +162,7 @@ async def get_custom_doc_articles_info(
     with _get_service_stub() as stub:
         req = GetFileChunkInfoRequest(
             file_chunk_ids=article_ids,
-            version=get_doc_version(user_id),
+            version="v2",
         )
         resp: GetFileChunkInfoResponse = await stub.GetFileChunkInfo(
             req,

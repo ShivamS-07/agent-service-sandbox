@@ -17,8 +17,8 @@ class TestCustomDocuments(TestExecutionPlanner):
         # two tests for the basic operation of custom docs tools
 
         prompt = (
-            "Get the 21 most relevant custom documents about climate change and summarize"
-            " information about its effects in 2023"
+            "From the 21 most relevant custom documents about climate change, summarize"
+            " information about climate change and any adjacent macro effects in 2023"
         )
 
         def validate_output(prompt: str, output: IOType) -> None:
@@ -79,6 +79,56 @@ class TestCustomDocuments(TestExecutionPlanner):
             validate_output=validate_output,
             required_tools=[
                 "get_user_custom_documents",
+            ],
+            validate_tool_args=validate_tool_args,
+        )
+
+    @skip_in_ci
+    def test_custom_documents_by_filename(self) -> None:
+        # Mostly, I am aiming to test the agent's ability to parse out naive file names.
+        # To be removed once file picker is in place.
+        prompt = (
+            "From my custom docs titled:\n"
+            # single quote
+            "'20240425_BWG_Strategy_NVDA_Semi_AMD_Focused_Q-A_4_18_24_Master.pdf'\n"
+            # doublequote
+            '"Federal fund pours $66.5M into firms for greener concrete - The Logic.pdf"\n'
+            # french quotes
+            "« gme.html »\n"
+            # unquoted
+            "and also AMD_10Q.pdf and STZ_10Q.pdf,"
+            "summarize the key points and present to me in a bullet point format."
+        )
+
+        def validate_output(prompt: str, output: IOType) -> None:
+            output_text = get_output(output=output)
+            self.assertIsInstance(output_text, Text)
+            self.assertGreater(len(output_text.val), 0)
+
+        def validate_tool_args(execution_log: DefaultDict[str, List[dict]]) -> None:
+            tool_name = "get_user_custom_documents_by_filename"
+
+            args = execution_log[tool_name][0]
+            file_names = set(args["file_names"])
+
+            # validate all mentinoed files in input
+            exected_files = {
+                "20240425_BWG_Strategy_NVDA_Semi_AMD_Focused_Q-A_4_18_24_Master.pdf",
+                "Federal fund pours $66.5M into firms for greener concrete - The Logic.pdf",
+                "gme.html",
+                "AMD_10Q.pdf",
+                "STZ_10Q.pdf",
+            }
+            self.assertSetEqual(
+                file_names,
+                exected_files,
+            )
+
+        self.prompt_test(
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=[
+                "get_user_custom_documents_by_filename",
             ],
             validate_tool_args=validate_tool_args,
         )
