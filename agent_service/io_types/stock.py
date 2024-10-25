@@ -5,7 +5,7 @@ from typing import Any, List, Optional
 from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.output import Output
 from agent_service.utils.boosted_pg import BoostedPG
-from agent_service.utils.stock_metadata import get_stock_metadata
+from agent_service.utils.stock_metadata import StockMetadata, get_stock_metadata
 
 
 @io_type
@@ -38,7 +38,21 @@ class StockID(ComplexIOBase):
 
     @staticmethod
     async def from_gbi_id_list(gbi_ids: List[int]) -> List["StockID"]:
+        # make sure to return the StockIds in the exact same order as requested
         meta_dict = await get_stock_metadata(gbi_ids=gbi_ids)
+        input_order_metas = [
+            meta_dict.get(
+                gbi_id,
+                # This should never happen but... who knows?
+                StockMetadata(
+                    gbi_id=gbi_id,
+                    symbol="UNKNOWN_" + str(gbi_id),
+                    company_name="UNKNOWN_" + str(gbi_id),
+                    isin="UNKNOWN_" + str(gbi_id),
+                ),
+            )
+            for gbi_id in gbi_ids
+        ]
         return [
             StockID(
                 gbi_id=meta.gbi_id,
@@ -46,7 +60,7 @@ class StockID(ComplexIOBase):
                 isin=meta.isin,
                 company_name=meta.company_name,
             )
-            for meta in meta_dict.values()
+            for meta in input_order_metas
         ]
 
     @staticmethod

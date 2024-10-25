@@ -1738,6 +1738,18 @@ async def get_stock_universe_table_from_universe_company_id(
         (euh.from_z <= %(end_date)s AND %(end_date)s <= euh.to_z  )
         )
         """
+
+        params = {
+            "spiq_company_id": universe_spiq_company_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+
+        full_rows = db.generic_read(
+            query,
+            params=params,
+        )
+
         if dedup_companies:
             dedup_query = f"""
                 SELECT DISTINCT ON (name)
@@ -1747,32 +1759,21 @@ async def get_stock_universe_table_from_universe_company_id(
             """
             deduped_rows_by_company = db.generic_read(
                 dedup_query,
-                params={
-                    "spiq_company_id": universe_spiq_company_id,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                },
+                params=params,
             )
-
-        full_rows = db.generic_read(
-            query,
-            params={
-                "spiq_company_id": universe_spiq_company_id,
-                "start_date": start_date,
-                "end_date": end_date,
-            },
-        )
-
-    elif not date_range:
+    else:
         # Find the stocks in the universe
         query = """
         SELECT DISTINCT ON (gbi_id)
         gbi_id, symbol, ms.isin, name, weight
         FROM "data".etf_universe_holdings euh
         JOIN master_security ms ON ms.gbi_security_id = euh.gbi_id
-        WHERE spiq_company_id = %s AND ms.is_public
+        WHERE spiq_company_id =  %(spiq_company_id)s AND ms.is_public
         AND euh.to_z > NOW()
         """
+
+        params = {"spiq_company_id": universe_spiq_company_id}
+        full_rows = db.generic_read(query, params=params)
 
         if dedup_companies:
             dedup_query = f"""
@@ -1781,9 +1782,7 @@ async def get_stock_universe_table_from_universe_company_id(
                 FROM ({query})
                 AS subquery
             """
-            deduped_rows_by_company = db.generic_read(dedup_query, [universe_spiq_company_id])
-
-        full_rows = db.generic_read(query, [universe_spiq_company_id])
+            deduped_rows_by_company = db.generic_read(dedup_query, params=params)
 
     if dedup_companies:
         await tool_log(
