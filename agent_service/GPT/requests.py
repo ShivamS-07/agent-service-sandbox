@@ -225,7 +225,7 @@ async def _query_gpt_worker(
         metadata.append(("nocache", "true"))
 
     result: QueryGPTResponse = await stub.QueryGPT(
-        request, timeout=TIMEOUTS.get(model, MAX_GPT_WORKER_TIMEOUT), metadata=metadata
+        request, timeout=MAX_GPT_WORKER_TIMEOUT, metadata=metadata
     )
 
     if not use_global_stub() and channel:

@@ -30,7 +30,7 @@ OPENAI_ORG_PARAM = "/openai/organization"
 OPENAI_API_PARAM = "/openai/api_key"
 
 # 5 minutes, worker does its own retries so we should wait for longer
-MAX_GPT_WORKER_TIMEOUT = 5 * 60
+MAX_GPT_WORKER_TIMEOUT = 20 * 60
 TIMEOUTS = {
     GPT4_O: 90,
     GPT4_TURBO: 90,
