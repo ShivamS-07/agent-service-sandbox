@@ -1065,48 +1065,45 @@ class AsyncDB:
             agent_where_clause = "WHERE " + " AND ".join(agent_where_clauses)
 
         sql = f"""
-        WITH a_id AS
-          (
-            SELECT a.agent_id, a.user_id, agent_name, a.created_at,
-              a.last_updated, a.automation_enabled, a.schedule, a.section_id, a.deleted, a.is_draft
-             FROM agent.agents a
-             {agent_where_clause}
-          ),
-          lr AS
-          (
-            SELECT DISTINCT ON (pr.agent_id) pr.agent_id, pr.created_at, pr.run_metadata
-            FROM agent.plan_runs pr
-            ORDER BY pr.agent_id, pr.created_at DESC
-          ),
-          msg AS
-          (
-            SELECT DISTINCT ON (m.agent_id) m.agent_id, m.message
-            FROM agent.chat_messages m
-            ORDER BY m.agent_id, m.message_time DESC
-          ),
-          nu AS
-          (
-            SELECT n.agent_id, COUNT(*) AS num_unread
-            FROM agent.notifications n
-            WHERE n.unread
-                GROUP BY n.agent_id
-          ),
-          lo AS
-          (
-            SELECT DISTINCT ON (ao.agent_id) ao.agent_id, ao.created_at
-            FROM agent.agent_outputs ao
-            WHERE NOT ao.deleted
-            ORDER BY ao.agent_id, ao.created_at DESC
-          )
-          SELECT a_id.agent_id::VARCHAR, a_id.user_id::VARCHAR, a_id.agent_name, a_id.created_at,
-            a_id.last_updated, a_id.automation_enabled, a_id.section_id::VARCHAR, lr.created_at AS last_run,
-            msg.message AS latest_agent_message, nu.num_unread AS unread_notification_count,
-            a_id.schedule, lr.run_metadata, a_id.deleted, a_id.is_draft, lo.created_at AS output_last_updated
-          FROM a_id
-          LEFT JOIN lr ON lr.agent_id = a_id.agent_id
-          LEFT JOIN msg ON msg.agent_id = a_id.agent_id
-          LEFT JOIN nu ON nu.agent_id = a_id.agent_id
-          LEFT JOIN lo ON lo.agent_id = a_id.agent_id
+        WITH a_id AS (
+            SELECT agent_id, user_id, agent_name, created_at, last_updated,
+                   automation_enabled, schedule, section_id, deleted, is_draft
+            FROM agent.agents a
+            {agent_where_clause}
+        )
+        SELECT
+            a.agent_id::VARCHAR, a.user_id::VARCHAR, a.agent_name, a.created_at, a.last_updated,
+            a.automation_enabled, a.section_id::VARCHAR, lr.last_run, msg.latest_agent_message,
+            nu.num_unread AS unread_notification_count, a.schedule, lr.run_metadata,
+            a.deleted, a.is_draft, lo.output_last_updated
+        FROM a_id AS a
+        LEFT JOIN LATERAL (
+            SELECT created_at AS last_run, run_metadata
+            FROM agent.plan_runs AS pr
+            WHERE pr.agent_id = a.agent_id
+            ORDER BY pr.created_at DESC
+            LIMIT 1
+        ) AS lr ON true
+        LEFT JOIN LATERAL (
+            SELECT message AS latest_agent_message
+            FROM agent.chat_messages AS m
+            WHERE m.agent_id = a.agent_id
+            ORDER BY m.message_time DESC
+            LIMIT 1
+        ) AS msg ON true
+        LEFT JOIN (
+            SELECT agent_id, COUNT(*) AS num_unread
+            FROM agent.notifications
+            WHERE unread
+            GROUP BY agent_id
+        ) AS nu ON nu.agent_id = a.agent_id
+        LEFT JOIN LATERAL (
+            SELECT created_at AS output_last_updated
+            FROM agent.agent_outputs AS ao
+            WHERE ao.agent_id = a.agent_id AND NOT ao.deleted
+            ORDER BY ao.created_at DESC
+            LIMIT 1
+        ) AS lo ON true;
         """
         rows = await self.pg.generic_read(sql, params=params)
         output = []
