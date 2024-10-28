@@ -256,7 +256,10 @@ organizations, companies, or entities that are not publicly traded (e.g., SpaceX
 Electronics). Ensure that only companies listed on recognized stock exchanges are included.
 - If the text uses a stock ticker symbol to refer to its corresponding company, use that stock
 ticker symbol as the value and identify the company name associated with that ticker.
-- The output should be only the dictionary containing the key-value pairs, with no additional text
+- Don't include any subsidiary companies that don't have its own stock symbol.
+- If the text mentions a company by its full name (e.g. containing "Inc."), use the full company name
+from the text.
+- The output should be only the dictionary containing the unique key-value pairs, with no additional text
 or commentary. Failure to comply means you will lose your job!
 
 This is an example output format: {{"Apple":"AAPL", "Tesla":"TSLA", "Nvidia":"NVDA"}}. Do not
@@ -290,7 +293,7 @@ The text you need to analyze is provided below.
                     stocks[stock_name] = await stock_identifier_lookup(  # type: ignore
                         StockIdentifierLookupInput(stock_name=stock_name), context
                     )
-                except ValueError:
+                except Exception:
                     # If stock cannot be found in the db, remove it from the dict
                     logger.error(f"Could not find stock for {stock_name}")
                     del stocks[stock_name]

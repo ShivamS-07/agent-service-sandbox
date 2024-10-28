@@ -438,10 +438,6 @@ async def stock_identifier_lookup_helper(
         # we have multiple matches, lets use dollar trading volume to choose the most likely match
         if confirm_stocks_sorted_by_volume[0].get("volume"):
             stock = confirm_stocks_sorted_by_volume[0]
-    elif orig_stocks_sorted_by_volume and orig_stocks_sorted_by_volume[0].get("volume"):
-        stock = orig_stocks_sorted_by_volume[0]
-    elif orig_stocks_sorted_by_match:
-        stock = orig_stocks_sorted_by_match[0]
     else:
         raise NotFoundError(f"Could not find any stocks related to: '{args.stock_name}'")
 
