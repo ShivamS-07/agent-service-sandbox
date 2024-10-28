@@ -183,17 +183,23 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-    async def delete_agent_output(
+    def delete_agent_output(
         self, agent_id: str, req: DeleteAgentOutputRequest
     ) -> DeleteAgentOutputResponse:
-        return await self.agent_service_impl.delete_agent_output(agent_id=agent_id, req=req)
+        return self.loop.run_until_complete(
+            self.agent_service_impl.delete_agent_output(agent_id=agent_id, req=req)
+        )
 
-    async def lock_agent_output(
+    def lock_agent_output(
         self, agent_id: str, req: LockAgentOutputRequest
     ) -> LockAgentOutputResponse:
-        return await self.agent_service_impl.lock_agent_output(agent_id=agent_id, req=req)
+        return self.loop.run_until_complete(
+            self.agent_service_impl.lock_agent_output(agent_id=agent_id, req=req)
+        )
 
-    async def unlock_agent_output(
+    def unlock_agent_output(
         self, agent_id: str, req: UnlockAgentOutputRequest
     ) -> UnlockAgentOutputResponse:
-        return await self.agent_service_impl.unlock_agent_output(agent_id=agent_id, req=req)
+        return self.loop.run_until_complete(
+            self.agent_service_impl.unlock_agent_output(agent_id=agent_id, req=req)
+        )
