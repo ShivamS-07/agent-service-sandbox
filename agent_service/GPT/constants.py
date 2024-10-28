@@ -7,7 +7,7 @@ GPT4_O = "gpt-4o-2024-08-06"
 GPT4_O_MINI = "gpt-4o-mini"
 O1 = "o1-preview"
 HAIKU = "claude-3-haiku-20240307"
-SONNET = "claude-3-5-sonnet-20240620"
+SONNET = "claude-3-5-sonnet-20241022"
 ADA_2 = "text-embedding-ada-002"
 TEXT_3_LARGE = "text-embedding-3-large"
 
