@@ -2,6 +2,7 @@ import ast
 import asyncio
 import datetime
 import json
+import os
 import traceback
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
 from uuid import uuid4
@@ -621,6 +622,23 @@ class Planner:
 
     async def _get_sample_plan_str(self, input: str) -> str:
         logger = get_prefect_logger(__name__)
+
+        # Check for sample plan override file.
+        override_sample_plan_file = os.environ.get("AGENT_SAMPLE_PLAN_OVERRIDE_FILE", "")
+        if len(override_sample_plan_file) > 0:
+            try:
+                with open(override_sample_plan_file, "r") as f:
+                    sample_plans_str = f.read()
+                    logger.warning("Only using override sample plan!!!")
+                    logger.info(f"Found relevant sample plan(s):\n{sample_plans_str}")
+                    sample_plans_str = PLAN_SAMPLE_TEMPLATE.format(sample_plans=sample_plans_str)
+                    return sample_plans_str
+            except Exception as e:
+                logger.warning(
+                    f"Sample plan override failed to load: {e}.  Continuing with normal operation."
+                )
+
+        # Normal operation, no overrides.
         sample_plans = await get_similar_sample_plans(input, self.context)
 
         if sample_plans:
