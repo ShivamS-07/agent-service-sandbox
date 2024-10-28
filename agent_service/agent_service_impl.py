@@ -818,22 +818,17 @@ class AgentServiceImpl:
     async def delete_agent_output(
         self, agent_id: str, req: DeleteAgentOutputRequest
     ) -> DeleteAgentOutputResponse:
-        # 1. Get the plan
-        _, old_plan, _, _, _ = await self.pg.get_latest_execution_plan(
-            agent_id=agent_id, only_finished_plans=True
-        )
-        if not old_plan:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete output from non-existant plan",
-            )
 
-        # 2. Delete and prune
-        new_plan = old_plan.get_pruned_plan(task_ids_to_remove=set(req.task_ids))
+        plan_map = await self.pg.get_execution_plans(plan_ids=[req.plan_id])
+        if not plan_map:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan ID not found")
 
-        # 3. Insert new plan
+        plan = plan_map[req.plan_id][0]
+        current_deleted = set(plan.deleted_task_ids)
+        to_delete = set(req.task_ids)
+        plan.deleted_task_ids = list(current_deleted.union(to_delete))
         write_plan_task = self.pg.write_execution_plan(
-            plan_id=str(uuid4()), agent_id=agent_id, plan=new_plan
+            plan_id=req.plan_id, agent_id=agent_id, plan=plan
         )
 
         # 4. Delete outputs

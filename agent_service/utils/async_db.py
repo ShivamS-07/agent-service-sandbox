@@ -207,7 +207,7 @@ class AsyncDB:
                 # probably not noticeable. We can revisit if needed. Need to do
                 # this so that frontend knows which outputs depend on other
                 # outputs in case of deleting.
-                plan = ExecutionPlan.model_validate(row["plan"])
+                plan = ExecutionPlan.from_dict(row["plan"])
                 node_dependency_map = plan.get_node_dependency_map()
                 node_parent_map = plan.get_node_parent_map()
                 for node, children in node_dependency_map.items():
@@ -364,7 +364,7 @@ class AsyncDB:
                 # probably not noticeable. We can revisit if needed. Need to do
                 # this so that frontend knows which outputs depend on other
                 # outputs in case of deleting.
-                plan = ExecutionPlan.model_validate(row["plan"])
+                plan = ExecutionPlan.from_dict(row["plan"])
                 node_dependency_map = plan.get_node_dependency_map()
                 node_parent_map = plan.get_node_parent_map()
                 for node, children in node_dependency_map.items():
@@ -585,7 +585,7 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
         if not rows:
             return None, None, None, None, None
-        plan = ExecutionPlan.model_validate(rows[0]["plan"])
+        plan = ExecutionPlan.from_dict(rows[0]["plan"])
         plan.locked_task_ids = list(rows[0]["locked_tasks"])
         return (
             rows[0]["plan_id"],
@@ -603,7 +603,7 @@ class AsyncDB:
             WHERE pr.plan_run_id = %(plan_run_id)s
         """
         rows = await self.pg.generic_read(sql, params={"plan_run_id": plan_run_id})
-        return ExecutionPlan.model_validate(rows[0]["plan"])
+        return ExecutionPlan.from_dict(rows[0]["plan"])
 
     async def get_agent_owner(self, agent_id: str) -> Optional[str]:
         """
@@ -736,7 +736,7 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, params={"plan_ids": plan_ids})
         output = {}
         for row in rows:
-            plan = ExecutionPlan.model_validate(row["plan"])
+            plan = ExecutionPlan.from_dict(row["plan"])
             plan.locked_task_ids = list(row["locked_tasks"])
             output[row["plan_id"]] = (
                 plan,
@@ -1574,7 +1574,7 @@ class AsyncDB:
                     category=row["category"],
                     created_at=row["created_at"],
                     is_visible=row["is_visible"],
-                    plan=ExecutionPlan.model_validate(row["plan"]),
+                    plan=ExecutionPlan.from_dict(row["plan"]),
                 )
             )
 

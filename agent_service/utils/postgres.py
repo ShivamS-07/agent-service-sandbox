@@ -120,7 +120,7 @@ class Postgres(PostgresBase):
         row = rows[0]
         return (
             row["plan_id"],
-            ExecutionPlan.model_validate(row["plan"]),
+            ExecutionPlan.from_dict(row["plan"]),
             row["created_at"],
             row["status"],
             row["upcoming_plan_run_id"],
@@ -137,7 +137,7 @@ class Postgres(PostgresBase):
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
         return (
-            [ExecutionPlan.model_validate(row["plan"]) for row in rows],
+            [ExecutionPlan.from_dict(row["plan"]) for row in rows],
             [row["created_at"] for row in rows],
             [row["plan_id"] for row in rows],
         )
@@ -633,7 +633,7 @@ class Postgres(PostgresBase):
             WHERE pr.plan_run_id = %(plan_run_id)s
         """
         rows = self.generic_read(sql, params={"plan_run_id": plan_run_id})
-        return ExecutionPlan.model_validate(rows[0]["plan"])
+        return ExecutionPlan.from_dict(rows[0]["plan"])
 
     ################################################################################################
     # Notifications
@@ -700,7 +700,7 @@ class Postgres(PostgresBase):
     ) -> Tuple[Optional[str], Optional[ExecutionPlan]]:
         live_agents_info = self.get_live_agents_info(agent_ids=[agent_id])
         if live_agents_info:
-            return live_agents_info[0]["plan_id"], ExecutionPlan.model_validate(
+            return live_agents_info[0]["plan_id"], ExecutionPlan.from_dict(
                 live_agents_info[0]["plan"]
             )
         return None, None

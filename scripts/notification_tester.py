@@ -81,7 +81,7 @@ async def main() -> List[OutputDiff]:
             for cn in await db.get_all_agent_custom_notifications(agent_id=args.agent_id)
         )
     )
-    plan = ExecutionPlan.model_validate(rows[0]["plan"])
+    plan = ExecutionPlan.from_dict(rows[0]["plan"])
     od = OutputDiffer(
         plan=plan,
         custom_notifications=custom_notification,

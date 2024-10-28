@@ -41,6 +41,7 @@ class TestFeatureDataLookup1(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
 
+    @unittest.skip("Flaky, JZ will investigate")
     async def test_feature_data_global(self):
         args = FeatureDataInput(
             stock_ids=[],

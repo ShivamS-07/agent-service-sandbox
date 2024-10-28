@@ -415,6 +415,7 @@ class Planner:
                     "plan_id": plan_id,
                     "prior_locked_tasks": last_plan.locked_task_ids,
                     "replan_with_locked_tasks": replan_with_locked_tasks,
+                    "old_plan_str": old_plan_str,
                 },
             )
         except Exception as e:
@@ -433,6 +434,7 @@ class Planner:
                     "plan_id": plan_id,
                     "prior_locked_tasks": last_plan.locked_task_ids,
                     "replan_with_locked_tasks": replan_with_locked_tasks,
+                    "old_plan_str": old_plan_str,
                 },
             )
             logger.warning(
@@ -527,6 +529,7 @@ class Planner:
                     "action": action,
                     "sample_plans": sample_plans_str,
                     "plan_id": plan_id,
+                    "old_plan_str": old_plan_str,
                 },
             )
         except Exception:
@@ -543,6 +546,7 @@ class Planner:
                     "action": action,
                     "sample_plans": sample_plans_str,
                     "plan_id": plan_id,
+                    "old_plan_str": old_plan_str,
                 },
             )
             logger.warning(

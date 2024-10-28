@@ -12,9 +12,11 @@ from agent_service.endpoints.models import (
     DeleteAgentOutputRequest,
     HorizonCriteria,
     HorizonCriteriaOperator,
+    LockAgentOutputRequest,
     MediaType,
     NotificationUser,
     SetAgentFeedBackRequest,
+    UnlockAgentOutputRequest,
     UpdateAgentRequest,
 )
 from agent_service.planner.constants import FirstAction
@@ -582,12 +584,131 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
             ),
         )
         self.assertTrue(res.success)
-        new_id, new_plan, _, _, _ = await self.pg.get_latest_execution_plan(agent_id=TEST_AGENT_ID)
-        self.assertNotEqual(new_id, TEST_PLAN_ID)
-        assert new_plan is not None
-        self.assertEqual([node.tool_task_id for node in new_plan.nodes], EXPECTED_TASK_IDs)
+        plan_id, plan, _, _, _ = await self.pg.get_latest_execution_plan(agent_id=TEST_AGENT_ID)
+        self.assertEqual(plan_id, TEST_PLAN_ID)
+        assert plan is not None
+        self.assertEqual([node.tool_task_id for node in plan.nodes], EXPECTED_TASK_IDs)
         outputs = await self.pg.get_agent_outputs(agent_id=TEST_AGENT_ID)
         self.assertEqual(len(outputs), 1)
+
+        # Try deleting again, make sure both deletions are applied
+        res = await self.delete_agent_output(
+            agent_id=TEST_AGENT_ID,
+            req=DeleteAgentOutputRequest(
+                plan_id=TEST_PLAN_ID,
+                output_ids=["c0aaed83-c0cf-47f5-910d-ec7666e2725d"],
+                task_ids=["4db70330-e715-4585-9c0e-0058dba7bbbc"],
+            ),
+        )
+        self.assertTrue(res.success)
+        plan_id, plan, _, _, _ = await self.pg.get_latest_execution_plan(agent_id=TEST_AGENT_ID)
+        self.assertEqual(plan_id, TEST_PLAN_ID)
+        assert plan is not None
+        self.assertEqual([node.tool_task_id for node in plan.nodes], [])
+        outputs = await self.pg.get_agent_outputs(agent_id=TEST_AGENT_ID)
+        self.assertEqual(len(outputs), 0)
+
+    async def test_lock_unlock_output(self):
+        TEST_AGENT_ID = "fd7b8b1a-3e3a-4195-8a6c-99f500149fde"
+        TEST_PLAN_ID = "5633b272-1a29-45c0-b2d0-de12160bd23c"
+
+        res = await self.lock_agent_output(
+            agent_id=TEST_AGENT_ID,
+            req=LockAgentOutputRequest(
+                plan_id=TEST_PLAN_ID,
+                output_ids=["e0fafdcd-19ae-4740-bdf7-8bd09e23ac7a"],
+                task_ids=["1982aa37-48d1-4451-be70-5d42dc66fab6"],
+            ),
+        )
+        self.assertTrue(res.success)
+        _, plan, _, _, _ = await self.pg.get_latest_execution_plan(agent_id=TEST_AGENT_ID)
+        assert plan is not None
+        self.assertEqual(plan.locked_task_ids, ["1982aa37-48d1-4451-be70-5d42dc66fab6"])
+        res = await self.lock_agent_output(
+            agent_id=TEST_AGENT_ID,
+            req=LockAgentOutputRequest(
+                plan_id=TEST_PLAN_ID,
+                output_ids=["c0aaed83-c0cf-47f5-910d-ec7666e2725d"],
+                task_ids=["4db70330-e715-4585-9c0e-0058dba7bbbc"],
+            ),
+        )
+        self.assertTrue(res.success)
+        _, plan, _, _, _ = await self.pg.get_latest_execution_plan(agent_id=TEST_AGENT_ID)
+        assert plan is not None
+        self.assertEqual(
+            plan.locked_task_ids,
+            ["1982aa37-48d1-4451-be70-5d42dc66fab6", "4db70330-e715-4585-9c0e-0058dba7bbbc"],
+        )
+
+        res = await self.unlock_agent_output(
+            agent_id=TEST_AGENT_ID,
+            req=UnlockAgentOutputRequest(
+                plan_id=TEST_PLAN_ID,
+                output_ids=["e0fafdcd-19ae-4740-bdf7-8bd09e23ac7a"],
+                task_ids=["1982aa37-48d1-4451-be70-5d42dc66fab6"],
+            ),
+        )
+        self.assertTrue(res.success)
+        _, plan, _, _, _ = await self.pg.get_latest_execution_plan(agent_id=TEST_AGENT_ID)
+        assert plan is not None
+        self.assertEqual(
+            plan.locked_task_ids,
+            ["4db70330-e715-4585-9c0e-0058dba7bbbc"],
+        )
+
+    async def test_delete_with_lock_unlock_agent_output(self):
+        TEST_AGENT_ID = "fd7b8b1a-3e3a-4195-8a6c-99f500149fde"
+        TEST_PLAN_ID = "5633b272-1a29-45c0-b2d0-de12160bd23c"
+
+        # First, lock an output
+        res = await self.lock_agent_output(
+            agent_id=TEST_AGENT_ID,
+            req=LockAgentOutputRequest(
+                plan_id=TEST_PLAN_ID,
+                output_ids=["c0aaed83-c0cf-47f5-910d-ec7666e2725d"],
+                task_ids=["4db70330-e715-4585-9c0e-0058dba7bbbc"],
+            ),
+        )
+        self.assertTrue(res.success)
+        _, plan, _, _, _ = await self.pg.get_latest_execution_plan(agent_id=TEST_AGENT_ID)
+        assert plan is not None
+        self.assertEqual(
+            plan.locked_task_ids,
+            ["4db70330-e715-4585-9c0e-0058dba7bbbc"],
+        )
+
+        # Then, delete a different output
+        res = await self.delete_agent_output(
+            agent_id=TEST_AGENT_ID,
+            req=DeleteAgentOutputRequest(
+                plan_id=TEST_PLAN_ID,
+                output_ids=["e0fafdcd-19ae-4740-bdf7-8bd09e23ac7a"],
+                task_ids=["1982aa37-48d1-4451-be70-5d42dc66fab6"],
+            ),
+        )
+        self.assertTrue(res.success)
+        _, plan, _, _, _ = await self.pg.get_latest_execution_plan(agent_id=TEST_AGENT_ID)
+        assert plan is not None
+        # Make sure locked output is not changed
+        self.assertEqual(
+            plan.locked_task_ids,
+            ["4db70330-e715-4585-9c0e-0058dba7bbbc"],
+        )
+
+        # Then unlock and make sure it works
+
+        res = await self.unlock_agent_output(
+            agent_id=TEST_AGENT_ID,
+            req=UnlockAgentOutputRequest(
+                plan_id=TEST_PLAN_ID,
+                output_ids=["c0aaed83-c0cf-47f5-910d-ec7666e2725d"],
+                task_ids=["4db70330-e715-4585-9c0e-0058dba7bbbc"],
+            ),
+        )
+        self.assertTrue(res.success)
+        _, plan, _, _, _ = await self.pg.get_latest_execution_plan(agent_id=TEST_AGENT_ID)
+        assert plan is not None
+        self.assertEqual(plan.locked_task_ids, [])
 
     def test_agent_quality_endpoints(self):
         # Step 1: Create and Insert mock AgentQC data

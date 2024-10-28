@@ -31,7 +31,7 @@ def build_plan_object(agent_id: str, plan_id: str) -> ExecutionPlan:
     """
     db = Postgres()
     rows = db.generic_read(sql, {"agent_id": agent_id, "plan_id": plan_id})
-    return ExecutionPlan.model_validate(rows[0]["plan"])
+    return ExecutionPlan.from_dict(rows[0]["plan"])
 
 
 def get_run_outputs(agent_id: str, plan_run_id: str) -> List[OutputWithID]:

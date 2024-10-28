@@ -146,6 +146,7 @@ class PlanStatus(enum.StrEnum):
 class ExecutionPlan(BaseModel):
     nodes: List[ToolExecutionNode]
     locked_task_ids: List[str] = []
+    deleted_task_ids: List[str] = []
 
     def __hash__(self) -> int:
         return self.get_formatted_plan().__hash__()
@@ -154,6 +155,17 @@ class ExecutionPlan(BaseModel):
         if isinstance(value, ExecutionPlan):
             return self.get_formatted_plan() == value.get_formatted_plan()
         return False
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: Dict[str, Any],
+        prune_deleted_tasks: bool = True,
+    ) -> "ExecutionPlan":
+        plan = cls.model_validate(data)
+        if prune_deleted_tasks and plan.deleted_task_ids:
+            plan = plan.get_pruned_plan(task_ids_to_remove=set(plan.deleted_task_ids))
+        return plan
 
     def get_plan_steps_for_gpt(self) -> str:
         output = []
@@ -230,10 +242,13 @@ class ExecutionPlan(BaseModel):
         """
         locked_task_set = set(self.locked_task_ids)
         logger.info(f"Replanning while preserving locked tasks: {locked_task_set}")
+        node_dep_map = self.get_node_dependency_map()
         non_locked_output_task_ids = {
             node.tool_task_id
             for node in self.nodes
             if node.is_output_node and node.tool_task_id not in locked_task_set
+            # don't remove it if it's depended on, e.g. analyze_output
+            and not node_dep_map.get(node)
         }
         return self.get_pruned_plan(task_ids_to_remove=non_locked_output_task_ids)
 
@@ -280,9 +295,12 @@ class ExecutionPlan(BaseModel):
         remaining_task_ids = {node.tool_task_id for node in remaining_nodes}
         return ExecutionPlan(
             nodes=remaining_nodes,
-            # Preserve locked tasks that are still in the new plan
+            # Preserve locked and deleted tasks that are still in the new plan
             locked_task_ids=[
                 task_id for task_id in self.locked_task_ids if task_id in remaining_task_ids
+            ],
+            deleted_task_ids=[
+                task_id for task_id in self.deleted_task_ids if task_id in remaining_task_ids
             ],
         )
 

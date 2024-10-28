@@ -41,8 +41,12 @@ from agent_service.endpoints.models import (
     GetTestCaseInfoResponse,
     GetTestSuiteRunInfoResponse,
     GetToolLibraryResponse,
+    LockAgentOutputRequest,
+    LockAgentOutputResponse,
     RestoreAgentResponse,
     TerminateAgentResponse,
+    UnlockAgentOutputRequest,
+    UnlockAgentOutputResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
 )
@@ -183,3 +187,13 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
         self, agent_id: str, req: DeleteAgentOutputRequest
     ) -> DeleteAgentOutputResponse:
         return await self.agent_service_impl.delete_agent_output(agent_id=agent_id, req=req)
+
+    async def lock_agent_output(
+        self, agent_id: str, req: LockAgentOutputRequest
+    ) -> LockAgentOutputResponse:
+        return await self.agent_service_impl.lock_agent_output(agent_id=agent_id, req=req)
+
+    async def unlock_agent_output(
+        self, agent_id: str, req: UnlockAgentOutputRequest
+    ) -> UnlockAgentOutputResponse:
+        return await self.agent_service_impl.unlock_agent_output(agent_id=agent_id, req=req)
