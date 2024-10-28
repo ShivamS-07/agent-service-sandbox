@@ -1556,6 +1556,7 @@ class GetStockUniverseInput(ToolArgs):
         " 'stocks in', 'companies in', 'holdings of'"
         " Please be careful not to confuse the r1k (Russell 1000), the r2k (Russell 2000),"
         " and the r3k (Russell 3000) when using this tool, these are very different universes!"
+        " Please be careful to run this tool as a separate step in your plan!"
     ),
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

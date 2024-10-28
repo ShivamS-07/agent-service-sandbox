@@ -23,6 +23,7 @@ from agent_service.tools.stocks import (
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import SyncBoostedPG, get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -351,7 +352,7 @@ async def get_peers(args: PeersForStockInput, context: PlanRunContext) -> List[S
 
 class GeneralPeersForStockInput(ToolArgs):
     stock_id: StockID
-    category: Optional[str] = None
+    max_num_peers: Optional[int] = None
 
 
 @tool(
@@ -359,12 +360,18 @@ class GeneralPeersForStockInput(ToolArgs):
     This function returns a list of peer companies for the input stock.
      Peers are related to the input stock as competitors as well as
      other actors in similar business or market areas as the input stock.
-     A string can also be provided to this function
-     which will focus on finding peers in a specific sector or industry.
+     You must use this tool when users ask for competitors or peers of a stock,
+     unless they express specific interest in competitive analysis. Never, ever
+     use this tool together with competitive analysis tools, instead use the
+     product_or_service_filter tool. For example, if the user asks:
+     'give me a news summary for each of the competitors of apple', you would
+     'use this tool, but if the user ask to 'compare apple with its key
+     competitors' you must NOT use this tool.
+     If the client mentions a specific number of peers that they want, include
+     that as max_num_peers, otherwise all peers will be returned
     """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
-    enabled=False,
 )
 async def get_general_peers(
     args: GeneralPeersForStockInput, context: PlanRunContext
@@ -381,12 +388,33 @@ async def get_general_peers(
         stock=args.stock_id,
         llm=llm,
         context=context,
-        category=args.category,
+        category=None,
     )
 
     await tool_log(log=f"Found {len(stock_ids)} peers for {args.stock_id.symbol}", context=context)
 
+    if args.max_num_peers and len(stock_ids) > args.max_num_peers:
+        stock_ids = stock_ids[: args.max_num_peers]
+        await tool_log(log=f"Filtered to top {args.max_num_peers} peers", context=context)
+
     return stock_ids
+
+
+async def get_peer_stock_id(
+    peer_info: Dict[str, str], context: PlanRunContext
+) -> Optional[StockID]:
+    stock_id: Optional[StockID] = None
+    for lookup_str in ["isin", "company_name", "symbol"]:
+        if lookup_str in peer_info:
+            stock_id = await stock_identifier_lookup(  # type: ignore
+                StockIdentifierLookupInput(
+                    stock_name=peer_info[lookup_str],
+                ),
+                context=context,
+            )
+        if stock_id:
+            break
+    return stock_id
 
 
 async def get_peer_group_for_stock(
@@ -448,22 +476,13 @@ async def get_peer_group_for_stock(
     # to pollute the work log for peers tool
     no_tool_log_context = context.model_copy(update={"skip_db_commit": True})
 
+    lookup_tasks = []
     for peer in initial_peer_group:
-        stock_id: Optional[StockID] = None
-        stock_name = "isin"
-        while not stock_id:
-            try:
-                stock_id = await stock_identifier_lookup(  # type: ignore
-                    StockIdentifierLookupInput(
-                        stock_name=peer[stock_name],
-                    ),
-                    context=no_tool_log_context,
-                )
-            except ValueError:
-                if stock_name == "symbol":
-                    logger.info(f"Could not map {peer[stock_name]} to a stock")
-                    break
-                stock_name = "company_name" if stock_name == "isin" else "symbol"
+        lookup_tasks.append(get_peer_stock_id(peer, no_tool_log_context))
+
+    lookup_result = await gather_with_concurrency(lookup_tasks, n=len(initial_peer_group))
+
+    for peer, stock_id in zip(initial_peer_group, lookup_result):
         if stock_id and stock_id.gbi_id not in peer_stock_ids:  # prevent dupes
             peer_stock_ids[stock_id.gbi_id] = stock_id
             peer_justifications[stock_id.gbi_id] = peer.get("justification", "")
@@ -508,18 +527,28 @@ async def get_peer_group_for_stock(
         )
 
     validated_peers: List[StockID] = []
+    validate_tasks = []
     for peer_stock_id in peer_stock_ids.values():
-        validate_peer_stock_gpt_resp = await llm.do_chat_w_sys_prompt(
-            main_prompt=VALIDATE_PEER_STOCK_MAIN_PROMPT.format(
-                peer_str=peer_stock_id.company_name,
-                input_stock_str=stock.company_name,
-                justification=peer_justifications.get(peer_stock_id.gbi_id, "No reasoning.\n"),
-                category_str=(f" in the field of: {category}" if category else ""),
-            ),
-            sys_prompt=VALIDATION_SYS_PROMPT.format(
-                extra_company_info=company_descriptions[peer_stock_id.gbi_id],
-            ),
+
+        validate_tasks.append(
+            llm.do_chat_w_sys_prompt(
+                main_prompt=VALIDATE_PEER_STOCK_MAIN_PROMPT.format(
+                    peer_str=peer_stock_id.company_name,
+                    input_stock_str=stock.company_name,
+                    justification=peer_justifications.get(peer_stock_id.gbi_id, "No reasoning.\n"),
+                    category_str=(f" in the field of: {category}" if category else ""),
+                ),
+                sys_prompt=VALIDATION_SYS_PROMPT.format(
+                    extra_company_info=company_descriptions[peer_stock_id.gbi_id],
+                ),
+            )
         )
+
+    validate_results = await gather_with_concurrency(validate_tasks, n=len(peer_stock_ids))
+
+    for peer_stock_id, validate_peer_stock_gpt_resp in zip(
+        peer_stock_ids.values(), validate_results
+    ):
         validate_peer_stock = validate_peer_stock_gpt_resp.split("\n")
         if len(validate_peer_stock) > 0 and validate_peer_stock[0].lower() == "false":
             logger.info(
@@ -527,6 +556,15 @@ async def get_peer_group_for_stock(
             )
             continue
         validated_peers.append(peer_stock_id)
+
+    for i, peer in enumerate(validated_peers):
+        if peer.gbi_id in peer_justifications:
+            validated_peers[i] = peer.inject_history_entry(
+                HistoryEntry(
+                    explanation=peer_justifications[peer.gbi_id],
+                    title=f"Connection to '{stock.company_name}'",
+                )
+            )
 
     return validated_peers
 

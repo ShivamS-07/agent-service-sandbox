@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Set
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
+from agent_service.planner.constants import MAX_SAMPLE_INPUT_MULTIPLER
 from agent_service.planner.planner_types import SamplePlan
 from agent_service.planner.prompts import (
     SAMPLE_PLANS_MAIN_PROMPT,
@@ -46,6 +47,12 @@ async def get_similar_sample_plans(
     db = get_psql()
     gpt = GPT(model=GPT4_O, context=context)
     sample_plans = db.get_all_sample_plans()
+    len_filtered_sample_plans = []
+    for sample_plan in sample_plans:
+        if not (len(sample_plan.input) > len(input) * MAX_SAMPLE_INPUT_MULTIPLER):
+            len_filtered_sample_plans.append(sample_plan)
+    sample_plans = len_filtered_sample_plans
+
     tasks = []
     tasks.append(_get_similar_plans(gpt=gpt, sample_plans=sample_plans[:], input=input))
     reversed_list = sample_plans[::-1]
