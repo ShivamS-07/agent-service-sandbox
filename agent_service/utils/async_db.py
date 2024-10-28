@@ -91,16 +91,16 @@ class AsyncDB:
         plan_id: str,
         latest_plan_run_id: str,
         cutoff_dt: Optional[datetime.datetime],
-    ) -> Optional[str]:
+    ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """
-        Returns the last plan run for the agent before the latest_run
+        Returns the last plan run for the agent before the latest_run, along with the timestamp for that run
         """
         date_filter = ""
         if cutoff_dt:
             date_filter = " AND created_at < %(cutoff_dt)s"
 
         sql = f"""
-        SELECT plan_run_id FROM agent.plan_runs
+        SELECT plan_run_id, created_at FROM agent.plan_runs
         WHERE plan_run_id != %(latest_plan_run_id)s
             AND agent_id = %(agent_id)s
             AND plan_id = %(plan_id)s{date_filter}
@@ -118,9 +118,9 @@ class AsyncDB:
             },
         )
         if rows:
-            return rows[0]["plan_run_id"]
+            return rows[0]["plan_run_id"], rows[0]["created_at"]
         else:
-            return None
+            return None, None
 
     async def get_agent_outputs(
         self, agent_id: str, plan_run_id: Optional[str] = None, cache: Optional[CacheBackend] = None

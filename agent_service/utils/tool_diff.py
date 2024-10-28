@@ -13,6 +13,9 @@ from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.postgres import SyncBoostedPG
 from agent_service.utils.prefect import get_prefect_logger
 
+MAX_TRIES = 3
+ONE_MINUTE = datetime.timedelta(minutes=1)
+
 
 @dataclass
 class PrevRunInfo:
@@ -26,28 +29,40 @@ async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional
     logger = get_prefect_logger(__name__)
     pg_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
 
-    previous_run_id = await pg_db.get_previous_plan_run(
-        agent_id=context.agent_id,
-        plan_id=context.plan_id,
-        latest_plan_run_id=context.plan_run_id,
-        cutoff_dt=context.as_of_date,
-    )
-
-    read_from_postgres = False
-    if previous_run_id is None:
-        return None
-
-    ch_db = Clickhouse()
     if context.task_id is None:  # shouldn't happen
         return None
-    logger.info("Checking clickhouse for prior run info")
-    io = await ch_db.get_io_for_tool_run(previous_run_id, context.task_id, tool_name)
-    if io is None:
-        logger.info("Checking postgres for prior run info")
-        io = await pg_db.get_task_run_info(
-            plan_run_id=previous_run_id, task_id=context.task_id, tool_name=tool_name
+
+    io = None
+    tries = 0
+
+    search_dt = context.as_of_date
+
+    while io is None and tries < MAX_TRIES:
+        previous_run_id, previous_run_time = await pg_db.get_previous_plan_run(
+            agent_id=context.agent_id,
+            plan_id=context.plan_id,
+            latest_plan_run_id=context.plan_run_id,
+            cutoff_dt=search_dt,
         )
-        read_from_postgres = True
+
+        read_from_postgres = False
+        if previous_run_id is None or previous_run_time is None:
+            return None
+
+        ch_db = Clickhouse()
+
+        logger.info("Checking clickhouse for prior run info")
+        io = await ch_db.get_io_for_tool_run(previous_run_id, context.task_id, tool_name)
+        if io is None:
+            logger.info("Checking postgres for prior run info")
+            io = await pg_db.get_task_run_info(
+                plan_run_id=previous_run_id, task_id=context.task_id, tool_name=tool_name
+            )
+            read_from_postgres = True
+
+        search_dt = previous_run_time - ONE_MINUTE  # look back before the last run time
+        tries += 1
+
     if io is None:
         logger.info("No prior run info found")
         return None
