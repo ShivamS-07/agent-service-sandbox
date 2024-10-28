@@ -322,8 +322,8 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     logger.info(f"Length of tokens in main prompt: {main_prompt_token_length}")
 
     # save main prompt as text file for debugging
-    # with open("main_prompt.txt", "w") as f:
-    #     f.write(main_prompt.filled_prompt)
+    with open("main_prompt.txt", "w") as f:
+        f.write(main_prompt.filled_prompt)
 
     # Write the commentary
     await tool_log(
@@ -477,19 +477,24 @@ async def get_commentary_inputs(
             tables.append(universe_stocks)
             # get universe performance in all levels
             for performance_level in UNIVERSE_PERFORMANCE_LEVELS:
-                universe_performance_table: Table = await get_universe_performance(  # type: ignore
-                    GetUniversePerformanceInput(
-                        universe_name=args.universe_name,
-                        date_range=args.date_range,
-                        performance_level=performance_level,
-                    ),
-                    context,
-                )
-                # add universe performance table to tables
-                tables.append(universe_performance_table)
-                if performance_level == "security":
-                    # this will be used to get top and bottom 3 contributers
-                    uni_perf_df = universe_performance_table.to_df()
+                try:
+                    universe_performance_table: Table = await get_universe_performance(  # type: ignore
+                        GetUniversePerformanceInput(
+                            universe_name=args.universe_name,
+                            date_range=args.date_range,
+                            performance_level=performance_level,
+                        ),
+                        context,
+                    )
+                    # add universe performance table to tables
+                    tables.append(universe_performance_table)
+                    if performance_level == "security":
+                        # this will be used to get top and bottom 3 contributers
+                        uni_perf_df = universe_performance_table.to_df()
+                except Exception as e:
+                    logger.exception(
+                        f"Failed to get universe performance table on {performance_level} level: {e}"
+                    )
             # get top and bottom 3 contributers and performers
             top_contributers = (
                 uni_perf_df.sort_values("weighted-return", ascending=False)
@@ -557,32 +562,42 @@ async def get_commentary_inputs(
 
             # get portfolio benchmark performance in all levels
             for performance_level in BENCHMARK_PERFORMANCE_LEVELS:
-                portfolio_benchmark_perf_table: Table = await get_portfolio_benchmark_performance(  # type: ignore
-                    GetPortfolioBenchmarkPerformanceInput(
-                        portfolio_id=args.portfolio_id,
-                        date_range=args.date_range,
-                        performance_level=performance_level,
-                    ),
-                    context,
-                )
-                # add portfolio benchmark performance table to tables
-                tables.append(portfolio_benchmark_perf_table)
+                try:
+                    portfolio_benchmark_perf_table: Table = await get_portfolio_benchmark_performance(  # type: ignore
+                        GetPortfolioBenchmarkPerformanceInput(
+                            portfolio_id=args.portfolio_id,
+                            date_range=args.date_range,
+                            performance_level=performance_level,
+                        ),
+                        context,
+                    )
+                    # add portfolio benchmark performance table to tables
+                    tables.append(portfolio_benchmark_perf_table)
+                except Exception as e:
+                    logger.exception(
+                        f"Failed to get portfolio benchmark performance table on {performance_level} level: {e}"
+                    )
 
             # get portfolio performance in all levels
             for performance_level in PORTFOLIO_PERFORMANCE_LEVELS:
-                portfolio_performance_table: Table = await get_portfolio_performance(  # type: ignore
-                    GetPortfolioPerformanceInput(
-                        portfolio_id=args.portfolio_id,
-                        date_range=args.date_range,
-                        performance_level=performance_level,
-                    ),
-                    context,
-                )
-                # add portfolio performance table to tables
-                tables.append(portfolio_performance_table)
-                if performance_level == "stock":
-                    # this will be used to get top and bottom 3 contributers
-                    port_perf_df = portfolio_performance_table.to_df()
+                try:
+                    portfolio_performance_table: Table = await get_portfolio_performance(  # type: ignore
+                        GetPortfolioPerformanceInput(
+                            portfolio_id=args.portfolio_id,
+                            date_range=args.date_range,
+                            performance_level=performance_level,
+                        ),
+                        context,
+                    )
+                    # add portfolio performance table to tables
+                    tables.append(portfolio_performance_table)
+                    if performance_level == "stock":
+                        # this will be used to get top and bottom 3 contributers
+                        port_perf_df = portfolio_performance_table.to_df()
+                except Exception as e:
+                    logger.exception(
+                        f"Failed to get portfolio performance table on {performance_level} level: {e}"
+                    )
             # get top and bottom 3 contributers and performers
             top_contributers = (
                 port_perf_df.sort_values("weighted-return", ascending=False)

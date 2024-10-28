@@ -366,7 +366,13 @@ async def prepare_portfolio_prompt(
         for performance_level in BENCHMARK_PERFORMANCE_LEVELS:
             if table.title == BENCHMARK_PERFORMANCE_TABLE_BASE_NAME + performance_level:
                 table_mapping[f"benchmark_perf_{performance_level}"] = table.to_df()
-
+    # check if the table is not being added then add a dummy table
+    for performance_level in PORTFOLIO_PERFORMANCE_LEVELS:
+        if f"portfolio_perf_{performance_level}" not in table_mapping:
+            table_mapping[f"portfolio_perf_{performance_level}"] = pd.DataFrame()
+    for performance_level in BENCHMARK_PERFORMANCE_LEVELS:
+        if f"benchmark_perf_{performance_level}" not in table_mapping:
+            table_mapping[f"benchmark_perf_{performance_level}"] = pd.DataFrame()
     # Prepare the geography prompt
     portfolio_geography_prompt = await prepare_geography_prompt(
         geography_prompt, portfolio_holdings_expanded_df, context
@@ -430,7 +436,10 @@ async def prepare_universe_prompt(
         for performance_level in UNIVERSE_PERFORMANCE_LEVELS:
             if table.title == UNIVERSE_PERFORMANCE_TABLE_BASE_NAME + performance_level:
                 table_mapping[f"universe_perf_{performance_level}"] = table.to_df()
-
+    # check if the table is not being added then add a dummy table
+    for performance_level in UNIVERSE_PERFORMANCE_LEVELS:
+        if f"universe_perf_{performance_level}" not in table_mapping:
+            table_mapping[f"universe_perf_{performance_level}"] = pd.DataFrame()
     # convert StockID column to company name to aviod commentary using tickers
     for df in table_mapping:
         if STOCK_ID_COL_NAME_DEFAULT in table_mapping[df].columns:

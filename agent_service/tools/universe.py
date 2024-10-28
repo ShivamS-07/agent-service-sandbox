@@ -30,7 +30,7 @@ from agent_service.tools.stocks import (
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 
-UNIVERSE_PERFORMANCE_LEVELS = ["overall", "security", "sector", "daily", "stock"]
+UNIVERSE_PERFORMANCE_LEVELS = ["overall", "security", "sector", "daily"]
 UNIVERSE_PERFORMANCE_TABLE_BASE_NAME = "Universe Performance - "
 UNIVERSE_HOLDINGS_TABLE_NAME = "Universe Holdings"
 STOCK_PERFORMANCE_TABLE_NAME = "Stock Performance"
