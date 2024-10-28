@@ -94,34 +94,49 @@ async def _get_earnings_summary_helper(
 ) -> Dict[StockID, List[StockEarningsText]]:
     user_id = context.user_id
     db = get_psql()
+
+    gbi_id_to_stock_id_lookup = {x.gbi_id: x for x in stock_ids}
+    gbi_ids = [stock.gbi_id for stock in stock_ids]
+    company_id_sql = """
+            SELECT gbi_id , spiq_company_id
+            FROM spiq_security_mapping
+            WHERE gbi_id = ANY(%(gbi_ids)s);
+            """
+    params = {"gbi_ids": gbi_ids}
+    rows = db.generic_read(company_id_sql, params)
+    gbi_to_comp_id_lookup = {row["gbi_id"]: row["spiq_company_id"] for row in rows}
+
     if allow_simple_generated_earnings:
         simple_generation_clause = ""
     else:
         simple_generation_clause = "AND fully_generated = TRUE"
 
     no_empty_summary_clause = "AND summary != '{}'"
-    earning_summary_sql = f"""SELECT DISTINCT ON (gbi_id, year, quarter)
-    summary_id::TEXT,
-    summary,
-    gbi_id,
-    sources,
-    year,
-    quarter,
-    created_timestamp
-    FROM
-        nlp_service.earnings_call_summaries
-    WHERE
-        gbi_id = ANY(%(gbi_ids)s)
-        AND (status_msg = 'COMPLETE' OR status_msg IS NULL) {no_empty_summary_clause}
-        {simple_generation_clause}
-    ORDER BY
-        gbi_id,
-        year,
-        quarter,
-        created_timestamp DESC
+    earning_summary_sql = f"""WITH earning_summaries AS (
+            SELECT
+                ecs.summary_id::TEXT, ecs.gbi_id, ssm.spiq_company_id, ecs.summary, ecs.year, ecs.quarter,
+                ecs.sources, ecs.is_complete, ecs.status_msg, ecs.created_timestamp
+            FROM nlp_service.earnings_call_summaries ecs
+            JOIN spiq_security_mapping ssm ON ecs.gbi_id = ssm.gbi_id
+            WHERE ssm.spiq_company_id = ANY(%(company_ids)s)
+                {no_empty_summary_clause}
+                {simple_generation_clause}
+            ORDER BY
+                ecs.gbi_id, ecs.year DESC, ecs.quarter DESC, ecs.created_timestamp DESC
+            )
+            SELECT DISTINCT ON (spiq_company_id, year, quarter)
+                es.summary_id, es.spiq_company_id, es.gbi_id, es.summary,
+                es.year, es.quarter, es.sources, es.is_complete,
+                es.status_msg, es.created_timestamp
+            FROM earning_summaries es
+            ORDER BY
+                es.spiq_company_id, es.year DESC, es.quarter DESC, es.created_timestamp DESC;
     """
 
-    rows = db.generic_read(earning_summary_sql, {"gbi_ids": [stock.gbi_id for stock in stock_ids]})
+    company_ids = [gbi_to_comp_id_lookup[gbi_id] for gbi_id in gbi_ids]
+    params = {"company_ids": company_ids}
+    rows = db.generic_read(earning_summary_sql, params)
+
     by_stock_lookup = defaultdict(list)
     for row in rows:
         by_stock_lookup[row["gbi_id"]].append(row)
@@ -146,7 +161,7 @@ async def _get_earnings_summary_helper(
         all_earning_fiscal_quarters[event.gbi_id].add((event.year, event.quarter))
         earning_events_lookup[event.gbi_id][(event.year, event.quarter)] = event
 
-    output: Dict[StockID, List[StockEarningsText]] = defaultdict(list)
+    comp_id_to_earnings: Dict[int, List[StockEarningsText]] = defaultdict(list)
     for stock_id in stock_ids:
         # Use this to track the year-quarter earnings with summaries for the given stock_id
         year_quarters_with_summaries = set()
@@ -181,11 +196,15 @@ async def _get_earnings_summary_helper(
             )
             year_quarters_with_summaries.add((year, quarter))
 
-        output[stock_id] = stock_output
+        comp_id_to_earnings[gbi_to_comp_id_lookup[stock_id.gbi_id]] = stock_output
         # Remove the year-quarters for the given stock_id for which earning summaries were generated
         all_earning_fiscal_quarters[stock_id.gbi_id] = (
             all_earning_fiscal_quarters[stock_id.gbi_id] - year_quarters_with_summaries
         )
+
+    output: Dict[StockID, List[StockEarningsText]] = defaultdict(list)
+    for gbi_id, comp_id in gbi_to_comp_id_lookup.items():
+        output[gbi_id_to_stock_id_lookup[gbi_id]] = comp_id_to_earnings[comp_id]
 
     # Find the list of events for the set of year-quarters for each stock_id that did not have earning summaries
     events_without_summaries: List[EventInfo] = []

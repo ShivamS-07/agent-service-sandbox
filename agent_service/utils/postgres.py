@@ -753,6 +753,34 @@ class Postgres(PostgresBase):
         rows = self.generic_read(sql, params={"workspace_id": workspace_id})
         return rows[0]["linked_portfolio_id"] if rows else None
 
+    def get_most_populated_listing_for_company_from_gbi_id(self, gbi_id: int) -> Optional[int]:
+        """
+        Given a GBI ID, this function finds the list of all GBI IDs that fall under the same
+        company as the original GBI ID. It then looks at the stock_news table for entries
+        corresponding to those GBI IDs and returns the GBI ID with the most entries in the past
+        3 months, breaking ties by sorting GBI IDs in increasing lexicographical order.
+        """
+        start_date = datetime.datetime.today() - datetime.timedelta(days=90)
+        end_date = datetime.datetime.today() + datetime.timedelta(days=1)
+        sql = """
+        SELECT COUNT(DISTINCT(news_id)) AS num_news, gbi_id::INT FROM nlp_service.stock_news
+        WHERE gbi_id IN (SELECT DISTINCT(gbi_id::INT)
+                FROM spiq_security_mapping
+                WHERE spiq_company_id = (
+                    SELECT spiq_company_id
+                    FROM spiq_security_mapping
+                    WHERE gbi_id = %(gbi_id)s
+                    LIMIT 1
+                ))
+        AND published_at >= %(start_date)s AND published_at <= %(end_date)s
+        GROUP BY gbi_id ORDER BY num_news DESC, gbi_id ASC
+        """
+        params = {"gbi_id": gbi_id, "start_date": start_date, "end_date": end_date}
+        res = self.generic_read(sql, params)
+        if res:
+            return res[0]["gbi_id"]
+        return None
+
 
 def get_psql(skip_commit: bool = False) -> Postgres:
     """

@@ -48,8 +48,16 @@ async def _get_news_developments_helper(
     end_date: Optional[datetime.date] = None,
 ) -> Dict[StockID, List[StockNewsDevelopmentText]]:
     # Response now has a list of topics. Build an association dict to ensure correct ordering.
+    db = get_psql()
     stock_to_topics_map: Dict[StockID, List[NewsTopic]] = defaultdict(list)
     gbi_id_to_stock_map: Dict[int, StockID] = {stock.gbi_id: stock for stock in stock_ids}
+    gbi_id_lookup: Dict[int, List[int]] = defaultdict(list)
+    for gbi_id in list(gbi_id_to_stock_map.keys()):
+        associated = db.get_most_populated_listing_for_company_from_gbi_id(gbi_id)
+        if associated:
+            gbi_id_lookup[associated].append(gbi_id)
+        else:
+            gbi_id_lookup[gbi_id].append(gbi_id)
 
     if not start_date:
         start_date = (get_now_utc() - datetime.timedelta(days=7)).date()
@@ -101,18 +109,19 @@ async def _get_news_developments_helper(
         FROM articles
         JOIN nlp_service.stock_news_topics t ON t.topic_id = articles.topic_id
     """
-    rows = get_psql().generic_read(
+    rows = db.generic_read(
         sql,
         {
-            "gbi_ids": list(gbi_id_to_stock_map.keys()),
+            "gbi_ids": list(gbi_id_lookup.keys()),
             "start_date": start_dt,
             "end_date": end_dt,
         },
     )
 
+    comp_earnings: Dict[int, List[NewsTopic]] = defaultdict(list)
+
     for row in rows:
-        stock = gbi_id_to_stock_map[row["gbi_id"]]
-        stock_to_topics_map[stock].append(
+        comp_earnings[row["gbi_id"]].append(
             NewsTopic(
                 topic_id=row["topic_id"],
                 first_article=row["first_article_date"],
@@ -122,6 +131,10 @@ async def _get_news_developments_helper(
                 ),
             )
         )
+
+    for company, news_topics in comp_earnings.items():
+        for listing in gbi_id_lookup[company]:
+            stock_to_topics_map[gbi_id_to_stock_map[listing]] = news_topics
 
     output_dict: Dict[StockID, List[StockNewsDevelopmentText]] = {}
     for stock in stock_ids:
