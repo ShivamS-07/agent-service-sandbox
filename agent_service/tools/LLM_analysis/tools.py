@@ -92,6 +92,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     UPDATE_SUMMARIZE_SYS_PROMPT,
 )
 from agent_service.tools.LLM_analysis.utils import (
+    classify_stock_text_relevancies_for_profile,
     extract_citations_from_gpt_output,
     get_all_text_citations,
     get_original_cite_count,
@@ -174,7 +175,6 @@ async def _initial_summarize_helper(
             args.topic,
             context.agent_id,
             model_for_filter_to_context=GPT4_O,
-            no_empty=True,
         )
         if len(texts) == 0:  # filtered out all relevant texts
             if args.stock:
@@ -200,9 +200,9 @@ async def _initial_summarize_helper(
         brainstorm_reminder = BRAINSTORM_REMINDER
         final_reminder = BRAINSTORM_FINAL_REMINDER
     else:
-        brainstorm_str = (
-            PER_SUMMARIZE_INSTRUCTIONS.format(no_summary=NO_SUMMARY) + PER_SUMMARIZE_BRAINSTORMING
-        )
+        brainstorm_str = PER_SUMMARIZE_INSTRUCTIONS.format(
+            no_summary=NO_SUMMARY
+        ) + PER_SUMMARIZE_BRAINSTORMING.format(no_summary=NO_SUMMARY)
         brainstorm_reminder = ""
         final_reminder = PER_SUMMARIZE_REMINDER
 
@@ -260,6 +260,9 @@ async def _initial_summarize_helper(
     if BRAINSTORM_DELIMITER in result:
         result = result.split(BRAINSTORM_DELIMITER)[-1]
 
+    if result.strip() == NO_SUMMARY:  # GPT isn't supposed to do this but does
+        return NO_SUMMARY, []
+
     text, citations = await extract_citations_from_gpt_output(result, text_group, context)
     has_gpt_generated_sources = (
         len([text for text in texts if text.text_type == DEFAULT_TEXT_TYPE]) > 0
@@ -277,6 +280,9 @@ async def _initial_summarize_helper(
         )
         if BRAINSTORM_DELIMITER in result:
             result = result.split(BRAINSTORM_DELIMITER)[-1]
+
+        if result.strip() == NO_SUMMARY:  # GPT isn't supposed to do this but does
+            return NO_SUMMARY, []
         text, citations = await extract_citations_from_gpt_output(result, text_group, context)
         tries += 1
 
@@ -314,7 +320,6 @@ async def _update_summarize_helper(
             args.topic,
             context.agent_id,
             model_for_filter_to_context=GPT4_O,
-            no_empty=True,
         )
         if len(new_texts) == 0:
             if remaining_original_citation_count == 0:
@@ -396,6 +401,7 @@ async def _update_summarize_helper(
         plan_delimiter=BRAINSTORM_DELIMITER,
         brainstorm_instructions=brainstorm_instructions,
         remaining_citations=remaining_original_citation_count,
+        no_summary=NO_SUMMARY,
     )
 
     result = await llm.do_chat_w_sys_prompt(
@@ -404,6 +410,9 @@ async def _update_summarize_helper(
     )
 
     result = result.split(BRAINSTORM_DELIMITER)[-1]  # strip planning section
+
+    if result.strip() == NO_SUMMARY:  # GPT isn't supposed to do this but does
+        return NO_SUMMARY, []
 
     combined_text_group = TextGroup.join(new_text_group, old_texts_group)
 
@@ -454,6 +463,8 @@ async def _update_summarize_helper(
         )
         result = result.split(BRAINSTORM_DELIMITER)[-1]  # strip planning section
 
+        if result.strip() == NO_SUMMARY:  # GPT isn't supposed to do this but does
+            return NO_SUMMARY, []
         text, citations = await extract_citations_from_gpt_output(
             result, combined_text_group, context
         )
@@ -774,26 +785,26 @@ async def per_idea_summarize_texts(
         prev_run_info = await get_prev_run_info(context, "per_idea_summarize_texts")
         if prev_run_info is not None:
             prev_args = PerIdeaSummarizeTextInput.model_validate_json(prev_run_info.inputs_str)
-            prev_ideas: List[Idea] = prev_args.ideas
-            old_ideas_lookup = {idea.title: idea for idea in prev_ideas}
+            prev_input_ideas: List[Idea] = prev_args.ideas
+            old_ideas_lookup = {idea.title: idea for idea in prev_input_ideas}
             prev_input_texts: List[Text] = prev_args.texts
             prev_input_texts = await partition_to_smaller_text_sizes(prev_input_texts, context)
-            prev_output_texts: List[Text] = prev_run_info.output  # type:ignore
+            prev_output_ideas: List[Idea] = prev_run_info.output  # type:ignore
             # get the title to text mapping for the old output texts, the titles are the idea titles
-            old_output_text_dict: Dict[str, Text] = {
-                text.title: text for text in prev_output_texts if text.title is not None
+            old_output_history_dict: Dict[str, HistoryEntry] = {
+                idea.title: idea.history[-1] for idea in prev_output_ideas
             }
             curr_input_texts = set(args.texts)
             old_input_texts = set(prev_input_texts)
-            new_texts = list(curr_input_texts - old_input_texts)
-            new_ideas = []
+            temp_new_ideas = []
             for idea in args.ideas:
                 if idea.title not in old_ideas_lookup:
-                    new_ideas.append(idea)
+                    temp_new_ideas.append(idea)
                     continue
-                old_output_text = old_output_text_dict[idea.title]
-                old_summary = old_output_text.val
-                all_old_citations = cast(List[TextCitation], old_output_text.history[-1].citations)
+                old_summary = cast(str, old_output_history_dict[idea.title].explanation)
+                all_old_citations = cast(
+                    List[TextCitation], old_output_history_dict[idea.title].citations
+                )
                 for citation in all_old_citations:
                     citation.source_text.reset_id()  # need to do this so we can match them
                 remaining_citations = [
@@ -806,6 +817,8 @@ async def per_idea_summarize_texts(
                     all_old_citations,
                     old_summary,
                 )
+            new_texts = list(curr_input_texts - old_input_texts)
+            new_ideas = temp_new_ideas
 
     except Exception as e:
         logger.warning(
@@ -1565,75 +1578,13 @@ async def run_profile_match(
     profile_output_instruction_str: str,
     context: PlanRunContext,
     use_cache: bool = True,
+    detailed_log: bool = True,
     crash_on_empty: bool = True,
 ) -> List[StockID]:
+
     logger = get_prefect_logger(__name__)
     if context.task_id is None:
         return []  # for mypy
-
-    # TODO: This needs to be moved outside the profile match helper function
-    prev_run_info = None
-    try:  # since everything associated with diffing is optional, put in try/except
-        if use_cache:
-            prev_run_info = await get_prev_run_info(context, "filter_stocks_by_profile_match")
-        else:
-            prev_run_info = None
-        if prev_run_info is not None:
-            prev_args = FilterStocksByProfileMatch.model_validate_json(prev_run_info.inputs_str)
-            prev_output: List[StockID] = prev_run_info.output  # type:ignore
-
-            # start by finding the differences in the input texts for the two runs
-            prev_stock_text_lookup = get_stock_text_lookup(prev_args.texts)
-            current_stock_text_lookup = get_stock_text_lookup(texts)
-            diff_text_stocks = []
-            same_text_stocks = []
-            stock_text_diff = {}
-            current_input_set = set(stocks)
-            for stock in stocks:
-                added_text_diff = get_text_diff(
-                    current_stock_text_lookup.get(stock, []), prev_stock_text_lookup.get(stock, [])
-                )
-                removed_text_diff = get_text_diff(
-                    prev_stock_text_lookup.get(stock, []),
-                    current_stock_text_lookup.get(stock, []),
-                )
-                if added_text_diff or removed_text_diff:
-                    diff_text_stocks.append(stock)
-                    if added_text_diff:
-                        stock_text_diff[stock] = added_text_diff
-                else:  # make sure we NEVER rubber stamp stocks with have citations that are missing
-                    missing_citations = False
-                    for output_stock in prev_output:
-                        if output_stock == stock:
-                            for citation in output_stock.history[-1].citations:
-                                if (
-                                    isinstance(citation, TextCitation)
-                                    and citation.source_text not in current_input_set
-                                ):
-                                    missing_citations = True
-                                    break
-                            break
-
-                    if missing_citations:
-                        diff_text_stocks.append(stock)
-                    else:
-                        same_text_stocks.append(stock)
-
-            # we are only going to do main pass for stocks that have some text difference
-            # relative to previous run
-            await tool_log(
-                f"No new information for {len(same_text_stocks)} stocks, skipping filtering for these stocks",
-                context=context,
-            )
-            stocks = diff_text_stocks
-
-    except Exception as e:
-        logger.warning(f"Error doing text diff from previous run: {e}")
-
-    aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(stocks, texts)
-    str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
-        aligned_text_groups.val, include_header=True, text_group_numbering=True
-    )
 
     profile_str: str = ""
     if isinstance(profile, TopicProfiles):
@@ -1653,6 +1604,98 @@ async def run_profile_match(
             "profile must be either a string or a TopicProfiles object "
             "in filter_stocks_by_profile_match function!"
         )
+
+    # Save the original text ids to compare against the prev texts, no need to
+    # save the whole text object
+    original_text = set(texts)
+    texts = await partition_to_smaller_text_sizes(texts, context=context)  # type: ignore
+    split_texts_set = set(texts)
+    filtered_down_texts = await classify_stock_text_relevancies_for_profile(
+        texts, profiles_str=profile_str, context=context  # type: ignore
+    )
+
+    # TODO: This needs to be moved outside the profile match helper function
+    prev_run_info = None
+    try:  # since everything associated with diffing is optional, put in try/except
+        if use_cache:
+            prev_run_info = await get_prev_run_info(context, "filter_stocks_by_profile_match")
+        else:
+            prev_run_info = None
+        if prev_run_info is not None:
+            prev_args = FilterStocksByProfileMatch.model_validate_json(prev_run_info.inputs_str)
+            prev_output_stocks: List[StockID] = prev_run_info.output  # type:ignore
+
+            # start by finding the differences in the input texts for the two runs,
+            # need to start by partitioning and reclassifying the previous texts
+            partitioned_prev_texts = cast(
+                List[StockText],
+                await partition_to_smaller_text_sizes(
+                    prev_args.texts, context=context  # type: ignore
+                ),
+            )
+            prev_stock_text_lookup = get_stock_text_lookup(partitioned_prev_texts)
+            current_stock_text_lookup = get_stock_text_lookup(filtered_down_texts)
+
+            prev_stock_id_by_gbi_lookup = {stock.gbi_id: stock for stock in prev_output_stocks}
+
+            diff_text_stocks = []
+            same_text_stocks = []
+            stock_text_diff = {}
+            current_input_set = set(stocks)
+            for stock in stocks:
+                added_text_diff = get_text_diff(
+                    current_stock_text_lookup.get(stock, []), prev_stock_text_lookup.get(stock, [])
+                )
+                if added_text_diff:
+                    diff_text_stocks.append(stock)
+                    if added_text_diff:
+                        stock_text_diff[stock] = added_text_diff
+                else:  # redo ones that have citations that are missing
+                    output_stock = prev_stock_id_by_gbi_lookup.get(stock.gbi_id)
+                    if output_stock:
+                        missing_citations = False
+                        for citation in output_stock.history[-1].citations:
+                            if isinstance(citation, TextCitation):
+                                citation.source_text.reset_id()
+                                if (citation.source_text not in split_texts_set) and (
+                                    citation.source_text not in original_text
+                                ):
+                                    missing_citations = True
+                                    break
+
+                        if missing_citations:
+                            diff_text_stocks.append(stock)
+                        else:
+                            same_text_stocks.append(stock)
+
+            # we are only going to do main pass for stocks that have some text difference
+            # relative to previous run
+            stocks = diff_text_stocks
+
+    except Exception as e:
+        logger.warning(f"Error doing text diff from previous run: {e}")
+
+    stocks_with_texts: List[StockID] = []
+    gbi_ids_with_texts = set([text.stock_id.gbi_id for text in filtered_down_texts])  # type: ignore
+    for stock in stocks:
+        if stock.gbi_id in gbi_ids_with_texts:
+            stocks_with_texts.append(stock)
+
+    if detailed_log:
+        no_info_stock_count = len(stocks) - len(stocks_with_texts)
+        if no_info_stock_count > 0:
+            await tool_log(
+                f"No new relevant information for {no_info_stock_count} stocks, skipping these stocks",
+                context=context,
+            )
+
+    aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(
+        stocks_with_texts, filtered_down_texts
+    )
+
+    str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
+        aligned_text_groups.val, include_header=True, text_group_numbering=True
+    )
 
     # prepare prompts
     profile_filter_main_prompt = Prompt(
@@ -1685,9 +1728,11 @@ async def run_profile_match(
     )
     cheap_llm = GPT(context=gpt_context, model=GPT4_O_MINI)
     stock_whitelist: Set[StockID] = set()
-    await tool_log(
-        f"Starting filtering with {len(aligned_text_groups.val.keys())} stocks", context=context
-    )
+    if detailed_log:
+        await tool_log(
+            f"Starting filtering with {len(aligned_text_groups.val.keys())} stocks",
+            context=context,
+        )
 
     if is_using_complex_profile:
         simple_profile_filter_sys_prompt = None
@@ -1714,10 +1759,11 @@ async def run_profile_match(
         if is_relevant:
             stock_whitelist.add(stock)
 
-    await tool_log(
-        f"Completed a surface level round of filtering. {len(stock_whitelist)} stocks remaining.",
-        context=context,
-    )
+    if detailed_log:
+        await tool_log(
+            f"Completed a surface level round of filtering. {len(stock_whitelist)} stocks remaining.",
+            context=context,
+        )
     llm = GPT(context=gpt_context, model=SONNET)
     stock_reason_map: Dict[StockID, Tuple[str, List[Citation]]] = {
         stock: (reason, citations)
@@ -1744,10 +1790,11 @@ async def run_profile_match(
         stock for stock in aligned_text_groups.val.keys() if stock in stock_reason_map
     ]
 
-    await tool_log(
-        f"Completed a more in-depth round of filtering. {len(filtered_stocks)} stocks remaining.",
-        context=context,
-    )
+    if detailed_log:
+        await tool_log(
+            f"Completed a more in-depth round of filtering. {len(filtered_stocks)} stocks remaining.",
+            context=context,
+        )
 
     # No need for an else since we can guarantee at this point one is not None, appeases linter
     if isinstance(profile, TopicProfiles):
@@ -1767,7 +1814,7 @@ async def run_profile_match(
         if prev_run_info is not None:
             if context.diff_info is not None:  # collect info for automatic diff
                 prev_input_set = set(prev_args.stocks)
-                prev_output_set = set(prev_output)
+                prev_output_set = set(prev_output_stocks)
                 added_stocks = []
                 for stock in filtered_stocks_with_scores:
                     if stock in prev_input_set and stock not in prev_output_set:
@@ -1791,8 +1838,12 @@ async def run_profile_match(
 
                 # identify stocks that didn't make it through this pass of the tool but did last time
 
-                for stock in prev_output:
-                    if stock in current_input_set and stock not in current_output_set:
+                for stock in prev_output_stocks:
+                    if (
+                        stock in current_input_set
+                        and stock not in current_output_set
+                        and stock not in same_text_stocks
+                    ):
                         removed_stocks.append(stock)
 
                 removed_diff_info = await profile_filter_removed_diff_info(
@@ -1832,7 +1883,7 @@ async def run_profile_match(
                 old_pass_count = 0
                 for new_stock in same_text_stocks:
                     found_stock = False
-                    for old_stock in prev_output:
+                    for old_stock in prev_output_stocks:
                         if old_stock == new_stock:
                             found_stock = True
                             break
@@ -1845,10 +1896,11 @@ async def run_profile_match(
                             filtered_stocks_with_scores.append(stock_with_old_history)
 
                 if old_pass_count > 0:
-                    await tool_log(
-                        f"Including {old_pass_count} stocks that have no update and passed filter previously",
-                        context=context,
-                    )
+                    if detailed_log:
+                        await tool_log(
+                            f"Including {old_pass_count} stocks that have no update and passed filter previously",
+                            context=context,
+                        )
 
     except Exception as e:
         logger.warning(f"Error duplicating output for stocks with no text changes: {e}")
@@ -1987,11 +2039,17 @@ async def per_idea_filter_stocks_by_profile_match(
 
     prev_run_info = None
 
-    todo_profiles = args.profiles
+    todo_profiles = args.profiles[:]
 
     removed_stocks: Set[StockID] = set()
     cached_profiles: List[TopicProfiles] = []
     cached_filtered_stocks = {}
+
+    # TODO: doing this both here and inside run_profile_match is redundant, but basically has no
+    # effect, and useful to have them available for checking against citations
+    split_texts = cast(
+        List[StockText], await partition_to_smaller_text_sizes(args.texts, context=context)  # type: ignore
+    )
 
     tasks = []
 
@@ -2006,14 +2064,14 @@ async def per_idea_filter_stocks_by_profile_match(
             new_stocks = set(args.stocks)
             added_stocks = new_stocks - old_stocks
             removed_stocks = old_stocks - new_stocks
-            all_texts = set(args.texts)
+            all_texts = set(args.texts) | set(split_texts)
             prev_output: StockGroups = prev_run_info.output  # type:ignore
             prev_group_lookup = {group.name: group for group in prev_output.stock_groups}
+            using_cache_count = 0
             for profile in args.profiles:
                 if (
-                    profile.initial_idea
+                    profile.initial_idea in profile_idea_lookup
                     and profile_idea_lookup[profile.initial_idea] in old_ideas
-                    and profile.topic
                     and profile.topic in prev_group_lookup
                 ):
                     must_do_stocks = list(added_stocks)
@@ -2023,13 +2081,14 @@ async def per_idea_filter_stocks_by_profile_match(
                                 citation.source_text.reset_id()
                                 if citation.source_text not in all_texts:
                                     must_do_stocks.append(stock)
+                                    break
 
                     if must_do_stocks:
                         tasks.append(
                             run_profile_match(
                                 stocks=must_do_stocks,
                                 profile=profile,
-                                texts=args.texts,
+                                texts=split_texts,
                                 profile_filter_main_prompt_str=args.profile_filter_main_prompt,
                                 profile_filter_sys_prompt_str=profile_filter_sys_prompt,
                                 profile_output_instruction_str=args.profile_output_instruction,
@@ -2047,8 +2106,15 @@ async def per_idea_filter_stocks_by_profile_match(
                         for stock in old_group.stocks
                         if stock not in removed_stocks and stock not in must_do_stocks
                     ]
+                    if len(cached_filtered_stocks[profile.initial_idea]) > 0:
+                        using_cache_count += 1
                     todo_profiles.remove(profile)
                     cached_profiles.append(profile)
+
+            if using_cache_count > 0:
+                await tool_log(
+                    f"Using previous run filter results for {using_cache_count} ideas", context
+                )
 
     except Exception as e:
         logger.warning(f"Error doing text diff from previous run: {e}")
@@ -2058,12 +2124,13 @@ async def per_idea_filter_stocks_by_profile_match(
             run_profile_match(
                 stocks=args.stocks,
                 profile=profile,
-                texts=args.texts,
+                texts=split_texts,
                 profile_filter_main_prompt_str=args.profile_filter_main_prompt,
                 profile_filter_sys_prompt_str=profile_filter_sys_prompt,
                 profile_output_instruction_str=args.profile_output_instruction,
                 context=context,
                 use_cache=False,
+                detailed_log=False,
                 crash_on_empty=False,
             )
         )
@@ -2073,16 +2140,15 @@ async def per_idea_filter_stocks_by_profile_match(
     # No need to log any of this logic, logs in run_profile_match are sufficient
     stock_groups: List[StockGroup] = []
     for profile, filtered_stocks in zip(cached_profiles + todo_profiles, filtered_stocks_list):
-        if len(filtered_stocks) > 0:
-            if profile.initial_idea in cached_filtered_stocks:
-                stock_groups.append(
-                    StockGroup(
-                        name=profile.topic,
-                        stocks=filtered_stocks + cached_filtered_stocks[profile.initial_idea],
-                    )
+        if profile.initial_idea in cached_filtered_stocks:
+            stock_groups.append(
+                StockGroup(
+                    name=profile.topic,
+                    stocks=filtered_stocks + cached_filtered_stocks[profile.initial_idea],
                 )
-            else:
-                stock_groups.append(StockGroup(name=profile.topic, stocks=filtered_stocks))
+            )
+        elif filtered_stocks:
+            stock_groups.append(StockGroup(name=profile.topic, stocks=filtered_stocks))
 
     return StockGroups(stock_groups=stock_groups)
 

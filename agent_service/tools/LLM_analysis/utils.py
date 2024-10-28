@@ -10,6 +10,8 @@ from agent_service.io_type_utils import ComplexIOBase, IOTypeBase
 from agent_service.io_types.text import (
     DEFAULT_TEXT_TYPE,
     NewsText,
+    StockText,
+    Text,
     TextCitation,
     TextCitationGroup,
     TextGroup,
@@ -25,8 +27,11 @@ from agent_service.tools.LLM_analysis.constants import (
 from agent_service.tools.LLM_analysis.prompts import (
     KEY_PHRASE_PROMPT,
     SECOND_ORDER_CITATION_PROMPT,
+    TEXT_SNIPPET_RELEVANCY_MAIN_PROMPT,
+    TEXT_SNIPPET_RELEVANCY_SYS_PROMPT,
 )
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.output_utils.output_construction import PreparedOutput
 from agent_service.utils.prefect import get_prefect_logger
@@ -270,3 +275,62 @@ async def get_second_order_citations(
                     new_citations.append(new_citation)
 
     return new_citations
+
+
+async def classify_stock_text_relevancy_for_profile(
+    text: str,
+    profiles_str: str,
+    company_name: str,
+    llm: GPT,
+) -> bool:
+    output = await llm.do_chat_w_sys_prompt(
+        main_prompt=TEXT_SNIPPET_RELEVANCY_MAIN_PROMPT.format(
+            company_name=company_name,
+            profiles=profiles_str,
+            text_snippet=text,
+        ),
+        sys_prompt=TEXT_SNIPPET_RELEVANCY_SYS_PROMPT.format(),
+        max_tokens=500,
+    )
+
+    try:
+        decision = int(output.strip()[0])
+        if decision == 1:
+            return True
+        else:
+            return False
+    except (json.JSONDecodeError, ValueError, IndexError):
+        logger = get_prefect_logger(__name__)
+        logger.warning(
+            f"Failed to get text snippet relevancy output, got '{output}'", exc_info=True
+        )
+        return False
+
+
+async def classify_stock_text_relevancies_for_profile(
+    texts: List[StockText], profiles_str: str, context: PlanRunContext
+) -> List[StockText]:
+    filtered_texts: List[StockText] = []
+    text_strs = await Text.get_all_strs(texts, include_header=True, include_timestamps=False)
+
+    llm = GPT(
+        model=GPT4_O_MINI,
+        context=create_gpt_context(GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID),
+    )
+    tasks = []
+    for i, text in enumerate(texts):
+        if isinstance(text, StockText):
+            text_str = text_strs[i]
+            # If StockText, there must be a stock_id
+            company_name = text.stock_id.company_name  # type: ignore
+            tasks.append(
+                classify_stock_text_relevancy_for_profile(
+                    text=text_str, profiles_str=profiles_str, company_name=company_name, llm=llm
+                )
+            )
+
+    results = await gather_with_concurrency(tasks, n=200)
+    for i, relevancy_descision in enumerate(results):
+        if relevancy_descision:
+            filtered_texts.append(texts[i])
+    return filtered_texts

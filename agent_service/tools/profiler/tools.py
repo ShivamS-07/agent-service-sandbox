@@ -26,6 +26,7 @@ from agent_service.tools.profiler.prompts import (
     IMPACT_SYS,
     PER_IDEA_GENERATE_PROFILE_DESCRIPTION,
 )
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.date_utils import get_now_utc
@@ -129,7 +130,7 @@ async def per_idea_generate_profiles(
             prev_output: List[TopicProfiles] = prev_run_info.output  # type:ignore
             old_profile_lookup = {profile.initial_idea: profile for profile in prev_output}
             existing_profile_lookup = {
-                idea: old_profile_lookup[idea.title]
+                idea.title: old_profile_lookup[idea.title]
                 for idea in prev_args.ideas
                 if idea.title in old_profile_lookup
             }
@@ -142,9 +143,11 @@ async def per_idea_generate_profiles(
     topic_profiles_for_ideas: List[TopicProfiles] = []
     tasks = []
 
+    existing_profile_count = 0
     for idea in args.ideas:
-        if idea in existing_profile_lookup:
-            tasks.append(identity(existing_profile_lookup[idea]))
+        if idea.title in existing_profile_lookup:
+            tasks.append(identity(existing_profile_lookup[idea.title]))
+            existing_profile_count += 1
             continue
         try:
             related_news_texts = await get_news_articles_for_topics(
@@ -162,6 +165,8 @@ async def per_idea_generate_profiles(
             logger.warning(f"Couldn't generate profiles for idea: {idea.title}")
 
     topic_profiles_for_ideas = await gather_with_concurrency(tasks, n=10)
+    if existing_profile_count > 0:
+        await tool_log(f"Using existing profiles for {existing_profile_count} ideas", context)
     return topic_profiles_for_ideas
 
 
