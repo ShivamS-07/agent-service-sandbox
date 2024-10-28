@@ -2,7 +2,7 @@ import datetime
 import logging
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional, Union, cast
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union, cast
 
 import numpy as np
 import pandas as pd
@@ -531,15 +531,18 @@ class TableOutputColumn(BaseModel):
 # strings. Otherwise, a string representing a year ("2022") will be converted to
 # some weird datetime. This only impacts cases where we serialize and
 # deserialize TableOutput specifically, which is really only done when caching.
-CellPrimitiveType = Union[
-    int,
-    str,
-    bool,
-    float,
-    datetime.date,
-    datetime.datetime,
+CellPrimitiveType = Annotated[
+    Union[
+        str,
+        int,
+        bool,
+        float,
+        datetime.date,
+        datetime.datetime,
+    ],
+    "left_to_right",
 ]
-OutputCellType = Union[CellPrimitiveType, StockMetadata, ScoreOutput]
+OutputCellType = Union[StockMetadata, ScoreOutput, CellPrimitiveType]
 
 
 class TableOutput(Output):

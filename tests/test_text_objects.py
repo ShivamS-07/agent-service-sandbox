@@ -58,20 +58,6 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
                 ],
                 expected_result='This```{"type": "citation", "citation_id": "cit1"}``` week ```{"gbi_id": 714, "symbol": "", "company_name": "", "isin": "", "sector": null, "subindustry": null, "exchange": null, "type": "stock", "text": "AAPL"}``` increased',  # noqa
             ),
-            # More than 5 citations in same place should limit to 5
-            param(
-                text="This is a test\nHello!",
-                text_objects=[
-                    CitationTextObject(citation_id="cit1", index=3),
-                    CitationTextObject(citation_id="cit2", index=3),
-                    CitationTextObject(citation_id="cit3", index=3),
-                    CitationTextObject(citation_id="cit4", index=3),
-                    CitationTextObject(citation_id="cit5", index=3),
-                    CitationTextObject(citation_id="cit6", index=3),
-                    CitationTextObject(citation_id="cit7", index=3),
-                ],
-                expected_result='This```{"type": "citation", "citation_id": "cit1"}``` ```{"type": "citation", "citation_id": "cit2"}``` ```{"type": "citation", "citation_id": "cit3"}``` ```{"type": "citation", "citation_id": "cit4"}``` ```{"type": "citation", "citation_id": "cit5"}``` is a test\nHello!',  # noqa
-            ),
         ]
     )
     async def test_render_text_objects(

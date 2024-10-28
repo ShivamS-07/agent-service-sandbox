@@ -96,9 +96,9 @@ class TextObject(SerializeableBase):
         # that index (in the very strange/rare case there are duplicates)
         # E.g. "Apple Inc." should be highlighted over just "Apple".
         for obj in sorted(objects, key=lambda o: (o.end_index or 0) - (o.index or 0)):
-            if obj.end_index and obj.index:
+            if obj.end_index is not None and obj.index is not None:
                 index_replacement_object_map[obj.index] = obj
-            elif obj.index:
+            elif obj.index is not None:
                 index_object_map[obj.index].append(obj)
 
         i = 0
@@ -107,6 +107,7 @@ class TextObject(SerializeableBase):
             # Handle texts with ONLY text objects by making sure there's at
             # least one character.
             text = " "
+
         while i < len(text):
             if i not in index_object_map and i not in index_replacement_object_map:
                 output_buffer.append(text[i])
@@ -120,7 +121,7 @@ class TextObject(SerializeableBase):
 
             if i in index_object_map:
                 # Simple case, just keep outputting the objects one after the other
-                text_objects = index_object_map[i][:5]  # Limit to the first 5 objects
+                text_objects = index_object_map[i]
                 output_buffer.append(text[i])
                 object_list = []
                 for obj in text_objects:

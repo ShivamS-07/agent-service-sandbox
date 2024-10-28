@@ -32,7 +32,8 @@ class RedisCacheBackend(CacheBackend):
 
     async def get(self, key: str, ttl: Optional[int] = None) -> Optional[IOType]:
         # redis implements ttl on insert, so ignored here
-        return await asyncio.to_thread(self.client.get, key=key)
+        val = await asyncio.to_thread(self.client.get, key=key)
+        return val
 
     async def set(self, key: str, val: IOType, ttl: Optional[int] = None) -> None:
         await asyncio.to_thread(self.client.set, key=key, val=val, ttl=ttl)
