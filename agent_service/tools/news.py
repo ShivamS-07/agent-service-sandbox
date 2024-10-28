@@ -76,23 +76,30 @@ async def _get_news_developments_helper(
     )  # add extra time to prevent timezone weirdness
 
     sql = """
-            WITH t AS (
-              SELECT
-                snt.topic_id,
-                CASE WHEN snt.gbi_id = -1 THEN sntm.gbi_id ELSE snt.gbi_id END AS gbi_id,
-                snt.topic_descriptions,
-                snt.created_at
-              FROM nlp_service.stock_news_topics snt
-              LEFT JOIN nlp_service.stock_news_topic_map sntm ON snt.topic_id = sntm.topic_id
-            )
-            SELECT t.topic_id::TEXT, t.gbi_id, t.topic_descriptions,
+        WITH articles AS (
+        SELECT
+                sn.topic_id,
                 MIN(sn.published_at) AS first_article_date,
                 MAX(sn.published_at) AS last_article_date
-            FROM nlp_service.stock_news sn
-            JOIN t ON sn.topic_id = t.topic_id
-            WHERE t.gbi_id = ANY(%(gbi_ids)s) AND sn.topic_id NOTNULL
-            GROUP BY t.topic_id, t.gbi_id, t.topic_descriptions
-            HAVING MAX(sn.published_at) >= %(start_date)s AND MIN(sn.published_at) <= %(end_date)s
+        FROM
+                nlp_service.stock_news sn
+        WHERE
+                sn.published_at BETWEEN %(start_date)s AND %(end_date)s
+                AND sn.topic_id IN (
+                  SELECT snt.topic_id
+                  FROM nlp_service.stock_news_topics snt
+                  LEFT JOIN nlp_service.stock_news_topic_map sntm ON
+                        snt.topic_id = sntm.topic_id
+                  WHERE sntm.gbi_id = ANY(%(gbi_ids)s) OR snt.gbi_id = ANY(%(gbi_ids)s)
+                )
+        GROUP BY sn.topic_id )
+        SELECT articles.topic_id::TEXT,
+               articles.first_article_date,
+               articles.last_article_date,
+               t.topic_descriptions,
+               t.gbi_id
+        FROM articles
+        JOIN nlp_service.stock_news_topics t ON t.topic_id = articles.topic_id
     """
     rows = get_psql().generic_read(
         sql,
