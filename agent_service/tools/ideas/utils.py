@@ -1,4 +1,4 @@
-from typing import List, Set
+from typing import List, Optional, Set
 
 from agent_service.GPT.constants import GPT4_O_MINI
 from agent_service.GPT.tokens import GPTTokenizer
@@ -8,7 +8,7 @@ from agent_service.tools.ideas.constants import (
     MAX_TEXT_GROUP_TOKENS,
     MIN_TEXT_GROUP_TOKENS,
 )
-from agent_service.utils.feature_flags import get_ld_flag, get_user_context
+from agent_service.utils.feature_flags import get_ld_flag
 
 
 async def create_small_text_groups(input_texts: List[Text]) -> List[List[Text]]:
@@ -43,9 +43,8 @@ async def create_small_text_groups(input_texts: List[Text]) -> List[List[Text]]:
     return output_text_groups
 
 
-def ideas_enabled(user_id: str) -> bool:
-    ld_user = get_user_context(user_id)
-    result = get_ld_flag("agent-svc-ideas-tools-enabled", default=False, user_context=ld_user)
+def ideas_enabled(user_id: Optional[str]) -> bool:
+    result = get_ld_flag("agent-svc-ideas-tools-enabled", default=False, user_context=user_id)
     return result
 
 

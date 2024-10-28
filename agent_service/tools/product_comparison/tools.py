@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -21,7 +21,7 @@ from agent_service.tools.product_comparison.prompts import (
 )
 from agent_service.tools.product_comparison.websearch import WebScraper
 from agent_service.types import PlanRunContext
-from agent_service.utils.feature_flags import get_ld_flag, get_user_context
+from agent_service.utils.feature_flags import get_ld_flag
 from agent_service.utils.postgres import SyncBoostedPG
 from agent_service.utils.string_utils import repair_json_if_needed
 
@@ -56,10 +56,9 @@ async def get_important_specs(
     return json.loads(repair_json_if_needed(result))
 
 
-def enabler_function(user_id: str) -> bool:
-    ld_user = get_user_context(user_id)
-    result = get_ld_flag("product-comparison-tool", default=False, user_context=ld_user)
-    logger.info(f"product comparison tool found?: {result}")
+def enabler_function(user_id: Optional[str]) -> bool:
+    result = get_ld_flag("product-comparison-tool", default=False, user_context=user_id)
+    logger.info(f"product comparison tool enabled?: {result}")
     return result
 
 

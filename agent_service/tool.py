@@ -177,7 +177,7 @@ class Tool:
     is_output_tool: bool = False
     store_output: bool = True
     enabled: bool = True
-    enabled_checker_func: Optional[Callable[[str], bool]] = None
+    enabled_checker_func: Optional[Callable[[Optional[str]], bool]] = None
 
     def to_function_header(self) -> str:
         """
@@ -348,9 +348,7 @@ class ToolRegistry:
             for tool in tool_dict.values():
                 if not tool.enabled:
                     continue
-                elif tool.enabled_checker_func and not (
-                    user_id and tool.enabled_checker_func(user_id)
-                ):
+                elif tool.enabled_checker_func and not (tool.enabled_checker_func(user_id)):
                     continue
                     # If there is a checker, only continue if there is a user ID which results in a true checker
                 tool_descriptions.append(tool.to_function_header())
@@ -390,7 +388,7 @@ def tool(
     create_prefect_task: bool = False,
     is_visible: bool = True,
     enabled: bool = True,
-    enabled_checker_func: Optional[Callable[[str], bool]] = None,
+    enabled_checker_func: Optional[Callable[[Optional[str]], bool]] = None,
     reads_chat: bool = False,
     update_instructions: Optional[str] = None,
     tool_registry: Type[ToolRegistry] = ToolRegistry,

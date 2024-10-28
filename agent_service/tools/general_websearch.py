@@ -10,7 +10,7 @@ from agent_service.tools.product_comparison.brightdata_websearch import (
     get_web_texts_async,
 )
 from agent_service.types import PlanRunContext
-from agent_service.utils.feature_flags import get_ld_flag, get_user_context
+from agent_service.utils.feature_flags import get_ld_flag
 
 URLS_TO_SCRAPE = 10
 
@@ -30,9 +30,8 @@ class GeneralWebSearchInput(ToolArgs):
 logger = logging.getLogger(__name__)
 
 
-def enabler_function(user_id: str) -> bool:
-    ld_user = get_user_context(user_id)
-    result = get_ld_flag("web-search-tool", default=False, user_context=ld_user)
+def enabler_function(user_id: Optional[str]) -> bool:
+    result = get_ld_flag("web-search-tool", default=False, user_context=user_id)
     logger.info(f"Web search tool being used: {result}")
     return result
 

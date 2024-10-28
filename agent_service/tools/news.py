@@ -432,9 +432,8 @@ class GetNewsAndWebPagesForTopicsInput(ToolArgs):
     max_num_articles_per_topic: Optional[int] = None
 
 
-def web_search_enabled(user_id: str) -> bool:
-    ld_user = get_user_context(user_id)
-    result = get_ld_flag("web-search-tool", default=False, user_context=ld_user)
+def web_search_enabled(user_id: Optional[str]) -> bool:
+    result = get_ld_flag("web-search-tool", default=False, user_context=user_id)
     return result
 
 

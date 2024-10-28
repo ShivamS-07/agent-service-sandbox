@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 from typing import Any, Dict, Optional, Union
 
@@ -12,6 +13,8 @@ from gbi_common_py_utils.utils.feature_flags import (
 
 from agent_service.utils.postgres import get_psql
 from definitions import CONFIG_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def __init_ld_client() -> ldclient.LDClient:
@@ -33,7 +36,7 @@ def get_user_context(user_id: str) -> LDUser:
     return create_user_from_userid(user_id=user_id, db=psql)
 
 
-def get_ld_flag(flag_name: str, default: Any, user_context: Optional[LDUser]) -> Any:
+def get_ld_flag(flag_name: str, default: Any, user_context: Union[None, str, LDUser]) -> Any:
     """
     Evaluate a flag for a user, defaulting to some value if the flag is not available.
     """
@@ -43,9 +46,19 @@ def get_ld_flag(flag_name: str, default: Any, user_context: Optional[LDUser]) ->
     except Exception:
         __init_ld_client()
         client = ldclient.get()
-    if user_context is None:
-        user_context = create_anonymous_user()
-    result = client.variation(flag_name, user_context.to_dict(), default)
+
+    if isinstance(user_context, str):
+        try:
+            result_context = get_user_context(user_context)
+        except Exception:
+            logger.warning(f"Bad userID string input: {user_context}")
+            result_context = create_anonymous_user()
+    elif user_context is None:
+        result_context = create_anonymous_user()
+    else:
+        result_context = user_context
+
+    result = client.variation(flag_name, result_context.to_dict(), default)
     return result
 
 
