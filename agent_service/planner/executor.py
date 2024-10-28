@@ -1,4 +1,5 @@
 import asyncio
+import os
 import pprint
 import time
 import traceback
@@ -10,7 +11,7 @@ from prefect import flow
 from pydantic import validate_call
 
 from agent_service.chatbot.chatbot import Chatbot
-from agent_service.endpoints.models import GetAgentOutputResponse, Status, TaskStatus
+from agent_service.endpoints.models import Status, TaskStatus
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT, set_plan_run_context
 from agent_service.GPT.tokens import GPTTokenizer
@@ -64,12 +65,15 @@ from agent_service.utils.agent_event_utils import (
 )
 from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
 from agent_service.utils.async_utils import gather_with_concurrency
-from agent_service.utils.cache_utils import RedisCacheBackend
+from agent_service.utils.cache_utils import get_redis_cache_backend_for_output
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
-from agent_service.utils.feature_flags import get_ld_flag, get_user_context
-from agent_service.utils.get_agent_outputs import get_agent_output
+from agent_service.utils.feature_flags import (
+    agent_output_cache_enabled,
+    get_ld_flag,
+    get_user_context,
+)
 from agent_service.utils.gpt_logging import (
     GptJobIdType,
     GptJobType,
@@ -257,6 +261,12 @@ async def _run_execution_plan_impl(
         logger=logger,
         db=async_db,
     )
+
+    if agent_output_cache_enabled() and os.getenv("REDIS_HOST") and not context.skip_db_commit:
+        logger.info(f"Using redis output cache. Connecting to {os.getenv('REDIS_HOST')}")
+        redis_cache_backend = get_redis_cache_backend_for_output()
+    else:
+        redis_cache_backend = None
 
     if scheduled_by_automation:
         context.diff_info = {}  # this will be populated during the run
@@ -509,6 +519,7 @@ async def _run_execution_plan_impl(
                 context=context,
                 db=db,
                 is_locked=step.tool_task_id in locked_task_ids,
+                cache_backend=redis_cache_backend,
             )
 
             final_outputs.extend(split_outputs)
@@ -720,21 +731,6 @@ async def _run_execution_plan_impl(
                     run_summary_short=short_diff_summary if short_diff_summary else "",
                     run_summary_long=whats_new_summary if whats_new_summary else "",
                 )
-
-    await get_agent_output(
-        agent_id=context.agent_id,
-        plan_run_id=context.plan_run_id,
-        pg=async_db,
-        cache=(
-            RedisCacheBackend(
-                namespace="agent-output-cache",
-                serialize_func=lambda x: x.model_dump_json(),
-                deserialize_func=lambda x: GetAgentOutputResponse.model_validate_json(x),
-            )
-            if not context.skip_db_commit
-            else None
-        ),
-    )
 
     await async_db.set_plan_run_metadata(
         context=context,

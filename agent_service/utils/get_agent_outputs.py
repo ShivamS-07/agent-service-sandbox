@@ -60,7 +60,7 @@ async def get_agent_output(
 
         run_summary_long.val = run_summary_long.val.replace("\n  ", "\n")
 
-    LOGGER.info(f"total time to get output for {agent_id} {time.perf_counter() - t}")
+    LOGGER.info(f"total time to get output for {agent_id} is {(time.perf_counter() - t):.2f}s")
 
     final_outputs = [output for output in outputs if not output.is_intermediate]
     return GetAgentOutputResponse(

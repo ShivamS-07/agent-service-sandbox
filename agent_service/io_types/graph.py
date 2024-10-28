@@ -45,7 +45,7 @@ class DataPoint(ComplexIOBase):
 
 @io_type
 class GraphDataset(ComplexIOBase):
-    dataset_id: Union[PrimitiveType, StockID, StockMetadata]
+    dataset_id: Union[PrimitiveType, StockMetadata, StockID]
     dataset_id_type: TableColumnType
     points: List[DataPoint]
 
@@ -119,7 +119,7 @@ class LineGraph(Graph):
 
 @io_type
 class PieSection(ComplexIOBase):
-    label: Union[PrimitiveType, StockID, StockMetadata]
+    label: Union[PrimitiveType, StockMetadata, StockID]
     value: PrimitiveType
     citation_refs: List[str] = []
 
@@ -178,13 +178,13 @@ class PieGraph(Graph):
 
 @io_type
 class BarDataPoint(ComplexIOBase):
-    label: Optional[Union[PrimitiveType, StockID, StockMetadata]]
+    label: Optional[Union[PrimitiveType, StockMetadata, StockID]]
     value: Optional[PrimitiveType]
 
 
 @io_type
 class BarData(ComplexIOBase):
-    index: Union[PrimitiveType, StockID, StockMetadata]
+    index: Union[PrimitiveType, StockMetadata, StockID]
     # values are a list of tuples (dataset_id, value)
     values: List[BarDataPoint]
 

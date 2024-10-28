@@ -285,7 +285,7 @@ class AsyncDB:
             res = await get_output_from_io_type(a_io_output, pg=self.pg)
 
             # DO NOT await this - run in background
-            run_async_background(cache.set(key=output_id, val=res))
+            run_async_background(cache.set(key=output_id, val=res, ttl=3600 * 24))
 
             return res
 

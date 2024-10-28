@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import List, Optional, Union
 
@@ -36,6 +37,7 @@ from agent_service.types import Message, Notification, PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.cache_utils import CacheBackend
 from agent_service.utils.constants import NOTIFICATION_SERVICE_QUEUE
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
@@ -140,6 +142,7 @@ async def publish_agent_output(
     is_intermediate: bool = False,
     db: Optional[Postgres] = None,
     is_locked: bool = False,
+    cache_backend: Optional[CacheBackend] = None,
 ) -> None:
     if not db:
         db = get_psql()
@@ -179,6 +182,10 @@ async def publish_agent_output(
         ),
     )
     await publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json())
+
+    if cache_backend and not context.skip_db_commit:
+        for o, rich_output in zip(outputs_with_ids, results):
+            asyncio.create_task(cache_backend.set(key=o.output_id, val=rich_output, ttl=3600 * 24))
 
 
 async def publish_agent_execution_plan(

@@ -1,16 +1,22 @@
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from gbi_common_py_utils.utils.redis import RedisCache
+from pydantic import BaseModel, Field
 
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
+from agent_service.io_types.graph import GraphOutput
+from agent_service.io_types.table import TableOutput
+from agent_service.io_types.text import TextOutput
 from agent_service.utils.postgres import get_psql
 
 DEFAULT_CACHE_TTL = 6 * 60 * 60  # six hours
 
 logger = logging.getLogger(__name__)
+
+REDIS_OUTPUT_CACHE_NAMESPACE = "agent-output-cache-new"
 
 
 class CacheBackend(ABC):
@@ -70,3 +76,26 @@ class PostgresCacheBackend(CacheBackend):
           last_updated = NOW()
         """
         self.db.generic_write(sql, {"key": key, "val": dump_io_type(val)})
+
+
+class OutputWrapper(BaseModel):
+    output: Union[TextOutput, GraphOutput, TableOutput] = Field(discriminator="output_type")
+
+    @classmethod
+    def serialize_func(cls, raw_output: Any) -> Any:
+        to_write = cls(output=raw_output)
+        res = to_write.model_dump_json(serialize_as_any=True)
+        return res
+
+    @classmethod
+    def deserialize_func(cls, raw_input: Any) -> Any:
+        agent_output = cls.model_validate_json(raw_input)
+        return agent_output.output
+
+
+def get_redis_cache_backend_for_output() -> RedisCacheBackend:
+    return RedisCacheBackend(
+        namespace=REDIS_OUTPUT_CACHE_NAMESPACE,
+        serialize_func=OutputWrapper.serialize_func,
+        deserialize_func=OutputWrapper.deserialize_func,
+    )

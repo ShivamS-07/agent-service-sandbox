@@ -110,7 +110,6 @@ from agent_service.endpoints.models import (
     ModifyPlanRunArgsRequest,
     ModifyPlanRunArgsResponse,
     NotificationEmailsResponse,
-    OutputWrapper,
     RearrangeSectionRequest,
     RearrangeSectionResponse,
     RenameMemoryRequest,
@@ -158,7 +157,7 @@ from agent_service.io_types.citations import CitationType, GetCitationDetailsRes
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
-from agent_service.utils.cache_utils import RedisCacheBackend
+from agent_service.utils.cache_utils import get_redis_cache_backend_for_output
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.custom_documents_utils import CustomDocumentException
 from agent_service.utils.date_utils import get_now_utc
@@ -204,23 +203,10 @@ async def lifespan(application: FastAPIExtended) -> AsyncGenerator:
     base_url = "alfa.boosted.ai" if env == "ALPHA" else "agent-dev.boosted.ai"
     channel = "alfa-client-queries" if env == "ALPHA" else "alfa-client-queries-dev"
 
-    def serialize_func(raw_output: Any) -> Any:
-        to_write = OutputWrapper(output=raw_output)
-        res = to_write.model_dump_json(serialize_as_any=True)
-        return res
-
-    def deserialize_func(raw_input: Any) -> Any:
-        agent_output = OutputWrapper.model_validate_json(raw_input)
-        return agent_output.output
-
     cache = None
     if agent_output_cache_enabled() and os.getenv("REDIS_HOST"):
         logger.info(f"Using redis output cache. Connecting to {os.getenv('REDIS_HOST')}")
-        cache = RedisCacheBackend(
-            namespace="agent-output-cache-new",
-            serialize_func=serialize_func,
-            deserialize_func=deserialize_func,
-        )
+        cache = get_redis_cache_backend_for_output()
 
     logger.info("Warming up AsyncDB connection")
     async_db = AsyncDB(pg=AsyncPostgresBase(min_pool_size=1, max_pool_size=3))
