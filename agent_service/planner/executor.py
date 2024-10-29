@@ -7,7 +7,6 @@ from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 from uuid import uuid4
 
 from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
-from prefect import flow
 from pydantic import validate_call
 
 from agent_service.chatbot.chatbot import Chatbot
@@ -30,10 +29,8 @@ from agent_service.planner.action_decide import (
 )
 from agent_service.planner.constants import (
     CHAT_DIFF_TEMPLATE,
-    CREATE_EXECUTION_PLAN_FLOW_NAME,
     EXECUTION_TRIES,
     NO_CHANGE_MESSAGE,
-    RUN_EXECUTION_PLAN_FLOW_NAME,
 )
 from agent_service.planner.errors import (
     AgentCancelledError,
@@ -92,24 +89,14 @@ from agent_service.utils.output_utils.prompts import (
 from agent_service.utils.output_utils.utils import io_type_to_gpt_input, output_for_log
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
 from agent_service.utils.prefect import (
-    FlowRunType,
     cancel_agent_flow,
     get_prefect_logger,
     kick_off_create_execution_plan,
     kick_off_run_execution_plan,
-    prefect_pause_current_agent_flow,
 )
 
-plan_run_deco = (
-    validate_call
-    if get_ld_flag(flag_name="agent-svc-disable-prefect-entirely", default=False, user_context=None)
-    else flow(name=RUN_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{context.plan_run_id}")
-)
-plan_create_deco = (
-    validate_call
-    if get_ld_flag(flag_name="agent-svc-disable-prefect-entirely", default=False, user_context=None)
-    else flow(name=CREATE_EXECUTION_PLAN_FLOW_NAME, flow_run_name="{plan_id}")
-)
+plan_run_deco = validate_call
+plan_create_deco = validate_call
 
 
 async def check_cancelled(
@@ -928,14 +915,12 @@ async def update_execution_after_input(
         "and getting latest execution plan from DB..."
     )
     results = await asyncio.gather(
-        prefect_pause_current_agent_flow(agent_id=agent_id),
         asyncio.to_thread(db.get_running_plan_run, agent_id=agent_id),
         asyncio.to_thread(db.get_latest_execution_plan, agent_id=agent_id),
     )
 
-    flow_run = results[0]
-    plan_run_db = results[1]
-    latest_plan_id, latest_plan, _, _, _ = results[2]
+    plan_run_db = results[0]
+    latest_plan_id, latest_plan, _, plan_status, _ = results[1]
 
     if plan_run_db:
         running_plan_id = plan_run_db["plan_id"]
@@ -1045,8 +1030,7 @@ async def update_execution_after_input(
             )
 
         elif action == FollowupAction.NONE or (
-            action == FollowupAction.RERUN
-            and (flow_run and flow_run.flow_run_type == FlowRunType.PLAN_CREATION)
+            action == FollowupAction.RERUN and (plan_status == PlanStatus.CREATING)
         ):
             if do_chat:
                 message = await chatbot.generate_input_update_no_action_response(chat_context)
@@ -1500,7 +1484,7 @@ async def run_execution_plan_local(
     replan_execution_error: bool = False,
     override_task_output_lookup: Optional[Dict[str, IOType]] = None,
     scheduled_by_automation: bool = False,
-    execution_log: Optional[Dict[str, List[Dict]]] = None,
+    execution_log: Optional[DefaultDict[str, List[dict]]] = None,
 ) -> Tuple[List[IOType], Optional[Dict[str, List[Dict]]]]:
     context.run_tasks_without_prefect = True
     result_to_return, new_execution_log = await run_execution_plan(

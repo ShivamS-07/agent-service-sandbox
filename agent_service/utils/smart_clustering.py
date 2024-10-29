@@ -1,7 +1,6 @@
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
-from scipy.spatial.distance import pdist, squareform
 
 from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O
 from agent_service.GPT.requests import GPT
@@ -101,6 +100,8 @@ class SmartClustering:
         # get pairs of indices (ints) of text_sources which are closest in embedding
         # space. A new pair is added for each text source in text_sources, which means if a pair
         # is already in the list, the next closest text in text_sources is paired, etc.
+        from scipy.spatial.distance import pdist, squareform
+
         embeddings = await self._get_text_embeddings(text_sources)
         sims = -squareform(
             pdist(embeddings, metric="cosine")

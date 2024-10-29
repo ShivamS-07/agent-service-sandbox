@@ -2,7 +2,6 @@ import logging
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from scipy.spatial.distance import cdist
 
 from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O
 from agent_service.GPT.requests import GPT
@@ -61,6 +60,8 @@ class SmartClassifier:
         self, instances: List[str], labels: List[str]
     ) -> List[Tuple[int, int, int]]:
         # get (i, j, k) triples where label k is the ith closest to instance j.
+        from scipy.spatial.distance import cdist
+
         instance_embeddings = await self._get_text_embeddings(instances)
         label_embeddings = await self._get_text_embeddings(labels)
         sims = -cdist(instance_embeddings, label_embeddings, metric="cosine")

@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 from dateutil.parser import parse as date_parse
 from numpy.lib.stride_tricks import sliding_window_view
-from scipy.special import expit  # type: ignore
 
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.hypothesis.constants import (
@@ -356,6 +355,8 @@ def get_hypothesis_match_chart(
     those values, weighted by recency, and pass them through logit function to get a range between -1 and 1
     We return a list of tuples corresponding to the date/averaged support score pairs, in order by date
     """
+    from scipy.special import expit  # type: ignore
+
     ref_time = ref_time if ref_time is not None else get_now_utc()
     latest_end_of_day = closest_end_of_day(ref_time)
     # start dates 1M back from 3M ago

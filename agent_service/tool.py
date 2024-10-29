@@ -37,7 +37,6 @@ from typing import (
 )
 
 import backoff
-from prefect.tasks import Task
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
@@ -59,7 +58,6 @@ from agent_service.utils.cache_utils import (
 )
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
-from agent_service.utils.prefect import get_task_run_name, is_inside_prefect_task
 
 CacheKeyType = str
 
@@ -580,29 +578,8 @@ def tool(
                 else:
                     return await call_func()
 
-            if (
-                create_prefect_task
-                and not context.run_tasks_without_prefect
-                and not is_inside_prefect_task()  # don't use nested tasks
-            ):
-                # Create a prefect task that wraps the function with its caching
-                # logic. This will ensure that retried tasks will include caching.
-                tags = None
-                if not is_visible:
-                    tags = ["hidden", "minitool"]
-                task = Task(
-                    name=tool_name,
-                    task_run_name=get_task_run_name(ctx=context),
-                    fn=main_func,
-                    description=description,
-                    timeout_seconds=timeout_seconds,
-                    tags=tags,
-                )
-
-                value = await task(args, context)
-            else:
-                # Otherwise, run locally without prefect running at all
-                value = await main_func(args, context)
+            # RUN THE TOOL
+            value = await main_func(args, context)
             _handle_tool_result(value, context)
             return value
 

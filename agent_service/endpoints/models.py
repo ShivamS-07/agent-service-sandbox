@@ -3,7 +3,6 @@ import enum
 from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
-from prefect.client.schemas.objects import StateType
 from pydantic import BaseModel, Field
 
 from agent_service.io_types.graph import GraphOutput
@@ -314,19 +313,6 @@ class Status(enum.StrEnum):
     CANCELLED = "CANCELLED"
     ERROR = "ERROR"
     NO_RESULTS_FOUND = "NO_RESULTS_FOUND"
-
-    @classmethod
-    def from_prefect_state(cls, prefect_state: Optional[StateType]) -> "Status":
-        if prefect_state == StateType.RUNNING:
-            return cls.RUNNING
-        elif prefect_state == StateType.COMPLETED:
-            return cls.COMPLETE
-        elif prefect_state in (StateType.FAILED, StateType.CRASHED):
-            return cls.ERROR
-        elif prefect_state in (StateType.CANCELLING, StateType.CANCELLED):
-            return cls.CANCELLED
-        else:
-            return cls.NOT_STARTED
 
 
 class PlanRunStatusInfo(BaseModel):

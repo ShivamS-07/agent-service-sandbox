@@ -2,10 +2,9 @@ import json
 import random
 from collections import defaultdict
 from datetime import date
-from typing import Any, Dict, List, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Union
 
 import pandas as pd
-from data_access_layer.core.dao.securities import SecuritiesMetadataDAO
 from feature_service_proto_v1.feature_metadata_service_pb2 import (
     GetAllFeaturesMetadataResponse,
 )
@@ -66,8 +65,13 @@ from agent_service.utils.string_utils import clean_to_json_if_needed
 
 logger = get_prefect_logger(__name__)
 
+if TYPE_CHECKING:
+    from data_access_layer.core.dao.securities import SecuritiesMetadataDAO
 
-async def get_sec_metadata_dao() -> SecuritiesMetadataDAO:
+
+async def get_sec_metadata_dao() -> "SecuritiesMetadataDAO":
+    from data_access_layer.core.dao.securities import SecuritiesMetadataDAO
+
     return SecuritiesMetadataDAO(cache_sec_metadata=True)
 
 

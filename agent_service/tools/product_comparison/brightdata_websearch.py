@@ -8,9 +8,7 @@ from typing import Any, Dict, List, Optional
 import aioboto3
 import aiohttp
 import requests
-from bs4 import BeautifulSoup
 from gbi_common_py_utils.utils.ssm import get_param
-from PyPDF2 import PdfReader
 
 from agent_service.io_types.text import WebText
 from agent_service.tools.product_comparison.constants import (
@@ -132,6 +130,8 @@ async def req_and_scrape(
             title: Optional[str] = None
             content_type = response.headers.get("Content-Type", "")
             if "application/pdf" in content_type:
+                from PyPDF2 import PdfReader
+
                 pdf_binary_data = await response.read()
                 pdf_file = io.BytesIO(pdf_binary_data)
                 pdf_reader = PdfReader(pdf_file)
@@ -142,6 +142,8 @@ async def req_and_scrape(
                 if pdf_reader.metadata:
                     title = pdf_reader.metadata.title
             elif "text/html" in content_type:
+                from bs4 import BeautifulSoup
+
                 html_content = await response.text()
                 soup = BeautifulSoup(html_content, "html.parser")
 

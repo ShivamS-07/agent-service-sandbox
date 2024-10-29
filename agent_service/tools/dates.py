@@ -4,8 +4,6 @@ import json
 import math
 from typing import Optional, Union
 
-import dateparser
-
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.dates import DateRange
@@ -83,6 +81,8 @@ class DateFromDateStrInput(ToolArgs):
 async def get_date_from_date_str(
     args: DateFromDateStrInput, context: PlanRunContext
 ) -> datetime.date:
+    import dateparser
+
     val = dateparser.parse(args.date_str)
     if not val:
         # use gpt to parse the date string
