@@ -44,6 +44,13 @@ class RedisCacheBackend(CacheBackend):
     async def set(self, key: str, val: IOType, ttl: Optional[int] = None) -> None:
         await asyncio.to_thread(self.client.set, key=key, val=val, ttl=ttl)
 
+    async def invalidate(self, key: str) -> None:
+        redis_key = self.client._make_redis_key(key=key)
+        try:
+            await asyncio.to_thread(self.client.client.delete, redis_key)
+        except Exception as e:
+            logger.error(f"Failed to delete key {redis_key}: {e}")
+
 
 class PostgresCacheBackend(CacheBackend):
     def __init__(self) -> None:
