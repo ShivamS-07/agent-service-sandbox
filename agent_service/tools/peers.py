@@ -15,6 +15,7 @@ from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table, TableColumnMetadata
 from agent_service.io_types.text import EarningsPeersText, Text, TextCitation
+from agent_service.planner.errors import NotFoundError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.LLM_analysis.tools import SummarizeTextInput, summarize_texts
 from agent_service.tools.stocks import (
@@ -406,12 +407,16 @@ async def get_peer_stock_id(
     stock_id: Optional[StockID] = None
     for lookup_str in ["isin", "company_name", "symbol"]:
         if lookup_str in peer_info:
-            stock_id = await stock_identifier_lookup(  # type: ignore
-                StockIdentifierLookupInput(
-                    stock_name=peer_info[lookup_str],
-                ),
-                context=context,
-            )
+            try:
+                stock_id = await stock_identifier_lookup(  # type: ignore
+                    StockIdentifierLookupInput(
+                        stock_name=peer_info[lookup_str],
+                    ),
+                    context=context,
+                )
+            except NotFoundError:
+                pass
+
         if stock_id:
             break
     return stock_id
