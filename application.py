@@ -120,6 +120,7 @@ from agent_service.endpoints.models import (
     RunTemplatePlanRequest,
     RunTemplatePlanResponse,
     SearchAgentQCRequest,
+    SearchAgentQCResponse,
     SetAgentFeedBackRequest,
     SetAgentFeedBackResponse,
     SetAgentScheduleRequest,
@@ -1825,12 +1826,12 @@ async def get_qc_agent_by_user(
 
 @router.post(
     "/agent/qc/search",
-    response_model=List[AgentQCResponse],
+    response_model=SearchAgentQCResponse,
     status_code=status.HTTP_200_OK,
 )
 async def search_agent_qc(
     req: SearchAgentQCRequest, user: User = Depends(parse_header)
-) -> List[AgentQCResponse]:
+) -> SearchAgentQCResponse:
     """
     Search Agent QC records based on various filters
 
@@ -1852,12 +1853,13 @@ async def search_agent_qc(
         )
 
     # Call the service function to search based on the filters
-    agent_qcs = await application.state.agent_service_impl.search_agent_qcs(
+    agent_qcs, total_agent_qcs = await application.state.agent_service_impl.search_agent_qcs(
         search_params=req.search_criteria,
+        pagination=req.pagination,
     )
 
     # Return the list of AgentQC records in the response model format
-    return [AgentQCResponse(agent_qc=agent_qc) for agent_qc in agent_qcs]
+    return SearchAgentQCResponse(agent_qcs=agent_qcs, total_agent_qcs=total_agent_qcs)
 
 
 @router.post(

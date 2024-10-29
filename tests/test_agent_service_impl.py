@@ -16,6 +16,7 @@ from agent_service.endpoints.models import (
     LockAgentOutputRequest,
     MediaType,
     NotificationUser,
+    Pagination,
     SetAgentFeedBackRequest,
     UnlockAgentOutputRequest,
     UpdateAgentRequest,
@@ -809,10 +810,13 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
                 arg2=None,
             )
         ]
-        search_results = self.loop.run_until_complete(self.pg.search_agent_qc(criteria))
+        search_results = self.loop.run_until_complete(
+            self.pg.search_agent_qc(criteria, pagination=Pagination(page_index=0, page_size=10))
+        )
 
         # Verify the search results
-        self.assertEqual(len(search_results), 0)
+        self.assertEqual(len(search_results), 2)
+        self.assertEqual(len(search_results[0]), 0)
 
         criteria_2 = [
             HorizonCriteria(
@@ -828,6 +832,9 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
                 arg2=None,
             ),
         ]
-        search_results = self.loop.run_until_complete(self.pg.search_agent_qc(criteria_2))
+        search_results = self.loop.run_until_complete(
+            self.pg.search_agent_qc(criteria_2, pagination=Pagination(page_index=0, page_size=10))
+        )
         # Verify the search results
-        self.assertEqual(len(search_results), 0)
+        self.assertEqual(len(search_results), 2)
+        self.assertEqual(len(search_results[0]), 0)

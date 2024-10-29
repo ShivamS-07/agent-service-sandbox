@@ -1240,8 +1240,19 @@ class HorizonCriteria(BaseModel):
     arg2: Optional[Any]
 
 
+class Pagination(BaseModel):
+    page_index: int
+    page_size: int
+
+
 class SearchAgentQCRequest(BaseModel):
     search_criteria: List[HorizonCriteria]
+    pagination: Pagination
+
+
+class SearchAgentQCResponse(BaseModel):
+    agent_qcs: List[AgentQC]
+    total_agent_qcs: int
 
 
 class AgentQCResponse(BaseModel):

@@ -104,6 +104,7 @@ from agent_service.endpoints.models import (
     ModifyPlanRunArgsResponse,
     NotificationEmailsResponse,
     NotificationEvent,
+    Pagination,
     PlanRunToolDebugInfo,
     PlanTemplateTask,
     RenameMemoryResponse,
@@ -2095,13 +2096,15 @@ class AgentServiceImpl:
             securities=[MasterSecurity(**security) for security in securities]
         )
 
-    async def search_agent_qcs(self, search_params: List[HorizonCriteria]) -> List[AgentQC]:
+    async def search_agent_qcs(
+        self, search_params: List[HorizonCriteria], pagination: Pagination
+    ) -> Tuple[List[AgentQC], int]:
 
         # Call the database search function
-        agent_qcs = await self.pg.search_agent_qc(search_params)
+        agent_qcs, total_agent_qcs = await self.pg.search_agent_qc(search_params, pagination)
 
         # Return the list of AgentQC objects
-        return agent_qcs
+        return agent_qcs, total_agent_qcs
 
     async def update_qc_agent(self, agent_qc: AgentQC) -> bool:
         try:

@@ -16,6 +16,7 @@ from agent_service.endpoints.models import (
     AgentSchedule,
     CustomNotification,
     HorizonCriteria,
+    Pagination,
     PlanRunStatusInfo,
     SetAgentFeedBackRequest,
     Status,
@@ -1885,9 +1886,12 @@ class AsyncDB:
         records = await self.pg.generic_read(sql, {"user_id": user_id})
         return [AgentQC(**record) for record in records]
 
-    async def search_agent_qc(self, criteria: List[HorizonCriteria]) -> List[AgentQC]:
+    async def search_agent_qc(
+        self, criteria: List[HorizonCriteria], pagination: Pagination
+    ) -> Tuple[List[AgentQC], int]:
         sql = """
         SELECT
+            COUNT(*) over () as total_agent_qcs,
             aqc.agent_qc_id::TEXT, aqc.agent_id::TEXT, ag.agent_name, aqc.plan_id::TEXT, aqc.user_id::TEXT,
             aqc.query, aqc.agent_status,
             aqc.cs_reviewer::TEXT, aqc.eng_reviewer::TEXT, aqc.prod_reviewer::TEXT, aqc.follow_up, aqc.score_rating,
@@ -1946,9 +1950,16 @@ class AsyncDB:
                 logger.warning(f"Unknown operator {criterion.operator=}")
 
         # Always sort by latest agent ran
-        sql += " ORDER BY aqc.created_at DESC"
+        sql += " ORDER BY aqc.created_at DESC LIMIT %(page_size)s OFFSET %(page_index)s"
+        search_params["page_size"] = pagination.page_size
+        search_params["page_index"] = pagination.page_index
         records = await self.pg.generic_read(sql, search_params)
-        return [AgentQC(**record) for record in records]
+        agent_qcs = []
+        total_agent_qcs = 0
+        for record in records:
+            total_agent_qcs = record.pop("total_agent_qcs", 0)
+            agent_qcs.append(AgentQC(**record))
+        return agent_qcs, total_agent_qcs
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:
