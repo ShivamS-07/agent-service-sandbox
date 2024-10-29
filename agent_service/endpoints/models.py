@@ -12,7 +12,11 @@ from agent_service.io_types.text import TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
 from agent_service.types import Message
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.prompt_template import OutputPreview, PromptTemplate
+from agent_service.utils.prompt_template import (
+    OutputPreview,
+    PromptTemplate,
+    UserOrganization,
+)
 from agent_service.utils.scheduling import AgentSchedule
 from agent_service.utils.sidebar_sections import SidebarSection
 
@@ -981,6 +985,7 @@ class Account(BaseModel):
     email: str
     username: str
     name: str
+    organization_id: Optional[str] = None
 
 
 class UpdateUserRequest(BaseModel):
@@ -1110,6 +1115,7 @@ class CreatePromptTemplateRequest(BaseModel):
     prompt: str
     category: str
     plan_run_id: str
+    organization_ids: Optional[List[str]] = None
 
 
 class CreatePromptTemplateResponse(BaseModel):
@@ -1120,6 +1126,7 @@ class CreatePromptTemplateResponse(BaseModel):
     category: str
     created_at: datetime.datetime
     plan_run_id: str
+    organization_ids: Optional[List[str]] = None
 
 
 class UpdatePromptTemplateRequest(BaseModel):
@@ -1130,6 +1137,7 @@ class UpdatePromptTemplateRequest(BaseModel):
     category: str
     plan: ExecutionPlan
     is_visible: bool = False
+    organization_ids: Optional[List[str]] = None
 
 
 class UpdatePromptTemplateResponse(BaseModel):
@@ -1185,6 +1193,10 @@ class DeletePromptTemplateRequest(BaseModel):
 
 class DeletePromptTemplateResponse(BaseModel):
     template_id: str
+
+
+class GetCompaniesResponse(BaseModel):
+    companies: List[UserOrganization]
 
 
 ################################################

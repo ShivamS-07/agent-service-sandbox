@@ -73,6 +73,7 @@ from agent_service.endpoints.models import (
     GetAvailableVariablesResponse,
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
+    GetCompaniesResponse,
     GetCustomDocumentFileInfoResponse,
     GetCustomDocumentFileResponse,
     GetDebugToolArgsResponse,
@@ -1644,6 +1645,7 @@ class AgentServiceImpl:
                 email=account.email,
                 username=account.username,
                 name=account.name,
+                organization_id=str(account.organization_membership.organization_id.id),
             )
             for account in res
         ]
@@ -1801,7 +1803,7 @@ class AgentServiceImpl:
         feature_ids: Optional[List[str]] = None,
         universe_id: Optional[str] = None,
     ) -> GetVariableCoverageResponse:
-        """Get coverage data for specified variables."""
+        """Get coverage data for specified variables"""
         # Set up universe ID based on environment if not provided
         SPY_UNIVERSE_ID_PROD = "4e5f2fd3-394e-4db9-aad3-5c20abf9bf3c"
         SPY_UNIVERSE_ID_DEV = "249a293b-d9e2-4905-94c1-c53034f877c9"
@@ -1923,12 +1925,34 @@ class AgentServiceImpl:
         except GRPCError as e:
             raise CustomDocumentException.from_grpc_error(e) from e
 
-    async def get_prompt_templates(self) -> List[PromptTemplate]:
-        prompt_templates = await self.pg.get_prompt_templates()
-        for template in prompt_templates:
-            preview = get_plan_preview(template.plan)
+    async def get_all_companies(self, user: User) -> GetCompaniesResponse:
+        companies = await self.pg.get_all_companies()
+        return GetCompaniesResponse(companies=companies)
+
+    async def get_prompt_templates(self, user: User, is_user_admin: bool) -> List[PromptTemplate]:
+        prompt_templates_all = await self.pg.get_prompt_templates()
+        user_info = await self.get_account_info(user)
+        user_org_id = user_info.organization_id
+
+        prompt_templates = []
+        for template in prompt_templates_all:
             if template.plan is not None:
-                template.preview = preview
+                if not is_user_admin:
+                    # if user is not admin, show templates that match company_id and templates with no organization_ids
+                    if not template.organization_ids:
+                        template.preview = get_plan_preview(template.plan)
+                        prompt_templates.append(template)
+                    else:
+                        if user_org_id in template.organization_ids:
+                            template.preview = get_plan_preview(template.plan)
+                            prompt_templates.append(template)
+                else:
+                    # if user is admin show all templates
+                    template.preview = get_plan_preview(template.plan)
+                    prompt_templates.append(template)
+            else:
+                LOGGER.error("A prompt template has no plan")
+
         return prompt_templates
 
     async def update_prompt_template(
@@ -1940,6 +1964,7 @@ class AgentServiceImpl:
         category: str,
         plan: ExecutionPlan,
         is_visible: bool = False,
+        organization_ids: Optional[List[str]] = None,
     ) -> UpdatePromptTemplateResponse:
         prompt_template = PromptTemplate(
             template_id=template_id,
@@ -1949,13 +1974,20 @@ class AgentServiceImpl:
             category=category,
             plan=plan,
             is_visible=is_visible,
+            organization_ids=organization_ids,
             created_at=get_now_utc(),
         )
         await self.pg.update_prompt_template(prompt_template)
         return UpdatePromptTemplateResponse(prompt_template=prompt_template)
 
     async def create_prompt_template(
-        self, name: str, description: str, prompt: str, category: str, plan_run_id: str
+        self,
+        name: str,
+        description: str,
+        prompt: str,
+        category: str,
+        plan_run_id: str,
+        organization_ids: Optional[List[str]] = None,
     ) -> CreatePromptTemplateResponse:
 
         # extract plan from agent_id and plan_id
@@ -1971,6 +2003,7 @@ class AgentServiceImpl:
             created_at=now,
             category=category,
             plan=plan,
+            organization_ids=organization_ids,
         )
         # add template to db
         await self.pg.insert_prompt_template(prompt_template)
@@ -1982,6 +2015,7 @@ class AgentServiceImpl:
             created_at=prompt_template.created_at,
             category=prompt_template.category,
             plan_run_id=plan_run_id,
+            organization_ids=organization_ids,
         )
 
     async def set_prompt_template_visibility(

@@ -79,6 +79,7 @@ from agent_service.endpoints.models import (
     GetAvailableVariablesResponse,
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
+    GetCompaniesResponse,
     GetCustomDocumentFileInfoResponse,
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
@@ -1505,12 +1506,26 @@ async def rearrange_section(
 
 
 @router.get(
-    "/template/prompt-templates",
+    "/template/get-all-companies",
+    response_model=GetCompaniesResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_all_companies(user: User = Depends(parse_header)) -> GetCompaniesResponse:
+    if not is_user_agent_admin(user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="User does not have access"
+        )
+    return await application.state.agent_service_impl.get_all_companies(user)
+
+
+@router.get(
+    "/template/get-prompt-templates",
     response_model=GetPromptTemplatesResponse,
     status_code=status.HTTP_200_OK,
 )
-async def get_prompt_templates() -> GetPromptTemplatesResponse:
-    templates = await application.state.agent_service_impl.get_prompt_templates()
+async def get_prompt_templates(user: User = Depends(parse_header)) -> GetPromptTemplatesResponse:
+    is_user_admin = is_user_agent_admin(user.user_id)
+    templates = await application.state.agent_service_impl.get_prompt_templates(user, is_user_admin)
     return GetPromptTemplatesResponse(prompt_templates=templates)
 
 
@@ -1526,6 +1541,7 @@ async def create_prompt_template(req: CreatePromptTemplateRequest) -> CreateProm
         prompt=req.prompt,
         category=req.category,
         plan_run_id=req.plan_run_id,
+        organization_ids=req.organization_ids,
     )
 
 
@@ -1605,6 +1621,7 @@ async def update_prompt_template(
         prompt=req.prompt,
         plan=req.plan,
         is_visible=req.is_visible,
+        organization_ids=req.organization_ids,
     )
 
 

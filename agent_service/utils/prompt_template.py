@@ -31,4 +31,10 @@ class PromptTemplate(BaseModel):
     created_at: datetime.datetime
     plan: ExecutionPlan
     is_visible: bool = False
+    organization_ids: Optional[List[str]] = None
     preview: Optional[List[OutputPreview]] = None
+
+
+class UserOrganization(BaseModel):
+    organization_id: str
+    organization_name: str

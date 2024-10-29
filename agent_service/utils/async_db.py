@@ -41,7 +41,7 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres, SyncBoostedPG
-from agent_service.utils.prompt_template import PromptTemplate
+from agent_service.utils.prompt_template import PromptTemplate, UserOrganization
 from agent_service.utils.sidebar_sections import SidebarSection
 
 logger = logging.getLogger(__name__)
@@ -1514,7 +1514,8 @@ class AsyncDB:
         sql = """
         UPDATE agent.prompt_templates
         SET name = %(name)s, description = %(description)s, prompt = %(prompt)s,
-            category = %(category)s, plan = %(plan)s, is_visible = %(is_visible)s, created_at = %(created_at)s
+            category = %(category)s, plan = %(plan)s, is_visible = %(is_visible)s, created_at = %(created_at)s,
+            organization_ids = %(organization_ids)s
         WHERE template_id = %(template_id)s
         """
         await self.pg.generic_write(
@@ -1527,6 +1528,7 @@ class AsyncDB:
                 "category": prompt_template.category,
                 "plan": prompt_template.plan.model_dump_json(),
                 "is_visible": prompt_template.is_visible,
+                "organization_ids": prompt_template.organization_ids,
                 "created_at": prompt_template.created_at,
             },
         )
@@ -1534,9 +1536,9 @@ class AsyncDB:
     async def insert_prompt_template(self, prompt_template: PromptTemplate) -> None:
         sql = """
         INSERT INTO agent.prompt_templates
-          (template_id, name, description, prompt, category, created_at, plan, is_visible)
+          (template_id, name, description, prompt, category, created_at, plan, is_visible, organization_ids)
         VALUES (%(template_id)s, %(name)s, %(description)s, %(prompt)s,
-                %(category)s, %(created_at)s, %(plan)s, %(is_visible)s)
+                %(category)s, %(created_at)s, %(plan)s, %(is_visible)s, %(organization_ids)s)
         """
         await self.pg.generic_write(
             sql,
@@ -1549,12 +1551,13 @@ class AsyncDB:
                 "created_at": prompt_template.created_at,
                 "plan": prompt_template.plan.model_dump_json(),
                 "is_visible": prompt_template.is_visible,
+                "organization_ids": prompt_template.organization_ids,
             },
         )
 
     async def get_prompt_templates(self) -> List[PromptTemplate]:
         sql = """
-        SELECT template_id::TEXT, name, description, prompt, category, created_at, plan, is_visible
+        SELECT template_id::TEXT, name, description, prompt, category, created_at, plan, is_visible, organization_ids
         FROM agent.prompt_templates
         ORDER BY name ASC
         """
@@ -1572,11 +1575,30 @@ class AsyncDB:
                     category=row["category"],
                     created_at=row["created_at"],
                     is_visible=row["is_visible"],
-                    plan=ExecutionPlan.from_dict(row["plan"]),
+                    organization_ids=(
+                        [str(company_id) for company_id in row["organization_ids"]]
+                        if row["organization_ids"]
+                        else None
+                    ),
+                    plan=ExecutionPlan.model_validate(row["plan"]),
                 )
             )
 
         return res
+
+    async def get_all_companies(self) -> List[UserOrganization]:
+
+        sql = """
+        SELECT id, name FROM user_service.organizations
+        """
+        rows = await self.pg.generic_read(sql=sql)
+        return [
+            UserOrganization(
+                organization_id=str(row["id"]),
+                organization_name=row["name"],
+            )
+            for row in rows
+        ]
 
     async def delete_prompt_template(self, template_id: str) -> None:
         sql = """
