@@ -131,7 +131,7 @@ def get_B3_prefix() -> str:
 
 SUPPORTED_FILE_TYPES = ["Current and Historical Portfolio Holdings"]
 
-DEFAULT_CRON_SCHEDULE = "0 8 * * *"  # Daily at 8am
+DEFAULT_CRON_SCHEDULE = "0 8 * * 1-5"  # Daily at 8am
 
 MEDIA_TO_MIMETYPE = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
