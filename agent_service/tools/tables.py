@@ -254,6 +254,36 @@ something vague like 'average stocks' but rather something specific like 'averag
 in the QQQ'. Do this in all cases, but this is especially critical if you are doing comparisons of
 aggregate statistics across different groupings of stocks.
 
+Note that if you are trying to use this tool to calculate a sector average of some statistic, and
+if you want a table/graph organized by sectors, you must use the table transform for stock groups.
+Do not use this tool to calculate basic sector statistics when the user wants per sector output.
+I repeat, this tool must NEVER, EVER be used for 'per sector' calculations!
+
+However, if you want an average sector statistic for each stock, you may use this tool, but before
+you call the tool you must join the table with your statistics for each stock with a table with the
+sector for each stock. Not only is it essential you add a sector column to the input table,
+you must be also be fully explicit in your transformation_description that you want a sector average
+output for each stock, not per sector!
+That is, do NOT say `calculate the average X for each sector` (if you are doing such a calculation,
+you should be using the per stock groups transform tool), instead you must say `calculate the sector
+average X for each stock, the output table must have a row for every stock`. You MUST do a per stock
+calculation if the user wants a per stock output, if you do a per sector calculation and then try to
+join it with per stock statistics, the tables will not join and you will fail at your task and be fired.
+I repeat, if you are calling this tool with a request to calculate a per sector statistc, you are wrong
+and you will be fired!!!!!!!!!
+
+If you are doing a transform calculation where you are using columns of the table to do the calculation,
+but the client clearly wants to keep the input columns or any other columns currently in the table in
+the final output, you must always explicitly mention in the transformation description that you do not
+wish to drop those columns. Otherwise, the default behavior of this tool when creating new columns is
+to drop any columns that are not created in the process.
+For example, if the client asks for a table with price, earnings, and price to earnings, and asks
+you to calculate price to earnings manually from an input table of price and earnings, you would say
+'calculate price to earnings, please keep the price and earnings columns'. Otherwise price and earnings
+columns will be removed from the output, which will make the client very unhappy in this case. You should
+always consider whether or not you wish to drop the columns every time you transform a table which generates
+a new column.
+
 Do not use this tool directly to calculate monthly/yearly change rates (e.g. revenue growth) for
 stocks. You must use the get_statistic_for_companies tool in all cases where the calculation
 can be done independently per stock, this tool should only be used for cross-stock calculations!

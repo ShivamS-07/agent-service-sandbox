@@ -40,6 +40,7 @@ from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.stock_metadata import get_stock_metadata_rows
 from agent_service.utils.string_utils import (
     clean_to_json_if_needed,
     repair_json_if_needed,
@@ -1086,7 +1087,7 @@ async def get_country_for_stocks(args: GetCountryInput, context: PlanRunContext)
     Returns:
         StockTable: a table of stock identifiers and countries.
     """
-    df = await get_metedata_for_stocks(args.stock_ids, context)
+    df = await get_metadata_for_stocks(args.stock_ids, context)
 
     # we might not have found metadata for all the gbi_ids (rare)
     # so lets select the ones we found and keep them for history
@@ -1129,7 +1130,7 @@ async def get_country_of_domicile_for_stocks(
     Returns:
         StockTable: a table of stock identifiers and countries.
     """
-    df = await get_metedata_for_stocks(args.stock_ids, context)
+    df = await get_metadata_for_stocks(args.stock_ids, context)
 
     # we might not have found metadata for all the gbi_ids (rare)
     # so lets select the ones we found and keep them for history
@@ -1173,7 +1174,7 @@ async def get_currency_for_stocks(args: GetCurrencyInput, context: PlanRunContex
         StockTable: a table of stock identifiers and currencies.
     """
 
-    df = await get_metedata_for_stocks(args.stock_ids, context)
+    df = await get_metadata_for_stocks(args.stock_ids, context)
     new_stock_ids = await StockID.from_gbi_id_list(list(df["gbi_id"]))
     df["Security"] = new_stock_ids
 
@@ -1213,7 +1214,7 @@ async def get_ISIN_for_stocks(args: GetISINInput, context: PlanRunContext) -> St
         StockTable: a table of stock identifiers and isin.
     """
 
-    df = await get_metedata_for_stocks(args.stock_ids, context)
+    df = await get_metadata_for_stocks(args.stock_ids, context)
     new_stock_ids = await StockID.from_gbi_id_list(list(df["gbi_id"]))
     df["Security"] = new_stock_ids
 
@@ -1255,7 +1256,7 @@ async def get_sector_for_stocks(args: GetSectorInput, context: PlanRunContext) -
         StockTable: a table of stock identifiers and sectors.
     """
 
-    df = await get_metedata_for_stocks(args.stock_ids, context)
+    df = await get_metadata_for_stocks(args.stock_ids, context)
     new_stock_ids = await StockID.from_gbi_id_list(list(df["gbi_id"]))
     df["Security"] = new_stock_ids
 
@@ -1300,7 +1301,7 @@ async def get_industry_group_for_stocks(
         StockTable: a table of stock identifiers and industry groups.
     """
 
-    df = await get_metedata_for_stocks(args.stock_ids, context)
+    df = await get_metadata_for_stocks(args.stock_ids, context)
     new_stock_ids = await StockID.from_gbi_id_list(list(df["gbi_id"]))
     df["Security"] = new_stock_ids
 
@@ -1342,7 +1343,7 @@ async def get_industry_for_stocks(args: GetIndustryInput, context: PlanRunContex
         StockTable: a table of stock identifiers and industries.
     """
 
-    df = await get_metedata_for_stocks(args.stock_ids, context)
+    df = await get_metadata_for_stocks(args.stock_ids, context)
     new_stock_ids = await StockID.from_gbi_id_list(list(df["gbi_id"]))
     df["Security"] = new_stock_ids
 
@@ -1386,7 +1387,7 @@ async def get_sub_industry_for_stocks(
         StockTable: a table of stock identifiers and sub industries.
     """
 
-    df = await get_metedata_for_stocks(args.stock_ids, context)
+    df = await get_metadata_for_stocks(args.stock_ids, context)
     new_stock_ids = await StockID.from_gbi_id_list(list(df["gbi_id"]))
     df["Security"] = new_stock_ids
 
@@ -1401,7 +1402,7 @@ async def get_sub_industry_for_stocks(
     return table
 
 
-async def get_metedata_for_stocks(
+async def get_metadata_for_stocks(
     stock_ids: List[StockID], context: PlanRunContext
 ) -> pd.DataFrame:
     """Returns the metadata for each stock
@@ -1418,39 +1419,7 @@ async def get_metedata_for_stocks(
 
     gbi_ids = await StockID.to_gbi_id_list(stock_ids)
 
-    # Find the stocks in the universe
-    sql = """
-    select *,
-    gics1.name AS gics1_name,
-    gics2.name AS gics2_name,
-    gics3.name AS gics3_name,
-    gics4.name AS gics4_name
-    FROM (
-    SELECT gbi_security_id AS gbi_id,
-    security_region AS country,
-    region AS country_of_domicile,
-    ms.isin AS isin,
-    ms.currency AS currency,
-    ms.gics AS gics4_sub_industry,
-    ms.gics / 100 AS gics3_industry,
-    ms.gics / 10000 AS gics2_industry_group,
-    ms.gics / 1000000 AS gics1_sector
-    FROM master_security ms
-    WHERE ms.gbi_security_id = ANY(%(stock_ids)s)
-    AND ms.is_public
-    ) msc
-    LEFT JOIN gic_sector gics1 ON  gics1.id = gics1_sector
-    LEFT JOIN gic_sector gics2 ON  gics2.id = gics2_industry_group
-    LEFT JOIN gic_sector gics3 ON  gics3.id = gics3_industry
-    LEFT JOIN gic_sector gics4 ON  gics4.id = gics4_sub_industry
-    """
-    rows = await db.generic_read(
-        sql,
-        params={
-            "stock_ids": gbi_ids,
-        },
-    )
-
+    rows = await get_stock_metadata_rows(gbi_ids=gbi_ids, pg=db)
     df = pd.DataFrame(rows)
 
     # the column names need to be changed to match the output column labels

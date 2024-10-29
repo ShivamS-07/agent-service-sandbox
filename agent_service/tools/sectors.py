@@ -20,6 +20,7 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.stock_metadata import get_stock_metadata_rows
 from agent_service.utils.string_utils import repair_json_if_needed
 from agent_service.utils.tool_diff import (
     add_task_id_to_stocks_history,
@@ -40,6 +41,42 @@ class SectorID(ComplexIOBase):
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         t: Text = Text(val=f"Sector: {self.sec_name}")
         return await t.to_rich_output(pg=pg, title=title)
+
+
+class GetStockSectorInput(ToolArgs):
+    stock_id: StockID
+
+
+@tool(
+    description=(
+        "This function takes a single StockId and returns the sector of that stock."
+        " Use this function to get the sector for a single stock when the user asks,"
+        " for example, to compare a specific stock against a baseline of stocks in its "
+        " sector, usually you will a this to get a sector and then use the sector filter"
+        " on a standard universe like the S&P 500 to those filter stocks in that sector."
+        " If you want to filter on a sector specifically mentioned by the client do not"
+        " use this tool, look up the sector identifier instead."
+        " If you want to look up the sector for a large number of stocks for the purposes"
+        " of displaying them to the user or doing grouped calculations across multiple "
+        " sectors, do not use this function, you should use the get_sector_for_stocks"
+        " instead."
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    is_visible=True,
+)
+async def get_stock_sector(args: GetStockSectorInput, context: PlanRunContext) -> SectorID:
+    """Returns the Sector of a stock
+
+    Returns:
+        SectorID: sector.
+    """
+
+    rows = await get_stock_metadata_rows(gbi_ids=[args.stock_id.gbi_id])
+    if not rows:
+        return SectorID(sec_id=-1, sec_name="Unknown Sector")
+
+    return SectorID(sec_id=rows[0]["gics1_sector"], sec_name=rows[0]["gics1_name"])
 
 
 @cached(cache=TTLCache(maxsize=1, ttl=ONE_HOUR), lock=Lock())

@@ -3,15 +3,19 @@ import unittest
 from agent_service.io_types.stock import StockID
 from agent_service.planner.errors import NonRetriableError
 from agent_service.tools.sectors import (
+    GetStockSectorInput,
     SectorFilterInput,
     SectorID,
     SectorIdentifierLookupInput,
     get_all_gics_classifications,
     get_default_stock_list,
+    get_stock_sector,
     gics_sector_industry_filter,
     sector_identifier_lookup,
 )
 from agent_service.types import PlanRunContext
+
+AAPL = StockID(gbi_id=714, isin="", symbol="AAPL", company_name="")
 
 
 class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
@@ -22,6 +26,11 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
         from agent_service.utils.logs import init_test_logging
 
         init_test_logging()
+
+    async def test_geT_stock_sector(self):
+        args = GetStockSectorInput(stock_id=AAPL)
+        sector_id = await get_stock_sector(args=args, context=self.context)
+        print(sector_id)
 
     async def test_get_all_gics(self):
         gics = get_all_gics_classifications()

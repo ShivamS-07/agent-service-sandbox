@@ -42,7 +42,7 @@ from agent_service.tools.portfolio import (
     PORTFOLIO_PERFORMANCE_LEVELS,
     PORTFOLIO_PERFORMANCE_TABLE_BASE_NAME,
 )
-from agent_service.tools.stocks import get_metedata_for_stocks
+from agent_service.tools.stocks import get_metadata_for_stocks
 from agent_service.tools.themes import (
     GetMacroeconomicThemeInput,
     GetThemeDevelopmentNewsArticlesInput,
@@ -313,7 +313,7 @@ async def prepare_geography_prompt(
     """
     stock_ids = portfolio_holdings_expanded_df[STOCK_ID_COL_NAME_DEFAULT].to_list()
     stock_weights = portfolio_holdings_expanded_df["Weight"].to_list()
-    df = await get_metedata_for_stocks(stock_ids, context)
+    df = await get_metadata_for_stocks(stock_ids, context)
 
     # we might not have found metadata for all the gbi_ids (rare)
     # so lets select the ones we found and keep them for history

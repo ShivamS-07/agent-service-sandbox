@@ -242,6 +242,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         test_suite_runs = (await self.agent_service_impl.get_test_suite_runs()).test_suite_runs
         self.assertTrue(test_suite_runs)
 
+    @unittest.skip("slow = 86 seconds")
     def test_get_test_case_info(self):
         test_name = "test_pe_nvda_feb_2024"
         test_case_info = self.get_info_for_test_case(test_name=test_name).test_case_info

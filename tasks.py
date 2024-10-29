@@ -32,9 +32,9 @@ def testfast(c):
     # runs each test class in its own process 8 at a time
     print("running tests in parallel")
     c.run(
-        "RUN_IN_CI=true pipenv run python -m pytest  --durations=0 --durations-min=1.0"
+        "RUN_IN_CI=true pipenv run python -m pytest  --durations=0 --durations-min=5.0"
         " --disable-warnings --capture=tee-sys  --log-cli-level=WARNING"
-        " -n 8 --dist worksteal"
+        " -n 16 --dist worksteal"
         " -v tests"
     )
 
@@ -49,7 +49,7 @@ def test(c):
 @task
 def testregressionci(c):
     c.run(
-        "RUN_IN_CI=true pipenv run python -m pytest  --durations=0 --durations-min=1.0"
+        "RUN_IN_CI=true pipenv run python -m pytest  --durations=0 --durations-min=5.0"
         " --disable-warnings --capture=tee-sys  --log-cli-level=WARNING"
         " -n 8 --dist worksteal"
         " -v regression_test"

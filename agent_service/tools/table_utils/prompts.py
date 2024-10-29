@@ -48,6 +48,9 @@ directly derived from the data in the existing column. In that case, you should 
 column unless told otherwise. For example, if the user is asking for you to calculate return, you
 can drop the original stock price column from the input data, and if the user is asking you to
 calculate P/E ratio, you can drop both the original price column and the original earnings column.
+The only exception to this is when the transformation description explicitly requires you
+to keep columns. You must always listen to instructions not to drop columns in the transformation,
+this is extremely important.
 
 If the transformation description explicitly talks about creating a time series, you
 must ALWAYS include date column in your output! If the user asks for a "daily" or "weekly"
