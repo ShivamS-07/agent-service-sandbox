@@ -1575,12 +1575,17 @@ class StockDescriptionSectionText(StockText):
 
         output = {}
         for gbi_id, desc in desc_lookup.items():
-            desc = desc.replace("\x92", "'")
-            desc_sections = get_sections(desc)
-            for section_of_interest in sections_by_desc_ids[gbi_id]:
-                section_id = section_of_interest[0]
-                section_header = section_of_interest[1]
-                output[section_id] = desc_sections[section_header]
+            if desc:
+                desc = desc.replace("\x92", "'")
+                desc_sections = get_sections(desc)
+                for section_of_interest in sections_by_desc_ids[gbi_id]:
+                    section_id = section_of_interest[0]
+                    section_header = section_of_interest[1]
+                    output[section_id] = desc_sections[section_header]
+            else:
+                for section_of_interest in sections_by_desc_ids[gbi_id]:
+                    section_id = section_of_interest[0]
+                    output[section_id] = "No description found"
         return output  # type: ignore
 
     @classmethod
