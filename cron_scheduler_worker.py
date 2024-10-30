@@ -1,5 +1,6 @@
 import argparse
 import datetime
+import hashlib
 import json
 import logging
 import os
@@ -27,10 +28,10 @@ from agent_service.utils.s3_upload import upload_string_to_s3
 from agent_service.utils.scheduling import AgentSchedule
 from agent_service.utils.sentry_utils import init_sentry
 
-SCHEDULE_UPDATE_DELAY = 60 * 5  # Check for new schedules every 5 min
+SCHEDULE_UPDATE_DELAY = 60 * 10  # Check for new schedules every 10 min
 # If the scheduler was disabled, kick off jobs that are up to 10 minutes late
-MISFIRE_GRACE_PERIOD = 60 * 30  # allow runs up to 30 minutes late
-AGENT_LOCK_PERIOD = 60 * 35  # prevent duplicate runs for 35 min
+MISFIRE_GRACE_PERIOD = 60 * 45  # allow runs up to 45 minutes late
+AGENT_LOCK_PERIOD = 60 * 50  # prevent duplicate runs for 50 min
 
 logger = logging.getLogger("cron_scheduler_worker")
 
@@ -177,9 +178,20 @@ def run_schedule_with_recurring_agent_updates(scheduler: BackgroundScheduler) ->
         agent_infos = get_live_agent_infos()
         logger.info(f"Got {len(agent_infos)} agents to process...")
         for agent_info in agent_infos:
+            jitter_minutes = 0
+            scheduled_hours, scheduled_minutes = agent_info.schedule.get_schedule_hours_minutes()
+            if scheduled_hours == 8 and scheduled_minutes == 0:
+                # Add jitter to agents scheduled at the default time.  Convert
+                # the agent_id hash to a number of minutes between -120 and
+                # 0. This makes sure that agents don't overwhelm our system, but
+                # also are consistent each day and won't be missed by the
+                # scheduler.
+                hashed_id = int(hashlib.md5(agent_info.context.agent_id.encode()).hexdigest(), 16)
+                jitter_minutes = (hashed_id % 120) * -1
+                logger.info(f"Agent {agent_info.context.agent_id} scheduled with {jitter_minutes=}")
             scheduler.add_job(
                 func=start_agent_run,
-                trigger=agent_info.schedule.to_cron_trigger(),
+                trigger=agent_info.schedule.to_cron_trigger(jitter_minutes=jitter_minutes),
                 kwargs={"agent": agent_info},
                 id=agent_info.context.agent_id,
                 name=f"start_agent_run_{agent_info.context.agent_id}",

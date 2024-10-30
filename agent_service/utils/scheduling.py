@@ -70,16 +70,49 @@ class AgentSchedule(BaseModel):
         trigger = self.to_cron_trigger()
         return trigger.get_next_fire_time(previous_fire_time=get_now_utc(), now=get_now_utc())
 
-    def to_cron_trigger(self) -> CronTrigger:
+    def get_schedule_hours_minutes(self) -> Tuple[Optional[int], Optional[int]]:
+        """
+        Returns a tuple of (hours, minutes). If either is '*', or otherwise not
+        convertible to an int, return None instead.
+        """
+        values = self.cron_schedule.split()
+        hours = None
+        minutes = None
+        try:
+            hours = int(values[1])
+        except ValueError:
+            pass
+
+        try:
+            minutes = int(values[0])
+        except ValueError:
+            pass
+
+        return (hours, minutes)
+
+    def to_cron_trigger(self, jitter_minutes: int = 0) -> CronTrigger:
+        # We only support jitter within an hour
         values = self.cron_schedule.split()
         day_of_week = values[4]
         # Hacky because we need to handle cases with commas, dashes, etc.
         if day_of_week != "*":
             for num, weekday in _DAY_OF_WEEK_MAP.items():
                 day_of_week = day_of_week.replace(num, weekday)
+        hours: int | str
+        minutes: int | str
+        try:
+            hours = int(values[1])
+            minutes = int(values[0])
+            dt = datetime.datetime(2000, 1, 1, hours, minutes)
+            dt += datetime.timedelta(minutes=jitter_minutes)
+            hours = dt.hour
+            minutes = dt.minute
+        except ValueError:
+            minutes = values[0]
+            hours = values[1]
         trigger = CronTrigger(
-            minute=values[0],
-            hour=values[1],
+            minute=minutes,
+            hour=hours,
             day=values[2],
             month=values[3],
             day_of_week=day_of_week,
