@@ -119,8 +119,8 @@ def grpc_retry(func: Callable[P, T]) -> Callable[P, T]:
                 ConnectionError,
                 IOError,
             ),
-            interval=1,
-            max_tries=3,
+            interval=5,
+            max_tries=6,
             jitter=backoff.random_jitter,
         )(func)(*args, **kwargs)
 

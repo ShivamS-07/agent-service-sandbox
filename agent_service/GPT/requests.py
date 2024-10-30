@@ -116,7 +116,7 @@ async def query_gpt_worker(
     max_tokens: Optional[int] = None,
     output_json: bool = False,
     retry_num: int = 1,
-    max_retries: int = 3,
+    max_retries: int = 6,
     request_id: Optional[str] = None,
     no_cache: bool = False,
     gpt_service_stub: Optional[GPTServiceStub] = None,
