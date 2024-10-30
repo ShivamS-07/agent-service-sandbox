@@ -9,6 +9,7 @@ import pandas as pd
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
+from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.tools.profiler.constants import (
     GREATER_THAN_AVERAGE,
     IMPORTANCE_POSTFIX,
@@ -102,9 +103,21 @@ async def write_industry_impact_table(
     # Very rare but seems that sometimes a column is skipped
     tries = 0
     while tries < 3:
+        chopped_texts_str = GPTTokenizer(model=llm.model).do_truncation_if_needed(
+            truncate_str=text_data,
+            other_prompt_strs=[
+                PROFILE_TABLE_MAIN.template,
+                PROFILE_TABLE_SYS.template,
+                theme,
+                str(impacts),
+            ],
+        )
         result = await llm.do_chat_w_sys_prompt(
             main_prompt=PROFILE_TABLE_MAIN.format(
-                theme=theme, impacts=impacts, text_documents=text_data, industries=industries
+                theme=theme,
+                impacts=impacts,
+                text_documents=chopped_texts_str,
+                industries=industries,
             ),
             sys_prompt=PROFILE_TABLE_SYS.format(),
         )
