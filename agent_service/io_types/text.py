@@ -2185,6 +2185,7 @@ class WebText(Text):
                 WebCitationOutput(
                     internal_id=str(text.id),
                     name=text.title or text.url or text.to_citation_title(),
+                    last_fetched_at=text.timestamp,
                     link=text.url,
                     inline_offset=cit.citation_text_offset,
                     summary=full_context,

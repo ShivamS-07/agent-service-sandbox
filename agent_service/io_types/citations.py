@@ -448,6 +448,7 @@ class KPICitationOutput(CitationOutput):
 class WebCitationOutput(CitationOutput):
     citation_type: CitationType = CitationType.WEB
     link: Optional[str] = None
+    last_fetched_at: Optional[datetime.datetime] = None
     snippet_highlight_start: Optional[int] = None
     snippet_highlight_end: Optional[int] = None  # inclusive
 

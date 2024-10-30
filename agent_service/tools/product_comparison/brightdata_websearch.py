@@ -20,6 +20,7 @@ from agent_service.tools.product_comparison.constants import (
     S3_BUCKET_BOOSTED_WEBSEARCH,
     URL_CACHE_TTL_HOURS,
 )
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -109,6 +110,8 @@ def brd_request(url: str, headers: Dict[str, str] = HEADER, timeout: int = 5) ->
 def remove_excess_formatting(text: str) -> str:
     # Remove tabs and replace three or more newlines with two newlines
     text = text.replace("\t", "")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n[ \t]*", "\n", text)
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
@@ -150,20 +153,35 @@ async def req_and_scrape(
                 if soup.title:
                     title = soup.title.string
 
-                # find all main content divs
-                main_contents = soup.find_all(name="div", attrs={"class": "content"})
-                if main_contents:
-                    # remove script, style, aside, footer tags
-                    cleaned_texts = []
-                    for main_content in main_contents:
-                        for tag in main_content(["script", "style", "aside", "footer"]):
-                            tag.decompose()
-                        cleaned_text = main_content.get_text()
-                        cleaned_texts.append(cleaned_text)
-                    text = "\n\n".join(cleaned_texts)
-                else:
-                    # fallback to extracting all text
-                    text = soup.get_text()
+                # use the main tag, if not possible, use the whole document
+                soup = soup.find("main") or soup
+
+                # Find tags to decompose since they likely contain no relevant text
+                tags_to_decompose = (
+                    soup.find_all(["header", "footer", "button", "nav", "aside"]) or []
+                )
+                tags_to_decompose.extend(
+                    soup.find_all(
+                        True,
+                        class_=re.compile(
+                            "authentica|button|footer|cookie" "|metadata|contact|form"
+                        ),
+                    )
+                    or []
+                )
+                tags_to_decompose.extend(
+                    soup.find_all(
+                        True,
+                        id=re.compile(
+                            "authentica|button|header|footer|cookie" "|metadata|contact|form"
+                        ),
+                    )
+                    or []
+                )
+                for tag in tags_to_decompose:
+                    tag.decompose()
+
+                text = soup.get_text(" ")
             else:
                 logger.info(f"Unsupported content type: {content_type}")
                 return None
@@ -180,7 +198,10 @@ async def req_and_scrape(
         logger.info(f"An unexpected error occurred: {e}")
         return None
 
-    obj = WebText(url=url, title=title)  # we don't save `text` in the obj and pass around
+    obj = WebText(
+        url=url, title=title, timestamp=get_now_utc()
+    )  # we don't save `text` in the obj and pass around
+
     clean_text = remove_excess_formatting(text)
 
     # upload to s3
@@ -207,7 +228,7 @@ async def get_web_texts_async(
     )
 
     sql1 = """
-        SELECT DISTINCT ON (url) id::VARCHAR, url, title
+        SELECT DISTINCT ON (url) id::VARCHAR, url, title, inserted_at
         FROM agent.websearch_metadata
         WHERE url = ANY(%(urls)s) AND inserted_at > NOW() - INTERVAL '%(num_hours)s hours'
         ORDER BY url, inserted_at DESC
@@ -218,7 +239,10 @@ async def get_web_texts_async(
     logger.info(f"Cache hit! Found {len(rows)} cached URLs out of {len(urls)}!")
 
     url_to_obj = {
-        row["url"]: WebText(id=row["id"], url=row["url"], title=row["title"]) for row in rows
+        row["url"]: WebText(
+            id=row["id"], url=row["url"], title=row["title"], timestamp=row["inserted_at"]
+        )
+        for row in rows
     }
     results: list[WebText] = list(url_to_obj.values())
 
@@ -262,11 +286,7 @@ async def get_web_texts_async(
 
 async def main() -> None:
     urls = [
-        "https://www.apple.com/ca/iphone-16-pro/",
-        "https://www.gsmarena.com/apple_iphone_16-13317.php",
-        "https://www.macrumors.com/roundup/iphone-16/",
-        "https://www.tomsguide.com/phones/iphones/apple-iphone-16-review",
-        "https://www.phonearena.com/phones/Apple-iPhone-16_id12240",
+        "https://jobs.apple.com/en-us/search?location=new-york-city-NYC&page=2",
     ]
 
     responses = await get_web_texts_async(urls)
