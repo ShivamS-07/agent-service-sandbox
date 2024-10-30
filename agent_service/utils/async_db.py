@@ -7,7 +7,6 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import (
-    Account,
     AgentFeedback,
     AgentMetadata,
     AgentNotificationEmail,
@@ -1333,7 +1332,10 @@ class AsyncDB:
         )
 
     async def set_agent_subscriptions(
-        self, agent_id: str, emails_to_user: Dict[str, Account], delete_previous_emails: bool = True
+        self,
+        agent_id: str,
+        email_to_user_id: Dict[str, str],
+        delete_previous_emails: bool = True,
     ) -> None:
         records_to_upload = []
         already_seen = set()
@@ -1342,10 +1344,14 @@ class AsyncDB:
         # need to make sure we do not remove all the emails
         if delete_previous_emails:
             await self.delete_all_email_subscriptions_for_agent(agent_id)
-        for email, user in emails_to_user.items():
+        for email, user_id in email_to_user_id.items():
             if email not in already_seen:
                 already_seen.add(email)
-                row = {"agent_id": agent_id, "email": email, "user_id": user.user_id}
+                row = {
+                    "agent_id": agent_id,
+                    "email": email,
+                    "user_id": user_id,
+                }
                 records_to_upload.append(row)
         await self.pg.multi_row_insert(
             table_name="agent.agent_notifications", rows=records_to_upload

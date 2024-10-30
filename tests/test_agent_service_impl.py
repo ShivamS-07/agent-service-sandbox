@@ -15,7 +15,6 @@ from agent_service.endpoints.models import (
     HorizonCriteriaOperator,
     LockAgentOutputRequest,
     MediaType,
-    NotificationUser,
     Pagination,
     SetAgentFeedBackRequest,
     UnlockAgentOutputRequest,
@@ -306,18 +305,11 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
 
         # insert a email notification
         emails = {
-            "test.email@test.com": NotificationUser(
-                user_id=test_user, username="testuser", name="TestUser", email="test.email@test.com"
-            ),
-            "test.email.2@test.com": NotificationUser(
-                user_id=test_user_2,
-                username="testuser2",
-                name="TestUser2",
-                email="test.email.2@test.com",
-            ),
+            "test.email@test.com": test_user,
+            "test.email.2@test.com": test_user_2,
         }
         self.loop.run_until_complete(
-            self.pg.set_agent_subscriptions(agent_id=agent_id, emails_to_user=emails)
+            self.pg.set_agent_subscriptions(agent_id=agent_id, email_to_user_id=emails)
         )
 
         # get notification event info
@@ -335,13 +327,8 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         self.loop.run_until_complete(
             self.pg.set_agent_subscriptions(
                 agent_id=agent_id,
-                emails_to_user={
-                    new_email: NotificationUser(
-                        user_id=test_user_3,
-                        username="testuser3",
-                        name="TestUser3",
-                        email="test.email.3@test.com",
-                    )
+                email_to_user_id={
+                    new_email: test_user_3,
                 },
             )
         )

@@ -585,10 +585,10 @@ async def update_agent_notification_emails(
         logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
         if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
             validate_user_agent_access(user.user_id, agent_id)
-        bad_emails = await application.state.agent_service_impl.set_agent_notification_emails(
+        await application.state.agent_service_impl.set_agent_notification_emails(
             agent_id=agent_id, emails=emails, user_id=user.user_id
         )
-        return UpdateNotificationEmailsResponse(success=True, bad_emails=bad_emails)
+        return UpdateNotificationEmailsResponse(success=True, bad_emails=[])
     except Exception as e:
         logger.warning(f"error in updating agent:{req.agent_id} emails:{req.emails}, error: {e}")
         return UpdateNotificationEmailsResponse(success=False, bad_emails=[])

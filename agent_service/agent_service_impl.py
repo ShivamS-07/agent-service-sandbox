@@ -447,7 +447,7 @@ class AgentServiceImpl:
 
     async def set_agent_notification_emails(
         self, agent_id: str, emails: List[str], user_id: str
-    ) -> List[str]:
+    ) -> None:
         """
 
         Args:
@@ -455,24 +455,21 @@ class AgentServiceImpl:
             emails: List of emails we want to add
             user_id: string user id
 
-        Returns: A list of invalid emails that could not be set. An email can be invalid if
-        an email can be invalid if it doesnt belong to a user, or it does but the user is not on the correct team.
+        Returns: None
 
         """
         # get valid users
         valid_users = await self.get_valid_notification_users(user_id=user_id)
+
         valid_users_to_email = {user.email: user for user in valid_users}
-        email_to_user = {}
-        invalid_emails_to_user = []
+        email_to_user_id = {}
         for email in emails:
             user = valid_users_to_email.get(email, None)
             if user:
-                email_to_user[email] = user
+                email_to_user_id[email] = user.user_id
             else:
-                invalid_emails_to_user.append(email)
-        await self.pg.set_agent_subscriptions(agent_id=agent_id, emails_to_user=email_to_user)
-
-        return invalid_emails_to_user
+                email_to_user_id[email] = ""
+        await self.pg.set_agent_subscriptions(agent_id=agent_id, email_to_user_id=email_to_user_id)
 
     async def delete_agent_notification_emails(self, agent_id: str, email: str) -> None:
         await self.pg.delete_agent_emails(agent_id=agent_id, email=email)
@@ -985,14 +982,7 @@ class AgentServiceImpl:
 
         await self.pg.set_agent_subscriptions(
             agent_id=agent_id,
-            emails_to_user={
-                user.email: Account(
-                    user_id=user_id,
-                    username=user.username,
-                    name=user.name,
-                    email=user.email,
-                )
-            },
+            email_to_user_id={user.email: user_id},
             delete_previous_emails=False,
         )
 
