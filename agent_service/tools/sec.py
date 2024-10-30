@@ -2,7 +2,7 @@ import datetime
 import json
 from collections import defaultdict
 from heapq import heappop, heappush
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 from rapidfuzz.fuzz import ratio
 
@@ -18,7 +18,6 @@ from agent_service.io_types.text import (
     Text,
 )
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
-from agent_service.tools.regions import FilterStockRegionInput, filter_stocks_by_region
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
@@ -39,22 +38,15 @@ MATCH_RATIO = 70  # minimum ratio for fuzzy matching to map filing type (higher 
 
 
 async def get_sec_filings_helper(
-    stock_ids: List[StockID],
-    start_date: Optional[datetime.date],
-    end_date: Optional[datetime.date],
-    must_include_10k: Optional[bool] = False,
+    stock_ids: List[StockID], start_date: Optional[datetime.date], end_date: Optional[datetime.date]
 ) -> Dict[StockID, List[StockSecFilingText]]:
     stock_filing_map = defaultdict(list)
 
     gbi_id_to_stock_id = {stock.gbi_id: stock for stock in stock_ids}
 
-    form_types = [FILE_10Q]
-    if must_include_10k:
-        form_types.append(FILE_10K)
-
     filing_gbi_pairs, filing_to_db_id = await SecFiling.get_filings(
         gbi_ids=list(gbi_id_to_stock_id.keys()),
-        form_types=form_types,
+        form_types=[FILE_10K, FILE_10Q],
         start_date=start_date,
         end_date=end_date,
     )
@@ -80,7 +72,6 @@ async def get_sec_filings_helper(
 class GetSecFilingsInput(ToolArgs):
     stock_ids: List[StockID]
     date_range: Optional[DateRange] = None
-    must_include_10k: Optional[bool] = False
 
 
 @tool(
@@ -90,8 +81,6 @@ class GetSecFilingsInput(ToolArgs):
     "for the previous quarter (10-Q) or year (10-K) for any US-listed companies. "
     "This tool should be used by default when users just ask for SEC filings, or when they explicitly ask "
     "for `10-K` or `10-Q` filings."
-    "By default, this tool only retrieves quarterly (10-Q) reports. If the user specifically asks for `10-K`"
-    "filings or the annual reports, then you must set the `must_include_10k` to True."
     "It is especially useful for finding current information about less well-known "
     "companies which may have little or no news for a given period. "
     "Any documents published within the date_range are included. Date_range will "
@@ -116,22 +105,10 @@ async def get_10k_10q_sec_filings(
         start_date = None
         end_date = None
 
-    us_stocks: List[StockID] = await filter_stocks_by_region(
-        FilterStockRegionInput(stock_ids=args.stock_ids, region_name="USA"),
-        context=context,
-    )  # type: ignore
-
-    stocks_str = f"{len(us_stocks)} US stocks"
-    if len(us_stocks) == 0:
-        return []
-    elif len(us_stocks) == 1:
-        us_stock = us_stocks[0]
-        stocks_str = us_stock.symbol if us_stock.symbol else us_stock.company_name
-
-    if len(us_stocks) != len(args.stock_ids):
-        await tool_log(
-            f"Only retrieving SEC filings for {stocks_str}",
-            context=context,
+    stocks_str = f"{len(args.stock_ids)} stocks"
+    if len(args.stock_ids) == 1:
+        stocks_str = (
+            args.stock_ids[0].symbol if args.stock_ids[0].symbol else args.stock_ids[0].company_name
         )
 
     daterange_str = ""
@@ -140,17 +117,11 @@ async def get_10k_10q_sec_filings(
         daterange_str = f"from {start_date.isoformat()} to {end_date.isoformat()}"
         use_latest_str = ""
 
-    include_10k_str = ""
-    if args.must_include_10k:
-        include_10k_str = ", 10-K"
-
     await tool_log(
-        f"Retrieving {use_latest_str}10-Q{include_10k_str} SEC filings for {stocks_str} {daterange_str}.",
+        f"Retrieving {use_latest_str}10-K, 10-Q SEC filings for {stocks_str} {daterange_str}.",
         context=context,
     )
-    stock_filing_map = await get_sec_filings_helper(
-        us_stocks, start_date, end_date, args.must_include_10k
-    )
+    stock_filing_map = await get_sec_filings_helper(args.stock_ids, start_date, end_date)
     all_filings: List[StockSecFilingText] = []
     for filings in stock_filing_map.values():
         all_filings.extend(filings)
@@ -225,9 +196,7 @@ class GetOtherSecFilingsInput(ToolArgs):
 async def get_non_10k_10q_sec_filings(
     args: GetOtherSecFilingsInput, context: PlanRunContext
 ) -> List[StockSecFilingText]:
-    form_types: List[SecFilingType | str] = [
-        SecFilingType(name=form_type) for form_type in args.form_types
-    ]
+    form_types = [SecFilingType(name=form_type) for form_type in args.form_types]
     return await get_sec_filings_with_type(
         GetSecFilingsWithTypeInput(
             stock_ids=args.stock_ids,
@@ -362,14 +331,14 @@ async def sec_filings_type_lookup(
 
 class GetSecFilingsWithTypeInput(ToolArgs):
     stock_ids: List[StockID]
-    form_types: List[Union[SecFilingType, str]]
+    form_types: List[SecFilingType]
     date_range: Optional[DateRange] = None
 
 
 @tool(
     description="Given a list of stock ID's, return a list of requested SEC filings for the stocks."
     " This tool should be used after `sec_filings_type_lookup` which will determine the SEC filing types"
-    " we need to retrieve. This tool should never be called unless it is after `sec_filings_type_lookup`."
+    " we need to retrieve. This tool should never be called by itself."
     " This tool should not be called if we only want to retrieve general information from SEC filings,"
     " instead the `get_10k_10q_sec_filings` tool should be used."
     " The output of this tool should never be outputted directly, instead you should use the `summarize_texts`"
@@ -397,40 +366,17 @@ async def get_sec_filings_with_type(
         start_date = None
         end_date = None
 
-    us_stocks: List[StockID] = await filter_stocks_by_region(
-        FilterStockRegionInput(stock_ids=args.stock_ids, region_name="USA"),
-        context=context,
-    )  # type: ignore
-
-    stocks_str = f"{len(us_stocks)} US stocks"
-    if len(us_stocks) == 0:
-        return []
-    elif len(us_stocks) == 1:
-        us_stock = us_stocks[0]
-        stocks_str = us_stock.symbol if us_stock.symbol else us_stock.company_name
-
-    elif len(us_stocks) != len(args.stock_ids):
-        await tool_log(
-            f"Only retrieving SEC filings for {stocks_str}",
-            context=context,
-        )
-
     if args.form_types and len(args.form_types) > 0:
-        form_types = []
-        for form_type in args.form_types:
-            if isinstance(form_type, str) and form_type != FILE_10K and form_type != FILE_10Q:
-                form_types.append(form_type)
-            elif (
-                isinstance(form_type, SecFilingType)
-                and form_type.name != FILE_10K
-                and form_type.name != FILE_10Q
-            ):
-                form_types.append(form_type.name)
+        form_types = [
+            form_type.name
+            for form_type in args.form_types
+            if form_type.name != FILE_10K or form_type.name != FILE_10Q
+        ]
         sec_10k_10q_filings: List[StockSecFilingText] = []
         if len(form_types) != len(args.form_types):
             sec_10k_10q_filings = await get_10k_10q_sec_filings(
                 GetSecFilingsInput(
-                    stock_ids=us_stocks,
+                    stock_ids=args.stock_ids,
                     date_range=args.date_range,
                 ),
                 context=context,
@@ -439,6 +385,14 @@ async def get_sec_filings_with_type(
         form_types_str = f"{len(form_types)} types of"
         if len(form_types) < 5:
             form_types_str = ", ".join(form_types)
+
+        stocks_str = f"{len(args.stock_ids)} stocks"
+        if len(args.stock_ids) == 1:
+            stocks_str = (
+                args.stock_ids[0].symbol
+                if args.stock_ids[0].symbol
+                else args.stock_ids[0].company_name
+            )
 
         daterange_str = ""
         use_latest_str = "the most recent "
@@ -451,7 +405,7 @@ async def get_sec_filings_with_type(
             context=context,
         )
         stock_filing_map = await get_other_sec_filings_helper(
-            us_stocks, form_types, start_date, end_date
+            args.stock_ids, form_types, start_date, end_date
         )
         sec_filings: List[StockSecFilingText] = []
         for filings in stock_filing_map.values():
@@ -479,7 +433,7 @@ async def get_sec_filings_with_type(
 
     return await get_10k_10q_sec_filings(
         GetSecFilingsInput(
-            stock_ids=us_stocks,
+            stock_ids=args.stock_ids,
             date_range=args.date_range,
         ),
         context=context,
