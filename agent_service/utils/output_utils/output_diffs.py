@@ -398,10 +398,10 @@ class OutputDiffer:
 
         prev_stock_lookup = {stock: stock for stock in prev_stock_set}
 
+        all_citations: List[TextCitation] = []
         if len(curr_stock_set) > len(added_stocks):  # there are some shared stocks
             change_output = ["  - Modified stocks\n"]
             curr_offset += len(change_output[0])
-            all_citations: List[TextCitation] = []
             for stock in curr_stock_list:
                 if stock in added_stocks:
                     continue
