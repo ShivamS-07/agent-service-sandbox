@@ -725,10 +725,6 @@ def _join_two_tables(first: Table, second: Table) -> Table:
     output_table = Table.from_df_and_cols(
         columns=output_col_metas, data=output_df, ignore_extra_cols=True
     )
-    if len(output_col_metas) > len(output_df.columns):
-        # If the dataframe has fewer columns than the output table, we have a
-        # duplicate column probably. We should remove it.
-        output_table.dedup_columns()
 
     # Make sure we use the objects' full histories
     stock_col = output_table.get_stock_column()
@@ -738,6 +734,7 @@ def _join_two_tables(first: Table, second: Table) -> Table:
         ]
     output_table.history = copy.deepcopy(first.history) + copy.deepcopy(second.history)
     output_table.dedup_history()
+    output_table.dedup_columns()
     return output_table
 
 
