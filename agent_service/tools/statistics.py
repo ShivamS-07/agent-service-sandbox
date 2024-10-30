@@ -516,6 +516,7 @@ class BeatOrMissEarningsFilterInput(ToolArgs):
     miss: bool = False
     quarters: Union[Optional[DateRange], int] = None
     mode: str = "earnings"
+    filter: bool = True
 
 
 @tool(
@@ -537,8 +538,14 @@ class BeatOrMissEarningsFilterInput(ToolArgs):
         " the list returned by this tool using the prepare_output tool, the title should specifically"
         " mention 'Last N Reported Quarters or `Last Reported Quarter` if quarters is 1 or None. For"
         " example, if the user asked for stocks which beat expectations each quarter for the last year"
-        " for prepare_output would say instead 'beat expecations for the last 4 reported quarters. "
-        " The stock list returned will include, actual and expected EPS and surprise for"
+        " for prepare_output would say instead 'beat expecations for the last 4 reported quarters."
+        " Usually you will want the filter argument to be True (the default), but if the user wants"
+        " beat/miss info about a stock or a handful of stocks without applying any filter, you set"
+        " filter = False. for example, if the user asks 'has GE met earning expectations recently?"
+        " you must set filter = False, since the client wants to see info about GE whether or not it"
+        " made earnings expectations! You should always set filter = False if the client asks a "
+        " beat/miss question about a specific stock!"
+        " Assuming filter=True, The stock list returned will include, actual and expected EPS and surprise for"
         " all stocks which passed the filter, which will be displayed to the user if the stock list is"
         " printed. You should use this tool whenever a user asks to filter stocks based on whether they"
         " beat or missed earnings expectations, in this cases you must not use either the get_statistics"
@@ -552,6 +559,12 @@ class BeatOrMissEarningsFilterInput(ToolArgs):
         " This tool does not have access to earnings guidance, you must not use this tool the user is"
         " interested in earnings guidance, instead you must read the earnings calls where guidance is"
         " discussed. Again, do not use this tool for earnings guidance related requests!"
+        " This tool must NOT be used in isolation when the client asks about beat/miss expectations"
+        " for future earnings, since this only provides past data. It is more important in such"
+        " situations to do a summary of news and to look at earnings expectations growth, which does"
+        " related to future data. This is still useful for context in those situations, but you must"
+        " never use only this tool when the user is asking about beat/miss expectations! If you do, you"
+        " will be fired!"
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
@@ -675,7 +688,10 @@ async def beat_or_miss_earnings_filter(
                     break
 
         if to_check_list and all(
-            [(actual >= expected) == (not args.miss) for _, actual, expected in to_check_list]
+            [
+                ((actual >= expected) == (not args.miss) or not args.filter)
+                for _, actual, expected in to_check_list
+            ]
         ):
             for quarter, actual, expected in to_check_list:
                 stock = stock.inject_history_entry(
