@@ -8,9 +8,8 @@ from agent_service.io_type_utils import HistoryEntry, IOType, load_io_type
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockText, TextCitation
 from agent_service.types import PlanRunContext
-from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_db import get_async_db
 from agent_service.utils.clickhouse import Clickhouse
-from agent_service.utils.postgres import SyncBoostedPG
 from agent_service.utils.prefect import get_prefect_logger
 
 MAX_TRIES = 3
@@ -27,7 +26,7 @@ class PrevRunInfo:
 
 async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional[PrevRunInfo]:
     logger = get_prefect_logger(__name__)
-    pg_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
+    pg_db = get_async_db(sync_db=True, skip_commit=context.skip_db_commit)
 
     if context.task_id is None:  # shouldn't happen
         return None

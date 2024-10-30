@@ -50,6 +50,12 @@ class AsyncDB:
     def __init__(self, pg: BoostedPG):
         self.pg = pg
 
+    async def generic_read(self, sql: str, params: Optional[Any] = None) -> List[Dict]:
+        return await self.pg.generic_read(sql, params)
+
+    async def generic_write(self, sql: str, params: Optional[Any] = None) -> None:
+        return await self.pg.generic_write(sql, params)
+
     async def get_prev_outputs_for_agent_plan(
         self, agent_id: str, plan_id: str, latest_plan_run_id: str
     ) -> Optional[Tuple[List[IOType], datetime.datetime]]:
@@ -2010,3 +2016,37 @@ async def get_latest_execution_plan_from_db(agent_id: str, db: Union[AsyncDB, Po
         return await db.get_latest_execution_plan(agent_id)
     else:
         return None, None, None, None, None
+
+
+ASYNC_DB: Optional[AsyncDB] = None
+
+
+def get_async_db(sync_db: bool = False, skip_commit: bool = False) -> AsyncDB:
+    """Get the single AsyncDB instance based on the parameters.
+
+    Args:
+        sync_db (bool, optional): Whether to use the SyncBoostedPG or AsyncPostgresBase under the hood.
+        skip_commit (bool, optional): Whether to skip the commit after each write operation. Note
+    that if it's True, it will use the SyncBoostedPG under the hood (because AsyncPostgresBase does
+    not support skipping commit).
+    """
+    global ASYNC_DB
+    if ASYNC_DB is None:
+        if sync_db or skip_commit:
+            ASYNC_DB = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_commit))
+        else:
+            ASYNC_DB = AsyncDB(pg=AsyncPostgresBase())
+    else:
+        if skip_commit:
+            if (
+                not isinstance(ASYNC_DB.pg, SyncBoostedPG)
+                or ASYNC_DB.pg.db.skip_commit != skip_commit
+            ):
+                ASYNC_DB = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_commit))
+        else:
+            if sync_db and not isinstance(ASYNC_DB.pg, SyncBoostedPG):
+                ASYNC_DB = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_commit))
+            elif not sync_db and not isinstance(ASYNC_DB.pg, AsyncPostgresBase):
+                ASYNC_DB = AsyncDB(pg=AsyncPostgresBase())
+
+    return ASYNC_DB
