@@ -155,7 +155,6 @@ from agent_service.external.feature_svc_client import (
 )
 from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
 from agent_service.external.user_svc_client import (
-    get_user_cached,
     get_users,
     list_team_members,
     update_user,
@@ -484,30 +483,24 @@ class AgentServiceImpl:
         )
 
     async def get_valid_notification_users(self, user_id: str) -> List[Account]:
+        valid_users = []
         # first we get all the teams that the user is a part of
-        user = await get_user_cached(user_id)
-        if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
+        user = await get_users(user_id=user_id, user_ids=[user_id], include_user_enabled=True)
         coroutines = [
             list_team_members(team_id=team.team_id.id, user_id=user_id)
-            for team in user.team_memberships
+            for team in user[0].team_memberships
         ]
         results = await asyncio.gather(*coroutines)
 
         # Flatten the list of results into valid_users
-        accounts: List[Account] = []
         for result in results:
-            accounts.extend(
-                Account(
-                    user_id=user.user_id.id,
-                    username=user.username,
-                    name=user.name,
-                    email=user.email,
-                )
-                for user in result
+            valid_users += result
+        return [
+            Account(
+                user_id=user.user_id.id, username=user.username, name=user.name, email=user.email
             )
-        return accounts
+            for user in valid_users
+        ]
 
     @async_perf_logger
     async def agent_quality_ingestion(
@@ -976,13 +969,11 @@ class AgentServiceImpl:
 
         # Now automatically subscribe the agent owner to email notification
         # get the email for the user
-        user = await get_user_cached(user_id)
-        if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
+        user = await get_users(user_id=user_id, user_ids=[user_id], include_user_enabled=True)
+        email = user[0].email
         await self.pg.set_agent_subscriptions(
             agent_id=agent_id,
-            email_to_user_id={user.email: user_id},
+            email_to_user_id={email: user_id},
             delete_previous_emails=False,
         )
 
@@ -1632,48 +1623,29 @@ class AgentServiceImpl:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="name and email cannot be empty"
             )
-        success = await update_user(user_id, name, username, email)
-        return UpdateUserResponse(success=success)
+        return UpdateUserResponse(success=await update_user(user_id, name, username, email))
 
     async def get_users_info(self, user: User, user_ids: List[str]) -> List[Account]:
-        if len(user_ids) == 1 and user_ids[0] == user.user_id:
-            cached_user = await get_user_cached(user.user_id)
-            if not cached_user:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"No Account Info found for {user.user_id}",
-                )
-            users = [cached_user]
-        else:
-            users = await get_users(user.user_id, user_ids, include_user_enabled=True)
-            if not users:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Users not found")
-
+        res = await get_users(user.user_id, user_ids, False)
+        if len(res) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No Account Info found for {user.user_id}",
+            )
         return [
             Account(
                 user_id=account.user_id.id,
                 email=account.email,
                 username=account.username,
                 name=account.name,
-                organization_id=account.organization_membership.organization_id.id,
+                organization_id=str(account.organization_membership.organization_id.id),
             )
-            for account in users
+            for account in res
         ]
 
     async def get_account_info(self, user: User) -> Account:
-        cached_user = await get_user_cached(user.user_id)
-        if not cached_user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No Account Info found for {user.user_id}",
-            )
-        return Account(
-            user_id=cached_user.user_id.id,
-            email=cached_user.email,
-            username=cached_user.username,
-            name=cached_user.name,
-            organization_id=cached_user.organization_membership.organization_id.id,
-        )
+        res = await self.get_users_info(user, [user.user_id])
+        return res[0]
 
     @async_perf_logger
     @async_wrap
@@ -2131,16 +2103,17 @@ class AgentServiceImpl:
         return DeletePromptTemplateResponse(template_id=template_id)
 
     async def get_user_has_alfa_access(self, user: User) -> bool:
-        cached_user = await get_user_cached(user_id=user.user_id)
-        if (
-            not cached_user
-            or not cached_user.cognito_enabled.value
-            or not cached_user.has_alfa_access
-        ):
+        db_user = await get_users(
+            user_id=user.user_id, user_ids=[user.user_id], include_user_enabled=True
+        )
+
+        if not db_user or not db_user[0]:
             return False
 
-        # Check if feature flag has been disabled for user (giving them access)
-        return not is_database_access_check_enabled_for_user(user_id=user.user_id)
+        # Check if feature flag has been disabled for user (giving them access) or check their db permission
+        return not is_database_access_check_enabled_for_user(user_id=user.user_id) or (
+            bool(db_user[0].has_alfa_access) and bool(db_user[0].cognito_enabled)  # type: ignore
+        )
 
     async def get_ordered_securities(
         self, req: GetOrderedSecuritiesRequest, user: User

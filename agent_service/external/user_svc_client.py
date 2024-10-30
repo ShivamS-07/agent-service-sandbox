@@ -2,7 +2,7 @@ import logging
 import os
 from contextlib import contextmanager
 from functools import lru_cache
-from typing import Generator, List, Optional, Tuple
+from typing import Generator, List, Tuple
 
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
@@ -22,8 +22,6 @@ from user_service_proto_v1.user_service_pb2 import (
 from user_service_proto_v1.well_known_types_pb2 import UUID
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
-from agent_service.utils.async_utils import run_async_background
-from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.feature_flags import is_user_agent_admin
 from agent_service.utils.logs import async_perf_logger
 
@@ -34,9 +32,6 @@ DEFAULT_URLS = {
     DEV_TAG: ("user-service-dev.boosted.ai", 50051),
     PROD_TAG: ("user-service-grpc-server-prod.us-west-2.elasticbeanstalk.com", 50051),
 }
-
-
-REDIS_AGENT_USER_NAMESPACE = "redis-agent-user-namespace"
 
 
 @lru_cache(maxsize=1)
@@ -64,9 +59,6 @@ def _get_service_stub() -> Generator[UserServiceStub, None, None]:
         channel.close()
 
 
-####################################################################################################
-# GetUsers
-####################################################################################################
 @grpc_retry
 @async_perf_logger
 async def get_users(user_id: str, user_ids: List[str], include_user_enabled: bool) -> List[User]:
@@ -85,56 +77,6 @@ async def get_users(user_id: str, user_ids: List[str], include_user_enabled: boo
         return [u for u in res.user]
 
 
-def get_user_key_func(user_id: str) -> str:
-    return f"{user_id}||True"
-
-
-def get_user_serializer(user: User) -> bytes:
-    return user.SerializeToString()
-
-
-def get_user_deserializer(x: bytes) -> User:
-    user = User()
-    user.ParseFromString(x)
-    return user
-
-
-def get_redis_cache_for_user() -> RedisCacheBackend:
-    return RedisCacheBackend(
-        namespace=REDIS_AGENT_USER_NAMESPACE,
-        serialize_func=get_user_serializer,
-        deserialize_func=get_user_deserializer,
-    )
-
-
-@async_perf_logger
-async def get_user_cached(user_id: str) -> Optional[User]:
-    """
-    Get user's information from cache if available, otherwise fetch from user service and cache it.
-    NOTE that we only cache the user when they have access to Alfa.
-    TTL sets to 1 hour in case someone is removed from Alfa.
-    """
-
-    redis_cache = get_redis_cache_for_user()
-    key = get_user_key_func(user_id)
-    user = await redis_cache.get(key=key)
-    if user is not None:
-        return user  # type: ignore
-
-    users = await get_users(user_id, user_ids=[user_id], include_user_enabled=True)
-    if not users:
-        return None
-
-    user = users[0]
-    if user.cognito_enabled.value and user.has_alfa_access:
-        run_async_background(redis_cache.set(key, user, ttl=3600))
-
-    return user
-
-
-####################################################################################################
-# UpdateUser
-####################################################################################################
 @grpc_retry
 @async_perf_logger
 async def update_user(user_id: str, name: str, username: str, email: str) -> bool:
@@ -145,10 +87,6 @@ async def update_user(user_id: str, name: str, username: str, email: str) -> boo
             ),
             metadata=get_default_grpc_metadata(user_id=user_id),
         )
-
-        redis_cache = get_redis_cache_for_user()
-        run_async_background(redis_cache.invalidate(get_user_key_func(user_id)))
-
         return True
 
 
