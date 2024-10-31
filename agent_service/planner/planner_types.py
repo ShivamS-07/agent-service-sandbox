@@ -45,7 +45,7 @@ def convert_arg(arg: Union[IOType, Variable, List[Union[IOType, Variable]]]) -> 
     if isinstance(arg, list):
         return f"[{', '.join(convert_arg(item) for item in arg)}]"
     elif isinstance(arg, Variable):
-        if not arg.index:
+        if arg.index is None:
             return arg.var_name
         else:
             return f"{arg.var_name}[{arg.index}]"
