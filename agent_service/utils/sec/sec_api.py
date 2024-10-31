@@ -469,13 +469,16 @@ class SecFiling:
     ) -> Tuple[Dict[str, str], Set[int], List[Tuple[str, int]]]:
         """
         Given a list of SEC filings, return a list of database table IDs for the available filings.
-        Default date range will be the last 100 days.
+        Default date range will be the last 100 days, one year if 10-K included
         """
         if end_date is None:
             end_date = datetime.date.today() + datetime.timedelta(days=1)
         if start_date is None:
             # default to a quarter of data (one filing)
             start_date = end_date - datetime.timedelta(days=100)
+            # default to a year of data if 10-K included
+            if FILE_10K in form_types:
+                start_date = end_date - datetime.timedelta(days=365)
 
         sql = """
             SELECT DISTINCT ON (formType, gbi_id, filedAt)
