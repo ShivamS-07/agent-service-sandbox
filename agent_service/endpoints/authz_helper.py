@@ -14,8 +14,8 @@ from agent_service.external.cognito_client import (
     COGNITO_URLS,
     get_cognito_user_id_from_access_token,
 )
+from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.environment import EnvironmentUtils
-from agent_service.utils.postgres import get_psql
 
 KEY_ID = "kid"
 RS_256 = "RS256"
@@ -143,13 +143,15 @@ def parse_header(
 ####################################################################################################
 # auth methods - if we find that we need to add more auth methods, we can make a new file
 ####################################################################################################
-def validate_user_agent_access(request_user_id: Optional[str], agent_id: str) -> None:
+async def validate_user_agent_access(
+    request_user_id: Optional[str], agent_id: str, async_db: AsyncDB
+) -> None:
     if not request_user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
 
-    owner_id = get_psql().get_agent_owner(agent_id)
+    owner_id = await async_db.get_agent_owner(agent_id)
     if owner_id is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Agent {agent_id} not found"
@@ -161,17 +163,27 @@ def validate_user_agent_access(request_user_id: Optional[str], agent_id: str) ->
         )
 
 
-def validate_user_plan_run_access(
-    request_user_id: Optional[str], plan_run_id: str, require_owner: bool = True
+async def validate_user_plan_run_access(
+    request_user_id: Optional[str],
+    plan_run_id: str,
+    async_db: AsyncDB,
+    require_owner: bool = True,
 ) -> None:
-    plan_run = get_psql().get_plan_run(plan_run_id)
-    if plan_run is None:
+    sql = """
+        SELECT agent_id::VARCHAR, plan_id::VARCHAR, created_at, shared
+        FROM agent.plan_runs
+        WHERE plan_run_id = %(plan_run_id)s
+        LIMIT 1
+    """
+    rows = await async_db.generic_read(sql, params={"plan_run_id": plan_run_id})
+    if not rows:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Plan run {plan_run_id} not found",
         )
 
     # do not require auth for shared plan runs
+    plan_run = rows[0]
     if plan_run.get("shared") and not require_owner:
         return
 
@@ -181,4 +193,4 @@ def validate_user_plan_run_access(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Agent for plan run {plan_run_id} not found",
         )
-    validate_user_agent_access(request_user_id, agent_id)
+    await validate_user_agent_access(request_user_id, agent_id, async_db)

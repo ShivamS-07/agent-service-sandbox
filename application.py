@@ -420,7 +420,9 @@ async def create_agent(
 async def update_agent_draft_status(
     agent_id: str, req: UpdateAgentDraftStatusRequest, user: User = Depends(parse_header)
 ) -> UpdateAgentDraftStatusResponse:
-    validate_user_agent_access(user.user_id, agent_id)
+    await validate_user_agent_access(
+        user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+    )
     return await application.state.agent_service_impl.update_agent_draft_status(
         agent_id=agent_id, is_draft=req.is_draft
     )
@@ -449,7 +451,9 @@ async def terminate_agent(
             detail="Either plan_id or plan_run_id must be provided",
         )
 
-    validate_user_agent_access(user.user_id, agent_id)
+    await validate_user_agent_access(
+        user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+    )
     return await application.state.agent_service_impl.terminate_agent(
         agent_id=agent_id, plan_id=req.plan_id, plan_run_id=req.plan_run_id
     )
@@ -461,7 +465,9 @@ async def terminate_agent(
     status_code=status.HTTP_200_OK,
 )
 async def delete_agent(agent_id: str, user: User = Depends(parse_header)) -> DeleteAgentResponse:
-    validate_user_agent_access(user.user_id, agent_id)
+    await validate_user_agent_access(
+        user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+    )
     return await application.state.agent_service_impl.delete_agent(agent_id=agent_id)
 
 
@@ -471,7 +477,12 @@ async def delete_agent(agent_id: str, user: User = Depends(parse_header)) -> Del
     status_code=status.HTTP_200_OK,
 )
 async def restore_agent(agent_id: str, user: User = Depends(parse_header)) -> RestoreAgentResponse:
-    validate_user_agent_access(user.user_id, agent_id)
+    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can restore agents",
+        )
+
     return await application.state.agent_service_impl.restore_agent(agent_id=agent_id)
 
 
@@ -484,7 +495,9 @@ async def update_agent(
     agent_id: str, req: UpdateAgentRequest, user: User = Depends(parse_header)
 ) -> UpdateAgentResponse:
     # NOTE: currently only allow updating agent name
-    validate_user_agent_access(user.user_id, agent_id)
+    await validate_user_agent_access(
+        user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+    )
 
     return await application.state.agent_service_impl.update_agent(agent_id=agent_id, req=req)
 
@@ -500,7 +513,9 @@ async def get_all_agents(user: User = Depends(parse_header)) -> GetAllAgentsResp
 async def get_agent(agent_id: str, user: User = Depends(parse_header)) -> AgentInfo:
     logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
 
     return await application.state.agent_service_impl.get_agent(agent_id=agent_id)
 
@@ -515,7 +530,9 @@ async def get_all_agent_notification_criteria(
 ) -> List[CustomNotification]:
     logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
     return await application.state.agent_service_impl.get_all_agent_notification_criteria(
         agent_id=agent_id
     )
@@ -530,7 +547,9 @@ async def create_agent_notification_criteria(
     req: CreateCustomNotificationRequest, user: User = Depends(parse_header)
 ) -> CustomNotificationStatusResponse:
     logger.info(f"Validating if {user.user_id=} has access to {req.agent_id=}.")
-    validate_user_agent_access(user.user_id, req.agent_id)
+    await validate_user_agent_access(
+        user.user_id, req.agent_id, async_db=application.state.agent_service_impl.pg
+    )
     cn_id = await application.state.agent_service_impl.create_agent_notification_criteria(req=req)
     return CustomNotificationStatusResponse(custom_notification_id=cn_id, success=True)
 
@@ -544,7 +563,9 @@ async def delete_agent_notification_criteria(
     agent_id: str, notification_criteria_id: str, user: User = Depends(parse_header)
 ) -> CustomNotificationStatusResponse:
     logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
-    validate_user_agent_access(user.user_id, agent_id)
+    await validate_user_agent_access(
+        user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+    )
     await application.state.agent_service_impl.delete_agent_notification_criteria(
         agent_id=agent_id, custom_notification_id=notification_criteria_id
     )
@@ -563,7 +584,9 @@ async def get_agent_notification_emails(
 ) -> NotificationEmailsResponse:
     logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
     return await application.state.agent_service_impl.get_agent_notification_emails(
         agent_id=agent_id
     )
@@ -582,7 +605,9 @@ async def update_agent_notification_emails(
     try:
         logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
         if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-            validate_user_agent_access(user.user_id, agent_id)
+            await validate_user_agent_access(
+                user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+            )
         await application.state.agent_service_impl.set_agent_notification_emails(
             agent_id=agent_id, emails=emails, user_id=user.user_id
         )
@@ -642,7 +667,9 @@ async def chat_with_agent(
     """
 
     logger.info(f"Validating if user {user.user_id} has access to agent {req.agent_id}.")
-    validate_user_agent_access(user.user_id, req.agent_id)
+    await validate_user_agent_access(
+        user.user_id, req.agent_id, async_db=application.state.agent_service_impl.pg
+    )
     return await application.state.agent_service_impl.chat_with_agent(req=req, user=user)
 
 
@@ -656,7 +683,9 @@ async def upload_file(
     upload: UploadFile,
     user: User = Depends(parse_header),
 ) -> UploadFileResponse:
-    validate_user_agent_access(user.user_id, agent_id)
+    await validate_user_agent_access(
+        user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+    )
     return await application.state.agent_service_impl.upload_file(
         upload=upload, user=user, agent_id=agent_id
     )
@@ -684,7 +713,9 @@ async def get_chat_history(
         user (User): User object from `parse_header`
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
 
     return await application.state.agent_service_impl.get_chat_history(
         agent_id=agent_id, start=start, end=end, start_index=start_index, limit_num=limit_num
@@ -719,7 +750,9 @@ async def get_agent_worklog_board(
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
         logger.info(f"Validating if user {user.user_id} has access to agent {agent_id}.")
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
 
     return await application.state.agent_service_impl.get_agent_worklog_board(
         agent_id=agent_id,
@@ -746,7 +779,9 @@ async def get_agent_task_output(
         task_id (str): the task ID of a run from Prefect
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
 
     return await application.state.agent_service_impl.get_agent_task_output(
         agent_id=agent_id, plan_run_id=plan_run_id, task_id=task_id
@@ -769,7 +804,9 @@ async def get_agent_log_output(
         task_id (str): the task ID of a run from Prefect
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
 
     return await application.state.agent_service_impl.get_agent_log_output(
         agent_id=agent_id, plan_run_id=plan_run_id, log_id=log_id
@@ -790,7 +827,9 @@ async def get_agent_output(
         agent_id (str): agent ID
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
 
     return await application.state.agent_service_impl.get_agent_plan_output(agent_id=agent_id)
 
@@ -806,7 +845,9 @@ async def delete_agent_output(
     """
     Delete an agent output, creating a new modified plan without the output step.
     """
-    validate_user_agent_access(user.user_id, agent_id)
+    await validate_user_agent_access(
+        user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+    )
 
     return await application.state.agent_service_impl.delete_agent_output(
         agent_id=agent_id, req=req
@@ -825,7 +866,9 @@ async def lock_agent_output(
     Lock an agent output, which will force it to be included always.
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
 
     return await application.state.agent_service_impl.lock_agent_output(agent_id=agent_id, req=req)
 
@@ -842,7 +885,9 @@ async def unlock_agent_output(
     Unlock an agent output.
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
 
     return await application.state.agent_service_impl.unlock_agent_output(
         agent_id=agent_id, req=req
@@ -864,7 +909,9 @@ async def get_agent_plan_output(
         plan_run_id (str): plan run ID
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
 
     return await application.state.agent_service_impl.get_agent_plan_output(
         agent_id=agent_id, plan_run_id=plan_run_id
@@ -898,7 +945,9 @@ async def stream_agent_events(
         agent_id (str): agent ID
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
 
     async def _wrap_serializer() -> AsyncContentStream:
         try:
@@ -965,7 +1014,9 @@ async def share_plan_run(
         plan_run_id (str): plan run ID
     """
 
-    validate_user_plan_run_access(user.user_id, req.plan_run_id)
+    await validate_user_plan_run_access(
+        user.user_id, req.plan_run_id, async_db=application.state.agent_service_impl.pg
+    )
     return await application.state.agent_service_impl.share_plan_run(plan_run_id=req.plan_run_id)
 
 
@@ -983,7 +1034,9 @@ async def unshare_plan_run(
         plan_run_id (str): plan run ID
     """
 
-    validate_user_plan_run_access(user.user_id, req.plan_run_id)
+    await validate_user_plan_run_access(
+        user.user_id, req.plan_run_id, async_db=application.state.agent_service_impl.pg
+    )
     return await application.state.agent_service_impl.unshare_plan_run(plan_run_id=req.plan_run_id)
 
 
@@ -1001,7 +1054,9 @@ async def mark_notifications_as_read(
         agent_id (str): agent ID
         timestamp (optional int): int representing timestamp in UTC
     """
-    validate_user_agent_access(user.user_id, req.agent_id)
+    await validate_user_agent_access(
+        user.user_id, req.agent_id, async_db=application.state.agent_service_impl.pg
+    )
     return await application.state.agent_service_impl.mark_notifications_as_read(
         req.agent_id, req.timestamp
     )
@@ -1021,7 +1076,9 @@ async def mark_notifications_as_unread(
         agent_id (str): agent ID
         message_id: message ID - set all messages with created_at >= message timestamp as unread
     """
-    validate_user_agent_access(user.user_id, req.agent_id)
+    await validate_user_agent_access(
+        user.user_id, req.agent_id, async_db=application.state.agent_service_impl.pg
+    )
     return await application.state.agent_service_impl.mark_notifications_as_unread(
         req.agent_id, req.message_id
     )
@@ -1041,7 +1098,9 @@ async def enable_agent_automation(
     Args:
         agent_id (str): agent ID
     """
-    validate_user_agent_access(user.user_id, req.agent_id)
+    await validate_user_agent_access(
+        user.user_id, req.agent_id, async_db=application.state.agent_service_impl.pg
+    )
     return await application.state.agent_service_impl.enable_agent_automation(
         agent_id=req.agent_id, user_id=user.user_id
     )
@@ -1061,7 +1120,9 @@ async def disable_agent_automation(
     Args:
         agent_id (str): agent ID
     """
-    validate_user_agent_access(user.user_id, req.agent_id)
+    await validate_user_agent_access(
+        user.user_id, req.agent_id, async_db=application.state.agent_service_impl.pg
+    )
     return await application.state.agent_service_impl.disable_agent_automation(
         agent_id=req.agent_id, user_id=user.user_id
     )
@@ -1075,7 +1136,9 @@ async def disable_agent_automation(
 async def set_agent_schedule(
     req: SetAgentScheduleRequest, user: User = Depends(parse_header)
 ) -> SetAgentScheduleResponse:
-    validate_user_agent_access(user.user_id, req.agent_id)
+    await validate_user_agent_access(
+        user.user_id, req.agent_id, async_db=application.state.agent_service_impl.pg
+    )
     return await application.state.agent_service_impl.set_agent_schedule(req=req)
 
 
@@ -1117,7 +1180,9 @@ async def get_plan_run_debug_info(
     include the list of tools, inputs, outputs
     """
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
 
     return await application.state.agent_service_impl.get_plan_run_debug_info(
         agent_id=agent_id, plan_run_id=plan_run_id
@@ -1137,7 +1202,9 @@ async def modify_plan_run_args(
 ) -> ModifyPlanRunArgsResponse:
     """Duplicate the plan with modified input variables and rerun it"""
     if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
-        validate_user_agent_access(user.user_id, agent_id)
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
 
     return await application.state.agent_service_impl.modify_plan_run_args(
         agent_id=agent_id, plan_run_id=plan_run_id, user_id=user.user_id, req=req

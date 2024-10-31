@@ -189,22 +189,6 @@ class Postgres(PostgresBase):
 
         return [row["plan_run_id"] for row in rows]
 
-    def get_plan_run(self, plan_run_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Given a plan_run_id, return the plan run's info.
-        """
-        sql = """
-        SELECT agent_id::VARCHAR, plan_id::VARCHAR, created_at, shared
-        FROM agent.plan_runs WHERE plan_run_id = %(plan_run_id)s LIMIT 1
-        """
-        params: Dict[str, Any] = {"plan_run_id": plan_run_id}
-        rows = self.generic_read(sql, params=params)
-
-        if not rows:
-            return None
-
-        return rows[0]
-
     def get_running_plan_run(self, agent_id: str) -> Optional[Dict[str, str]]:
         """
         Look at `agent.plan_runs` table and find the latest plan run that is either NOT_STARTED or

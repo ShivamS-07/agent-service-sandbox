@@ -10,6 +10,7 @@ from gbi_common_py_utils.utils.feature_flags import (
     create_anonymous_user,
     create_user_from_userid,
 )
+from gbi_common_py_utils.utils.redis import redis_cached
 
 from agent_service.utils.postgres import get_psql
 from definitions import CONFIG_PATH
@@ -90,7 +91,14 @@ def get_secure_mode_hash(user_context: LDUser) -> str:
     return client.secure_mode_hash(get_custom_user_dict(user_context=user_context))
 
 
-def is_user_agent_admin(user_id: str, default: bool = False) -> bool:
+@redis_cached(
+    namespace="is_user_agent_admin",
+    key_func=lambda user_id: user_id,
+    serialize_func=lambda b: str(b).encode("utf-8"),
+    deserialize_func=lambda s: s == b"True",
+    ttl=3600,
+)
+def is_user_agent_admin(user_id: str) -> bool:
     """
     Users with flag on can access some agent windows owned by other users. Currently the endpoints
     are:
@@ -104,7 +112,7 @@ def is_user_agent_admin(user_id: str, default: bool = False) -> bool:
     """
 
     return get_ld_flag(
-        flag_name="warren-agent-admin", user_context=get_user_context(user_id), default=default
+        flag_name="warren-agent-admin", user_context=get_user_context(user_id), default=False
     )
 
 

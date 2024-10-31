@@ -31,8 +31,11 @@ def initialize_unauthed_endpoints(application_instance: FastAPI) -> None:
     status_code=status.HTTP_200_OK,
 )
 async def get_plan_run_output(plan_run_id: str) -> GetPlanRunOutputResponse:
-    validate_user_plan_run_access(
-        request_user_id=None, plan_run_id=plan_run_id, require_owner=False
+    await validate_user_plan_run_access(
+        request_user_id=None,
+        plan_run_id=plan_run_id,
+        async_db=application.state.agent_service_impl.pg,
+        require_owner=False,
     )
 
     return await application.state.agent_service_impl.get_plan_run_output(plan_run_id=plan_run_id)
