@@ -7,7 +7,7 @@ from typing import Any, DefaultDict, Dict, Iterator, List, Optional, Tuple
 from gbi_common_py_utils.utils.postgres import PostgresBase
 from psycopg import Cursor
 
-from agent_service.endpoints.models import AgentMetadata, Status
+from agent_service.endpoints.models import AgentInfo, Status
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
 from agent_service.planner.planner_types import (
     ExecutionPlan,
@@ -61,7 +61,7 @@ class Postgres(PostgresBase):
         rows = self.generic_read(sql, params={"agent_id": agent_id})
         return rows[0]["user_id"] if rows else None
 
-    def insert_agent(self, agent_metadata: AgentMetadata) -> None:
+    def insert_agent(self, agent_metadata: AgentInfo) -> None:
         self.multi_row_insert(table_name="agent.agents", rows=[agent_metadata.to_agent_row()])
 
     def insert_chat_messages(self, messages: List[Message]) -> None:

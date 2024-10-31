@@ -16,7 +16,7 @@ from uuid import uuid4
 from gbi_common_py_utils.utils.clickhouse_base import ClickhouseBase
 from gbi_common_py_utils.utils.environment import DEV_TAG
 
-from agent_service.endpoints.models import AgentMetadata
+from agent_service.endpoints.models import AgentInfo
 from agent_service.GPT.constants import CLIENT_NAMESPACE, DEFAULT_CHEAP_MODEL
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import IOType, dump_io_type
@@ -228,7 +228,7 @@ class TestExecutionPlanner(unittest.TestCase):
         skip_output: bool,
         do_chat: bool = False,
     ):
-        agent = AgentMetadata(
+        agent = AgentInfo(
             agent_id=agent_id,
             user_id=user_id,
             agent_name=DEFAULT_AGENT_NAME,

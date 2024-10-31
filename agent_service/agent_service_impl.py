@@ -41,6 +41,7 @@ from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
     Account,
     AgentEvent,
+    AgentInfo,
     AgentMetadata,
     AgentQC,
     AvailableVariable,
@@ -273,11 +274,17 @@ class AgentServiceImpl:
         self.base_url = base_url
         self.cache = cache
 
-    async def create_agent(self, user: User, is_draft: bool = False) -> CreateAgentResponse:
+    async def create_agent(
+        self, user: User, is_draft: bool = False, created_from_template: bool = False
+    ) -> CreateAgentResponse:
         """Create an agent entry in the DB and return ID immediately"""
 
         now = get_now_utc()
-        agent = AgentMetadata(
+        agent_meta = AgentMetadata(created_from_template=created_from_template)
+        if user.real_user_id and user.real_user_id != user.user_id:
+            agent_meta.created_while_spoofed = True
+            agent_meta.real_user_id = user.real_user_id
+        agent = AgentInfo(
             agent_id=str(uuid4()),
             user_id=user.user_id,
             agent_name=DEFAULT_AGENT_NAME,
@@ -285,6 +292,7 @@ class AgentServiceImpl:
             last_updated=now,
             deleted=False,
             is_draft=is_draft,
+            agent_metadata=agent_meta,
         )
         await self.pg.create_agent(agent)
         return CreateAgentResponse(success=True, allow_retry=False, agent_id=agent.agent_id)
@@ -305,7 +313,7 @@ class AgentServiceImpl:
             section.index = i
         return GetAllAgentsResponse(agents=agents, sections=sections)
 
-    async def get_agent(self, agent_id: str) -> AgentMetadata:
+    async def get_agent(self, agent_id: str) -> AgentInfo:
         agents, cost_info = await asyncio.gather(
             self.pg.get_user_all_agents(agent_ids=[agent_id]),
             self.ch.get_agents_cost_info(agent_ids=[agent_id]),
@@ -2039,7 +2047,7 @@ class AgentServiceImpl:
 
         # create a new agent
         LOGGER.info("Creating agent for the template plan")
-        agent = await self.create_agent(user=user, is_draft=is_draft)
+        agent = await self.create_agent(user=user, is_draft=is_draft, created_from_template=True)
         agent_id = agent.agent_id if agent.agent_id else ""
 
         # insert user's new message to DB for the agent

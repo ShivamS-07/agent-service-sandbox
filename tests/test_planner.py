@@ -6,7 +6,7 @@ from unittest import IsolatedAsyncioTestCase, TestCase
 
 import pandas as pd
 
-from agent_service.endpoints.models import AgentMetadata
+from agent_service.endpoints.models import AgentInfo
 from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_type_utils import IOType
 from agent_service.io_types.graph import LineGraph
@@ -587,7 +587,7 @@ class TestPlans(IsolatedAsyncioTestCase):
         )
         plan_run_context = PlanRunContext.get_dummy()
         db = get_psql(skip_commit=True)
-        agent = AgentMetadata(
+        agent = AgentInfo(
             agent_id=plan_run_context.agent_id,
             user_id=plan_run_context.user_id,
             agent_name=DEFAULT_AGENT_NAME,

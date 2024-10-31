@@ -113,6 +113,15 @@ class SetAgentScheduleResponse(BaseModel):
 # GetAllAgents, GetAgent
 ####################################################################################################
 class AgentMetadata(BaseModel):
+    created_from_template: bool = False
+    copied_from_agent_id: Optional[str] = None
+    created_while_spoofed: bool = False
+    # Populated if the agent was created while spoofed. This is the user ID of
+    # the "real" user, not the spoofed user.
+    real_user_id: Optional[str] = None
+
+
+class AgentInfo(BaseModel):
     agent_id: str
     user_id: Optional[str]
     agent_name: str
@@ -133,6 +142,7 @@ class AgentMetadata(BaseModel):
     section_id: Optional[str] = None
 
     is_draft: Optional[bool] = False
+    agent_metadata: Optional[AgentMetadata] = None
 
     def to_agent_row(self) -> Dict[str, Any]:
         return {
@@ -142,6 +152,11 @@ class AgentMetadata(BaseModel):
             "created_at": self.created_at,
             "last_updated": self.last_updated,
             "is_draft": self.is_draft,
+            "agent_metadata": (
+                self.agent_metadata.model_dump_json()
+                if self.agent_metadata
+                else AgentMetadata().model_dump_json()
+            ),
         }
 
 
@@ -152,7 +167,7 @@ class Section(BaseModel):
 
 class GetAllAgentsResponse(BaseModel):
     sections: List[SidebarSection]
-    agents: List[AgentMetadata]
+    agents: List[AgentInfo]
 
 
 ####################################################################################################

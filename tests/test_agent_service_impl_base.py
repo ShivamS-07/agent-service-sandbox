@@ -23,7 +23,7 @@ from grpclib.client import Channel
 from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
-    AgentMetadata,
+    AgentInfo,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     CreateAgentResponse,
@@ -91,7 +91,7 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
     def get_all_agents(self, user: User) -> GetAllAgentsResponse:
         return self.loop.run_until_complete(self.agent_service_impl.get_all_agents(user=user))
 
-    def get_agent(self, agent_id: str) -> AgentMetadata:
+    def get_agent(self, agent_id: str) -> AgentInfo:
         return self.loop.run_until_complete(self.agent_service_impl.get_agent(agent_id=agent_id))
 
     def terminate_agent(

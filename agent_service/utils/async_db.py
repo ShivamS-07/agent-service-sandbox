@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_service.endpoints.models import (
     AgentFeedback,
+    AgentInfo,
     AgentMetadata,
     AgentNotificationEmail,
     AgentOutput,
@@ -811,7 +812,7 @@ class AsyncDB:
             total_message_count=total_message_count,
         )
 
-    async def create_agent(self, agent_metadata: AgentMetadata) -> None:
+    async def create_agent(self, agent_metadata: AgentInfo) -> None:
         await self.pg.multi_row_insert(
             table_name="agent.agents", rows=[agent_metadata.to_agent_row()]
         )
@@ -1046,7 +1047,7 @@ class AsyncDB:
     @async_perf_logger
     async def get_user_all_agents(
         self, user_id: Optional[str] = None, agent_ids: Optional[List[str]] = None
-    ) -> List[AgentMetadata]:
+    ) -> List[AgentInfo]:
         """
         This function retrieves all agents for a given user, optionally filtered
         by a list of agent ids.
@@ -1127,7 +1128,7 @@ class AsyncDB:
                 else row["latest_agent_message"]
             )
             output.append(
-                AgentMetadata(
+                AgentInfo(
                     agent_id=row["agent_id"],
                     user_id=row["user_id"],
                     agent_name=row["agent_name"],
@@ -1644,6 +1645,13 @@ class AsyncDB:
             agent_info["agent_name"] = dst_agent_name
         agent_info["created_at"] = datetime.datetime.utcnow()
         agent_info["last_updated"] = datetime.datetime.utcnow()
+        meta = (
+            AgentMetadata.model_validate(agent_info["agent_metadata"])
+            if agent_info.get("agent_metadata")
+            else AgentMetadata()
+        )
+        meta.copied_from_agent_id = src_agent_id
+        agent_info["agent_metadata"] = meta.model_dump_json()
         agent_info["section_id"] = None
         if agent_info["schedule"]:
             agent_info["schedule"] = json.dumps(agent_info["schedule"])

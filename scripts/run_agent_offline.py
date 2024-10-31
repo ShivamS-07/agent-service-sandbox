@@ -5,7 +5,7 @@ from pprint import pprint
 from typing import Optional
 from uuid import uuid4
 
-from agent_service.endpoints.models import AgentMetadata
+from agent_service.endpoints.models import AgentInfo
 from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.planner.executor import (
     create_execution_plan_local,
@@ -54,7 +54,7 @@ async def gen_and_run_plan(
     if user_id is None:
         user_id = str(uuid4())
     plan_id = str(uuid4())
-    agent = AgentMetadata(
+    agent = AgentInfo(
         agent_id=agent_id,
         user_id=user_id,
         agent_name=DEFAULT_AGENT_NAME,
