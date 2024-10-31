@@ -6,6 +6,7 @@ import Levenshtein
 
 from agent_service.GPT.constants import GPT4_O, GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
+from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import ComplexIOBase, IOTypeBase
 from agent_service.io_types.text import (
     DEFAULT_TEXT_TYPE,
@@ -283,11 +284,22 @@ async def classify_stock_text_relevancy_for_profile(
     company_name: str,
     llm: GPT,
 ) -> bool:
+
+    chopped_text_str = GPTTokenizer(model=llm.model).do_truncation_if_needed(
+        truncate_str=text,
+        other_prompt_strs=[
+            TEXT_SNIPPET_RELEVANCY_MAIN_PROMPT.template,
+            TEXT_SNIPPET_RELEVANCY_SYS_PROMPT.template,
+            company_name,
+            profiles_str,
+        ],
+    )
+
     output = await llm.do_chat_w_sys_prompt(
         main_prompt=TEXT_SNIPPET_RELEVANCY_MAIN_PROMPT.format(
             company_name=company_name,
             profiles=profiles_str,
-            text_snippet=text,
+            text_snippet=chopped_text_str,
         ),
         sys_prompt=TEXT_SNIPPET_RELEVANCY_SYS_PROMPT.format(),
         max_tokens=500,
@@ -317,6 +329,7 @@ async def classify_stock_text_relevancies_for_profile(
         model=GPT4_O_MINI,
         context=create_gpt_context(GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID),
     )
+
     tasks = []
     for i, text in enumerate(texts):
         if isinstance(text, StockText):
