@@ -1828,13 +1828,7 @@ class StockSecFilingSectionText(StockText):
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         output = defaultdict(list)
-        filing_id_set = set()
         for text in texts:
-            source_text = text.source_text
-            source_text = cast(Self, text.source_text)
-            if source_text.filing_id in filing_id_set:
-                continue
-            filing_id_set.add(source_text.filing_id)
             hl_start, hl_end = None, None
             if text.citation_snippet_context and text.citation_snippet:
                 hl_start, hl_end = CompanyFilingCitationOutput.get_offsets_from_snippets(
@@ -2105,13 +2099,7 @@ class StockOtherSecFilingSectionText(StockText):
         cls, texts: List[TextCitation], db: BoostedPG
     ) -> Dict[TextCitation, Sequence[CitationOutput]]:
         output = defaultdict(list)
-        filing_id_set = set()
         for text in texts:
-            source_text = text.source_text
-            source_text = cast(Self, text.source_text)
-            if source_text.filing_id in filing_id_set:
-                continue
-            filing_id_set.add(source_text.filing_id)
             hl_start, hl_end = None, None
             if text.citation_snippet_context and text.citation_snippet:
                 hl_start, hl_end = CompanyFilingCitationOutput.get_offsets_from_snippets(
