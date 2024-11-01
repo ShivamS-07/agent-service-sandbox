@@ -5,7 +5,7 @@ RUN apt-get -s dist-upgrade | grep "^Inst" | grep -i securi | awk -F " " {'print
 # install pandoc for document conversion
 RUN apt-get install -y pandoc
 RUN apt-get install -y libpq-dev
-RUN pip install pipenv
+RUN pip install pipenv==2024.0.1
 WORKDIR /service
 COPY Pipfile ./
 RUN pipenv install --verbose
