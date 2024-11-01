@@ -71,6 +71,7 @@ from agent_service.endpoints.models import (
     GetAgentDebugInfoResponse,
     GetAgentFeedBackResponse,
     GetAgentOutputResponse,
+    GetAgentsQCRequest,
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
@@ -83,6 +84,7 @@ from agent_service.endpoints.models import (
     GetCustomDocumentFileInfoResponse,
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
+    GetLiveAgentsQCResponse,
     GetMemoryContentResponse,
     GetOrderedSecuritiesRequest,
     GetOrderedSecuritiesResponse,
@@ -1942,6 +1944,23 @@ async def search_agent_qc(
 
     # Return the list of AgentQC records in the response model format
     return SearchAgentQCResponse(agent_qcs=agent_qcs, total_agent_qcs=total_agent_qcs)
+
+
+@router.post(
+    "/agent/qc/get-live-agents",
+    response_model=GetLiveAgentsQCResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_live_agents_qc(
+    req: GetAgentsQCRequest, user: User = Depends(parse_header)
+) -> GetLiveAgentsQCResponse:
+    # Validate user access to QC tool
+    if not user_has_qc_tool_access(user_id=user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
+        )
+
+    return await application.state.agent_service_impl.get_live_agents_qc(req=req)
 
 
 @router.post(

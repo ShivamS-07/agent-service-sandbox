@@ -13,6 +13,7 @@ from agent_service.endpoints.models import (
     AgentNotificationEmail,
     AgentOutput,
     AgentQC,
+    AgentQCInfo,
     AgentSchedule,
     CustomNotification,
     HorizonCriteria,
@@ -2002,6 +2003,46 @@ class AsyncDB:
             total_agent_qcs = record.pop("total_agent_qcs", 0)
             agent_qcs.append(AgentQC(**record))
         return agent_qcs, total_agent_qcs
+
+    async def get_agents_for_qc(
+        self,
+        live_only: bool = True,
+        start_dt: Optional[datetime.datetime] = None,
+        end_dt: Optional[datetime.datetime] = None,
+    ) -> List[AgentQCInfo]:
+        where_parts = []
+        where_clause = ""
+        params = {}
+        if live_only:
+            where_parts.append("a.automation_enabled")
+        if start_dt:
+            where_parts.append("pr.created_at >= %(start_dt)s")
+            params["start_dt"] = start_dt
+        if end_dt:
+            where_parts.append("pr.created_at <= %(end_dt)s")
+            params["end_dt"] = end_dt
+        if where_parts:
+            parts_str = " AND ".join(where_parts)
+            where_clause = f"WHERE {parts_str}"
+
+        sql = f"""
+        SELECT DISTINCT ON (a.agent_id)
+          a.agent_id::TEXT, a.agent_name, a.user_id::TEXT, u.name AS user_name,
+          o.id::TEXT AS user_org_id, o.name AS user_org_name, (NOT is_client) AS user_is_internal,
+          pr.plan_run_id::TEXT AS most_recent_plan_run_id,
+          pr.status AS most_recent_plan_run_status,
+          pr.created_at AS last_run_start
+        FROM agent.agents a
+        JOIN agent.plan_runs pr ON pr.agent_id = a.agent_id
+        JOIN user_service.users u ON a.user_id = u.id
+        JOIN user_service.company_membership cm ON cm.user_id = u.id::TEXT
+        JOIN user_service.organizations o ON o.id::TEXT = cm.company_id
+        {where_clause}
+        ORDER BY a.agent_id, pr.created_at DESC
+        """
+
+        results = await self.pg.generic_read(sql, params)
+        return [AgentQCInfo.model_validate(row) for row in results]
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:

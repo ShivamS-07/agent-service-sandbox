@@ -1278,3 +1278,26 @@ class UpdateAgentQCRequest(BaseModel):
 
 class UpdateAgentQCResponse(BaseModel):
     success: bool
+
+
+class GetAgentsQCRequest(BaseModel):
+    start_dt: Optional[datetime.datetime] = None
+    end_dt: Optional[datetime.datetime] = None
+
+
+class AgentQCInfo(BaseModel):
+    agent_id: str
+    agent_name: str
+    user_id: str
+    user_name: str
+    user_org_id: str
+    user_org_name: str
+    user_is_internal: bool
+
+    most_recent_plan_run_id: str
+    most_recent_plan_run_status: Status
+    last_run_start: datetime.datetime
+
+
+class GetLiveAgentsQCResponse(BaseModel):
+    agent_infos: List[AgentQCInfo]

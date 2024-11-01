@@ -67,6 +67,7 @@ from agent_service.endpoints.models import (
     GetAgentDebugInfoResponse,
     GetAgentFeedBackResponse,
     GetAgentOutputResponse,
+    GetAgentsQCRequest,
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
@@ -79,6 +80,7 @@ from agent_service.endpoints.models import (
     GetCustomDocumentFileResponse,
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
+    GetLiveAgentsQCResponse,
     GetMemoryContentResponse,
     GetOrderedSecuritiesRequest,
     GetOrderedSecuritiesResponse,
@@ -2174,3 +2176,9 @@ class AgentServiceImpl:
         except Exception as e:
             logging.warning(f"Failed to update quality agent table {agent_qc.agent_qc_id=}: {e}")
             return False
+
+    async def get_live_agents_qc(self, req: GetAgentsQCRequest) -> GetLiveAgentsQCResponse:
+        infos = await self.pg.get_agents_for_qc(
+            live_only=True, start_dt=req.start_dt, end_dt=req.end_dt
+        )
+        return GetLiveAgentsQCResponse(agent_infos=infos)
