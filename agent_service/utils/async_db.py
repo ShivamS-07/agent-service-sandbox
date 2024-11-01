@@ -827,13 +827,15 @@ class AsyncDB:
     async def update_execution_plan_status(
         self, plan_id: str, agent_id: str, status: PlanStatus = PlanStatus.READY
     ) -> None:
+
+        now_utc = get_now_utc()
         sql = """
         INSERT INTO agent.execution_plans (plan_id, agent_id, plan, created_at, last_updated, status)
         VALUES (
           %(plan_id)s, %(agent_id)s, %(empty_plan)s, %(created_at)s, %(last_updated)s, %(status)s
         )
         ON CONFLICT (plan_id) DO UPDATE SET
-          last_updated = NOW(),
+          last_updated = %(now_utc)s,
           status = EXCLUDED.status
         """
         created_at = last_updated = get_now_utc()  # need so skip_commit db has proper times
@@ -847,6 +849,7 @@ class AsyncDB:
                 "empty_plan": ExecutionPlan(nodes=[]).model_dump_json(),
                 "last_updated": last_updated,
                 "status": status.value,
+                "now_utc": now_utc,
             },
         )
 
@@ -857,6 +860,7 @@ class AsyncDB:
         plan: ExecutionPlan,
         status: PlanStatus = PlanStatus.READY,
     ) -> None:
+        now_utc = get_now_utc()
         sql = """
         INSERT INTO agent.execution_plans (plan_id, agent_id, plan, created_at,
                     last_updated, status, locked_tasks)
@@ -867,7 +871,7 @@ class AsyncDB:
         ON CONFLICT (plan_id) DO UPDATE SET
           agent_id = EXCLUDED.agent_id,
           plan = EXCLUDED.plan,
-          last_updated = NOW(),
+          last_updated = %(now_utc)s,
           status = EXCLUDED.status,
           locked_tasks = EXCLUDED.locked_tasks
         """
@@ -883,12 +887,14 @@ class AsyncDB:
                 "last_updated": last_updated,
                 "status": status.value,
                 "locked_tasks": locked_ids,
+                "now_utc": now_utc,
             },
         )
 
     async def update_plan_run(
         self, agent_id: str, plan_id: str, plan_run_id: str, status: Status = Status.NOT_STARTED
     ) -> None:
+        now_utc = get_now_utc()
         sql = """
         INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id, status)
         VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(status)s)
@@ -896,7 +902,7 @@ class AsyncDB:
           agent_id = EXCLUDED.agent_id,
           plan_id = EXCLUDED.plan_id,
           status = EXCLUDED.status,
-          last_updated = NOW()
+          last_updated = %(now_utc)s
         """
         await self.pg.generic_write(
             sql,
@@ -905,6 +911,7 @@ class AsyncDB:
                 "plan_id": plan_id,
                 "plan_run_id": plan_run_id,
                 "status": status.value,
+                "now_utc": now_utc,
             },
         )
 
@@ -986,13 +993,14 @@ class AsyncDB:
         tasks: List[TaskStatus],
         plan_run_id: str,
     ) -> None:
+        now_utc = get_now_utc()
         sql = """
         INSERT INTO agent.task_runs AS tr (task_id, agent_id, plan_run_id, status)
         VALUES (%(task_id)s, %(agent_id)s, %(plan_run_id)s, %(status)s)
         ON CONFLICT (plan_run_id, task_id) DO UPDATE SET
           agent_id = EXCLUDED.agent_id,
           status = EXCLUDED.status,
-          last_updated = NOW() WHERE tr.status != EXCLUDED.status
+          last_updated = %(now_utc)s WHERE tr.status != EXCLUDED.status
         """
         params = [
             {
@@ -1000,6 +1008,7 @@ class AsyncDB:
                 "task_id": task.task_id,
                 "plan_run_id": plan_run_id,
                 "status": task.status.value,
+                "now_utc": now_utc,
             }
             for task in tasks
         ]

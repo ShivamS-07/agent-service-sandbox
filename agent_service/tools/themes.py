@@ -105,11 +105,13 @@ class ThemePostgres:
         sql = """
             SELECT news_id::TEXT, published_at
             FROM nlp_service.theme_news
-            WHERE development_id = %s
-            AND published_at >= NOW() - INTERVAL '2 years'
+            WHERE development_id = %(development_id)s
+            AND published_at >= %(now_utc)s - INTERVAL '2 years'
             ORDER BY published_at DESC
         """
-        records = self.db.generic_read(sql, [development_id])
+        now_utc = get_now_utc()
+        params = {"development_id": development_id, "now_utc": now_utc}
+        records = self.db.generic_read(sql, params=params)
         return [(record["news_id"], record["published_at"]) for record in records]
 
 

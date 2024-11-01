@@ -12,6 +12,7 @@ from agent_service.external.feature_svc_client import (
     nc_swap_rows_fields,
 )
 from agent_service.utils.async_utils import async_wrap
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.feature_flags import get_ld_flag
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ def get_stock_search_data(
     end_date: Optional[dt.date] = None,
 ) -> List[Dict[str, Any]]:
     start_date = start_date or EARLIEST_START_DATE
-    end_date = end_date or dt.datetime.now().date()
+    end_date = end_date or get_now_utc().date()
     records = get_stock_search_dao().get_feature_data(
         gbi_ids=gbi_ids, features=features, start_date=start_date, end_date=end_date
     )
@@ -68,7 +69,7 @@ async def get_feature_svc_stock_volume(user_id: str, gbi_ids: List[int]) -> List
 
     # calendar days (prob not equivalent to stocksearch value but serves the same purpose)
     num_days = 63
-    end_date = dt.datetime.now().date()
+    end_date = get_now_utc().date()
     start_date = end_date - dt.timedelta(days=num_days)
     output_currency = "USD"
     features = ["spiq_real_volume", "spiq_close"]
@@ -123,7 +124,7 @@ async def sort_stocks_by_volume(user_id: str, gbi_ids: List[int]) -> List[Tuple[
         sorted_list2 = sorted(ffill2.items(), key=lambda x: x[1], reverse=True)
         return sorted_list2
 
-    END_DATE = dt.datetime.now().date()
+    END_DATE = get_now_utc().date()
     # look back N days to forwardfill
     START_DATE = END_DATE - dt.timedelta(days=21)
 

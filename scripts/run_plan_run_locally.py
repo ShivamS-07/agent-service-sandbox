@@ -1,7 +1,23 @@
+# flake8: noqa
+import datetime
+
+from agent_service.utils.date_utils import (
+    MockDate,
+    enable_mock_time,
+    get_now_utc,
+    increment_mock_time,
+    set_mock_time,
+)
+
+# this must be monkeypatched before most of our imports
+# override today() to use our mocked current time
+datetime.date = MockDate  # type:ignore
+
 import argparse
 import asyncio
+import logging
 import sys
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 from unittest.mock import AsyncMock, patch
 
 from gbi_common_py_utils.utils.clickhouse_base import ClickhouseBase
@@ -12,6 +28,69 @@ from agent_service.planner.executor import run_execution_plan_local
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import PlanRunContext
 from agent_service.utils.logs import init_stdout_logging
+from agent_service.utils.postgres import Postgres
+
+logger = logging.getLogger(__name__)
+
+
+def get_plan_run_info(plan_run_id: str, env: str) -> Dict[str, Any]:
+    # check the create and update times for the plan id
+    # we do this because currently the create date is generated on db server
+    # at row insert but we supply a last_updated datetime in code when updating status.
+    # return any plan runs within the time period
+    sql = """
+    SELECT plan_run_id::VARCHAR, created_at, agent_id::VARCHAR, 
+    plan_id::VARCHAR , last_updated
+    FROM agent.plan_runs
+    WHERE plan_run_id = %(plan_run_id)s
+    """
+
+    db = Postgres(environment=env)
+    params = {
+        "plan_run_id": plan_run_id,
+    }
+    rows = db.generic_read(sql, params=params)
+    return rows[0]
+
+
+def get_plan_context_postgres(plan_run_id: str, env: str) -> Tuple[ExecutionPlan, PlanRunContext]:
+    db = Postgres(environment=env)
+
+    # agent_id::VARCHAR, plan_id::VARCHAR, created_at,
+    plan_info = db.get_plan_run(plan_run_id)
+    if not plan_info:
+        raise Exception(f"{plan_run_id=} not found")
+
+    sql = """
+    SELECT DISTINCT ON (ag.agent_id) ag.agent_id::TEXT, ag.user_id::TEXT, ep.plan_id::TEXT, ep.plan,
+    ag.schedule
+    FROM agent.agents ag JOIN agent.execution_plans ep ON ag.agent_id = ep.agent_id
+    WHERE ag.agent_id = %(agent_id)s and ep.plan_id = %(plan_id)s
+    -- ORDER BY ag.agent_id, ep.created_at DESC
+    """
+    params = {"agent_id": plan_info["agent_id"], "plan_id": plan_info["plan_id"]}
+
+    rows = db.generic_read(sql, params=params)
+    agent_info = rows[0]
+    plan = ExecutionPlan(**agent_info["plan"])
+
+    plan_run_info = get_plan_run_info(plan_run_id, env=env)
+
+    # get all the chat history from the plan run and everything prior
+    chat_context = db.get_chats_history_for_agent(
+        agent_id=plan_info["agent_id"], end=plan_run_info["last_updated"]
+    )
+    context = PlanRunContext(
+        agent_id=agent_info["agent_id"],
+        plan_id=agent_info["plan_id"],
+        user_id=agent_info["user_id"],
+        plan_run_id=plan_run_id,
+        chat=chat_context,
+        run_tasks_without_prefect=True,
+        as_of_date=plan_run_info["last_updated"],
+    )
+
+    return plan, context
 
 
 def fetch_task_outputs_from_clickhouse(
@@ -29,6 +108,7 @@ def fetch_task_outputs_from_clickhouse(
     """
     rows = c.generic_read(sql, params={"plan_run_id": plan_run_id, "task_ids": task_ids})
     output = {}
+
     for row in rows:
         output[row["task_id"]] = load_io_type(row["output"])
 
@@ -66,13 +146,36 @@ def parse_args() -> argparse.Namespace:
 
 
 async def main() -> IOType:
+    # comment this out if you want to run the plan_run_id but for today()
+    # instead of the same day it was originally tun
+    enable_mock_time()
     args = parse_args()
     init_stdout_logging()
-    plan, context = fetch_plan_and_context_from_clickhouse(
-        plan_run_id=args.plan_run_id, env=args.env
-    )
+    try:
+        plan, context = fetch_plan_and_context_from_clickhouse(
+            plan_run_id=args.plan_run_id, env=args.env
+        )
+    except Exception as e:
+        logger.warning(f"falling back to postgres for plan/context retrieval: {repr(e)}")
+        plan, context = get_plan_context_postgres(plan_run_id=args.plan_run_id, env=args.env)
+
     context.run_tasks_without_prefect = True
     context.skip_db_commit = True
+
+    print("==================================")
+    if context.as_of_date:
+        set_mock_time(context.as_of_date)
+        print(f"overriding current time to: {context.as_of_date=}")
+    else:
+        plan_run_info = get_plan_run_info(plan_run_id=args.plan_run_id, env=args.env)
+        last_update = plan_run_info["last_update"]
+        context.as_of_date = last_update
+        set_mock_time(last_update)
+        print(f"overriding current time to: {last_update=}")
+    print("==================================")
+
+    # move time slightly forward
+    increment_mock_time()
 
     # Fill in the variables dict with things already computed
     override_output_dict = None
@@ -95,7 +198,6 @@ async def main() -> IOType:
     with (
         patch(target="agent_service.planner.executor.get_psql"),
         patch(target="agent_service.planner.executor.AsyncDB") as adb,
-        patch(target="agent_service.planner.executor.get_agent_output"),
         patch(target="agent_service.planner.executor.check_cancelled") as cc,
         patch(target="agent_service.planner.executor.publish_agent_execution_plan"),  # noqa
         patch(target="agent_service.planner.executor.publish_agent_execution_status"),  # noqa

@@ -36,6 +36,7 @@ from agent_service.utils.async_db import get_async_db
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.cache_utils import PostgresCacheBackend
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.prefect import get_prefect_logger
@@ -1735,10 +1736,11 @@ async def get_stock_universe_table_from_universe_company_id(
         FROM "data".etf_universe_holdings euh
         JOIN master_security ms ON ms.gbi_security_id = euh.gbi_id
         WHERE spiq_company_id =  %(spiq_company_id)s AND ms.is_public
-        AND euh.to_z > NOW()
+        AND euh.to_z > %(now_utc)s
         """
 
-        params = {"spiq_company_id": universe_spiq_company_id}
+        now_utc = get_now_utc()
+        params = {"spiq_company_id": universe_spiq_company_id, "now_utc": now_utc}
         full_rows = await db.generic_read(query, params=params)
 
         if dedup_companies:

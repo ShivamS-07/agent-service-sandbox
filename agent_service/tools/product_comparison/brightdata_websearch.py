@@ -230,11 +230,13 @@ async def get_web_texts_async(
     sql1 = """
         SELECT DISTINCT ON (url) id::VARCHAR, url, title, inserted_at
         FROM agent.websearch_metadata
-        WHERE url = ANY(%(urls)s) AND inserted_at > NOW() - INTERVAL '%(num_hours)s hours'
+        WHERE url = ANY(%(urls)s) AND inserted_at > %(now_utc)s - INTERVAL '%(num_hours)s hours'
         ORDER BY url, inserted_at DESC
     """
     pg = get_psql()
-    rows = pg.generic_read(sql1, params={"urls": urls, "num_hours": URL_CACHE_TTL_HOURS})
+    params = {"urls": urls, "num_hours": URL_CACHE_TTL_HOURS, "now_utc": get_now_utc()}
+
+    rows = pg.generic_read(sql1, params=params)
 
     logger.info(f"Cache hit! Found {len(rows)} cached URLs out of {len(urls)}!")
 
