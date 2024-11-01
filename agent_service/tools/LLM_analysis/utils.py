@@ -334,8 +334,10 @@ async def classify_stock_text_relevancies_for_profile(
     for i, text in enumerate(texts):
         if isinstance(text, StockText):
             text_str = text_strs[i]
+            if not text.stock_id:
+                continue
             # If StockText, there must be a stock_id
-            company_name = text.stock_id.company_name  # type: ignore
+            company_name = text.stock_id.company_name
             tasks.append(
                 classify_stock_text_relevancy_for_profile(
                     text=text_str, profiles_str=profiles_str, company_name=company_name, llm=llm

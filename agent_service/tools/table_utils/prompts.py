@@ -204,6 +204,9 @@ schema. If the transformation description starts with the word `filter` or
 `rank`, it is 100% certain that this is the kind of problem it is, even
 if there is mention of a time calculation (it has likely already been done!)
 
+Note that the values in STOCK columns are not just strings, so you CANNOT
+manually add rows with stocks in them.
+
 Your first step must always be to drop any NaN/None/NA rows, you must not do any
 sorting/filering operations with Nones in the table. Do not forget this!
 In most cases, after removing the Nones you will just sort the values of

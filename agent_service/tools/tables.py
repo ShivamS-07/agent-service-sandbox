@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import traceback
 from itertools import chain
 from json.decoder import JSONDecodeError
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
@@ -464,6 +465,8 @@ async def transform_tables_helper(
     debug_info["code_first_attempt"] = code
     logger.info(f"Running transform code:\n{code}")
     output_dfs = []
+    had_error = False
+    error = None
     for data_df in data_dfs:
         output_df, error = _run_transform_code(df=data_df, code=code)
 
@@ -476,9 +479,24 @@ async def transform_tables_helper(
                         f"'{df_col}' not in dataframe cols: {output_df.columns}"
                     )
         if output_df is None or error:
+            had_error = True
             break
+        try:
+            table = Table.from_df_and_cols(
+                columns=new_col_schema, data=output_df, stocks_are_hashable_objs=True
+            )
+        except Exception:
+            error = traceback.format_exc()
+            had_error = True
+            break
+
+        if table.get_num_rows() == 0:
+            error = "Table transformation resulted in an empty table"
+            had_error = True
+            break
+
         output_dfs.append(output_df)
-    if output_df is None or error:
+    if had_error:
         output_dfs = []
         logger.warning("Failed when transforming dataframe... trying again")
         logger.warning(f"Failing code:\n{code}")
@@ -491,7 +509,10 @@ async def transform_tables_helper(
                 col_type_explain=TableColumnType.get_type_explanations(),
                 today=datetime.date.today(),
                 error=(
-                    "Your last code failed with this error, please correct it:\n"
+                    "Your last code failed with this error. If it is a validation error, "
+                    "it may be because you transformed the dataframe in such a way that "
+                    "it is now unable to be read. "
+                    "Please correct it:\n"
                     f"Last Code:\n\n{code}\n\n"
                     f"Error:\n{error}"
                 ),
