@@ -231,20 +231,19 @@ be the same.
 There is one kind of filtering you may be asked to do that is more challenging, namely that
 you may be asked to filter a stock based on data across multiple dates (including months, quarter
 and years). For example: 'filter to stocks which have had at least a 5% stock gain in each of
-the last 6 months`. In this case, you must be very careful that you output only
-one row per stock that passes the filter. That is, in the input table, each stock will have
-multiple datapoints across the relevant days/months/quarters/years, but in the final table
-there must be only have one row for each stock that passes the filter (and of course no rows
-for stocks which do not).
+the last 6 months`. In this case, you must be very careful that you preserve all the data you are
+using to do the filtering, in the final table there should only be rows with stocks that pass
+the filter, but each stocks will have multiple rows, one for each of the datapoints used in
+the filter.
 
 If you have been asked to do filtering involving multiple datapoints per stock (i.e. you are
 filtering and there is a date, quarter/period, month, or year column and a clear indication
 of more than one datapoint per stock), you must explicit state this in your comment at the
-top of your code. After you say it is a filter problem, say 'This is a multidate filter problem,
-I must remove all but one row for each stock which passes my filter'.
-You must also mention it explicitly in the comment for the line that removes the extra
-rows per stock. Do not forget, there is no deduplication later on and having the same stock
-listed multiple times will make the user angry.
+top of your code and follow a strategy that involves deriving a python list corresponding
+to the desired stocks, and then filtering the dataframe on that list . After you say it is a
+filter problem, say 'This is a multidate filter problem, I will keep data for all relevant
+dates for stocks that pass the filter in my output. I will accomplish this by first deriving
+a list of stocks to keep, and then filtering the original df on that list.'.
 
 If your operation across stocks involves a sum, averaging, or other agglomeration across
 stocks, your output will NOT have a stock column (the rows of which correspond to
@@ -670,6 +669,9 @@ return` should be considered easy.
 Similarly, you should default to easy for most basic calculations of performance (simple cumulative or daily
 returns/stock price changes), however if task involves calculation of monthly, quarterly, or yearly returns
 involving multiple months, quarter, or years, you should consider the task hard.
+
+Simple calculations of minimum or maximum value for a statistic over a time range should also
+be considered easy.
 
 All other calculations that are not otherwise trivial should be considered hard.
 

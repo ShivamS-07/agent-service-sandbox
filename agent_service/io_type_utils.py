@@ -90,7 +90,7 @@ class TableColumnType(enum.StrEnum):
             "- 'date/datetime': A column containing a python date or datetime object."
             "- 'quarter': A column containing a year + financial quarter represented as a string (yyyyQq)."
             " For example, 2024Q2."
-            "- 'year': A column containing a year represented as a string. (yyyy)"
+            "- 'year': A column containing a year represented as a string (yyyy). Note it is not an integer!"
             "- 'month': A column containing a year + month represented as a string (yyyy-mm)"
             "- 'percent': A column containing a percent value float. 100% is equal to 1.0, NOT 100. "
             "E.g. 25 percent is represented as 0.25. NEVER multiply by 100 to get this.\n"

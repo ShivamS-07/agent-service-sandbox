@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
+from collections import defaultdict
 from itertools import chain
 from json.decoder import JSONDecodeError
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
@@ -27,6 +28,7 @@ from agent_service.io_types.table import (
     StockTable,
     StockTableColumn,
     Table,
+    TableColumn,
     TableColumnMetadata,
     TableColumnType,
     object_histories_to_columns,
@@ -397,6 +399,41 @@ async def transform_table(
             except Exception as e:
                 logger.warning(f"Error doing diff from previous run: {e}")
 
+    # special case where we are doing filters over multiple dates
+    # e.g. (filter to stocks with gains in each of the last 5 years)
+    # And want to include all the relevant data in the output table.
+
+    if args.transformation_description.startswith("Filter to stocks"):
+        stock_column = output_table.get_stock_column()
+        date_column = output_table.get_date_column()
+        if (
+            stock_column
+            and date_column
+            and len(output_table.columns) == 3
+            and len(set(stock_column.data)) != len(stock_column.data)
+        ):
+            for other_column in output_table.columns:  # should be last column, but just in case
+                if other_column != date_column and other_column != stock_column:
+                    break
+
+            stat_lookup: Dict[StockID, Dict[str, float]] = defaultdict(dict)
+            for i in range(len(stock_column.data)):
+                stat_lookup[stock_column.data[i]][date_column.data[i]] = other_column.data[i]  # type: ignore
+            new_stock_column = StockTableColumn(
+                title=stock_column.title,
+                history=stock_column.history,
+                data=cast(List[StockID], list(set(stock_column.data))),
+            )
+            new_columns: List[TableColumn] = [new_stock_column]
+            for date in set(date_column.data):
+                new_column = copy.deepcopy(other_column)
+                new_column.metadata.label = f"{new_column.metadata.label}, {date}"
+                new_column.data = []
+                for stock in new_stock_column.data:
+                    new_column.data.append(stat_lookup[stock][date])  # type: ignore
+                new_columns.append(new_column)
+        output_table = StockTable(columns=new_columns)
+
     return output_table
 
 
@@ -577,6 +614,8 @@ class PerStockGroupTransformTableInput(ToolArgs):
     otherwise required for the calculation, the StockGroups object already contains that information,
     to have it in the input table too is entirely redundant and may result in duplicate columns.
     Otherwise, follow the instructions for transform_table.
+    The output of this tool is always a table. Make sure you always label the output variable of this
+    tool as a table, e.g. sector_performance_table.
 """,
     category=ToolCategory.TABLE,
 )
