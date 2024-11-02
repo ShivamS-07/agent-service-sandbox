@@ -137,11 +137,49 @@ def _get_command(data_file: str, code_file: str) -> str:
     return command
 
 
-def _run_transform_code(df: pd.DataFrame, code: str) -> Tuple[Optional[pd.DataFrame], str]:
-    if code.startswith("```python"):
-        code = code[9:]
+def cleanup_generated_python(code: str) -> str:
+    code = code.strip()
     if code.endswith("```"):
         code = code[:-3]
+
+    if code.startswith("```python"):
+        code = code[9:]
+        lines = code.splitlines()
+        found_back_quote = False
+        # GPT sometimes (always?) wraps code in ```python ... ```
+        # additionally it sometimes writes an explanation after the last ```
+        # backquote is not a valid python char so we can remove it
+        # and convert anything after that to a comment
+        for i, l in enumerate(lines):
+            if found_back_quote:
+                lines[i] = "# " + l
+            elif l.strip().startswith("```"):
+                # this can also false positive inside of a """ block
+                found_back_quote = True
+                lines[i] = ""
+        code = "\n".join(lines)
+
+    if "import" in code or "from" in code:
+        # sometimes GPT imports pandas even though we told it not to/not needed
+        # we can safely comment out these lines because if it is just pandas,
+        # we already imported it
+        # if it is some random module, we would have failed it before in pandas_exec
+        # it will now fail in a different spot when we try to exec() it because code
+        # using the imported module will fail
+        lines = code.splitlines()
+        for i, l in enumerate(lines):
+            # technically this could find a false positive inside of a """ block
+            # but our checks in pandas_exec would have the same problem
+            if "import" in l and (l.startswith("from ") or l.startswith("import ")):
+                lines[i] = "# " + l
+
+        code = "\n".join(lines)
+
+    return code
+
+
+def _run_transform_code(df: pd.DataFrame, code: str) -> Tuple[Optional[pd.DataFrame], str]:
+    code = cleanup_generated_python(code)
     delete = (
         sys.platform != "win32"
     )  # turning off delete is necessary for temp file to work in Windows
@@ -499,6 +537,8 @@ async def transform_tables_helper(
         # sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
         sys_prompt=NO_PROMPT,
     )
+
+    code = cleanup_generated_python(code)
     debug_info["code_first_attempt"] = code
     logger.info(f"Running transform code:\n{code}")
     output_dfs = []
@@ -518,6 +558,7 @@ async def transform_tables_helper(
         if output_df is None or error:
             had_error = True
             break
+
         try:
             table = Table.from_df_and_cols(
                 columns=new_col_schema, data=output_df, stocks_are_hashable_objs=True
@@ -533,9 +574,13 @@ async def transform_tables_helper(
             break
 
         output_dfs.append(output_df)
+
     if had_error:
+        debug_info["code_first_attempt_error"] = error
         output_dfs = []
         logger.warning("Failed when transforming dataframe... trying again")
+        logger.warning("first attempt failed with error:")
+        logger.warning(error)
         logger.warning(f"Failing code:\n{code}")
         code = await gpt.do_chat_w_sys_prompt(
             main_prompt=DATAFRAME_TRANSFORMER_MAIN_PROMPT.format(
@@ -559,6 +604,8 @@ async def transform_tables_helper(
             sys_prompt=NO_PROMPT,
             temperature=1.0,
         )
+
+        code = cleanup_generated_python(code)
         debug_info["code_second_attempt"] = code
         logger.info(f"Running transform code:\n{code}")
         for data_df in data_dfs:
