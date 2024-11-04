@@ -51,6 +51,7 @@ from agent_service.external.grpc_utils import (
     grpc_retry,
 )
 from agent_service.tools.portfolio import PortfolioID
+from agent_service.utils.feature_flags import get_ld_flag
 from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
@@ -76,10 +77,35 @@ def get_url_and_port() -> Tuple[str, int]:
     return DEFAULT_URLS[env]
 
 
+@lru_cache(maxsize=1)
+def get_b4_url_and_port() -> Tuple[str, int]:
+    url = os.environ.get("NLP_SERVICE_B4_URL")
+    if url is not None:
+        logger.warning(f"Found NLP service B4 url override: {url}")
+        split_url, port = url.split(":")
+        return split_url, int(port)
+
+    env = get_environment_tag()
+    if env not in DEFAULT_URLS:
+        raise ValueError(f"No URL is set for environment {env}")
+    return DEFAULT_URLS[env]
+
+
 @contextmanager
 def _get_service_stub() -> Generator[NLPServiceStub, None, None]:
     try:
         url, port = get_url_and_port()
+        channel = Channel(url, port)
+        yield NLPServiceStub(channel)
+    finally:
+        channel.close()
+
+
+@contextmanager
+def _get_service_b4_stub() -> Generator[NLPServiceStub, None, None]:
+    nlp_service_b4 = get_ld_flag("nlp-service-b4", False, None)
+    try:
+        url, port = get_b4_url_and_port() if nlp_service_b4 else get_url_and_port()
         channel = Channel(url, port)
         yield NLPServiceStub(channel)
     finally:
@@ -199,7 +225,7 @@ async def get_earnings_call_events(
 ) -> GetEarningsCallEventsResponse:
     start_timestamp = date_to_timestamp(start_date)
     end_timestamp = date_to_timestamp(end_date)
-    with _get_service_stub() as stub:
+    with _get_service_b4_stub() as stub:
         request = GetEarningsCallEventsRequest(
             gbi_ids=gbi_ids, start_date=start_timestamp, end_date=end_timestamp
         )
@@ -216,7 +242,7 @@ async def get_earnings_call_events(
 async def get_latest_earnings_call_events(
     user_id: str, gbi_ids: List[int]
 ) -> GetLatestEarningsCallEventsResponse:
-    with _get_service_stub() as stub:
+    with _get_service_b4_stub() as stub:
         request = GetLatestEarningsCallEventsRequest(gbi_ids=gbi_ids)
         response: GetLatestEarningsCallEventsResponse = await stub.GetLatestEarningCallEvents(
             request, metadata=get_default_grpc_metadata(user_id=user_id)
@@ -231,7 +257,7 @@ async def get_latest_earnings_call_events(
 async def get_earnings_call_transcripts(
     user_id: str, events: List[EventInfo]
 ) -> GetEarningsCallTranscriptsResponse:
-    with _get_service_stub() as stub:
+    with _get_service_b4_stub() as stub:
         request = GetEarningsCallTranscriptsRequest(earnings_event_info=events)
         response: GetEarningsCallTranscriptsResponse = await stub.GetEarningCallTranscripts(
             request, metadata=get_default_grpc_metadata(user_id=user_id)
@@ -246,7 +272,7 @@ async def get_earnings_call_transcripts(
 async def get_earnings_call_summaries_with_real_time_gen(
     user_id: str, events: List[EventInfo]
 ) -> GenerateEarningsCallFromEventsResponse:
-    with _get_service_stub() as stub:
+    with _get_service_b4_stub() as stub:
         request = GenerateEarningsCallFromEventsRequest(earnings_event_info=events)
         response: GenerateEarningsCallFromEventsResponse = (
             await stub.GenerateEarningsCallFromEvents(
