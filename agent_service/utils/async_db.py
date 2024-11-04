@@ -2019,10 +2019,13 @@ class AsyncDB:
         live_only: bool = True,
         start_dt: Optional[datetime.datetime] = None,
         end_dt: Optional[datetime.datetime] = None,
+        filter_deleted: bool = True,
     ) -> List[AgentQCInfo]:
         where_parts = []
         where_clause = ""
         params = {}
+        if filter_deleted:
+            where_parts.append("NOT a.deleted")
         if live_only:
             where_parts.append("a.automation_enabled")
         if start_dt:
