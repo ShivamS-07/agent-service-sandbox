@@ -6,7 +6,13 @@ from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_types.idea import Idea
-from agent_service.io_types.text import ProfileText, Text, TextGroup, TopicProfiles
+from agent_service.io_types.text import (
+    ProfileText,
+    Text,
+    TextCitation,
+    TextGroup,
+    TopicProfiles,
+)
 from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.ideas.utils import ideas_enabled
@@ -149,22 +155,35 @@ async def per_idea_generate_profiles(
             tasks.append(identity(existing_profile_lookup[idea.title]))
             existing_profile_count += 1
             continue
+
+        idea_texts = []
+        for history_entry in idea.description.history:
+            for citation in history_entry.citations:
+                if isinstance(citation, TextCitation):
+                    idea_texts.append(citation.source_text)
+
         try:
-            related_news_texts = await get_news_articles_for_topics(
+            related_news_texts: List[Text] = await get_news_articles_for_topics(
                 GetNewsArticlesForTopicsInput(topics=[idea.title]), context=context
+            )  # type: ignore
+        except EmptyOutputError:
+            related_news_texts = []
+            logger.warning(
+                f"Couldn't find additional news articles for idea, '{idea.title}'"
+                "in profile generation, using only texts from ideas description"
             )
 
-            text_group = TextGroup(val=related_news_texts)  # type: ignore
-            texts_str: str = await Text.get_all_strs(
-                text_group, include_header=True, text_group_numbering=True
-            )  # type: ignore
+        idea_texts.extend(related_news_texts)
+        text_group = TextGroup(val=idea_texts)  # type: ignore
+        texts_str: str = await Text.get_all_strs(
+            text_group, include_header=True, text_group_numbering=True
+        )  # type: ignore
 
-            topic = args.topic_template.replace(IDEA, idea.title)
-            tasks.append(get_profiles(topic, texts_str, context, idea))
-        except EmptyOutputError:
-            logger.warning(f"Couldn't generate profiles for idea: {idea.title}")
+        topic = args.topic_template.replace(IDEA, idea.title)
+        tasks.append(get_profiles(topic, texts_str, context, idea))
 
     topic_profiles_for_ideas = await gather_with_concurrency(tasks, n=10)
+
     if existing_profile_count > 0:
         await tool_log(f"Using existing profiles for {existing_profile_count} ideas", context)
     return topic_profiles_for_ideas
