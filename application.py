@@ -1479,9 +1479,6 @@ async def get_team_accounts(user: User = Depends(parse_header)) -> GetTeamAccoun
 async def get_user_has_access(
     request: Request, user: User = Depends(parse_header)
 ) -> UserHasAccessResponse:
-    if user.is_admin or user.is_super_admin:
-        return UserHasAccessResponse(success=True)
-
     has_access = await application.state.agent_service_impl.get_user_has_alfa_access(user=user)
 
     # TODO: remove this check once the flag is turned on for external users

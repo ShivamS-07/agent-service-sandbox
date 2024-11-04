@@ -2137,6 +2137,9 @@ class AgentServiceImpl:
         return DeletePromptTemplateResponse(template_id=template_id)
 
     async def get_user_has_alfa_access(self, user: User) -> bool:
+        if user.is_admin or user.is_super_admin:
+            return True
+
         cached_user = await get_user_cached(user_id=user.user_id)
         if not cached_user:
             return False
