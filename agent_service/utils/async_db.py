@@ -604,15 +604,15 @@ class AsyncDB:
             rows[0]["upcoming_plan_run_id"],
         )
 
-    async def get_execution_plan_for_run(self, plan_run_id: str) -> ExecutionPlan:
+    async def get_execution_plan_for_run(self, plan_run_id: str) -> Tuple[str, ExecutionPlan]:
         sql = """
-            SELECT plan
+            SELECT ep.plan_id::TEXT, ep.plan
             FROM agent.execution_plans ep
             JOIN agent.plan_runs pr ON ep.plan_id = pr.plan_id
             WHERE pr.plan_run_id = %(plan_run_id)s
         """
         rows = await self.pg.generic_read(sql, params={"plan_run_id": plan_run_id})
-        return ExecutionPlan.from_dict(rows[0]["plan"])
+        return (rows[0]["plan_id"], ExecutionPlan.from_dict(rows[0]["plan"]))
 
     async def get_agent_owner(self, agent_id: str, include_deleted: bool = True) -> Optional[str]:
         """

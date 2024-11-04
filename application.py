@@ -120,6 +120,8 @@ from agent_service.endpoints.models import (
     RenameSectionRequest,
     RenameSectionResponse,
     RestoreAgentResponse,
+    RetryPlanRunRequest,
+    RetryPlanRunResponse,
     RunTemplatePlanRequest,
     RunTemplatePlanResponse,
     SearchAgentQCRequest,
@@ -1150,6 +1152,28 @@ async def set_agent_schedule(
         user.user_id, req.agent_id, async_db=application.state.agent_service_impl.pg
     )
     return await application.state.agent_service_impl.set_agent_schedule(req=req)
+
+
+@router.post(
+    "/agent/retry-plan-run",
+    response_model=RetryPlanRunResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def retry_plan_run(
+    req: RetryPlanRunRequest,
+    user: User = Depends(parse_header),
+) -> RetryPlanRunResponse:
+    if (
+        not user.is_super_admin
+        and not is_user_agent_admin(user.user_id)
+        and not user_has_qc_tool_access(user_id=user.user_id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User is not authorized to retry agent runs.",
+        )
+
+    return await application.state.agent_service_impl.retry_plan_run(req=req)
 
 
 @router.get(

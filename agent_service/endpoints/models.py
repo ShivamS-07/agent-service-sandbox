@@ -1120,6 +1120,15 @@ class RearrangeSectionResponse(BaseModel):
     success: bool
 
 
+class RetryPlanRunRequest(BaseModel):
+    agent_id: str
+    plan_run_id: str
+
+
+class RetryPlanRunResponse(BaseModel):
+    success: bool = True
+
+
 ####################################################################################################
 # Prompt Templates
 ####################################################################################################

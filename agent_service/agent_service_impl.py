@@ -113,6 +113,8 @@ from agent_service.endpoints.models import (
     PlanTemplateTask,
     RenameMemoryResponse,
     RestoreAgentResponse,
+    RetryPlanRunRequest,
+    RetryPlanRunResponse,
     RunTemplatePlanResponse,
     SetAgentFeedBackRequest,
     SetAgentFeedBackResponse,
@@ -1050,6 +1052,28 @@ class AgentServiceImpl:
             error_msg=error_msg,
         )
 
+    async def retry_plan_run(self, req: RetryPlanRunRequest) -> RetryPlanRunResponse:
+
+        plan_id, plan = await self.pg.get_execution_plan_for_run(plan_run_id=req.plan_run_id)
+        user_id = await self.pg.get_agent_owner(agent_id=req.agent_id)
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+
+        ctx = PlanRunContext(
+            agent_id=req.agent_id,
+            plan_id=plan_id,
+            user_id=user_id,
+            plan_run_id=req.plan_run_id,
+        )
+        ctx.chat = await self.pg.get_chats_history_for_agent(agent_id=ctx.agent_id)
+
+        LOGGER.info(f"Retrying for {req.agent_id=}, {req.plan_run_id=}")
+        await kick_off_run_execution_plan(
+            plan=plan,
+            context=ctx,
+        )
+        return RetryPlanRunResponse()
+
     def get_secure_ld_user(self, user_id: str) -> GetSecureUserResponse:
         ld_user = get_user_context(user_id=user_id)
         return GetSecureUserResponse(
@@ -1196,7 +1220,7 @@ class AgentServiceImpl:
         Get plan nodes from Postgres, `agent.execution_plans` table
         Get input and output from Clickhouse, `agent.tool_calls` table
         """
-        execution_plan, tool_calls, tool_prompt_infos = await asyncio.gather(
+        (_, execution_plan), tool_calls, tool_prompt_infos = await asyncio.gather(
             self.pg.get_execution_plan_for_run(plan_run_id),
             self.ch.get_plan_run_debug_tool_calls(plan_run_id),
             self.ch.get_plan_run_debug_prompt_infos(plan_run_id),
@@ -1320,7 +1344,7 @@ class AgentServiceImpl:
         arg_is_variable_error_temp = "The arg '{arg_name}' is a Variable, not editable"
         errors: list[ValidateArgError] = []
 
-        execution_plan = await self.pg.get_execution_plan_for_run(plan_run_id)
+        _, execution_plan = await self.pg.get_execution_plan_for_run(plan_run_id)
         for node in execution_plan.nodes:
             if node.tool_task_id not in arg_mapping:
                 continue
@@ -2018,7 +2042,7 @@ class AgentServiceImpl:
     ) -> CreatePromptTemplateResponse:
 
         # extract plan from agent_id and plan_id
-        plan = await self.pg.get_execution_plan_for_run(plan_run_id)
+        _, plan = await self.pg.get_execution_plan_for_run(plan_run_id)
 
         # create prompt template object
         now = get_now_utc()
