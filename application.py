@@ -468,7 +468,10 @@ async def terminate_agent(
 )
 async def delete_agent(agent_id: str, user: User = Depends(parse_header)) -> DeleteAgentResponse:
     await validate_user_agent_access(
-        user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        user.user_id,
+        agent_id,
+        async_db=application.state.agent_service_impl.pg,
+        invalidate_cache=True,
     )
     return await application.state.agent_service_impl.delete_agent(agent_id=agent_id)
 

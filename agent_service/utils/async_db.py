@@ -613,7 +613,7 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, params={"plan_run_id": plan_run_id})
         return ExecutionPlan.from_dict(rows[0]["plan"])
 
-    async def get_agent_owner(self, agent_id: str) -> Optional[str]:
+    async def get_agent_owner(self, agent_id: str, include_deleted: bool = True) -> Optional[str]:
         """
         This function retrieves the owner of an agent, mainly used in authorization.
         Caches the result for 128 calls since the owner cannot change.
@@ -623,10 +623,11 @@ class AsyncDB:
 
         Returns: The user id of the agent owner.
         """
-        sql = """
+        deleted_clause = "AND NOT deleted" if not include_deleted else ""
+        sql = f"""
             SELECT user_id::VARCHAR
             FROM agent.agents
-            WHERE agent_id = %(agent_id)s;
+            WHERE agent_id = %(agent_id)s {deleted_clause};
         """
         rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
         return rows[0]["user_id"] if rows else None

@@ -15,6 +15,7 @@ from agent_service.external.cognito_client import (
     get_cognito_user_id_from_access_token,
 )
 from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.environment import EnvironmentUtils
 
 KEY_ID = "kid"
@@ -143,15 +144,54 @@ def parse_header(
 ####################################################################################################
 # auth methods - if we find that we need to add more auth methods, we can make a new file
 ####################################################################################################
+def get_agent_owner_redis() -> RedisCacheBackend:
+    return RedisCacheBackend(
+        namespace="agent_owner",
+        serialize_func=lambda user_id: user_id.encode("utf-8"),
+        deserialize_func=lambda user_id: user_id.decode("utf-8"),
+    )
+
+
+async def get_agent_owner(
+    agent_id: str, async_db: AsyncDB, no_cache: bool = False
+) -> Optional[str]:
+    if no_cache:
+        return await async_db.get_agent_owner(agent_id, include_deleted=False)
+
+    redis_cache = get_agent_owner_redis()
+    owner_id = await redis_cache.get(agent_id)
+    if owner_id:
+        return owner_id  # type: ignore
+
+    owner_id = await async_db.get_agent_owner(agent_id, include_deleted=False)
+    if owner_id:
+        await redis_cache.set(agent_id, owner_id, ttl=3600 * 24)
+
+    return owner_id
+
+
+async def invalidate_agent_owner_cache(agent_id: str) -> None:
+    redis_cache = get_agent_owner_redis()
+    await redis_cache.invalidate(agent_id)
+
+
 async def validate_user_agent_access(
-    request_user_id: Optional[str], agent_id: str, async_db: AsyncDB
+    request_user_id: Optional[str], agent_id: str, async_db: AsyncDB, invalidate_cache: bool = False
 ) -> None:
+    """
+    Validates whether the request user is the owner of the agent.
+    - The agent must not be deleted, otherwise `owner_id` will be None, thus raising Exception
+    - We use Redis to cache the owner_id as the owner cannot be changed
+    - If `invalidate_cache` is True, we will use DB to get the owner, and remove cache from Redis.
+    This flag is currently only used by `/delete-agent` endpoint.
+    """
+
     if not request_user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
 
-    owner_id = await async_db.get_agent_owner(agent_id)
+    owner_id = await get_agent_owner(agent_id, async_db, no_cache=invalidate_cache)
     if owner_id is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Agent {agent_id} not found"
@@ -161,6 +201,9 @@ async def validate_user_agent_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"User {request_user_id} is not authorized to access agent {agent_id}",
         )
+
+    if invalidate_cache:
+        await invalidate_agent_owner_cache(agent_id)
 
 
 async def validate_user_plan_run_access(
