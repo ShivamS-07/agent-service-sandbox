@@ -1,7 +1,7 @@
 import asyncio
 import datetime
 from collections import defaultdict
-from typing import Dict, List, Optional, Set, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 from agent_service.GPT.constants import (
     FILTER_CONCURRENCY,
@@ -12,7 +12,7 @@ from agent_service.GPT.constants import (
 )
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
-from agent_service.io_type_utils import Citation, HistoryEntry
+from agent_service.io_type_utils import Citation, HistoryEntry, dump_io_type
 from agent_service.io_types.idea import Idea
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
@@ -31,7 +31,13 @@ from agent_service.planner.errors import (
     EmptyInputError,
     EmptyOutputError,
 )
-from agent_service.tool import ToolArgMetadata, ToolArgs, ToolCategory, tool
+from agent_service.tool import (
+    TOOL_DEBUG_INFO,
+    ToolArgMetadata,
+    ToolArgs,
+    ToolCategory,
+    tool,
+)
 from agent_service.tools.dates import DateFromDateStrInput, get_date_from_date_str
 from agent_service.tools.ideas.utils import ideas_enabled
 from agent_service.tools.LLM_analysis.constants import (
@@ -1580,6 +1586,7 @@ async def run_profile_match(
     use_cache: bool = True,
     detailed_log: bool = True,
     crash_on_empty: bool = True,
+    debug_info: Optional[Dict[str, Any]] = None,
 ) -> List[StockID]:
 
     logger = get_prefect_logger(__name__)
@@ -1613,6 +1620,10 @@ async def run_profile_match(
     filtered_down_texts = await classify_stock_text_relevancies_for_profile(
         texts, profiles_str=profile_str, context=context  # type: ignore
     )
+
+    # Adding this so we can compare mini filtering with other filtering methods
+    if debug_info is not None:
+        debug_info["filtered_texts"] = dump_io_type(filtered_down_texts)
 
     # TODO: This needs to be moved outside the profile match helper function
     prev_run_info = None
@@ -1976,6 +1987,9 @@ async def filter_stocks_by_profile_match(
             "in filter_stocks_by_profile_match function!"
         )
 
+    debug_info: Dict[str, Any] = {}
+    TOOL_DEBUG_INFO.set(debug_info)
+
     return await run_profile_match(
         stocks=args.stocks,
         profile=args.profile,
@@ -1985,6 +1999,7 @@ async def filter_stocks_by_profile_match(
         profile_output_instruction_str=args.profile_output_instruction,
         context=context,
         use_cache=True,
+        debug_info=debug_info,
     )
 
 

@@ -72,9 +72,9 @@ def get_plan_runs(
     AND plan_id = %(plan_id)s
     AND 
     (
-    (created_at >= %(start_date)s AND created_at <=  %(end_date)s)
+    (created_at::DATE >= %(start_date)s AND created_at::DATE <=  %(end_date)s)
     OR
-    (last_updated >= %(start_date)s AND last_updated <=  %(end_date)s)
+    (last_updated::DATE >= %(start_date)s AND last_updated::DATE <=  %(end_date)s)
     )
     ORDER BY created_at asc
     """

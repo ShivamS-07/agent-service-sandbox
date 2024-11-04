@@ -44,14 +44,15 @@ from agent_service.tools.table_utils.prompts import (
     DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT,
     DATAFRAME_SCHEMA_GENERATOR_SYS_PROMPT,
     DATAFRAME_TRANSFORMER_MAIN_PROMPT,
-    DATAFRAME_TRANSFORMER_OLD_CODE_TEMPLATE,
     PICK_GPT_MAIN_PROMPT,
     TABLE_ADD_DIFF_MAIN_PROMPT,
     TABLE_REMOVE_DIFF_MAIN_PROMPT,
+    UPDATE_DATAFRAME_TRANSFORMER_MAIN_PROMPT,
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.tool_diff import get_prev_run_info
@@ -350,10 +351,14 @@ async def transform_table(
     old_code: Optional[str] = None
     prev_args = None
     prev_output = None
+    old_description = None
+    old_date = None
     try:  # since everything here is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "transform_table")
         if prev_run_info is not None:
             prev_args = TransformTableArgs.model_validate_json(prev_run_info.inputs_str)
+            old_description = prev_args.transformation_description
+
             prev_output = prev_run_info.output  # type:ignore
             prev_other: Dict[str, str] = prev_run_info.debug  # type:ignore
             if prev_other:
@@ -363,6 +368,7 @@ async def transform_table(
                     else prev_other["code_first_attempt"]
                 )
                 old_schema = load_io_type(prev_other["table_schema"])  # type:ignore
+                old_date = prev_other["date"] if "date" in prev_other else None
 
     except Exception as e:
         logger.warning(f"Error getting info from previous run: {e}")
@@ -376,6 +382,8 @@ async def transform_table(
         context,
         old_code=old_code,
         old_schema=old_schema,
+        old_description=old_description,
+        old_date=old_date,
         debug_info=debug_info,
     )
     output_table = list_of_one_table[0]
@@ -470,7 +478,7 @@ async def transform_table(
                 for stock in new_stock_column.data:
                     new_column.data.append(stat_lookup[stock][date])  # type: ignore
                 new_columns.append(new_column)
-        output_table = StockTable(columns=new_columns)
+            output_table = StockTable(columns=new_columns)
 
     return output_table
 
@@ -481,6 +489,8 @@ async def transform_tables_helper(
     context: PlanRunContext,
     old_code: Optional[str] = None,
     old_schema: Optional[List[TableColumnMetadata]] = None,
+    old_description: Optional[str] = None,
+    old_date: Optional[str] = None,
     debug_info: Dict[str, Any] = {},
 ) -> List[Table]:
     logger = get_prefect_logger(__name__)
@@ -490,22 +500,15 @@ async def transform_tables_helper(
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    old_gpt = GPT(context=gpt_context)  # keep using turbo for the schema generation
+
     medium_gpt = GPT(model=GPT4_O, context=gpt_context)
-    challenge = await medium_gpt.do_chat_w_sys_prompt(
-        PICK_GPT_MAIN_PROMPT.format(task=description, labels=labels), NO_PROMPT
-    )
 
-    if challenge.lower().strip() == "easy":
-        gpt = GPT(model=GPT4_O, context=gpt_context)
-    else:
-        gpt = GPT(model=O1, context=gpt_context)
-        await tool_log("Brainstorming in advance of calculation", context)
-    if old_schema:
-        await tool_log(log="Using table schema from previous run", context=context)
-        new_col_schema = old_schema
+    today = get_now_utc().date()
 
-    else:
+    data_dfs = [input_table.to_df(stocks_as_hashables=True) for input_table in tables]
+
+    if not old_code or not old_schema:
+        old_gpt = GPT(context=gpt_context)  # keep using turbo for the schema generation
         await tool_log(log="Computing new table schema", context=context)
         new_col_schema = await gen_new_column_schema(
             old_gpt,
@@ -513,37 +516,66 @@ async def transform_tables_helper(
             current_table_cols=input_col_metadata,
         )
 
-    debug_info["table_schema"] = dump_io_type(new_col_schema)
-    logger.info(f"Table Schema: {debug_info['table_schema']}")
-    await tool_log(log="Transforming table", context=context)
-    data_dfs = [input_table.to_df(stocks_as_hashables=True) for input_table in tables]
-    if old_code:
-        old_code_section = DATAFRAME_TRANSFORMER_OLD_CODE_TEMPLATE.format(old_code=old_code)
+        logger.info(f"Table Schema: {new_col_schema}")
+        await tool_log(log="Planning table transformation", context=context)
+
+        challenge = await medium_gpt.do_chat_w_sys_prompt(
+            PICK_GPT_MAIN_PROMPT.format(task=description, labels=labels), NO_PROMPT
+        )
+
+        if challenge.lower().strip() == "easy":
+            gpt = medium_gpt
+        else:
+            gpt = GPT(model=O1, context=gpt_context)
+            await tool_log("Brainstorming in advance of calculation", context)
+
+        code = await gpt.do_chat_w_sys_prompt(
+            main_prompt=DATAFRAME_TRANSFORMER_MAIN_PROMPT.format(
+                col_schema=_dump_cols(input_col_metadata),
+                output_schema=_dump_cols(new_col_schema),
+                info=_get_df_info(data_dfs[0]),
+                transform=description,
+                col_type_explain=TableColumnType.get_type_explanations(),
+                today=today,
+                error="",
+            ),
+            temperature=1.0,
+            # sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
+            sys_prompt=NO_PROMPT,
+        )
+        code = cleanup_generated_python(code)
+
     else:
-        old_code_section = ""
+        gpt = medium_gpt
+        await tool_log(log="Using table schema from previous run", context=context)
+        new_col_schema = old_schema
+        main_prompt = UPDATE_DATAFRAME_TRANSFORMER_MAIN_PROMPT.format(
+            old_code=old_code,
+            description=description,
+            old_description=old_description,
+            date=today.isoformat(),
+            old_date=old_date,
+        )
+        result = await gpt.do_chat_w_sys_prompt(main_prompt, NO_PROMPT)
+        if result.strip().lower() != "no change":
+            await tool_log(
+                log="Updating table transformation plan from previous run", context=context
+            )
+            code = cleanup_generated_python(result)
+        else:
+            await tool_log(
+                log="Used same table transformation plan as previous run", context=context
+            )
+            code = old_code
 
-    code = await gpt.do_chat_w_sys_prompt(
-        main_prompt=DATAFRAME_TRANSFORMER_MAIN_PROMPT.format(
-            col_schema=_dump_cols(input_col_metadata),
-            output_schema=_dump_cols(new_col_schema),
-            info=_get_df_info(data_dfs[0]),
-            transform=description,
-            col_type_explain=TableColumnType.get_type_explanations(),
-            today=datetime.date.today(),
-            error="",
-            old_code=old_code_section,
-        ),
-        temperature=1.0,
-        # sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
-        sys_prompt=NO_PROMPT,
-    )
-
-    code = cleanup_generated_python(code)
+    debug_info["table_schema"] = dump_io_type(new_col_schema)
+    debug_info["date"] = today.isoformat()
     debug_info["code_first_attempt"] = code
     logger.info(f"Running transform code:\n{code}")
     output_dfs = []
     had_error = False
     error = None
+    await tool_log(log="Executing transformation", context=context)
     for data_df in data_dfs:
         output_df, error = _run_transform_code(df=data_df, code=code)
 
@@ -598,7 +630,6 @@ async def transform_tables_helper(
                     f"Last Code:\n\n{code}\n\n"
                     f"Error:\n{error}"
                 ),
-                old_code=old_code_section,
             ),
             # sys_prompt=DATAFRAME_TRANSFORMER_SYS_PROMPT,
             sys_prompt=NO_PROMPT,
@@ -672,14 +703,16 @@ async def per_stock_group_transform_table(
     logger = get_prefect_logger(__name__)
     old_schema: Optional[List[TableColumnMetadata]] = None
     old_code: Optional[str] = None
+    old_description = None
     # TODO: Consider doing stock list diffing for stock group filtering
     # prev_args = None
     # prev_output = None
     try:  # since everything here is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "per_stock_group transform_table")
         if prev_run_info is not None:
-            # prev_args = TransformTableArgs.model_validate_json(prev_run_info.inputs_str)
+            prev_args = TransformTableArgs.model_validate_json(prev_run_info.inputs_str)
             # prev_output = prev_run_info.output  # type:ignore
+            old_description = prev_args.transformation_description
             prev_other: Dict[str, str] = prev_run_info.debug  # type:ignore
             if prev_other:
                 old_code = (
@@ -687,6 +720,7 @@ async def per_stock_group_transform_table(
                     if "code_second_attempt" in prev_other
                     else prev_other["code_first_attempt"]
                 )
+                old_date = prev_other["date"] if "date" in prev_other else None
                 old_schema = load_io_type(prev_other["table_schema"])  # type:ignore
 
     except Exception as e:
@@ -703,6 +737,8 @@ async def per_stock_group_transform_table(
         context,
         old_code=old_code,
         old_schema=old_schema,
+        old_description=old_description,
+        old_date=old_date,
         debug_info=debug_info,
     )
 

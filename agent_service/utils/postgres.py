@@ -229,8 +229,8 @@ class Postgres(PostgresBase):
 
     def insert_plan_run(self, agent_id: str, plan_id: str, plan_run_id: str) -> None:
         sql = """
-        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id)
-        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s)
+        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id, created_at)
+        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(created_at)s)
         ON CONFLICT (plan_run_id) DO NOTHING
         """
 
@@ -240,6 +240,7 @@ class Postgres(PostgresBase):
                 "agent_id": agent_id,
                 "plan_id": plan_id,
                 "plan_run_id": plan_run_id,
+                "created_at": get_now_utc(),
             },
         )
 

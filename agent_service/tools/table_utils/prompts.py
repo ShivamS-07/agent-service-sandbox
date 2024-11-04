@@ -582,8 +582,6 @@ The input dataframe's overall info: {info}
 The transformation description:
     {transform}
 
-{old_code}
-
 {error}
 Write your code below. Make sure you reassign the output to the same variable `df`.
 Your code:
@@ -596,17 +594,6 @@ DATAFRAME_TRANSFORMER_SYS_PROMPT = Prompt(
     name="DATAFRAME_TRANSFORMER_SYS_PROMPT",
     template=DATAFRAME_TRANSFORMER_SYS_PROMPT_STR,
 ).format()  # format immediately since no arguments
-
-
-DATAFRAME_TRANSFORMER_OLD_CODE_TEMPLATE = """
-
-You have previously generated code for this transformation. The code is provided below. Confirm
-that it still solves the problem, and, assuming so, please copy the code verbatim except
-where you need to change it due to the fact that the dates are now different.
-
-{old_code}
-
-"""
 
 
 TABLE_ADD_DIFF_MAIN_PROMPT = Prompt(
@@ -656,8 +643,8 @@ You are a senior financial analyst that is deciding whether to give a small pand
 an intern or an salaried employee. You don't trust the intern's skills yet, in particular you would
 only want to give them simple tasks that involve simple filtering or ranking filtering stocks based
 on a single calculated measure for each stock, or simple stock return (cumulative stock price change)
-calculations. Any more challenging task, including any task that could possibly involve using the groupby
-function or otherwise manipulating the columns of the table should be left to experts.
+calculations. More challenging tasks, including any task that could possibly involve using the groupby
+function or otherwise manipulating the columns of the table, should be left to experts.
 
 You should default to filtering or ranking tasks being easy. It does not usually matter what we are filtering
 or ranking by, because this will already be calculated at this point. The one key exception is to this
@@ -666,9 +653,11 @@ stocks which have 5% return in each of the last 6 months`. In those cases, you w
 stocks, and the task is therefore hard. However, simple cases like `filter to stocks that have 5% weekly
 return` should be considered easy.
 
-Similarly, you should default to easy for most basic calculations of performance (simple cumulative or daily
-returns/stock price changes), however if task involves calculation of monthly, quarterly, or yearly returns
-involving multiple months, quarter, or years, you should consider the task hard.
+Similarly, you should default to easy for most basic calculations of stock performance (simple cumulative
+or daily returns/stock price changes), e.g. `calculate percentage price gain for TSX stocks for the 6 months`,
+however if the task involves calculation of monthly, quarterly, or yearly returns involving multiple months,
+quarters, or years (e.g. `calculate performance for TSX stocks for each of the last 6 months`), you should
+consider the task hard.
 
 Simple calculations of minimum or maximum value for a statistic over a time range should also
 be considered easy.
@@ -683,6 +672,9 @@ Output the word 'easy' if you think that the task is simple enough for the panda
 """,
 )
 
-# Here are the table column labels: {labels}
+UPDATE_DATAFRAME_TRANSFORMER_MAIN_PROMPT_STR = "You are financial analyst in charge of a script which carries out a important calculation by manipulating a pandas dataframe. Your current task is to update an older version of the script by changing any date-relevant aspects of the script to use the newer dates, as required. You will be provided with the old code, the old description of the transformation, an updated description (which might be unchanged), the date the last script was run (which might be None; if it is, you should try to infer the previous date from the other information), and the current date. Unless there is nothing to change, you should copy verbatim everything from the original script (which ran successfully) but switch out any references to dates in either the code or the comments that need to be updated based on the differences between the old description and the current description, or the old date and the current date, or both. I repeat, do not make any non-date related changes to the script, and you will generally only switch out string literals or references to dates in comments. Note that in addition to dates in YYYY-MM-DD format, you may also need to change months (YYYY-MM), quarters (YYYYQQ, e.g. 2024Q4), or years, all of which must ultimately be expressed as string literals. Depending on the transformation, you may or may not need to use the current date, and you may not need to do anything at all; be careful not to make unnecessary changes, if you do you will be severely punished. If there is nothing to change because the code does not mention any kind of date, you can simply output the words 'No Change' and nothing else. Otherwise you should rewrite the entire code from beginning to end, do not leave anything out. Here is the old_description: `{old_description}` Here is the new description: `{description}`. Here is the old date (if any): {old_date}. Here is the new date: {date}. Here is the old code, delimited by ---\n:\n---\n{old_code}\n---\nNow write the updated code, or `no change` if no change is needed:\n"  # noqa: E501
 
-# Now output the word easy or hard:
+UPDATE_DATAFRAME_TRANSFORMER_MAIN_PROMPT = Prompt(
+    name="UPDATE_DATAFRAME_TRANSFORMER_MAIN_PROMPT",
+    template=UPDATE_DATAFRAME_TRANSFORMER_MAIN_PROMPT_STR,
+)
