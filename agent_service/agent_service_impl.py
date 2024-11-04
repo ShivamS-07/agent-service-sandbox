@@ -2176,7 +2176,7 @@ class AgentServiceImpl:
             return False
 
     async def get_live_agents_qc(self, req: GetAgentsQCRequest) -> GetLiveAgentsQCResponse:
-        infos = await self.pg.get_agents_for_qc(
+        infos = await self.pg.get_agent_metadata_for_qc(
             live_only=True, start_dt=req.start_dt, end_dt=req.end_dt
         )
         return GetLiveAgentsQCResponse(agent_infos=infos)

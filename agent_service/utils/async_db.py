@@ -2014,7 +2014,7 @@ class AsyncDB:
             agent_qcs.append(AgentQC(**record))
         return agent_qcs, total_agent_qcs
 
-    async def get_agents_for_qc(
+    async def get_agent_metadata_for_qc(
         self,
         live_only: bool = True,
         start_dt: Optional[datetime.datetime] = None,

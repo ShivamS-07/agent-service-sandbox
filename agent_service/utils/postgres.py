@@ -194,7 +194,7 @@ class Postgres(PostgresBase):
         Given a plan_run_id, return the plan run's info.
         """
         sql = """
-        SELECT agent_id::VARCHAR, plan_id::VARCHAR, created_at, shared
+        SELECT agent_id::VARCHAR, plan_id::VARCHAR, created_at, shared, status
         FROM agent.plan_runs WHERE plan_run_id = %(plan_run_id)s LIMIT 1
         """
         params: Dict[str, Any] = {"plan_run_id": plan_run_id}

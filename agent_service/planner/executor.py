@@ -231,14 +231,43 @@ async def _run_execution_plan_impl(
     # PLAN RUN SETUP
     ###########################################
     logger = get_prefect_logger(__name__)
-    logger.warning(f"PLAN RUN SETUP {context.plan_run_id=}")
+    logger.info(f"PLAN RUN SETUP {context.plan_run_id=}")
     # Maps variables to their resolved values
     variable_lookup: Dict[str, IOType] = {}
     db = get_psql(skip_commit=context.skip_db_commit)
     async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
-    db.insert_plan_run(
-        agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
-    )
+    existing_run = db.get_plan_run(plan_run_id=context.plan_run_id)
+    skip_tasks_with_existing_outputs = False
+
+    if existing_run and existing_run.get("status") == Status.ERROR.value:
+        # If there's an existing errored run with the same ID, that means that
+        # we want to retry from the errored task.
+        skip_tasks_with_existing_outputs = True
+        logger.info(
+            (
+                f"{context.plan_run_id=} already exists with status {existing_run['status']},"
+                " retrying run from latest non-complete step!"
+            )
+        )
+        complete_task_ids = []
+        task_statuses = await async_db.get_task_run_statuses(plan_run_ids=[context.plan_run_id])
+        for (_, task_id), status_info in task_statuses.items():
+            if status_info.status == Status.COMPLETE:
+                complete_task_ids.append(task_id)
+        override_task_work_log_id_lookup = await async_db.get_task_work_log_ids(
+            agent_id=context.agent_id, task_ids=complete_task_ids, plan_id=context.plan_id
+        )
+    elif existing_run and existing_run.get("status") != Status.NOT_STARTED.value:
+        # Not allowed to run with the same ID if the run wasn't
+        # errored. NOT_STARTED is acceptable since the run may have been
+        # inserted before it started.
+        raise RuntimeError(
+            f"Unable to retry a run that is in status={existing_run['status']}!!! {context=}"
+        )
+    else:
+        db.insert_plan_run(
+            agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
+        )
     # publish start plan run execution to FE
     await publish_agent_execution_status(
         agent_id=context.agent_id,
@@ -329,6 +358,19 @@ async def _run_execution_plan_impl(
             f" {context.plan_id=}"
         )
 
+        if (
+            skip_tasks_with_existing_outputs
+            and override_task_output_lookup
+            and step.tool_task_id in override_task_output_lookup
+        ):
+            # If the skip_tasks_with_existing_outputs flag is set, we want to
+            # FULLY skip these steps, don't even publish statuses or anything.
+            tool_output = override_task_output_lookup[step.tool_task_id]
+            if step.output_variable_name:
+                variable_lookup[step.output_variable_name] = tool_output
+            logger.info(f"Fully skipping step '{step.tool_name}' with id={step.tool_task_id}")
+            continue
+
         tool = ToolRegistry.get_tool(step.tool_name)
         # First, resolve the variables
         resolved_args = step.resolve_arguments(variable_lookup=variable_lookup)
@@ -354,7 +396,6 @@ async def _run_execution_plan_impl(
         # if the tool output already exists in the map, just use that
         if override_task_output_lookup and step.tool_task_id in override_task_output_lookup:
             logger.info(f"Step '{step.tool_name}' already in task lookup, using existing value...")
-            tool_output = override_task_output_lookup[step.tool_task_id]
             step_args = None
             try:
                 step_args = tool.input_type(**resolved_args)
