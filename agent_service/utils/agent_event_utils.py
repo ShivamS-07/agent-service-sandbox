@@ -1,8 +1,9 @@
 import asyncio
 import logging
-from typing import List, Optional, Union
+from typing import List, Optional, Union, cast
 
 import boto3
+from user_service_proto_v1.user_service_pb2 import User
 
 from agent_service.agent_quality_worker.ingestion_worker import (
     send_agent_quality_message,
@@ -21,6 +22,7 @@ from agent_service.endpoints.models import (
     NewPlanEvent,
     NotificationEvent,
     NotifyMessageEvent,
+    OnboardingEmailMessage,
     OutputEvent,
     PlanRunTaskLog,
     PlanStatusEvent,
@@ -30,6 +32,7 @@ from agent_service.endpoints.models import (
     TaskStatusEvent,
 )
 from agent_service.endpoints.utils import get_plan_preview
+from agent_service.external.user_svc_client import get_user_cached
 from agent_service.io_type_utils import load_io_type
 from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, OutputWithID, PlanStatus
@@ -432,3 +435,22 @@ async def send_agent_emails(
         queue = sqs.get_queue_by_name(QueueName=NOTIFICATION_SERVICE_QUEUE)
         queue.send_message(MessageBody=detailed_message.model_dump_json())
         queue.send_message(MessageBody=simple_message.model_dump_json())
+
+
+async def send_welcome_email(user_id: str) -> None:
+    sqs = boto3.resource("sqs", region_name="us-west-2")
+
+    user = cast(User, await get_user_cached(user_id=user_id))
+
+    # This is HubSpot ID for the welcome email we're sending
+    WELCOME_EMAIL_ID = 181851687081
+
+    message = OnboardingEmailMessage(
+        user_name=user.name,
+        user_id=user_id,
+        email=user.email,
+        hubspot_email_id=WELCOME_EMAIL_ID,
+    )
+
+    queue = sqs.get_queue_by_name(QueueName=NOTIFICATION_SERVICE_QUEUE)
+    queue.send_message(MessageBody=message.model_dump_json())

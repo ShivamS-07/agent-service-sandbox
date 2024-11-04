@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "9f804d4c1bb4cb5b87961a2c1bb2e89b425dd003e50e34014dca45e7de2a27dc"
+            "sha256": "c782357db2f97db88e21b232c0a7f093c9394b9631c3d1c3e395afb7ac3c31e2"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -1599,6 +1599,14 @@
             "index": "gbi",
             "version": "==1.140.0"
         },
+        "notification-service-proto-v1": {
+            "hashes": [
+                "sha256:21297d9130510a443f3e260da323f81a27b2efeaed6d57f0b14597832f52ae65"
+            ],
+            "index": "gbi",
+            "markers": "python_version >= '3'",
+            "version": "==1.5.0"
+        },
         "numpy": {
             "hashes": [
                 "sha256:03a8c78d01d9781b28a6989f6fa1bb2c4f2d51201cf99d3dd875df6fbd96b23b",
@@ -2818,7 +2826,7 @@
                 "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d",
                 "sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8"
             ],
-            "markers": "python_version >= '3.8'",
+            "markers": "python_version < '3.13'",
             "version": "==4.12.2"
         },
         "tzdata": {
@@ -3747,7 +3755,7 @@
                 "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d",
                 "sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8"
             ],
-            "markers": "python_version >= '3.8'",
+            "markers": "python_version < '3.13'",
             "version": "==4.12.2"
         }
     }

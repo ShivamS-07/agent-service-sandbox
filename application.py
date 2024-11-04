@@ -159,8 +159,10 @@ from agent_service.external.grpc_utils import create_jwt
 from agent_service.GPT.requests import _get_gpt_service_stub
 from agent_service.io_types.citations import CitationType, GetCitationDetailsResponse
 from agent_service.slack.slack_sender import SlackSender
+from agent_service.utils.agent_event_utils import send_welcome_email
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
+from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.cache_utils import get_redis_cache_backend_for_output
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.custom_documents_utils import CustomDocumentException
@@ -168,6 +170,8 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.feature_flags import (
     agent_output_cache_enabled,
+    get_ld_flag,
+    get_user_context,
     is_user_agent_admin,
     user_has_qc_tool_access,
 )
@@ -175,6 +179,7 @@ from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect_task_executor import PrefectTaskExecutor
 from agent_service.utils.sentry_utils import init_sentry
+from agent_service.utils.user_metadata import is_user_first_login
 from no_auth_endpoints import initialize_unauthed_endpoints
 
 DEFAULT_IP = "0.0.0.0"
@@ -1471,11 +1476,26 @@ async def get_team_accounts(user: User = Depends(parse_header)) -> GetTeamAccoun
 @router.get(
     "/user/has-access", response_model=UserHasAccessResponse, status_code=status.HTTP_200_OK
 )
-async def get_user_has_access(user: User = Depends(parse_header)) -> UserHasAccessResponse:
+async def get_user_has_access(
+    request: Request, user: User = Depends(parse_header)
+) -> UserHasAccessResponse:
     if user.is_admin or user.is_super_admin:
         return UserHasAccessResponse(success=True)
 
     has_access = await application.state.agent_service_impl.get_user_has_alfa_access(user=user)
+
+    # TODO: remove this check once the flag is turned on for external users
+    if get_ld_flag(
+        flag_name="onboarding-email-sequence",
+        default=False,
+        user_context=get_user_context(user_id=user.user_id),
+    ):
+        # make sure user is not spoofed and it is their first login
+        if request.headers.get("realuserid") == user.user_id and await is_user_first_login(
+            user_id=user.user_id
+        ):
+            run_async_background(send_welcome_email(user_id=user.user_id))
+
     return UserHasAccessResponse(success=has_access)
 
 

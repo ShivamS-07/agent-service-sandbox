@@ -251,6 +251,14 @@ class AgentSubscriptionMessage(BaseModel):
     agent_data: List[AgentNotificationData]
 
 
+class OnboardingEmailMessage(BaseModel):
+    message_type: str = "onboarding_email_event"
+    user_name: str
+    user_id: str
+    email: str
+    hubspot_email_id: int
+
+
 ####################################################################################################
 # Agent Feedback
 ####################################################################################################
