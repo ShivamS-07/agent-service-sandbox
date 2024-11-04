@@ -17,6 +17,7 @@ from agent_service.endpoints.models import (
     AgentSchedule,
     CustomNotification,
     HorizonCriteria,
+    HorizonCriteriaOperator,
     Pagination,
     PlanRunStatusInfo,
     SetAgentFeedBackRequest,
@@ -1888,59 +1889,11 @@ class AsyncDB:
             values_to_update=values_to_update,
         )
 
-    async def get_agent_qc_by_id(self, ids: list[str]) -> list[AgentQC]:
-        sql = """
-        SELECT aq.agent_qc_id::TEXT, aq.agent_id::TEXT, ag.agent_name, aq.plan_id::TEXT, aq.user_id::TEXT, aq.query,
-               aq.agent_status, aq.cs_reviewer::TEXT, aq.eng_reviewer::TEXT, aq.prod_reviewer::TEXT,
-               aq.follow_up, aq.score_rating, aq.priority, aq.use_case,
-               aq.problem_area, aq.cs_failed_reason, aq.cs_attempt_reprompting, aq.cs_expected_output, aq.cs_notes,
-               aq.canned_prompt_id, aq.eng_failed_reason, aq.eng_solution, aq.eng_solution_difficulty,
-               aq.jira_link, aq.slack_link, aq.fullstory_link, aq.duplicate_agent::TEXT, aq.created_at, aq.last_updated,
-               us.cognito_username,
-               ARRAY_AGG(af.*) AS agent_feedbacks,
-               (SELECT tl.cloudwatch_url
-                FROM boosted_dag.task_log tl
-                WHERE tl.agent_id = aq.agent_id::TEXT
-                ORDER BY tl.finished_at DESC
-                LIMIT 1) AS cloudwatch_url
-        FROM agent.agent_qc aq
-        LEFT JOIN user_service.users us ON aq.user_id = us.id
-        LEFT JOIN agent.feedback af ON aq.agent_id = af.agent_id AND aq.plan_id = af.plan_id
-        LEFT JOIN agent.agents ag ON ag.agent_id = aq.agent_id
-        WHERE aq.agent_qc_id = ANY(%(ids)s)
-        GROUP BY aq.agent_qc_id, us.cognito_username, ag.agent_name
-        """
-        records = await self.pg.generic_read(sql, {"ids": ids})
-        return [AgentQC(**record) for record in records]
-
-    async def get_agent_qc_by_user(self, user_id: str) -> list[AgentQC]:
-        sql = """
-        SELECT
-            aq.agent_qc_id::TEXT, aq.agent_id::TEXT, ag.agent_name, aq.plan_id::TEXT, aq.user_id::TEXT, aq.query,
-           aq.agent_status, aq.cs_reviewer::TEXT, aq.eng_reviewer::TEXT, aq.prod_reviewer::TEXT,
-           aq.follow_up, aq.score_rating, aq.priority, aq.use_case,
-           aq.problem_area, aq.cs_failed_reason, aq.cs_attempt_reprompting, aq.cs_expected_output, aq.cs_notes,
-           aq.canned_prompt_id, aq.eng_failed_reason, aq.eng_solution, aq.eng_solution_difficulty,
-           aq.jira_link, aq.slack_link, aq.fullstory_link, aq.duplicate_agent::TEXT, aq.created_at, aq.last_updated,
-           us.cognito_username,
-            array_agg(af.*) AS agent_feedbacks,
-            (SELECT tl.cloudwatch_url
-             FROM boosted_dag.task_log tl
-             WHERE tl.agent_id = aq.agent_id::TEXT
-             ORDER BY tl.finished_at DESC
-             LIMIT 1) AS cloudwatch_url
-        FROM agent.agent_qc aq
-        LEFT JOIN user_service.users us ON aq.user_id = us.id
-        LEFT JOIN agent.feedback af ON aq.agent_id = af.agent_id AND aq.plan_id = af.plan_id
-        LEFT JOIN agent.agents ag ON aq.agent_id = ag.agent_id
-        WHERE aq.user_id = %(user_id)s
-        GROUP BY aq.agent_qc_id, us.cognito_username, ag.agent_name
-        """
-        records = await self.pg.generic_read(sql, {"user_id": user_id})
-        return [AgentQC(**record) for record in records]
-
     async def search_agent_qc(
-        self, criteria: List[HorizonCriteria], pagination: Pagination
+        self,
+        filter_criteria: List[HorizonCriteria],
+        search_criteria: List[HorizonCriteria],
+        pagination: Optional[Pagination] = None,
     ) -> Tuple[List[AgentQC], int]:
         sql = """
         SELECT
@@ -1951,8 +1904,8 @@ class AsyncDB:
             aqc.priority, aqc.use_case, aqc.problem_area, aqc.cs_failed_reason, aqc.cs_attempt_reprompting,
             aqc.cs_expected_output, aqc.cs_notes, aqc.canned_prompt_id, aqc.eng_failed_reason, aqc.eng_solution,
             aqc.eng_solution_difficulty, aqc.jira_link, aqc.slack_link, aqc.fullstory_link, aqc.duplicate_agent::TEXT,
-            aqc.created_at, aqc.last_updated,
-            cw.cloudwatch_url
+            aqc.created_at, aqc.last_updated, us.cognito_username,
+            cw.cloudwatch_url, json_agg(af.*) AS agent_feedbacks
         FROM agent.agent_qc aqc
         LEFT JOIN agent.agents ag ON aqc.agent_id = ag.agent_id
         LEFT JOIN
@@ -1964,55 +1917,120 @@ class AsyncDB:
                 AS latest_by_agent_id
                 LEFT JOIN boosted_dag.task_log all_tl
                 ON all_tl.agent_id = latest_by_agent_id.agent_id and all_tl.finished_at = latest_by_agent_id.latest)
-                AS cw ON cw.agent_id = aqc.agent_id::TEXT
+                AS cw ON cw.agent_id = aqc.agent_id::text
+        LEFT JOIN user_service.users us ON aqc.user_id = us.id
+        LEFT JOIN agent.feedback af ON aqc.agent_id = af.agent_id AND aqc.plan_id = af.plan_id
         """
-        search_params = {}
-        # Dynamically add conditions based on HorizonCriteria
-        for idx, criterion in enumerate(criteria):
-            if idx == 0:
-                sql += "\nWHERE"
-            else:
-                sql += " AND"
-            param1 = f"arg1_{idx}"
-            param2 = f"arg2_{idx}"
+
+        def criteria_to_sql_clause_helper(
+            criterion: HorizonCriteria, params: Dict[str, Any], param1_name: str, param2_name: str
+        ) -> str:
             if criterion.operator == "BETWEEN":
-                sql += f" {criterion.column} BETWEEN %({param1})s AND %({param2})s"
-                search_params[param1] = criterion.arg1
-                search_params[param2] = criterion.arg2
+                params[param1_name] = criterion.arg1
+                params[param2_name] = criterion.arg2
+                return f" {criterion.column} BETWEEN %({param1_name})s AND %({param2_name})s"
             elif criterion.operator == "ILIKE":
-                sql += f" {criterion.column} ILIKE %({param1})s"
-                search_params[param1] = f"%{criterion.arg1}%"  # Add wildcards for partial matches
+                params[param1_name] = f"%{criterion.arg1}%"  # Add wildcards for partial matches
+                return f" {criterion.column} ILIKE %({param1_name})s"
             elif criterion.operator == "=":
-                sql += f" {criterion.column} = %({param1})s"
-                search_params[param1] = criterion.arg1
+                params[param1_name] = criterion.arg1
+                return f" {criterion.column} = %({param1_name})s"
             elif criterion.operator == "IN":
-                sql += f" {criterion.column} IN %({param1})s"
-                search_params[param1] = tuple(
-                    criterion.arg1
-                )  # Ensure arg1 is a tuple for IN queries
+                params[param1_name] = tuple(criterion.arg1)  # Ensure arg1 is a tuple for IN queries
+                return f" {criterion.column} IN %({param1_name})s"
             elif criterion.operator == ">":
-                sql += f" {criterion.column} > %({param1})s"
-                search_params[param1] = criterion.arg1
+                params[param1_name] = criterion.arg1
+                return f" {criterion.column} > %({param1_name})s"
             elif criterion.operator == "<":
-                sql += f" {criterion.column} < %({param1})s"
-                search_params[param1] = criterion.arg1
+                params[param1_name] = criterion.arg1
+                return f" {criterion.column} < %({param1_name})s"
             elif criterion.operator == "!=":
-                sql += f" {criterion.column} != %({param1})s"
-                search_params[param1] = criterion.arg1
-            else:
-                logger.warning(f"Unknown operator {criterion.operator=}")
+                params[param1_name] = criterion.arg1
+                return f" {criterion.column} != %({param1_name})s"
+            elif criterion.operator == "=ANY":
+                params[param1_name] = criterion.arg1
+                return f" {criterion.column} = ANY(%({param1_name})s)"
+
+            logger.warning(f"Unknown operator {criterion.operator=}")
+            return ""
+
+        sql_params: Dict[str, Any] = {}
+        if len(filter_criteria) > 0 or len(search_criteria) > 0:
+            sql += "\nWHERE"
+
+        # Dynamically add conditions based on HorizonCriteria, use AND between conditions
+        for idx, criteria in enumerate(filter_criteria):
+            if idx != 0:
+                sql += " AND"
+            param1 = f"filter_arg1_{idx}"
+            param2 = f"filter_arg2_{idx}"
+            sql += criteria_to_sql_clause_helper(criteria, sql_params, param1, param2)
+
+        # Use OR between conditions
+        for idx, criteria in enumerate(search_criteria):
+            if idx == 0 and len(sql_params) > 0:
+                sql += " AND"
+            elif idx != 0:
+                sql += " OR"
+            param1 = f"search_arg1_{idx}"
+            param2 = f"search_arg2_{idx}"
+            sql += criteria_to_sql_clause_helper(criteria, sql_params, param1, param2)
 
         # Always sort by latest agent ran
-        sql += " ORDER BY aqc.created_at DESC LIMIT %(page_size)s OFFSET %(page_index)s"
-        search_params["page_size"] = pagination.page_size
-        search_params["page_index"] = pagination.page_index
-        records = await self.pg.generic_read(sql, search_params)
+        sql += """
+            GROUP BY aqc.agent_qc_id, us.cognito_username, ag.agent_name, cw.cloudwatch_url
+            ORDER BY aqc.created_at DESC
+        """
+
+        if pagination:
+            sql += " LIMIT %(page_size)s OFFSET %(page_index)s"
+            sql_params["page_size"] = pagination.page_size
+            sql_params["page_index"] = pagination.page_index
+
+        records = await self.pg.generic_read(sql, sql_params)
         agent_qcs = []
         total_agent_qcs = 0
         for record in records:
             total_agent_qcs = record.pop("total_agent_qcs", 0)
-            agent_qcs.append(AgentQC(**record))
+            agent_feedbacks = [
+                AgentFeedback(**agent_feedback)
+                for agent_feedback in record.pop("agent_feedbacks", [])
+                if agent_feedback is not None
+            ]
+            agent_qcs.append(AgentQC(agent_feedbacks=agent_feedbacks, **record))
         return agent_qcs, total_agent_qcs
+
+    async def get_agent_qc_by_ids(self, agent_qc_ids: List[str]) -> list[AgentQC]:
+        ids_filter = [
+            HorizonCriteria(
+                column="aqc.agent_qc_id",
+                operator=HorizonCriteriaOperator.equal_any,
+                arg1=agent_qc_ids,
+                arg2=None,
+            )
+        ]
+
+        # Call the search DB function to retrieve agent QC by IDs
+        agent_qcs, _ = await self.search_agent_qc(ids_filter, [], None)
+
+        # Return the list of AgentQC objects
+        return agent_qcs
+
+    async def get_agent_qc_by_user_ids(self, user_ids: List[str]) -> List[AgentQC]:
+        user_ids_filter = [
+            HorizonCriteria(
+                column="aqc.user_id",
+                operator=HorizonCriteriaOperator.equal_any,
+                arg1=user_ids,
+                arg2=None,
+            )
+        ]
+
+        # Call the search DB function to retrieve agent QCs by user_id
+        agent_qcs, _ = await self.search_agent_qc(user_ids_filter, [], None)
+
+        # Return the list of AgentQC objects
+        return agent_qcs
 
     async def get_agent_metadata_for_qc(
         self,

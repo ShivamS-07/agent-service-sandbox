@@ -744,7 +744,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
 
         # Retrieve and verify the inserted record
         inserted_qc = self.loop.run_until_complete(
-            self.pg.get_agent_qc_by_id([agent_qc.agent_qc_id])
+            self.pg.get_agent_qc_by_ids([agent_qc.agent_qc_id])
         )
         self.assertEqual(inserted_qc[0].agent_qc_id, agent_qc.agent_qc_id)
         self.assertEqual(inserted_qc[0].use_case, agent_qc.use_case)
@@ -760,7 +760,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
 
         # Retrieve and verify the updated record
         updated_qc = self.loop.run_until_complete(
-            self.pg.get_agent_qc_by_id([agent_qc.agent_qc_id])
+            self.pg.get_agent_qc_by_ids([agent_qc.agent_qc_id])
         )
         self.assertEqual(updated_qc[0].follow_up, "follow up 2")
         self.assertEqual(updated_qc[0].score_rating, 5)
@@ -785,7 +785,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
 
         # Retrieve all records by user_id and verify count
         retrieved_qcs_by_user = self.loop.run_until_complete(
-            self.pg.get_agent_qc_by_user(user_id=user_id)
+            self.pg.get_agent_qc_by_user_ids([user_id])
         )
         self.assertEqual(len(retrieved_qcs_by_user), 3)
         self.assertEqual(retrieved_qcs_by_user[0].user_id, user_id)
@@ -794,35 +794,64 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
             HorizonCriteria(
                 column="use_case",
                 operator=HorizonCriteriaOperator.ilike.value,
-                arg1="user",
+                arg1="updated use case",
                 arg2=None,
             )
         ]
         search_results = self.loop.run_until_complete(
-            self.pg.search_agent_qc(criteria, pagination=Pagination(page_index=0, page_size=10))
+            self.pg.search_agent_qc(criteria, [], pagination=Pagination(page_index=0, page_size=10))
         )
 
         # Verify the search results
         self.assertEqual(len(search_results), 2)
-        self.assertEqual(len(search_results[0]), 0)
+        self.assertEqual(len(search_results[0]), 1)
+
+        criteria_1 = [
+            HorizonCriteria(
+                column="query",
+                operator=HorizonCriteriaOperator.ilike.value,
+                arg1="initial query",
+                arg2=None,
+            ),
+        ]
+
+        criteria_2 = [
+            HorizonCriteria(
+                column="use_case",
+                operator=HorizonCriteriaOperator.ilike.value,
+                arg1="updated use case",
+                arg2=None,
+            ),
+        ]
+        search_results = self.loop.run_until_complete(
+            self.pg.search_agent_qc(
+                criteria_1, criteria_2, pagination=Pagination(page_index=0, page_size=10)
+            )
+        )
+        # Verify the search results
+        self.assertEqual(len(search_results), 2)
+        self.assertEqual(len(search_results[0]), 1)
 
         criteria_2 = [
             HorizonCriteria(
                 column="query",
                 operator=HorizonCriteriaOperator.ilike.value,
-                arg1="updated use case",
+                arg1="user-specific query",
                 arg2=None,
             ),
             HorizonCriteria(
                 column="use_case",
                 operator=HorizonCriteriaOperator.ilike.value,
-                arg1="user",
+                arg1="updated use case",
                 arg2=None,
             ),
         ]
+
         search_results = self.loop.run_until_complete(
-            self.pg.search_agent_qc(criteria_2, pagination=Pagination(page_index=0, page_size=10))
+            self.pg.search_agent_qc(
+                [], criteria_2, pagination=Pagination(page_index=0, page_size=10)
+            )
         )
         # Verify the search results
         self.assertEqual(len(search_results), 2)
-        self.assertEqual(len(search_results[0]), 0)
+        self.assertEqual(len(search_results[0]), 3)

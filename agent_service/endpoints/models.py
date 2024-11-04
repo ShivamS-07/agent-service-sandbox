@@ -1247,6 +1247,8 @@ class AgentQC(BaseModel):
     duplicate_agent: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     last_updated: datetime.datetime
+    cognito_username: Optional[str] = None
+    agent_feedbacks: List[AgentFeedback] = []
 
 
 class HorizonCriteriaOperator(enum.StrEnum):
@@ -1257,6 +1259,7 @@ class HorizonCriteriaOperator(enum.StrEnum):
     ilike = "ILIKE"
     between = "BETWEEN"
     in_operator = "IN"
+    equal_any = "=ANY"
 
 
 class HorizonCriteria(BaseModel):
@@ -1272,6 +1275,7 @@ class Pagination(BaseModel):
 
 
 class SearchAgentQCRequest(BaseModel):
+    filter_criteria: List[HorizonCriteria]
     search_criteria: List[HorizonCriteria]
     pagination: Pagination
 
@@ -1279,10 +1283,6 @@ class SearchAgentQCRequest(BaseModel):
 class SearchAgentQCResponse(BaseModel):
     agent_qcs: List[AgentQC]
     total_agent_qcs: int
-
-
-class AgentQCResponse(BaseModel):
-    agent_qc: AgentQC
 
 
 class UpdateAgentQCRequest(BaseModel):

@@ -1177,16 +1177,14 @@ class AgentServiceImpl:
 
         return GetPlanRunOutputResponse(outputs=outputs, agent_name=agent_name)
 
-    async def get_agent_qc_by_id(self, agent_qc_id: List[str]) -> list[AgentQC]:
-        # Call the SQL function to retrieve agent QC by ID
-        agent_qcs = await self.pg.get_agent_qc_by_id(agent_qc_id)
+    async def get_agent_qc_by_ids(self, agent_qc_ids: List[str]) -> List[AgentQC]:
+        agent_qcs = await self.pg.get_agent_qc_by_ids(agent_qc_ids)
 
         # Return the list of AgentQC objects
         return agent_qcs
 
-    async def get_agent_qc_by_user(self, user_id: str) -> list[AgentQC]:
-        # Call the SQL function to retrieve agent QCs by user_id
-        agent_qcs = await self.pg.get_agent_qc_by_user(user_id)
+    async def get_agent_qc_by_user_ids(self, user_ids: List[str]) -> List[AgentQC]:
+        agent_qcs = await self.pg.get_agent_qc_by_user_ids(user_ids)
 
         # Return the list of AgentQC objects
         return agent_qcs
@@ -2158,11 +2156,16 @@ class AgentServiceImpl:
         )
 
     async def search_agent_qcs(
-        self, search_params: List[HorizonCriteria], pagination: Pagination
+        self,
+        filter_criteria: List[HorizonCriteria],
+        search_criteria: List[HorizonCriteria],
+        pagination: Pagination,
     ) -> Tuple[List[AgentQC], int]:
 
         # Call the database search function
-        agent_qcs, total_agent_qcs = await self.pg.search_agent_qc(search_params, pagination)
+        agent_qcs, total_agent_qcs = await self.pg.search_agent_qc(
+            filter_criteria, search_criteria, pagination
+        )
 
         # Return the list of AgentQC objects
         return agent_qcs, total_agent_qcs

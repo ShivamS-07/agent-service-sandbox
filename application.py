@@ -38,7 +38,7 @@ from agent_service.endpoints.authz_helper import (
 )
 from agent_service.endpoints.models import (
     AgentInfo,
-    AgentQCResponse,
+    AgentQC,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     ConvertMarkdownRequest,
@@ -1875,10 +1875,10 @@ async def get_ordered_securities(
 
 @router.get(
     "/agent/qc/{id}",
-    response_model=List[AgentQCResponse],
+    response_model=List[AgentQC],
     status_code=status.HTTP_200_OK,
 )
-async def get_qc_agent_by_id(id: str, user: User = Depends(parse_header)) -> List[AgentQCResponse]:
+async def get_qc_agent_by_id(id: str, user: User = Depends(parse_header)) -> List[AgentQC]:
     """
     Get QC Agent by ID
 
@@ -1895,20 +1895,18 @@ async def get_qc_agent_by_id(id: str, user: User = Depends(parse_header)) -> Lis
         )
 
     # Call the function to retrieve agent QC by ID
-    agent_qcs = await application.state.agent_service_impl.get_agent_qc_by_id([id])
+    agent_qcs = await application.state.agent_service_impl.get_agent_qc_by_ids([id])
 
     # Return the list of AgentQC objects
-    return [AgentQCResponse(agent_qc=agent_qc) for agent_qc in agent_qcs]
+    return agent_qcs
 
 
 @router.get(
     "/agent/qc/user/{user_id}",
-    response_model=List[AgentQCResponse],
+    response_model=List[AgentQC],
     status_code=status.HTTP_200_OK,
 )
-async def get_qc_agent_by_user(
-    user_id: str, user: User = Depends(parse_header)
-) -> List[AgentQCResponse]:
+async def get_qc_agent_by_user(user_id: str, user: User = Depends(parse_header)) -> List[AgentQC]:
     """
     Get QC Agents by User ID
 
@@ -1925,10 +1923,10 @@ async def get_qc_agent_by_user(
         )
 
     # Call the function to retrieve agent QCs by user_id
-    agent_qcs = await application.state.agent_service_impl.get_agent_qc_by_user(user_id)
+    agent_qcs = await application.state.agent_service_impl.get_agent_qc_by_user_ids([user_id])
 
     # Return the list of AgentQC objects
-    return [AgentQCResponse(agent_qc=agent_qc) for agent_qc in agent_qcs]
+    return agent_qcs
 
 
 @router.post(
@@ -1961,7 +1959,8 @@ async def search_agent_qc(
 
     # Call the service function to search based on the filters
     agent_qcs, total_agent_qcs = await application.state.agent_service_impl.search_agent_qcs(
-        search_params=req.search_criteria,
+        filter_criteria=req.filter_criteria,
+        search_criteria=req.search_criteria,
         pagination=req.pagination,
     )
 
