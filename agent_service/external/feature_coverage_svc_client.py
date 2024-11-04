@@ -9,7 +9,6 @@ import backoff
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
     LOCAL_TAG,
-    PROD_TAG,
     get_environment_tag,
 )
 from pydantic import BaseModel
@@ -18,10 +17,12 @@ from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
 
+# Note: Please use port forwarding to run this locally
+# kubectl port-forward -n {namespace} svc/feature-coverage-service 8000:8000
+# namespace - insights-backend-dev/insights-backend-prod
 DEFAULT_URLS = {
-    LOCAL_TAG: "http://localhost:5000",
-    DEV_TAG: "http://localhost:5000",
-    PROD_TAG: "https://feature-coverage-service.alpha.internal.boosted.ai",
+    LOCAL_TAG: "http://localhost:8000",
+    DEV_TAG: "http://localhost:8000",
 }
 
 FEATURE_COVERAGE_SERVICE_CLIENT = None
@@ -39,11 +40,23 @@ class FeatureCoverageServiceError(Exception):
         message: str,
         status_code: Optional[int] = None,
         response_content: Optional[Dict[Any, Any]] = None,
+        request_details: Optional[Dict[str, Any]] = None,
     ):
         self.message = message
         self.status_code = status_code
         self.response_content = response_content
+        self.request_details = request_details
         super().__init__(self.message)
+
+    def __str__(self) -> str:
+        error_parts = [f"Feature Coverage Service Error: {self.message}"]
+        if self.status_code:
+            error_parts.append(f"Status Code: {self.status_code}")
+        if self.request_details:
+            error_parts.append(f"Request Details: {self.request_details}")
+        if self.response_content:
+            error_parts.append(f"Response Content: {self.response_content}")
+        return " | ".join(error_parts)
 
 
 class FeatureCoverageItem(BaseModel):

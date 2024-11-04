@@ -149,7 +149,6 @@ from agent_service.external.custom_data_svc_client import (
     list_custom_docs,
 )
 from agent_service.external.feature_coverage_svc_client import (
-    FeatureCoverageServiceError,
     get_feature_coverage_client,
 )
 from agent_service.external.feature_svc_client import (
@@ -219,6 +218,7 @@ from agent_service.utils.scheduling import (
 from agent_service.utils.sidebar_sections import SidebarSection, find_sidebar_section
 from agent_service.utils.string_utils import is_valid_uuid
 from agent_service.utils.task_executor import TaskExecutor
+from agent_service.utils.variable_explorer_utils import VariableExplorerException
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1809,7 +1809,7 @@ class AgentServiceImpl:
                 ]
             )
         except GRPCError as e:
-            raise CustomDocumentException.from_grpc_error(e) from e
+            raise VariableExplorerException.from_grpc_error(e) from e
 
     async def get_variable_hierarchy(self, user: User) -> GetVariableHierarchyResponse:
         try:
@@ -1827,7 +1827,7 @@ class AgentServiceImpl:
                 ]
             )
         except GRPCError as e:
-            raise CustomDocumentException.from_grpc_error(e) from e
+            raise VariableExplorerException.from_grpc_error(e) from e
 
     async def get_variable_coverage(
         self,
@@ -1855,21 +1855,14 @@ class AgentServiceImpl:
         # Use provided universe_id or default
         universe_id = universe_id or default_universe_id
 
-        try:
-            coverage_response = await feat_coverage_client.get_latest_universe_coverage(
-                universe_id=universe_id,
-                feature_ids=feature_ids,
-            )
+        coverage_response = await feat_coverage_client.get_latest_universe_coverage(
+            universe_id=universe_id,
+            feature_ids=feature_ids,
+        )
 
-            coverage_dict = {item.feature_id: item.coverage for item in coverage_response.features}
+        coverage_dict = {item.feature_id: item.coverage for item in coverage_response.features}
 
-            return GetVariableCoverageResponse(coverages=coverage_dict)
-
-        except FeatureCoverageServiceError as e:
-            LOGGER.error(f"Feature coverage service error: {e.message}")
-            raise CustomDocumentException(
-                message=f"Failed to fetch feature coverage: {e.message}"
-            ) from e
+        return GetVariableCoverageResponse(coverages=coverage_dict)
 
     # Custom Documents
     async def list_custom_documents(self, user: User) -> ListCustomDocumentsResponse:
