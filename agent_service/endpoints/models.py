@@ -891,7 +891,12 @@ class CustomDocumentListing(BaseModel):
     size: int
     is_dir: bool
     listing_status: str
-    upload_time: datetime.datetime
+    upload_time: Optional[datetime.datetime] = None
+    author: str
+    author_org: str
+    publication_time: Optional[datetime.datetime] = None
+    company_name: str
+    spiq_company_id: int
 
 
 class ListCustomDocumentsResponse(BaseModel):

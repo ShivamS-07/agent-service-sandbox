@@ -156,6 +156,7 @@ from agent_service.external.feature_svc_client import (
     get_all_variable_hierarchy,
     get_all_variables_metadata,
 )
+from agent_service.external.grpc_utils import timestamp_to_datetime
 from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
 from agent_service.external.user_svc_client import (
     get_user_cached,
@@ -1874,7 +1875,6 @@ class AgentServiceImpl:
     async def list_custom_documents(self, user: User) -> ListCustomDocumentsResponse:
         try:
             resp: ListDocumentsResponse = await list_custom_docs(user_id=user.user_id)
-
             return ListCustomDocumentsResponse(
                 documents=[
                     CustomDocumentListing(
@@ -1888,7 +1888,12 @@ class AgentServiceImpl:
                         listing_status=document_listing_status_to_str(
                             listing.listing_status.status
                         ),
-                        upload_time=listing.upload_time.ToDatetime(),
+                        upload_time=timestamp_to_datetime(listing.upload_time),
+                        publication_time=timestamp_to_datetime(listing.publication_time),
+                        author=listing.author,
+                        author_org=listing.author_org,
+                        company_name=listing.company_name,
+                        spiq_company_id=listing.spiq_company_id,
                     )
                     for listing in resp.listings
                 ],
