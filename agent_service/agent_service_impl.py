@@ -48,16 +48,17 @@ from agent_service.endpoints.models import (
     CannedPrompt,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
+    CheckCustomDocumentUploadQuotaResponse,
     CreateAgentResponse,
     CreateCustomNotificationRequest,
     CreatePromptTemplateResponse,
-    CustomDocumentListing,
     CustomDocumentSummaryChunk,
     CustomNotification,
     Debug,
     DeleteAgentOutputRequest,
     DeleteAgentOutputResponse,
     DeleteAgentResponse,
+    DeleteCustomDocumentsResponse,
     DeleteMemoryResponse,
     DeletePromptTemplateResponse,
     DisableAgentAutomationResponse,
@@ -145,6 +146,8 @@ from agent_service.endpoints.utils import (
     get_plan_preview,
 )
 from agent_service.external.custom_data_svc_client import (
+    check_custom_doc_upload_quota,
+    delete_custom_docs,
     document_listing_status_to_str,
     get_custom_doc_file_contents,
     get_custom_doc_file_info,
@@ -157,7 +160,6 @@ from agent_service.external.feature_svc_client import (
     get_all_variable_hierarchy,
     get_all_variables_metadata,
 )
-from agent_service.external.grpc_utils import timestamp_to_datetime
 from agent_service.external.pa_svc_client import get_all_watchlists, get_all_workspaces
 from agent_service.external.user_svc_client import (
     get_user_cached,
@@ -191,7 +193,10 @@ from agent_service.utils.async_utils import (
 from agent_service.utils.cache_utils import CacheBackend
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
-from agent_service.utils.custom_documents_utils import CustomDocumentException
+from agent_service.utils.custom_documents_utils import (
+    CustomDocumentException,
+    custom_doc_listing_proto_to_model,
+)
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import (
@@ -1891,27 +1896,7 @@ class AgentServiceImpl:
         try:
             resp: ListDocumentsResponse = await list_custom_docs(user_id=user.user_id)
             return ListCustomDocumentsResponse(
-                documents=[
-                    CustomDocumentListing(
-                        file_id=listing.file_id,
-                        name=listing.name,
-                        base_path=listing.base_path,
-                        full_path=listing.full_path,
-                        type=listing.type,
-                        size=listing.size,
-                        is_dir=listing.is_dir,
-                        listing_status=document_listing_status_to_str(
-                            listing.listing_status.status
-                        ),
-                        upload_time=timestamp_to_datetime(listing.upload_time),
-                        publication_time=timestamp_to_datetime(listing.publication_time),
-                        author=listing.author,
-                        author_org=listing.author_org,
-                        company_name=listing.company_name,
-                        spiq_company_id=listing.spiq_company_id,
-                    )
-                    for listing in resp.listings
-                ],
+                documents=[custom_doc_listing_proto_to_model(listing) for listing in resp.listings],
             )
         except GRPCError as e:
             raise CustomDocumentException.from_grpc_error(e) from e
@@ -1973,6 +1958,37 @@ class AgentServiceImpl:
                     for ch in file_info.chunks
                 ],
             )
+        except GRPCError as e:
+            raise CustomDocumentException.from_grpc_error(e) from e
+
+    async def delete_custom_documents(
+        self, user: User, file_paths: List[str]
+    ) -> DeleteCustomDocumentsResponse:
+        try:
+            delete_resp = await delete_custom_docs(user_id=user.user_id, file_paths=file_paths)
+            return DeleteCustomDocumentsResponse(success=delete_resp.status.code == 0)
+        except GRPCError as e:
+            raise CustomDocumentException.from_grpc_error(e) from e
+
+    async def check_document_upload_quota(
+        self, user: User, candidate_total_size: Optional[int] = 0
+    ) -> CheckCustomDocumentUploadQuotaResponse:
+        try:
+            resp = await check_custom_doc_upload_quota(
+                user_id=user.user_id, candidate_total_size=candidate_total_size
+            )
+            response = CheckCustomDocumentUploadQuotaResponse(
+                authorized_s3_bucket=(
+                    None if resp.authorized_s3_bucket == "" else resp.authorized_s3_bucket
+                ),
+                authorized_s3_prefix=(
+                    None if resp.authorized_s3_prefix == "" else resp.authorized_s3_prefix
+                ),
+                total_quota_size=resp.total_quota_size,
+                remaining_quota_size=resp.remaining_quota_size,
+                message=resp.status.message if len(resp.status.message) > 0 else None,
+            )
+            return response
         except GRPCError as e:
             raise CustomDocumentException.from_grpc_error(e) from e
 

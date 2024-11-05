@@ -911,6 +911,22 @@ class ListCustomDocumentsResponse(BaseModel):
     documents: List[CustomDocumentListing]
 
 
+class CheckCustomDocumentUploadQuotaResponse(BaseModel):
+    authorized_s3_bucket: Optional[str] = None
+    authorized_s3_prefix: Optional[str] = None
+    total_quota_size: int
+    remaining_quota_size: int
+    message: Optional[str] = None
+
+
+class DeleteCustomDocumentsRequest(BaseModel):
+    file_paths: List[str]
+
+
+class DeleteCustomDocumentsResponse(BaseModel):
+    success: bool
+
+
 class GetCustomDocumentFileRequest(BaseModel):
     for_preview: bool
 

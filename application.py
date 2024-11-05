@@ -41,6 +41,7 @@ from agent_service.endpoints.models import (
     AgentQC,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
+    CheckCustomDocumentUploadQuotaResponse,
     ConvertMarkdownRequest,
     CopyAgentToUsersRequest,
     CopyAgentToUsersResponse,
@@ -56,6 +57,8 @@ from agent_service.endpoints.models import (
     DeleteAgentOutputRequest,
     DeleteAgentOutputResponse,
     DeleteAgentResponse,
+    DeleteCustomDocumentsRequest,
+    DeleteCustomDocumentsResponse,
     DeleteMemoryResponse,
     DeletePromptTemplateRequest,
     DeletePromptTemplateResponse,
@@ -1881,6 +1884,44 @@ async def get_custom_doc_details(
     except CustomDocumentException as e:
         logger.exception(f"Error while getting custom doc metadata {file_id}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.message)
+
+
+@router.post(
+    "/custom-documents/delete-documents",
+    response_model=DeleteCustomDocumentsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def delete_custom_docs(
+    req: DeleteCustomDocumentsRequest, user: User = Depends(parse_header)
+) -> DeleteCustomDocumentsResponse:
+    """
+    Deletes custom documents
+    """
+    if req.file_paths is None or len(req.file_paths) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No file paths provided"
+        )
+    resp = await application.state.agent_service_impl.delete_custom_documents(
+        user=user, file_paths=req.file_paths
+    )
+    return resp
+
+
+@router.get(
+    "/custom-documents/quota",
+    response_model=CheckCustomDocumentUploadQuotaResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_custom_doc_quota(
+    candidate_total_size: Optional[int] = 0, user: User = Depends(parse_header)
+) -> CheckCustomDocumentUploadQuotaResponse:
+    """
+    Gets the available custom document upload quota for the user and checks if they have capacity
+    for the candidate size of file(s) provided
+    """
+    return await application.state.agent_service_impl.check_document_upload_quota(
+        user=user, candidate_total_size=candidate_total_size
+    )
 
 
 @router.post(

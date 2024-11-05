@@ -18,6 +18,8 @@ from stock_universe_service_proto_v1.custom_data_service_grpc import (
 from stock_universe_service_proto_v1.custom_data_service_pb2 import (
     CheckDocumentUploadQuotaRequest,
     CheckDocumentUploadQuotaResponse,
+    DeleteListingsRequest,
+    DeleteListingsResponse,
     GetCitationContextRequest,
     GetCitationContextResponse,
     GetDocsByFileNamesRequest,
@@ -202,7 +204,7 @@ async def get_custom_doc_file_contents(
 @grpc_retry
 @async_perf_logger
 async def check_custom_doc_upload_quota(
-    user_id: str, candidate_total_size: int
+    user_id: str, candidate_total_size: Optional[int] = 0
 ) -> CheckDocumentUploadQuotaResponse:
     with _get_service_stub() as stub:
         req = CheckDocumentUploadQuotaRequest(request_total_file_size=candidate_total_size)
@@ -221,6 +223,18 @@ async def list_custom_docs(
     with _get_service_stub() as stub:
         req = ListDocumentsRequest(base_path=base_path, recursive=recursive)
         resp: ListDocumentsResponse = await stub.ListDocuments(
+            req,
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def delete_custom_docs(user_id: str, file_paths: List[str]) -> DeleteListingsResponse:
+    with _get_service_stub() as stub:
+        req = DeleteListingsRequest(paths=file_paths)
+        resp: DeleteListingsResponse = await stub.DeleteListings(
             req,
             metadata=get_default_grpc_metadata(user_id=user_id),
         )
