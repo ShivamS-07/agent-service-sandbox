@@ -368,8 +368,8 @@ async def get_statistic_data_for_companies(
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)
 
+    all_statistic_lookup = await get_statistic_lookup(context)
     if not decomp_json:
-        all_statistic_lookup = await get_statistic_lookup(context)
         # sorting by length encourages it to pick simpler stats (seems to start looking at top)
         all_statistics = "\n".join(sorted(all_statistic_lookup, key=lambda x: len(x)))
         if is_timeseries:
