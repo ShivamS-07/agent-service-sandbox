@@ -22,13 +22,15 @@ TEMPLATE_FROM_PLAN_SYS_PROMPT = Prompt(
         "\n- The prompt should be a coherent, concise summary of the client messages "
         "while maintaining the same tone and language. "
         "\n- Ensure the prompt is generalizable to similar tasks, using different tool input variables. "
-        "\n- Use <code> for specific inputs such as topics, date ranges, portfolio names, sectors, etc. "
+        "\n- Use <code> for specific inputs such as topics, date ranges, portfolio names, sectors, index names, etc. "
         "\n- If user mentions 'my portfolio' or similar terms, and do not provide the exact name, "
         "use <code>my portfolio</code> tag in your prompt. "
         '\n- Use <option-dropdown type="stock" value="stock_name"></option-dropdown> tag ONLY for company names, '
-        "stock symbols, and indexes. "
+        "or stock symbols. If a stock symbol or company name is mentioned multiple times, "
+        "use the tag ONLY for the first mention, "
+        "and then use 'target stock' or 'target company' or similar term for the rest without any tag. "
         "Make sure the type attribute is set to 'stock' and the value attribute is set to the given "
-        "stock symbol, or index name, or company name. "
+        "stock symbol, or company name. "
         "\n- If client mentioned any of these words such 'top' or 'bottom', 'high' or 'low', 'increase' or 'decrease', "
         "'positive' or 'negative', 'best' or 'worst', etc., use a <option-dropdown> tag to represent the pair. "
         "For example if client mentioned 'top', use "
@@ -82,7 +84,7 @@ TEMPLATE_FROM_PLAN_SYS_PROMPT = Prompt(
         "\n##Prompt Template: "
         "Write a summary of news in the <code>last week</code> focusing on topics "
         "<code>US election poll predictions</code> "
-        'and its impact on the market <option-dropdown type="stock" value="SPX"></option-dropdown> index. '
+        "and its impact on the market <code>SPY</code> index. "
         "In a separate section, show <code>my portfolio</code> holding. "
         'In a new section include a brief analysis of how <option-dropdown type="stock" value="Nvidia"> '
         "</option-dropdown> prices are impacted by the US election result."
@@ -121,7 +123,7 @@ TEMPLATE_FROM_PLAN_SYS_PROMPT = Prompt(
         "good buys with positive news over the past 3 months. Then add a deep dive into the top 3 ideas "
         "\n##Prompt Template: "
         'Analyze the <option-dropdown type="stat" options=\'["bottom", "top"]\' value="bottom"></option-dropdown> '
-        '<code>100</code> stocks in the <option-dropdown type="stock" value="SPY"></option-dropdown> universe based on '
+        "<code>100</code> stocks in the <code>SPY</code> universe based on "
         "<code>the percentage gain over the past year</code>. Filter these companies to those with a <code>P/E</code> "
         "ratio greater than <code>10</code> and less than <code>25</code>. "
         "Further narrow down these companies to those considered good buys with "
