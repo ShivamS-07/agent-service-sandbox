@@ -30,7 +30,7 @@ class PromptTemplate(BaseModel):
     category: str
     created_at: datetime.datetime
     plan: ExecutionPlan
-    is_visible: bool = False
+    user_id: Optional[str] = None
     organization_ids: Optional[List[str]] = None
     preview: Optional[List[OutputPreview]] = None
 

@@ -1159,6 +1159,7 @@ class CreatePromptTemplateRequest(BaseModel):
 
 class CreatePromptTemplateResponse(BaseModel):
     template_id: str
+    user_id: str
     name: str
     description: str
     prompt: str
@@ -1175,22 +1176,11 @@ class UpdatePromptTemplateRequest(BaseModel):
     prompt: str
     category: str
     plan: ExecutionPlan
-    is_visible: bool = False
     organization_ids: Optional[List[str]] = None
 
 
 class UpdatePromptTemplateResponse(BaseModel):
     prompt_template: PromptTemplate
-
-
-class SetPromptTemplateVisibilityRequest(BaseModel):
-    template_id: str
-    is_visible: bool
-
-
-class SetPromptTemplateVisibilityResponse(BaseModel):
-    template_id: str
-    is_visible: bool
 
 
 class GetPromptTemplatesResponse(BaseModel):
@@ -1236,6 +1226,15 @@ class DeletePromptTemplateResponse(BaseModel):
 
 class GetCompaniesResponse(BaseModel):
     companies: List[UserOrganization]
+
+
+class GenPromptTemplateFromPlanResponse(BaseModel):
+    prompt_str: str
+
+
+class GenPromptTemplateFromPlanRequest(BaseModel):
+    plan_run_id: str
+    agent_id: str
 
 
 ################################################

@@ -64,6 +64,7 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationResponse,
     ExecutionPlanTemplate,
+    GenPromptTemplateFromPlanResponse,
     GenTemplatePlanResponse,
     GetAgentDebugInfoResponse,
     GetAgentFeedBackResponse,
@@ -121,7 +122,6 @@ from agent_service.endpoints.models import (
     SetAgentFeedBackResponse,
     SetAgentScheduleRequest,
     SetAgentScheduleResponse,
-    SetPromptTemplateVisibilityResponse,
     SharePlanRunResponse,
     Status,
     TerminateAgentResponse,
@@ -210,6 +210,7 @@ from agent_service.utils.get_agent_outputs import get_agent_output
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.memory_handler import MemoryHandler, get_handler
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
+from agent_service.utils.plan_to_template import generate_template_from_plan
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
 from agent_service.utils.prefect import kick_off_run_execution_plan
 from agent_service.utils.prompt_template import PromptTemplate
@@ -2004,19 +2005,22 @@ class AgentServiceImpl:
         prompt_templates = []
         for template in prompt_templates_all:
             if template.plan is not None:
-                if not is_user_admin:
-                    # if user is not admin, show templates that match company_id and templates with no organization_ids
-                    if not template.organization_ids:
-                        template.preview = get_plan_preview(template.plan)
-                        prompt_templates.append(template)
-                    else:
-                        if user_org_id in template.organization_ids:
-                            template.preview = get_plan_preview(template.plan)
-                            prompt_templates.append(template)
-                else:
+                if is_user_admin:
                     # if user is admin show all templates
                     template.preview = get_plan_preview(template.plan)
                     prompt_templates.append(template)
+                else:
+                    # show templates that have no organization_id or match organization_id
+                    if not template.organization_ids or user_org_id in template.organization_ids:
+                        template.preview = get_plan_preview(template.plan)
+                        prompt_templates.append(template)
+                        continue
+                    # show those that have user_id matching the user
+                    if template.user_id and user.user_id == template.user_id:
+                        template.preview = get_plan_preview(template.plan)
+                        prompt_templates.append(template)
+                        continue
+
             else:
                 LOGGER.error("A prompt template has no plan")
 
@@ -2030,7 +2034,6 @@ class AgentServiceImpl:
         prompt: str,
         category: str,
         plan: ExecutionPlan,
-        is_visible: bool = False,
         organization_ids: Optional[List[str]] = None,
     ) -> UpdatePromptTemplateResponse:
         prompt_template = PromptTemplate(
@@ -2040,7 +2043,6 @@ class AgentServiceImpl:
             prompt=prompt,
             category=category,
             plan=plan,
-            is_visible=is_visible,
             organization_ids=organization_ids,
             created_at=get_now_utc(),
         )
@@ -2054,6 +2056,7 @@ class AgentServiceImpl:
         prompt: str,
         category: str,
         plan_run_id: str,
+        user: User,
         organization_ids: Optional[List[str]] = None,
     ) -> CreatePromptTemplateResponse:
 
@@ -2064,6 +2067,7 @@ class AgentServiceImpl:
         now = get_now_utc()
         prompt_template = PromptTemplate(
             template_id=str(uuid.uuid4()),
+            user_id=user.user_id,
             name=name,
             description=description,
             prompt=prompt,
@@ -2076,6 +2080,7 @@ class AgentServiceImpl:
         await self.pg.insert_prompt_template(prompt_template)
         return CreatePromptTemplateResponse(
             template_id=prompt_template.template_id,
+            user_id=user.user_id,
             name=prompt_template.name,
             description=prompt_template.description,
             prompt=prompt_template.prompt,
@@ -2085,14 +2090,19 @@ class AgentServiceImpl:
             organization_ids=organization_ids,
         )
 
-    async def set_prompt_template_visibility(
-        self, template_id: str, is_visible: bool
-    ) -> SetPromptTemplateVisibilityResponse:
-        await self.pg.set_prompt_template_visibility(template_id, is_visible)
-        return SetPromptTemplateVisibilityResponse(
-            template_id=template_id,
-            is_visible=is_visible,
+    async def gen_prompt_template_from_plan(
+        self, plan_run_id: str, agent_id: str
+    ) -> GenPromptTemplateFromPlanResponse:
+        # extract plan from agent_id and plan_id
+        _, plan = await self.pg.get_execution_plan_for_run(plan_run_id)
+        prompt_str = await generate_template_from_plan(
+            plan=plan,
+            agent_id=agent_id,
+            gpt_service_stub=self.gpt_service_stub,
+            db=self.pg,
         )
+
+        return GenPromptTemplateFromPlanResponse(prompt_str=prompt_str)
 
     async def gen_template_plan(self, template_prompt: str, user: User) -> GenTemplatePlanResponse:
 

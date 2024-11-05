@@ -68,6 +68,8 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationRequest,
     EnableAgentAutomationResponse,
+    GenPromptTemplateFromPlanRequest,
+    GenPromptTemplateFromPlanResponse,
     GenTemplatePlanRequest,
     GenTemplatePlanResponse,
     GetAccountInfoResponse,
@@ -135,8 +137,6 @@ from agent_service.endpoints.models import (
     SetAgentScheduleResponse,
     SetAgentSectionRequest,
     SetAgentSectionResponse,
-    SetPromptTemplateVisibilityRequest,
-    SetPromptTemplateVisibilityResponse,
     SharePlanRunRequest,
     SharePlanRunResponse,
     TerminateAgentRequest,
@@ -1625,7 +1625,8 @@ async def rearrange_section(
     status_code=status.HTTP_200_OK,
 )
 async def get_all_companies(user: User = Depends(parse_header)) -> GetCompaniesResponse:
-    if not is_user_agent_admin(user.user_id):
+    is_user_admin = user.is_super_admin or is_user_agent_admin(user.user_id)
+    if not is_user_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="User does not have access"
         )
@@ -1638,7 +1639,7 @@ async def get_all_companies(user: User = Depends(parse_header)) -> GetCompaniesR
     status_code=status.HTTP_200_OK,
 )
 async def get_prompt_templates(user: User = Depends(parse_header)) -> GetPromptTemplatesResponse:
-    is_user_admin = is_user_agent_admin(user.user_id)
+    is_user_admin = user.is_super_admin or is_user_agent_admin(user.user_id)
     templates = await application.state.agent_service_impl.get_prompt_templates(user, is_user_admin)
     return GetPromptTemplatesResponse(prompt_templates=templates)
 
@@ -1648,28 +1649,17 @@ async def get_prompt_templates(user: User = Depends(parse_header)) -> GetPromptT
     response_model=CreatePromptTemplateRequest,
     status_code=status.HTTP_200_OK,
 )
-async def create_prompt_template(req: CreatePromptTemplateRequest) -> CreatePromptTemplateResponse:
+async def create_prompt_template(
+    req: CreatePromptTemplateRequest, user: User = Depends(parse_header)
+) -> CreatePromptTemplateResponse:
     return await application.state.agent_service_impl.create_prompt_template(
         name=req.name,
+        user=user,
         description=req.description,
         prompt=req.prompt,
         category=req.category,
         plan_run_id=req.plan_run_id,
         organization_ids=req.organization_ids,
-    )
-
-
-@router.post(
-    "/template/set-prompt-template-visibility",
-    response_model=SetPromptTemplateVisibilityRequest,
-    status_code=status.HTTP_200_OK,
-)
-async def set_prompt_template_visibility(
-    req: SetPromptTemplateVisibilityRequest,
-) -> SetPromptTemplateVisibilityResponse:
-    return await application.state.agent_service_impl.set_prompt_template_visibility(
-        template_id=req.template_id,
-        is_visible=req.is_visible,
     )
 
 
@@ -1734,8 +1724,21 @@ async def update_prompt_template(
         category=req.category,
         prompt=req.prompt,
         plan=req.plan,
-        is_visible=req.is_visible,
         organization_ids=req.organization_ids,
+    )
+
+
+@router.post(
+    "/template/gen-template-from-plan",
+    response_model=GenPromptTemplateFromPlanResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def gen_prompt_template_from_plan(
+    req: GenPromptTemplateFromPlanRequest, user: User = Depends(parse_header)
+) -> GenPromptTemplateFromPlanResponse:
+    return await application.state.agent_service_impl.gen_prompt_template_from_plan(
+        plan_run_id=req.plan_run_id,
+        agent_id=req.agent_id,
     )
 
 
