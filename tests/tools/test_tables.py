@@ -2,15 +2,22 @@ import unittest
 
 from agent_service.io_type_utils import HistoryEntry, TableColumnType
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import Table, TableColumnMetadata
+from agent_service.io_types.table import StockTable, Table, TableColumnMetadata
 from agent_service.tools.tables import (
+    CreateTableStockListArgs,
     GetStockListFromTableArgs,
+    JoinStockListTableArgs,
     JoinTableArgs,
+    create_table_from_stock_list,
     get_stock_identifier_list_from_table,
+    join_stock_list_to_table,
     join_tables,
 )
 from agent_service.types import PlanRunContext
 from tests.tools.table_data import (
+    STOCK4,
+    STOCK5,
+    STOCK6,
     TEST_STOCK_DATE_TABLE1,
     TEST_STOCK_DATE_TABLE2,
     TEST_STOCK_TABLE1,
@@ -124,7 +131,26 @@ class TestTableTools(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             first_stock.history,
             [
-                HistoryEntry(explanation="Test 1"),
+                HistoryEntry(explanation="Test 1", title="Test"),
                 HistoryEntry(title="News Summary", explanation="blah1"),
             ],
         )
+
+    async def test_create_table_from_stock_list(self):
+        stocks = [STOCK4, STOCK5, STOCK6]
+        result = await create_table_from_stock_list(
+            args=CreateTableStockListArgs(stock_list=stocks), context=PlanRunContext.get_dummy()
+        )
+        self.assertEqual(len(result.columns), 2)
+        self.assertEqual(result.columns[1].metadata.label, "Test")
+
+    async def test_join_stock_list_to_table(self):
+        result = await join_stock_list_to_table(
+            args=JoinStockListTableArgs(
+                input_table=StockTable(columns=TEST_STOCK_TABLE1.columns),
+                stock_list=[STOCK4, STOCK5, STOCK6],
+            ),
+            context=PlanRunContext.get_dummy(),
+        )
+        self.assertEqual(len(result.columns), 3)
+        self.assertEqual(result.columns[2].metadata.label, "Test")

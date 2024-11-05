@@ -14,7 +14,7 @@ STOCK4 = StockID(
     symbol="GOOG",
     isin="",
     company_name="",
-    history=[HistoryEntry(explanation="Test 1")],
+    history=[HistoryEntry(explanation="Test 1", title="Test")],
 )
 STOCK5 = StockID(gbi_id=124, symbol="IBM", isin="", company_name="")
 STOCK6 = StockID(gbi_id=149, symbol="IDK", isin="", company_name="")
