@@ -26,6 +26,7 @@ from agent_service.tools.LLM_analysis.constants import (
     UNITS,
 )
 from agent_service.tools.LLM_analysis.prompts import (
+    CHECK_TOPICALITY_MAIN_PROMPT,
     KEY_PHRASE_PROMPT,
     SECOND_ORDER_CITATION_PROMPT,
     TEXT_SNIPPET_RELEVANCY_MAIN_PROMPT,
@@ -349,3 +350,17 @@ async def classify_stock_text_relevancies_for_profile(
         if relevancy_descision:
             filtered_texts.append(texts[i])
     return filtered_texts
+
+
+async def is_topical(topic: str, context: PlanRunContext) -> bool:
+    llm = GPT(
+        model=GPT4_O,
+        context=create_gpt_context(GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID),
+    )
+
+    result = await llm.do_chat_w_sys_prompt(
+        main_prompt=CHECK_TOPICALITY_MAIN_PROMPT.format(topic=topic),
+        sys_prompt=NO_PROMPT,
+        max_tokens=500,
+    )
+    return result.split("\n")[-1].strip().lower() != "no"

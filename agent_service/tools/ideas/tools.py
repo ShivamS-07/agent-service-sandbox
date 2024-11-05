@@ -1,5 +1,5 @@
 import json
-from typing import Coroutine, List, Optional, Set, Tuple
+from typing import Coroutine, Dict, List, Optional, Set, Tuple
 
 from agent_service.GPT.constants import GPT4_O, GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
@@ -24,6 +24,7 @@ from agent_service.tools.ideas.prompts import (
     IDEA_CLASSIFY_SYS_PROMPT_STR,
     IDEA_CLUSTER_MAIN_PROMPT_STR,
     IDEA_CLUSTER_SYS_PROMPT_STR,
+    IDEA_NOUN_MAIN_PROMPT,
     INITIAL_BRAINSTORM_PROMPT,
 )
 from agent_service.tools.ideas.utils import (
@@ -48,7 +49,11 @@ from agent_service.utils.tool_diff import get_prev_run_info
 
 
 async def initial_brainstorm(
-    texts: List[Text], idea_definition: str, context: PlanRunContext, use_cheap: bool = True
+    texts: List[Text],
+    idea_definition: str,
+    idea_noun: Dict[str, str],
+    context: PlanRunContext,
+    use_cheap: bool = True,
 ) -> List[Tuple[str, List[Text], int]]:
     logger = get_prefect_logger(__name__)
     text_group = TextGroup(val=texts)
@@ -64,7 +69,12 @@ async def initial_brainstorm(
     else:
         llm = GPT(context=gpt_context, model=GPT4_O)
 
-    main_prompt = INITIAL_BRAINSTORM_PROMPT.format(idea_definition=idea_definition, texts=text_str)
+    main_prompt = INITIAL_BRAINSTORM_PROMPT.format(
+        idea_definition=idea_definition,
+        idea=idea_noun["singular"],
+        ideas=idea_noun["plural"],
+        texts=text_str,
+    )
 
     result = await llm.do_chat_w_sys_prompt(main_prompt, NO_PROMPT, output_json=True)
 
@@ -82,7 +92,7 @@ async def initial_brainstorm(
                 ]
                 sources = [text for text in sources if text]
                 if sources:
-                    final_output.append((idea_dict["idea"], sources, rank))  # type: ignore
+                    final_output.append((idea_dict[idea_noun["singular"]], sources, rank))  # type: ignore
             success = True
         except (json.JSONDecodeError, KeyError):
             logger.warning(f"Failed to parse correct json from initial brainstorm output: {result}")
@@ -145,6 +155,7 @@ async def create_final_idea(
     idea_definition: str,
     idea_formulations: List[str],
     idea_relevant_texts: List[Text],
+    idea_noun: Dict[str, str],
     context: PlanRunContext,
 ) -> Idea:
     logger = get_prefect_logger(__name__)
@@ -170,12 +181,17 @@ async def create_final_idea(
         ],
     )
 
+    idea_sg = idea_noun["singular"]
+    idea_pl = idea_noun["plural"]
+
     main_prompt = FINAL_IDEA_MAIN_PROMPT.format(
         idea_definition=idea_definition,
         initial_ideas=ideas_str,
         source_documents=text_str,
+        idea=idea_sg,
+        ideas=idea_pl,
     )
-    sys_prompt = FINAL_IDEA_SYS_PROMPT.format()
+    sys_prompt = FINAL_IDEA_SYS_PROMPT.format(idea=idea_sg, ideas=idea_pl)
 
     result = await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt)
 
@@ -206,6 +222,17 @@ async def create_final_idea(
     description = description.inject_history_entry(HistoryEntry(citations=citations))  # type: ignore
 
     return Idea(title=title, description=description)
+
+
+async def get_idea_noun(idea_definition: str, context: PlanRunContext) -> Dict[str, str]:
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(context=gpt_context, model=GPT4_O)
+    result = await llm.do_chat_w_sys_prompt(
+        IDEA_NOUN_MAIN_PROMPT.format(idea_definition=idea_definition), NO_PROMPT
+    )
+    return json.loads(clean_to_json_if_needed(result))
 
 
 class BrainstormIdeasFromTextsInput(ToolArgs):
@@ -248,6 +275,8 @@ async def brainstorm_ideas_from_text(
             f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
         )
 
+    idea_noun = await get_idea_noun(args.idea_definition, context)
+
     text_groups = await create_small_text_groups(partitioned_texts)
 
     if len(text_groups) > CHEAP_LMM_BATCH_THRESHOLD:
@@ -259,7 +288,9 @@ async def brainstorm_ideas_from_text(
     # do brainstorming for each group that can fit in a single GPT context call
     for text_group in text_groups:
         tasks.append(
-            initial_brainstorm(text_group, args.idea_definition, context, use_cheap=use_cheap)
+            initial_brainstorm(
+                text_group, args.idea_definition, idea_noun, context, use_cheap=use_cheap
+            )
         )
     result = await gather_with_concurrency(tasks)
     initial_ideas = [idea for idea_groups in result for idea in idea_groups]
@@ -299,7 +330,11 @@ async def brainstorm_ideas_from_text(
                 if len(final_tasks) < MIN_TOP_NEW_IDEA:
                     final_tasks.append(
                         create_final_idea(
-                            args.idea_definition, idea_formulations, idea_relevant_texts, context
+                            args.idea_definition,
+                            idea_formulations,
+                            idea_relevant_texts,
+                            idea_noun,
+                            context,
                         )
                     )
                 else:  # low ranked new idea that doesn't have old idea, skip
@@ -320,7 +355,11 @@ async def brainstorm_ideas_from_text(
                     replace_dict[len(final_tasks)] = old_idea
                     final_tasks.append(
                         create_final_idea(
-                            args.idea_definition, idea_formulations, idea_relevant_texts, context
+                            args.idea_definition,
+                            idea_formulations,
+                            idea_relevant_texts,
+                            idea_noun,
+                            context,
                         )
                     )
                     used_old_ideas.add(old_idea)
@@ -350,7 +389,9 @@ async def brainstorm_ideas_from_text(
         # generate final ideas with references
         clustered_ideas = clustered_ideas[: args.max_ideas]
         final_tasks = [
-            create_final_idea(args.idea_definition, idea_formulations, idea_relevant_texts, context)
+            create_final_idea(
+                args.idea_definition, idea_formulations, idea_relevant_texts, idea_noun, context
+            )
             for idea_formulations, idea_relevant_texts, _ in clustered_ideas
         ]
         final_ideas = await gather_with_concurrency(final_tasks, n=len(clustered_ideas))

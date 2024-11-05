@@ -282,6 +282,16 @@ class OutputDiffer:
         else:
             notification_instructions_str = BASIC_NOTIFICATION_TEMPLATE
 
+        latest_output_str, prev_output = GPTTokenizer(GPT4_O).do_multi_truncation_if_needed(
+            [latest_output_str, prev_output],  # type: ignore
+            [
+                GENERATE_DIFF_MAIN_PROMPT.template,
+                GENERATE_DIFF_SYS_PROMPT.template,  # type: ignore
+                NO_UPDATE_MESSAGE,
+                notification_instructions_str,
+            ],
+        )
+
         result = await self.llm.do_chat_w_sys_prompt(
             main_prompt=GENERATE_DIFF_MAIN_PROMPT.format(
                 latest_output=latest_output_str,

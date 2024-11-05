@@ -33,7 +33,11 @@ async def _get_similar_plans(gpt: GPT, sample_plans: List[SamplePlan], input: st
                 )
             )
         )
-        return set(sample_plans[i].id for i in relevant_sample_plans)
+        return set(
+            sample_plans[i].id
+            for i in relevant_sample_plans
+            if isinstance(i, int) and i < len(sample_plans)
+        )
     except json.JSONDecodeError as e:
         logger = get_prefect_logger(__name__)
         logger.warning(f"Failed to select simple plans with error: {e}")

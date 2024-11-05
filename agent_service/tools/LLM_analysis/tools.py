@@ -103,6 +103,7 @@ from agent_service.tools.LLM_analysis.utils import (
     get_all_text_citations,
     get_original_cite_count,
     get_second_order_citations,
+    is_topical,
 )
 from agent_service.tools.news import (
     GetNewsDevelopmentsAboutCompaniesInput,
@@ -156,7 +157,11 @@ class SummarizeTextInput(ToolArgs):
 
 
 async def _initial_summarize_helper(
-    args: SummarizeTextInput, context: PlanRunContext, llm: GPT, single_summary: bool = True
+    args: SummarizeTextInput,
+    context: PlanRunContext,
+    llm: GPT,
+    single_summary: bool = True,
+    topic_filter: bool = True,
 ) -> Tuple[str, List[TextCitation]]:
     # create prompts
     summarize_sys_prompt = Prompt(
@@ -175,7 +180,7 @@ async def _initial_summarize_helper(
     topic_phrase = args.topic_phrase
     stock_phrase = args.stock_phrase
     logger = get_prefect_logger(__name__)
-    if args.topic:
+    if args.topic and topic_filter:
         texts = await topic_filter_helper(
             args.texts,
             args.topic,
@@ -183,11 +188,21 @@ async def _initial_summarize_helper(
             model_for_filter_to_context=GPT4_O,
         )
         if len(texts) == 0:  # filtered out all relevant texts
+            if single_summary:
+                await tool_log(log="All texts filtered out before summary", context=context)
             if args.stock:
                 return NO_SUMMARY_FOR_STOCK, []
             else:
                 return NO_SUMMARY, []
+        if single_summary:
+            await tool_log(
+                log="Applied topic filtering before summarization, "
+                f"{len(args.texts) - len(texts)} of {len(args.texts)} text snippets removed",
+                context=context,
+            )
     else:
+        if single_summary:
+            await tool_log(log="No topic filtering", context=context)
         texts = args.texts
 
     text_group = TextGroup(val=texts)
@@ -317,10 +332,11 @@ async def _update_summarize_helper(
     original_citations: List[TextCitation],
     remaining_original_citation_count: int,
     single_summary: bool = True,
+    topic_filter: bool = True,
 ) -> Tuple[str, List[TextCitation]]:
     logger = get_prefect_logger(__name__)
     last_original_citation_count = get_original_cite_count(original_citations)
-    if args.topic:
+    if args.topic and topic_filter:
         new_texts = await topic_filter_helper(
             new_texts,
             args.topic,
@@ -527,6 +543,11 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         await tool_log(log="No text data provided for summarization, skipping", context=context)
         return Text(val=NO_SUMMARY)
 
+    if args.topic:
+        topic_filter = await is_topical(args.topic, context)
+    else:
+        topic_filter = False
+
     original_texts = set(args.texts)
 
     args.texts = await partition_to_smaller_text_sizes(args.texts, context)
@@ -564,6 +585,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
                     prev_output.val,
                     all_old_citations,
                     get_original_cite_count(remaining_citations),
+                    topic_filter=topic_filter,
                 )
             else:
                 if remaining_citations:  # output old summary
@@ -579,7 +601,9 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         )
 
     if text is None:
-        text, citations = await _initial_summarize_helper(args, context, llm)
+        text, citations = await _initial_summarize_helper(
+            args, context, llm, topic_filter=topic_filter
+        )
 
     summary: Text = Text(val=text)
     summary = summary.inject_history_entry(
@@ -614,6 +638,10 @@ async def per_stock_summarize_texts(
 
     if len(args.texts) == 0:
         raise EmptyInputError("Cannot summarize when no texts provided")
+
+    topic_filter = await is_topical(args.topic, context)
+    if topic_filter:
+        await tool_log("Applying topic filtering before summarization", context)
 
     original_texts = set(args.texts)
 
@@ -701,6 +729,7 @@ async def per_stock_summarize_texts(
                             all_old_citations,
                             get_original_cite_count(remaining_citations),
                             single_summary=False,
+                            topic_filter=topic_filter,
                         )
                     )
                 else:
@@ -717,6 +746,7 @@ async def per_stock_summarize_texts(
                             context,
                             llm,
                             single_summary=False,
+                            topic_filter=topic_filter,
                         )
                     )
                 else:
@@ -733,6 +763,8 @@ async def per_stock_summarize_texts(
     output = []
 
     for stock, (summary, citations) in zip(args.stocks, results):
+        if summary == NO_SUMMARY:
+            summary = NO_SUMMARY_FOR_STOCK
         stock = stock.inject_history_entry(
             HistoryEntry(
                 explanation=summary,
