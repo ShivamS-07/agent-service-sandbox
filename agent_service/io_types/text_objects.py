@@ -286,7 +286,8 @@ The text you need to analyze is provided below.
         try:
             stocks: dict = json.loads(result)
         except json.JSONDecodeError:
-            raise ValueError(f"Could not parse dictionary string: {result}")
+            logger.exception(f"Invalid stocks json when tagging: {result}")
+            return []
 
         for stock_name in list(stocks.keys()):
             if stocks[stock_name] not in symbol_to_stock_map:
