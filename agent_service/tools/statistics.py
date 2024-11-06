@@ -81,8 +81,7 @@ TWO_QUARTERS = datetime.timedelta(days=183)
 
 DECOMPOSITION_MAIN_PROMPT_STR = "Identify which of the following list of statistics is, or can be used to derive the statistic referenced by the user, as understood in the larger chat context, and provide a mathematical description of how such a derivation would occur, as needed. {time_series}\n Here is the statistic you must return: {statistic_description}\nHere is the larger chat context, delimited by `---`:\n---\n{chat_context}\n---\nAnd here is the long list of statistics you have data for, also delimited by `---`:\n---\n{statistic_list}\n---\nNow output your json consisting of a list of relevant statistics, and an explanation of how to derive the client's statistic from those statistics, and, if applicable, the amount additional time series data that must be requested beyond the timespan asked for by the client:\n"  # noqa: E501
 
-
-DECOMPOSITION_UPDATE_MAIN_PROMPT_STR = "You are a financial analyst tasked with doing a periodic calculation of financial statistics. As part of that, each time you do the calculation, you generally need to update your detailed calculation description to reflect the passage of time since the last run. You will be given a short general description of the target statistic, the previous detailed calculation description (which is usually date specific), start and end dates associated with that previous calculation, and start and end dates for the current calculation. You will rewrite the detailed calculation description in its entirety, making any date changes required. In many cases, that will simply involve subbing out any appearance of the old dates with the new ones. Note that sometimes the start and end dates will be the same; if this the case, sometimes there will only be one date in the calculation description, other times there will be two dates; if there are two, usually the other date is defined relative to the start/end date (e.g. the other date is a month/quarter/year before), and if so you must change the other date to preserve that relative relationship, which will be typically be mentioned in the general calculation description. Sometimes your calculation will involve months (e.g. `2024-09`) or years (e.g. `2024`) that need to be changed. A common situation is that the relevant year or month is the last complete one before the end date; generally if there are months or years involved in the calculations and the difference between old and new dates involve a change to the year or month, there will be a corresponding change to any month or year mentioned in the detailed description, but if there is no change to the month or year, no change is required (as such, it is definitely possible that you will not need to modify the detailed description at all). Make sure you do not change anything that is not related to dates. Here is the general description of the target statistic:{statistic_reference}. Here is the detailed calculation description which you are updating: `{decomp_description}` Here is the old start date: {old_start_date}. Here is the new start date: {new_start_date}. Here is the old end date: {old end date}. Here is the new end date: {new_end_date}. Now rewrite the detailed description with any changes needed based on the updated date(s):\n"  # noqa: E501
+UPDATE_DECOMPOSITION_MAIN_PROMPT_STR = "You are a financial analyst tasked with doing a periodic calculation of financial statistics. As part of that, each time you do the calculation, you generally need to update your detailed calculation description to reflect the passage of time since the last run. You will be given a short general description of the target statistic, the previous detailed calculation description (which is usually date specific), start and end dates associated with that previous calculation, and start and end dates for the current calculation. You will rewrite the detailed calculation description in its entirety, making any date changes required. In many cases, that will simply involve subbing out any appearance of the old dates with the new ones. Note that sometimes the start and end dates will be the same; if this the case, sometimes there will only be one date in the calculation description, other times there will be two dates; if there are two, usually the other date is defined relative to the start/end date (e.g. the other date is a month/quarter/year before), and if so you must change the other date to preserve that relative relationship, which will be typically be mentioned in the general calculation description. Sometimes your calculation will involve months (e.g. `2024-09`) or years (e.g. `2024`) that need to be changed. A common situation is that the relevant year or month is the last complete one before the end date; generally if there are months or years involved in the calculations and the difference between old and new dates involve a change to the year or month, there will be a corresponding change to any month or year mentioned in the detailed description, but if there is no change to the month or year, no change is required (as such, it is definitely possible that you will not need to modify the detailed description at all). Make sure you do not change anything that is not related to dates. Here is the general description of the target statistic:{statistic_reference}. Here is the detailed calculation description which you are updating: `{decomp_description}` Here is the old start date: {old_start_date}. Here is the new start date: {new_start_date}. Here is the old end date: {old_end_date}. Here is the new end date: {new_end_date}. Now rewrite the detailed description with any changes needed based on the updated date(s):\n"  # noqa: E501
 
 DECOMPOSITION_SYS_PROMPT = Prompt(
     name="DECOMPOSITION_SYS_PROMPT",
@@ -95,7 +94,7 @@ DECOMPOSITION_MAIN_PROMPT = Prompt(
 )
 
 UPDATE_DECOMPOSITION_MAIN_PROMPT = Prompt(
-    name="UPDATE_DECOMPOSITION_MAIN_PROMPT", template=DECOMPOSITION_UPDATE_MAIN_PROMPT_STR
+    name="UPDATE_DECOMPOSITION_MAIN_PROMPT", template=UPDATE_DECOMPOSITION_MAIN_PROMPT_STR
 )
 
 TIME_SERIES_TEMPLATE = (
@@ -342,7 +341,7 @@ async def get_statistic_data_for_companies(
                 else:
                     update_main_prompt = UPDATE_DECOMPOSITION_MAIN_PROMPT.format(
                         statistic_reference=args.statistic_reference,
-                        calculation=old_decomp_description,
+                        decomp_description=old_decomp_description,
                         old_start_date=old_start_date,
                         old_end_date=old_end_date,
                         new_start_date=start_date,
@@ -358,7 +357,7 @@ async def get_statistic_data_for_companies(
                 }
 
                 await tool_log(
-                    log=("loaded statistic calculation description from previous run"),
+                    log=("Loaded statistic calculation description from previous run"),
                     context=context,
                 )
 

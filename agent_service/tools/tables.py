@@ -704,6 +704,7 @@ async def per_stock_group_transform_table(
     old_schema: Optional[List[TableColumnMetadata]] = None
     old_code: Optional[str] = None
     old_description = None
+    old_date = None
     # TODO: Consider doing stock list diffing for stock group filtering
     # prev_args = None
     # prev_output = None
