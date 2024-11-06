@@ -24,7 +24,7 @@ async def main(
 ) -> None:
     ch = Clickhouse()
     sql = """
-    select gbi_id, cik, filing from sec.sec_filings
+    select gbi_id, cik, filing from sec.sec_filings_parsed
     """
     where_clause = ""
     if gbi_ids:
@@ -84,10 +84,20 @@ async def main(
 
                 if to_insert_map:
                     start_time = time.time()
-                    _, rows_to_insert = await SecFiling.get_concat_10k_10q_sections_from_api(
+
+                    # TODO deprecate once we switch over to the new table sec.sec_filings_parsed
+                    _, rows_to_insert = await SecFiling.old_get_concat_10k_10q_sections_from_api(
                         filing_gbi_pairs=to_insert_map, insert_to_db=False
                     )
                     await ch.multi_row_insert(table_name="sec.sec_filings", rows=rows_to_insert)
+
+                    _, rows_to_insert = await SecFiling.get_concat_10k_10q_sections_from_api(
+                        filing_gbi_pairs=to_insert_map, insert_to_db=False
+                    )
+                    await ch.multi_row_insert(
+                        table_name="sec.sec_filings_parsed", rows=rows_to_insert
+                    )
+
                     LOGGER.info(
                         f"Inserted {len(to_insert_map)} filings into Clickhouse in {time.time() - start_time} seconds."
                     )

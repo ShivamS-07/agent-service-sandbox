@@ -483,7 +483,7 @@ class SecFiling:
         sql = """
             SELECT DISTINCT ON (formType, gbi_id, filedAt)
                 id::TEXT AS id, filing, gbi_id
-            FROM sec.sec_filings
+            FROM sec.sec_filings_parsed
             WHERE gbi_id IN %(gbi_ids)s AND formType IN %(form_types)s
                 AND filedAt >= %(start_date)s AND filedAt <= %(end_date)s
         """
@@ -519,7 +519,7 @@ class SecFiling:
 
         sql = """
             SELECT id::TEXT AS id, content, riskFactors, managementSection
-            FROM sec.sec_filings
+            FROM sec.sec_filings_parsed
             WHERE formType in ('10-K', '10-Q') AND id IN %(db_ids)s
         """
         ch = Clickhouse()
@@ -556,7 +556,7 @@ class SecFiling:
 
         sql = """
             SELECT id::TEXT AS id, filing, content, riskFactors, managementSection
-            FROM sec.sec_filings
+            FROM sec.sec_filings_parsed
             WHERE formType in ('10-K', '10-Q') AND filing IN %(filing_jsons)s
         """
         ch = Clickhouse()
@@ -582,10 +582,11 @@ class SecFiling:
         return output
 
     @classmethod
-    async def get_concat_10k_10q_sections_from_api(
+    async def old_get_concat_10k_10q_sections_from_api(
         cls, filing_gbi_pairs: List[Tuple[str, int]], insert_to_db: bool = True
     ) -> Tuple[Dict[str, str], List[Dict]]:
         """
+        DEPRECATED - switched with get_concat_10k_10q_sections_from_api
         Returns Tuple[Dict[str, str], List[Dict]]:
         - Dict[str, str]: A dictionary where the key is the filing information (JSON string) and the
             value is the concatenated filing text.
@@ -673,6 +674,102 @@ class SecFiling:
         return output, rows_to_insert
 
     @classmethod
+    async def get_concat_10k_10q_sections_from_api(
+        cls, filing_gbi_pairs: List[Tuple[str, int]], insert_to_db: bool = True
+    ) -> Tuple[Dict[str, str], List[Dict]]:
+        """
+        Returns Tuple[Dict[str, str], List[Dict]]:
+        - Dict[str, str]: A dictionary where the key is the filing information (JSON string) and the
+            value is the concatenated filing text.
+        - List[Dict]: A list of dictionaries representing the rows to be inserted into the database.
+        """
+        if not filing_gbi_pairs:
+            return {}, []
+
+        rows_to_insert = []
+
+        if insert_to_db:
+            ch = Clickhouse()
+
+        output = {}
+        for filing_info_str, gbi_id in filing_gbi_pairs:
+            filing_info = json.loads(filing_info_str)
+
+            try:
+                # NOTE that these downloaded sections are processed, not the raw data
+                management_section = SecFiling._download_10k_10q_section(
+                    filing_info, section=MANAGEMENT_SECTION
+                )
+                risk_factor_section = SecFiling._download_10k_10q_section(
+                    filing_info, section=RISK_FACTORS
+                )
+
+                text = (
+                    f"Management Section:\n\n{management_section}\n\n"
+                    f"Risk Factors Section:\n\n{risk_factor_section}"
+                )
+
+                # LINK_TO_HTML is ok for extracting sections, but LINK_TO_FILING_DETAILS is needed for full content
+                # Examples:
+                # LINK_TO_HTML: https://www.sec.gov/Archives/edgar/data/320193/000032019324000069/0000320193-24-000069-index.htm  # noqa
+                # LINK_TO_FILING_DETAILS: https://www.sec.gov/Archives/edgar/data/320193/000032019324000069/aapl-20240330.htm  # noqa
+                # For some older SEC filings (pre-2000), LINK_TO_FILING_DETAILS returns a directory
+                # and not the actual text, so we use LINK_TO_TXT when LINK_TO_FILING_DETAILS has no extension
+                # Examples:
+                # LINK_TO_FILING_DETAILS: https://www.sec.gov/Archives/edgar/data/320193/  # noqa
+                # LINK_TO_TXT: https://www.sec.gov/Archives/edgar/data/320193/0000912057-97-019277.txt  # noqa
+
+                extension: str = get_file_extension(filing_info[LINK_TO_FILING_DETAILS])
+                # no extension == directory
+                if len(extension) == 0:
+                    full_content = SecFiling.render_api.get_filing(url=filing_info[LINK_TO_TXT])
+                else:
+                    full_content = SecFiling.render_api.get_filing(
+                        url=filing_info[LINK_TO_FILING_DETAILS]
+                    )
+
+                processed_full_content = html_to_text(full_content)
+                time.sleep(0.25)
+
+                if management_section or risk_factor_section:
+                    # if there's at least 1 non-empty section, use the concatenated text
+                    output[filing_info_str] = text
+                else:
+                    output[filing_info_str] = processed_full_content
+
+                # New row with values
+                row_to_insert = {
+                    "gbi_id": gbi_id,
+                    CIK: filing_info[CIK],
+                    FORM_TYPE: filing_info[FORM_TYPE],  # '10-Q' or '10-K'
+                    FILED_TIMESTAMP: parse_date_str_in_utc(filing_info[FILED_TIMESTAMP]),
+                    "filing": filing_info_str,
+                    "content": processed_full_content,
+                    "raw_content": full_content,
+                    "filing_json_id": filing_info.get("id", None),
+                    MANAGEMENT_SECTION: management_section,
+                    RISK_FACTORS: risk_factor_section,
+                }
+
+                rows_to_insert.append(row_to_insert)
+                if insert_to_db:
+                    try:
+                        await ch.multi_row_insert(
+                            table_name="sec.sec_filings_parsed",
+                            rows=[row_to_insert],
+                        )
+                    except Exception as e:
+                        # Log the error and skip the insertion
+                        logger.exception(
+                            f"Failed to insert filing content for gbi_id={gbi_id}: {e}"
+                        )
+            except Exception as e:
+                logger.exception(f"Failed to get 10K/10Q filing sections for gbi_id={gbi_id}: {e}")
+                time.sleep(10)
+
+        return output, rows_to_insert
+
+    @classmethod
     def _download_10k_10q_section(cls, filing: Dict, section: str) -> Optional[str]:
         """Download 10K/10Q section from sec-api.io
 
@@ -725,7 +822,7 @@ class SecFiling:
 
         sql = """
             SELECT id::TEXT AS id, content
-            FROM sec.sec_filings
+            FROM sec.sec_filings_parsed
             WHERE id IN %(db_ids)s
         """
         ch = Clickhouse()
@@ -751,7 +848,7 @@ class SecFiling:
 
         sql = """
             SELECT id::TEXT AS id, filing, content
-            FROM sec.sec_filings
+            FROM sec.sec_filings_parsed
             WHERE filing IN %(filing_jsons)s
         """
         ch = Clickhouse()
@@ -774,7 +871,7 @@ class SecFiling:
         sql = """
             SELECT id::TEXT AS db_id, riskFactors, managementSection, gbi_id,
                    formType AS form_type, filedAt AS filed_at, content
-            FROM sec.sec_filings
+            FROM sec.sec_filings_parsed
             WHERE id IN %(db_ids)s
         """
         ch = AsyncClickhouseBase()
@@ -804,7 +901,7 @@ class SecFiling:
         sql = """
             SELECT id::TEXT AS db_id, riskFactors, managementSection, gbi_id,
                    formType AS form_type, filedAt AS filed_at, content
-            FROM sec.sec_filings
+            FROM sec.sec_filings_parsed
             WHERE gbi_id = %(gbi_id)s AND filedAt::DATE = %(filed_at)s
                   AND formType = %(filing_type)s
         """
@@ -860,7 +957,7 @@ class SecFiling:
                 if insert_to_db:
                     try:
                         await ch.multi_row_insert(
-                            table_name="sec.sec_filings",
+                            table_name="sec.sec_filings_parsed",
                             rows=[
                                 {
                                     "gbi_id": gbi_id,
@@ -871,6 +968,7 @@ class SecFiling:
                                     ),
                                     "filing": filing_info_str,
                                     "content": processed_full_content,
+                                    "raw_content": full_content,
                                 }
                             ],
                         )
