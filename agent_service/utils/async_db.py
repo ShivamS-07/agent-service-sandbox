@@ -1897,19 +1897,9 @@ class AsyncDB:
             aqc.cs_expected_output, aqc.cs_notes, aqc.canned_prompt_id, aqc.eng_failed_reason, aqc.eng_solution,
             aqc.eng_solution_difficulty, aqc.jira_link, aqc.slack_link, aqc.fullstory_link, aqc.duplicate_agent::TEXT,
             aqc.created_at, aqc.last_updated, us.cognito_username,
-            cw.cloudwatch_url, json_agg(af.*) AS agent_feedbacks
+            json_agg(af.*) AS agent_feedbacks
         FROM agent.agent_qc aqc
         LEFT JOIN agent.agents ag ON aqc.agent_id = ag.agent_id
-        LEFT JOIN
-            (SELECT all_tl.agent_id, all_tl.cloudwatch_url
-                FROM (SELECT tl.agent_id, MAX(tl.finished_at) as latest
-                        FROM boosted_dag.task_log tl
-                        WHERE tl.agent_id IS NOT NULL AND tl.agent_id != '' AND tl.cloudwatch_url IS NOT NULL
-                        GROUP BY tl.agent_id)
-                AS latest_by_agent_id
-                LEFT JOIN boosted_dag.task_log all_tl
-                ON all_tl.agent_id = latest_by_agent_id.agent_id and all_tl.finished_at = latest_by_agent_id.latest)
-                AS cw ON cw.agent_id = aqc.agent_id::text
         LEFT JOIN user_service.users us ON aqc.user_id = us.id
         LEFT JOIN agent.feedback af ON aqc.agent_id = af.agent_id AND aqc.plan_id = af.plan_id
         """
@@ -1970,7 +1960,7 @@ class AsyncDB:
 
         # Always sort by latest agent ran
         sql += """
-            GROUP BY aqc.agent_qc_id, us.cognito_username, ag.agent_name, cw.cloudwatch_url
+            GROUP BY aqc.agent_qc_id, us.cognito_username, ag.agent_name
             ORDER BY aqc.created_at DESC
         """
 
