@@ -286,7 +286,7 @@ class OutputDiffer:
             [latest_output_str, prev_output_str],
             [
                 GENERATE_DIFF_MAIN_PROMPT.template,
-                GENERATE_DIFF_SYS_PROMPT.template,  # type: ignore
+                GENERATE_DIFF_SYS_PROMPT.filled_prompt,
                 NO_UPDATE_MESSAGE,
                 notification_instructions_str,
             ],
