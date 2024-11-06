@@ -382,19 +382,10 @@ async def send_agent_emails(
 
         # create a subscription message
         detailed_email_user_id_pairs = set()
-        simple_email_user_id_pairs = set()
         for agent_sub in agent_subs:
             if agent_sub.user_id:
-                if get_ld_flag(
-                    "whats-new-in-email",
-                    default=False,
-                    user_context=get_user_context(agent_sub.user_id),
-                ):
-                    detailed_email_user_id_pairs.add((agent_sub.user_id, agent_sub.email))
-                else:
-                    simple_email_user_id_pairs.add((agent_sub.user_id, agent_sub.email))
+                detailed_email_user_id_pairs.add((agent_sub.user_id, agent_sub.email))
             else:
-                # non-user email addresses will get the "whats-new-in-email" feature flag
                 detailed_email_user_id_pairs.add(("", agent_sub.email))
 
         detailed_message = AgentSubscriptionMessage(
@@ -414,27 +405,8 @@ async def send_agent_emails(
             ],
         )
 
-        # this list contains the users who do not have the "whats-new-in-email" feature flag enabled
-        simple_message = AgentSubscriptionMessage(
-            user_id_email_pairs=list(simple_email_user_id_pairs),
-            agent_data=[
-                AgentNotificationData(
-                    agent_name=agent_name,
-                    agent_id=agent_id,
-                    email_subject=email_subject if email_subject else agent_name,
-                    plan_run_id=plan_run_id,
-                    agent_owner=agent_owner if agent_owner else "",
-                    notification_body=AgentNotificationBody(
-                        summary_title=f"Update for {agent_name}",
-                        summary_body=run_summary_short if run_summary_short else "",
-                    ),
-                )
-            ],
-        )
-
         queue = sqs.get_queue_by_name(QueueName=NOTIFICATION_SERVICE_QUEUE)
         queue.send_message(MessageBody=detailed_message.model_dump_json())
-        queue.send_message(MessageBody=simple_message.model_dump_json())
 
 
 async def send_welcome_email(user_id: str) -> None:

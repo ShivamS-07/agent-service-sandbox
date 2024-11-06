@@ -66,11 +66,7 @@ from agent_service.utils.cache_utils import get_redis_cache_backend_for_output
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
-from agent_service.utils.feature_flags import (
-    agent_output_cache_enabled,
-    get_ld_flag,
-    get_user_context,
-)
+from agent_service.utils.feature_flags import agent_output_cache_enabled
 from agent_service.utils.gpt_logging import (
     GptJobIdType,
     GptJobType,
@@ -723,35 +719,20 @@ async def _run_execution_plan_impl(
 
             # Don't send email if agent is draft
             is_agent_draft = await check_draft(db=db, agent_id=context.agent_id)
-            if (
-                get_ld_flag(
-                    flag_name="agent-email-notification",
-                    default=False,
-                    user_context=get_user_context(user_id=context.user_id),
-                )
-                and not is_agent_draft
-            ):
+            if not is_agent_draft:
                 logger.info(
                     f"Sending Email notification for agent: {context.agent_id}, plan run: {context.plan_run_id}"
                 )
 
-                email_subject = ""
-                if get_ld_flag(
-                    flag_name="agent-email-title-improvement",
-                    default=False,
-                    user_context=get_user_context(user_id=context.user_id),
-                ):
-                    email_subject_prompt = EMAIL_SUBJECT_MAIN_PROMPT.format(
-                        email_content=(
-                            short_diff_summary + "\n" + whats_new_summary
-                            if whats_new_summary
-                            else ""
-                        )
+                email_subject_prompt = EMAIL_SUBJECT_MAIN_PROMPT.format(
+                    email_content=(
+                        short_diff_summary + "\n" + whats_new_summary if whats_new_summary else ""
                     )
-                    email_subject = await llm.do_chat_w_sys_prompt(
-                        main_prompt=email_subject_prompt,
-                        sys_prompt=NO_PROMPT,
-                    )
+                )
+                email_subject = await llm.do_chat_w_sys_prompt(
+                    main_prompt=email_subject_prompt,
+                    sys_prompt=NO_PROMPT,
+                )
 
                 await send_agent_emails(
                     pg=async_db,
