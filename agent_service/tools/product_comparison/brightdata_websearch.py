@@ -60,9 +60,18 @@ async def get_urls_async(
     )
 
     queries = [query.replace(" ", "+") for query in queries]
+
+    # the first query uses google's main search, the second query searches using google's news tab to get news stories
     urls = [
         f"https://www.google.com/search?q={query}&brd_json=1&num={num_results}" for query in queries
     ]
+    urls.extend(
+        [
+            f"https://www.google.com/search?q={query}&brd_json=1&num={num_results}&tbm=nws"
+            for query in queries
+        ]
+    )
+
     async with aiohttp.ClientSession(max_line_size=8190 * 5, max_field_size=8190 * 5) as session:
         tasks = []
         for url in urls:
@@ -76,8 +85,9 @@ async def get_urls_async(
     result_urls = set()
     for result in results:
         try:
-            # this line parses the returned result from Brightdata's SERP service to get the URLS to search
+            # google regular search results have the link under "organic", Google News results have it under "news"
             items = [item for item in result.get("organic", [])]  # type: ignore
+            items.extend([item for item in result.get("news", [])])
             result_urls.update([item["link"] for item in items])
         except requests.JSONDecodeError:
             logger.info(f"JSON decoding error for {url}")
@@ -287,11 +297,18 @@ async def get_web_texts_async(
 
 
 async def main() -> None:
+    """
     urls = [
         "https://jobs.apple.com/en-us/search?location=new-york-city-NYC&page=2",
     ]
 
     responses = await get_web_texts_async(urls)
+    """
+
+    query_1 = "nintendo switch 2"
+    query_2 = "Australia betting"
+
+    responses = await get_urls_async([query_1, query_2], 10)
     print(responses)
 
 
