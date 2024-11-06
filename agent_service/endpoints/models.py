@@ -211,6 +211,7 @@ class UpdateNotificationEmailsResponse(BaseModel):
 class RemoveNotificationEmailsRequest(BaseModel):
     agent_id: str
     email: str
+    notification_key: str
 
 
 class RemoveNotificationEmailsResponse(BaseModel):
@@ -257,6 +258,12 @@ class OnboardingEmailMessage(BaseModel):
     user_id: str
     email: str
     hubspot_email_id: int
+
+
+class ForwardingEmailMessage(BaseModel):
+    message_type: str = "forwarding_email_event"
+    notification_key: str
+    recipient_email: str
 
 
 ####################################################################################################

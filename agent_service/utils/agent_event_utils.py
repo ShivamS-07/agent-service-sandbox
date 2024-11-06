@@ -3,6 +3,7 @@ import logging
 from typing import List, Optional, Union, cast
 
 import boto3
+from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
 from user_service_proto_v1.user_service_pb2 import User
 
 from agent_service.agent_quality_worker.ingestion_worker import (
@@ -18,6 +19,7 @@ from agent_service.endpoints.models import (
     EventType,
     ExecutionPlanTemplate,
     ExecutionStatusEvent,
+    ForwardingEmailMessage,
     MessageEvent,
     NewPlanEvent,
     NotificationEvent,
@@ -52,6 +54,8 @@ from agent_service.utils.redis_queue import (
 )
 
 logger = logging.getLogger(__name__)
+sqs = boto3.resource("sqs", region_name="us-west-2")
+queue = sqs.get_queue_by_name(QueueName=NOTIFICATION_SERVICE_QUEUE)
 
 
 async def send_chat_message(
@@ -369,7 +373,6 @@ async def send_agent_emails(
     if the agent has email subscriptions and sends a message to the notification service
     to send the email
     """
-    sqs = boto3.resource("sqs", region_name="us-west-2")
     # Get agent Information
     agent_name = await pg.get_agent_name(agent_id=agent_id)
     agent_owner = await pg.get_agent_owner(agent_id=agent_id)
@@ -405,13 +408,10 @@ async def send_agent_emails(
             ],
         )
 
-        queue = sqs.get_queue_by_name(QueueName=NOTIFICATION_SERVICE_QUEUE)
         queue.send_message(MessageBody=detailed_message.model_dump_json())
 
 
 async def send_welcome_email(user_id: str) -> None:
-    sqs = boto3.resource("sqs", region_name="us-west-2")
-
     user = cast(User, await get_user_cached(user_id=user_id))
 
     # This is HubSpot ID for the welcome email we're sending
@@ -424,5 +424,14 @@ async def send_welcome_email(user_id: str) -> None:
         hubspot_email_id=WELCOME_EMAIL_ID,
     )
 
-    queue = sqs.get_queue_by_name(QueueName=NOTIFICATION_SERVICE_QUEUE)
     queue.send_message(MessageBody=message.model_dump_json())
+
+
+def forward_existing_email(notification_key: str, recipient_email: str) -> None:
+    # only forward emails in prod environment
+    if get_environment_tag() == PROD_TAG:
+        message = ForwardingEmailMessage(
+            notification_key=notification_key,
+            recipient_email=recipient_email,
+        )
+        queue.send_message(MessageBody=message.model_dump_json())
