@@ -1113,9 +1113,10 @@ async def enable_agent_automation(
     Args:
         agent_id (str): agent ID
     """
-    await validate_user_agent_access(
-        user.user_id, req.agent_id, async_db=application.state.agent_service_impl.pg
-    )
+    if not user_has_qc_tool_access(user_id=user.user_id):
+        await validate_user_agent_access(
+            user.user_id, req.agent_id, async_db=application.state.agent_service_impl.pg
+        )
     return await application.state.agent_service_impl.enable_agent_automation(
         agent_id=req.agent_id, user_id=user.user_id
     )
@@ -1135,9 +1136,10 @@ async def disable_agent_automation(
     Args:
         agent_id (str): agent ID
     """
-    await validate_user_agent_access(
-        user.user_id, req.agent_id, async_db=application.state.agent_service_impl.pg
-    )
+    if not user_has_qc_tool_access(user_id=user.user_id):
+        await validate_user_agent_access(
+            user.user_id, req.agent_id, async_db=application.state.agent_service_impl.pg
+        )
     return await application.state.agent_service_impl.disable_agent_automation(
         agent_id=req.agent_id, user_id=user.user_id
     )

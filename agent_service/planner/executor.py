@@ -235,7 +235,10 @@ async def _run_execution_plan_impl(
     existing_run = db.get_plan_run(plan_run_id=context.plan_run_id)
     skip_tasks_with_existing_outputs = False
 
-    if existing_run and existing_run.get("status") == Status.ERROR.value:
+    if existing_run and existing_run.get("status") in (
+        Status.ERROR.value,
+        Status.NO_RESULTS_FOUND.value,
+    ):
         # If there's an existing errored run with the same ID, that means that
         # we want to retry from the errored task.
         skip_tasks_with_existing_outputs = True
