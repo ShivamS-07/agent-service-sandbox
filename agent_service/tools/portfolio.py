@@ -8,7 +8,11 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 from dateutil.relativedelta import relativedelta
-from pa_portfolio_service_proto_v1.workspace_pb2 import StockAndWeight, WorkspaceAuth
+from pa_portfolio_service_proto_v1.workspace_pb2 import (
+    StockAndWeight,
+    WorkspaceAuth,
+    WorkspaceMetadata,
+)
 from pydantic import field_validator
 
 from agent_service.external.dal_svc_client import get_dal_client
@@ -22,6 +26,8 @@ from agent_service.external.pa_svc_client import (
     get_full_strategy_info,
     get_transitive_holdings_from_stocks_and_weights,
 )
+from agent_service.GPT.constants import GPT4_O_MINI, NO_PROMPT
+from agent_service.GPT.requests import GPT
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
@@ -43,8 +49,10 @@ from agent_service.tools.feature_data import get_latest_price
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.constants import get_B3_prefix
+from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.tool_diff import (
     add_task_id_to_stocks_history,
     get_prev_run_info,
@@ -391,7 +399,15 @@ async def convert_portfolio_mention_to_portfolio_id(
         else:
             raise NotFoundError("User does not have access to any portfolios")
     else:
-        raise NotFoundError(f"No portfolio found matching: '{args.portfolio_name}'")
+        # Final check, use GPT as a fallback for portfolio and watchlist lookup
+        # Need to get the section of the string that portfolio refers to
+        portfolio = await portfolio_match_by_gpt(
+            context=context,
+            portfolio_name=args.portfolio_name,
+            portfolios=workspaces,
+        )
+        if not portfolio:
+            raise NotFoundError(f"No portfolio found matching: '{args.portfolio_name}'")
 
     base_url = f"{get_B3_prefix()}/dashboard/portfolios/summary"
     portfolio_name_with_link_markdown = (
@@ -994,3 +1010,61 @@ async def get_performance_overall_level(
         ],
     )
     return table
+
+
+PORTFOLIO_MATCH_PROMPT_STR = """
+Given a portfolio name, find the best match from a list of portfolio options.
+Consider possible typos, transposed letters, or minor spelling errors when finding the closest match.
+Even if the match is not exact, return the portfolio that seems most relevant or closest in meaning.
+Only respond with "no_match" if no portfolio name reasonably aligns with the given name.
+When returning "no_match", return it without any punctuation or anything.
+Here are the portfolios to consider: {portfolios}.
+Here is the text to potentially match to one of them: {portfolio_name}.
+"""
+
+
+async def portfolio_match_by_gpt(
+    context: PlanRunContext,
+    portfolio_name: str,
+    portfolios: List[WorkspaceMetadata],
+) -> Optional[WorkspaceMetadata]:
+    """
+    Match a specific "portfolio" mentioned by a prompt to the closest WorkspaceMetadata
+    object from the given list of portfolios.
+    If there is no connection to be made at all, just return None.
+    """
+    if not portfolios:
+        return None
+
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+
+    llm = GPT(context=gpt_context, model=GPT4_O_MINI)
+
+    PORTFOLIO_MATCH_PROMPT = Prompt(
+        name="PORTFOLIO_MATCH_PROMPT", template=PORTFOLIO_MATCH_PROMPT_STR
+    )
+
+    portfolio_names = [pf.name for pf in portfolios]
+    prompt = PORTFOLIO_MATCH_PROMPT.format(
+        portfolio_name=portfolio_name, portfolios=portfolio_names
+    )
+
+    result_str = await llm.do_chat_w_sys_prompt(
+        main_prompt=prompt,
+        sys_prompt=NO_PROMPT,
+    )
+
+    logger.info(f"Comparing portfolio name: {portfolio_name} got match: {result_str}")
+    # First pass case sensitive
+    for portfolio in portfolios:
+        if portfolio.name == result_str:
+            return portfolio
+
+    # Just in case GPT returned all lowercase, second pass case in-sensitive
+    for portfolio in portfolios:
+        if portfolio.name.lower() == result_str.lower():
+            return portfolio
+
+    return None

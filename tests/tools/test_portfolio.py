@@ -32,6 +32,7 @@ from agent_service.tools.portfolio import (
     get_portfolio_holdings,
     get_portfolio_performance,
     get_portfolio_trades,
+    portfolio_match_by_gpt,
 )
 from agent_service.types import PlanRunContext
 
@@ -90,6 +91,51 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         args = GetPortfolioInput(portfolio_name="")
         result = await convert_portfolio_mention_to_portfolio_id(args, self.context)
         self.assertEqual(result, rows[0]["id"])
+
+    async def test_portfolio_match_by_gpt(self):
+        # Test 1 & 2 - Validate it matches to SOME portfolio
+        portfolio_name = "Luxury & Super Luxury portfolio"
+        portfolios = [
+            WorkspaceMetadata(name="LUX"),
+            WorkspaceMetadata(name="Global Portfolio"),
+            WorkspaceMetadata(name="Small Cap Portfolio"),
+            WorkspaceMetadata(name="Random"),
+            WorkspaceMetadata(name="Default Portfolio"),
+        ]
+
+        result = await portfolio_match_by_gpt(
+            context=self.context,
+            portfolio_name=portfolio_name,
+            portfolios=portfolios,
+        )
+
+        self.assertIn(result.name, [portfolio.name for portfolio in portfolios])
+
+        portfolio_name = "GCS"
+        portfolios = [
+            WorkspaceMetadata(name="GSC"),
+            WorkspaceMetadata(name="Global Portfolio"),
+            WorkspaceMetadata(name="Small Cap Portfolio"),
+            WorkspaceMetadata(name="Random"),
+            WorkspaceMetadata(name="Default Portfolio"),
+        ]
+
+        result = await portfolio_match_by_gpt(
+            context=self.context,
+            portfolio_name=portfolio_name,
+            portfolios=portfolios,
+        )
+
+        self.assertIn(result.name, [portfolio.name for portfolio in portfolios])
+
+        # Test 3 - Given no portfolios, should match to "None" as per the prompt instructions
+        result = await portfolio_match_by_gpt(
+            context=self.context,
+            portfolio_name=portfolio_name,
+            portfolios=[],
+        )
+        expected_result = None
+        self.assertEqual(result, expected_result)
 
     @patch("agent_service.tools.portfolio.get_all_holdings_in_workspace")
     @patch("agent_service.tools.portfolio.get_workspace_name")
