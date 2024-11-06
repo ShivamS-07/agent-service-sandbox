@@ -1301,7 +1301,7 @@ class Pagination(BaseModel):
 class SearchAgentQCRequest(BaseModel):
     filter_criteria: List[HorizonCriteria]
     search_criteria: List[HorizonCriteria]
-    pagination: Pagination
+    pagination: Optional[Pagination] = None
 
 
 class SearchAgentQCResponse(BaseModel):

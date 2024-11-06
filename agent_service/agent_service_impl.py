@@ -2212,7 +2212,7 @@ class AgentServiceImpl:
         self,
         filter_criteria: List[HorizonCriteria],
         search_criteria: List[HorizonCriteria],
-        pagination: Pagination,
+        pagination: Optional[Pagination] = None,
     ) -> Tuple[List[AgentQC], int]:
 
         # Call the database search function
