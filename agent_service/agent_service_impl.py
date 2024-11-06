@@ -224,7 +224,6 @@ from agent_service.utils.scheduling import (
     get_schedule_from_user_description,
 )
 from agent_service.utils.sidebar_sections import SidebarSection, find_sidebar_section
-from agent_service.utils.string_utils import is_valid_uuid
 from agent_service.utils.task_executor import TaskExecutor
 from agent_service.utils.variable_explorer_utils import VariableExplorerException
 
@@ -1189,23 +1188,16 @@ class AgentServiceImpl:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=repr(e))
 
     # Requires no authorization
-    async def get_plan_run_output(self, plan_run_id: str) -> GetPlanRunOutputResponse:
-        if not is_valid_uuid(plan_run_id):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid {plan_run_id=}"
-            )
-        outputs = await self.pg.get_plan_run_outputs(plan_run_id=plan_run_id)
-        if not outputs:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=f"No output found for {plan_run_id=}"
-            )
-
-        agent_name = await self.pg.get_agent_name(outputs[0].agent_id)
-        final_outputs = [output for output in outputs if not output.is_intermediate]
-        if final_outputs:
-            return GetPlanRunOutputResponse(outputs=final_outputs, agent_name=agent_name)
-
-        return GetPlanRunOutputResponse(outputs=outputs, agent_name=agent_name)
+    async def get_plan_run_output(
+        self, agent_id: str, plan_run_id: str
+    ) -> GetPlanRunOutputResponse:
+        output, agent_name = await asyncio.gather(
+            get_agent_output(
+                pg=self.pg, agent_id=agent_id, plan_run_id=plan_run_id, cache=self.cache
+            ),
+            self.pg.get_agent_name(agent_id),
+        )
+        return GetPlanRunOutputResponse(outputs=output.outputs, agent_name=agent_name)
 
     async def get_agent_qc_by_ids(self, agent_qc_ids: List[str]) -> List[AgentQC]:
         agent_qcs = await self.pg.get_agent_qc_by_ids(agent_qc_ids)

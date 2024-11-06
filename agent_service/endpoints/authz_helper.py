@@ -17,6 +17,7 @@ from agent_service.external.cognito_client import (
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.environment import EnvironmentUtils
+from agent_service.utils.string_utils import is_valid_uuid
 
 KEY_ID = "kid"
 RS_256 = "RS256"
@@ -211,10 +212,16 @@ async def validate_user_plan_run_access(
     plan_run_id: str,
     async_db: AsyncDB,
     require_owner: bool = True,
-) -> None:
+) -> str:
+    if not is_valid_uuid(plan_run_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid {plan_run_id=}"
+        )
+
     sql = """
-        SELECT agent_id::VARCHAR, plan_id::VARCHAR, created_at, shared
-        FROM agent.plan_runs
+        SELECT pr.agent_id::VARCHAR, pr.plan_id::VARCHAR, pr.shared, a.user_id::VARCHAR
+        FROM agent.plan_runs pr
+        JOIN agent.agents a ON pr.agent_id = a.agent_id
         WHERE plan_run_id = %(plan_run_id)s
         LIMIT 1
     """
@@ -227,13 +234,20 @@ async def validate_user_plan_run_access(
 
     # do not require auth for shared plan runs
     plan_run = rows[0]
-    if plan_run.get("shared") and not require_owner:
-        return
-
-    agent_id = plan_run.get("agent_id")
+    agent_id = plan_run["agent_id"]
     if agent_id is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Agent for plan run {plan_run_id} not found",
         )
-    await validate_user_agent_access(request_user_id, agent_id, async_db)
+
+    if plan_run["shared"] and not require_owner:
+        return agent_id
+
+    if plan_run["user_id"] is None or plan_run["user_id"] != request_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User {request_user_id} is not authorized to access plan run {plan_run_id}",
+        )
+
+    return agent_id
