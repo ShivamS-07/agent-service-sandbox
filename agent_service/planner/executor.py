@@ -308,6 +308,9 @@ async def _run_execution_plan_impl(
     override_task_output_lookup = {
         key: val for key, val in clickhouse_task_id_output_map.items() if val is not None
     }
+    worklog_task_id_output_map = {
+        key: val for key, val in worklog_task_id_output_map.items() if val is not None
+    }
     override_task_output_lookup.update(worklog_task_id_output_map)
 
     locked_task_ids = set(plan.locked_task_ids)
