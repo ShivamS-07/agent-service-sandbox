@@ -48,7 +48,7 @@ from agent_service.planner.planner_types import (
     ToolExecutionNode,
 )
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
-from agent_service.tool import ToolRegistry
+from agent_service.tool import ToolRegistry, log_tool_call_event
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.agent_event_utils import (
     get_agent_task_logs,
@@ -421,7 +421,7 @@ async def _run_execution_plan_impl(
                 "end_time_utc": get_now_utc().isoformat(),
                 "start_time_utc": get_now_utc().isoformat(),
             }
-            log_event(event_name="agent-service-tool-call", event_data=event_data)
+            await log_tool_call_event(context=context, event_data=event_data)
         else:
             # Run the tool, store its output, errors and replan
             try:
