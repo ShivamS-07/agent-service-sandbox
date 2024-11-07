@@ -850,6 +850,9 @@ class Planner:
         variables that must be bound to values at execution time.
         """
         expected_args = tool.input_type.model_fields
+        num_required_args = len([arg for arg in expected_args.values() if arg.is_required()])
+        if len(args) < num_required_args:
+            raise ExecutionPlanParsingError(f"Tool '{tool.name}' has missing required arguments!")
         parsed_args: PartialToolArgs = {}
 
         for arg, val in args.items():
