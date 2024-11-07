@@ -19,6 +19,8 @@ from jwt import PyJWT
 from jwt.algorithms import RSAAlgorithm
 from typing_extensions import ParamSpec
 
+BOOSTED_ISS = "https://boosted.ai"
+
 
 def get_default_grpc_metadata(
     user_id: str = "", cognito_groups: Optional[List[str]] = None
@@ -45,7 +47,7 @@ def create_jwt(
     payload_dict: Dict[str, Any] = {
         "sub": user_id,
         "cognito:groups": [] if cognito_groups is None else cognito_groups,
-        "iss": "https://boosted.ai",
+        "iss": BOOSTED_ISS,
     }
 
     if expiry_hours:

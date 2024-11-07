@@ -14,6 +14,7 @@ from agent_service.external.cognito_client import (
     COGNITO_URLS,
     get_cognito_user_id_from_access_token,
 )
+from agent_service.external.grpc_utils import BOOSTED_ISS
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.environment import EnvironmentUtils
@@ -100,8 +101,11 @@ def extract_user_from_jwt(
         if "exp" in data and data["exp"] < time.time():
             raise ValueError("Token has expired")
 
-        # Retrieve custom:user_id from cognito, will raise exception if fails
-        user_id = get_cognito_user_id_from_access_token(auth_token)
+        user_id = data.get(SUBJECT, None)
+        iss = data.get("iss", None)
+        if iss != BOOSTED_ISS:
+            # Retrieve custom:user_id from cognito, will raise exception if fails
+            user_id = get_cognito_user_id_from_access_token(auth_token)
 
         groups = data.get("cognito:groups", [])
         is_super_admin = "super-admin" in groups
