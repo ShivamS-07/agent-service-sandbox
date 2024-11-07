@@ -305,7 +305,9 @@ async def _run_execution_plan_impl(
             logger.exception("Unable to fetch task outputs using replay ID's from clickhouse")
 
     # Override clickhouse values with postgres values if both are present
-    override_task_output_lookup = clickhouse_task_id_output_map
+    override_task_output_lookup = {
+        key: val for key, val in clickhouse_task_id_output_map.items() if val is not None
+    }
     override_task_output_lookup.update(worklog_task_id_output_map)
 
     locked_task_ids = set(plan.locked_task_ids)
@@ -361,6 +363,7 @@ async def _run_execution_plan_impl(
             skip_tasks_with_existing_outputs
             and override_task_output_lookup
             and step.tool_task_id in override_task_output_lookup
+            and override_task_output_lookup[step.tool_task_id] is not None
         ):
             # If the skip_tasks_with_existing_outputs flag is set, we want to
             # FULLY skip these steps, don't even publish statuses or anything.
@@ -395,7 +398,11 @@ async def _run_execution_plan_impl(
         )
 
         # if the tool output already exists in the map, just use that
-        if override_task_output_lookup and step.tool_task_id in override_task_output_lookup:
+        if (
+            override_task_output_lookup
+            and step.tool_task_id in override_task_output_lookup
+            and override_task_output_lookup[step.tool_task_id] is not None
+        ):
             logger.info(f"Step '{step.tool_name}' already in task lookup, using existing value...")
             step_args = None
             try:
