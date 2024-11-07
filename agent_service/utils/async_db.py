@@ -4,7 +4,10 @@ import json
 import logging
 import time
 import uuid
+from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+from dateutil.parser import parse
 
 from agent_service.endpoints.models import (
     AgentFeedback,
@@ -2039,23 +2042,57 @@ class AsyncDB:
             where_clause = f"WHERE {parts_str}"
 
         sql = f"""
-        SELECT DISTINCT ON (a.agent_id)
+        SELECT
           a.agent_id::TEXT, a.agent_name, a.user_id::TEXT, u.name AS user_name,
           o.id::TEXT AS user_org_id, o.name AS user_org_name, (NOT is_client) AS user_is_internal,
-          pr.plan_run_id::TEXT AS most_recent_plan_run_id,
-          pr.status AS most_recent_plan_run_status,
-          pr.created_at AS last_run_start
+          JSON_AGG(
+            JSON_BUILD_OBJECT(
+              'plan_run_id', pr.plan_run_id,
+              'status', pr.status,
+              'created_at', pr.created_at
+            )
+          ORDER BY pr.created_at DESC
+          ) AS plan_run_info
         FROM agent.agents a
         JOIN agent.plan_runs pr ON pr.agent_id = a.agent_id
         JOIN user_service.users u ON a.user_id = u.id
         JOIN user_service.company_membership cm ON cm.user_id = u.id::TEXT
         JOIN user_service.organizations o ON o.id::TEXT = cm.company_id
         {where_clause}
-        ORDER BY a.agent_id, pr.created_at DESC
+        GROUP BY a.agent_id, a.agent_name, a.user_id, user_name, user_org_id, user_org_name,
+                 user_is_internal
         """
 
+        qc_infos = []
         results = await self.pg.generic_read(sql, params)
-        return [AgentQCInfo.model_validate(row) for row in results]
+        for row in results:
+            if not row["plan_run_info"]:
+                continue
+            most_recent_run = row["plan_run_info"][0]
+            info = AgentQCInfo(
+                agent_id=row["agent_id"],
+                agent_name=row["agent_name"],
+                user_id=row["user_id"],
+                user_name=row["user_name"],
+                user_org_id=row["user_org_id"],
+                user_org_name=row["user_org_name"],
+                user_is_internal=row["user_is_internal"],
+                most_recent_plan_run_id=most_recent_run["plan_run_id"],
+                most_recent_plan_run_status=Status(
+                    most_recent_run["status"] or Status.COMPLETE.value
+                ),
+                last_run_start=parse(most_recent_run["created_at"]),
+            )
+            last_successful_run = None
+            run_count_by_status: Dict[Status, int] = defaultdict(int)
+            for run_info in row["plan_run_info"]:
+                if not last_successful_run and run_info["status"] == Status.COMPLETE:
+                    last_successful_run = parse(run_info["created_at"])
+                run_count_by_status[Status(run_info["status"] or Status.COMPLETE.value)] += 1
+            info.run_count_by_status = run_count_by_status
+            info.last_successful_run = last_successful_run
+            qc_infos.append(info)
+        return qc_infos
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:

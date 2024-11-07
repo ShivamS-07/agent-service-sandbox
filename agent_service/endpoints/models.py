@@ -1342,6 +1342,9 @@ class AgentQCInfo(BaseModel):
     most_recent_plan_run_status: Status
     last_run_start: datetime.datetime
 
+    last_successful_run: Optional[datetime.datetime] = None
+    run_count_by_status: Dict[Status, int] = {}
+
 
 class GetLiveAgentsQCResponse(BaseModel):
     agent_infos: List[AgentQCInfo]
