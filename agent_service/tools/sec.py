@@ -17,6 +17,7 @@ from agent_service.io_types.text import (
     StockSecFilingText,
     Text,
 )
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.regions import FilterStockRegionInput, filter_stocks_by_region
 from agent_service.tools.tool_log import tool_log
@@ -117,10 +118,14 @@ async def get_10k_10q_sec_filings(
         start_date = None
         end_date = None
 
-    us_stocks: List[StockID] = await filter_stocks_by_region(
-        FilterStockRegionInput(stock_ids=args.stock_ids, region_name="USA"),
-        context=context,
-    )  # type: ignore
+    us_stocks: List[StockID] = []
+    try:
+        us_stocks = await filter_stocks_by_region(
+            FilterStockRegionInput(stock_ids=args.stock_ids, region_name="USA"),
+            context=context,
+        )  # type: ignore
+    except EmptyOutputError:
+        us_stocks = []
 
     stocks_str = f"{len(us_stocks)} US stocks"
     if len(us_stocks) == 0:
@@ -398,10 +403,14 @@ async def get_sec_filings_with_type(
         start_date = None
         end_date = None
 
-    us_stocks: List[StockID] = await filter_stocks_by_region(
-        FilterStockRegionInput(stock_ids=args.stock_ids, region_name="USA"),
-        context=context,
-    )  # type: ignore
+    us_stocks: List[StockID] = []
+    try:
+        us_stocks = await filter_stocks_by_region(
+            FilterStockRegionInput(stock_ids=args.stock_ids, region_name="USA"),
+            context=context,
+        )  # type: ignore
+    except EmptyOutputError:
+        us_stocks = []
 
     stocks_str = f"{len(us_stocks)} US stocks"
     if len(us_stocks) == 0:
