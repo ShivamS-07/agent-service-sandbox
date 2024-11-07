@@ -356,12 +356,12 @@ async def get_news_articles_for_topics(
 ) -> List[NewsPoolArticleText]:
     # TODO: if start_date is very old, it will send many requests to GPT
     # start_date is optional, if not provided, use 30 days ago
+    date_range_provided = args.date_range is not None
     if args.date_range:
-        start_date = args.date_range.start_date
-        end_date = args.date_range.end_date
+        start_date, end_date = args.date_range.start_date, args.date_range.end_date
     else:
-        start_date = (get_now_utc() - datetime.timedelta(days=30)).date()
-        end_date = datetime.date.today() + datetime.timedelta(days=2)
+        start_date = get_now_utc().date() - datetime.timedelta(days=30)
+        end_date = get_now_utc().date() + datetime.timedelta(days=2)
 
     # prepare embedding
     llm = GPT(model=DEFAULT_EMBEDDING_MODEL)
@@ -372,39 +372,56 @@ async def get_news_articles_for_topics(
     news_articles: List[NewsPoolArticleText] = []
     for topic, embedding in zip(args.topics, embeddings):
         relevant_news: List[NewsPoolArticleText] = []
-        for news_batch in _get_similar_news_to_embedding(
-            db,
-            start_date,
-            end_date,
-            embedding,
-            batch_size=EMBEDDING_POOL_BATCH_SIZE,
-        ):
-            # check most relevant news with gpt
-            gpt = GPT(model=DEFAULT_CHEAP_MODEL)
-            tasks = []
-            for _, news_text, _ in news_batch:
-                tasks.append(
-                    gpt.do_chat_w_sys_prompt(
-                        main_prompt=THEME_RELEVANT_MAIN_PROMPT.format(topic=topic, news=news_text),
-                        sys_prompt=THEME_RELEVANT_SYS_PROMPT.format(),
+
+        async def fetch_topical_news() -> None:
+            for news_batch in _get_similar_news_to_embedding(
+                db,
+                start_date,
+                end_date,
+                embedding,
+                batch_size=EMBEDDING_POOL_BATCH_SIZE,
+            ):
+                # check most relevant news with gpt
+                gpt = GPT(model=DEFAULT_CHEAP_MODEL)
+                tasks = []
+                for _, news_text, _ in news_batch:
+                    tasks.append(
+                        gpt.do_chat_w_sys_prompt(
+                            main_prompt=THEME_RELEVANT_MAIN_PROMPT.format(
+                                topic=topic, news=news_text
+                            ),
+                            sys_prompt=THEME_RELEVANT_SYS_PROMPT.format(),
+                        )
                     )
+                results = await gather_with_concurrency(tasks, n=EMBEDDING_POOL_BATCH_SIZE)
+
+                successful = []
+                for news, result in zip(news_batch, results):
+                    if result.lower().startswith("yes"):
+                        successful.append(news)
+                # if less than 10% of the batch is successful, stop
+                if len(successful) / len(results) <= MIN_POOL_PERCENT_PER_BATCH:
+                    break
+
+                relevant_news.extend(
+                    [
+                        NewsPoolArticleText(id=id, timestamp=timestamp)
+                        for id, _, timestamp in successful
+                    ]
                 )
-            results = await gather_with_concurrency(tasks, n=EMBEDDING_POOL_BATCH_SIZE)
+                # if we have enough news, stop
+                if len(relevant_news) >= MAX_NUM_RELEVANT_NEWS_PER_TOPIC:
+                    break
 
-            successful = []
-            for news, result in zip(news_batch, results):
-                if result.lower().startswith("yes"):
-                    successful.append(news)
-            # if less than 10% of the batch is successful, stop
-            if len(successful) / len(results) <= MIN_POOL_PERCENT_PER_BATCH:
-                break
+        await fetch_topical_news()
 
-            relevant_news.extend(
-                [NewsPoolArticleText(id=id, timestamp=timestamp) for id, _, timestamp in successful]
-            )
-            # if we have enough news, stop
-            if len(relevant_news) >= MAX_NUM_RELEVANT_NEWS_PER_TOPIC:
-                break
+        if (
+            len(relevant_news) == 0
+            and not date_range_provided
+            and start_date != datetime.date.today() - datetime.timedelta(days=100)
+        ):
+            start_date = datetime.date.today() - datetime.timedelta(days=100)
+            await fetch_topical_news()
 
         await tool_log(
             log=f"Found {len(relevant_news)} news articles for topic: {topic}.",
@@ -416,12 +433,10 @@ async def get_news_articles_for_topics(
         news_articles.extend(relevant_news)
 
     if not args.suppress_no_article_error and len(news_articles) == 0:
-        if args.date_range:
-            raise EmptyOutputError(
-                "Found no news articles for provided topic(s) within specified date range"
-            )
-        else:
-            raise EmptyOutputError("Found no news articles for provided topic(s)")
+        await tool_log(
+            f"Found no news articles for provided topic(s) between {start_date=}, {end_date=}",
+            context=context,
+        )
 
     return news_articles
 
