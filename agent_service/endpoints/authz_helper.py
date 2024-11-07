@@ -100,14 +100,15 @@ def extract_user_from_jwt(
         if "exp" in data and data["exp"] < time.time():
             raise ValueError("Token has expired")
 
-        sub = data.get(SUBJECT, None)
+        # Retrieve custom:user_id from cognito, will raise exception if fails
         user_id = get_cognito_user_id_from_access_token(auth_token)
+
         groups = data.get("cognito:groups", [])
         is_super_admin = "super-admin" in groups
         is_admin = "admin" in groups
         return User(
             auth_token=auth_token,
-            user_id=user_id if user_id else sub,
+            user_id=user_id,
             is_super_admin=is_super_admin,
             is_admin=is_admin,
             groups=groups,

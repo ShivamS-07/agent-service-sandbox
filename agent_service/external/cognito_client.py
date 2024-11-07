@@ -1,8 +1,9 @@
 import logging
 import os
 from functools import lru_cache
-from typing import Any, Optional
+from typing import Any
 
+import backoff
 import boto3
 
 COGNITO_CLIENT = None
@@ -25,22 +26,23 @@ def get_cognito_client() -> Any:
 
 
 @lru_cache(maxsize=256)
-def get_cognito_user_id_from_access_token(access_token: str) -> Optional[str]:
+@backoff.on_exception(backoff.constant, exception=Exception, max_tries=3, logger=logger)
+def get_cognito_user_id_from_access_token(access_token: str) -> str:
     cognito_client = get_cognito_client()
-    try:
-        cognito_user = cognito_client.get_user(
-            AccessToken=access_token,
-        )
-        user_attributes = cognito_user.get("UserAttributes", {})
-        user_id = next(
-            (
-                attribute.get("Value")
-                for attribute in user_attributes
-                if attribute.get("Name") == "custom:user_id"
-            ),
-            None,
-        )
-        return user_id
-    except Exception:
-        logger.info(f"Could not find user in cognito with access_token {access_token}")
-    return None
+    cognito_user = cognito_client.get_user(
+        AccessToken=access_token,
+    )
+    user_attributes = cognito_user.get("UserAttributes", {})
+    user_id = next(
+        (
+            attribute.get("Value")
+            for attribute in user_attributes
+            if attribute.get("Name") == "custom:user_id"
+        ),
+        None,
+    )
+
+    if not user_id:
+        raise ValueError(f'Could not get field "custom:user_id" from {access_token}')
+
+    return user_id
