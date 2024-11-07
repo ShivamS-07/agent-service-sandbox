@@ -323,7 +323,8 @@ class OutputDiffer:
         removed_stocks = prev_stock_set - curr_stock_set
         add_remove_output = []
         if added_stocks and self.context.diff_info:
-            added_output = []
+            added_output: List[str] = []
+            added_stocks_count = 1
             for stock in added_stocks:
                 found = True
                 for history_entry in stock.history:
@@ -334,18 +335,21 @@ class OutputDiffer:
                             task_id
                         ].get("added", []):
                             added_output.append(
-                                f"    - {stock.company_name}: {self.context.diff_info[task_id]['added'][stock]}"
+                                f"  {added_stocks_count}. **{stock.company_name}**  "
                             )
+                            added_output.append(self.context.diff_info[task_id]["added"][stock])
                             found = True
                             break
                 if not found:
-                    added_output.append(f"    - {stock.company_name}")
+                    added_output.append(f"  {added_stocks_count}. **{stock.company_name}**")
+                added_stocks_count += 1
             if added_output:
-                add_remove_output.append("\n".join(["  - Added stocks"] + added_output))
+                add_remove_output.append("\n".join(["**Newly Added Stocks:**"] + added_output))
 
         final_str = None
         if removed_stocks and self.context.diff_info:
             removed_output = []
+            removed_stocks_count = 1
             for stock in removed_stocks:
                 found = False
                 for history_entry in stock.history:
@@ -355,14 +359,16 @@ class OutputDiffer:
                             task_id
                         ].get("removed", []):
                             removed_output.append(
-                                f"    - {stock.company_name}: {self.context.diff_info[task_id]['removed'][stock]}"
+                                f"  {removed_stocks_count}. **{stock.company_name}**:  "
                             )
+                            removed_output.append(self.context.diff_info[task_id]["removed"][stock])
                             found = True
                             break
                 if not found:
-                    removed_output.append(f"    - {stock.company_name}")
+                    removed_output.append(f"  {removed_stocks_count}. **{stock.company_name}**")
+                removed_stocks_count += 1
             if removed_output:
-                add_remove_output.append("\n".join(["  - Removed stocks"] + removed_output))
+                add_remove_output.append("\n".join(["**Removed Stocks:**"] + removed_output))
 
         if add_remove_output:
             final_str = f"\n{'\n'.join(add_remove_output)}\n"
@@ -410,12 +416,14 @@ class OutputDiffer:
 
         all_citations: List[TextCitation] = []
         if len(curr_stock_set) > len(added_stocks):  # there are some shared stocks
-            change_output = ["  - Modified stocks\n"]
+            change_output = ["**Modified Stocks:**\n"]
             curr_offset += len(change_output[0])
+            modified_stocks_count = 1
             for stock in curr_stock_list:
                 if stock in added_stocks:
                     continue
-                temp_change_output = [f"    - {stock.company_name}\n"]
+                temp_change_output = [f"  {modified_stocks_count}. **{stock.company_name}**\n"]
+                modified_stocks_count += 1
                 temp_offset = curr_offset + len(temp_change_output[0])
                 for new_history_entry in stock.history:
                     # we are only interested in the output of per stock summary
