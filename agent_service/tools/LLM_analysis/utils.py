@@ -105,7 +105,7 @@ async def extract_citations_from_gpt_output(
     # 4. Get the citation snippet if any and check if it is the source text
     # 5. If the snippet is not in text, find a sentence which has key phrase, or otherwise similar
     # 6. Get the context around it, and package up the citation with text, index, and snippet
-    GPT_ouput: str,
+    GPT_output: str,
     text_group: TextGroup,
     context: PlanRunContext,
 ) -> Tuple[str, Optional[List[TextCitation]]]:
@@ -114,7 +114,7 @@ async def extract_citations_from_gpt_output(
         model=GPT4_O_MINI,
         context=create_gpt_context(GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID),
     )
-    main_text, anchor_citation_dict = get_initial_breakdown(GPT_ouput)
+    main_text, anchor_citation_dict = get_initial_breakdown(GPT_output)
     if anchor_citation_dict is None:
         return main_text, anchor_citation_dict
     final_text_bits = []
