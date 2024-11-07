@@ -397,6 +397,9 @@ async def get_commentary_inputs(
     logger = get_prefect_logger(__name__)
     texts: List[Text] = []
     tables: List[Table] = []
+    # if no stock or topic or universe or portfolio is provided, use default universe SP500
+    if not args.stock_ids and not args.topics and not args.universe_name and not args.portfolio_id:
+        args.universe_name = "S&P 500"
 
     # If macroeconomic is True, get the top themes and related texts
     if args.macroeconomic:
