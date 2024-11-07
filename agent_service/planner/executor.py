@@ -407,6 +407,7 @@ async def _run_execution_plan_impl(
             and override_task_output_lookup[step.tool_task_id] is not None
         ):
             logger.info(f"Step '{step.tool_name}' already in task lookup, using existing value...")
+            tool_output = override_task_output_lookup[step.tool_task_id]
             step_args = None
             try:
                 step_args = tool.input_type(**resolved_args)
