@@ -35,3 +35,7 @@ FILING_DOWNLOAD_LOOKUP = {
 }
 
 HTML_PARSER = "html.parser"
+
+USD = "USD"
+NA_CURRENCIES = ["USD", "CAD"]
+EUR_CURRENCIES = ["EUR", "CHF", "GBP"]

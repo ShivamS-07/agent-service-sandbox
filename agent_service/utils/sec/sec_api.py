@@ -19,6 +19,7 @@ from agent_service.utils.sec.constants import (
     CUSIP,
     DEFAULT_FILING_FORMAT,
     DEFAULT_FILINGS_SEARCH_RANGE,
+    EUR_CURRENCIES,
     FILE_10K,
     FILE_10Q,
     FILED_TIMESTAMP,
@@ -29,12 +30,14 @@ from agent_service.utils.sec.constants import (
     LINK_TO_HTML,
     LINK_TO_TXT,
     MANAGEMENT_SECTION,
+    NA_CURRENCIES,
     NASDAQ,
     NYSE,
     RISK_FACTORS,
     SEC_API_KEY_NAME,
     TICKER,
     US,
+    USD,
 )
 from agent_service.utils.sec.supported_types import SUPPORTED_TYPE_MAPPING
 from agent_service.utils.string_utils import get_sections, html_to_text
@@ -113,6 +116,7 @@ class SecMapping:
             rows_to_insert = [
                 {"gbi_id": gbi_id, "cik": mapping[gbi_id], "inserted_time": now}
                 for gbi_id in gbi_ids
+                if mapping[gbi_id]
             ]
             get_psql().multi_row_generic_insert_or_update(
                 table_name="nlp_service.gbi_cik_mapping",
@@ -144,7 +148,10 @@ class SecMapping:
             return None
 
         if cls._can_map_isin_to_cik(metadata.isin):
-            return cls._map_isin_to_cik(metadata.isin)
+            cik = cls._map_isin_to_cik(metadata.isin)
+            # only return if we get a valid cik from this mapping
+            if cik:
+                return cik
 
         # If the ISIN is non-US or not found, try a more roundabout method...
         return cls._map_non_us_isin_to_cik(metadata)
@@ -165,7 +172,9 @@ class SecMapping:
                 continue
 
             # skip if the wrong currency
-            if item["currency"] != sec_meta.currency:
+            if item["currency"] != sec_meta.currency and not cls._currency_helper(
+                item["currency"], sec_meta.currency
+            ):
                 continue
 
             # skip if delisted
@@ -175,6 +184,7 @@ class SecMapping:
             # if we've passed all the above checks, this CIK works
             return item[CIK]
 
+        # TODO: Add stock lookup fallback
         # if we went through all results without finding anything, return None
         return None
 
@@ -227,6 +237,21 @@ class SecMapping:
             return None
         else:
             return result[0][CIK] if len(result) == 1 else None
+
+    @classmethod
+    def _currency_helper(cls, currency_a: str, currency_b: str) -> bool:
+        """
+        Match USD by default.
+        If NA currency (USD, CAD) match USD
+        If EU currency (EUR, CHF, GBP) match EUR
+        """
+        if currency_a in NA_CURRENCIES and currency_b in NA_CURRENCIES:
+            return True
+
+        if currency_a in EUR_CURRENCIES and currency_b in EUR_CURRENCIES:
+            return True
+
+        return currency_a == USD
 
 
 @dataclass(frozen=True)
@@ -290,7 +315,11 @@ class SecFiling:
         # Get the CIK mapping for the GBI IDs from DB
         gbi_cik_mapping = SecMapping.get_gbi_cik_mapping_from_db(gbi_ids)
 
-        no_cached_gbi_ids = [gbi_id for gbi_id in gbi_ids if gbi_id not in gbi_cik_mapping]
+        no_cached_gbi_ids = [
+            gbi_id
+            for gbi_id in gbi_ids
+            if gbi_id not in gbi_cik_mapping or not gbi_cik_mapping[gbi_id]
+        ]
         gbi_cik_mapping_from_api = SecMapping.get_gbi_cik_mapping_from_api(no_cached_gbi_ids)
 
         logger.info(
