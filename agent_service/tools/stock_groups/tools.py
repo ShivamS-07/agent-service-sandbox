@@ -5,13 +5,16 @@ from typing import Dict, List
 
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT
+from agent_service.io_type_utils import ComplexIOBase
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_groups import StockGroup, StockGroups
 from agent_service.io_types.table import StockTable
 from agent_service.planner.errors import BadInputError
 from agent_service.tool import ToolArgs, ToolCategory, tool
+from agent_service.tools.lists import _list_to_set
 from agent_service.tools.stock_groups.constants import COLUMN, THRESHOLDS
 from agent_service.tools.stock_groups.prompts import (
+    COLLAPSE_STOCK_GROUPS_DESCRIPTION,
     CREATE_GROUP_MAIN_PROMPT,
     CREATE_STOCK_GROUPS_DESCRIPTION,
 )
@@ -97,3 +100,21 @@ async def create_stock_groups_from_table(
     for label, stocks in group_dict.items():
         stock_groups.append(StockGroup(name=label, stocks=stocks))
     return StockGroups(header=args.header, stock_groups=stock_groups)
+
+
+class CollapseStockGroupsToList(ToolArgs):
+    stock_groups: StockGroups
+
+
+@tool(description=COLLAPSE_STOCK_GROUPS_DESCRIPTION, category=ToolCategory.STOCK, enabled=True)
+async def collapse_stock_groups_to_stock_list(
+    args: CollapseStockGroupsToList, context: PlanRunContext
+) -> List[StockID]:
+    final_list = args.stock_groups.stock_groups[0].stocks
+    for stock_group in args.stock_groups.stock_groups[1:]:
+        final_list = list(
+            ComplexIOBase.union_sets(
+                _list_to_set(final_list), _list_to_set(stock_group.stocks)
+            )  # type:ignore
+        )
+    return final_list

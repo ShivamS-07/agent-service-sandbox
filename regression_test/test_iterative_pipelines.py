@@ -75,3 +75,27 @@ class TestIterativePipelines(TestExecutionPlanner):
             required_tools=["per_stock_summarize_texts"],
             validate_tool_args=validate_tool_args,
         )
+
+    @skip_in_ci
+    def test_per_stock_competitors(self):
+        prompt = (
+            "Get competitors for each of AMD, V, and GM."
+            " For each stock discuss any initiatives of competitors that might affect its business"
+        )
+
+        def validate_output(prompt: str, output: IOType) -> bool:
+            return
+
+        def validate_tool_args(execution_log: DefaultDict[str, List[dict]]) -> bool:
+            return
+
+        self.prompt_test(
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=[
+                "per_stock_get_general_peers",
+                "collapse_stock_groups_to_stock_list",
+                "per_stock_group_summarize_texts",
+            ],
+            validate_tool_args=validate_tool_args,
+        )

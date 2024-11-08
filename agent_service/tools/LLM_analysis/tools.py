@@ -54,6 +54,7 @@ from agent_service.tools.LLM_analysis.constants import (
     NO_SUMMARY_FOR_STOCK,
     STOCK_TYPE,
     SUMMARIZE_CITATION_INCREASE_LIMIT,
+    TARGET_STOCK,
 )
 from agent_service.tools.LLM_analysis.prompts import (
     ANSWER_QUESTION_DESCRIPTION,
@@ -85,6 +86,7 @@ from agent_service.tools.LLM_analysis.prompts import (
     PROFILE_REMOVE_DIFF_MAIN_PROMPT,
     PROFILE_REMOVE_DIFF_SYS_PROMPT,
     SIMPLE_PROFILE_FILTER_SYS_PROMPT_STR_DEFAULT,
+    STOCK_PHRASE_DIVERSITY,
     STOCK_PHRASE_STR_DEFAULT,
     SUMMARIZE_BRAINSTORM_INSTRUCTIONS_STR_DEFAULT,
     SUMMARIZE_DESCRIPTION,
@@ -245,7 +247,7 @@ async def _initial_summarize_helper(
     if stock:
         stock_str = stock_phrase.format(stock=stock.company_name)
     else:
-        stock_str = ""
+        stock_str = STOCK_PHRASE_DIVERSITY
 
     texts_str = GPTTokenizer(DEFAULT_LLM).do_truncation_if_needed(
         texts_str,
@@ -389,7 +391,7 @@ async def _update_summarize_helper(
     if stock:
         stock_str = STOCK_PHRASE_STR_DEFAULT.format(stock=stock.company_name)
     else:
-        stock_str = ""
+        stock_str = STOCK_PHRASE_DIVERSITY
 
     new_texts_str, old_texts_str = GPTTokenizer(DEFAULT_LLM).do_multi_truncation_if_needed(
         [new_texts_str, old_texts_str],
@@ -920,6 +922,7 @@ class PerStockGroupSummarizeTextInput(ToolArgs):
     stock_groups: StockGroups
     texts: List[StockText]
     topic_template: str
+    column_header: str = "Summary"
 
 
 @tool(
@@ -940,7 +943,7 @@ async def per_stock_group_summarize_texts(
     if len(args.texts) == 0:
         raise EmptyInputError("Cannot summarize when no texts provided")
 
-    if f"for {STOCK_TYPE} stocks" not in args.topic_template:
+    if f"{STOCK_TYPE} stocks" not in args.topic_template:
         raise BadInputError("Input topic template missing STOCK_TYPE placeholder")
 
     args.texts = cast(
@@ -1004,7 +1007,22 @@ async def per_stock_group_summarize_texts(
     tasks = []
     for group in new_groups:
         group_set = set(group.stocks)
-        topic = args.topic_template.replace(STOCK_TYPE, group.name)
+        if group.ref_stock:
+            group_set.add(group.ref_stock)  # include text data from target stock if any
+        topic = (
+            (args.topic_template.replace(STOCK_TYPE, group.name))
+            if "Competitors" not in group.name
+            else args.topic_template.replace("STOCK_TYPE stocks", group.name)
+        )
+        if group.ref_stock:
+            topic = topic.replace(
+                TARGET_STOCK,
+                (
+                    group.ref_stock.company_name
+                    if group.ref_stock.company_name
+                    else group.ref_stock.isin
+                ),
+            )
         group_texts = [text for text in args.texts if text.stock_id and text.stock_id in group_set]
         tasks.append(
             _initial_summarize_helper(
@@ -1018,6 +1036,8 @@ async def per_stock_group_summarize_texts(
     if prev_run_dict:
         for group, (remaining_citations, all_old_citations, old_summary) in prev_run_dict.items():
             group_set = set(group.stocks)
+            if group.ref_stock:
+                group_set.add(group.ref_stock)  # include text data from target stock if any
             group_new_texts = [
                 text for text in new_texts if text.stock_id and text.stock_id in group_set
             ]
@@ -1025,7 +1045,20 @@ async def per_stock_group_summarize_texts(
             if group_new_texts or (
                 remaining_citations and len(remaining_citations) < len(all_old_citations)
             ):
-                topic = args.topic_template.replace(STOCK_TYPE, group.name)
+                topic = (
+                    (args.topic_template.replace(STOCK_TYPE, group.name))
+                    if "Competitors" not in group.name
+                    else args.topic_template.replace("STOCK_TYPE stocks", group.name)
+                )
+                if group.ref_stock:
+                    topic = topic.replace(
+                        TARGET_STOCK,
+                        (
+                            group.ref_stock.company_name
+                            if group.ref_stock.company_name
+                            else group.ref_stock.isin
+                        ),
+                    )
                 tasks.append(
                     _update_summarize_helper(
                         SummarizeTextInput(texts=group_new_texts, topic=topic),  # type: ignore
@@ -1049,11 +1082,9 @@ async def per_stock_group_summarize_texts(
     results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
     output = []
 
-    column_title = args.topic_template.replace(f"for {STOCK_TYPE} stocks", "").strip()
-
     for group, (summary, citations) in zip(new_groups + old_groups, results):
         group = group.inject_history_entry(
-            HistoryEntry(explanation=summary, title=column_title, citations=citations)
+            HistoryEntry(explanation=summary, title=args.column_header, citations=citations)
         )
         output.append(group)
 
@@ -1204,7 +1235,7 @@ class AnswerQuestionInput(ToolArgs):
     answer_question_main_prompt: str = ANSWER_QUESTION_MAIN_PROMPT_STR_DEFAULT
     answer_question_sys_prompt: str = ANSWER_QUESTION_SYS_PROMPT_STR_DEFAULT
 
-    # toool arguments metadata
+    # tool arguments metadata
     arg_metadata = {
         "answer_question_main_prompt": ToolArgMetadata(hidden_from_planner=True),
         "answer_question_sys_prompt": ToolArgMetadata(hidden_from_planner=True),

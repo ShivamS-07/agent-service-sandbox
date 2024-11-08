@@ -13,9 +13,10 @@ from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import HistoryEntry, TableColumnType
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
+from agent_service.io_types.stock_groups import StockGroup, StockGroups
 from agent_service.io_types.table import Table, TableColumnMetadata
 from agent_service.io_types.text import EarningsPeersText, Text, TextCitation
-from agent_service.planner.errors import NotFoundError
+from agent_service.planner.errors import EmptyInputError, NotFoundError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.LLM_analysis.tools import SummarizeTextInput, summarize_texts
 from agent_service.tools.stocks import (
@@ -29,6 +30,7 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import SyncBoostedPG, get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.tool_diff import get_prev_run_info
 
 DELIMITER = "\n\n********************\n\n"
 SEPARATOR = "###"
@@ -572,6 +574,93 @@ async def get_peer_group_for_stock(
             )
 
     return validated_peers
+
+
+class PerStockGeneralPeersInput(ToolArgs):
+    stock_ids: List[StockID]
+    max_num_peers: Optional[int] = None
+
+
+@tool(
+    description="""
+    This function returns a StockGroups object where each of its StockGroups
+    consists of a list of peer companies for one.
+    Peers are related to the input stock as competitors as well as
+    other actors in similar business or market areas as the input stock.
+    You should use this tool when client ask for competitors or peers of a list
+    of stocks, For example, if the client asks:
+    'show me a list of competitors for each of my watchlist stocks',
+    you would use this tool. One of the most important uses of this tool is
+    preparing lists of competitors for use to generate a related discussion
+    using the per_stock_group_summarize_tool.
+    You must never use this tool when the client is interested in a single group of competitors
+    in those cases use the filter_by_product_or_service tool (for competitive analysis or other
+    single product market situations) or the get_general_peers tool (when a general list of
+    competitors is needed, potentially involving multiple different product markets).
+    If the client mentions a specific number of peers that they want, include
+    that as max_num_peers, otherwise all peers will be returned for each stock
+    """,
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+)
+async def per_stock_get_general_peers(
+    args: PerStockGeneralPeersInput, context: PlanRunContext
+) -> StockGroups:
+    if not args.stock_ids:
+        raise EmptyInputError("No peers found due to no input stocks")
+
+    logger = get_prefect_logger(__name__)
+    stock_groups = []
+
+    wanted_stocks = args.stock_ids
+
+    try:  # since everything associated with diffing is optional, put in try/except
+        prev_run_info = await get_prev_run_info(context, "per_stock_get_general_peers")
+        if prev_run_info is not None:
+            old_competitor_lookup = {
+                stock_group.ref_stock: stock_group
+                for stock_group in prev_run_info.output.stock_groups  # type: ignore
+            }
+            new_wanted_stocks = []
+            old_stock_groups = []
+            for stock in args.stock_ids:
+                # For now, we keep competitors constant within an agent. Since these competitors are
+                # thought up by GPT, it doesn't make sense to update them except when the model updates,
+                # most variation will be random
+                if stock in old_competitor_lookup:
+                    old_stock_groups.append(old_competitor_lookup[stock])
+                else:
+                    new_wanted_stocks.append(stock)
+            wanted_stocks = new_wanted_stocks
+            stock_groups = old_stock_groups
+
+    except Exception as e:
+        logger.warning(f"Error including stock ids from previous run: {e}")
+
+    llm = GPT(context=None, model=GPT4_O)
+    tasks = []
+    for stock in wanted_stocks:
+        tasks.append(
+            get_peer_group_for_stock(
+                stock=stock,
+                llm=llm,
+                context=context,
+                category=None,
+            )
+        )
+
+    results = await gather_with_concurrency(tasks, n=30)
+    for target_stock, competitors in zip(wanted_stocks, results):
+        stock_groups.append(
+            StockGroup(
+                name=f"{target_stock.company_name if target_stock.company_name else target_stock.symbol} Competitors",
+                stocks=competitors,
+                ref_stock=target_stock,
+            )
+        )
+    return StockGroups(
+        header="Target Stocks", stock_list_header="Competitors", stock_groups=stock_groups
+    )
 
 
 async def main() -> None:

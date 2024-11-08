@@ -17,12 +17,14 @@ from agent_service.utils.output_utils.output_construction import PreparedOutput
 class StockGroup(ComplexIOBase):
     name: str
     stocks: List[StockID]
+    ref_stock: Optional[StockID] = None
 
 
 @io_type
 class StockGroups(ComplexIOBase):
     stock_groups: List[StockGroup]
     header: str = "Stock Group"
+    stock_list_header: str = "Stocks"
 
     async def split_into_components(self, main_title: Optional[str] = None) -> List[IOType]:
         # This will display summaries added using per_stock_group_summarize_text
@@ -30,7 +32,24 @@ class StockGroups(ComplexIOBase):
 
         name_column = TableColumn(
             metadata=TableColumnMetadata(label=self.header, col_type=TableColumnType.STRING),
-            data=[group.name for group in self.stock_groups],
+            data=[
+                (
+                    group.name
+                    if not group.ref_stock
+                    else Text(
+                        text_objects=[
+                            StockTextObject(
+                                gbi_id=group.ref_stock.gbi_id,
+                                symbol=group.ref_stock.symbol,
+                                company_name=group.ref_stock.company_name,
+                                isin=group.ref_stock.isin,
+                                index=0,
+                            )
+                        ]
+                    )
+                )
+                for group in self.stock_groups
+            ],
         )
 
         columns.append(name_column)
@@ -57,7 +76,9 @@ class StockGroups(ComplexIOBase):
             stock_column_texts.append(Text(text_objects=stock_objs))  # type:ignore
 
         stocks_column = TableColumn(
-            metadata=TableColumnMetadata(label="Stocks", col_type=TableColumnType.STRING),
+            metadata=TableColumnMetadata(
+                label=self.stock_list_header, col_type=TableColumnType.STRING
+            ),
             data=stock_column_texts,  # type:ignore
         )
         columns.append(stocks_column)
@@ -76,6 +97,8 @@ class StockGroups(ComplexIOBase):
                     [
                         PreparedOutput(val=stock_group.stocks, title=stock_group.name)
                         for stock_group in self.stock_groups
+                        if stock_group.ref_stock
+                        is None  # don't do this for competitor stock groups
                     ]
                 )
         except IndexError:
