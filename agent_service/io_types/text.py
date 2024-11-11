@@ -2150,7 +2150,7 @@ class WebText(Text):
         async with aioboto3.Session().client("s3") as s3:
             fileobjs = [BytesIO() for _ in texts]
             tasks = [
-                s3.download_fileobj(Bucket="boosted-websearch", Key=text.id, Fileobj=fileobj)
+                s3.download_fileobj(Bucket="boosted-websearch", Key=str(text.id), Fileobj=fileobj)
                 for text, fileobj in zip(texts, fileobjs)
             ]
             _ = await gather_with_concurrency(tasks, n=10)

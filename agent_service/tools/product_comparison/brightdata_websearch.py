@@ -9,6 +9,7 @@ import aioboto3
 import aiohttp
 import requests
 from gbi_common_py_utils.utils.ssm import get_param
+from types_aiobotocore_s3 import S3Client
 
 from agent_service.io_types.text import WebText
 from agent_service.tools.product_comparison.constants import (
@@ -128,7 +129,7 @@ def remove_excess_formatting(text: str) -> str:
 @async_perf_logger
 async def req_and_scrape(
     session: aiohttp.ClientSession,
-    s3_client: Any,
+    s3_client: S3Client,
     url: str,
     headers: Dict[str, str],
     proxy: str,
@@ -218,7 +219,7 @@ async def req_and_scrape(
     await s3_client.upload_fileobj(
         Fileobj=io.BytesIO(clean_text.encode("utf-8")),
         Bucket=S3_BUCKET_BOOSTED_WEBSEARCH,
-        Key=obj.id,
+        Key=str(obj.id),
     )
 
     # Return the response object

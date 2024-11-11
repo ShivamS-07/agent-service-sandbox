@@ -1,10 +1,10 @@
 import logging
 import os
 from functools import lru_cache
-from typing import Any
 
 import backoff
 import boto3
+from mypy_boto3_cognito_idp import CognitoIdentityProviderClient
 
 COGNITO_CLIENT = None
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ COGNITO_URLS = [USER_POOL_JWKS_URL]
 COGNITO_USER_ID = "custom:user_id"
 
 
-def get_cognito_client() -> Any:
+def get_cognito_client() -> CognitoIdentityProviderClient:
     global COGNITO_CLIENT
     if COGNITO_CLIENT is None:
         COGNITO_CLIENT = boto3.client("cognito-idp", region_name=REGION_NAME)
@@ -32,7 +32,7 @@ def get_cognito_user_id_from_access_token(access_token: str) -> str:
     cognito_user = cognito_client.get_user(
         AccessToken=access_token,
     )
-    user_attributes = cognito_user.get("UserAttributes", {})
+    user_attributes = cognito_user.get("UserAttributes", [])
     user_id = next(
         (
             attribute.get("Value")

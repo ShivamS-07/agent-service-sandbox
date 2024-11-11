@@ -35,6 +35,8 @@ from stock_universe_service_proto_v1.custom_data_service_pb2 import (
     ListDocumentsRequest,
     ListDocumentsResponse,
     ListingStatusType,
+    ProcessUploadedS3DocumentsRequest,
+    ProcessUploadedS3DocumentsResponse,
     SemanticSearchDocsRequest,
     SemanticSearchDocsResponse,
 )
@@ -209,6 +211,22 @@ async def check_custom_doc_upload_quota(
     with _get_service_stub() as stub:
         req = CheckDocumentUploadQuotaRequest(request_total_file_size=candidate_total_size)
         resp: CheckDocumentUploadQuotaResponse = await stub.CheckDocumentUploadQuota(
+            req,
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def process_uploaded_s3_documents(
+    user_id: str, s3_keys: List[str], s3_bucket: str, allow_overwrite: Optional[bool] = True
+) -> ProcessUploadedS3DocumentsResponse:
+    with _get_service_stub() as stub:
+        req = ProcessUploadedS3DocumentsRequest(
+            s3_bucket=s3_bucket, s3_keys=s3_keys, allow_overwrite=allow_overwrite or False
+        )
+        resp: ProcessUploadedS3DocumentsResponse = await stub.ProcessUploadedS3Documents(
             req,
             metadata=get_default_grpc_metadata(user_id=user_id),
         )

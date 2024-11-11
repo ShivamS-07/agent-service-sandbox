@@ -926,6 +926,11 @@ class CheckCustomDocumentUploadQuotaResponse(BaseModel):
     message: Optional[str] = None
 
 
+class AddCustomDocumentsResponse(BaseModel):
+    success: bool
+    added_listings: Optional[List[CustomDocumentListing]] = None
+
+
 class DeleteCustomDocumentsRequest(BaseModel):
     file_paths: List[str]
 

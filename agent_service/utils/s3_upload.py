@@ -1,6 +1,17 @@
+import asyncio
 import hashlib
+from typing import BinaryIO, List, NamedTuple
 
+import aioboto3
 import boto3
+
+from agent_service.utils.logs import async_perf_logger
+
+
+class S3FileUploadTuple(NamedTuple):
+    file_object: BinaryIO
+    bucket_name: str
+    key_path: str
 
 
 def upload_string_to_s3(data: str) -> str:
@@ -16,6 +27,22 @@ def upload_string_to_s3(data: str) -> str:
 
     s3_client.put_object(Bucket=bucket_name, Key=object_key, Body=data)
     return s3_path
+
+
+@async_perf_logger
+async def async_upload_files_to_s3(files: List[S3FileUploadTuple]) -> None:
+    """Upload files to S3 asynchronously.
+
+    Args:
+        files (List[S3FileUploadTuple]): List of tuples containing the file object,
+            bucket name, and file key/path.
+    """
+    async with aioboto3.Session().client("s3") as s3_client:
+        tasks = [
+            s3_client.upload_fileobj(Fileobj=file_obj, Bucket=s3_bucket_name, Key=s3_key_path)
+            for file_obj, s3_bucket_name, s3_key_path in files
+        ]
+        await asyncio.gather(*tasks)
 
 
 def download_json_from_s3(s3_path: str) -> str:

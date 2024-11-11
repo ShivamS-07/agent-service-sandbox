@@ -30,6 +30,11 @@ class CustomDocumentException(Exception):
         return e
 
 
+class CustomDocumentQuotaExceededException(CustomDocumentException):
+    def __init__(self, message: str, errors: Optional[List[str]] = None):
+        super().__init__(message, errors)
+
+
 def custom_doc_listing_proto_to_model(
     listing: ProtoCustomDocumentListing,
 ) -> CustomDocumentListing:

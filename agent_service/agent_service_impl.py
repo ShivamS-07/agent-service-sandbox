@@ -29,6 +29,7 @@ from gbi_common_py_utils.utils.environment import (
 )
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 from grpclib import GRPCError
+from grpclib import Status as GrpcStatus
 from stock_universe_service_proto_v1.custom_data_service_pb2 import (
     GetFileContentsResponse,
     GetFileInfoResponse,
@@ -40,6 +41,7 @@ from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
     Account,
+    AddCustomDocumentsResponse,
     AgentEvent,
     AgentInfo,
     AgentMetadata,
@@ -152,6 +154,7 @@ from agent_service.external.custom_data_svc_client import (
     get_custom_doc_file_contents,
     get_custom_doc_file_info,
     list_custom_docs,
+    process_uploaded_s3_documents,
 )
 from agent_service.external.feature_coverage_svc_client import (
     get_feature_coverage_client,
@@ -195,6 +198,7 @@ from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
 from agent_service.utils.custom_documents_utils import (
     CustomDocumentException,
+    CustomDocumentQuotaExceededException,
     custom_doc_listing_proto_to_model,
 )
 from agent_service.utils.date_utils import get_now_utc
@@ -219,6 +223,7 @@ from agent_service.utils.redis_queue import (
     get_notification_event_channel,
     wait_for_messages,
 )
+from agent_service.utils.s3_upload import S3FileUploadTuple, async_upload_files_to_s3
 from agent_service.utils.scheduling import (
     AgentSchedule,
     get_schedule_from_user_description,
@@ -1953,6 +1958,62 @@ class AgentServiceImpl:
             )
         except GRPCError as e:
             raise CustomDocumentException.from_grpc_error(e) from e
+
+    async def add_custom_documents(
+        self,
+        user: User,
+        files: List[UploadFile],
+        base_path: Optional[str] = "",
+        allow_overwrite: Optional[bool] = True,
+    ) -> AddCustomDocumentsResponse:
+
+        # get total size of files
+        total_size = sum([file.size or 0 for file in files])
+
+        # check if total size exceeds limit, get bucket paths
+        quota_resp = await check_custom_doc_upload_quota(
+            user_id=user.user_id, candidate_total_size=total_size
+        )
+        s3_bucket = quota_resp.authorized_s3_bucket
+        s3_prefix = quota_resp.authorized_s3_prefix
+        if quota_resp.status.code == GrpcStatus.RESOURCE_EXHAUSTED.value:
+            raise CustomDocumentQuotaExceededException(quota_resp.status.message)
+
+        if len(s3_bucket) == 0 or len(s3_prefix) == 0:
+            # if we didn't get s3 paths, we can't continue
+            raise CustomDocumentException(
+                message=(
+                    quota_resp.status.message
+                    or "Error getting authorized paths for document upload"
+                ),
+                errors=[str(detail) for detail in quota_resp.status.details],
+            )
+
+        # upload files to s3
+        to_upload: List[S3FileUploadTuple] = []
+        s3_uploaded_file_keys = []
+        for file in files:
+            file_path = f"{base_path}{file.filename}" if base_path else file.filename
+            s3_key = f"{s3_prefix}{file_path}"
+            to_upload.append(
+                S3FileUploadTuple(file_object=file.file, bucket_name=s3_bucket, key_path=s3_key)
+            )
+            s3_uploaded_file_keys.append(s3_key)
+
+        await async_upload_files_to_s3(files=to_upload)
+
+        # notify backend of new files
+        process_resp = await process_uploaded_s3_documents(
+            user_id=user.user_id, s3_bucket=s3_bucket, s3_keys=s3_uploaded_file_keys
+        )
+
+        response = AddCustomDocumentsResponse(
+            success=process_resp.status.code == 0,
+            added_listings=[
+                custom_doc_listing_proto_to_model(doc) for doc in process_resp.updated_listings
+            ],
+        )
+        return response
 
     async def delete_custom_documents(
         self, user: User, file_paths: List[str]

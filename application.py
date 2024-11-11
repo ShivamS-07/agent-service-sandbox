@@ -37,6 +37,7 @@ from agent_service.endpoints.authz_helper import (
     validate_user_plan_run_access,
 )
 from agent_service.endpoints.models import (
+    AddCustomDocumentsResponse,
     AgentInfo,
     AgentQC,
     ChatWithAgentRequest,
@@ -170,7 +171,10 @@ from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.cache_utils import get_redis_cache_backend_for_output
 from agent_service.utils.clickhouse import Clickhouse
-from agent_service.utils.custom_documents_utils import CustomDocumentException
+from agent_service.utils.custom_documents_utils import (
+    CustomDocumentException,
+    CustomDocumentQuotaExceededException,
+)
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.feature_flags import (
@@ -370,7 +374,13 @@ class ProcessTimeMiddleware:
                 audit_info.real_user_id = user_info.real_user_id
 
             request_body = await request.body()
-            audit_info.request_body = json.loads(request_body) if request_body else None
+
+            content_type = request.headers.get("Content-Type", "")
+            # request body might be binary or multipart form data for file uploads, etc.
+            # only log the request body if it's JSON
+            if "application/json" in content_type:
+                audit_info.request_body = json.loads(request_body) if request_body else None
+
         except Exception:
             audit_info.error = traceback.format_exc()
 
@@ -1889,6 +1899,33 @@ async def get_custom_doc_details(
     except CustomDocumentException as e:
         logger.exception(f"Error while getting custom doc metadata {file_id}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.message)
+
+
+@router.post(
+    "/custom-documents/add-documents",
+    response_model=AddCustomDocumentsResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def add_custom_docs(
+    files: list[UploadFile], base_path: Optional[str] = "", user: User = Depends(parse_header)
+) -> AddCustomDocumentsResponse:
+    """
+    Uploads custom documents; will overwrite/reprocess existing files if uploaded again
+    Args:
+        body should be multipart/form-data with
+            - `files` key containing the file(s) to upload
+            - `base_path` (optional) key containing the base path (directory) to upload the files to
+                          when omitted (default behaviour), files are uploaded to the root path for the user
+    """
+    try:
+        return await application.state.agent_service_impl.add_custom_documents(
+            user=user, files=files, base_path=base_path, allow_overwrite=True
+        )
+    except CustomDocumentQuotaExceededException as e:
+        logger.warning(
+            f"User {user.user_id} attempted to upload custom documents over quota: {e.message}"
+        )
+        raise HTTPException(status_code=status.HTTP_507_INSUFFICIENT_STORAGE, detail=e.message)
 
 
 @router.post(
