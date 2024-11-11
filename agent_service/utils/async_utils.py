@@ -87,7 +87,9 @@ async def to_awaitable(val: T) -> T:
 
 
 # credit: https://stackoverflow.com/questions/48483348/how-to-limit-concurrency-with-python-asyncio
-async def gather_with_concurrency(tasks: Collection[Awaitable], n: int = MAX_CONCURRENCY) -> Any:
+async def gather_with_concurrency(
+    tasks: Collection[Awaitable], n: int = MAX_CONCURRENCY, return_exceptions: bool = False
+) -> Any:
     n = min(n, len(tasks))  # no greater than number of tasks
     semaphore = asyncio.Semaphore(n)
 
@@ -95,7 +97,9 @@ async def gather_with_concurrency(tasks: Collection[Awaitable], n: int = MAX_CON
         async with semaphore:
             return await task
 
-    return await asyncio.gather(*(sem_task(task) for task in tasks))
+    return await asyncio.gather(
+        *(sem_task(task) for task in tasks), return_exceptions=return_exceptions
+    )
 
 
 async def gather_dict_as_completed(

@@ -18,6 +18,7 @@ from agent_service.GPT.constants import GPT4_O, MAX_TOKENS, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_types.dates import DateRange
+from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import STOCK_ID_COL_NAME_DEFAULT, Table
 from agent_service.io_types.text import StatisticsText, Text, TextGroup, ThemeText
 from agent_service.tools.commentary.constants import (
@@ -90,6 +91,7 @@ async def get_theme_related_texts(
         ),
         context,
     )
+    logger.info(f"Found {len(development_texts)} developments for themes.")
     article_texts: List[Any] = await get_news_articles_for_theme_developments(  # type: ignore
         GetThemeDevelopmentNewsArticlesInput(
             developments_list=development_texts,
@@ -97,12 +99,19 @@ async def get_theme_related_texts(
         ),
         context,
     )
+    logger.info(f"Found {len(article_texts)} articles for developments.")
     statistics_texts = await get_statistics_for_theme(
         context=context, texts=themes_texts, date_range=date_range
     )
+    logger.info(f"Found {len(statistics_texts)} statistics for themes.")
     res.extend(development_texts)  # type: ignore
     res.extend(article_texts)  # type: ignore
     res.extend(statistics_texts)  # type: ignore
+    await tool_log(
+        log=f"Retrieved {len(res)} theme related texts for top market trends.",
+        context=context,
+        associated_data=res,
+    )
     return res
 
 
@@ -303,9 +312,11 @@ async def get_texts_for_topics(
             except Exception as e:
                 logger.warning(f"Failed to get news pool articles for topic {topic}: {e}")
 
-    if len(texts) == 0:
-        raise Exception("No data collected for commentary from available sources")
-
+    await tool_log(
+        log=f"Retrieved {len(texts)} texts for topics: {topics}.",
+        context=context,
+        associated_data=texts,
+    )
     return texts
 
 
@@ -568,3 +579,40 @@ async def prepare_main_prompt(
                 f"Length of tokens in {text_type}: {GPTTokenizer(COMMENTARY_LLM).get_token_length(text_list_str)}"
             )
     return main_prompt
+
+
+async def get_top_bottom_stocks(
+    tables: List[Table], top_n_stocks: int, table_title: str
+) -> List[StockID]:
+    perf_df_found = False
+    for table in tables:
+        if table.title == table_title:
+            perf_df = table.to_df()
+            perf_df_found = True
+
+    if not perf_df_found:
+        raise ValueError(f"Performance table ({table_title}) for stock level not found in tables.")
+
+    # get top and bottom 3 contributers and performers
+    top_contributers = (
+        perf_df.sort_values("weighted-return", ascending=False)
+        .head(top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
+        .tolist()
+    )
+    bottom_contributers = (
+        perf_df.sort_values("weighted-return", ascending=True)
+        .head(top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
+        .tolist()
+    )
+    top_performers = (
+        perf_df.sort_values("return", ascending=False)
+        .head(top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
+        .tolist()
+    )
+    bottom_performers = (
+        perf_df.sort_values("return", ascending=True)
+        .head(top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
+        .tolist()
+    )
+
+    return top_contributers + bottom_contributers + top_performers + bottom_performers

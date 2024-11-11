@@ -31,6 +31,7 @@ from agent_service.tools.commentary.helpers import (
     get_previous_commentary_results,
     get_texts_for_topics,
     get_theme_related_texts,
+    get_top_bottom_stocks,
     organize_commentary_inputs,
     prepare_main_prompt,
     prepare_portfolio_prompt,
@@ -67,6 +68,7 @@ from agent_service.tools.news import (
 from agent_service.tools.portfolio import (
     BENCHMARK_PERFORMANCE_LEVELS,
     PORTFOLIO_PERFORMANCE_LEVELS,
+    PORTFOLIO_PERFORMANCE_TABLE_BASE_NAME,
     GetPortfolioBenchmarkHoldingsInput,
     GetPortfolioBenchmarkPerformanceInput,
     GetPortfolioHoldingsInput,
@@ -88,6 +90,7 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.tools.universe import (
     STOCK_PERFORMANCE_TABLE_NAME,
     UNIVERSE_PERFORMANCE_LEVELS,
+    UNIVERSE_PERFORMANCE_TABLE_BASE_NAME,
     GetUniverseHoldingsInput,
     GetUniversePerformanceInput,
     get_universe_holdings,
@@ -98,6 +101,7 @@ from agent_service.tools.watchlist import (
     get_stocks_for_user_all_watchlists,
 )
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -395,8 +399,8 @@ async def get_commentary_inputs(
 ) -> List[Union[Text, Table]]:
 
     logger = get_prefect_logger(__name__)
-    texts: List[Text] = []
-    tables: List[Table] = []
+    inputs: List[Union[Text, Table]] = []
+    tasks = []
     # if no stock or topic or universe or portfolio is provided, use default universe SP500
     if not args.stock_ids and not args.topics and not args.universe_name and not args.portfolio_id:
         args.universe_name = "S&P 500"
@@ -439,17 +443,12 @@ async def get_commentary_inputs(
                 associated_data=themes_texts_list,
             )
             themes_texts_list = themes_texts_list[:MAX_THEMES_PER_COMMENTARY]
-            theme_related_texts = await get_theme_related_texts(
-                themes_texts_list, args.date_range, context
-            )
-            texts.extend(themes_texts_list + theme_related_texts)
-            await tool_log(
-                log=f"Retrieved {len(texts)} theme related texts for top market trends.",
-                context=context,
-                associated_data=theme_related_texts,
-            )
+            inputs.extend(themes_texts_list)
+
         except Exception as e:
-            logger.exception(f"Failed to get top themes and related texts: {e}")
+            logger.exception(f"Failed to get top themes: {e}")
+
+        tasks.append(get_theme_related_texts(themes_texts_list, args.date_range, context))
 
     # If no topics are provided, use universe_name as topic
     if not args.topics and args.universe_name:
@@ -459,94 +458,35 @@ async def get_commentary_inputs(
         args.topics = args.topics + [args.universe_name]
     # If topics are provided, get the texts for the topics
     if args.topics:
-        try:
-            topic_texts = await get_texts_for_topics(args.topics, args.date_range, context)
-            await tool_log(
-                log=f"Retrieved {len(topic_texts)} texts for topics: {args.topics}.",
-                context=context,
-                associated_data=topic_texts,
-            )
-            texts.extend(topic_texts)
-        except Exception as e:
-            logger.exception(f"Failed to get texts for topics: {e}")
+        tasks.append(get_texts_for_topics(args.topics, args.date_range, context))
 
     # if universe_name is provided, find top contributers/performers and performance tables
     if args.universe_name:
-        try:
-            # get universe holdings table
-            universe_stocks: Table = await get_universe_holdings(  # type: ignore
+        # get universe holdings table
+        tasks.append(
+            get_universe_holdings(  # type: ignore
                 GetUniverseHoldingsInput(universe_name=args.universe_name), context
             )
-            tables.append(universe_stocks)
-            # get universe performance in all levels
-            for performance_level in UNIVERSE_PERFORMANCE_LEVELS:
-                try:
-                    universe_performance_table: Table = await get_universe_performance(  # type: ignore
-                        GetUniversePerformanceInput(
-                            universe_name=args.universe_name,
-                            date_range=args.date_range,
-                            performance_level=performance_level,
-                        ),
-                        context,
-                    )
-                    # add universe performance table to tables
-                    tables.append(universe_performance_table)
-                    if performance_level == "security":
-                        # this will be used to get top and bottom 3 contributers
-                        uni_perf_df = universe_performance_table.to_df()
-                except Exception as e:
-                    logger.exception(
-                        f"Failed to get universe performance table on {performance_level} level: {e}"
-                    )
-            # get top and bottom 3 contributers and performers
-            top_contributers = (
-                uni_perf_df.sort_values("weighted-return", ascending=False)
-                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
-                .tolist()
-            )
-            bottom_contributers = (
-                uni_perf_df.sort_values("weighted-return", ascending=True)
-                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
-                .tolist()
-            )
-            top_performers = (
-                uni_perf_df.sort_values("return", ascending=False)
-                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
-                .tolist()
-            )
-            bottom_performers = (
-                uni_perf_df.sort_values("return", ascending=True)
-                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
-                .tolist()
-            )
-
-            # deduplicate top/bottom contributers and performers and stock_ids
-            args.stock_ids = list(
-                set(
-                    top_contributers
-                    + bottom_contributers
-                    + top_performers
-                    + bottom_performers
-                    + args.stock_ids
+        )
+        # get universe performance in all levels
+        for performance_level in UNIVERSE_PERFORMANCE_LEVELS:
+            tasks.append(
+                get_universe_performance(  # type: ignore
+                    GetUniversePerformanceInput(
+                        universe_name=args.universe_name,
+                        date_range=args.date_range,
+                        performance_level=performance_level,
+                    ),
+                    context,
                 )
-            )
-
-            await tool_log(
-                log=f"Retrieved {args.top_n_stocks} top/bottom contributers and performers in {args.universe_name}.",
-                context=context,
-            )
-
-        except Exception as e:
-            logger.exception(
-                f"Failed to get stocks/performances for universe {args.universe_name}: {e}"
             )
 
     # if portfolio_id is provided, get the portfolio top performers/contributers and performance tables
     if args.portfolio_id:
-        try:
-            # get portfolio/ benchamrk holdings tables - default and expanded
-            for expand_etfs in [False, True]:
-                portfolio_holdings_table: StockTable = await get_portfolio_holdings(  # type: ignore
+        # get portfolio/ benchamrk holdings tables - default and expanded
+        for expand_etfs in [False, True]:
+            tasks.append(
+                get_portfolio_holdings(  # type: ignore
                     GetPortfolioHoldingsInput(
                         portfolio_id=args.portfolio_id,
                         expand_etfs=expand_etfs,
@@ -554,37 +494,32 @@ async def get_commentary_inputs(
                     ),
                     context,
                 )
-                tables.append(portfolio_holdings_table)
-                benchmark_holdings_table: Table = await get_portfolio_benchmark_holdings(  # type: ignore
+            )
+            tasks.append(
+                get_portfolio_benchmark_holdings(  # type: ignore
                     GetPortfolioBenchmarkHoldingsInput(
                         portfolio_id=args.portfolio_id, expand_etfs=expand_etfs
                     ),
                     context,
                 )
-                tables.append(benchmark_holdings_table)
+            )
 
-            # get portfolio benchmark performance in all levels
-            for performance_level in BENCHMARK_PERFORMANCE_LEVELS:
-                try:
-                    portfolio_benchmark_perf_table: Table = await get_portfolio_benchmark_performance(  # type: ignore
-                        GetPortfolioBenchmarkPerformanceInput(
-                            portfolio_id=args.portfolio_id,
-                            date_range=args.date_range,
-                            performance_level=performance_level,
-                        ),
-                        context,
-                    )
-                    # add portfolio benchmark performance table to tables
-                    tables.append(portfolio_benchmark_perf_table)
-                except Exception as e:
-                    logger.exception(
-                        f"Failed to get portfolio benchmark performance table on {performance_level} level: {e}"
-                    )
-
+        # get portfolio benchmark performance in all levels
+        for performance_level in BENCHMARK_PERFORMANCE_LEVELS:
+            tasks.append(
+                get_portfolio_benchmark_performance(  # type: ignore
+                    GetPortfolioBenchmarkPerformanceInput(
+                        portfolio_id=args.portfolio_id,
+                        date_range=args.date_range,
+                        performance_level=performance_level,
+                    ),
+                    context,
+                )
+            )
             # get portfolio performance in all levels
             for performance_level in PORTFOLIO_PERFORMANCE_LEVELS:
-                try:
-                    portfolio_performance_table: Table = await get_portfolio_performance(  # type: ignore
+                tasks.append(
+                    get_portfolio_performance(  # type: ignore
                         GetPortfolioPerformanceInput(
                             portfolio_id=args.portfolio_id,
                             date_range=args.date_range,
@@ -592,68 +527,40 @@ async def get_commentary_inputs(
                         ),
                         context,
                     )
-                    # add portfolio performance table to tables
-                    tables.append(portfolio_performance_table)
-                    if performance_level == "stock":
-                        # this will be used to get top and bottom 3 contributers
-                        port_perf_df = portfolio_performance_table.to_df()
-                except Exception as e:
-                    logger.exception(
-                        f"Failed to get portfolio performance table on {performance_level} level: {e}"
-                    )
-            # get top and bottom 3 contributers and performers
-            top_contributers = (
-                port_perf_df.sort_values("weighted-return", ascending=False)
-                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
-                .tolist()
-            )
-            bottom_contributers = (
-                port_perf_df.sort_values("weighted-return", ascending=True)
-                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
-                .tolist()
-            )
-            top_performers = (
-                port_perf_df.sort_values("return", ascending=False)
-                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
-                .tolist()
-            )
-            bottom_performers = (
-                port_perf_df.sort_values("return", ascending=True)
-                .head(args.top_n_stocks)[STOCK_ID_COL_NAME_DEFAULT]
-                .tolist()
-            )
-
-            # deduplicate top/bottom contributers and performers and stock_ids
-            args.stock_ids = list(
-                set(
-                    top_contributers
-                    + bottom_contributers
-                    + top_performers
-                    + bottom_performers
-                    + args.stock_ids
                 )
-            )
 
-            await tool_log(
-                log=f"Retrieved {args.top_n_stocks} top/bottom contributers and performers in portfolio.",
-                context=context,
-            )
-        except Exception as e:
-            logger.exception(
-                f"Failed to get stocks/performances for portfolio {args.portfolio_id}: {e}"
-            )
+    tasks_results = await gather_with_concurrency(tasks, n=len(tasks), return_exceptions=True)
+    for task, result in zip(tasks, tasks_results):
+        if isinstance(result, Exception):
+            # Add the function name for failed
+            logger.exception(msg=f"Task '{task.__name__}' failed with exception: {result}")
+        else:
+            # Add successful results to the combined result
+            if isinstance(result, list):
+                inputs.extend(result)
+            else:
+                inputs.append(result)
 
-    # If stock_ids are provided, get the texts for the stock_ids
+    # augment stock_ids with top performers/contributers from portfolio and universe if provided
+    tables = [table for table in inputs if isinstance(table, Table)]
+    if args.portfolio_id:
+        args.stock_ids.extend(
+            await get_top_bottom_stocks(  # type: ignore
+                tables=tables,
+                top_n_stocks=args.top_n_stocks,
+                table_title=PORTFOLIO_PERFORMANCE_TABLE_BASE_NAME + "stock",
+            )
+        )
+    if args.universe_name:
+        args.stock_ids.extend(
+            await get_top_bottom_stocks(  # type: ignore
+                tables=tables,
+                top_n_stocks=args.top_n_stocks,
+                table_title=UNIVERSE_PERFORMANCE_TABLE_BASE_NAME + "security",
+            )
+        )
     if args.stock_ids:
-        if len(args.stock_ids) > MAX_STOCKS_PER_COMMENTARY:
-            await tool_log(
-                log=(
-                    f"Number of stocks is more than {MAX_STOCKS_PER_COMMENTARY}. "
-                    f"Only first {MAX_STOCKS_PER_COMMENTARY} stocks will be considered."
-                ),
-                context=context,
-            )
-            args.stock_ids = args.stock_ids[:MAX_STOCKS_PER_COMMENTARY]
+        args.stock_ids = list(set(args.stock_ids))
         try:
             date_range = args.date_range
             if args.date_range.start_date == args.date_range.end_date:
@@ -677,6 +584,15 @@ async def get_commentary_inputs(
 
             tables.append(stock_performance_table)
             # get news developments and articles for stock ids
+            if len(args.stock_ids) > MAX_STOCKS_PER_COMMENTARY:
+                await tool_log(
+                    log=(
+                        f"Number of stocks is more than {MAX_STOCKS_PER_COMMENTARY}. "
+                        f"Only first {MAX_STOCKS_PER_COMMENTARY} stocks will be considered."
+                    ),
+                    context=context,
+                )
+            args.stock_ids = args.stock_ids[:MAX_STOCKS_PER_COMMENTARY]
             stock_devs: List[StockNewsDevelopmentText] = (
                 await get_all_news_developments_about_companies(  # type: ignore
                     GetNewsDevelopmentsAboutCompaniesInput(
@@ -698,11 +614,11 @@ async def get_commentary_inputs(
                 context=context,
                 associated_data=stock_texts,
             )
-            texts.extend(stock_texts)
+            inputs.extend(stock_texts)
         except Exception as e:
             logger.exception(f"Failed to get texts for stock ids: {e}")
 
     # raise if inputs are empty
-    if len(texts) == 0:
-        raise EmptyInputError("No texts/news found for commentary.")
-    return texts + tables
+    if len(inputs) == 0:
+        raise EmptyInputError("No texts/tables found for commentary.")
+    return inputs
