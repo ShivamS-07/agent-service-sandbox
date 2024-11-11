@@ -30,10 +30,19 @@ class CacheBackend(ABC):
 
 
 class RedisCacheBackend(CacheBackend):
-    def __init__(self, namespace: Any, serialize_func: Any, deserialize_func: Any) -> None:
+    def __init__(
+        self,
+        namespace: Any,
+        serialize_func: Any,
+        deserialize_func: Any,
+        max_connections: int = 4,
+    ) -> None:
         # TODO use async redis client
         self.client = RedisCache(
-            namespace=namespace, serialize_func=serialize_func, deserialize_func=deserialize_func
+            namespace=namespace,
+            serialize_func=serialize_func,
+            deserialize_func=deserialize_func,
+            max_connections=max_connections,
         )
 
     async def get(self, key: str, ttl: Optional[int] = None) -> Optional[IOType]:
