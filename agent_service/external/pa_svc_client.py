@@ -15,6 +15,8 @@ from grpclib.client import Channel
 from pa_portfolio_service_proto_v1.marketplace_messages_pb2 import (
     GetFullStrategiesInfoRequest,
     GetFullStrategiesInfoResponse,
+    ListAllAuthorizedStrategiesRequest,
+    ListAllAuthorizedStrategiesResponse,
 )
 from pa_portfolio_service_proto_v1.pa_service_grpc import PAServiceStub
 from pa_portfolio_service_proto_v1.portfolio_crud_actions_pb2 import (
@@ -347,3 +349,16 @@ async def get_transitive_holdings_from_stocks_and_weights(
             )
 
     return [weighted_security for weighted_security in response.weighted_securities]
+
+
+@grpc_retry
+@async_perf_logger
+async def get_list_all_authorized_strategies(
+    user_id: str,
+) -> List[ListAllAuthorizedStrategiesResponse.AuthorizedStrategy]:
+    with _get_service_stub() as stub:
+        response: ListAllAuthorizedStrategiesResponse = await stub.ListAllAuthorizedStrategies(
+            ListAllAuthorizedStrategiesRequest(),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        return list(response.strategies)

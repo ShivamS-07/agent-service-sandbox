@@ -222,6 +222,7 @@ class ToolCategory(enum.StrEnum):
     COMPETITIVE_ANALYSIS = "competitive_analysis"
     IDEAS = "ideas"
     WEB = "web search"
+    STRATEGY = "strategy"
 
     def get_description(self) -> str:
         if self == ToolCategory.MISC:
@@ -300,6 +301,9 @@ class ToolCategory(enum.StrEnum):
 
         if self == ToolCategory.WEB:
             return "Tools that involve web searching"
+
+        if self == ToolCategory.STRATEGY:
+            return "Tools that relate to strategies (or it could be called B1/quant strategies)"
 
         return ""
 

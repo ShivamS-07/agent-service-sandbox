@@ -7,6 +7,9 @@ from uuid import uuid4
 
 import pandas as pd
 from google.protobuf.timestamp_pb2 import Timestamp
+from pa_portfolio_service_proto_v1.marketplace_messages_pb2 import (
+    ListAllAuthorizedStrategiesResponse,
+)
 from pa_portfolio_service_proto_v1.well_known_types_pb2 import UUID
 from pa_portfolio_service_proto_v1.workspace_pb2 import WorkspaceAuth, WorkspaceMetadata
 
@@ -28,7 +31,9 @@ from agent_service.tools.portfolio import (
     GetPortfolioInput,
     GetPortfolioPerformanceInput,
     GetPortfolioTradesInput,
+    GetStrategyInput,
     convert_portfolio_mention_to_portfolio_id,
+    convert_strategy_mention_to_strategy,
     get_portfolio_holdings,
     get_portfolio_performance,
     get_portfolio_trades,
@@ -136,6 +141,82 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         )
         expected_result = None
         self.assertEqual(result, expected_result)
+
+    @patch("agent_service.tools.portfolio.get_list_all_authorized_strategies")
+    async def test_convert_strategy_mention_to_strategy(self, get_list_all_authorized_strategies):
+        get_list_all_authorized_strategies.side_effect = lambda user_id: [
+            ListAllAuthorizedStrategiesResponse.AuthorizedStrategy(
+                strategy_id=UUID(id="1"),
+                model_name="S&P 500",
+                strategy_name="ABC",
+                is_strategy_live=True,
+                created_date=Timestamp(seconds=1),
+            ),
+            ListAllAuthorizedStrategiesResponse.AuthorizedStrategy(
+                strategy_id=UUID(id="2"),
+                model_name="S&P 500",
+                strategy_name="ABC",
+                is_strategy_live=True,
+                created_date=Timestamp(seconds=2),
+            ),
+            ListAllAuthorizedStrategiesResponse.AuthorizedStrategy(
+                strategy_id=UUID(id="3"),
+                model_name="S&P 500",
+                strategy_name="ABC",
+                is_strategy_live=False,
+                created_date=Timestamp(seconds=3),
+            ),
+            ListAllAuthorizedStrategiesResponse.AuthorizedStrategy(
+                strategy_id=UUID(id="4"),
+                model_name="S&P 500",
+                strategy_name="ACxyZ",
+                is_strategy_live=True,
+                created_date=Timestamp(seconds=4),
+            ),
+            ListAllAuthorizedStrategiesResponse.AuthorizedStrategy(
+                strategy_id=UUID(id="5"),
+                model_name="S&P 500",
+                strategy_name="ACYZ",
+                is_strategy_live=True,
+                created_date=Timestamp(seconds=5),
+            ),
+            ListAllAuthorizedStrategiesResponse.AuthorizedStrategy(
+                strategy_id=UUID(id="6"),
+                model_name="S&P 500",
+                strategy_name="ACYZ",
+                is_strategy_live=True,
+                created_date=Timestamp(seconds=6),
+            ),
+            ListAllAuthorizedStrategiesResponse.AuthorizedStrategy(
+                strategy_id=UUID(id="7"),
+                model_name="S&P 500",
+                strategy_name="ACxyz",
+                is_strategy_live=True,
+                created_date=Timestamp(seconds=7),
+            ),
+        ]
+        # Exact Match - most recent LIVE
+        strategy = await convert_strategy_mention_to_strategy(
+            GetStrategyInput(strategy_name="S&P 500 - ABC"), self.context
+        )
+        self.assertEqual(strategy.strategy_id, "2")
+
+        strategy = await convert_strategy_mention_to_strategy(
+            GetStrategyInput(strategy_name="S&P 500 - ABC", strategy_uuid="1"), self.context
+        )
+        self.assertEqual(strategy.strategy_id, "1")
+
+        # Contains Match
+        strategy = await convert_strategy_mention_to_strategy(
+            GetStrategyInput(strategy_name="S&P 500 - AB"), self.context
+        )
+        self.assertEqual(strategy.strategy_id, "2")
+
+        # difflib + GPT
+        strategy = await convert_strategy_mention_to_strategy(
+            GetStrategyInput(strategy_name="S&P 500 - AYZ"), self.context
+        )
+        self.assertEqual(strategy.strategy_id, "6")
 
     @patch("agent_service.tools.portfolio.get_all_holdings_in_workspace")
     @patch("agent_service.tools.portfolio.get_workspace_name")

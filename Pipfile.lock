@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "b78f037437e723a6f6f9bf0223d30e3b0875fe9b1c224aac24e36048a42cabd8"
+            "sha256": "8748bde3ead0437edfaa583181a1841da388ea821d140019ca8e5f2e4f1bad43"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -1931,11 +1931,11 @@
         },
         "pa-portfolio-service-proto-v1": {
             "hashes": [
-                "sha256:0a8233b029295a29c1db7f4714c112e73c3b9825f08803e9b9aa0fdebad55978"
+                "sha256:1da6eee049be6865c07135f52ecedb558162441e235ef53d9c6808d2eedff4b3"
             ],
             "index": "gbi",
             "markers": "python_version >= '3'",
-            "version": "==1.306.0"
+            "version": "==1.315.0"
         },
         "packaging": {
             "hashes": [

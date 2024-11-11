@@ -8,6 +8,9 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 from dateutil.relativedelta import relativedelta
+from pa_portfolio_service_proto_v1.marketplace_messages_pb2 import (
+    ListAllAuthorizedStrategiesResponse,
+)
 from pa_portfolio_service_proto_v1.workspace_pb2 import (
     StockAndWeight,
     WorkspaceAuth,
@@ -24,10 +27,12 @@ from agent_service.external.pa_svc_client import (
     get_all_holdings_in_workspace,
     get_all_workspaces,
     get_full_strategy_info,
+    get_list_all_authorized_strategies,
     get_transitive_holdings_from_stocks_and_weights,
 )
 from agent_service.GPT.constants import GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
+from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
@@ -37,7 +42,7 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
     TableColumnType,
 )
-from agent_service.planner.errors import NotFoundError
+from agent_service.planner.errors import EmptyOutputError, NotFoundError
 from agent_service.tool import (
     ToolArgMetadata,
     ToolArgs,
@@ -1068,3 +1073,199 @@ async def portfolio_match_by_gpt(
             return portfolio
 
     return None
+
+
+####################################################################################################
+# Strategy
+####################################################################################################
+class GetStrategyInput(ToolArgs):
+    strategy_name: str
+    strategy_uuid: Optional[str] = None
+
+
+@io_type
+class StrategyMetadata(ComplexIOBase):
+    model_id: str
+    strategy_id: str
+    model_name: str
+    strategy_name: str
+    is_live: bool
+    created_date: datetime.datetime
+
+
+@tool(
+    description=(
+        "This function returns the metadata of a Strategy given a strategy name or mention (e.g. my strategy) as well as a strategy's UUID if available. It MUST be used when the client mentions any 'strategy' in the request. Here, the 'strategy' also has alias like 'quant strategy', 'B1 strategy', or 'Boosted strategy' that refers to the trading strategies people created for back-testing purpose. This function will try to match the given name with the strategy names for that client and return the closest match. `strategy_uuid` should be included in addition to the name ONLY if a strategy's UUID is explicitly mentioned in user input! In that case, you still MUST call this function to resolve the ID to an object. E.g. 'My strategy' (Strategy ID: <some UUID>)."  # noqa
+    ),
+    category=ToolCategory.STRATEGY,
+    tool_registry=ToolRegistry,
+)
+async def convert_strategy_mention_to_strategy(
+    args: GetStrategyInput, context: PlanRunContext
+) -> StrategyMetadata:
+    """
+    Get the stocks that are inside a strategy. Note this is not the holdings of a strategy, but rather
+    the stocks that are "ranked" by the B1 strategy
+
+    Complex implementation:
+    1. If `strategy_id` is provided and can match to a strategy, return the stocks under the strategy.
+    2. If `strategy_name` matches exactly to strategies, return the stocks under the most recent LIVE one.
+    3. If `strategy_name` matches partially to strategies (contain), return the stocks under the most recent LIVE one.
+    4. If no direct match, use `difflib` to calculate the similarity and sort the strategies.
+        - If there are close matches (>=0.6), use GPT to find the best one among them.
+        - Otherwise, use GPT to find the best one among all strategies.
+        Note that experiments show that the order of the names may affect the result, so sort it
+        by the similarity before passing to GPT
+    """
+
+    logger = get_prefect_logger(__name__)
+
+    logger.info("Getting user's all authorized strategies")
+    strategies = await get_list_all_authorized_strategies(context.user_id)
+    if not strategies:
+        raise EmptyOutputError(message="User has no access to any strategies!")
+
+    await tool_log(log=f"Found {len(strategies)} strategies", context=context)
+
+    lower_strategy_name = args.strategy_name.lower()
+    perfect_matches: List[ListAllAuthorizedStrategiesResponse.AuthorizedStrategy] = []
+    contain_matches: List[ListAllAuthorizedStrategiesResponse.AuthorizedStrategy] = []
+    concat_names = []
+    for strategy in strategies:
+        if args.strategy_uuid and args.strategy_uuid == strategy.strategy_id.id:
+            logger.info(f"Found strategy by id: {strategy.strategy_id.id}")
+            perfect_matches.append(strategy)
+            break
+
+        concat_name = f"{strategy.model_name} - {strategy.strategy_name}"
+        concat_names.append(concat_name)
+
+        if args.strategy_name == concat_name:
+            perfect_matches.append(strategy)
+        elif lower_strategy_name in concat_name.lower():
+            contain_matches.append(strategy)
+
+    num_perfect_matches = len(perfect_matches)
+    num_contain_matches = len(contain_matches)
+    if num_perfect_matches > 0:
+        logger.info(
+            f"Found {num_perfect_matches} perfect matched strategies. "
+            "Choose the most recent LIVE one."
+        )
+        strategy = max(
+            perfect_matches, key=lambda x: (x.is_strategy_live, x.created_date.ToDatetime())
+        )
+    elif num_contain_matches > 0:
+        logger.info(
+            f"Found {num_contain_matches} partial matched strategies. "
+            "Choose the most recent LIVE one."
+        )
+        strategy = max(
+            contain_matches, key=lambda x: (x.is_strategy_live, x.created_date.ToDatetime())
+        )
+    else:
+        logger.info("No direct match. Using `difflib` to sort the strategies.")
+        name_ratio_pairs = [
+            (name, difflib.SequenceMatcher(None, args.strategy_name, name).ratio())
+            for name in set(concat_names)
+        ]
+        name_ratio_pairs.sort(key=lambda x: x[1], reverse=True)
+        close_matches = [name for name, ratio in name_ratio_pairs if ratio >= WEAK_MATCH_SIMILARITY]
+        if close_matches:
+            logger.info(f"Found {len(close_matches)} close match. Using GPT to find the best one.")
+            strategy_name = await get_best_matched_strategy_name_by_gpt(
+                args.strategy_name, close_matches, context
+            )
+        else:
+            names = [name for name, _ in name_ratio_pairs]
+            strategy_name = await get_best_matched_strategy_name_by_gpt(
+                args.strategy_name, names, context
+            )
+
+        if strategy_name:
+            matches = [
+                s
+                for s, concat_name in zip(strategies, concat_names)
+                if concat_name == strategy_name
+            ]
+            strategy = max(matches, key=lambda x: (x.is_strategy_live, x.created_date.ToDatetime()))
+        else:
+            logger.warning(
+                f"No strategy found for the mention <{args.strategy_name}>. Use the most recent LIVE one."  # noqa
+            )
+            strategy = max(
+                strategies, key=lambda x: (x.is_strategy_live, x.created_date.ToDatetime())
+            )
+
+    await tool_log(
+        log=(
+            f"Found strategy <{strategy.model_name} - {strategy.strategy_name}> "
+            f"(id={strategy.strategy_id.id})"
+        ),
+        context=context,
+    )
+    return StrategyMetadata(
+        model_id=strategy.model_id.id,
+        strategy_id=strategy.strategy_id.id,
+        model_name=strategy.model_name,
+        strategy_name=strategy.strategy_name,
+        is_live=strategy.is_strategy_live,
+        created_date=strategy.created_date.ToDatetime(),
+    )
+
+
+class GetStrategyStocksInput(ToolArgs):
+    strategy_metadata: StrategyMetadata
+
+
+@tool(
+    description="Given the metadata of a strategy, this tool returns the list of stock identifiers that are inside the strategy. It should only be used after the tool `convert_strategy_mention_to_strategy` when the user asks for the stocks in their strategies.",  # noqa
+    category=ToolCategory.STRATEGY,
+    tool_registry=ToolRegistry,
+)
+async def get_strategy_stocks(
+    args: GetStrategyStocksInput, context: PlanRunContext
+) -> List[StockID]:
+    sql = """
+        SELECT valid_gbi_ids
+        FROM public.portfolios
+        WHERE id = %(portfolio_id)s
+    """
+    rows = get_psql().generic_read(sql, {"portfolio_id": args.strategy_metadata.strategy_id})
+    if not rows:
+        raise EmptyOutputError(message="No valid stocks found for the strategy")
+
+    stock_ids = await StockID.from_gbi_id_list(rows[0]["valid_gbi_ids"])
+    await tool_log(log=f"Found {len(stock_ids)} stocks", context=context)
+    return stock_ids
+
+
+async def get_best_matched_strategy_name_by_gpt(
+    strategy_mention: str,
+    strategy_names: List[str],
+    context: PlanRunContext,
+) -> Optional[str]:
+    if len(strategy_names) == 0:
+        return None
+    elif len(strategy_names) == 1:
+        return strategy_names[0]
+
+    prompt_str = "I have an indexed list of strategy names that are case-sensitive, and I'd like you to find the best match for a user-specified strategy from this list. For example, it should look like: '0 <Strategy0>', '1 <Strategy1>'... Return the integer of the index of the strategy whose name matches the following mention the best. Note that the user's input might not be exact or fully accurate, so consider possible typos, transposed letters, or minor spelling errors when finding the closest match. Even if the match is not exact, return the strategy that seems most relevant or closest in meaning. Your response MUST ONLY be the index of the best matched strategy.\nHere is the strategy mention:{strategy_mention}.\nHere are the strategy names:\n{strategy_names}"  # noqa
+    main_prompt = Prompt(template=prompt_str, name="B1_STRATEGY_MATCHING")
+    filled_main_prompt = main_prompt.format(
+        strategy_mention=strategy_mention,
+        strategy_names="\n".join([f"{i} <{name}>" for i, name in enumerate(strategy_names)]),
+    )
+
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(gpt_context, GPT4_O_MINI)
+    result = await llm.do_chat_w_sys_prompt(filled_main_prompt, sys_prompt=NO_PROMPT, max_tokens=10)
+
+    try:
+        return strategy_names[int(result)]
+    except Exception as e:
+        logger = get_prefect_logger(__name__)
+        logger.exception(f"Failed to get the best matched strategy name by GPT: {e}")
+        return None
