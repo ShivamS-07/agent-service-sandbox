@@ -144,6 +144,168 @@ TEST_STOCK_DATE_TABLE2 = Table.from_df_and_cols(
     ),
 )
 
+TEST_STOCK_QTR_TABLE = Table.from_df_and_cols(
+    columns=[
+        TableColumnMetadata(label="Quarter", col_type=TableColumnType.QUARTER, unit=None),
+        TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK, unit=None),
+        TableColumnMetadata(label="Close Price", col_type=TableColumnType.FLOAT, unit=None),
+    ],
+    data=pd.DataFrame(
+        data={
+            "Quarter": {
+                0: "2024Q1",
+                1: "2024Q2",
+                2: "2024Q3",
+                3: "2024Q4",
+                4: "2024Q1",
+                5: "2024Q2",
+                6: "2024Q3",
+                7: "2024Q4",
+                8: "2024Q1",
+                9: "2024Q2",
+                10: "2024Q3",
+                11: "2024Q4",
+            },
+            "Security": {
+                0: STOCK4,
+                1: STOCK4,
+                2: STOCK4,
+                3: STOCK4,
+                4: STOCK5,
+                5: STOCK5,
+                6: STOCK5,
+                7: STOCK5,
+                8: STOCK6,
+                9: STOCK6,
+                10: STOCK6,
+                11: STOCK6,
+            },
+            "Close Price": {
+                0: 21.21,
+                1: 21.1,
+                2: 21.1,
+                3: 21.1,
+                4: 160.92,
+                5: 168.43,
+                6: 168.43,
+                7: 168.43,
+                8: 185.6,
+                9: 183.76,
+                10: 183.76,
+                11: 183.76,
+            },
+        }
+    ),
+)
+
+TEST_STOCK_YEAR_TABLE = Table.from_df_and_cols(
+    columns=[
+        TableColumnMetadata(label="Year", col_type=TableColumnType.YEAR, unit=None),
+        TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK, unit=None),
+        TableColumnMetadata(label="Open Price", col_type=TableColumnType.FLOAT, unit=None),
+    ],
+    data=pd.DataFrame(
+        data={
+            "Year": {
+                0: "2021",
+                1: "2022",
+                2: "2023",
+                3: "2024",
+                4: "2021",
+                5: "2022",
+                6: "2023",
+                7: "2024",
+                8: "2021",
+                9: "2022",
+                10: "2023",
+                11: "2024",
+            },
+            "Security": {
+                0: STOCK4,
+                1: STOCK4,
+                2: STOCK4,
+                3: STOCK4,
+                4: STOCK5,
+                5: STOCK5,
+                6: STOCK5,
+                7: STOCK5,
+                8: STOCK6,
+                9: STOCK6,
+                10: STOCK6,
+                11: STOCK6,
+            },
+            "Open Price": {
+                0: 21.21,
+                1: 21.1,
+                2: 21.1,
+                3: 21.1,
+                4: 160.92,
+                5: 168.43,
+                6: 168.43,
+                7: 168.43,
+                8: 185.6,
+                9: 183.76,
+                10: 183.76,
+                11: 183.76,
+            },
+        }
+    ),
+)
+
+TEST_STOCK_MONTH_TABLE = Table.from_df_and_cols(
+    columns=[
+        TableColumnMetadata(label="Month", col_type=TableColumnType.MONTH, unit=None),
+        TableColumnMetadata(label="Security", col_type=TableColumnType.STOCK, unit=None),
+        TableColumnMetadata(label="Open Price", col_type=TableColumnType.FLOAT, unit=None),
+    ],
+    data=pd.DataFrame(
+        data={
+            "Month": {
+                0: "2021-01",
+                1: "2022-02",
+                2: "2023-03",
+                3: "2024-04",
+                4: "2021-01",
+                5: "2022-02",
+                6: "2023-03",
+                7: "2024-04",
+                8: "2021-01",
+                9: "2022-02",
+                10: "2023-03",
+                11: "2024-04",
+            },
+            "Security": {
+                0: STOCK4,
+                1: STOCK4,
+                2: STOCK4,
+                3: STOCK4,
+                4: STOCK5,
+                5: STOCK5,
+                6: STOCK5,
+                7: STOCK5,
+                8: STOCK6,
+                9: STOCK6,
+                10: STOCK6,
+                11: STOCK6,
+            },
+            "Open Price": {
+                0: 21.21,
+                1: 21.1,
+                2: 21.1,
+                3: 21.1,
+                4: 160.92,
+                5: 168.43,
+                6: 168.43,
+                7: 168.43,
+                8: 185.6,
+                9: 183.76,
+                10: 183.76,
+                11: 183.76,
+            },
+        }
+    ),
+)
+
 TEST_STRING_DATE_TABLE1 = Table.from_df_and_cols(
     columns=[
         TableColumnMetadata(label="Date", col_type=TableColumnType.DATE, unit=None),

@@ -780,6 +780,41 @@ def _join_two_tables_vertically(first: Table, second: Table) -> Table:
 
 
 def _join_two_tables(first: Table, second: Table) -> Table:
+    first = copy.deepcopy(first)
+    second = copy.deepcopy(second)
+    first_date_col = first.get_date_column()
+    second_date_col = second.get_date_column()
+
+    if (
+        first_date_col
+        and second_date_col
+        and first_date_col.metadata.col_type != second_date_col.metadata.col_type
+    ):
+        first_date_col_type = first_date_col.metadata.col_type
+        second_date_col_type = second_date_col.metadata.col_type
+        granularity_higherarchy = {
+            TableColumnType.YEAR: 1,
+            TableColumnType.QUARTER: 2,
+            TableColumnType.MONTH: 3,
+            TableColumnType.DATE: 4,
+            TableColumnType.DATETIME: 4,
+        }
+        if (
+            first_date_col_type in granularity_higherarchy
+            and second_date_col_type in granularity_higherarchy
+        ):
+            if (
+                granularity_higherarchy[first_date_col_type]
+                < granularity_higherarchy[second_date_col_type]
+            ):
+                # This means the first table is less granular, need to convert
+                # it to the second table's granularity
+                first = first.convert_table_to_time_granularity(second_date_col_type)
+            elif (
+                granularity_higherarchy[first_date_col_type]
+                > granularity_higherarchy[second_date_col_type]
+            ):
+                second = second.convert_table_to_time_granularity(first_date_col_type)
     have_stock_columns = (
         first.get_stock_column() is not None and second.get_stock_column is not None
     )

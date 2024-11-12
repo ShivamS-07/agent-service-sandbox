@@ -1,3 +1,4 @@
+import datetime
 import unittest
 
 from agent_service.io_type_utils import HistoryEntry, TableColumnType
@@ -20,8 +21,11 @@ from tests.tools.table_data import (
     STOCK6,
     TEST_STOCK_DATE_TABLE1,
     TEST_STOCK_DATE_TABLE2,
+    TEST_STOCK_MONTH_TABLE,
+    TEST_STOCK_QTR_TABLE,
     TEST_STOCK_TABLE1,
     TEST_STOCK_TABLE2,
+    TEST_STOCK_YEAR_TABLE,
     TEST_STRING_DATE_TABLE1,
     TEST_STRING_DATE_TABLE2,
 )
@@ -154,3 +158,22 @@ class TestTableTools(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(result.columns), 3)
         self.assertEqual(result.columns[2].metadata.label, "Test")
+
+    async def test_join_different_date_types(self):
+        with self.subTest("Date and Quarter"):
+            args = JoinTableArgs(input_tables=[TEST_STOCK_DATE_TABLE1, TEST_STOCK_QTR_TABLE])
+            result: Table = await join_tables(args=args, context=PlanRunContext.get_dummy())
+            self.assertEqual(len(result.columns), 3)
+            self.assertIsInstance(result.to_df()["Date"][0], datetime.date)
+
+        with self.subTest("Date and Year"):
+            args = JoinTableArgs(input_tables=[TEST_STOCK_DATE_TABLE1, TEST_STOCK_YEAR_TABLE])
+            result: Table = await join_tables(args=args, context=PlanRunContext.get_dummy())
+            self.assertEqual(len(result.columns), 4)
+            self.assertIsInstance(result.to_df()["Date"][0], datetime.date)
+
+        with self.subTest("Year and Month"):
+            args = JoinTableArgs(input_tables=[TEST_STOCK_YEAR_TABLE, TEST_STOCK_MONTH_TABLE])
+            result: Table = await join_tables(args=args, context=PlanRunContext.get_dummy())
+            self.assertEqual(len(result.columns), 3)
+            self.assertIsInstance(result.to_df()["Month"][0], str)

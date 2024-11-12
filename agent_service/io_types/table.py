@@ -248,6 +248,160 @@ class Table(ComplexIOBase):
                 return col
         return None
 
+    @staticmethod
+    def _convert_to_start_date(
+        df: pd.DataFrame, time_column: Any, current_type: TableColumnType
+    ) -> pd.DataFrame:
+        """Convert the time column to the start date of each period for uniformity."""
+        if current_type == TableColumnType.YEAR:
+            df[time_column] = pd.to_datetime(df[time_column].astype(str) + "-01-01")
+
+        elif current_type == TableColumnType.QUARTER:
+            year = df[time_column].astype(str).str[:4]
+            quarter = df[time_column].astype(str).str[-1].astype(int)
+            df[time_column] = pd.to_datetime(
+                year + "-" + ((quarter - 1) * 3 + 1).astype(str) + "-01"
+            )
+
+        elif current_type == TableColumnType.MONTH:
+            df[time_column] = pd.to_datetime(df[time_column].astype(str) + "-01")
+
+        return df
+
+    @staticmethod
+    def _resample_with_group_by(
+        df: pd.DataFrame, time_col: Any, group_col: Any, resample_val: str = "D"
+    ) -> pd.DataFrame:
+        expanded_dfs = []
+        # Step 2: Group by the stock column
+        for _, stock_df in df.groupby(group_col):
+            # Set the time column as the index to make it easier to resample
+            stock_df = stock_df.set_index(time_col)
+
+            # Step 3: resample for each stock
+            resampled_df = stock_df.resample(resample_val).ffill()
+
+            # Step 4: Reset index so that time is a column again
+            resampled_df = resampled_df.reset_index()
+
+            # Add the expanded stock data to our list
+            expanded_dfs.append(resampled_df)
+
+        # Concatenate all expanded dataframes back into a single DataFrame
+        df = pd.concat(expanded_dfs, ignore_index=True)
+        return df
+
+    @staticmethod
+    def _expand_to_daily_with_ffill(
+        df: pd.DataFrame,
+        time_column: Any,
+        current_type: TableColumnType,
+        stock_column: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """Expands the time column to daily frequency with forward-fill."""
+        df = Table._convert_to_start_date(df, time_column, current_type)
+
+        if not stock_column:
+            df = df.set_index(time_column)
+            full_date_range = pd.date_range(start=df.index.min(), end=df.index.max(), freq="D")
+            df = df.reindex(full_date_range).ffill().reset_index()
+            df = df.rename(columns={"index": time_column})
+        else:
+            df = Table._resample_with_group_by(
+                df, time_col=time_column, group_col=stock_column, resample_val="D"
+            )
+
+        return df
+
+    @staticmethod
+    def _aggregate_to_target_granularity(
+        df: pd.DataFrame,
+        time_column: Any,
+        target_type: TableColumnType,
+        stock_column: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """Aggregate a daily DataFrame back to the specified target granularity."""
+        df[time_column] = pd.to_datetime(df[time_column])  # Ensure the column is in datetime format
+
+        if target_type == TableColumnType.MONTH:
+            # Resample to monthly, taking the last available value for each month
+            if stock_column:
+                df = Table._resample_with_group_by(
+                    df, time_col=time_column, group_col=stock_column, resample_val="M"
+                )
+            else:
+                df = df.set_index(time_column).resample("M").ffill().reset_index()
+            df[time_column] = df[time_column].dt.strftime("%Y-%m")
+
+        elif target_type == TableColumnType.QUARTER:
+            # Resample to quarterly, taking the last available value for each quarter
+            if stock_column:
+                df = Table._resample_with_group_by(
+                    df, time_col=time_column, group_col=stock_column, resample_val="Q"
+                )
+            else:
+                df = df.set_index(time_column).resample("Q").ffill().reset_index()
+            df[time_column] = (
+                df[time_column].dt.to_period("Q").dt.strftime("%YQ%q")
+            )  # Format to e.g., '2024Q1'
+
+        elif target_type == TableColumnType.YEAR:
+            # Resample to yearly, taking the last available value for each year
+            if stock_column:
+                df = Table._resample_with_group_by(
+                    df, time_col=time_column, group_col=stock_column, resample_val="Y"
+                )
+            else:
+                df = df.set_index(time_column).resample("Y").ffill().reset_index()
+            df[time_column] = df[time_column].dt.year  # Keep only the year
+            df[time_column] = df[time_column].astype(str)
+
+        df = df.rename(columns={time_column: target_type.title()})
+        return df
+
+    def convert_table_to_time_granularity(self, target_type: TableColumnType) -> "Table":
+        if not TableColumnType.is_date_type(target_type):
+            return self
+        date_col = self.get_date_column()
+        stock_col_name = None
+        stock_col = self.get_stock_column()
+        if not date_col or date_col.metadata.col_type == target_type:
+            return self
+        if stock_col:
+            stock_col_name = str(stock_col.metadata.label)
+
+        current_type = date_col.metadata.col_type
+        time_column = date_col.metadata.label
+
+        # First, convert to dates
+        df = self.to_df()
+
+        df = self._expand_to_daily_with_ffill(
+            df, time_column=time_column, current_type=current_type, stock_column=stock_col_name
+        )
+        df = self._aggregate_to_target_granularity(
+            df, time_column=time_column, target_type=target_type, stock_column=stock_col_name
+        )
+
+        date_col.metadata.label = target_type.title()
+        date_col.metadata.col_type = target_type
+        new_table = self.from_df_and_cols(columns=[col.metadata for col in self.columns], data=df)
+        if isinstance(self, StockTable):
+            return StockTable(
+                history=deepcopy(self.history),
+                columns=new_table.columns,
+                prefer_graph_type=self.prefer_graph_type,
+                should_subsample_large_table=self.should_subsample_large_table,
+                table_was_reduced=self.table_was_reduced,
+            )
+        return Table(
+            history=deepcopy(self.history),
+            columns=new_table.columns,
+            prefer_graph_type=self.prefer_graph_type,
+            should_subsample_large_table=self.should_subsample_large_table,
+            table_was_reduced=self.table_was_reduced,
+        )
+
     def get_score_column(self) -> Optional[TableColumn]:
         return self.get_first_col_of_type(TableColumnType.SCORE)
 
@@ -417,6 +571,7 @@ class Table(ComplexIOBase):
         # other. Create a table from fixed_cols so that we can easily convert to
         # a row-based schema.
         fixed_table = Table(columns=final_cols)
+        fixed_table.dedup_columns()
         all_gbi_ids = {
             stock.gbi_id
             for col in fixed_table.columns
@@ -433,6 +588,16 @@ class Table(ComplexIOBase):
         df = df.replace({np.nan: None})
         rows = df.values.tolist()
 
+        if rows and len(output_cols) > len(rows[0]):
+            # Dedup here just like we dedped the table itself with dedup_columns
+            final_output_cols = []
+            output_cols_set = set()
+            for out_col in output_cols:
+                if out_col in output_cols_set:
+                    continue
+                output_cols_set.add(out_col)
+                final_output_cols.append(out_col)
+            output_cols = final_output_cols
         return TableOutput(title=title, columns=output_cols, rows=rows, citations=table_citations)
 
     def delete_data_before_start_date(self, start_date: datetime.date) -> None:
@@ -525,6 +690,19 @@ class TableOutputColumn(BaseModel):
     is_highlighted: bool = False
     # Refers back to citations in the base TableOutput object.
     citation_refs: List[CitationID] = []
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, TableOutputColumn):
+            return False
+        return (
+            self.name == other.name
+            and self.col_type == other.col_type
+            and self.unit == other.unit
+            and self.citation_refs == other.citation_refs
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.name, self.col_type, self.unit, tuple(self.citation_refs)))
 
 
 # We need to redefine and reorder PrimitiveType to correctly parse
