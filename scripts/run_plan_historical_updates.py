@@ -12,21 +12,9 @@
 #
 ######################################################################
 
-import datetime
-
-from agent_service.utils.date_utils import (
-    MockDate,
-    enable_mock_time,
-    get_now_utc,
-    increment_mock_time,
-    set_mock_time,
-)
-
-# override today() to use our mocked current time
-datetime.date = MockDate  # type:ignore
-
 import argparse
 import asyncio
+import datetime
 import json
 import logging
 import os
@@ -45,20 +33,28 @@ from agent_service.io_type_utils import (
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockText
-from agent_service.planner.executor import (  # TODO creae another script to create a public agent using private code; , create_execution_plan,
-    run_execution_plan,
-)
+from agent_service.planner.executor import run_execution_plan
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.tools.output import OutputArgs, prepare_output
 from agent_service.types import PlanRunContext
+from agent_service.utils.date_utils import (
+    enable_mock_time,
+    get_now_utc,
+    increment_mock_time,
+    set_mock_time,
+)
 from agent_service.utils.logs import init_stdout_logging
-from agent_service.utils.postgres import Postgres
+from agent_service.utils.postgres import Postgres, get_psql
+
+# override today() to use our mocked current time
+# enable_mock_time()
+
 
 logger = logging.getLogger(__name__)
 
 
 def get_plan_runs(
-    agent: str, plan_id: str, start_date: datetime.date, end_date: datetime.date
+    db: Postgres, agent: str, plan_id: str, start_date: datetime.date, end_date: datetime.date
 ) -> List[Dict[str, Any]]:
 
     # check the create and update times for the plan id
@@ -79,7 +75,6 @@ def get_plan_runs(
     ORDER BY created_at asc
     """
 
-    db = Postgres()
     params = {
         "agent": agent,
         "plan_id": plan_id,
@@ -90,7 +85,7 @@ def get_plan_runs(
     return rows
 
 
-def delete_plan_run(agent_id: str, plan_run_id: str) -> None:
+def delete_plan_run(db: Postgres, agent_id: str, plan_run_id: str) -> None:
     sql1 = """
         DELETE FROM agent.plan_runs
         WHERE agent_id = %(agent_id)s AND plan_run_id = %(plan_run_id)s
@@ -117,7 +112,6 @@ def delete_plan_run(agent_id: str, plan_run_id: str) -> None:
         AND is_user_message = FALSE
     """
 
-    db = Postgres()
     db.generic_write(sql1, {"agent_id": agent_id, "plan_run_id": plan_run_id})
     db.generic_write(sql2, {"agent_id": agent_id, "plan_run_id": plan_run_id})
     db.generic_write(sql3, {"agent_id": agent_id, "plan_run_id": plan_run_id})
@@ -162,12 +156,28 @@ def parse_args() -> argparse.Namespace:
 
 
 async def main() -> None:
+    os.environ["FORCE_LOGGING"] = "1"  # enable clickhouse logs
     args = parse_args()
-    datetime.date.today()
 
     end_date = args.end_date
     start_date = args.start_date
 
+    await run_plan_historical_updates(
+        agent_id=args.agent,
+        start_date=args.start_date,
+        end_date=args.end_date,
+        days_increment=1,
+        skip_commit=False,
+    )
+
+
+async def run_plan_historical_updates(
+    agent_id: str,
+    skip_commit: bool,
+    start_date: Optional[datetime.date] = None,
+    end_date: Optional[datetime.date] = None,
+    days_increment: int = 1,
+) -> None:
     if not start_date:
         start_date = datetime.date.today()
 
@@ -182,20 +192,22 @@ async def main() -> None:
     set_mock_time(start_time)
     enable_mock_time()
 
-    time_increment = datetime.timedelta(days=1)
+    time_increment = datetime.timedelta(days=days_increment)
 
-    db = Postgres()
-    agent_infos = db.get_live_agents_info(agent_ids=[args.agent])
+    db = get_psql(skip_commit=skip_commit)
+    agent_infos = db.get_live_agents_info(agent_ids=[agent_id])
     agent_info = agent_infos[0]
     plan = ExecutionPlan(**agent_info["plan"])
     user_id = agent_info["user_id"]
 
-    chat_contexts = db.get_chat_contexts(agent_ids=[args.agent])
+    chat_contexts = db.get_chat_contexts(agent_ids=[agent_id])
     # we will assume all of the chat context is valid for all runs
-    chat_context = chat_contexts[args.agent]
+    chat_context = chat_contexts[agent_id]
 
     # cleanup old runs for same time period first
-    plan_runs = get_plan_runs(agent_info["agent_id"], agent_info["plan_id"], start_date, end_date)
+    plan_runs = get_plan_runs(
+        db, agent_info["agent_id"], agent_info["plan_id"], start_date, end_date
+    )
     print(
         "found",
         len(plan_runs),
@@ -206,10 +218,16 @@ async def main() -> None:
     )
     for r in plan_runs:
         print("deleting:", r)
-        delete_plan_run(agent_id=agent_info["agent_id"], plan_run_id=r["plan_run_id"])
+        delete_plan_run(db, agent_id=agent_info["agent_id"], plan_run_id=r["plan_run_id"])
 
     print("start/end", start_date, end_date)
     current_date = start_date
+
+    plan_id = agent_info["plan_id"]
+    print("==================================")
+    print(f"about to run {plan_id=}:", plan)
+    print("==================================")
+
     while current_date <= end_date:
         new_plan_run_id = str(uuid.uuid4())
         print("==================================")
@@ -224,7 +242,8 @@ async def main() -> None:
             plan_run_id=new_plan_run_id,
             chat=chat_context,
             run_tasks_without_prefect=True,
-            as_of_date=current_date,
+            as_of_date=get_now_utc(),
+            skip_db_commit=skip_commit,
         )
 
         print("about to run context:", context)
@@ -268,8 +287,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    os.environ["FORCE_LOGGING"] = "1"  # enable clickhouse logs
-
     s = time.time()
 
     if sys.platform == "win32":

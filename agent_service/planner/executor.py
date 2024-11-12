@@ -796,6 +796,7 @@ async def create_execution_plan(
     do_chat: bool = True,
     chat_context: Optional[ChatContext] = None,
     use_sample_plans: bool = True,
+    plan_run_id: Optional[str] = None,
 ) -> Optional[ExecutionPlan]:
     db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
     if action != FollowupAction.CREATE:
@@ -859,7 +860,9 @@ async def create_execution_plan(
         )
         raise RuntimeError("Failed to create execution plan!")
 
-    plan_run_id = str(uuid4())
+    if not plan_run_id:
+        plan_run_id = str(uuid4())
+
     ctx = PlanRunContext(
         agent_id=agent_id,
         plan_id=plan_id,
@@ -1552,6 +1555,7 @@ async def create_execution_plan_local(
     chat_context: Optional[ChatContext] = None,
     do_chat: bool = False,
     use_sample_plans: bool = True,
+    plan_run_id: Optional[str] = None,
 ) -> Optional[ExecutionPlan]:
     return await create_execution_plan(
         agent_id=agent_id,
@@ -1566,4 +1570,5 @@ async def create_execution_plan_local(
         chat_context=chat_context,
         do_chat=do_chat,
         use_sample_plans=use_sample_plans,
+        plan_run_id=plan_run_id,
     )

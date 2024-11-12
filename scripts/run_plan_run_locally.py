@@ -1,24 +1,12 @@
 # flake8: noqa
-import datetime
-
-from agent_service.utils.date_utils import (
-    MockDate,
-    enable_mock_time,
-    get_now_utc,
-    increment_mock_time,
-    set_mock_time,
-)
-
-# this must be monkeypatched before most of our imports
-# override today() to use our mocked current time
-datetime.date = MockDate  # type:ignore
-
 import argparse
 import asyncio
+import datetime
 import logging
 import sys
-from typing import Any, Dict, List, Tuple
-from unittest.mock import AsyncMock, patch
+from typing import Any, Dict, List, Optional, Tuple, Union
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 from gbi_common_py_utils.utils.clickhouse_base import ClickhouseBase
 
@@ -27,8 +15,17 @@ from agent_service.io_types import *  # noqa
 from agent_service.planner.executor import run_execution_plan_local
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.date_utils import (
+    MockDate,
+    disable_mock_time,
+    enable_mock_time,
+    get_now_utc,
+    increment_mock_time,
+    set_mock_time,
+)
 from agent_service.utils.logs import init_stdout_logging
-from agent_service.utils.postgres import Postgres
+from agent_service.utils.postgres import Postgres, get_psql
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +90,42 @@ def get_plan_context_postgres(plan_run_id: str, env: str) -> Tuple[ExecutionPlan
     return plan, context
 
 
+def fetch_task_outputs(plan_run_id: str, task_ids: List[str], env: str) -> Dict[str, IOType]:
+    res = fetch_task_outputs_from_clickhouse(plan_run_id=plan_run_id, task_ids=task_ids, env=env)
+
+    res2 = fetch_task_outputs_from_postgres(plan_run_id=plan_run_id, task_ids=task_ids, env=env)
+
+    for k, v in res2.items():
+        if v:
+            res[k] = v
+    return res
+
+
+def fetch_task_outputs_from_postgres(
+    plan_run_id: str, task_ids: List[str], env: str
+) -> Dict[str, IOType]:
+    """
+    Returns a mapping from task ID to its output.
+    """
+    db = Postgres(environment=env)
+    sql = """
+    SELECT output, task_id::TEXT
+    FROM agent.task_run_info
+    WHERE plan_run_id = %(plan_run_id)s
+    AND task_id = ANY(%(task_ids)s )
+    """
+    rows = db.generic_read(sql, params={"plan_run_id": plan_run_id, "task_ids": task_ids})
+    output = {}
+
+    for row in rows:
+        if row["output"]:
+            output[row["task_id"]] = load_io_type(row["output"])
+        else:
+            output[row["task_id"]] = None
+
+    return output
+
+
 def fetch_task_outputs_from_clickhouse(
     plan_run_id: str, task_ids: List[str], env: str
 ) -> Dict[str, IOType]:
@@ -110,7 +143,10 @@ def fetch_task_outputs_from_clickhouse(
     output = {}
 
     for row in rows:
-        output[row["task_id"]] = load_io_type(row["output"])
+        if row["output"]:
+            output[row["task_id"]] = load_io_type(row["output"])
+        else:
+            output[row["task_id"]] = None
 
     return output
 
@@ -137,67 +173,109 @@ def fetch_plan_and_context_from_clickhouse(
     )
 
 
+def fetch_plan_and_context(plan_run_id: str, env: str) -> Tuple[ExecutionPlan, PlanRunContext]:
+    try:
+        plan, context = fetch_plan_and_context_from_clickhouse(plan_run_id=plan_run_id, env=env)
+    except Exception as e:
+        logger.warning(f"falling back to postgres for plan/context retrieval: {repr(e)}")
+        plan, context = get_plan_context_postgres(plan_run_id=plan_run_id, env=env)
+
+    return plan, context
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--plan-run-id", type=str, required=True)
     parser.add_argument("-t", "--start-with-task-id", type=str)
     parser.add_argument("-e", "--env", type=str, default="DEV")
+    parser.add_argument("-d", "--as-of-date", type=str, default="")
+    parser.add_argument(
+        "-s",
+        "--scheduled-as-automation",
+        nargs="?",
+        type=bool,
+        choices=[True, False],
+        const=True,
+        default=False,
+    )
     return parser.parse_args()
 
 
-async def main() -> IOType:
-    # comment this out if you want to run the plan_run_id but for today()
-    # instead of the same day it was originally tun
-    enable_mock_time()
-    args = parse_args()
-    init_stdout_logging()
-    try:
-        plan, context = fetch_plan_and_context_from_clickhouse(
-            plan_run_id=args.plan_run_id, env=args.env
-        )
-    except Exception as e:
-        logger.warning(f"falling back to postgres for plan/context retrieval: {repr(e)}")
-        plan, context = get_plan_context_postgres(plan_run_id=args.plan_run_id, env=args.env)
+async def run_plan_run_id_task_id(
+    plan_run_id: str,
+    start_with_task_id: Optional[str] = None,
+    run_as_if_scheduled_by_automation: bool = False,
+    run_as_if_date: Union[None, str, datetime.date] = None,
+    env: str = "DEV",
+) -> IOType:
+    plan, context = fetch_plan_and_context(plan_run_id=plan_run_id, env=env)
 
     context.run_tasks_without_prefect = True
     context.skip_db_commit = True
 
+    original_run_date = None
     print("==================================")
     if context.as_of_date:
-        set_mock_time(context.as_of_date)
-        print(f"overriding current time to: {context.as_of_date=}")
+        original_run_date = context.as_of_date
     else:
-        plan_run_info = get_plan_run_info(plan_run_id=args.plan_run_id, env=args.env)
-        last_update = plan_run_info["last_update"]
-        context.as_of_date = last_update
-        set_mock_time(last_update)
-        print(f"overriding current time to: {last_update=}")
-    print("==================================")
-
-    # move time slightly forward
-    increment_mock_time()
+        plan_run_info = get_plan_run_info(plan_run_id=plan_run_id, env=env)
+        print("plan_run_info", plan_run_info)
+        last_update = plan_run_info["last_updated"]
+        original_run_date = last_update
 
     # Fill in the variables dict with things already computed
     override_output_dict = None
-    if args.start_with_task_id:
+    if start_with_task_id:
         task_ids_to_lookup = []
         override_output_dict = {}
         var_name_to_task_id = {}
         for step in plan.nodes:
-            if step.tool_task_id == args.start_with_task_id:
+            if step.tool_task_id == start_with_task_id:
                 break
             task_ids_to_lookup.append(step.tool_task_id)
             var_name_to_task_id[step.output_variable_name] = step.tool_task_id
 
-        task_id_output_map = fetch_task_outputs_from_clickhouse(
-            plan_run_id=args.plan_run_id, task_ids=task_ids_to_lookup, env=args.env
+        task_id_output_map = fetch_task_outputs(
+            plan_run_id=plan_run_id, task_ids=task_ids_to_lookup, env=env
         )
         for task_id, output in task_id_output_map.items():
             override_output_dict[task_id] = output
 
+    print("==================================")
+    if "orig" in str(run_as_if_date).lower():
+        # use the original run date
+        if original_run_date:
+            context.as_of_date = original_run_date
+            enable_mock_time()
+            set_mock_time(original_run_date)
+            print(f"overriding current time to: {original_run_date=}")
+            # move time slightly forward
+            increment_mock_time()
+    elif isinstance(run_as_if_date, datetime.date):
+        start_time = datetime.datetime.combine(run_as_if_date, datetime.time(hour=7, minute=35))
+        context.as_of_date = start_time
+        enable_mock_time()
+        set_mock_time(start_time)
+        print(f"overriding current time to: {start_time=}")
+        # move time slightly forward
+        increment_mock_time()
+    else:
+        # run as today
+        print(f"running as today instead of {original_run_date=}")
+        context.as_of_date = None
+        disable_mock_time()
+    print("==================================")
+
+    # if you want to test update mode
+    if run_as_if_scheduled_by_automation:
+        print(f"simulating run by automation {run_as_if_scheduled_by_automation=}")
+
+    new_plan_run_id = str(uuid4())
+
+    print(f"Rerunning {plan_run_id=} as {new_plan_run_id=}")
+    context.plan_run_id = new_plan_run_id
+
     with (
-        patch(target="agent_service.planner.executor.get_psql"),
-        patch(target="agent_service.planner.executor.AsyncDB") as adb,
         patch(target="agent_service.planner.executor.check_cancelled") as cc,
         patch(target="agent_service.planner.executor.publish_agent_execution_plan"),  # noqa
         patch(target="agent_service.planner.executor.publish_agent_execution_status"),  # noqa
@@ -207,15 +285,38 @@ async def main() -> IOType:
         patch(target="agent_service.planner.executor.send_agent_emails"),  # noqa
         patch(target="agent_service.planner.executor.send_chat_message"),  # noqa
     ):
-
         cc.return_value = False
-        adb().set_plan_run_metadata = AsyncMock()
-        adb().update_plan_run = AsyncMock()
-        adb().update_task_statuses = AsyncMock()
+        db = get_psql(skip_commit=context.skip_db_commit)
+        db.get_plan_run = MagicMock()  # type: ignore
+        db.get_plan_run.return_value = None
+
         result, _ = await run_execution_plan_local(
-            plan=plan, context=context, override_task_output_lookup=override_output_dict
+            plan=plan,
+            context=context,
+            override_task_output_lookup=override_output_dict,
+            scheduled_by_automation=run_as_if_scheduled_by_automation,
         )
     return result
+
+
+async def main() -> IOType:
+    args = parse_args()
+    init_stdout_logging()
+
+    as_of_date = args.as_of_date
+    if as_of_date:
+        try:
+            as_of_date = datetime.date.fromisoformat(as_of_date)
+        except Exception:
+            pass
+
+    return await run_plan_run_id_task_id(
+        plan_run_id=args.plan_run_id,
+        start_with_task_id=args.start_with_task_id,
+        run_as_if_scheduled_by_automation=args.scheduled_as_automation,
+        run_as_if_date=as_of_date,
+        env=args.env,
+    )
 
 
 if __name__ == "__main__":
