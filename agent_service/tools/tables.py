@@ -592,16 +592,11 @@ async def transform_tables_helper(
             break
 
         try:
-            table = Table.from_df_and_cols(
+            Table.from_df_and_cols(
                 columns=new_col_schema, data=output_df, stocks_are_hashable_objs=True
             )
         except Exception:
             error = traceback.format_exc()
-            had_error = True
-            break
-
-        if table.get_num_rows() == 0:
-            error = "Table transformation resulted in an empty table"
             had_error = True
             break
 
