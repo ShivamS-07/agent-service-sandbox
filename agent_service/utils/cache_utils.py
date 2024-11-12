@@ -35,7 +35,7 @@ class RedisCacheBackend(CacheBackend):
         namespace: Any,
         serialize_func: Any,
         deserialize_func: Any,
-        max_connections: int = 4,
+        max_connections: Optional[int] = None,
     ) -> None:
         # TODO use async redis client
         self.client = RedisCache(

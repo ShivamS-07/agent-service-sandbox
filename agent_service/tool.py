@@ -546,7 +546,6 @@ def tool(
                                 namespace="agent-tool-cache",
                                 serialize_func=dump_io_type,
                                 deserialize_func=load_io_type,
-                                max_connections=2,
                             )
                         )
                         key = cache_key_fn(tool_name, args, context)
