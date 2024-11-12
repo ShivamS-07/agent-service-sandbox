@@ -57,7 +57,7 @@ proto-cube-flat-proto-v1 = {version = "==1.2.0", index = "gbi"}
 gbi_common_py_utils = {version='==1.0.121', index="gbi"}
 boosted-data-access-layer = {version='==0.0.0+c8975f441c8e3804afc822c9bb8a19224af9c15b', index="gbi"}
 nlp_service_proto_v1 = {version = "==1.140.0", index = "gbi"}
-stock-universe-service-proto-v1 = {version = "==0.50.0", index = "gbi"}
+stock-universe-service-proto-v1 = {version = "==0.52.0", index = "gbi"}
 pa-portfolio-service-proto-v1 = {version = "==1.315.0", index = "gbi"}
 discover_service_proto_v1 = {version = "==0.19.0", index = "gbi"}
 feature-service-proto-v1 = {version = "==1.54.0", index = "gbi"}

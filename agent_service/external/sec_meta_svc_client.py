@@ -15,10 +15,10 @@ from stock_universe_service_proto_v1.security_metadata_service_grpc import (
     SecurityMetadataServiceStub,
 )
 from stock_universe_service_proto_v1.security_metadata_service_pb2 import (
+    GetAllEtfSectorsRequest,
+    GetAllEtfSectorsResponse,
     GetEtfHoldingsForDateRequest,
     GetEtfHoldingsForDateResponse,
-    GetRolledUpSecuritySectorsRequest,
-    GetRolledUpSecuritySectorsResponse,
 )
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
@@ -79,15 +79,12 @@ async def get_etf_holdings(etf_id: int, user_id: str) -> GetEtfHoldingsForDateRe
 
 @grpc_retry
 @async_perf_logger
-async def get_rolled_up_security_sectors(
-    gbi_ids: List[int], user_id: str
-) -> GetRolledUpSecuritySectorsResponse:
+async def get_all_etf_sectors(gbi_ids: List[int], user_id: str) -> GetAllEtfSectorsResponse:
     with _get_service_stub() as stub:
-        req = GetRolledUpSecuritySectorsRequest(
+        req = GetAllEtfSectorsRequest(
             gbi_ids=gbi_ids,
-            flatten_fund_of_funds=True,
         )
-        resp: GetRolledUpSecuritySectorsResponse = await stub.GetRolledUpSecuritySectors(
+        resp: GetAllEtfSectorsResponse = await stub.GetAllEtfSectors(
             req,
             metadata=get_default_grpc_metadata(user_id=user_id),
         )

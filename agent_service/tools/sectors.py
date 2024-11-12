@@ -373,21 +373,23 @@ async def gics_sector_industry_filter(
     etf_stock_ids = {etf["gbi_security_id"] for etf in etf_rows}
 
     if etf_stock_ids:
-        etf_sectors = await sec_meta_svc_client.get_rolled_up_security_sectors(
+        etf_sectors = await sec_meta_svc_client.get_all_etf_sectors(
             gbi_ids=list(etf_stock_ids),
             user_id=context.user_id,
         )
-        for security in etf_sectors.security_sectors:
-            matching_sector = next(
-                (
-                    sector
-                    for sector in security.sector_weights
-                    if sector.sector_id == int(sector_id_str[0:2])
-                ),
-                None,
-            )
-            if matching_sector and matching_sector.weight >= (args.etf_min_sector_threshold * 0.01):
-                included_gbi_ids.add(security.gbi_id)
+
+        for etf in etf_sectors.breakdowns:
+            sector_weight = 0.0
+            if len(sector_id_str) == 2:
+                sector_weight = etf.sectors[int(sector_id_str)]
+            elif len(sector_id_str) == 4:
+                sector_weight = etf.industry_groups[int(sector_id_str)]
+            elif len(sector_id_str) == 6:
+                sector_weight = etf.industries[int(sector_id_str)]
+            else:
+                sector_weight = etf.sub_industries[int(sector_id_str)]
+            if sector_weight >= (args.etf_min_sector_threshold * 0.01):
+                included_gbi_ids.add(etf.gbi_id)
 
     # Add a fallback here if sector ID is too specific?
     sector_filter_clause = "ms.gics = %(sector_id)s"
