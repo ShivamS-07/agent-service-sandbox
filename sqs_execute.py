@@ -8,6 +8,7 @@ import traceback
 
 from gbi_common_py_utils.utils.environment import DEV_TAG, PROD_TAG, get_environment_tag
 
+from agent_service.endpoints.models import Status
 from agent_service.planner.errors import AgentExecutionError
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.sqs_serve.message_handler import MessageHandler
@@ -37,8 +38,8 @@ def wait_if_needed(start_time: float) -> None:
         time.sleep(5)
 
 
-class NoOutputException(Exception):
-    pass
+class NoOutputException(AgentExecutionError):
+    result_status = Status.NO_RESULTS_FOUND
 
 
 async def main() -> None:
