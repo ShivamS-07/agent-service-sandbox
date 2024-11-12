@@ -2,7 +2,6 @@
 import datetime
 import logging
 from typing import Dict, List, Optional
-from uuid import uuid4
 
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.async_db import AsyncDB
@@ -17,7 +16,6 @@ logging.basicConfig(
 import asyncio
 import unittest
 
-from gpt_service_proto_v1.service_grpc import GPTServiceStub
 from grpclib.client import Channel
 
 from agent_service.agent_service_impl import AgentServiceImpl
@@ -71,10 +69,8 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
         cls.loop = get_loop()
         cls.pg = AsyncDB(pg=SkipCommitBoostedPG())
         cls.channel = Channel(host="gpt-service-2.boosted.ai", port=50051)
-        cls.gpt_service_stub = GPTServiceStub(cls.channel)
         cls.agent_service_impl = AgentServiceImpl(
             task_executor=DoNothingTaskExecutor(),
-            gpt_service_stub=cls.gpt_service_stub,
             async_db=cls.pg,
             clickhouse_db=Clickhouse(),
             slack_sender=SlackSender(channel="tommy-test"),

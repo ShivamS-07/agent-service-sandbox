@@ -1,6 +1,5 @@
 import unittest
 
-from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_types.stock import StockID
 from agent_service.tools.peers import GeneralPeersForStockInput, get_general_peers
 from agent_service.types import PlanRunContext
@@ -12,7 +11,6 @@ FORD = StockID(gbi_id=4579, isin="", symbol="F", company_name="Ford")
 @unittest.skip("The tool is disabled")
 class TestPeers(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        set_use_global_stub(False)
         self.context = PlanRunContext.get_dummy()
 
         # uncomment for easier debugging

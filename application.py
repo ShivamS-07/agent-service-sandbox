@@ -162,7 +162,6 @@ from agent_service.endpoints.models import (
     UserHasAccessResponse,
 )
 from agent_service.external.grpc_utils import create_jwt
-from agent_service.GPT.requests import _get_gpt_service_stub
 from agent_service.io_types.citations import CitationType, GetCitationDetailsResponse
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.agent_event_utils import send_welcome_email
@@ -232,7 +231,6 @@ async def lifespan(application: FastAPIExtended) -> AsyncGenerator:
 
     application.state.agent_service_impl = AgentServiceImpl(
         task_executor=PrefectTaskExecutor(),
-        gpt_service_stub=_get_gpt_service_stub()[0],
         async_db=async_db,
         clickhouse_db=Clickhouse(),
         slack_sender=SlackSender(channel=channel),

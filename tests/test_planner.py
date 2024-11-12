@@ -7,7 +7,6 @@ from unittest import IsolatedAsyncioTestCase, TestCase
 import pandas as pd
 
 from agent_service.endpoints.models import AgentInfo
-from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_type_utils import IOType
 from agent_service.io_types.graph import LineGraph
 from agent_service.io_types.table import Table
@@ -458,7 +457,6 @@ def get_test_registry() -> Type[ToolRegistry]:
 class TestPlans(IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        set_use_global_stub(False)
         warnings.filterwarnings(
             "ignore", category=ResourceWarning, message="unclosed.*<ssl.SSLSocket.*>"
         )

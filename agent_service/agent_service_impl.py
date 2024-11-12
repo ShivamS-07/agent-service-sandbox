@@ -27,7 +27,6 @@ from gbi_common_py_utils.utils.environment import (
     STAGING_TAG,
     get_environment_tag,
 )
-from gpt_service_proto_v1.service_grpc import GPTServiceStub
 from grpclib import GRPCError
 from grpclib import Status as GrpcStatus
 from stock_universe_service_proto_v1.custom_data_service_pb2 import (
@@ -275,7 +274,6 @@ class AgentServiceImpl:
     def __init__(
         self,
         task_executor: TaskExecutor,
-        gpt_service_stub: GPTServiceStub,
         async_db: AsyncDB,
         clickhouse_db: Clickhouse,
         slack_sender: SlackSender,
@@ -285,7 +283,6 @@ class AgentServiceImpl:
         self.pg = async_db
         self.ch = clickhouse_db
         self.task_executor = task_executor
-        self.gpt_service_stub = gpt_service_stub
         self.slack_sender = slack_sender
         self.base_url = base_url
         self.cache = cache
@@ -622,7 +619,6 @@ class AgentServiceImpl:
             agent_id=agent_id,
             chat_context=ChatContext(messages=[user_msg]),
             existing_names=existing_agents,
-            gpt_service_stub=self.gpt_service_stub,
             user_id=user_id,
         )
 
@@ -637,7 +633,7 @@ class AgentServiceImpl:
     @async_perf_logger
     async def _create_initial_response(self, user: User, agent_id: str, user_msg: Message) -> None:
         LOGGER.info("Generating initial response from GPT (first prompt)")
-        chatbot = Chatbot(agent_id, gpt_service_stub=self.gpt_service_stub)
+        chatbot = Chatbot(agent_id)
         chat_context = ChatContext(messages=[user_msg])
         action_decider = FirstActionDecider(agent_id=agent_id, skip_db_commit=True)
 
@@ -2151,7 +2147,6 @@ class AgentServiceImpl:
         prompt_str = await generate_template_from_plan(
             plan=plan,
             agent_id=agent_id,
-            gpt_service_stub=self.gpt_service_stub,
             db=self.pg,
         )
 

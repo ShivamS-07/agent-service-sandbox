@@ -1,8 +1,6 @@
 from datetime import date
 from typing import List, Optional
 
-from gpt_service_proto_v1.service_grpc import GPTServiceStub
-
 from agent_service.chatbot.prompts import AGENT_DESCRIPTION_PROMPT
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
@@ -35,7 +33,6 @@ async def generate_name_for_agent(
     chat_context: ChatContext,
     existing_names: List[str],
     model: str = DEFAULT_SMART_MODEL,
-    gpt_service_stub: Optional[GPTServiceStub] = None,
     user_id: Optional[str] = None,
 ) -> str:
     main_prompt = NAME_AGENT_MAIN_PROMPT.format(
@@ -43,6 +40,6 @@ async def generate_name_for_agent(
     )
     sys_prompt = NAME_AGENT_SYS_PROMPT.format(agent_description=AGENT_DESCRIPTION)
     context = chatbot_context(agent_id, user_id)
-    llm = GPT(context=context, model=model, gpt_service_stub=gpt_service_stub)
+    llm = GPT(context=context, model=model)
     result = await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=10)
     return result

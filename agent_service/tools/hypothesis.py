@@ -2,12 +2,10 @@
 
 import json
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple
-
-from gpt_service_proto_v1.service_grpc import GPTServiceStub
+from typing import Any, Dict, List, Tuple
 
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
-from agent_service.GPT.requests import GPT, _get_gpt_service_stub
+from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import HistoryEntry, Score
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import (
@@ -44,16 +42,13 @@ async def hypothesis_helper(
     hypothesis: str,
     stock_to_developments: Dict[StockID, List[StockNewsDevelopmentText]],
     context: PlanRunContext,
-    gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> List[Tuple[CompanyNewsTopicInfo, HypothesisNewsTopicInfo]]:
     stock_id_to_pipeline: Dict[StockID, HypothesisPipeline] = {}
     embedding: List[float] = None  # type: ignore
     hypothesis_breakdown: Dict[str, Any] = None  # type: ignore
 
     for stock_id in stock_to_developments.keys():
-        pipeline = HypothesisPipeline(
-            stock_id.gbi_id, hypothesis, gpt_service_stub=gpt_service_stub
-        )
+        pipeline = HypothesisPipeline(stock_id.gbi_id, hypothesis)
         if embedding is None or hypothesis_breakdown is None:
             await pipeline.initial_hypothesis_processing()  # only need to do it once
             embedding = pipeline.hypothesis.embedding
@@ -126,9 +121,7 @@ async def test_hypothesis_for_news_developments(
         stock_to_developments[development.stock_id].append(development)
 
     logger.info(f"Processing hypothesis {args.hypothesis} for {len(stock_to_developments)} stocks")
-    news_topic_pairs = await hypothesis_helper(
-        args.hypothesis, stock_to_developments, context, gpt_service_stub=_get_gpt_service_stub()[0]
-    )
+    news_topic_pairs = await hypothesis_helper(args.hypothesis, stock_to_developments, context)
 
     hypothesis_news_developments: List[StockHypothesisNewsDevelopmentText] = []
     for news_topic, hypothesis_news_topic in news_topic_pairs:
@@ -176,9 +169,7 @@ async def summarize_hypothesis_from_news_developments(
         raise EmptyInputError("Could not find any relevant news developments")
 
     # gbi_id doesn't matter, as long as it's valid
-    pipeline = HypothesisPipeline(
-        gbi_id=714, hypothesis_text=args.hypothesis, gpt_service_stub=_get_gpt_service_stub()[0]
-    )
+    pipeline = HypothesisPipeline(gbi_id=714, hypothesis_text=args.hypothesis)
     await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
 
     match_score, summary, ref_news_developments, _, _ = (
@@ -287,12 +278,9 @@ async def test_hypothesis_for_earnings_summaries(
     pipeline: HypothesisPipeline = None  # type: ignore
 
     outputs: List[StockHypothesisEarningsSummaryPointText] = []
-    gpt_service_stub = _get_gpt_service_stub()[0]
     for stock_id, earnings_summary_list in stock_to_summaries.items():
         if pipeline is None:
-            pipeline = HypothesisPipeline(
-                stock_id.gbi_id, args.hypothesis, gpt_service_stub=gpt_service_stub
-            )
+            pipeline = HypothesisPipeline(stock_id.gbi_id, args.hypothesis)
             await pipeline.initial_hypothesis_processing()
         else:
             new_hypothesis_obj = pipeline.create_hypothesis_info(stock_id.gbi_id, args.hypothesis)
@@ -350,9 +338,7 @@ async def summarize_hypothesis_from_earnings_summaries(
         raise ValueError("Could not find any relevant earnings summary points")
 
     # gbi_id doesn't matter, as long as it's valid
-    pipeline = HypothesisPipeline(
-        gbi_id=714, hypothesis_text=args.hypothesis, gpt_service_stub=_get_gpt_service_stub()[0]
-    )
+    pipeline = HypothesisPipeline(gbi_id=714, hypothesis_text=args.hypothesis)
     await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
 
     match_score, summary, _, ref_earnings_points, _ = (
@@ -516,12 +502,9 @@ async def test_hypothesis_for_custom_documents(
     pipeline: HypothesisPipeline = None  # type: ignore
 
     hypothesis_custom_documents: List[StockHypothesisCustomDocumentText] = []
-    gpt_service_stub = _get_gpt_service_stub()[0]
     for stock_id, custom_document_list in stock_to_custom_docs.items():
         if pipeline is None:
-            pipeline = HypothesisPipeline(
-                stock_id.gbi_id, args.hypothesis, gpt_service_stub=gpt_service_stub
-            )
+            pipeline = HypothesisPipeline(stock_id.gbi_id, args.hypothesis)
             await pipeline.initial_hypothesis_processing()  # only need to do it once
         else:
             new_hypothesis_obj = pipeline.create_hypothesis_info(stock_id.gbi_id, args.hypothesis)
@@ -591,9 +574,7 @@ async def summarize_hypothesis_from_custom_documents(
         raise ValueError("Could not find any relevant custom documents")
 
     # gbi_id doesn't matter, as long as it's valid
-    pipeline = HypothesisPipeline(
-        gbi_id=714, hypothesis_text=args.hypothesis, gpt_service_stub=_get_gpt_service_stub()[0]
-    )
+    pipeline = HypothesisPipeline(gbi_id=714, hypothesis_text=args.hypothesis)
     await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
 
     match_score, summary, _, _, ref_custom_documents = (

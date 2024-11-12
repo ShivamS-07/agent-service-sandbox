@@ -5,7 +5,6 @@ import logging
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
-from gpt_service_proto_v1.service_grpc import GPTServiceStub
 from pydantic.main import BaseModel
 
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
@@ -95,7 +94,6 @@ class OutputDiffer:
         context: PlanRunContext,
         custom_notifications: Optional[str],
         model: str = GPT4_O,
-        gpt_service_stub: Optional[GPTServiceStub] = None,
     ):
         self.context = context
         self.plan = plan
@@ -103,7 +101,7 @@ class OutputDiffer:
         gpt_context = create_gpt_context(
             GptJobType.AGENT_CHATBOT, self.context.agent_id, GptJobIdType.AGENT_ID
         )
-        self.llm = GPT(gpt_context, model, gpt_service_stub=gpt_service_stub)
+        self.llm = GPT(gpt_context, model)
 
     async def _compute_diff_for_texts(
         self, latest_output: Text, prev_output: Text, prev_run_time: datetime.datetime
