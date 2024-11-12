@@ -35,6 +35,7 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.tool_diff import get_prev_run_info
@@ -162,16 +163,20 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "Never pass a single stock."
         "\n Again, 'product_str' is a string representing the product or service the filtered companies provide. "
         "For example, 'electric vehicles' (Tesla), 'cloud computing' (Amazon), 'solar panels' (First Solar), "
-        " 'smartphones' (Apple), 'AI chips' (Nvidia), 'online retail' (Amazon), etc. "
+        "'smartphones' (Apple), 'AI chips' (Nvidia), 'online retail' (Amazon), etc. "
+        "Note that terms that simply contain the words `market` or `product` or `service`, but are not actually "
+        "real products or services (e.g `market share`, `product manager`) are must NOT be used as a product_str! "
         "If the product_str is NOT just a simple noun phrase of a few words, then you must not use this tool, "
         "you should use the filter stocks by profile tool! The product_str must not have any conjuctions such as "
         " `and` or `or` in it. If you have such a situation, you should use the profile filter tool. Never, ever "
         "leave out important information just to use this tool, use the profile filter tool which accepts complex "
         "input. Listen to me about this or you will be fired!"
-        "If the client does NOT mention a specific product/service/market but does mention a specific company and "
-        "is looking to compare with peers/competitors to that company, call the `get_core_company_product"
-        "tool and pass the result as product_str to this tool. You must only pass a product_str that either "
-        "is exactly what the client said, or which come from that helper tool."
+        "There are only two ways you can derive the product_str argument: either you must copy a relevant string"
+        "from the client that specifically indicates the product/service desired (this must be an exact string match, "
+        "not a rewriting), or you must use get_core_company_product tool. It is NEVER, EVER acceptable to infer "
+        "the core product yourself from a provided stock. Seriously, if you use a product_str that is not "
+        "either the output of the get_core_company_product tool or an exact string match to something the client has "
+        "said to you, you will be fired!"
         "Note that if the client does NOT mention a specific product/service and is NOT doing a competitive "
         "analysis, you will not use this tool, you will use the get_general_peers tool. This tool is only "
         "for when a specific product/market is mentioned by the client, or when a specific product/market must "
@@ -193,7 +198,7 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "if the product_str was cars, you should use the world stocks because of major Japanese manufacturers "
         "like Toyota, Honda, etc."
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.LLM_ANALYSIS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -209,6 +214,23 @@ async def filter_stocks_by_product_or_service(
 
     if len(args.stock_ids) == 0:
         raise EmptyInputError("Cannot filter stocks by product/service with empty stock list")
+
+    if (
+        args.must_include_stocks
+        and len(args.must_include_stocks) == 1
+        and context.chat
+        and args.product_str.lower() not in context.chat.get_gpt_input().lower()
+    ):
+        # the planner simply won't listen about not deriving its own product_str, so adding this work around
+        plan_str = (
+            get_psql(skip_commit=context.skip_db_commit)
+            .get_execution_plan_for_run(context.plan_run_id)
+            .get_formatted_plan(numbered=True)
+        )
+        if "get_core_company_product" not in plan_str:
+            args.product_str = await get_core_company_product(  # type:ignore
+                GetCoreCompanyProduct(stock_id=args.must_include_stocks[0]), context
+            )
 
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)
@@ -614,20 +636,22 @@ class GetCoreCompanyProduct(ToolArgs):
 @tool(
     description=(
         "This tool will provide the key product or service of a company for use in the "
-        "filter_stocks_by_product_or_service_filter tool. It must be used when the client "
+        "filter_stocks_by_product_or_service_filter tool. It must always be used when the client "
         "expresses interest in comparing a company with its competitors or peers but does not "
-        "mention a specific product/service/market of interest. You must never, ever use this "
-        "tool when the user wants competitors/peers but not a competitive analysis, use "
-        "either the get_general_peers tool (if they do not mention a product or market) or the "
+        "mention a specific product/service/market of interest (mentioning a stock does NOT count, "
+        "if only a stock is mentioned you MUST use this tool!"
+        "Do not use tool when the user wants competitors/peers but are not doing a full competitive"
+        "analysis, use either the get_general_peers tool (if they do not mention a product or market) or the "
         "product filter tool (if they do mention a product or market). "
-        "Important: You must never, ever use this tool if client specifically mentions a market, service "
-        "or product of interest. For example, if the user ask to 'Compare competitors of Google' you "
+        "Important: You must never, ever use this tool if client specifically directly mentions a market, "
+        "service or product of interest. For example, if the user ask to 'Compare competitors of Google' you "
         "would use this tool to choose a product/market to use for competitive anaylsis, but if the user "
         "asks you to `Compare Google with competitors in cloud computing` you would NOT use this tool, "
         "you would use the product filter tool with cloud computing as the product_str (don't forget to "
         "get a universe of stocks for the tool first!). "
         "This is extremely important: if you use this tool in cases where the client mentions a relevant "
-        "product/service/market for the comparison mentioned, you will be fired."
+        "product/service/market for the comparison mentioned, you will be fired. You will also be fired "
+        "if you fail to use this tool and instead make up an incorrect core product for a company!!! "
         "The return value is a string that can be passed as product_str to the product filter tool."
     ),
     category=ToolCategory.STOCK,

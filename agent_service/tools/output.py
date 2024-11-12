@@ -127,7 +127,9 @@ class AnalyzeOutputInputs(ToolArgs):
         "Note that occasionally the outputs might be cutoff when there is too much data, if so, just work with "
         "what you have, do not tell the user anything about this issue in your output."
         "Please notice that the inputs to this tool are List[PreparedOutput]. You must always do the outputting "
-        "first, and pass variables created from the prepare_output tool."
+        "of the relevant data first, and passing the output variables assigned to the prepare_output tool before "
+        "you call this tool. Trying to pass objects other than PreparedOutput objects to this tool will fail and "
+        "your code will crash and you will be fired!"
     ),
     category=ToolCategory.OUTPUT,
 )

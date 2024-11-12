@@ -553,6 +553,10 @@ If the user asks to be notified when an earnings call happens, the date range sh
 must always include a date range. If there is no clear indication of the date range from the client's
 messages, you should default to the upcoming earnings calls so the date range should be from today to
 today + 90 days.
+This tool only contains columns related to stock earnings date and times, it does NOT contain any other typical
+information about stocks (e.g. performance, sectors, market cap, etc.). If you need to do further manipulation
+of these stocks based on their statistics, you MUST extract the stock list and get additional data from the
+get_statistics tool or other relevant tools.
 """,
     category=ToolCategory.EARNINGS,
     tool_registry=ToolRegistry,

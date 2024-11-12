@@ -329,6 +329,12 @@ This tool can be used to filter both stocks and ETFs, only try to filter for ETF
 mentions ETFs or funds.
 For ETFs, an optional sector threshold can be passed in which specifies the amount of holdings
 for an ETF that should match to the specified sector.
+This tool filters to a particular sector, all of the output stocks will be in the sector. If the
+client is interested in filtering out a particular sector, first call this tool with the sector
+you want to filter out, and then use the diff_list tool, subtracting the original stock list from
+this new list. Listen carefully, you must not use this tool only and assume you are 'filtering out',
+you will do exactly the opposite of what the client wants, the plan will fail, and you will be
+fired!!!!
 """,
     category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,

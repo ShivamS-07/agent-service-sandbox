@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections import defaultdict
 from typing import Dict, List, Optional
 
@@ -30,6 +31,7 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.postgres import SyncBoostedPG, get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.string_utils import clean_to_json_if_needed
 from agent_service.utils.tool_diff import get_prev_run_info
 
 DELIMITER = "\n\n********************\n\n"
@@ -40,7 +42,8 @@ GET_PEER_GROUP_FOR_STOCK_MAIN_PROMPT = Prompt(
     "Provided is also some information about the stock "
     "that may be useful to supplement your knowledge "
     "of the stock:\n"
-    "{input_stock_info}",
+    "{input_stock_info}"
+    "\nNow output the peers with a json on each line:",
 )
 GET_PEER_GROUP_FOR_STOCK_SYS_PROMPT = Prompt(
     name="GET_PEER_GROUP_FOR_STOCK_SYS_PROMPT",
@@ -49,22 +52,18 @@ GET_PEER_GROUP_FOR_STOCK_SYS_PROMPT = Prompt(
     {chat_context}
     Your task is to identify a list of stocks that belong to peer groups for a given stock.
     A peer group refers to stocks that operate in a similar market, industry, or sector, including competitors.
-    Do not limit the amount of peers in the peer group, provide as many as possible.
-    You may also be provided with a category to help you focus the peer group.
-    The given stocks will each be presented on its own line, starting with a numerical stock identifier,
-    the name of the stock, and optionally, the focus category, all delineated with the separator {separator}.
-    Aggregate peer stocks by company and stock rather than individual products or divisions.\n
-    For the format of the output:
-    Return the given stock identifier and then the stock name, delineated by the separator {separator}.
-    Return the peer stocks line by line, starting with:
-    the Name of the Peer Stock
-    the ISIN of the stock if it is publicly traded, else return False
-    the Stock Symbol if it is publicly traded, else return False
-    a 2 to 3 sentence justification of why you have chosen them to belong to the peer group
-    all on the same line, all delineated with the separator {separator}.
-    Output only plain text.
-    Do not number the list.
-    Do not output any additional justification or explanation.
+    Do not limit the number of peers in the peer group, provide as many as possible, starting with the most
+    important.
+    The given stock will each be presented on its own line, starting with a numerical stock identifier,
+    the name of the stock, all delineated with the separator {separator}.
+    Each peer you identify will be a json on one line of your output, each json will contain the following
+    four keys with string values:
+    company_name: the full name of the peer stock
+    isin: the ISIN of the stock. If it is not publicly traded, the isin key should be the string None
+    symbol: the stock symbol/ticker. If it is not publicly traded, the symbol key should be the string None
+    justification: a 2 to 3 sentence justification of why you have included them in the peer group
+    Other than the lines with jsons (the entire json for each stock must be on a single line), do not output
+    anything else
     """,
 )
 VALIDATE_INPUT_STOCK_MAIN_PROMPT = Prompt(
@@ -452,27 +451,23 @@ async def get_peer_group_for_stock(
 
     initial_peer_group = []
     initial_peers = initial_peers_gpt_resp.split("\n")
-    # first line should be input stock: gbi_id, company name
-    input_stock = initial_peers[0].split(SEPARATOR)
-    if int(input_stock[0]) == stock.gbi_id:
-        for initial_peer in initial_peers[1:]:
-            # check line is not empty
-            if initial_peer:
-                try:
-                    # company name, ISIN, stock symbol, justification
-                    peer_lst = initial_peer.split(SEPARATOR)
-                    # filter out non-public companies
-                    if peer_lst[1].lower() != "false" or peer_lst[2].lower() != "false":
-                        peer_obj = {
-                            "company_name": peer_lst[0],
-                            "isin": peer_lst[1],
-                            "symbol": peer_lst[2],
-                            "justification": peer_lst[3],
-                        }
-                        initial_peer_group.append(peer_obj)
-                except IndexError:
-                    logger.warning(f"Peers parsing failed for line: {initial_peer}, skipping")
-                    continue
+    for initial_peer in initial_peers:
+        # check line is not empty
+        if initial_peer and "```" not in initial_peer:
+            try:
+                # company name, ISIN, stock symbol, justification
+                peer_obj = json.loads(clean_to_json_if_needed(initial_peer))
+                # filter out non-public companies
+                if (
+                    peer_obj["company_name"]
+                    and peer_obj["isin"] != "None"
+                    and peer_obj["symbol"] != "None"
+                    and peer_obj["justification"]
+                ):
+                    initial_peer_group.append(peer_obj)
+            except IndexError:
+                logger.warning(f"Peers parsing failed for line: {initial_peer}, skipping")
+                continue
 
     # Dict[gbi_id, StockID]
     peer_stock_ids: Dict[int, StockID] = {}
@@ -659,7 +654,7 @@ async def per_stock_get_general_peers(
             )
         )
     return StockGroups(
-        header="Target Stocks", stock_list_header="Competitors", stock_groups=stock_groups
+        header="Target Stocks", stock_list_header="Peer Stocks", stock_groups=stock_groups
     )
 
 

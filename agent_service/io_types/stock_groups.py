@@ -54,12 +54,6 @@ class StockGroups(ComplexIOBase):
 
         columns.append(name_column)
 
-        extra_columns = object_histories_to_columns(
-            objects=cast(List[ComplexIOBase], self.stock_groups)
-        )
-
-        columns.extend(extra_columns)
-
         stock_column_texts = []
         for stock_group in self.stock_groups:
             stock_objs = []
@@ -82,6 +76,12 @@ class StockGroups(ComplexIOBase):
             data=stock_column_texts,  # type:ignore
         )
         columns.append(stocks_column)
+
+        extra_columns = object_histories_to_columns(
+            objects=cast(List[ComplexIOBase], self.stock_groups)
+        )
+
+        columns.extend(extra_columns)
 
         output = [PreparedOutput(val=Table(columns=columns), title=main_title or self.header)]
 

@@ -1088,7 +1088,11 @@ async def per_stock_group_summarize_texts(
         )
         output.append(group)
 
-    return StockGroups(header=args.stock_groups.header, stock_groups=output)
+    return StockGroups(
+        header=args.stock_groups.header,
+        stock_list_header=args.stock_groups.stock_list_header,
+        stock_groups=output,
+    )
 
 
 class CompareTextInput(ToolArgs):
