@@ -14,6 +14,7 @@ from agent_service.io_types.stock import StockID
 from agent_service.tools.watchlist import (
     GetUserWatchlistStocksInput,
     get_user_watchlist_stocks,
+    watchlist_match_by_gpt,
 )
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
@@ -61,6 +62,43 @@ class TestWatchlistTools(IsolatedAsyncioTestCase):
                 ]
             ),
         )
+
+    async def test_watchlist_match_by_gpt(self):
+        # Test 1 - Validate it matches to SOME watchlist
+        watchlist_name = "Luxury & Super Luxury Watchlist"
+        watchlists_name_to_id = {
+            "LUX": "some_id",
+            "Global Portfolio": "some_id",
+            "Small Cap Portfolio": "some_id",
+            "Random": "some_id",
+            "Default Portfolio": "some_id",
+        }
+
+        result_name, _ = await watchlist_match_by_gpt(
+            context=self.context,
+            watchlist_name=watchlist_name,
+            watchlists_name_to_id=watchlists_name_to_id,
+        )
+
+        self.assertIn(result_name, [name for name in watchlists_name_to_id.keys()])
+
+        # Test 2 - Validate it matches to SOME watchlist
+        watchlist_name = "GCS"
+        watchlists_name_to_id = {
+            "GSC": "some_id",
+            "Global Portfolio": "some_id",
+            "Small Cap Portfolio": "some_id",
+            "Random": "some_id",
+            "Default Portfolio": "some_id",
+        }
+
+        result_name, _ = await watchlist_match_by_gpt(
+            context=self.context,
+            watchlist_name=watchlist_name,
+            watchlists_name_to_id=watchlists_name_to_id,
+        )
+
+        self.assertIn(result_name, [name for name in watchlists_name_to_id.keys()])
 
     def create_dummy_watchlists_for_user(self, user_id: str):
         rows = [
