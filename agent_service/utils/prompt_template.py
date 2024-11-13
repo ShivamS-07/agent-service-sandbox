@@ -30,6 +30,8 @@ class PromptTemplate(BaseModel):
     category: str
     created_at: datetime.datetime
     plan: ExecutionPlan
+    cadence_tag: str
+    notification_criteria: Optional[List[str]] = None
     user_id: Optional[str] = None
     organization_ids: Optional[List[str]] = None
     preview: Optional[List[OutputPreview]] = None

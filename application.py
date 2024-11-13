@@ -1671,6 +1671,8 @@ async def create_prompt_template(
         category=req.category,
         plan_run_id=req.plan_run_id,
         organization_ids=req.organization_ids,
+        cadence_tag=req.cadence_tag,
+        notification_criteria=req.notification_criteria,
     )
 
 
@@ -1693,14 +1695,16 @@ async def gen_template_plan(
     response_model=RunTemplatePlanResponse,
     status_code=status.HTTP_200_OK,
 )
-async def create_agent_and_run_template_plan(
+async def create_agent_and_run_template(
     req: RunTemplatePlanRequest, user: User = Depends(parse_header)
 ) -> RunTemplatePlanResponse:
 
-    return await application.state.agent_service_impl.create_agent_and_run_template_plan(
+    return await application.state.agent_service_impl.create_agent_and_run_template(
         template_prompt=req.template_prompt,
+        notification_criteria=req.notification_criteria,
         plan=req.plan,
         is_draft=req.is_draft,
+        cadence_description=req.cadence_description,
         user=user,
     )
 
@@ -1735,6 +1739,8 @@ async def update_prompt_template(
         category=req.category,
         prompt=req.prompt,
         plan=req.plan,
+        cadence_tag=req.cadence_tag,
+        notification_criteria=req.notification_criteria,
         organization_ids=req.organization_ids,
     )
 

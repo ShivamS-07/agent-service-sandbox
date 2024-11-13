@@ -1178,7 +1178,9 @@ class CreatePromptTemplateRequest(BaseModel):
     prompt: str
     category: str
     plan_run_id: str
+    cadence_tag: str
     organization_ids: Optional[List[str]] = None
+    notification_criteria: Optional[List[str]] = None
 
 
 class CreatePromptTemplateResponse(BaseModel):
@@ -1190,7 +1192,9 @@ class CreatePromptTemplateResponse(BaseModel):
     category: str
     created_at: datetime.datetime
     plan_run_id: str
+    cadence_tag: str
     organization_ids: Optional[List[str]] = None
+    notification_criteria: Optional[List[str]] = None
 
 
 class UpdatePromptTemplateRequest(BaseModel):
@@ -1200,6 +1204,8 @@ class UpdatePromptTemplateRequest(BaseModel):
     prompt: str
     category: str
     plan: ExecutionPlan
+    cadence_tag: str
+    notification_criteria: Optional[List[str]] = None
     organization_ids: Optional[List[str]] = None
 
 
@@ -1238,6 +1244,8 @@ class RunTemplatePlanRequest(BaseModel):
     template_prompt: str
     plan: ExecutionPlan
     is_draft: bool = False
+    notification_criteria: Optional[List[str]] = None
+    cadence_description: Optional[str] = None
 
 
 class DeletePromptTemplateRequest(BaseModel):

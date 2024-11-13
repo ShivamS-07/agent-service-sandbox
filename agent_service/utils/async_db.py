@@ -1564,22 +1564,26 @@ class AsyncDB:
     async def update_prompt_template(self, prompt_template: PromptTemplate) -> None:
         sql = """
         UPDATE agent.prompt_templates
-        SET name = %(name)s, description = %(description)s, prompt = %(prompt)s,
-            category = %(category)s, plan = %(plan)s,
-            created_at = %(created_at)s, organization_ids = %(organization_ids)s
+        SET created_at = %(created_at)s,
+            name = %(name)s, description = %(description)s, prompt = %(prompt)s,
+            category = %(category)s, plan = %(plan)s, organization_ids = %(organization_ids)s,
+            cadence_tag = %(cadence_tag)s, notification_criteria = %(notification_criteria)s
+
         WHERE template_id = %(template_id)s
         """
         await self.pg.generic_write(
             sql,
             {
-                "template_id": prompt_template.template_id,
+                "created_at": prompt_template.created_at,
                 "name": prompt_template.name,
                 "description": prompt_template.description,
                 "prompt": prompt_template.prompt,
                 "category": prompt_template.category,
                 "plan": prompt_template.plan.model_dump_json(),
+                "cadence_tag": prompt_template.cadence_tag,
+                "notification_criteria": prompt_template.notification_criteria,
                 "organization_ids": prompt_template.organization_ids,
-                "created_at": prompt_template.created_at,
+                "template_id": prompt_template.template_id,
             },
         )
 
@@ -1587,10 +1591,10 @@ class AsyncDB:
         sql = """
         INSERT INTO agent.prompt_templates
           (template_id, name, description, prompt,
-          category, created_at, plan,
+          category, created_at, plan, cadence_tag, notification_criteria,
           organization_ids, user_id)
         VALUES (%(template_id)s, %(name)s, %(description)s, %(prompt)s,
-                %(category)s, %(created_at)s, %(plan)s,
+                %(category)s, %(created_at)s, %(plan)s, %(cadence_tag)s, %(notification_criteria)s,
                 %(organization_ids)s, %(user_id)s)
         """
         await self.pg.generic_write(
@@ -1603,6 +1607,8 @@ class AsyncDB:
                 "category": prompt_template.category,
                 "created_at": prompt_template.created_at,
                 "plan": prompt_template.plan.model_dump_json(),
+                "cadence_tag": prompt_template.cadence_tag,
+                "notification_criteria": prompt_template.notification_criteria,
                 "organization_ids": prompt_template.organization_ids,
                 "user_id": prompt_template.user_id,
             },
@@ -1610,8 +1616,8 @@ class AsyncDB:
 
     async def get_prompt_templates(self) -> List[PromptTemplate]:
         sql = """
-        SELECT template_id::TEXT, name, description, prompt, category, created_at,
-            plan, organization_ids, user_id
+        SELECT template_id::TEXT, name::TEXT, description::TEXT, prompt::TEXT, category, created_at,
+            plan, cadence_tag::TEXT, notification_criteria, organization_ids, user_id
         FROM agent.prompt_templates
         ORDER BY name ASC
         """
@@ -1634,6 +1640,12 @@ class AsyncDB:
                         else None
                     ),
                     plan=ExecutionPlan.model_validate(row["plan"]),
+                    cadence_tag=str(row["cadence_tag"]),
+                    notification_criteria=(
+                        [str(row) for row in row["notification_criteria"]]
+                        if row["notification_criteria"]
+                        else None
+                    ),
                     user_id=str(row["user_id"]) if row["user_id"] else None,
                 )
             )

@@ -2101,6 +2101,8 @@ class AgentServiceImpl:
         prompt: str,
         category: str,
         plan: ExecutionPlan,
+        cadence_tag: str,
+        notification_criteria: Optional[List[str]] = None,
         organization_ids: Optional[List[str]] = None,
     ) -> UpdatePromptTemplateResponse:
         prompt_template = PromptTemplate(
@@ -2110,6 +2112,8 @@ class AgentServiceImpl:
             prompt=prompt,
             category=category,
             plan=plan,
+            cadence_tag=cadence_tag,
+            notification_criteria=notification_criteria,
             organization_ids=organization_ids,
             created_at=get_now_utc(),
         )
@@ -2124,6 +2128,8 @@ class AgentServiceImpl:
         category: str,
         plan_run_id: str,
         user: User,
+        cadence_tag: str,
+        notification_criteria: Optional[List[str]] = None,
         organization_ids: Optional[List[str]] = None,
     ) -> CreatePromptTemplateResponse:
 
@@ -2141,6 +2147,8 @@ class AgentServiceImpl:
             created_at=now,
             category=category,
             plan=plan,
+            cadence_tag=cadence_tag,
+            notification_criteria=notification_criteria,
             organization_ids=organization_ids,
         )
         # add template to db
@@ -2155,6 +2163,8 @@ class AgentServiceImpl:
             category=prompt_template.category,
             plan_run_id=plan_run_id,
             organization_ids=organization_ids,
+            cadence_tag=cadence_tag,
+            notification_criteria=notification_criteria,
         )
 
     async def gen_prompt_template_from_plan(
@@ -2172,7 +2182,7 @@ class AgentServiceImpl:
 
     async def gen_template_plan(self, template_prompt: str, user: User) -> GenTemplatePlanResponse:
 
-        LOGGER.info("Generating template plan...")
+        LOGGER.info("Generating template plan....")
         chat_context = ChatContext(
             messages=[Message(message=template_prompt, is_user_message=True)]
         )
@@ -2183,8 +2193,14 @@ class AgentServiceImpl:
 
         return GenTemplatePlanResponse(plan=plan, preview=get_plan_preview(plan))
 
-    async def create_agent_and_run_template_plan(
-        self, template_prompt: str, plan: ExecutionPlan, is_draft: bool, user: User
+    async def create_agent_and_run_template(
+        self,
+        template_prompt: str,
+        notification_criteria: Optional[List[str]],
+        plan: ExecutionPlan,
+        is_draft: bool,
+        cadence_description: Optional[str],
+        user: User,
     ) -> RunTemplatePlanResponse:
 
         # create a new agent
@@ -2244,6 +2260,26 @@ class AgentServiceImpl:
             context=context,
             do_chat=True,
         )
+
+        # set up cadence and notification criteria if they exist
+        if cadence_description:
+            agent_schedule = await self.set_agent_schedule(
+                SetAgentScheduleRequest(
+                    agent_id=agent_id,
+                    user_schedule_description=cadence_description,
+                )
+            )
+            LOGGER.info(f"Set up cadence for agent_id={agent_schedule.agent_id} ")
+        if notification_criteria:
+            for notification_prompt in notification_criteria:
+                notif_id = await self.create_agent_notification_criteria(
+                    CreateCustomNotificationRequest(
+                        agent_id=agent_id,
+                        notification_prompt=notification_prompt,
+                    )
+                )
+                LOGGER.info(f"Set up notification criteria with notif_id={notif_id} ")
+
         return RunTemplatePlanResponse(
             agent_id=agent_id,
         )
