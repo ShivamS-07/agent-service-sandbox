@@ -3,6 +3,11 @@ from enum import StrEnum
 from typing import Dict, Optional, cast
 
 import google.generativeai as genai
+from gbi_common_py_utils.utils.environment import (
+    PROD_TAG,
+    STAGING_TAG,
+    get_environment_tag,
+)
 from gbi_common_py_utils.utils.ssm import get_param
 
 from agent_service.io_type_utils import Citation, HistoryEntry
@@ -23,7 +28,12 @@ class GoogleAIModel(StrEnum):
     GEMINI_PRO = "gemini-1.5-pro"
 
 
-genai.configure(api_key=get_param(name="/google/gemini/api-key"))
+api_key = (
+    get_param(name="/google/gemini/api-key")
+    if get_environment_tag() in (STAGING_TAG, PROD_TAG)
+    else get_param("/google/gemini/api-key-dev")
+)
+genai.configure(api_key=api_key)
 
 
 class GeminiClient:
