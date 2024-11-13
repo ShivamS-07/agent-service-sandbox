@@ -23,6 +23,7 @@ from agent_service.endpoints.models import (
     HorizonCriteriaOperator,
     Pagination,
     PlanRunStatusInfo,
+    QuickThoughts,
     SetAgentFeedBackRequest,
     Status,
     TaskRunStatusInfo,
@@ -1451,6 +1452,39 @@ class AsyncDB:
                 ),
             },
         )
+
+    async def insert_quick_thought_for_agent(
+        self, quick_thought_id: str, agent_id: str, quick_thoughts: QuickThoughts
+    ) -> None:
+        sql = """
+        INSERT INTO agent.quick_thoughts (quick_thought_id, agent_id, quick_thought_text)
+        VALUES (%(quick_thought_id)s, %(agent_id)s, %(quick_thought)s)
+        """
+        await self.pg.generic_write(
+            sql,
+            params={
+                "agent_id": agent_id,
+                "quick_thought": quick_thoughts.summary.model_dump_json(),
+                "quick_thought_id": quick_thought_id,
+            },
+        )
+
+    async def get_latest_quick_thought_for_agent(self, agent_id: str) -> Optional[QuickThoughts]:
+        sql = """
+        SELECT quick_thought_text FROM agent.quick_thoughts
+        WHERE agent_id = %(agent_id)s
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+        rows = await self.pg.generic_read(
+            sql,
+            params={
+                "agent_id": agent_id,
+            },
+        )
+        if not rows:
+            return None
+        return QuickThoughts(summary=TextOutput.model_validate_json(rows[0]["quick_thought_text"]))
 
     async def set_agent_feedback(
         self, feedback_data: SetAgentFeedBackRequest, user_id: str

@@ -419,6 +419,10 @@ class GetAgentWorklogBoardResponse(BaseModel):
     latest_plan_status: Optional[str] = None
 
 
+class QuickThoughts(BaseModel):
+    summary: TextOutput
+
+
 ####################################################################################################
 # GetAgentTaskOutput
 ####################################################################################################
@@ -455,6 +459,7 @@ class GetAgentOutputResponse(BaseModel):
     run_summary_long: Optional[str | TextOutput] = None
     run_summary_short: Optional[str] = None
     newly_updated_outputs: List[str] = Field(default_factory=list)
+    quick_thoughts: Optional[QuickThoughts] = None
 
 
 class GetPlanRunOutputResponse(BaseModel):
@@ -504,6 +509,7 @@ class EventType(enum.StrEnum):
     TASK_STATUS = "task_status"
     TASK_LOG = "task_log"
     AGENT_NAME = "agent_name"
+    QUICK_THOUGHTS = "quick_thoughts"
 
 
 class Event(BaseModel):
@@ -527,6 +533,11 @@ class AgentNameEvent(Event):
 class OutputEvent(Event):
     event_type: Literal[EventType.OUTPUT] = EventType.OUTPUT
     output: List[AgentOutput]
+
+
+class AgentQuickThoughtsEvent(Event):
+    event_type: Literal[EventType.QUICK_THOUGHTS] = EventType.QUICK_THOUGHTS
+    quick_thoughts: QuickThoughts
 
 
 class NewPlanEvent(Event):
@@ -574,6 +585,7 @@ class AgentEvent(BaseModel):
         TaskStatusEvent,
         ExecutionStatusEvent,
         AgentNameEvent,
+        AgentQuickThoughtsEvent,
     ] = Field(discriminator="event_type")
     timestamp: datetime.datetime = Field(default_factory=get_now_utc)
 

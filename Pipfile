@@ -66,7 +66,7 @@ griffe= {version = "==0.48.0", index = "pypi"}
 rapidfuzz = {version = "==3.9.7", index = "pypi"}
 uvloop = {version = "==0.20.0", index = "pypi", markers = "sys_platform != 'win32'"}
 aioboto3 = {version= "==13.1.1", index="pypi"}
-google-cloud-aiplatform = {version = "==1.71.1", index = "pypi"}
+google-generativeai = {version = "==0.8.3", index = "pypi"}
 botocore-stubs = "*"
 boto3-stubs = {extras = ["sqs", "cognito-idp", "s3"], version = "*"}
 types-aioboto3 = {extras = ["sqs", "cognito-idp", "s3"], version = "*"}

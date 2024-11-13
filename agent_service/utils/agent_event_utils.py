@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import List, Optional, Union, cast
+from uuid import uuid4
 
 import boto3
 from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
@@ -15,6 +16,7 @@ from agent_service.endpoints.models import (
     AgentNotificationBody,
     AgentNotificationData,
     AgentOutput,
+    AgentQuickThoughtsEvent,
     AgentSubscriptionMessage,
     EventType,
     ExecutionPlanTemplate,
@@ -29,6 +31,7 @@ from agent_service.endpoints.models import (
     PlanRunTaskLog,
     PlanStatusEvent,
     PlanTemplateTask,
+    QuickThoughts,
     Status,
     TaskStatus,
     TaskStatusEvent,
@@ -140,6 +143,23 @@ async def publish_agent_name(agent_id: str, agent_name: str) -> None:
     """
     event = AgentEvent(agent_id=agent_id, event=AgentNameEvent(agent_name=agent_name))
     await publish_agent_event(agent_id=agent_id, serialized_event=event.model_dump_json())
+
+
+async def publish_agent_quick_thoughts(
+    agent_id: str, quick_thoughts: QuickThoughts, db: AsyncDB
+) -> None:
+    quick_thought_id = str(uuid4())
+    await db.insert_quick_thought_for_agent(
+        agent_id=agent_id, quick_thought_id=quick_thought_id, quick_thoughts=quick_thoughts
+    )
+
+    await publish_agent_event(
+        agent_id=agent_id,
+        serialized_event=AgentEvent(
+            agent_id=agent_id,
+            event=AgentQuickThoughtsEvent(quick_thoughts=quick_thoughts),
+        ).model_dump_json(),
+    )
 
 
 async def publish_agent_output(

@@ -10,7 +10,7 @@ from agent_service.utils.prefect import (
 from agent_service.utils.task_executor import TaskExecutor
 
 
-class PrefectTaskExecutor(TaskExecutor):
+class DefaultTaskExecutor(TaskExecutor):
     async def create_execution_plan(
         self,
         agent_id: str,

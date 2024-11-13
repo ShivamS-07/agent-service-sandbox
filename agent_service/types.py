@@ -66,6 +66,14 @@ class ChatContext(BaseModel):
             ]
         )
 
+    def get_latest_user_message(self) -> Optional[Message]:
+        messages = sorted(self.messages, key=lambda msg: msg.message_time, reverse=True)
+        for message in messages:
+            if message.is_user_message:
+                return message
+
+        return None
+
 
 class PlanRunContext(BaseModel):
     # TODO contains all necessary ID's, as well as chat context

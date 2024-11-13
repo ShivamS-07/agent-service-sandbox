@@ -175,6 +175,7 @@ from agent_service.utils.custom_documents_utils import (
     CustomDocumentQuotaExceededException,
 )
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.default_task_executor import DefaultTaskExecutor
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.feature_flags import (
     agent_output_cache_enabled,
@@ -185,7 +186,6 @@ from agent_service.utils.feature_flags import (
 )
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import get_psql
-from agent_service.utils.prefect_task_executor import PrefectTaskExecutor
 from agent_service.utils.sentry_utils import init_sentry
 from agent_service.utils.user_metadata import is_user_first_login
 from no_auth_endpoints import initialize_unauthed_endpoints
@@ -230,7 +230,7 @@ async def lifespan(application: FastAPIExtended) -> AsyncGenerator:
     await async_db.pg.generic_read("SELECT * FROM agent.agents LIMIT 1")
 
     application.state.agent_service_impl = AgentServiceImpl(
-        task_executor=PrefectTaskExecutor(),
+        task_executor=DefaultTaskExecutor(),
         async_db=async_db,
         clickhouse_db=Clickhouse(),
         slack_sender=SlackSender(channel=channel),

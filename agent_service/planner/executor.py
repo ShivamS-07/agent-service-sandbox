@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import pprint
 import time
@@ -10,7 +11,8 @@ from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
 from pydantic import validate_call
 
 from agent_service.chatbot.chatbot import Chatbot
-from agent_service.endpoints.models import Status, TaskStatus
+from agent_service.endpoints.models import QuickThoughts, Status, TaskStatus
+from agent_service.external.gemini_client import GeminiClient
 from agent_service.GPT.constants import GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT, set_plan_run_context
 from agent_service.GPT.tokens import GPTTokenizer
@@ -47,6 +49,7 @@ from agent_service.planner.planner_types import (
     RunMetadata,
     ToolExecutionNode,
 )
+from agent_service.planner.prompts import QUICK_THOUGHTS_PROMPT
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.tool import ToolRegistry, log_tool_call_event
 from agent_service.types import ChatContext, Message, PlanRunContext
@@ -56,17 +59,21 @@ from agent_service.utils.agent_event_utils import (
     publish_agent_execution_status,
     publish_agent_output,
     publish_agent_plan_status,
+    publish_agent_quick_thoughts,
     publish_agent_task_status,
     send_agent_emails,
     send_chat_message,
 )
 from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
-from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.async_utils import (
+    gather_with_concurrency,
+    run_async_background,
+)
 from agent_service.utils.cache_utils import get_redis_cache_backend_for_output
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
-from agent_service.utils.feature_flags import agent_output_cache_enabled
+from agent_service.utils.feature_flags import agent_output_cache_enabled, get_ld_flag
 from agent_service.utils.gpt_logging import (
     GptJobIdType,
     GptJobType,
@@ -90,6 +97,8 @@ from agent_service.utils.prefect import (
     kick_off_create_execution_plan,
     kick_off_run_execution_plan,
 )
+
+logger = logging.getLogger(__name__)
 
 plan_run_deco = validate_call
 plan_create_deco = validate_call
@@ -816,6 +825,15 @@ async def create_execution_plan(
             db=db,
         )
 
+    chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
+
+    # Generate quick thoughts in the background
+    run_async_background(
+        generate_quick_thoughts(
+            agent_id=agent_id, user_id=user_id, db=db, chat_context=chat_context
+        )
+    )
+
     logger = get_prefect_logger(__name__)
     context = plan_create_context(agent_id, user_id, plan_id)
     planner = Planner(
@@ -831,7 +849,6 @@ async def create_execution_plan(
         agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CREATING, db=db
     )
 
-    chat_context = chat_context or await get_chat_history_from_db(agent_id, db)
     if await check_cancelled(db=db, agent_id=agent_id, plan_id=plan_id):
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
@@ -931,8 +948,6 @@ async def create_execution_plan(
 # If rerun, then check to see if current step is before step that requires
 # rerun, if so, can continue, otherwise cancel current run and restart run
 # if append or replan, update the plan and rerun
-
-
 @async_perf_logger
 async def update_execution_after_input(
     agent_id: str,
@@ -1246,6 +1261,13 @@ async def rewrite_execution_plan(
     if not old_plan or not old_plan_id or not plan_timestamp:  # shouldn't happen, just for mypy
         raise RuntimeError("Cannot rewrite a plan that does not exist!")
 
+    if action == FollowupAction.REPLAN:
+        run_async_background(
+            generate_quick_thoughts(
+                agent_id=agent_id, user_id=user_id, db=db, chat_context=chat_context
+            )
+        )
+
     await publish_agent_plan_status(
         agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CREATING, db=db
     )
@@ -1514,6 +1536,31 @@ async def handle_error_in_execution(
             run_plan_in_prefect_immediately=True,
         )
         return True
+
+
+@async_perf_logger
+async def generate_quick_thoughts(
+    agent_id: str, user_id: str, db: AsyncDB, chat_context: Optional[ChatContext] = None
+) -> None:
+    if not get_ld_flag(
+        flag_name="enable-quick-thoughts-generation", default=False, user_context=user_id
+    ):
+        return
+    try:
+        if not chat_context:
+            chat_context = await db.get_chats_history_for_agent(agent_id=agent_id)
+        # TODO handle logging and context
+        message = chat_context.get_latest_user_message()
+        if not message:
+            return
+        gemini = GeminiClient()
+        prompt = QUICK_THOUGHTS_PROMPT.format(chat=message.get_gpt_input())
+        grounding_result = await gemini.query_google_grounding(query=prompt.filled_prompt)
+        await publish_agent_quick_thoughts(
+            agent_id=agent_id, quick_thoughts=QuickThoughts(summary=grounding_result), db=db
+        )
+    except Exception:
+        logger.exception(f"Unable to generate quick thoughts for {agent_id=}")
 
 
 # Run these in tests or if you don't want to connect to the prefect server.

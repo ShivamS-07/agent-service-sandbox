@@ -342,3 +342,11 @@ NOTIFICATION_UPDATE_MAIN_PROMPT = Prompt(
 NOTIFICATION_DEFAULT_MAIN_PROMPT = Prompt(
     NOTIFICATION_DEFAULT_MAIN_PROMPT_STR, "NOTIFICATION_DEFAULT_MAIN_PROMPT"
 )
+
+QUICK_THOUGHTS_PROMPT = Prompt(
+    template="""You are a financial analyst who is chatting with a
+client. Please answer this question that you client has asked you:
+{chat}
+""",
+    name="QUICK_THOUGHTS_PROMPT",
+)

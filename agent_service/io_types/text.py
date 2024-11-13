@@ -2138,6 +2138,33 @@ class StockOtherSecFilingSectionText(StockText):
 
 
 @io_type
+class GoogleGroundingSnippetText(Text):
+    text_type: ClassVar[str] = "Google Web Results"
+    url: Optional[str] = None
+    title: Optional[str] = ""
+
+    @classmethod
+    async def get_citations_for_output(
+        cls, texts: List[TextCitation], db: BoostedPG
+    ) -> Dict[TextCitation, Sequence[CitationOutput]]:
+        output = defaultdict(list)
+        for cit in texts:
+            text = cast(Self, cit.source_text)
+
+            output[cit].append(
+                WebCitationOutput(
+                    internal_id=str(text.id),
+                    name=text.title or text.url or text.to_citation_title(),
+                    last_fetched_at=text.timestamp,
+                    link=text.url,
+                    inline_offset=cit.citation_text_offset,
+                    summary=cit.citation_snippet,
+                )
+            )
+        return output  # type: ignore
+
+
+@io_type
 class WebText(Text):
     text_type: ClassVar[str] = "Web Results"
     url: Optional[str] = None
