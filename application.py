@@ -485,12 +485,13 @@ async def terminate_agent(
     status_code=status.HTTP_200_OK,
 )
 async def delete_agent(agent_id: str, user: User = Depends(parse_header)) -> DeleteAgentResponse:
-    await validate_user_agent_access(
-        user.user_id,
-        agent_id,
-        async_db=application.state.agent_service_impl.pg,
-        invalidate_cache=True,
-    )
+    if not user_has_qc_tool_access(user_id=user.user_id):
+        await validate_user_agent_access(
+            user.user_id,
+            agent_id,
+            async_db=application.state.agent_service_impl.pg,
+            invalidate_cache=True,
+        )
     return await application.state.agent_service_impl.delete_agent(agent_id=agent_id)
 
 
