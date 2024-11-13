@@ -580,6 +580,13 @@ async def get_earnings_call_dates(
         for date, date_with_time in dates_data:
             rows.append((gbi_id, date, date_with_time))
 
+    default_date = datetime.date(datetime.MINYEAR, 1, 1)
+    default_datetime = datetime.datetime(datetime.MINYEAR, 1, 1)
+    rows.sort(
+        key=lambda x: (x[1] if x[1] else default_date, x[2] if x[2] else default_datetime),
+        reverse=True,
+    )
+
     return StockTable(
         columns=[
             StockTableColumn(data=[gbi_id_stock_map[row[0]] for row in rows]),
