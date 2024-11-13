@@ -331,6 +331,8 @@ async def get_statistic_data_for_companies(
 
     decomp_json = {}
 
+    all_statistic_lookup = await get_statistic_lookup(context)
+
     try:  # since everything here is optional, put in try/except
         # TODO: maybe update so we don't have to pull in the input or output when we don't need it?
         prev_run_info = await get_prev_run_info(context, "get_statistic_data_for_companies")
@@ -343,33 +345,47 @@ async def get_statistic_data_for_companies(
                 old_decomp = json.loads(prev_other["decomp_json"])
                 old_decomp_description = old_decomp["calculation"]
 
-                if old_decomp_description == "" or (
-                    start_date.isoformat() == old_start_date
-                    and end_date.isoformat() == old_end_date
-                ):
-                    new_calculation = old_decomp_description
-                else:
-                    update_main_prompt = UPDATE_DECOMPOSITION_MAIN_PROMPT.format(
-                        statistic_reference=args.statistic_reference,
-                        decomp_description=old_decomp_description,
-                        old_start_date=old_start_date,
-                        old_end_date=old_end_date,
-                        new_start_date=start_date,
-                        new_end_date=end_date,
+                # When we disable old statistics, we need to force a reset of any calculations
+                # that use it
+
+                bad_stat = False
+
+                for stat in old_decomp["components"]:
+                    if stat not in all_statistic_lookup:
+                        bad_stat = stat
+
+                if not bad_stat:
+                    if old_decomp_description == "" or (
+                        start_date.isoformat() == old_start_date
+                        and end_date.isoformat() == old_end_date
+                    ):
+                        new_calculation = old_decomp_description
+                    else:
+                        update_main_prompt = UPDATE_DECOMPOSITION_MAIN_PROMPT.format(
+                            statistic_reference=args.statistic_reference,
+                            decomp_description=old_decomp_description,
+                            old_start_date=old_start_date,
+                            old_end_date=old_end_date,
+                            new_start_date=start_date,
+                            new_end_date=end_date,
+                        )
+
+                        new_calculation = await llm.do_chat_w_sys_prompt(
+                            update_main_prompt, NO_PROMPT
+                        )
+
+                    decomp_json = {
+                        "extra_timespan": old_decomp["extra_timespan"],
+                        "components": old_decomp["components"],
+                        "calculation": new_calculation,
+                    }
+
+                    await tool_log(
+                        log=("Loaded statistic calculation description from previous run"),
+                        context=context,
                     )
-
-                    new_calculation = await llm.do_chat_w_sys_prompt(update_main_prompt, NO_PROMPT)
-
-                decomp_json = {
-                    "extra_timespan": old_decomp["extra_timespan"],
-                    "components": old_decomp["components"],
-                    "calculation": new_calculation,
-                }
-
-                await tool_log(
-                    log=("Loaded statistic calculation description from previous run"),
-                    context=context,
-                )
+                else:
+                    logger.warning(f"Failed to load statistic: {bad_stat}, redoing from scratch")
 
     except Exception as e:
         logger.warning(f"Error getting info from previous run: {e}")
@@ -377,7 +393,6 @@ async def get_statistic_data_for_companies(
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)
 
-    all_statistic_lookup = await get_statistic_lookup(context)
     if not decomp_json:
         # sorting by length encourages it to pick simpler stats (seems to start looking at top)
         all_statistics = "\n".join(sorted(all_statistic_lookup, key=lambda x: len(x)))

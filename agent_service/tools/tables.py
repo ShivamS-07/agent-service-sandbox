@@ -476,7 +476,10 @@ async def transform_table(
                 new_column.metadata.label = f"{new_column.metadata.label}, {date}"
                 new_column.data = []
                 for stock in new_stock_column.data:
-                    new_column.data.append(stat_lookup[stock][date])  # type: ignore
+                    if date in stat_lookup[stock]:
+                        new_column.data.append(stat_lookup[stock][date])  # type: ignore
+                    else:
+                        new_column.data.append(None)
                 new_columns.append(new_column)
             output_table = StockTable(columns=new_columns)
 
