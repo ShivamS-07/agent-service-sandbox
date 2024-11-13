@@ -240,6 +240,9 @@ async def lifespan(application: FastAPIExtended) -> AsyncGenerator:
 
     yield
 
+    if cache:
+        await cache.client.client.close()  # explicitly close redis connection
+
 
 application = FastAPIExtended(title="Agent Service", lifespan=lifespan)
 
@@ -501,7 +504,7 @@ async def delete_agent(agent_id: str, user: User = Depends(parse_header)) -> Del
     status_code=status.HTTP_200_OK,
 )
 async def restore_agent(agent_id: str, user: User = Depends(parse_header)) -> RestoreAgentResponse:
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can restore agents",
@@ -536,7 +539,7 @@ async def get_all_agents(user: User = Depends(parse_header)) -> GetAllAgentsResp
 @router.get("/agent/get-agent/{agent_id}", response_model=AgentInfo, status_code=status.HTTP_200_OK)
 async def get_agent(agent_id: str, user: User = Depends(parse_header)) -> AgentInfo:
     logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -553,7 +556,7 @@ async def get_all_agent_notification_criteria(
     agent_id: str, user: User = Depends(parse_header)
 ) -> List[CustomNotification]:
     logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -607,7 +610,7 @@ async def get_agent_notification_emails(
     agent_id: str, user: User = Depends(parse_header)
 ) -> NotificationEmailsResponse:
     logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -628,7 +631,7 @@ async def update_agent_notification_emails(
     emails = req.emails
     try:
         logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
-        if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+        if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
             await validate_user_agent_access(
                 user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
             )
@@ -736,7 +739,7 @@ async def get_chat_history(
         end (Optional[datetime.datetime]): end time to filter messages, inclusive
         user (User): User object from `parse_header`
     """
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -772,7 +775,7 @@ async def get_agent_worklog_board(
         start_index (Optional[int]): start index to filter work log
         limit_num (Optional[int]): number of plan runs to return
     """
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         logger.info(f"Validating if user {user.user_id} has access to agent {agent_id}.")
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
@@ -802,7 +805,7 @@ async def get_agent_task_output(
         plan_run_id (str): the run ID from Prefect
         task_id (str): the task ID of a run from Prefect
     """
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -827,7 +830,7 @@ async def get_agent_log_output(
         plan_run_id (str): the run ID from Prefect
         task_id (str): the task ID of a run from Prefect
     """
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -850,7 +853,7 @@ async def get_agent_output(
     Args:
         agent_id (str): agent ID
     """
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -889,7 +892,7 @@ async def lock_agent_output(
     """
     Lock an agent output, which will force it to be included always.
     """
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -908,7 +911,7 @@ async def unlock_agent_output(
     """
     Unlock an agent output.
     """
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -932,7 +935,7 @@ async def get_agent_plan_output(
         agent_id (str): agent ID
         plan_run_id (str): plan run ID
     """
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -968,7 +971,7 @@ async def stream_agent_events(
     Args:
         agent_id (str): agent ID
     """
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -1179,7 +1182,7 @@ async def retry_plan_run(
 ) -> RetryPlanRunResponse:
     if (
         not user.is_super_admin
-        and not is_user_agent_admin(user.user_id)
+        and not await is_user_agent_admin(user.user_id)
         and not user_has_qc_tool_access(user_id=user.user_id)
     ):
         raise HTTPException(
@@ -1209,7 +1212,7 @@ async def get_secure_ld_user(user: User = Depends(parse_header)) -> GetSecureUse
 async def get_agent_debug_info(
     agent_id: str, user: User = Depends(parse_header)
 ) -> GetAgentDebugInfoResponse:
-    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+    if not user.is_super_admin and not await is_user_agent_admin(user.user_id):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
@@ -1227,7 +1230,7 @@ async def get_plan_run_debug_info(
     """Return detailed information about a plan run for debugging purposes,
     include the list of tools, inputs, outputs
     """
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -1249,7 +1252,7 @@ async def modify_plan_run_args(
     user: User = Depends(parse_header),
 ) -> ModifyPlanRunArgsResponse:
     """Duplicate the plan with modified input variables and rerun it"""
-    if not (user.is_super_admin or is_user_agent_admin(user.user_id)):
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
@@ -1267,7 +1270,7 @@ async def modify_plan_run_args(
 async def get_agent_debug_args(
     replay_id: str, user: User = Depends(parse_header)
 ) -> GetDebugToolArgsResponse:
-    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+    if not user.is_super_admin and not await is_user_agent_admin(user.user_id):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
@@ -1282,7 +1285,7 @@ async def get_agent_debug_args(
 async def get_agent_debug_result(
     replay_id: str, user: User = Depends(parse_header)
 ) -> GetDebugToolResultResponse:
-    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+    if not user.is_super_admin and not await is_user_agent_admin(user.user_id):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
@@ -1393,7 +1396,7 @@ async def get_info_for_test_run(
 ) -> GetTestSuiteRunInfoResponse:
     if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
-    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+    if not user.is_super_admin and not await is_user_agent_admin(user.user_id):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
@@ -1410,7 +1413,7 @@ async def get_info_for_test_run(
 async def get_test_suite_runs(user: User = Depends(parse_header)) -> GetTestSuiteRunsResponse:
     if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
-    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+    if not user.is_super_admin and not await is_user_agent_admin(user.user_id):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
@@ -1425,7 +1428,7 @@ async def get_test_suite_runs(user: User = Depends(parse_header)) -> GetTestSuit
 async def get_test_cases(user: User = Depends(parse_header)) -> GetTestCasesResponse:
     if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
-    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+    if not user.is_super_admin and not await is_user_agent_admin(user.user_id):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
@@ -1442,7 +1445,7 @@ async def get_info_for_test_case(
 ) -> GetTestCaseInfoResponse:
     if get_environment_tag() in [STAGING_TAG, PROD_TAG]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="")
-    if not user.is_super_admin and not is_user_agent_admin(user.user_id):
+    if not user.is_super_admin and not await is_user_agent_admin(user.user_id):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
         )
@@ -1518,20 +1521,21 @@ async def get_user_has_access(
     request: Request, user: User = Depends(parse_header)
 ) -> UserHasAccessResponse:
     has_access = await application.state.agent_service_impl.get_user_has_alfa_access(user=user)
+    if not has_access:
+        return UserHasAccessResponse(success=False)
 
-    # TODO: remove this check once the flag is turned on for external users
-    if get_ld_flag(
-        flag_name="onboarding-email-sequence",
-        default=False,
-        user_context=get_user_context(user_id=user.user_id),
-    ):
-        # make sure user is not spoofed and it is their first login
-        if request.headers.get("realuserid") == user.user_id and await is_user_first_login(
-            user_id=user.user_id
+    # make sure user is not spoofed and it is their first login
+    if request.headers.get("realuserid") == user.user_id:
+        # TODO: remove this check once the flag is turned on for external users
+        if get_ld_flag(
+            flag_name="onboarding-email-sequence",
+            default=False,
+            user_context=get_user_context(user_id=user.user_id),
         ):
-            run_async_background(send_welcome_email(user_id=user.user_id))
+            if await is_user_first_login(user_id=user.user_id):
+                run_async_background(send_welcome_email(user_id=user.user_id))
 
-    return UserHasAccessResponse(success=has_access)
+    return UserHasAccessResponse(success=True)
 
 
 @router.post(
@@ -1636,7 +1640,7 @@ async def rearrange_section(
     status_code=status.HTTP_200_OK,
 )
 async def get_all_companies(user: User = Depends(parse_header)) -> GetCompaniesResponse:
-    is_user_admin = user.is_super_admin or is_user_agent_admin(user.user_id)
+    is_user_admin = user.is_super_admin or await is_user_agent_admin(user.user_id)
     if not is_user_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="User does not have access"
@@ -1650,7 +1654,7 @@ async def get_all_companies(user: User = Depends(parse_header)) -> GetCompaniesR
     status_code=status.HTTP_200_OK,
 )
 async def get_prompt_templates(user: User = Depends(parse_header)) -> GetPromptTemplatesResponse:
-    is_user_admin = user.is_super_admin or is_user_agent_admin(user.user_id)
+    is_user_admin = user.is_super_admin or await is_user_agent_admin(user.user_id)
     templates = await application.state.agent_service_impl.get_prompt_templates(user, is_user_admin)
     return GetPromptTemplatesResponse(prompt_templates=templates)
 
@@ -1775,7 +1779,7 @@ async def copy_agent(
     # Check to see if user is authorized to duplicate
     # they are only allowed to request with one user_id and it must be their own
     # if they are spoofing (user_id != real_user_id), allow request
-    if not is_user_agent_admin(user.user_id):
+    if not await is_user_agent_admin(user.user_id):
         if user.user_id == user.real_user_id and (
             len(req.dst_user_ids) > 1 or user.user_id not in req.dst_user_ids
         ):

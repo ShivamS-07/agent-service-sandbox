@@ -1,9 +1,7 @@
-import asyncio
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Union
 
-from gbi_common_py_utils.utils.redis import RedisCache
 from pydantic import BaseModel, Field
 
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
@@ -11,6 +9,7 @@ from agent_service.io_types.graph import GraphOutput
 from agent_service.io_types.table import TableOutput
 from agent_service.io_types.text import TextOutput
 from agent_service.utils.postgres import get_psql
+from agent_service.utils.redis_async import AsyncRedisCache
 
 DEFAULT_CACHE_TTL = 6 * 60 * 60  # six hours
 
@@ -36,29 +35,27 @@ class RedisCacheBackend(CacheBackend):
         serialize_func: Any,
         deserialize_func: Any,
         max_connections: Optional[int] = None,
+        auto_close_connection: bool = False,
     ) -> None:
         # TODO use async redis client
-        self.client = RedisCache(
+        self.client = AsyncRedisCache(
             namespace=namespace,
             serialize_func=serialize_func,
             deserialize_func=deserialize_func,
             max_connections=max_connections,
+            auto_close_connection=auto_close_connection,
         )
 
     async def get(self, key: str, ttl: Optional[int] = None) -> Optional[IOType]:
         # redis implements ttl on insert, so ignored here
-        val = await asyncio.to_thread(self.client.get, key=key)
+        val = await self.client.get(key=key)
         return val
 
     async def set(self, key: str, val: IOType, ttl: Optional[int] = None) -> None:
-        await asyncio.to_thread(self.client.set, key=key, val=val, ttl=ttl)
+        await self.client.set(key=key, val=val, ttl=ttl)
 
     async def invalidate(self, key: str) -> None:
-        redis_key = self.client._make_redis_key(key=key)
-        try:
-            await asyncio.to_thread(self.client.client.delete, redis_key)
-        except Exception as e:
-            logger.error(f"Failed to delete key {redis_key}: {e}")
+        await self.client.delete(key)
 
 
 class PostgresCacheBackend(CacheBackend):
@@ -109,9 +106,10 @@ class OutputWrapper(BaseModel):
         return agent_output.output
 
 
-def get_redis_cache_backend_for_output() -> RedisCacheBackend:
+def get_redis_cache_backend_for_output(auto_close_connection: bool = False) -> RedisCacheBackend:
     return RedisCacheBackend(
         namespace=REDIS_OUTPUT_CACHE_NAMESPACE,
         serialize_func=OutputWrapper.serialize_func,
         deserialize_func=OutputWrapper.deserialize_func,
+        auto_close_connection=auto_close_connection,
     )

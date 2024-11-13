@@ -10,6 +10,7 @@ from gbi_common_py_utils.utils.environment import (
     PROD_TAG,
     get_environment_tag,
 )
+from gbi_common_py_utils.utils.redis import is_redis_available
 from grpclib.client import Channel
 from user_service_proto_v1.user_service_grpc import UserServiceStub
 from user_service_proto_v1.user_service_pb2 import (
@@ -73,7 +74,7 @@ async def get_users(user_id: str, user_ids: List[str], include_user_enabled: boo
     with _get_service_stub() as stub:
         metadata = [
             *get_default_grpc_metadata(user_id=user_id),
-            ("is-warren-agent-admin", "True" if is_user_agent_admin(user_id) else "False"),
+            ("is-warren-agent-admin", "True" if await is_user_agent_admin(user_id) else "False"),
         ]
         res = await stub.GetUsers(
             GetUsersRequest(
@@ -99,7 +100,10 @@ def get_user_deserializer(x: bytes) -> User:
     return user
 
 
-def get_redis_cache_for_user() -> RedisCacheBackend:
+@lru_cache(maxsize=1)
+def get_redis_cache_for_user() -> Optional[RedisCacheBackend]:
+    if not is_redis_available():
+        return None
     return RedisCacheBackend(
         namespace=REDIS_AGENT_USER_NAMESPACE,
         serialize_func=get_user_serializer,
@@ -116,6 +120,10 @@ async def get_user_cached(user_id: str) -> Optional[User]:
     """
 
     redis_cache = get_redis_cache_for_user()
+    if not redis_cache:
+        users = await get_users(user_id, user_ids=[user_id], include_user_enabled=True)
+        return users[0] if users else None
+
     key = get_user_key_func(user_id)
     user = await redis_cache.get(key=key)
     if user is not None:
@@ -147,7 +155,8 @@ async def update_user(user_id: str, name: str, username: str, email: str) -> boo
         )
 
         redis_cache = get_redis_cache_for_user()
-        run_async_background(redis_cache.invalidate(get_user_key_func(user_id)))
+        if redis_cache:
+            run_async_background(redis_cache.invalidate(get_user_key_func(user_id)))
 
         return True
 

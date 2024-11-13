@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 import jwt
 from fastapi import HTTPException, Security, status
 from fastapi.security.api_key import APIKeyHeader
+from gbi_common_py_utils.utils.redis import is_redis_available
 from gbi_common_py_utils.utils.ssm import get_param
 from starlette.requests import Request
 
@@ -150,7 +151,10 @@ def parse_header(
 ####################################################################################################
 # auth methods - if we find that we need to add more auth methods, we can make a new file
 ####################################################################################################
-def get_agent_owner_redis() -> RedisCacheBackend:
+@lru_cache(maxsize=1)
+def get_agent_owner_redis() -> Optional[RedisCacheBackend]:
+    if not is_redis_available():
+        return None
     return RedisCacheBackend(
         namespace="agent_owner",
         serialize_func=lambda user_id: user_id.encode("utf-8"),
@@ -165,6 +169,9 @@ async def get_agent_owner(
         return await async_db.get_agent_owner(agent_id, include_deleted=False)
 
     redis_cache = get_agent_owner_redis()
+    if not redis_cache:
+        return await async_db.get_agent_owner(agent_id, include_deleted=False)
+
     owner_id = await redis_cache.get(agent_id)
     if owner_id:
         return owner_id  # type: ignore
@@ -178,7 +185,8 @@ async def get_agent_owner(
 
 async def invalidate_agent_owner_cache(agent_id: str) -> None:
     redis_cache = get_agent_owner_redis()
-    await redis_cache.invalidate(agent_id)
+    if redis_cache:
+        await redis_cache.invalidate(agent_id)
 
 
 async def validate_user_agent_access(
