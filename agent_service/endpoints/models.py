@@ -1297,6 +1297,9 @@ class AgentQC(BaseModel):
     last_updated: datetime.datetime
     cognito_username: Optional[str] = None
     agent_feedbacks: List[AgentFeedback] = []
+    cs_reviewed: Optional[bool] = None
+    eng_reviewed: Optional[bool] = None
+    prod_reviewed: Optional[bool] = None
 
 
 class HorizonCriteriaOperator(enum.StrEnum):

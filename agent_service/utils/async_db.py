@@ -1904,6 +1904,9 @@ class AsyncDB:
             "fullstory_link": agent_qc.fullstory_link,
             "duplicate_agent": agent_qc.duplicate_agent,
             "last_updated": agent_qc.last_updated,
+            "cs_reviewed": agent_qc.cs_reviewed,
+            "eng_reviewed": agent_qc.eng_reviewed,
+            "prod_reviewed": agent_qc.prod_reviewed,
         }
 
         # Remove fields that are None or immutable
@@ -1933,8 +1936,8 @@ class AsyncDB:
             aqc.priority, aqc.use_case, aqc.problem_area, aqc.cs_failed_reason, aqc.cs_attempt_reprompting,
             aqc.cs_expected_output, aqc.cs_notes, aqc.canned_prompt_id, aqc.eng_failed_reason, aqc.eng_solution,
             aqc.eng_solution_difficulty, aqc.jira_link, aqc.slack_link, aqc.fullstory_link, aqc.duplicate_agent::TEXT,
-            aqc.created_at, aqc.last_updated, us.cognito_username,
-            json_agg(af.*) AS agent_feedbacks
+            aqc.created_at, aqc.last_updated, aqc.cs_reviewed, aqc.eng_reviewed, aqc.prod_reviewed,
+            us.cognito_username, json_agg(af.*) AS agent_feedbacks
         FROM agent.agent_qc aqc
         LEFT JOIN agent.agents ag ON aqc.agent_id = ag.agent_id
         LEFT JOIN user_service.users us ON aqc.user_id = us.id
