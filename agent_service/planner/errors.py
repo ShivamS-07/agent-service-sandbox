@@ -5,6 +5,10 @@ class AgentExecutionError(Exception):
     alert_on_error: bool = False
     result_status = Status.ERROR
 
+    # If this is False, the status is NOT updated at all when the exception is
+    # raised. I.e. if False, the result_status will be ignored.
+    publish_result_status: bool = True
+
 
 class AgentRetryError(AgentExecutionError):
     pass

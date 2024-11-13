@@ -112,6 +112,7 @@ from agent_service.endpoints.models import (
     NotificationEmailsResponse,
     NotificationEvent,
     Pagination,
+    PlanRunStatusInfo,
     PlanRunToolDebugInfo,
     PlanTemplateTask,
     RenameMemoryResponse,
@@ -1059,11 +1060,28 @@ class AgentServiceImpl:
         )
 
     async def retry_plan_run(self, req: RetryPlanRunRequest) -> RetryPlanRunResponse:
+        tasks = [
+            self.pg.get_plan_run_statuses(plan_run_ids=[req.plan_run_id]),
+            self.pg.get_execution_plan_for_run(plan_run_id=req.plan_run_id),
+            self.pg.get_agent_owner(agent_id=req.agent_id),
+        ]
 
-        plan_id, plan = await self.pg.get_execution_plan_for_run(plan_run_id=req.plan_run_id)
-        user_id = await self.pg.get_agent_owner(agent_id=req.agent_id)
+        statuses: Dict[str, PlanRunStatusInfo]
+        plan_id: str
+        plan: ExecutionPlan
+        user_id: Optional[str]
+        statuses, (plan_id, plan), user_id = await asyncio.gather(*tasks)  # type: ignore
         if not user_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+
+        if req.plan_run_id not in statuses:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan run not found")
+
+        if statuses[req.plan_run_id].status not in (Status.ERROR, Status.NO_RESULTS_FOUND):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Plan run not in ERROR or NO_RESULTS_FOUND status!",
+            )
 
         ctx = PlanRunContext(
             agent_id=req.agent_id,

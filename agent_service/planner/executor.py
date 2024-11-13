@@ -206,16 +206,19 @@ async def run_execution_plan(
         return result_to_return, execution_log
     except Exception as e:
         status = Status.ERROR
+        publish_result = True
         if isinstance(e, AgentExecutionError):
             status = e.result_status
-        await publish_agent_execution_status(
-            agent_id=context.agent_id,
-            plan_run_id=context.plan_run_id,
-            plan_id=context.plan_id,
-            status=status,
-            logger=logger,
-            db=async_db,
-        )
+            publish_result = e.publish_result_status
+        if publish_result:
+            await publish_agent_execution_status(
+                agent_id=context.agent_id,
+                plan_run_id=context.plan_run_id,
+                plan_id=context.plan_id,
+                status=status,
+                logger=logger,
+                db=async_db,
+            )
         raise
 
 
