@@ -42,7 +42,7 @@ from agent_service.types import ChatContext, Message, Notification, PlanRunConte
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
-from agent_service.utils.cache_utils import CacheBackend
+from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
@@ -136,7 +136,10 @@ class AsyncDB:
             return None, None
 
     async def get_agent_outputs(
-        self, agent_id: str, plan_run_id: Optional[str] = None, cache: Optional[CacheBackend] = None
+        self,
+        agent_id: str,
+        plan_run_id: Optional[str] = None,
+        cache: Optional[RedisCacheBackend] = None,
     ) -> List[AgentOutput]:
         """
         if `plan_run_id` is None, get the latest run's outputs
@@ -238,7 +241,7 @@ class AsyncDB:
         return outputs
 
     async def get_agent_outputs_cache(
-        self, cache: CacheBackend, agent_id: str, plan_run_id: Optional[str] = None
+        self, cache: RedisCacheBackend, agent_id: str, plan_run_id: Optional[str] = None
     ) -> List[AgentOutput]:
         """
         if `plan_run_id` is None, get the latest run's outputs
@@ -287,31 +290,19 @@ class AsyncDB:
         if not rows_without_output:
             return []
 
-        # Download output values from cache
-        async def get_output_from_cache(
-            output_id: str,
-        ) -> Tuple[str, Optional[Union[TextOutput, GraphOutput, TableOutput]]]:
-            cached_output: Optional[Union[TextOutput, GraphOutput, TableOutput]] = await cache.get(output_id)  # type: ignore  # noqa
-            return output_id, cached_output
-
-        async def get_non_cached(output_id: str, a_io_output: IOType) -> Any:
-            res = await get_output_from_io_type(a_io_output, pg=self.pg)
-
-            # DO NOT await this - run in background
-            run_async_background(cache.set(key=output_id, val=res, ttl=3600 * 24))
-
-            return res
-
         start = end
         output_id_to_row = {row["output_id"]: row for row in rows_without_output}
         uncached_output_ids = set(output_id_to_row.keys())
         output_values: List[Tuple[str, Output]] = []
-        output_get_tasks = [get_output_from_cache(row["output_id"]) for row in rows_without_output]
-        outputs_with_ids = await asyncio.gather(*output_get_tasks)
-        for cached_output_id, cached_output in outputs_with_ids:
-            if cached_output:
-                uncached_output_ids.discard(cached_output_id)
-                output_values.append((cached_output_id, cached_output))
+
+        outputs_with_ids: Optional[Dict[str, TextOutput | GraphOutput | TableOutput]] = (
+            await cache.multiget(keys=output_id_to_row.keys())  # type: ignore
+        )
+        if outputs_with_ids:
+            for cached_output_id, cached_output in outputs_with_ids.items():
+                if cached_output:
+                    uncached_output_ids.discard(cached_output_id)
+                    output_values.append((cached_output_id, cached_output))
 
         end = time.perf_counter()
         logger.info(
@@ -341,7 +332,7 @@ class AsyncDB:
             for row in output_rows:
                 output_id = row["output_id"]
                 io_output = load_io_type(row["output"]) if row["output"] else row["output"]
-                non_cached_output_tasks.append(get_non_cached(output_id, io_output))
+                non_cached_output_tasks.append(get_output_from_io_type(io_output, pg=self.pg))
 
             end = time.perf_counter()
             logger.info(
@@ -351,9 +342,13 @@ class AsyncDB:
             start = end
 
             results = await asyncio.gather(*non_cached_output_tasks)
+            inputs_to_cache = {}
             for output_row, non_cached_output in zip(output_rows, results):
                 output_id = output_row["output_id"]
                 output_values.append((output_id, non_cached_output))
+                inputs_to_cache[output_id] = non_cached_output
+
+            run_async_background(cache.multiset(inputs_to_cache, ttl=3600 * 24))  # type: ignore
 
             end = time.perf_counter()
             logger.info(

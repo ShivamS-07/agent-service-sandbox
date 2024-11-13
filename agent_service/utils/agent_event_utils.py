@@ -44,7 +44,7 @@ from agent_service.planner.planner_types import ExecutionPlan, OutputWithID, Pla
 from agent_service.types import Message, Notification, PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
-from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.cache_utils import CacheBackend
 from agent_service.utils.constants import NOTIFICATION_SERVICE_QUEUE
 from agent_service.utils.date_utils import get_now_utc
@@ -183,7 +183,7 @@ async def publish_agent_output(
 
     async_pg = AsyncPostgresBase()
     coros = [get_output_from_io_type(o.output, pg=async_pg) for o in outputs_with_ids]
-    results = await gather_with_concurrency(coros, n=len(coros))
+    results = await asyncio.gather(*coros)
 
     now = get_now_utc()
     event = AgentEvent(
@@ -211,8 +211,14 @@ async def publish_agent_output(
     await publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json())
 
     if cache_backend and not context.skip_db_commit:
-        for o, rich_output in zip(outputs_with_ids, results):
-            asyncio.create_task(cache_backend.set(key=o.output_id, val=rich_output, ttl=3600 * 24))
+        run_async_background(
+            cache_backend.multiset(
+                key_val_map={
+                    o.output_id: rich_output for o, rich_output in zip(outputs_with_ids, results)
+                },
+                ttl=3600 * 24,
+            )
+        )
 
 
 async def publish_agent_execution_plan(

@@ -3,6 +3,7 @@ from functools import lru_cache
 from typing import Any, Dict, Optional, Union
 
 import ldclient
+import sentry_sdk
 from gbi_common_py_utils import get_config
 from gbi_common_py_utils.utils import ssm
 from gbi_common_py_utils.utils.feature_flags import (
@@ -122,13 +123,19 @@ async def is_user_agent_admin(user_id: str) -> bool:
             flag_name="warren-agent-admin", user_context=get_user_context(user_id), default=False
         )
 
-    is_admin = await redis_cache.get(user_id)
-    if is_admin is None:
-        is_admin = get_ld_flag(
-            flag_name="warren-agent-admin", user_context=get_user_context(user_id), default=False
-        )
-        run_async_background(redis_cache.set(user_id, is_admin, ttl=3600))
+    with sentry_sdk.start_span(
+        op="redis.get", description="Get user agent admin flag from Redis cache"
+    ):
+        is_admin = await redis_cache.get(user_id)
+        if is_admin is not None:
+            return is_admin  # type: ignore
 
+    is_admin = get_ld_flag(
+        flag_name="warren-agent-admin",
+        user_context=get_user_context(user_id),
+        default=False,
+    )
+    run_async_background(redis_cache.set(user_id, is_admin, ttl=3600))
     return is_admin  # type: ignore
 
 

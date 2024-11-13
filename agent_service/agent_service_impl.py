@@ -15,6 +15,7 @@ from typing import (
     Optional,
     Tuple,
     Union,
+    cast,
     get_args,
     get_origin,
 )
@@ -193,7 +194,7 @@ from agent_service.utils.async_utils import (
     gather_with_concurrency,
     run_async_background,
 )
-from agent_service.utils.cache_utils import CacheBackend
+from agent_service.utils.cache_utils import CacheBackend, RedisCacheBackend
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
 from agent_service.utils.custom_documents_utils import (
@@ -838,7 +839,10 @@ class AgentServiceImpl:
         self, agent_id: str, plan_run_id: Optional[str] = None
     ) -> GetAgentOutputResponse:
         return await get_agent_output(
-            pg=self.pg, agent_id=agent_id, plan_run_id=plan_run_id, cache=self.cache
+            pg=self.pg,
+            agent_id=agent_id,
+            plan_run_id=plan_run_id,
+            cache=cast(RedisCacheBackend, self.cache),
         )
 
     async def delete_agent_output(
@@ -1212,7 +1216,10 @@ class AgentServiceImpl:
     ) -> GetPlanRunOutputResponse:
         output, agent_name = await asyncio.gather(
             get_agent_output(
-                pg=self.pg, agent_id=agent_id, plan_run_id=plan_run_id, cache=self.cache
+                pg=self.pg,
+                agent_id=agent_id,
+                plan_run_id=plan_run_id,
+                cache=cast(RedisCacheBackend, self.cache),
             ),
             self.pg.get_agent_name(agent_id),
         )

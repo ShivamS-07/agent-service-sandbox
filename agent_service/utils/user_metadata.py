@@ -3,6 +3,7 @@ import json
 from functools import lru_cache
 from typing import Optional, cast
 
+import sentry_sdk
 from gbi_common_py_utils.utils.redis import is_redis_available
 from user_service_proto_v1.user_service_pb2 import User
 
@@ -39,9 +40,12 @@ async def is_user_first_login(user_id: str) -> IOType:
     # Try to get from cache first
     cache = get_user_first_login_cache_client()
     if cache:
-        cached_result = await cache.get(cache_key)
-        if cached_result is not None:
-            return cached_result
+        with sentry_sdk.start_span(
+            op="redis.get", description="Get user first login from Redis cache"
+        ):
+            cached_result = await cache.get(cache_key)
+            if cached_result is not None:
+                return cached_result
 
     user_metadata = cast(User, await get_user_cached(user_id))
     user_created_date = user_metadata.user_created.ToDatetime()

@@ -8,7 +8,7 @@ from agent_service.endpoints.models import GetAgentOutputResponse
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import gather_with_concurrency
-from agent_service.utils.cache_utils import CacheBackend, RedisCacheBackend
+from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.get_agent_outputs import get_agent_output
 from agent_service.utils.logs import init_stdout_logging
 
@@ -16,7 +16,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 async def wrap_get_agent_output(
-    pg: AsyncDB, cache: CacheBackend, agent_id: str, plan_run_id: Optional[str] = None
+    pg: AsyncDB, cache: RedisCacheBackend, agent_id: str, plan_run_id: Optional[str] = None
 ) -> None:
     try:
         await get_agent_output(pg=pg, cache=cache, agent_id=agent_id, plan_run_id=plan_run_id)

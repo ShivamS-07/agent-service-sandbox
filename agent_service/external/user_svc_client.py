@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from functools import lru_cache
 from typing import Generator, List, Optional, Tuple
 
+import sentry_sdk
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
     LOCAL_TAG,
@@ -124,14 +125,18 @@ async def get_user_cached(user_id: str) -> Optional[User]:
         users = await get_users(user_id, user_ids=[user_id], include_user_enabled=True)
         return users[0] if users else None
 
-    key = get_user_key_func(user_id)
-    user = await redis_cache.get(key=key)
-    if user is not None:
-        return user  # type: ignore
+    with sentry_sdk.start_span(op="redis.get", description="Get user from Redis cache"):
+        key = get_user_key_func(user_id)
+        user = await redis_cache.get(key=key)
+        if user is not None:
+            return user  # type: ignore
 
-    users = await get_users(user_id, user_ids=[user_id], include_user_enabled=True)
-    if not users:
-        return None
+    with sentry_sdk.start_span(
+        op="user_service.get_users", description="Get user from User Service"
+    ):
+        users = await get_users(user_id, user_ids=[user_id], include_user_enabled=True)
+        if not users:
+            return None
 
     user = users[0]
     if user.cognito_enabled.value and user.has_alfa_access:

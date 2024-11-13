@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, Iterable, Optional
 
 import redis.asyncio as redis
 from gbi_common_py_utils.utils.redis import (
@@ -108,6 +108,37 @@ class AsyncRedisCache:
 
         return None
 
+    async def multiget(self, keys: Iterable[str], key_prefix: str = "") -> Optional[Dict[str, Any]]:
+        redis_keys = [self._make_redis_key(key, key_prefix) for key in keys]
+        # first, try to get the value from Redis
+        try:
+            vals = await self.client.mget(redis_keys)
+        except redis.RedisError as e:
+            logger.error("Encountered redis error in RedisCache get operation")
+            logger.exception(e)
+            return None
+        finally:
+            if self.auto_close_connection:
+                await self.client.close()
+
+        # if the value isn't present, return None
+        if vals is None:
+            return None
+
+        outputs: Dict[str, Any] = {}
+        for key, val in zip(keys, vals):
+            if val is not None:
+                # If the value is present, try to deserialize.
+                try:
+                    deserialized_val = self.deserialize_func(val)
+                    outputs[key] = deserialized_val
+                except Exception as e:
+                    logger.exception(
+                        f"Encountered exception while deserializing {key=}: {val}.\nException: {e}"
+                    )
+
+        return outputs
+
     async def set(
         self, key: str, val: Any, ttl: Optional[int] = None, key_prefix: str = ""
     ) -> None:
@@ -126,6 +157,40 @@ class AsyncRedisCache:
         except redis.RedisError as e:
             logger.error("Encountered redis error in RedisCache set operation")
             logger.exception(e)
+        finally:
+            if self.auto_close_connection:
+                await self.client.close()
+
+    async def multiset(
+        self, key_val_map: Dict[str, Any], ttl: Optional[int] = None, key_prefix: str = ""
+    ) -> None:
+        """
+        Multi-set the values:
+        - Use `mset` to set all keys at once, but the downside is that the method doesn't accept TTL
+        - If TTL is provided, use pipeline to batch multiple commands into a single request
+        """
+
+        inputs = {}
+        for key, val in key_val_map.items():
+            try:
+                redis_key = self._make_redis_key(key, key_prefix)
+                inputs[redis_key] = self.serialize_func(val)
+            except Exception as e:
+                logger.exception(
+                    f"Encountered exception while serializing {redis_key=}: {val}.\nException: {e}"
+                )
+
+        try:
+            if ttl is None:
+                await self.client.mset(inputs)
+            else:
+                async with self.client.pipeline() as pipe:
+                    for key, val in inputs.items():
+                        await pipe.set(key, val, ex=ttl)
+                    await pipe.execute()
+        except redis.RedisError as e:
+            logger.exception(f"Encountered redis error in RedisCache set operation:\n{e}")
+            return
         finally:
             if self.auto_close_connection:
                 await self.client.close()

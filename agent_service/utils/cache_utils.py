@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Iterable, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -24,7 +24,17 @@ class CacheBackend(ABC):
         pass
 
     @abstractmethod
+    async def multiget(
+        self, keys: Iterable[str], ttl: Optional[int] = None
+    ) -> Optional[Dict[str, IOType]]:
+        pass
+
+    @abstractmethod
     async def set(self, key: str, val: IOType, ttl: Optional[int] = None) -> None:
+        pass
+
+    @abstractmethod
+    async def multiset(self, key_val_map: Dict[str, IOType], ttl: Optional[int] = None) -> None:
         pass
 
 
@@ -51,8 +61,16 @@ class RedisCacheBackend(CacheBackend):
         val = await self.client.get(key=key)
         return val
 
+    async def multiget(
+        self, keys: Iterable[str], ttl: Optional[int] = None
+    ) -> Optional[Dict[str, IOType]]:
+        return await self.client.multiget(keys=keys)
+
     async def set(self, key: str, val: IOType, ttl: Optional[int] = None) -> None:
         await self.client.set(key=key, val=val, ttl=ttl)
+
+    async def multiset(self, key_val_map: Dict[str, IOType], ttl: Optional[int] = None) -> None:
+        await self.client.multiset(key_val_map=key_val_map, ttl=ttl)
 
     async def invalidate(self, key: str) -> None:
         await self.client.delete(key)
@@ -79,6 +97,11 @@ class PostgresCacheBackend(CacheBackend):
         val_str = rows[0]["cache_value"]
         return load_io_type(val_str)
 
+    async def multiget(
+        self, keys: Iterable[str], ttl: Optional[int] = None
+    ) -> Optional[Dict[str, IOType]]:
+        raise NotImplementedError("multiget not implemented for PostgresCacheBackend")
+
     async def set(self, key: str, val: IOType, ttl: Optional[int] = None) -> None:
         # postgres implements ttl on read, so ignored here
         sql = """
@@ -89,6 +112,9 @@ class PostgresCacheBackend(CacheBackend):
           last_updated = NOW()
         """
         self.db.generic_write(sql, {"key": key, "val": dump_io_type(val)})
+
+    async def multiset(self, key_val_map: Dict[str, IOType], ttl: Optional[int] = None) -> None:
+        raise NotImplementedError("multiset not implemented for PostgresCacheBackend")
 
 
 class OutputWrapper(BaseModel):

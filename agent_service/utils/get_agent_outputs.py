@@ -15,7 +15,7 @@ from agent_service.endpoints.models import (
 )
 from agent_service.io_types.text import Text, TextOutput
 from agent_service.utils.async_db import AsyncDB
-from agent_service.utils.cache_utils import CacheBackend
+from agent_service.utils.cache_utils import RedisCacheBackend
 
 LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ async def get_agent_output(
     pg: AsyncDB,
     agent_id: str,
     plan_run_id: Optional[str] = None,
-    cache: Optional[CacheBackend] = None,
+    cache: Optional[RedisCacheBackend] = None,
 ) -> GetAgentOutputResponse:
     """
     If `plan_run_id` is None, default to get the outputs of the latest run
