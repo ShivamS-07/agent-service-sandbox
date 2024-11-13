@@ -75,6 +75,15 @@ class UpdateAgentResponse(BaseModel):
 
 
 ####################################################################################################
+# Agent Help
+####################################################################################################
+class AgentHelpRequest(BaseModel):
+    is_help_requested: bool
+    send_chat_message: bool = False
+    resolved_by_cs: bool = False
+
+
+####################################################################################################
 # Agent automation enabled flag
 ####################################################################################################
 class EnableAgentAutomationRequest(BaseModel):
@@ -143,6 +152,7 @@ class AgentInfo(BaseModel):
 
     is_draft: Optional[bool] = False
     agent_metadata: Optional[AgentMetadata] = None
+    help_requested: bool = False
 
     def to_agent_row(self) -> Dict[str, Any]:
         return {
@@ -634,6 +644,7 @@ class MarkNotificationsAsUnreadResponse(BaseModel):
 
 class NotificationEventType(enum.StrEnum):
     NOTIFY_MESSAGE = "notify_message"
+    NOTIFY_HELP_STATUS = "notify_help_status"
 
 
 class NotifyMessageEvent(BaseModel):
@@ -643,9 +654,17 @@ class NotifyMessageEvent(BaseModel):
     latest_notification_string: Optional[str] = None
 
 
+class NotifyHelpStatusEvent(BaseModel):
+    event_type: Literal[NotificationEventType.NOTIFY_HELP_STATUS] = (
+        NotificationEventType.NOTIFY_HELP_STATUS
+    )
+    agent_id: str
+    is_help_requested: bool
+
+
 class NotificationEvent(BaseModel):
     user_id: str
-    event: Union[NotifyMessageEvent] = Field(discriminator="event_type")
+    event: Union[NotifyMessageEvent, NotifyHelpStatusEvent] = Field(discriminator="event_type")
     timestamp: datetime.datetime = Field(default_factory=get_now_utc)
 
 
@@ -1365,6 +1384,7 @@ class AgentQCInfo(BaseModel):
     user_org_id: str
     user_org_name: str
     user_is_internal: bool
+    help_requested: bool
 
     most_recent_plan_run_id: str
     most_recent_plan_run_status: Status

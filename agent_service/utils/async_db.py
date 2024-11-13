@@ -790,7 +790,7 @@ class AsyncDB:
         sql = f"""
             SELECT cm.message_id::VARCHAR, cm.message, cm.is_user_message, cm.message_time,
             cm.message_author, cm.plan_run_id::VARCHAR,
-              COALESCE(nf.unread, FALSE) as unread
+              COALESCE(nf.unread, FALSE) as unread, cm.message_metadata
             FROM agent.chat_messages cm
             LEFT JOIN agent.notifications nf
             ON cm.message_id = nf.message_id
@@ -824,6 +824,14 @@ class AsyncDB:
         UPDATE agent.agents SET is_draft = %(is_draft)s WHERE agent_id = %(agent_id)s
         """
         await self.pg.generic_write(sql, params={"agent_id": agent_id, "is_draft": is_draft})
+
+    async def update_agent_help_requested(self, agent_id: str, help_requested: bool) -> None:
+        sql = """
+        UPDATE agent.agents SET help_requested = %(help_requested)s WHERE agent_id = %(agent_id)s
+        """
+        await self.pg.generic_write(
+            sql, params={"agent_id": agent_id, "help_requested": help_requested}
+        )
 
     async def update_execution_plan_status(
         self, plan_id: str, agent_id: str, status: PlanStatus = PlanStatus.READY
@@ -1085,7 +1093,8 @@ class AsyncDB:
         sql = f"""
         WITH a_id AS (
             SELECT agent_id, user_id, agent_name, created_at, last_updated,
-                   automation_enabled, schedule, section_id, deleted, is_draft
+                   automation_enabled, schedule, section_id, deleted, is_draft,
+                   help_requested
             FROM agent.agents a
             {agent_where_clause}
         )
@@ -1093,7 +1102,7 @@ class AsyncDB:
             a.agent_id::VARCHAR, a.user_id::VARCHAR, a.agent_name, a.created_at, a.last_updated,
             a.automation_enabled, a.section_id::VARCHAR, lr.last_run, msg.latest_agent_message,
             nu.num_unread AS unread_notification_count, a.schedule, lr.run_metadata,
-            a.deleted, a.is_draft, lo.output_last_updated
+            a.deleted, a.is_draft, lo.output_last_updated, a.help_requested
         FROM a_id AS a
         LEFT JOIN LATERAL (
             SELECT created_at AS last_run, run_metadata
@@ -1155,6 +1164,7 @@ class AsyncDB:
                     section_id=row["section_id"],
                     deleted=row["deleted"],
                     output_last_updated=row["output_last_updated"],
+                    help_requested=row["help_requested"],
                 )
             )
         return output
@@ -2070,24 +2080,18 @@ class AsyncDB:
     ) -> List[AgentQCInfo]:
         where_parts = []
         where_clause = ""
-        params = {}
+        params: Dict[str, Any] = {}
         if filter_deleted:
             where_parts.append("NOT a.deleted")
         if live_only:
             where_parts.append("a.automation_enabled")
-        if start_dt:
-            where_parts.append("pr.created_at >= %(start_dt)s")
-            params["start_dt"] = start_dt
-        if end_dt:
-            where_parts.append("pr.created_at <= %(end_dt)s")
-            params["end_dt"] = end_dt
         if where_parts:
             parts_str = " AND ".join(where_parts)
             where_clause = f"WHERE {parts_str}"
 
         sql = f"""
-        SELECT
-          a.agent_id::TEXT, a.agent_name, a.user_id::TEXT, u.name AS user_name,
+        SELECT DISTINCT ON (a.agent_id)
+          a.agent_id::TEXT, a.agent_name, a.user_id::TEXT, u.name AS user_name, a.help_requested,
           o.id::TEXT AS user_org_id, o.name AS user_org_name, (NOT is_client) AS user_is_internal,
           JSON_AGG(
             JSON_BUILD_OBJECT(
@@ -2116,6 +2120,7 @@ class AsyncDB:
             info = AgentQCInfo(
                 agent_id=row["agent_id"],
                 agent_name=row["agent_name"],
+                help_requested=row["help_requested"],
                 user_id=row["user_id"],
                 user_name=row["user_name"],
                 user_org_id=row["user_org_id"],
@@ -2127,6 +2132,10 @@ class AsyncDB:
                 ),
                 last_run_start=parse(most_recent_run["created_at"]),
             )
+            if start_dt and info.last_run_start < start_dt:
+                continue
+            if end_dt and info.last_run_start > end_dt:
+                continue
             last_successful_run = None
             run_count_by_status: Dict[Status, int] = defaultdict(int)
             for run_info in row["plan_run_info"]:

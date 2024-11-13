@@ -43,6 +43,7 @@ from agent_service.endpoints.models import (
     Account,
     AddCustomDocumentsResponse,
     AgentEvent,
+    AgentHelpRequest,
     AgentInfo,
     AgentMetadata,
     AgentQC,
@@ -180,12 +181,20 @@ from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import ExecutionPlan, Variable
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.tool import ToolCategory, ToolRegistry
-from agent_service.types import ChatContext, MemoryType, Message, PlanRunContext
+from agent_service.types import (
+    ChatContext,
+    MemoryType,
+    Message,
+    MessageMetadata,
+    MessageSpecialFormatting,
+    PlanRunContext,
+)
 from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import (
     publish_agent_execution_plan,
     publish_agent_name,
     send_chat_message,
+    update_agent_help_requested,
 )
 from agent_service.utils.agent_name import generate_name_for_agent
 from agent_service.utils.async_db import AsyncDB
@@ -413,6 +422,48 @@ class AgentServiceImpl:
             ),
             db=self.pg,
         )
+        return UpdateAgentResponse(success=True)
+
+    async def set_agent_help_requested(
+        self, agent_id: str, req: AgentHelpRequest
+    ) -> UpdateAgentResponse:
+
+        user = await self.pg.get_agent_owner(agent_id=agent_id)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+
+        run_async_background(
+            update_agent_help_requested(
+                agent_id=agent_id, user_id=user, help_requested=req.is_help_requested, db=self.pg
+            )
+        )
+        if not req.send_chat_message:
+            return UpdateAgentResponse(success=True)
+
+        message_metadata = MessageMetadata()
+        if req.is_help_requested:
+            message_metadata.formatting = MessageSpecialFormatting.HELP_REQUESTED
+            message = (
+                "I've alerted a human to help with your request. I will notify you when I "
+                "have an update."
+            )
+        else:
+            message = "Help request cancelled."
+            if req.resolved_by_cs:
+                message_metadata.formatting = MessageSpecialFormatting.HELP_RESOLVED
+                message = "A human has addressed the issue I was having. I should be all set!"
+
+        await send_chat_message(
+            message=Message(
+                agent_id=agent_id,
+                message=message,
+                is_user_message=False,
+                visible_to_llm=False,
+                message_metadata=message_metadata,
+            ),
+            db=self.pg,
+        )
+
         return UpdateAgentResponse(success=True)
 
     async def get_all_agent_notification_criteria(self, agent_id: str) -> List[CustomNotification]:

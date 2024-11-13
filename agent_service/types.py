@@ -13,6 +13,15 @@ GPT_USER_TAG = "Client"
 GPT_AGENT_TAG = "You"
 
 
+class MessageSpecialFormatting(enum.StrEnum):
+    HELP_REQUESTED = "help_requested"
+    HELP_RESOLVED = "help_resolved"
+
+
+class MessageMetadata(BaseModel):
+    formatting: Optional[MessageSpecialFormatting] = None
+
+
 class Message(BaseModel):
     agent_id: str = Field(default_factory=lambda: str(uuid4()))  # default is for testing only
     message_id: str = Field(default_factory=lambda: str(uuid4()))
@@ -23,6 +32,7 @@ class Message(BaseModel):
     visible_to_llm: bool = True
     message_author: Optional[str] = ""
     plan_run_id: Optional[str] = None
+    message_metadata: Optional[MessageMetadata] = MessageMetadata()
 
     def get_gpt_input(self) -> str:
         from agent_service.io_types.text_objects import extract_text_objects_from_text
@@ -41,6 +51,9 @@ class Message(BaseModel):
             "visible_to_llm": self.visible_to_llm,
             "message_author": self.message_author,
             "plan_run_id": self.plan_run_id,
+            "message_metadata": (
+                self.message_metadata.model_dump_json() if self.message_metadata else None
+            ),
         }
 
 

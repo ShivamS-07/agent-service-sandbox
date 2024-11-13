@@ -25,6 +25,7 @@ from agent_service.endpoints.models import (
     MessageEvent,
     NewPlanEvent,
     NotificationEvent,
+    NotifyHelpStatusEvent,
     NotifyMessageEvent,
     OnboardingEmailMessage,
     OutputEvent,
@@ -134,6 +135,17 @@ async def send_chat_message(
         await publish_agent_event(
             agent_id=message.agent_id, serialized_event=event.model_dump_json()
         )
+
+
+async def update_agent_help_requested(
+    agent_id: str, user_id: str, help_requested: bool, db: AsyncDB
+) -> None:
+    await db.update_agent_help_requested(agent_id=agent_id, help_requested=help_requested)
+    event = NotificationEvent(
+        user_id=user_id,
+        event=NotifyHelpStatusEvent(agent_id=agent_id, is_help_requested=help_requested),
+    )
+    await publish_notification_event(user_id=user_id, serialized_event=event.model_dump_json())
 
 
 async def publish_agent_name(agent_id: str, agent_name: str) -> None:

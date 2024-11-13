@@ -38,6 +38,7 @@ from agent_service.endpoints.authz_helper import (
 )
 from agent_service.endpoints.models import (
     AddCustomDocumentsResponse,
+    AgentHelpRequest,
     AgentInfo,
     AgentQC,
     ChatWithAgentRequest,
@@ -527,6 +528,19 @@ async def update_agent(
     )
 
     return await application.state.agent_service_impl.update_agent(agent_id=agent_id, req=req)
+
+
+@router.post("/agent/help/{agent_id}")
+async def set_agent_help_requested(
+    agent_id: str, req: AgentHelpRequest, user: User = Depends(parse_header)
+) -> UpdateAgentResponse:
+    if not user_has_qc_tool_access(user_id=user.user_id):
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
+    return await application.state.agent_service_impl.set_agent_help_requested(
+        agent_id=agent_id, req=req
+    )
 
 
 @router.get(
