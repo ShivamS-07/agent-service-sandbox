@@ -561,13 +561,14 @@ class Planner:
         self, user_input: str, llm: GPT, sample_plans: str = ""
     ) -> str:
         sys_prompt = PLANNER_SYS_PROMPT.format(
-            rules=PLAN_RULES,
             guidelines=PLAN_GUIDELINES,
             example=PLAN_EXAMPLE,
             tools=self.tool_string,
         )
 
-        main_prompt = PLANNER_MAIN_PROMPT.format(message=user_input, sample_plans=sample_plans)
+        main_prompt = PLANNER_MAIN_PROMPT.format(
+            message=user_input, sample_plans=sample_plans, rules=PLAN_RULES
+        )
         return await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     async def _query_GPT_for_new_plan_after_input(
