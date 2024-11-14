@@ -538,7 +538,7 @@ async def prepare_main_prompt(
     )
     logger.info(f"Length of tokens in main prompt: {main_prompt_token_length}")
     # if main prompt is too long, summerize some texts
-    if main_prompt_token_length > MAX_TOKENS[COMMENTARY_LLM]:
+    if main_prompt_token_length > MAX_TOKENS[COMMENTARY_LLM] * 0.95:
         texts = GPTTokenizer(COMMENTARY_LLM).do_truncation_if_needed(
             texts,
             [
