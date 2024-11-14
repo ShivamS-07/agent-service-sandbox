@@ -777,6 +777,8 @@ async def per_stock_summarize_texts(
         )
         output.append(stock)
 
+    output.sort(key=lambda x: x.history[-1].explanation == NO_SUMMARY_FOR_STOCK)
+
     return output
 
 
