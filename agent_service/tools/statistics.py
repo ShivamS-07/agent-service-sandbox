@@ -22,7 +22,7 @@ from agent_service.io_types.table import (
     TableColumn,
     TableColumnMetadata,
 )
-from agent_service.planner.errors import EmptyOutputError
+from agent_service.planner.errors import EmptyInputError, EmptyOutputError
 from agent_service.tool import (
     TOOL_DEBUG_INFO,
     ToolArgs,
@@ -282,6 +282,9 @@ async def get_statistic_data_for_companies(
 
     if context.chat is None:  # for mypy
         raise Exception("No chat context provided")
+
+    if not args.stock_ids:
+        raise EmptyInputError("No stocks to derive statistics for")
 
     logger = get_prefect_logger(__name__)
 

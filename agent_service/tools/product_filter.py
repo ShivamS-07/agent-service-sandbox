@@ -445,6 +445,9 @@ async def filter_stocks_by_product_or_service(
             len(args.must_include_stocks) if args.must_include_stocks else 0
         )
 
+        if non_must_quota <= 0:  # no room due to previous run, can't add anything
+            filtered_stocks2_dict = {}
+
         if len(non_must_stocks) > non_must_quota:
             logger.info("Too many stocks, filtering by market cap")
             market_cap_table = cast(
