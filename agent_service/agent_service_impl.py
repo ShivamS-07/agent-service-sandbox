@@ -432,10 +432,8 @@ class AgentServiceImpl:
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
 
-        run_async_background(
-            update_agent_help_requested(
-                agent_id=agent_id, user_id=user, help_requested=req.is_help_requested, db=self.pg
-            )
+        await update_agent_help_requested(
+            agent_id=agent_id, user_id=user, help_requested=req.is_help_requested, db=self.pg
         )
         if not req.send_chat_message:
             return UpdateAgentResponse(success=True)
