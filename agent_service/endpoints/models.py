@@ -1374,6 +1374,7 @@ class UpdateAgentQCResponse(BaseModel):
 class GetAgentsQCRequest(BaseModel):
     start_dt: Optional[datetime.datetime] = None
     end_dt: Optional[datetime.datetime] = None
+    live_only: bool = True
 
 
 class AgentQCInfo(BaseModel):
