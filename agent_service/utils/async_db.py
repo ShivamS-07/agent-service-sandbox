@@ -1762,6 +1762,12 @@ class AsyncDB:
         for chat_message_data in chat_messages:
             chat_message_data["agent_id"] = dst_agent_id
             chat_message_data["message_id"] = str(uuid.uuid4())
+            if chat_message_data["message_metadata"]:
+                chat_message_data["message_metadata"] = json.dumps(
+                    chat_message_data["message_metadata"]
+                )
+            else:
+                chat_message_data["message_metadata"] = "{}"
             if chat_message_data["plan_run_id"]:
                 regular_chat_messages.append(chat_message_data)
             else:
