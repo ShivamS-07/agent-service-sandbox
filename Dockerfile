@@ -9,6 +9,7 @@ RUN pip install pipenv==2024.0.1
 WORKDIR /service
 COPY Pipfile ./
 ENV CARGO_BUILD_JOBS=1
+ENV PIPENV_MAX_SUBPROCESS=2
 RUN pipenv install --verbose
 COPY agent_service/ ./agent_service
 COPY application.py .
