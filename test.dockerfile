@@ -7,6 +7,7 @@ RUN apt-get install -y pandoc
 RUN apt-get install -y libpq-dev
 RUN pip install pipenv==2024.0.1
 WORKDIR /service
+ENV CARGO_BUILD_JOBS=1
 COPY Pipfile ./
 RUN pipenv install --verbose
 RUN pipenv install --dev
