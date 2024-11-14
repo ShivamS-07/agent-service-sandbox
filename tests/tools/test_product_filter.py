@@ -35,7 +35,7 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
     async def test_filter_by_product1(self):
         result = await filter_stocks_by_product_or_service(
             FilterStocksByProductOrServiceInput(
-                stock_ids=self.stock_ids, product_str="smartphone", texts=[]
+                stock_ids=self.stock_ids, product_str="smartphone", texts=[], filter_only=True
             ),
             self.context,
         )
@@ -44,7 +44,10 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
     async def test_filter_by_product2(self):
         result = await filter_stocks_by_product_or_service(
             FilterStocksByProductOrServiceInput(
-                stock_ids=self.stock_ids, product_str="gold and copper mine", texts=[]
+                stock_ids=self.stock_ids,
+                product_str="gold and copper mine",
+                texts=[],
+                filter_only=True,
             ),
             self.context,
         )
@@ -54,7 +57,7 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
     async def test_filter_by_product3(self):
         result = await filter_stocks_by_product_or_service(
             FilterStocksByProductOrServiceInput(
-                stock_ids=self.stock_ids, product_str="chairs", texts=[]
+                stock_ids=self.stock_ids, product_str="chairs", texts=[], filter_only=True
             ),
             self.context,
         )
@@ -80,6 +83,7 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
                     product_str=product,
                     texts=[],
                     must_include_stocks=companies if companies else None,
+                    filter_only=True,
                 ),
                 self.context,
             )
@@ -90,6 +94,7 @@ class TestFilterStocksByProductOrService(IsolatedAsyncioTestCase):
                         stock_ids=self.sp500_stock_ids,
                         product_str=product,
                         must_include_stocks=companies,
+                        filter_only=True,
                     ),
                     self.context,
                 )

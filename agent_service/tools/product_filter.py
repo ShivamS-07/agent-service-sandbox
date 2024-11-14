@@ -1,9 +1,10 @@
+import json
 from collections import Counter
 from typing import Any, Dict, List, Optional, cast
 
 from agent_service.GPT.constants import GPT4_O, GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import HistoryEntry, dump_io_type
+from agent_service.io_type_utils import HistoryEntry, dump_io_type, load_io_type
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
 from agent_service.io_types.table import StockTable
@@ -17,6 +18,7 @@ from agent_service.tool import (
     ToolRegistry,
     tool,
 )
+from agent_service.tools.peers import get_peer_stock_id
 from agent_service.tools.statistics import (
     GetStatisticDataForCompaniesInput,
     get_statistic_data_for_companies,
@@ -38,6 +40,7 @@ from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.string_utils import clean_to_json_if_needed
 from agent_service.utils.tool_diff import get_prev_run_info
 
 SEPARATOR = "###"
@@ -105,6 +108,33 @@ PRODUCT_DESCRIPTION_PROMPT = Prompt(
     ),
 )
 
+STOCK_BRAINSTORM_PROMPT_STR = """
+    You are a financial analyst who is doing a market analysis of relevant companies for a client
+    You will be provided with a particular type of product or service, and asked to brainstorm companies
+    that offer that product or service. You should start with the most obvious, well-known companies,
+    and include any that you can think of. Do not limit yourself to US stocks unless it is clear that
+    is what the user wants, based on the chat context.
+    Each company you identify will be a json on one line of your output, each json will contain the following
+    four keys with string values:
+    company_name: the full name of the peer stock
+    isin: the ISIN of the stock. If it is not publicly traded, the isin key should be the string None
+    symbol: the stock symbol/ticker. If it is not publicly traded, the symbol key should be the string None
+    justification: a 2 to 3 sentence justification of why you have included them
+    Other than the lines with jsons (the entire json for each stock must be on a single line), do not output
+    anything else.
+    Here is the product/service: {product_str}
+    Here is the larger chat context, deliminted by ---, which might help you understand what kinds of stocks
+    the client is interested in
+    ---
+    {chat_str}
+    ---
+    Now write the relevant companies in json format, one per line:
+"""
+
+STOCK_BRAINSTORM_PROMPT = Prompt(
+    name="STOCK_BRAINSTORM_PROMPT", template=STOCK_BRAINSTORM_PROMPT_STR
+)
+
 
 class FilterStocksByProductOrServiceInput(ToolArgs):
     stock_ids: List[StockID]
@@ -114,6 +144,7 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
     product_str: str
     must_include_stocks: Optional[List[StockID]] = None
     max_results: Optional[int] = None
+    filter_only: bool = False
 
     # prompt arguments (hidden from planner)
     stock_product_filter1_main_prompt: str = STOCK_PRODUCT_FILTER1_MAIN_PROMPT_STR_DEFAULT
@@ -192,11 +223,15 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "If the user has not specified any specific universe of stocks, the S&P500 is a good default "
         "to pass to this tool. If the user has mentioned a specific stock whose main market is domestic, "
         "you should pass an region-specific index which contains that stock. "
-        "However, if the client has not mentioned a region and either there is a mention of a stock "
-        "which has an major international presence, or the product market involves major international "
-        "competition, you should instead use the Vanguard World Stock ETF instead of the S&P 500, for example "
-        "if the product_str was cars, you should use the world stocks because of major Japanese manufacturers "
-        "like Toyota, Honda, etc."
+        "When the filter_only argument is set to False (the default) we will attempt to come up with all major stocks "
+        "that produce the product, above and beyond those in the list of stock_ids we are filtering over. In the "
+        "general case, we will want to do this (hence the reason this defaults to False), but if the client expresses "
+        "that they only want to consider stocks in a particular stock universe (or country, etc.), then filter_only "
+        "must be set to True. For example, if the client asks for 'companies in the S&P 500 that offer investment "
+        "planning`, you must explictly set filter_only=True because considering all stocks might result in companies "
+        "outside the S&P 500 being included. The default value for filter_only is False so you must explicitly set it "
+        "to True in your arguments to this tool when the client limits their request, if you do not and a client gets "
+        "a company outside the range they are asking for, you will be fired!"
     ),
     category=ToolCategory.LLM_ANALYSIS,
     tool_registry=ToolRegistry,
@@ -253,6 +288,9 @@ async def filter_stocks_by_product_or_service(
     must_include_stocks_set = set(args.must_include_stocks if args.must_include_stocks else [])
     stocks_to_filter = list(stock_ids_set | must_include_stocks_set)
 
+    debug_info: Dict[str, Any] = {}
+    TOOL_DEBUG_INFO.set(debug_info)
+
     prev_run_info = None
     prev_output: List[StockID] = []
     try:  # since everything associated with diffing is optional, put in try/except
@@ -261,6 +299,22 @@ async def filter_stocks_by_product_or_service(
             prev_args = FilterStocksByProductOrServiceInput.model_validate_json(
                 prev_run_info.inputs_str
             )
+
+            prev_stock_ids_set = set(prev_args.stock_ids)
+
+            if (
+                not args.filter_only
+                and prev_run_info.debug
+                and "brainstormed_stocks" in prev_run_info.debug
+            ):
+                brainstormed_stocks = cast(
+                    List[StockID], load_io_type(prev_run_info.debug["brainstormed_stocks"])
+                )
+                stock_ids_set.update(brainstormed_stocks)
+                prev_stock_ids_set.update(brainstormed_stocks)
+                debug_info["brainstormed_stocks"] = dump_io_type(brainstormed_stocks)
+
+            args.filter_only = True  # do not redo the brainstorming each update
 
             # only include the stocks that were in the previous run as well as in the current inputs
             prev_output = [
@@ -271,7 +325,7 @@ async def filter_stocks_by_product_or_service(
             prev_output_set = set(prev_output)
 
             # we are only going to run the tool on the stocks that are different
-            diff_stock_ids = stock_ids_set - set(prev_args.stock_ids)
+            diff_stock_ids = stock_ids_set - prev_stock_ids_set
 
             # must_include_stocks should always be in prev_output
             args.must_include_stocks = list(must_include_stocks_set - prev_output_set)
@@ -284,6 +338,20 @@ async def filter_stocks_by_product_or_service(
                 return prev_output
     except Exception as e:
         logger.warning(f"Error including stock ids from previous run: {e}")
+
+    # initiate GPT llm models
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm_cheap = GPT(model=FILTER1_LLM, context=gpt_context)
+    llm_big = GPT(model=FILTER2_LLM, context=gpt_context)
+
+    if not args.filter_only:
+        await tool_log(log="Doing an initial brainstorm of relevant stocks", context=context)
+        brainstormed_stocks = await brainstorm_stocks(args.product_str, llm_big, context)
+        logger.info(f"Brainstormed stocks: {[stock.company_name for stock in brainstormed_stocks]}")
+        stocks_to_filter = list(set(stocks_to_filter) | set(brainstormed_stocks))
+        debug_info["brainstormed_stocks"] = dump_io_type(brainstormed_stocks)
 
     # get company/stock descriptions
     description_texts = await get_company_descriptions(
@@ -305,12 +373,6 @@ async def filter_stocks_by_product_or_service(
     logger.info(f"Number of stocks to be filtered: {len(stocks)}")
 
     # first round of filtering
-    # initiate GPT llm models
-    gpt_context = create_gpt_context(
-        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
-    )
-    llm_cheap = GPT(model=FILTER1_LLM, context=gpt_context)
-    llm_big = GPT(model=FILTER2_LLM, context=gpt_context)
 
     # run CONSISTENCY_ROUNDS times to get a more stable result
     await tool_log(
@@ -596,6 +658,55 @@ async def filter_stocks_round2(
                 break
 
     return res
+
+
+async def brainstorm_stocks(product_str: str, llm: GPT, context: PlanRunContext) -> List[StockID]:
+    if context.chat:
+        chat_str = context.chat.get_gpt_input()
+    else:
+        chat_str = ""
+
+    result = await llm.do_chat_w_sys_prompt(
+        STOCK_BRAINSTORM_PROMPT.format(product_str=product_str, chat_str=chat_str), NO_PROMPT
+    )
+
+    initial_stocks = []
+    initial_stock_jsons = result.split("\n")
+    for initial_stock_json in initial_stock_jsons:
+        # check line is not empty
+        if initial_stock_json and "```" not in initial_stock_json:
+            try:
+                # company name, ISIN, stock symbol, justification
+                stock_obj = json.loads(clean_to_json_if_needed(initial_stock_json))
+                # filter out non-public companies
+                if (
+                    stock_obj["company_name"]
+                    and stock_obj["isin"] != "None"
+                    and stock_obj["symbol"] != "None"
+                    and stock_obj["justification"]
+                ):
+                    initial_stocks.append(stock_obj)
+            except IndexError:
+                logger.warning(f"Peers parsing failed for line: {initial_stock_json}, skipping")
+                continue
+
+    lookup_tasks = []
+
+    # we don't want the internal decision making of stock_identifier_lookup
+    # to pollute the work log for peers tool
+    no_tool_log_context = context.model_copy(update={"skip_db_commit": True})
+
+    for peer in initial_stocks:
+        lookup_tasks.append(get_peer_stock_id(peer, no_tool_log_context))
+
+    lookup_result = await gather_with_concurrency(lookup_tasks, n=len(initial_stocks))
+
+    final_stocks = []
+
+    for stock in lookup_result:
+        if stock and stock not in final_stocks:
+            final_stocks.append(stock)
+    return final_stocks
 
 
 GET_COMPANY_PRODUCT_PROMPT_STR = """
