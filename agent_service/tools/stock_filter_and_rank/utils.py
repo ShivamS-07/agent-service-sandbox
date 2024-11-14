@@ -1,20 +1,21 @@
+import datetime
 import random
 from asyncio.log import logger
 from collections import defaultdict
 from copy import deepcopy
 from math import ceil, floor
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
-from agent_service.GPT.constants import GPT4_O, GPT4_O_MINI, SONNET
+from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O, GPT4_O_MINI, SONNET
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import Citation, HistoryEntry, Score
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.stock_aligned_text import StockAlignedTextGroups
-from agent_service.io_types.text import StockText, Text, TextGroup
+from agent_service.io_types.text import StockText, Text
 from agent_service.tools.LLM_analysis.constants import RUBRIC_DELIMITER
 from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
-from agent_service.tools.stock_rank_by_text.constants import (
+from agent_service.tools.stock_filter_and_rank.constants import (
     EVALUATE_AND_SUMMARIZE_CONCURRENCY,
     NONRELEVANT_COMPANY_EXPLANATION,
     PAIRWISE_CONCURRENCY,
@@ -24,11 +25,13 @@ from agent_service.tools.stock_rank_by_text.constants import (
     SCORE_OUTPUT_DELIMITER,
     TIEBREAKER_CONCURRENCY,
 )
-from agent_service.tools.stock_rank_by_text.prompts import (
+from agent_service.tools.stock_filter_and_rank.prompts import (
+    PROFILE_ADD_DIFF_MAIN_PROMPT,
+    PROFILE_ADD_DIFF_SYS_PROMPT,
     PROFILE_EXPOSURE_TEXT_EVALUATER_MAIN_PROMPT,
     PROFILE_EXPOSURE_TEXT_EVALUATER_SYS_PROMPT,
-    PROFILE_EXPOSURE_TEXT_SUMMARIZER_MAIN_PROMPT,
-    PROFILE_EXPOSURE_TEXT_SUMMARIZER_SYS_PROMPT,
+    PROFILE_REMOVE_DIFF_MAIN_PROMPT,
+    PROFILE_REMOVE_DIFF_SYS_PROMPT,
     PROFILE_RUBRIC_EXAMPLES_MAIN_INSTRUCTION,
     PROFILE_RUBRIC_EXAMPLES_SYS_INSTRUCTION,
     PROFILE_RUBRIC_GENERATION_MAIN_OBJ,
@@ -41,27 +44,226 @@ from agent_service.tools.stock_rank_by_text.prompts import (
     TWO_COMP_PROFILE_COMPARISON_SYS_PROMPT,
 )
 from agent_service.types import PlanRunContext
-from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.prompt_utils import Prompt
 
 random.seed(RANDOM_SEED)
 
 
-async def evaluate_and_summarize_profile_fit_for_stock(
+async def profile_filter_stock_match(
+    aligned_text_groups: StockAlignedTextGroups,
+    str_lookup: Dict[StockID, str],
+    profile: str,
+    is_using_complex_profile: bool,
+    llm: GPT,
+    context: PlanRunContext,
+    profile_filter_main_prompt: Prompt,
+    simple_profile_filter_sys_prompt: Optional[Prompt] = None,
+    complex_profile_filter_sys_prompt: Optional[Prompt] = None,
+    topic: str = "",
+    do_citations: bool = True,
+    stock_whitelist: Optional[Set[StockID]] = None,
+) -> List[Tuple[bool, str, List[Citation]]]:
+    logger = get_prefect_logger(__name__)
+    if (simple_profile_filter_sys_prompt is None) and (complex_profile_filter_sys_prompt is None):
+        logger.error(
+            "Simple Filter System Prompt and Complex Filter System Prompt cannot both be None!"
+        )
+
+    # Add a placeholder company name as a safety buffer
+    tokenizer = GPTTokenizer(GPT4_O)
+    used = 0
+    if is_using_complex_profile and isinstance(complex_profile_filter_sys_prompt, Prompt):
+        used = tokenizer.get_token_length(
+            "\n".join(
+                [
+                    profile_filter_main_prompt.template,
+                    complex_profile_filter_sys_prompt.template,
+                    topic,
+                    profile,
+                    "Placeholder Company Name",
+                ]
+            )
+        )
+    elif isinstance(simple_profile_filter_sys_prompt, Prompt):
+        used = tokenizer.get_token_length(
+            "\n".join(
+                [
+                    profile_filter_main_prompt.template,
+                    simple_profile_filter_sys_prompt.template,
+                    profile,
+                    "Placeholder Company Name",
+                ]
+            )
+        )
+
+    tasks = []
+    for stock in aligned_text_groups.val:
+        text_str = str_lookup[stock]
+        text_str = tokenizer.chop_input_to_allowed_length(text_str, used)
+        if text_str == "" or (stock_whitelist is not None and stock not in stock_whitelist):
+            tasks.append(identity(""))
+
+        elif is_using_complex_profile and isinstance(complex_profile_filter_sys_prompt, Prompt):
+            tasks.append(
+                llm.do_chat_w_sys_prompt(
+                    profile_filter_main_prompt.format(
+                        company_name=stock.company_name,
+                        texts=text_str,
+                        profile=profile,
+                        today=(
+                            context.as_of_date.date().isoformat()
+                            if context.as_of_date
+                            else datetime.date.today().isoformat()
+                        ),
+                    ),
+                    complex_profile_filter_sys_prompt.format(topic_name=topic),
+                )
+            )
+        elif isinstance(simple_profile_filter_sys_prompt, Prompt):
+            tasks.append(
+                llm.do_chat_w_sys_prompt(
+                    profile_filter_main_prompt.format(
+                        company_name=stock.company_name,
+                        texts=text_str,
+                        profile=profile,
+                        today=(
+                            context.as_of_date.date().isoformat()
+                            if context.as_of_date
+                            else datetime.date.today().isoformat()
+                        ),
+                    ),
+                    simple_profile_filter_sys_prompt.format(),
+                )
+            )
+
+    results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
+
+    output_tuples: List[Tuple[bool, str, List[Citation]]] = []
+    for result, text_group in zip(results, aligned_text_groups.val.values()):
+        try:
+            rationale, answer, citation_anchor_map = (
+                result.strip().replace("\n\n", "\n").split("\n")
+            )
+            is_match = answer.lower().startswith("yes")
+            if is_match and do_citations:
+                rationale, citations = await extract_citations_from_gpt_output(
+                    "\n".join([rationale, citation_anchor_map]), text_group, context
+                )
+            else:
+                citations = []
+        except ValueError:
+            is_match = False
+            rationale = "No match"
+            citations = []
+        output_tuples.append((is_match, rationale, citations))  # type:ignore
+
+    return output_tuples
+
+
+async def profile_filter_added_diff_info(
+    added_stocks: List[StockID],
+    profile_str: str,
+    stock_text_diff: Dict[StockID, List[StockText]],
+    agent_id: str,
+) -> Dict[StockID, str]:
+    # For each stock that has been added in this run of the profile filter, try to generate a useful explanation
+    # for why based on text differences
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
+    llm = GPT(context=gpt_context, model=SONNET)
+
+    # might later do citations for this but not bothering now
+    str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
+        {stock: stock_text_diff.get(stock, []) for stock in added_stocks},
+        include_header=True,
+        text_group_numbering=False,
+    )
+
+    tasks = []
+    for stock in added_stocks:
+        if str_lookup[stock]:
+            tasks.append(
+                llm.do_chat_w_sys_prompt(
+                    PROFILE_ADD_DIFF_MAIN_PROMPT.format(
+                        company_name=stock.company_name,
+                        profiles=profile_str,
+                        new_documents=str_lookup[stock],
+                    ),
+                    PROFILE_ADD_DIFF_SYS_PROMPT.format(),
+                )
+            )
+        else:
+            tasks.append(identity(""))
+
+    results = await gather_with_concurrency(tasks)
+    return {
+        stock: explanation.split("\n")[0]
+        for stock, explanation in zip(added_stocks, results)
+        if "Yes, " in explanation
+    }
+
+
+async def profile_filter_removed_diff_info(
+    removed_stocks: List[StockID],
+    profile_str: str,
+    stock_text_diff: Dict[StockID, List[StockText]],
+    agent_id: str,
+) -> Dict[StockID, str]:
+    # For each stock that has been removed in this run of the profile filter, try to generate a useful explanation
+    # for why based on text differences
+    gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
+    llm = GPT(context=gpt_context, model=SONNET)
+
+    # might later do citations for this but not bothering now
+    str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
+        {stock: stock_text_diff.get(stock, []) for stock in removed_stocks},
+        include_header=True,
+        text_group_numbering=False,
+    )
+
+    tasks = []
+    for stock in removed_stocks:
+        if str_lookup[stock]:
+            tasks.append(
+                llm.do_chat_w_sys_prompt(
+                    PROFILE_REMOVE_DIFF_MAIN_PROMPT.format(
+                        company_name=stock.company_name,
+                        profiles=profile_str,
+                        new_documents=str_lookup[stock],
+                    ),
+                    PROFILE_REMOVE_DIFF_SYS_PROMPT.format(),
+                )
+            )
+        else:
+            tasks.append(identity(""))
+
+    results = await gather_with_concurrency(tasks)
+    return {
+        stock: explanation.split("\n")[0]
+        for stock, explanation in zip(removed_stocks, results)
+        if "Agreed, " in explanation
+    }
+
+
+async def evaluate_profile_fit_for_stock(
     profile: str,
     stock_id: StockID,
     company_texts: str,
-    text_group: TextGroup,
     context: PlanRunContext,
-) -> Optional[Tuple[str, List[Citation]]]:
+    input_llm: Optional[GPT] = None,
+) -> bool:
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
 
-    llm = GPT(model=GPT4_O, context=gpt_context)
-    cheap_llm = GPT(model=GPT4_O_MINI, context=gpt_context)
+    if input_llm:
+        llm = input_llm
+    else:
+        llm = GPT(model=GPT4_O_MINI, context=gpt_context)
 
-    tokenizer = GPTTokenizer(model=cheap_llm.model)
+    tokenizer = GPTTokenizer(model=llm.model)
     fixed_len = tokenizer.get_token_length(
         input=(
             " ".join(
@@ -77,7 +279,7 @@ async def evaluate_and_summarize_profile_fit_for_stock(
         flexible_input=company_texts, fixed_input_len=fixed_len
     )
 
-    llm_output = await cheap_llm.do_chat_w_sys_prompt(
+    llm_output = await llm.do_chat_w_sys_prompt(
         main_prompt=PROFILE_EXPOSURE_TEXT_EVALUATER_MAIN_PROMPT.format(
             profile=profile,
             company_name=stock_id.company_name,
@@ -95,77 +297,37 @@ async def evaluate_and_summarize_profile_fit_for_stock(
             f"Failed to proper decifer llm output during stock rank stock evaluator, got {llm_output}"
         )
 
-    stock_profile_summary_data: Optional[Tuple[str, List[Citation]]] = None
     if decision == 1:
-        # Different model, different context limit
-        tokenizer = GPTTokenizer(model=llm.model)
-        fixed_len = tokenizer.get_token_length(
-            input=(
-                " ".join(
-                    [
-                        PROFILE_EXPOSURE_TEXT_SUMMARIZER_SYS_PROMPT.template,
-                        PROFILE_EXPOSURE_TEXT_SUMMARIZER_MAIN_PROMPT.template,
-                        profile,
-                    ]
-                )
-            )
-        )
-        chopped_company_texts = tokenizer.chop_input_to_allowed_length(
-            flexible_input=company_texts, fixed_input_len=fixed_len
-        )
-
-        llm_output = await llm.do_chat_w_sys_prompt(
-            main_prompt=PROFILE_EXPOSURE_TEXT_SUMMARIZER_MAIN_PROMPT.format(
-                profile=profile, documents=chopped_company_texts
-            ),
-            sys_prompt=PROFILE_EXPOSURE_TEXT_SUMMARIZER_SYS_PROMPT.format(),
-        )
-        stock_summary_for_profile, citations = await extract_citations_from_gpt_output(
-            llm_output, text_group, context
-        )
-        if citations:
-            stock_profile_summary_data = (stock_summary_for_profile, citations)  # type: ignore
-        else:
-            stock_profile_summary_data = (stock_summary_for_profile, [])
-        return stock_profile_summary_data
+        return True
     else:
         logger.info(
             f"{stock_id.symbol} ({stock_id.company_name}) did not have any relevant "
             f"information for profile '{profile}'"
         )
-        return stock_profile_summary_data
+        return False
 
 
-async def evaluate_and_summarize_profile_fit_for_stocks(
-    profile: str, stocks: List[StockID], texts: List[StockText], context: PlanRunContext
+async def evaluate_profile_fit_for_stocks(
+    profile: str,
+    aligned_text_groups: StockAlignedTextGroups,
+    str_lookup: Dict[StockID, str],
+    context: PlanRunContext,
+    llm: Optional[GPT] = None,
 ) -> Dict[StockID, Tuple[str, List[Citation]]]:
-    aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(stocks, texts)
-    str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
-        aligned_text_groups.val, include_header=True, text_group_numbering=True
-    )
-
-    profile_summary_lookup: Dict[StockID, Any] = {}
     tasks = []
-    for stock_id, text_group in aligned_text_groups.val.items():
+    for stock_id, _ in aligned_text_groups.val.items():
         tasks.append(
-            evaluate_and_summarize_profile_fit_for_stock(
+            evaluate_profile_fit_for_stock(
                 profile=profile,
                 stock_id=stock_id,
                 company_texts=str_lookup[stock_id],
-                text_group=text_group,
+                input_llm=llm,
                 context=context,
             )
         )
 
     res = await gather_with_concurrency(tasks, n=EVALUATE_AND_SUMMARIZE_CONCURRENCY)
-
-    for stock_id, data in zip(aligned_text_groups.val.keys(), res):
-        if data:
-            profile_summary_lookup[stock_id] = data
-        else:
-            profile_summary_lookup[stock_id] = (NONRELEVANT_COMPANY_EXPLANATION, [])
-
-    return profile_summary_lookup
+    return res
 
 
 async def compare_stocks(
@@ -390,8 +552,6 @@ async def rank_individual_levels(
 
 
 # Rubric Generation & Evaluation Code
-
-
 async def get_profile_rubric(
     profile: str,
     agent_id: str,

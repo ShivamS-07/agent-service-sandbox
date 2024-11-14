@@ -13,5 +13,6 @@ NONRELEVANT_COMPANY_EXPLANATION = (
 # Constants to help out with scoring filtered stocks by profile
 SCORE_OUTPUT_DELIMITER = "___"
 RUBRIC_DELIMITER = "RUBRIC_OUTPUT"
+MAX_RUBRIC_SCORE = 5
 SCORE_MAPPING = {"0": 0.0, "1": 0.2, "2": 0.4, "3": 0.6, "4": 0.8, "5": 1.0}
 SAMPLES_DELIMITER = "------"
