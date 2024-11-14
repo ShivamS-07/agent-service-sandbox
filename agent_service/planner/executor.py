@@ -1545,6 +1545,7 @@ async def handle_error_in_execution(
 async def generate_quick_thoughts(
     agent_id: str, user_id: str, db: AsyncDB, chat_context: Optional[ChatContext] = None
 ) -> None:
+
     if not get_ld_flag(
         flag_name="enable-quick-thoughts-generation", default=False, user_context=user_id
     ):
@@ -1554,7 +1555,12 @@ async def generate_quick_thoughts(
             chat_context = await db.get_chats_history_for_agent(agent_id=agent_id)
         # TODO handle logging and context
         message = chat_context.get_latest_user_message()
-        if not message:
+
+        # check if message can be handled by quickthoughts
+        # run_quick_thoughts = await is_relevant_for_quick_thoughts(message) if message else False
+        run_quick_thoughts = True
+
+        if not message or not run_quick_thoughts:
             return
         gemini = GeminiClient()
         prompt = QUICK_THOUGHTS_PROMPT.format(chat=message.get_gpt_input())
