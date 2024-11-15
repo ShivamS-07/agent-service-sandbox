@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Union
 
 import ldclient
 import sentry_sdk
+from cachetools import TTLCache
 from gbi_common_py_utils import get_config
 from gbi_common_py_utils.utils import ssm
 from gbi_common_py_utils.utils.feature_flags import (
@@ -105,6 +106,10 @@ def get_user_agent_redis_cache() -> Optional[RedisCacheBackend]:
     )
 
 
+ADMIN_CACHE_TTL = 3600
+ADMIN_CACHE = TTLCache(maxsize=256, ttl=ADMIN_CACHE_TTL)
+
+
 async def is_user_agent_admin(user_id: str) -> bool:
     """
     Users with flag on can access some agent windows owned by other users. Currently the endpoints
@@ -117,17 +122,25 @@ async def is_user_agent_admin(user_id: str) -> bool:
     - `get_agent_plan_output`
     - `stream_agent_events`
     """
+    cached_val = ADMIN_CACHE.get(user_id)
+    if isinstance(cached_val, bool):
+        logger.info(f"Get user {user_id} agent admin from in-memory TTL Cache: {cached_val}")
+        return cached_val
+
     redis_cache = get_user_agent_redis_cache()
     if not redis_cache:
-        return get_ld_flag(
+        is_admin = get_ld_flag(
             flag_name="warren-agent-admin", user_context=get_user_context(user_id), default=False
         )
+        ADMIN_CACHE[user_id] = is_admin
+        return is_admin
 
     with sentry_sdk.start_span(
         op="redis.get", description="Get user agent admin flag from Redis cache"
     ):
         is_admin = await redis_cache.get(user_id)
-        if is_admin is not None:
+        if isinstance(is_admin, bool):
+            ADMIN_CACHE[user_id] = is_admin
             return is_admin  # type: ignore
 
     is_admin = get_ld_flag(
@@ -135,7 +148,8 @@ async def is_user_agent_admin(user_id: str) -> bool:
         user_context=get_user_context(user_id),
         default=False,
     )
-    run_async_background(redis_cache.set(user_id, is_admin, ttl=3600))
+    run_async_background(redis_cache.set(user_id, is_admin, ttl=ADMIN_CACHE_TTL))
+    ADMIN_CACHE[user_id] = is_admin
     return is_admin  # type: ignore
 
 

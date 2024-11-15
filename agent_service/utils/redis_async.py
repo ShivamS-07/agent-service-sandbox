@@ -26,7 +26,7 @@ def get_redis_async_client(max_connections: Optional[int] = None) -> redis.Redis
     global _REDIS_ASYNC
 
     # is_redis_available checks these, but needed for mypy
-    if _REDIS_PORT and _REDIS_HOST and is_redis_available():
+    if _REDIS_ASYNC is None and _REDIS_PORT and _REDIS_HOST and is_redis_available():
         logger.info(f"Initializing ASYNC redis connection: {_REDIS_HOST}:{_REDIS_PORT}")
         _REDIS_ASYNC = redis.Redis(
             host=_REDIS_HOST,
@@ -36,7 +36,8 @@ def get_redis_async_client(max_connections: Optional[int] = None) -> redis.Redis
             socket_connect_timeout=_REDIS_CONNECT_TIMEOUT,
             max_connections=max_connections,
         )
-    else:
+
+    if _REDIS_ASYNC is None:
         raise RuntimeError("No Redis client available")
 
     return _REDIS_ASYNC

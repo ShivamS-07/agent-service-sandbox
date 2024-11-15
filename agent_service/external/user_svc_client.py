@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import Generator, List, Optional, Tuple
 
 import sentry_sdk
+from cachetools import TTLCache
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
     LOCAL_TAG,
@@ -112,6 +113,10 @@ def get_redis_cache_for_user() -> Optional[RedisCacheBackend]:
     )
 
 
+USER_CACHE_TTL = 3600
+USER_CACHE = TTLCache(maxsize=256, ttl=USER_CACHE_TTL)
+
+
 @async_perf_logger
 async def get_user_cached(user_id: str) -> Optional[User]:
     """
@@ -119,16 +124,26 @@ async def get_user_cached(user_id: str) -> Optional[User]:
     NOTE that we only cache the user when they have access to Alfa.
     TTL sets to 1 hour in case someone is removed from Alfa.
     """
+    cached_user = USER_CACHE.get(user_id)
+    if isinstance(cached_user, User):
+        logger.info(f"Get user from in-memory TTL Cache: {user_id}")
+        return cached_user
 
     redis_cache = get_redis_cache_for_user()
     if not redis_cache:
         users = await get_users(user_id, user_ids=[user_id], include_user_enabled=True)
-        return users[0] if users else None
+
+        user = users[0] if users else None
+        if isinstance(user, User):
+            USER_CACHE[user_id] = user
+
+        return user
 
     with sentry_sdk.start_span(op="redis.get", description="Get user from Redis cache"):
         key = get_user_key_func(user_id)
-        user = await redis_cache.get(key=key)
-        if user is not None:
+        user = await redis_cache.get(key=key)  # type: ignore
+        if isinstance(user, User):
+            USER_CACHE[user_id] = user
             return user  # type: ignore
 
     with sentry_sdk.start_span(
@@ -138,11 +153,21 @@ async def get_user_cached(user_id: str) -> Optional[User]:
         if not users:
             return None
 
-    user = users[0]
-    if user.cognito_enabled.value and user.has_alfa_access:
-        run_async_background(redis_cache.set(key, user, ttl=3600))
+        user = users[0]
+        if user.cognito_enabled.value and user.has_alfa_access:
+            run_async_background(redis_cache.set(key, user, ttl=USER_CACHE_TTL))
+            USER_CACHE[user_id] = user
 
-    return user
+        return user
+
+
+async def invalidate_user_cache(user_id: str) -> None:
+    if user_id in USER_CACHE:
+        del USER_CACHE[user_id]
+
+    redis_cache = get_redis_cache_for_user()
+    if redis_cache:
+        await redis_cache.invalidate(get_user_key_func(user_id))
 
 
 ####################################################################################################
@@ -159,9 +184,7 @@ async def update_user(user_id: str, name: str, username: str, email: str) -> boo
             metadata=get_default_grpc_metadata(user_id=user_id),
         )
 
-        redis_cache = get_redis_cache_for_user()
-        if redis_cache:
-            run_async_background(redis_cache.invalidate(get_user_key_func(user_id)))
+        run_async_background(invalidate_user_cache(user_id))
 
         return True
 

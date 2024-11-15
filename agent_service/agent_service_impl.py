@@ -22,6 +22,7 @@ from typing import (
 from uuid import uuid4
 
 import pandoc
+import sentry_sdk
 from fastapi import HTTPException, Request, UploadFile, status
 from gbi_common_py_utils.utils.environment import (
     LOCAL_TAG,
@@ -2383,9 +2384,10 @@ class AgentServiceImpl:
         if user.is_admin or user.is_super_admin:
             return True
 
-        cached_user = await get_user_cached(user_id=user.user_id)
-        if not cached_user:
-            return False
+        with sentry_sdk.start_span(op="get_user_cached", description="get_user_cached"):
+            cached_user = await get_user_cached(user_id=user.user_id)
+            if not cached_user:
+                return False
 
         # 1. If people are permitted to access by User SVC, we return True
         # 2. Or if feature flag returns False (meaning everyone has access to Alfa), we return True

@@ -371,7 +371,7 @@ class ProcessTimeMiddleware:
         try:
             authorization = request.headers.get("Authorization", None)
             if authorization:
-                user_info = parse_header(request=request, auth_token=authorization)
+                user_info = await parse_header(request=request, auth_token=authorization)
                 request.state.user_info = user_info
                 audit_info.user_id = user_info.user_id
                 audit_info.real_user_id = user_info.real_user_id
@@ -397,7 +397,7 @@ class ProcessTimeMiddleware:
             await self.app(scope, receive_from_queue, send)
         except Exception as e:
             error = traceback.format_exc()
-            audit_info.error = audit_info.error + "/n" + error if audit_info.error else error
+            audit_info.error = audit_info.error + "\n" + error if audit_info.error else error
             update_audit_info_with_response_info(
                 audit_info=audit_info, received_timestamp=received_timestamp
             )

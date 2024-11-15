@@ -157,11 +157,11 @@ def strip_code_backticks(obj: str) -> str:
     return "\n".join(outputs)
 
 
-def is_valid_uuid(input: str) -> bool:
+def is_valid_uuid(input: str | None) -> bool:
     try:
         uuid.UUID(input)
         return True
-    except ValueError:
+    except Exception:
         return False
 
 

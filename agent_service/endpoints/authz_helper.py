@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import jwt
 import sentry_sdk
+from cachetools import TTLCache
 from fastapi import HTTPException, Security, status
 from fastapi.security.api_key import APIKeyHeader
 from gbi_common_py_utils.utils.redis import is_redis_available
@@ -77,7 +78,7 @@ def get_keyid_to_key_map() -> Dict[Any, jwt.PyJWK]:
     return key_id_map
 
 
-def extract_user_from_jwt(
+async def extract_user_from_jwt(
     auth_token: str, real_user_id: str, fullstory_link: str
 ) -> Optional[User]:
     try:
@@ -108,7 +109,8 @@ def extract_user_from_jwt(
         iss = data.get("iss", None)
         if iss != BOOSTED_ISS:
             # Retrieve custom:user_id from cognito, will raise exception if fails
-            user_id = get_cognito_user_id_from_access_token(auth_token)
+            with sentry_sdk.start_span(op="get_cognito_user_id_from_access_token"):
+                user_id = await get_cognito_user_id_from_access_token(auth_token)
 
         groups = data.get("cognito:groups", [])
         is_super_admin = "super-admin" in groups
@@ -127,7 +129,7 @@ def extract_user_from_jwt(
         return None
 
 
-def parse_header(
+async def parse_header(
     request: Request, auth_token: Optional[str] = Security(APIKeyHeader(name="Authorization"))
 ) -> User:
     user_info = getattr(request.state, "user_info", None)
@@ -142,7 +144,7 @@ def parse_header(
         auth_token = auth_token[len(COGNITO_PREFIX) :]
     real_user_id = request.headers.get("realuserid", "")
     fullstory_link = request.headers.get("fullstorylink", "")
-    user = extract_user_from_jwt(
+    user = await extract_user_from_jwt(
         auth_token, real_user_id=real_user_id, fullstory_link=fullstory_link
     )
     if not user:
@@ -164,30 +166,48 @@ def get_agent_owner_redis() -> Optional[RedisCacheBackend]:
     )
 
 
+AGENT_OWNER_CACHE_TTL = 3600 * 24
+AGENT_OWNER_CACHE = TTLCache(maxsize=256, ttl=AGENT_OWNER_CACHE_TTL)
+
+
 async def get_agent_owner(
     agent_id: str, async_db: AsyncDB, no_cache: bool = False
 ) -> Optional[str]:
     if no_cache:
         return await async_db.get_agent_owner(agent_id, include_deleted=False)
 
+    owner_id = AGENT_OWNER_CACHE.get(agent_id)
+    if is_valid_uuid(owner_id):
+        logger.info(f"Get agent {agent_id} owner from in-memory TTL Cache: {owner_id}!")
+        return owner_id
+
     redis_cache = get_agent_owner_redis()
     if not redis_cache:
-        return await async_db.get_agent_owner(agent_id, include_deleted=False)
+        owner_id = await async_db.get_agent_owner(agent_id, include_deleted=False)
+        if owner_id:
+            AGENT_OWNER_CACHE[agent_id] = owner_id
+
+        return owner_id
 
     with sentry_sdk.start_span(op="redis.get", description="Get agent owner from Redis cache"):
         owner_id = await redis_cache.get(agent_id)
-        if owner_id:
+        if is_valid_uuid(owner_id):
+            AGENT_OWNER_CACHE[agent_id] = owner_id
             return owner_id  # type: ignore
 
     with sentry_sdk.start_span(op="db.get_agent_owner", description="Get agent owner from DB"):
         owner_id = await async_db.get_agent_owner(agent_id, include_deleted=False)
         if owner_id:
-            run_async_background(redis_cache.set(agent_id, owner_id, ttl=3600 * 24))
+            AGENT_OWNER_CACHE[agent_id] = owner_id
+            run_async_background(redis_cache.set(agent_id, owner_id, ttl=AGENT_OWNER_CACHE_TTL))
 
     return owner_id
 
 
 async def invalidate_agent_owner_cache(agent_id: str) -> None:
+    if agent_id in AGENT_OWNER_CACHE:
+        del AGENT_OWNER_CACHE[agent_id]
+
     redis_cache = get_agent_owner_redis()
     if redis_cache:
         await redis_cache.invalidate(agent_id)
