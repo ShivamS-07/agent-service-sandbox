@@ -37,6 +37,7 @@ from agent_service.tools.LLM_analysis.tools import SummarizeTextInput, summarize
 from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.utils.async_db import get_async_db
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc, parse_date_str_in_utc
 from agent_service.utils.postgres import get_psql
@@ -93,7 +94,8 @@ async def _get_earnings_summary_helper(
     allow_simple_generated_earnings: bool = False,
 ) -> Dict[StockID, List[StockEarningsText]]:
     user_id = context.user_id
-    db = get_psql()
+
+    async_db = get_async_db()
 
     gbi_id_to_stock_id_lookup = {x.gbi_id: x for x in stock_ids}
     gbi_ids = [stock.gbi_id for stock in stock_ids]
@@ -103,7 +105,7 @@ async def _get_earnings_summary_helper(
             WHERE gbi_id = ANY(%(gbi_ids)s);
             """
     params = {"gbi_ids": gbi_ids}
-    rows = db.generic_read(company_id_sql, params)
+    rows = await async_db.generic_read(company_id_sql, params)
     gbi_to_comp_id_lookup = {row["gbi_id"]: row["spiq_company_id"] for row in rows}
 
     if allow_simple_generated_earnings:
@@ -135,7 +137,7 @@ async def _get_earnings_summary_helper(
 
     company_ids = [gbi_to_comp_id_lookup[gbi_id] for gbi_id in gbi_ids]
     params = {"company_ids": company_ids}
-    rows = db.generic_read(earning_summary_sql, params)
+    rows = await async_db.generic_read(earning_summary_sql, params)
 
     by_stock_lookup = defaultdict(list)
     for row in rows:

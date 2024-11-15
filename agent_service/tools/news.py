@@ -21,6 +21,7 @@ from agent_service.tools.general_websearch import (
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_db import AsyncDB, get_async_db
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc, parse_date_str_in_utc
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
@@ -41,6 +42,71 @@ class NewsTopic:
     major_updates: List[datetime.datetime]
 
 
+# FIXME: Check if it's correct
+async def get_most_populated_listing_for_company_from_gbi_id(
+    async_db: AsyncDB, gbi_ids: List[int]
+) -> Dict[int, List[int]]:
+    """
+    In our system, several GBI IDs can belong to the same company (spiq_company_id)
+    This function tries to find the GBI ID under the same company with the most news articles in
+    the past 3 months.
+    The return is a Dictionary of GBI ID to a list of GBI IDs that belong to the same company. The
+    key is the GBI ID with the most news articles in the past 3 months.
+    """
+    today = get_now_utc().date()
+    start_date = today - datetime.timedelta(days=90)
+    end_date = today + datetime.timedelta(days=1)
+
+    # with the given gbi_ids, we want to get ALL gbi_ids that belong to the same companies
+    sql1 = """
+        SELECT DISTINCT spiq_company_id, gbi_id
+        FROM spiq_security_mapping
+        WHERE spiq_company_id IN (
+            SELECT spiq_company_id
+            FROM spiq_security_mapping
+            WHERE gbi_id = ANY(%(gbi_ids)s)
+        )
+    """
+    rows = await async_db.generic_read(sql1, {"gbi_ids": gbi_ids})
+    gbi_id_to_spiq_id = {row["gbi_id"]: row["spiq_company_id"] for row in rows}
+
+    # Find the gbi_id under the same company with the most news articles in the past 3 months
+    sql2 = """
+        SELECT gbi_id, COUNT(DISTINCT(news_id)) AS num_news
+        FROM nlp_service.stock_news
+        WHERE gbi_id = ANY(%(gbi_ids)s)
+            AND published_at >= %(start_date)s AND published_at <= %(end_date)s
+        GROUP BY gbi_id
+        ORDER BY num_news DESC, max(published_at) DESC
+    """
+    rows = await async_db.generic_read(
+        sql2,
+        {"gbi_ids": list(gbi_id_to_spiq_id.keys()), "start_date": start_date, "end_date": end_date},
+    )
+
+    # Find the gbi_id under the same company with the most news articles in the past 3 months
+    spiq_company_id_to_max_num_news = {}
+    for row in rows:
+        gbi_id = row["gbi_id"]
+        spiq_company_id = gbi_id_to_spiq_id[gbi_id]
+        if spiq_company_id not in spiq_company_id_to_max_num_news:
+            spiq_company_id_to_max_num_news[spiq_company_id] = (gbi_id, row["num_news"])
+        else:
+            if row["num_news"] > spiq_company_id_to_max_num_news[spiq_company_id][1]:
+                spiq_company_id_to_max_num_news[spiq_company_id] = (gbi_id, row["num_news"])
+
+    gbi_id_lookup = defaultdict(list)
+    for gbi_id in gbi_ids:
+        spiq_company_id = gbi_id_to_spiq_id[gbi_id]
+        if spiq_company_id not in spiq_company_id_to_max_num_news:
+            gbi_id_lookup[gbi_id].append(gbi_id)
+        else:
+            associated, _ = spiq_company_id_to_max_num_news[spiq_company_id]
+            gbi_id_lookup[associated].append(gbi_id)
+
+    return gbi_id_lookup
+
+
 async def _get_news_developments_helper(
     stock_ids: List[StockID],
     user_id: str,
@@ -48,22 +114,19 @@ async def _get_news_developments_helper(
     end_date: Optional[datetime.date] = None,
 ) -> Dict[StockID, List[StockNewsDevelopmentText]]:
     # Response now has a list of topics. Build an association dict to ensure correct ordering.
-    db = get_psql()
+    async_db = get_async_db()
     stock_to_topics_map: Dict[StockID, List[NewsTopic]] = defaultdict(list)
     gbi_id_to_stock_map: Dict[int, StockID] = {stock.gbi_id: stock for stock in stock_ids}
-    gbi_id_lookup: Dict[int, List[int]] = defaultdict(list)
-    for gbi_id in list(gbi_id_to_stock_map.keys()):
-        associated = db.get_most_populated_listing_for_company_from_gbi_id(gbi_id)
-        if associated:
-            gbi_id_lookup[associated].append(gbi_id)
-        else:
-            gbi_id_lookup[gbi_id].append(gbi_id)
+    gbi_id_lookup = await get_most_populated_listing_for_company_from_gbi_id(
+        async_db, gbi_ids=list(gbi_id_to_stock_map.keys())
+    )
 
+    now = get_now_utc()
     if not start_date:
-        start_date = (get_now_utc() - datetime.timedelta(days=7)).date()
+        start_date = (now - datetime.timedelta(days=7)).date()
     if not end_date:
         # Add an extra day to be sure we don't miss anything with timezone weirdness
-        end_date = get_now_utc().date() + datetime.timedelta(days=1)
+        end_date = (now + datetime.timedelta(days=1)).date()
 
     start_dt = datetime.datetime(
         year=start_date.year,
@@ -109,7 +172,7 @@ async def _get_news_developments_helper(
         FROM articles
         JOIN nlp_service.stock_news_topics t ON t.topic_id = articles.topic_id
     """
-    rows = db.generic_read(
+    rows = await async_db.generic_read(
         sql,
         {
             "gbi_ids": list(gbi_id_lookup.keys()),
@@ -210,25 +273,26 @@ async def get_all_news_developments_about_companies(
     args: GetNewsDevelopmentsAboutCompaniesInput, context: PlanRunContext
 ) -> List[StockNewsDevelopmentText]:
     date_range_provided = args.date_range is not None
+    now = get_now_utc()
     if args.date_range:
         start_date, end_date = args.date_range.start_date, args.date_range.end_date
     else:
-        start_date = get_now_utc().date() - datetime.timedelta(days=7)
-        end_date = get_now_utc().date() + datetime.timedelta(days=1)
+        start_date = (now - datetime.timedelta(days=7)).date()
+        end_date = (now + datetime.timedelta(days=1)).date()
     topic_lookup = await _get_news_developments_helper(
         args.stock_ids, context.user_id, start_date, end_date
     )
     # if there are no news and there was no date range passed
     # then we extend the default to 1 month and try to get news again
     if not date_range_provided and len(topic_lookup.keys()) < NEWS_COUNT_THRESHOLD:
-        start_date = (get_now_utc() - datetime.timedelta(days=30)).date()
+        start_date = (now - datetime.timedelta(days=30)).date()
         # Add an extra day to be sure we don't miss anything with timezone weirdness
-        end_date = get_now_utc().date() + datetime.timedelta(days=1)
+        end_date = (now + datetime.timedelta(days=1)).date()
         topic_lookup = await _get_news_developments_helper(
             args.stock_ids, context.user_id, start_date, end_date
         )
         if len(topic_lookup.keys()) < NEWS_COUNT_THRESHOLD:
-            start_date = (get_now_utc() - datetime.timedelta(days=90)).date()
+            start_date = (now - datetime.timedelta(days=90)).date()
             topic_lookup = await _get_news_developments_helper(
                 args.stock_ids, context.user_id, start_date, end_date
             )

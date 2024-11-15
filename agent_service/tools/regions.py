@@ -8,6 +8,7 @@ from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_db import get_async_db
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -535,8 +536,8 @@ async def filter_stocks_by_region(
     WHERE security_region = ANY(%(countries)s)
     AND gbi_security_id = ANY(%(stocks)s)
     """
-    db = get_psql()
-    rows = db.generic_read(
+    async_db = get_async_db()
+    rows = await async_db.generic_read(
         sql, {"stocks": [stock.gbi_id for stock in args.stock_ids], "countries": countries}
     )
     stocks_to_include = {row["gbi_security_id"] for row in rows}

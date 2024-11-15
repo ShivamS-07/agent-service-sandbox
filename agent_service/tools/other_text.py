@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 from typing import List, Optional
 
@@ -24,6 +25,7 @@ from agent_service.tools.stock_metadata import (  # get_company_descriptions_sto
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.prefect import get_prefect_logger
 
 
@@ -74,6 +76,7 @@ class GetAllTextDataForStocksInput(ToolArgs):
     is_visible=False,
     store_output=False,
 )
+@async_perf_logger
 async def get_default_text_data_for_stocks(
     args: GetAllTextDataForStocksInput, context: PlanRunContext
 ) -> List[StockText]:
@@ -89,60 +92,68 @@ async def get_default_text_data_for_stocks(
 
     all_data: List[StockText] = []
 
-    await tool_log(log="Getting company descriptions", context=context)
-    try:
-        description_data = await get_company_descriptions(
-            GetStockDescriptionInput(stock_ids=stock_ids), context=context
-        )
-        all_data.extend(description_data)  # type: ignore
-    except Exception as e:
-        logger.exception(f"failed to get company description(s) due to error: {e}")
+    async def _get_company_descriptions() -> None:
+        try:
+            description_data = await get_company_descriptions(
+                GetStockDescriptionInput(stock_ids=stock_ids), context=context
+            )
+            all_data.extend(description_data)  # type: ignore
+        except Exception as e:
+            logger.exception(f"failed to get company description(s) due to error: {e}")
 
-    await tool_log(log="Getting news developments", context=context)
-    try:
-        news_data = await get_all_news_developments_about_companies(
-            GetNewsDevelopmentsAboutCompaniesInput(
-                stock_ids=stock_ids,
-                date_range=args.date_range,
-            ),
-            context=context,
-        )
-        all_data.extend(news_data)  # type: ignore
-    except Exception as e:
-        logger.exception(f"failed to get company news due to error: {e}")
+    async def _get_all_news_developments_about_companies() -> None:
+        try:
+            news_data = await get_all_news_developments_about_companies(
+                GetNewsDevelopmentsAboutCompaniesInput(
+                    stock_ids=stock_ids,
+                    date_range=args.date_range,
+                ),
+                context=context,
+            )
+            all_data.extend(news_data)  # type: ignore
+        except Exception as e:
+            logger.exception(f"failed to get company news due to error: {e}")
 
-    await tool_log(log="Getting earnings summaries", context=context)
-    try:
-        earnings_data = await get_earnings_call_summaries(
-            GetEarningsCallDataInput(stock_ids=stock_ids, date_range=args.date_range),
-            context=context,
-        )
-        all_data.extend(earnings_data)  # type: ignore
-    except Exception as e:
-        logger.exception(f"failed to get earnings summaries due to error: {e}")
+    async def _get_earnings_call_summaries() -> None:
+        try:
+            earnings_data = await get_earnings_call_summaries(
+                GetEarningsCallDataInput(stock_ids=stock_ids, date_range=args.date_range),
+                context=context,
+            )
+            all_data.extend(earnings_data)  # type: ignore
+        except Exception as e:
+            logger.exception(f"failed to get earnings summaries due to error: {e}")
 
-    await tool_log(log="Getting SEC filings", context=context)
-    try:
-        sec_filings = await get_10k_10q_sec_filings(
-            GetSecFilingsInput(stock_ids=stock_ids, date_range=args.date_range),
-            context=context,
-        )
-        all_data.extend(sec_filings)  # type: ignore
-    except Exception as e:
-        logger.exception(f"failed to get SEC filings(s) due to error: {e}")
+    async def _get_10k_10q_sec_filings() -> None:
+        try:
+            sec_filings = await get_10k_10q_sec_filings(
+                GetSecFilingsInput(stock_ids=stock_ids, date_range=args.date_range),
+                context=context,
+            )
+            all_data.extend(sec_filings)  # type: ignore
+        except Exception as e:
+            logger.exception(f"failed to get SEC filings(s) due to error: {e}")
 
-    await tool_log(log="Getting user uploaded documents", context=context)
-    try:
-        custom_docs = await get_user_custom_documents(
-            GetCustomDocsInput(
-                stock_ids=stock_ids,
-                date_range=args.date_range,
-            ),
-            context=context,
-        )
-        all_data.extend(custom_docs)  # type: ignore
-    except Exception as e:
-        logger.exception(f"failed to get user custom documents due to error: {e}")
+    async def _get_user_custom_documents() -> None:
+        try:
+            custom_docs = await get_user_custom_documents(
+                GetCustomDocsInput(
+                    stock_ids=stock_ids,
+                    date_range=args.date_range,
+                ),
+                context=context,
+            )
+            all_data.extend(custom_docs)  # type: ignore
+        except Exception as e:
+            logger.exception(f"failed to get user custom documents due to error: {e}")
+
+    await asyncio.gather(
+        _get_company_descriptions(),
+        _get_all_news_developments_about_companies(),
+        _get_earnings_call_summaries(),
+        _get_10k_10q_sec_filings(),
+        _get_user_custom_documents(),
+    )
 
     await tool_log(log="Combining all text data", context=context)
     if len(all_data) == 0:

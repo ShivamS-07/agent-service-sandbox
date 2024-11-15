@@ -23,10 +23,7 @@ class GetStockDescriptionInput(ToolArgs):
 async def get_company_descriptions(
     args: GetStockDescriptionInput, context: PlanRunContext
 ) -> List[StockDescriptionText]:
-    await tool_log(
-        log="Collecting company/stocks descriptions.",
-        context=context,
-    )
+    await tool_log(log=f"Found {len(args.stock_ids)} company descriptions", context=context)
     return [
         StockDescriptionText(id=stock_id.gbi_id, stock_id=stock_id) for stock_id in args.stock_ids
     ]
