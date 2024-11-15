@@ -1327,6 +1327,10 @@ class AgentQC(BaseModel):
     cs_reviewed: Optional[bool] = None
     eng_reviewed: Optional[bool] = None
     prod_reviewed: Optional[bool] = None
+    owner_name: Optional[str] = None
+    owner_organization_name: Optional[str] = None
+    prod_priority: Optional[str] = None
+    prod_notes: Optional[str] = None
 
 
 class HorizonCriteriaOperator(enum.StrEnum):

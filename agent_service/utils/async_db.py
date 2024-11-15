@@ -1930,6 +1930,8 @@ class AsyncDB:
             "cs_reviewed": agent_qc.cs_reviewed,
             "eng_reviewed": agent_qc.eng_reviewed,
             "prod_reviewed": agent_qc.prod_reviewed,
+            "prod_priority": agent_qc.prod_priority,
+            "prod_notes": agent_qc.prod_notes,
         }
 
         # Remove fields that are None or immutable
@@ -1960,10 +1962,14 @@ class AsyncDB:
             aqc.cs_expected_output, aqc.cs_notes, aqc.canned_prompt_id, aqc.eng_failed_reason, aqc.eng_solution,
             aqc.eng_solution_difficulty, aqc.jira_link, aqc.slack_link, aqc.fullstory_link, aqc.duplicate_agent::TEXT,
             aqc.created_at, aqc.last_updated, aqc.cs_reviewed, aqc.eng_reviewed, aqc.prod_reviewed,
-            us.cognito_username, json_agg(af.*) AS agent_feedbacks
+            aqc.prod_priority, aqc.prod_notes,
+            us.cognito_username, us.name AS owner_name, org.name AS owner_organization_name,
+            json_agg(af.*) AS agent_feedbacks
         FROM agent.agent_qc aqc
         LEFT JOIN agent.agents ag ON aqc.agent_id = ag.agent_id
         LEFT JOIN user_service.users us ON aqc.user_id = us.id
+        LEFT JOIN user_service.company_membership cm ON aqc.user_id::TEXT = cm.user_id
+        LEFT JOIN user_service.organizations org ON cm.company_id = org.id::TEXT
         LEFT JOIN agent.feedback af ON aqc.agent_id = af.agent_id AND aqc.plan_id = af.plan_id
         """
 
@@ -1980,9 +1986,12 @@ class AsyncDB:
             elif criterion.operator == "=":
                 params[param1_name] = criterion.arg1
                 return f" {criterion.column} = %({param1_name})s"
-            elif criterion.operator == "IN":
-                params[param1_name] = tuple(criterion.arg1)  # Ensure arg1 is a tuple for IN queries
-                return f" {criterion.column} IN %({param1_name})s"
+            elif criterion.operator == "IN" and isinstance(criterion.arg1, list):
+                params[param1_name] = criterion.arg1  # Ensure arg1 is a list for IN queries
+                return f" {criterion.column} = ANY(%({param1_name})s)"
+            elif criterion.operator == "IN":  # Fallback to EQUAL behavior if arg1 is not a list
+                params[param1_name] = criterion.arg1
+                return f" {criterion.column} = %({param1_name})s"
             elif criterion.operator == ">":
                 params[param1_name] = criterion.arg1
                 return f" {criterion.column} > %({param1_name})s"
@@ -2023,7 +2032,7 @@ class AsyncDB:
 
         # Always sort by latest agent ran
         sql += """
-            GROUP BY aqc.agent_qc_id, us.cognito_username, ag.agent_name
+            GROUP BY aqc.agent_qc_id, us.cognito_username, us.name, org.name, ag.agent_name
             ORDER BY aqc.created_at DESC
         """
 
