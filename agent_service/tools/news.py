@@ -2,6 +2,8 @@ import datetime
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
+from math import floor
+from statistics import mean
 from typing import Dict, Generator, List, Optional, Tuple
 
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, DEFAULT_EMBEDDING_MODEL
@@ -290,14 +292,17 @@ async def get_all_news_developments_about_companies(
     )
     # if there are no news and there was no date range passed
     # then we extend the default to 1 month and try to get news again
-    if not date_range_provided and len(topic_lookup.keys()) < NEWS_COUNT_THRESHOLD:
+    if (
+        not date_range_provided
+        and floor(mean(len(news) for _, news in topic_lookup.items())) < NEWS_COUNT_THRESHOLD
+    ):
         start_date = (now - datetime.timedelta(days=30)).date()
         # Add an extra day to be sure we don't miss anything with timezone weirdness
         end_date = (now + datetime.timedelta(days=1)).date()
         topic_lookup = await _get_news_developments_helper(
             args.stock_ids, context.user_id, start_date, end_date
         )
-        if len(topic_lookup.keys()) < NEWS_COUNT_THRESHOLD:
+        if floor(mean(len(news) for _, news in topic_lookup.items())) < NEWS_COUNT_THRESHOLD:
             start_date = (now - datetime.timedelta(days=90)).date()
             topic_lookup = await _get_news_developments_helper(
                 args.stock_ids, context.user_id, start_date, end_date
