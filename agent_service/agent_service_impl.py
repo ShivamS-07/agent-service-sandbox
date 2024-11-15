@@ -24,6 +24,7 @@ from uuid import uuid4
 import pandoc
 from fastapi import HTTPException, Request, UploadFile, status
 from gbi_common_py_utils.utils.environment import (
+    LOCAL_TAG,
     PROD_TAG,
     STAGING_TAG,
     get_environment_tag,
@@ -178,7 +179,7 @@ from agent_service.io_types.citations import CitationDetailsType, CitationType
 from agent_service.planner.action_decide import FirstActionDecider
 from agent_service.planner.constants import CHAT_DIFF_TEMPLATE, FirstAction
 from agent_service.planner.planner import Planner
-from agent_service.planner.planner_types import ExecutionPlan, Variable
+from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, Variable
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.tool import ToolCategory, ToolRegistry
 from agent_service.types import (
@@ -193,6 +194,7 @@ from agent_service.uploads import UploadHandler
 from agent_service.utils.agent_event_utils import (
     publish_agent_execution_plan,
     publish_agent_name,
+    publish_agent_plan_status,
     send_chat_message,
     update_agent_help_requested,
 )
@@ -289,6 +291,7 @@ class AgentServiceImpl:
         clickhouse_db: Clickhouse,
         slack_sender: SlackSender,
         base_url: str,
+        env: str = LOCAL_TAG,
         cache: Optional[CacheBackend] = None,
     ):
         self.pg = async_db
@@ -297,6 +300,7 @@ class AgentServiceImpl:
         self.slack_sender = slack_sender
         self.base_url = base_url
         self.cache = cache
+        self.env = env
 
     async def create_agent(
         self, user: User, is_draft: bool = False, created_from_template: bool = False
@@ -425,15 +429,18 @@ class AgentServiceImpl:
         return UpdateAgentResponse(success=True)
 
     async def set_agent_help_requested(
-        self, agent_id: str, req: AgentHelpRequest
+        self, agent_id: str, req: AgentHelpRequest, requesting_user: User
     ) -> UpdateAgentResponse:
 
-        user = await self.pg.get_agent_owner(agent_id=agent_id)
-        if not user:
+        owner_user_id = await self.pg.get_agent_owner(agent_id=agent_id)
+        if not owner_user_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
 
         await update_agent_help_requested(
-            agent_id=agent_id, user_id=user, help_requested=req.is_help_requested, db=self.pg
+            agent_id=agent_id,
+            user_id=owner_user_id,
+            help_requested=req.is_help_requested,
+            db=self.pg,
         )
         if not req.send_chat_message:
             return UpdateAgentResponse(success=True)
@@ -461,6 +468,27 @@ class AgentServiceImpl:
             ),
             db=self.pg,
         )
+
+        if req.is_help_requested:
+            # Send the slack message after the chat message to prevent any delays
+            slack_channel = "support-woz" if self.env == PROD_TAG else "alfa-client-queries-dev"
+            ss = SlackSender(channel=slack_channel)
+            user_email, user_slack_info = await get_user_info_slack_string(
+                pg=self.pg, user_id=requesting_user.user_id
+            )
+            agent_link = f"{self.base_url}/chat/{agent_id}"
+            fullstory_link = "N.A."
+            if requesting_user.fullstory_link:
+                fullstory_link = requesting_user.fullstory_link.replace("https://", "")
+            message_text = (
+                f"User requested help with agent!"
+                f"\nAgent Link: {agent_link}"
+                f"\n{user_slack_info}"
+                f"\nemail: {user_email}"
+                f"\nFullstory link: {fullstory_link}"
+            )
+            # TODO make truly async
+            await asyncio.to_thread(ss.send_message, message_text=message_text)
 
         return UpdateAgentResponse(success=True)
 
@@ -609,7 +637,6 @@ class AgentServiceImpl:
     @async_perf_logger
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
         agent_id = req.agent_id
-
         try:
             LOGGER.info(f"Inserting user's new message to DB for {agent_id=}")
             user_msg = Message(
@@ -633,8 +660,8 @@ class AgentServiceImpl:
                 LOGGER.info(
                     "Creating future tasks to generate initial response and send slack message"
                 )
-                run_async_background(self._create_initial_response(user, agent_id, user_msg))  # 2s
                 run_async_background(self._slack_chat_msg(req, user))  # 0.1s
+                await self._create_initial_response(user, agent_id, user_msg)  # 2s
 
             if req.canned_prompt_id:
                 log_event(
@@ -682,7 +709,9 @@ class AgentServiceImpl:
         return name
 
     @async_perf_logger
-    async def _create_initial_response(self, user: User, agent_id: str, user_msg: Message) -> None:
+    async def _create_initial_response(
+        self, user: User, agent_id: str, user_msg: Message
+    ) -> FirstAction:
         LOGGER.info("Generating initial response from GPT (first prompt)")
         chatbot = Chatbot(agent_id)
         chat_context = ChatContext(messages=[user_msg])
@@ -712,12 +741,17 @@ class AgentServiceImpl:
         if action == FirstAction.PLAN:
             plan_id = str(uuid4())
             LOGGER.info(f"Creating execution plan {plan_id} for {agent_id=}")
-            tasks.append(
-                self.task_executor.create_execution_plan(  # this isn't async
-                    agent_id=agent_id,
-                    plan_id=plan_id,
-                    user_id=user.user_id,
-                    run_plan_in_prefect_immediately=True,
+            tasks.extend(
+                (
+                    self.task_executor.create_execution_plan(  # this isn't async
+                        agent_id=agent_id,
+                        plan_id=plan_id,
+                        user_id=user.user_id,
+                        run_plan_in_prefect_immediately=True,
+                    ),
+                    publish_agent_plan_status(
+                        agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CREATING, db=self.pg
+                    ),
                 )
             )
             if get_ld_flag(
@@ -734,6 +768,7 @@ class AgentServiceImpl:
                 )
 
         await asyncio.gather(*tasks)
+        return action
 
     @async_perf_logger
     async def _slack_chat_msg(self, req: ChatWithAgentRequest, user: User) -> None:
@@ -751,7 +786,7 @@ class AgentServiceImpl:
                         f"\nfullstory_link: {user.fullstory_link.replace('https://', '')}"
                     )
                 six_hours_from_now = int(time.time() + (60 * 60 * 2))
-                self.slack_sender.send_message_at(
+                self.slack_sender.send_message(
                     message_text=f"{req.prompt}\n"
                     f"Link: {self.base_url}/chat/{req.agent_id}\n"
                     f"canned_prompt_id: {req.canned_prompt_id}\n"

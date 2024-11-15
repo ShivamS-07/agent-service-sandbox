@@ -125,7 +125,7 @@ async def main() -> None:
                         f"Last Login (NYC Time): {last_login.isoformat() if last_login else 'N/A'}"
                     )
                     slack_sender = SlackSender(channel=channel)
-                    slack_sender.send_message_at(
+                    slack_sender.send_message(
                         message_text=message_text, send_at=int(time.time()) + 60
                     )
         log_event(

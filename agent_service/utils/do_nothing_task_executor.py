@@ -1,8 +1,10 @@
 import logging
 from typing import Optional
 
+from agent_service.planner.constants import FollowupAction
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, PlanRunContext
+from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.task_executor import TaskExecutor
 
 LOGGER = logging.getLogger(__name__)
@@ -35,5 +37,6 @@ class DoNothingTaskExecutor(TaskExecutor):
         run_tasks_without_prefect: bool = False,
         do_chat: bool = True,
         chat_context: Optional[ChatContext] = None,
-    ) -> None:
-        pass
+        async_db: Optional[AsyncDB] = None,
+    ) -> Optional[FollowupAction]:
+        return FollowupAction.NONE

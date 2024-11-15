@@ -237,6 +237,7 @@ async def lifespan(application: FastAPIExtended) -> AsyncGenerator:
         slack_sender=SlackSender(channel=channel),
         base_url=base_url,
         cache=cache,
+        env=env,
     )
 
     yield
@@ -539,7 +540,7 @@ async def set_agent_help_requested(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
     return await application.state.agent_service_impl.set_agent_help_requested(
-        agent_id=agent_id, req=req
+        agent_id=agent_id, req=req, requesting_user=user
     )
 
 

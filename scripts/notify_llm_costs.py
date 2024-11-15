@@ -33,7 +33,7 @@ async def main() -> None:
         f"http://grafana.boosted.ai/d/edwbon46t3hfkc/cost-monitoring?from=now-1d%2Fd&to=now-1d%2Fd&orgId=1&tab=query"
     )
 
-    SlackSender("llm-costs").send_message_at(msg_content, int(time.time()) + 60)
+    SlackSender("llm-costs").send_message(msg_content, int(time.time()) + 60)
 
 
 if __name__ == "__main__":

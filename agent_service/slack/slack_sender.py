@@ -1,5 +1,5 @@
 import traceback
-from typing import Tuple
+from typing import Any, Optional, Tuple
 
 import requests
 from gbi_common_py_utils.utils.ssm import get_param
@@ -32,20 +32,23 @@ class SlackSender:
         self.channel = channel
         self.auth_token = get_param("/alpha/slack/api_token")
 
-    def send_message_at(self, message_text: str, send_at: int) -> None:
+    def send_message(self, message_text: str, send_at: Optional[int] = None) -> None:
         try:
             url = "https://slack.com/api/chat.scheduleMessage"
+            if send_at is None:
+                url = "https://slack.com/api/chat.postMessage"
 
             headers = {
                 "Content-type": "application/json",
                 "Authorization": f"Bearer {self.auth_token}",
             }
 
-            data = {
+            data: dict[str, Any] = {
                 "channel": self.channel,
                 "text": message_text,
-                "post_at": send_at,
             }
+            if send_at is not None:
+                data["post_at"] = send_at
 
             response = requests.post(url, json=data, headers=headers)
             log_event(

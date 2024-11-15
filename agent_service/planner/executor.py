@@ -152,7 +152,7 @@ async def send_notification_slack_message(
                 f"{user_info_slack_string}"
             )
 
-            SlackSender(channel).send_message_at(message_text, int(time.time()) + 60)
+            SlackSender(channel).send_message(message_text, int(time.time()) + 60)
 
     except Exception:
         log_event(
@@ -962,6 +962,7 @@ async def update_execution_after_input(
     do_chat: bool = True,
     chat_context: Optional[ChatContext] = None,
     use_sample_plans: bool = True,
+    async_db: Optional[AsyncDB] = None,
 ) -> Optional[Tuple[str, ExecutionPlan, FollowupAction]]:
     logger = get_prefect_logger(__name__)
 
@@ -977,6 +978,8 @@ async def update_execution_after_input(
         asyncio.to_thread(db.get_running_plan_run, agent_id=agent_id),
         asyncio.to_thread(db.get_latest_execution_plan, agent_id=agent_id),
     )
+    if not async_db:
+        async_db = AsyncDB(SyncBoostedPG(skip_commit=skip_db_commit))
 
     plan_run_db = results[0]
     latest_plan_id, latest_plan, _, plan_status, _ = results[1]
@@ -1078,14 +1081,20 @@ async def update_execution_after_input(
                 )
                 if plan:
                     return new_plan_id, plan, action
-            await kick_off_create_execution_plan(
-                agent_id=agent_id,
-                user_id=user_id,
-                plan_id=new_plan_id,
-                action=action,
-                skip_db_commit=skip_db_commit,
-                skip_task_cache=skip_task_cache,
-                run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
+
+            await asyncio.gather(
+                publish_agent_plan_status(
+                    agent_id=agent_id, plan_id=new_plan_id, status=PlanStatus.CREATING, db=async_db
+                ),
+                kick_off_create_execution_plan(
+                    agent_id=agent_id,
+                    user_id=user_id,
+                    plan_id=new_plan_id,
+                    action=action,
+                    skip_db_commit=skip_db_commit,
+                    skip_task_cache=skip_task_cache,
+                    run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
+                ),
             )
 
         elif action == FollowupAction.NONE or (
@@ -1212,14 +1221,19 @@ async def update_execution_after_input(
                 if plan:
                     logger.info(f"plan created: {new_plan_id}, {plan}")
                     return new_plan_id, plan, action
-            await kick_off_create_execution_plan(
-                agent_id=agent_id,
-                user_id=user_id,
-                plan_id=new_plan_id,
-                action=action,
-                skip_db_commit=skip_db_commit,
-                skip_task_cache=skip_task_cache,
-                run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
+            await asyncio.gather(
+                publish_agent_plan_status(
+                    agent_id=agent_id, plan_id=new_plan_id, status=PlanStatus.CREATING, db=async_db
+                ),
+                kick_off_create_execution_plan(
+                    agent_id=agent_id,
+                    user_id=user_id,
+                    plan_id=new_plan_id,
+                    action=action,
+                    skip_db_commit=skip_db_commit,
+                    skip_task_cache=skip_task_cache,
+                    run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
+                ),
             )
 
     return None

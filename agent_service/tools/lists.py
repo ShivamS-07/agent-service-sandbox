@@ -46,8 +46,12 @@ async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IO
         # Do this if the lists have complex io types in them
         result = list(ComplexIOBase.union_sets(_list_to_set(args.list1), _list_to_set(args.list2)))  # type: ignore
     except Exception:
-        # otherwise just do a normal union
-        result = list(_list_to_set(args.list1 + args.list2))
+        try:
+            # otherwise just do a normal union
+            result = list(_list_to_set(args.list1 + args.list2))
+        except Exception:
+            # if this fails, do a simple list addition
+            result = args.list1 + args.list2
 
     await tool_log(
         log=f"Merged list has {len(result)} items",

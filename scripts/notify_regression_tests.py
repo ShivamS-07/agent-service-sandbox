@@ -48,7 +48,7 @@ async def main(agent_service_version: Optional[str] = None) -> None:
         f"To see detailed results, visit this link: "
         f"https://agent-dev.boosted.ai/regression-test/{version_short}"
     )
-    SlackSender("regression-tests").send_message_at(msg_content, int(time.time()) + 60)
+    SlackSender("regression-tests").send_message(msg_content, int(time.time()) + 60)
 
 
 if __name__ == "__main__":

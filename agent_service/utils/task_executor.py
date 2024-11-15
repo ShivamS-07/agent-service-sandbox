@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from agent_service.planner.constants import FollowupAction
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, PlanRunContext
+from agent_service.utils.async_db import AsyncDB
 
 
 class TaskExecutor(ABC):
@@ -35,5 +37,6 @@ class TaskExecutor(ABC):
         run_tasks_without_prefect: bool = False,
         do_chat: bool = True,
         chat_context: Optional[ChatContext] = None,
-    ) -> None:
+        async_db: Optional[AsyncDB] = None,
+    ) -> Optional[FollowupAction]:
         pass

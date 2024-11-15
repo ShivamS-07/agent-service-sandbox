@@ -1,8 +1,10 @@
 from typing import Optional
 
+from agent_service.planner.constants import FollowupAction
 from agent_service.planner.executor import update_execution_after_input
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, PlanRunContext
+from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.prefect import (
     kick_off_create_execution_plan,
     kick_off_run_execution_plan,
@@ -44,8 +46,9 @@ class DefaultTaskExecutor(TaskExecutor):
         run_tasks_without_prefect: bool = False,
         do_chat: bool = True,
         chat_context: Optional[ChatContext] = None,
-    ) -> None:
-        await update_execution_after_input(
+        async_db: Optional[AsyncDB] = None,
+    ) -> Optional[FollowupAction]:
+        res = await update_execution_after_input(
             agent_id=agent_id,
             user_id=user_id,
             skip_db_commit=skip_db_commit,
@@ -54,4 +57,8 @@ class DefaultTaskExecutor(TaskExecutor):
             run_tasks_without_prefect=run_tasks_without_prefect,
             do_chat=do_chat,
             chat_context=chat_context,
+            async_db=async_db,
         )
+        if not res:
+            return None
+        return res[2]
