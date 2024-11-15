@@ -59,7 +59,7 @@ class GPT:
     ) -> None:
         self.model = model
         self.context = context
-        self.llm_client = LLMClient()
+        self.llm_client = LLMClient(max_retries=20)
 
     async def do_chat_w_sys_prompt_impl(
         self,
