@@ -1,4 +1,5 @@
 import datetime
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, Generator, List, Optional, Tuple
@@ -11,13 +12,16 @@ from agent_service.io_types.text import (
     NewsPoolArticleText,
     StockNewsDevelopmentArticlesText,
     StockNewsDevelopmentText,
+    StockText,
     Text,
 )
 from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.general_websearch import (
     GeneralWebSearchInput,
+    SingleStockWebSearchInput,
     general_web_search,
+    single_stock_web_search,
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -32,6 +36,8 @@ EMBEDDING_POOL_BATCH_SIZE = 100
 MIN_POOL_PERCENT_PER_BATCH = 0.1
 MAX_NUM_RELEVANT_NEWS_PER_TOPIC = 200
 NEWS_COUNT_THRESHOLD = 5
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -392,6 +398,82 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
     )
 
 
+def web_search_enabled(user_id: Optional[str]) -> bool:
+    result = get_ld_flag("web-search-tool", default=False, user_context=user_id)
+    return result
+
+
+class GetLatestNewsForCompaniesInput(ToolArgs):
+    stock_ids: List[StockID]
+    get_developments: Optional[bool] = True
+
+
+@tool(
+    description=(
+        "This function searches the web for articles relevant to a list of stocks, "
+        "as well as calls an internal API which provides latest news developments. "
+        "The output is a list of Stock Texts obtained from both sources (web and developments). "
+        "This function must be called over get_all_news_developments_about_companies unless there is a date_range "
+        "or the user doesn't want web searches. This is your go to function when the client asks for news on a stock. "
+        "If you only want news developments, call get_all_news_developments_about_companies instead"
+        "If get_all_news_developments_about_companies is being called sometime before or after this function,"
+        "set get_developments = False since we don't want to get the info twice, otherwise it should be True. "
+        "This tool will look to obtain the latest information on a stock, so you should not use this tool "
+        "if information from a certain point in time is needed. "
+        "Never, ever pass an empty list of stocks to this function, you must only use this "
+        "function when you have a specific list of stocks you want news for. If you have a general "
+        "topic you want news about, use get_news_and_web_pages_for_topics. "
+        "If the user asks about news sentiment, do NOT use this function, use the recommendation tool. "
+        "Never use this function to collect news for writing a commentary, instead use the get_commentary_inputs. "
+        "Never use this tool together with write_commentary tool or get_commentary_inputs. "
+        "Never, ever use get_default_text_data_for_stock as a substitute for this tool if the "
+        "client says they want to look 'news' data for companies, you must use this tool "
+        "even if multiple data sources are mentioned."
+        "Remember that this tool will always fetch the latest information on stocks, so use this if the client is "
+        "looking for information within the last month."
+    ),
+    category=ToolCategory.NEWS,
+    tool_registry=ToolRegistry,
+    enabled_checker_func=web_search_enabled,
+)
+async def get_latest_news_for_companies(
+    args: GetLatestNewsForCompaniesInput, context: PlanRunContext
+) -> List[StockText]:
+    tasks = []
+
+    for stock_id in args.stock_ids:
+        tasks.append(
+            single_stock_web_search(
+                SingleStockWebSearchInput(stock_id=stock_id, query=stock_id.company_name),
+                context=context,
+            )
+        )
+
+    if args.get_developments:
+        tasks.append(
+            get_all_news_developments_about_companies(
+                GetNewsDevelopmentsAboutCompaniesInput(
+                    stock_ids=args.stock_ids,
+                ),
+                context,
+            )
+        )
+
+    results = await gather_with_concurrency(tasks)
+
+    texts: List[StockText] = []
+    for result in results:
+        texts.extend(result)
+
+    if len(args.stock_ids) == 0:
+        logger.error("No stocks were inputted for latest news search")
+
+    if len(texts) == 0:
+        logger.error("Found no web articles for the provided stocks")
+
+    return texts
+
+
 @tool(
     description=(
         "This function takes a list of topics and returns a "
@@ -511,11 +593,6 @@ class GetNewsAndWebPagesForTopicsInput(ToolArgs):
     max_num_articles_per_topic: Optional[int] = None
 
 
-def web_search_enabled(user_id: Optional[str]) -> bool:
-    result = get_ld_flag("web-search-tool", default=False, user_context=user_id)
-    return result
-
-
 @tool(
     description=(
         "This function takes a list of topics and returns a "
@@ -568,7 +645,7 @@ async def get_news_and_web_pages_for_topics(
     ):
         tasks.append(
             general_web_search(
-                GeneralWebSearchInput(queries=["news on " + topic for topic in args.topics]),
+                GeneralWebSearchInput(queries=[topic for topic in args.topics]),
                 context=context,
             )
         )

@@ -37,6 +37,8 @@ password = get_param(BRIGHTDATA_SERP_PASSWORD)
 proxy_url = f"http://{username}:{password}@{host}:{port}"
 proxies = {"http": proxy_url, "https": proxy_url}
 
+CERTIFICATE_LOCATION = "agent_service/tools/product_comparison/brd_certificate.crt"
+
 
 async def async_fetch_json(
     session: aiohttp.ClientSession,
@@ -54,24 +56,17 @@ async def async_fetch_json(
 
 async def get_urls_async(
     queries: List[str], num_results: int, headers: Dict[str, str] = HEADER, timeout: int = 60
-) -> List[Any]:
+) -> List[str]:
     ssl_context = ssl.create_default_context()
-    ssl_context.load_verify_locations(
-        cafile="agent_service/tools/product_comparison/brd_certificate.crt"
-    )
+    ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
 
     queries = [query.replace(" ", "+") for query in queries]
 
-    # the first query uses google's main search, the second query searches using google's news tab to get news stories
+    # this query uses google's main search
     urls = [
-        f"https://www.google.com/search?q={query}&brd_json=1&num={num_results}" for query in queries
+        f"https://www.google.com/search?q={query}&brd_json=1&num={num_results}&hl=en-US"
+        for query in queries
     ]
-    urls.extend(
-        [
-            f"https://www.google.com/search?q={query}&brd_json=1&num={num_results}&tbm=nws"
-            for query in queries
-        ]
-    )
 
     async with aiohttp.ClientSession(max_line_size=8190 * 5, max_field_size=8190 * 5) as session:
         tasks = []
@@ -88,7 +83,43 @@ async def get_urls_async(
         try:
             # google regular search results have the link under "organic", Google News results have it under "news"
             items = [item for item in result.get("organic", [])]  # type: ignore
-            items.extend([item for item in result.get("news", [])])
+            result_urls.update([item["link"] for item in items])
+        except requests.JSONDecodeError:
+            logger.info(f"JSON decoding error for {url}")
+
+    return list(result_urls)
+
+
+async def get_news_urls_async(
+    queries: List[str], num_results: int, headers: Dict[str, str] = HEADER, timeout: int = 60
+) -> List[str]:
+    ssl_context = ssl.create_default_context()
+    ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
+
+    queries = [query.replace(" ", "+") for query in queries]
+
+    # this query searches using google's news tab to get news stories
+    # as_qdr=m means we only look for the recent month,
+    # hl=en-US means we only look at english sites,
+    urls = [
+        f"https://www.google.com/search?q={query}&brd_json=1&num={num_results}&tbm=nws&as_qdr=m&hl=en-US"
+        for query in queries
+    ]
+
+    async with aiohttp.ClientSession(max_line_size=8190 * 5, max_field_size=8190 * 5) as session:
+        tasks = []
+        for url in urls:
+            tasks.append(
+                async_fetch_json(session, url, headers, req_proxies["http"], timeout, ssl_context)
+            )
+
+        results = await asyncio.gather(*tasks)
+        results = [result for result in results if result is not None]
+
+    result_urls = set()
+    for result in results:
+        try:
+            items = [item for item in result.get("news", [])]
             result_urls.update([item["link"] for item in items])
         except requests.JSONDecodeError:
             logger.info(f"JSON decoding error for {url}")
@@ -108,7 +139,7 @@ def brd_request(url: str, headers: Dict[str, str] = HEADER, timeout: int = 5) ->
         proxies=req_proxies,
         timeout=timeout,
         headers=headers,
-        verify="agent_service/tools/product_comparison/brd_certificate.crt",
+        verify=CERTIFICATE_LOCATION,
     )
 
     if response.status_code == 400:
@@ -234,9 +265,7 @@ async def get_web_texts_async(
     logger = get_prefect_logger(__name__)
 
     ssl_context = ssl.create_default_context()
-    ssl_context.load_verify_locations(
-        cafile="agent_service/tools/product_comparison/brd_certificate.crt"
-    )
+    ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
 
     sql1 = """
         SELECT DISTINCT ON (url) id::VARCHAR, url, title, inserted_at

@@ -15,8 +15,10 @@ from agent_service.tools.earnings import (
     get_earnings_call_summaries,
 )
 from agent_service.tools.news import (
+    GetLatestNewsForCompaniesInput,
     GetNewsDevelopmentsAboutCompaniesInput,
     get_all_news_developments_about_companies,
+    get_latest_news_for_companies,
 )
 from agent_service.tools.sec import GetSecFilingsInput, get_10k_10q_sec_filings
 from agent_service.tools.stock_metadata import (  # get_company_descriptions_stock_aligned,
@@ -25,6 +27,7 @@ from agent_service.tools.stock_metadata import (  # get_company_descriptions_sto
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.prefect import get_prefect_logger
 
@@ -81,16 +84,37 @@ async def get_default_text_data_for_stocks(
     args: GetAllTextDataForStocksInput, context: PlanRunContext
 ) -> List[StockText]:
     stock_ids = args.stock_ids
-
     logger = get_prefect_logger(__name__)
+    all_data: List[StockText] = []
+
     if not args.date_range:
+        # perform web search IF there is no date_range
+        if get_ld_flag(
+            flag_name="web-search-tool",
+            default=False,
+            user_context=get_user_context(user_id=context.user_id),
+        ):
+            await tool_log(
+                log="Getting company descriptions and news developments from the web",
+                context=context,
+            )
+            try:
+                news_data = await get_latest_news_for_companies(
+                    GetLatestNewsForCompaniesInput(
+                        stock_ids=stock_ids,
+                        get_developments=False,
+                    ),
+                    context=context,
+                )
+                all_data.extend(news_data)  # type: ignore
+            except Exception as e:
+                logger.exception(f"failed to get web news due to error: {e}")
+
         today = context.as_of_date.date() if context.as_of_date else datetime.date.today()
         start_date = today - datetime.timedelta(days=90)
         # Add an extra day to be sure we don't miss anything with timezone weirdness
         end_date = today + datetime.timedelta(days=1)
         args.date_range = DateRange(start_date=start_date, end_date=end_date)
-
-    all_data: List[StockText] = []
 
     async def _get_company_descriptions() -> None:
         try:

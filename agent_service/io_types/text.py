@@ -2220,6 +2220,12 @@ class WebText(Text):
 
 
 @io_type
+class WebStockText(WebText, StockText):
+    # has the properties of both a WebText and a StockText
+    pass
+
+
+@io_type
 class KPIText(Text):
     pid: Optional[int] = None
     explanation: Optional[str] = None  # To be used as a way to store why a KPI has been selected
