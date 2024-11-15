@@ -453,13 +453,15 @@ class StockNewsDevelopmentText(NewsText, StockText):
         FROM nlp_service.stock_news_topics
         WHERE topic_id = ANY(%(topic_ids)s)
         """
-        from agent_service.utils.postgres import get_psql
+        from agent_service.utils.async_db import get_async_db
 
-        db = get_psql()
-        rows = db.generic_read(sql, {"topic_ids": [topic.id for topic in news_topics]})
+        db = get_async_db()
+
+        rows = await db.generic_read(sql, {"topic_ids": [topic.id for topic in news_topics]})
+
         rows_with_articles = []
         if news_topics_articles_only:
-            rows_with_articles = db.generic_read(
+            rows_with_articles = await db.generic_read(
                 article_sql, {"topic_ids": list(news_topics_articles_only.keys())}
             )
         for row in rows_with_articles:
@@ -543,14 +545,16 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
     async def _get_strs_lookup(
         cls, news_topics: List[StockNewsDevelopmentArticlesText]  # type: ignore
     ) -> Dict[TextIDType, str]:
-        from agent_service.utils.postgres import get_psql
+        from agent_service.utils.async_db import get_async_db
 
         sql = """
             SELECT news_id::TEXT, headline, summary
             FROM nlp_service.stock_news
             WHERE news_id = ANY(%(news_ids)s)
         """
-        rows = get_psql().generic_read(sql, {"news_ids": [topic.id for topic in news_topics]})
+        rows = await get_async_db().generic_read(
+            sql, {"news_ids": [topic.id for topic in news_topics]}
+        )
         return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
 
     @classmethod
@@ -593,10 +597,11 @@ class NewsPoolArticleText(NewsText):
         FROM nlp_service.news_pool
         WHERE news_id = ANY(%(news_ids)s)
         """
-        from agent_service.utils.postgres import get_psql
+        from agent_service.utils.async_db import get_async_db
 
-        db = get_psql()
-        rows = db.generic_read(sql, {"news_ids": [topic.id for topic in news_pool]})
+        rows = await get_async_db().generic_read(
+            sql, {"news_ids": [topic.id for topic in news_pool]}
+        )
         return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
 
     @classmethod
@@ -749,10 +754,9 @@ class ThemeText(Text):
         FROM nlp_service.themes
         WHERE theme_id = ANY(%(theme_id)s)
         """
-        from agent_service.utils.postgres import get_psql
+        from agent_service.utils.async_db import get_async_db
 
-        db = get_psql()
-        rows = db.generic_read(sql, {"theme_id": [topic.id for topic in themes]})
+        rows = await get_async_db().generic_read(sql, {"theme_id": [topic.id for topic in themes]})
         return {row["theme_id"]: row["description"] for row in rows}
 
     @classmethod
@@ -792,10 +796,11 @@ class ThemeNewsDevelopmentText(NewsText):
         FROM nlp_service.theme_developments
         WHERE development_id = ANY(%(development_id)s)
         """
-        from agent_service.utils.postgres import get_psql
+        from agent_service.utils.async_db import get_async_db
 
-        db = get_psql()
-        rows = db.generic_read(sql, {"development_id": [topic.id for topic in themes]})
+        rows = await get_async_db().generic_read(
+            sql, {"development_id": [topic.id for topic in themes]}
+        )
         return {row["development_id"]: f"{row['label']}:\n{row['description']}" for row in rows}
 
     @classmethod
@@ -839,10 +844,11 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
         FROM nlp_service.theme_news
         WHERE news_id = ANY(%(news_id)s)
         """
-        from agent_service.utils.postgres import get_psql
+        from agent_service.utils.async_db import get_async_db
 
-        db = get_psql()
-        rows = db.generic_read(sql, {"news_id": [topic.id for topic in developments]})
+        rows = await get_async_db().generic_read(
+            sql, {"news_id": [topic.id for topic in developments]}
+        )
         return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
 
     @classmethod
@@ -913,10 +919,11 @@ class StockEarningsSummaryText(StockEarningsText):
         FROM nlp_service.earnings_call_summaries
         WHERE summary_id = ANY(%(earnings_ids)s)
         """
-        from agent_service.utils.postgres import get_psql
+        from agent_service.utils.async_db import get_async_db
 
-        db = get_psql()
-        rows = db.generic_read(sql, {"earnings_ids": [summary.id for summary in earnings_texts]})
+        rows = await get_async_db().generic_read(
+            sql, {"earnings_ids": [summary.id for summary in earnings_texts]}
+        )
         str_lookup = {}
         for row in rows:
             output = []
@@ -1264,11 +1271,10 @@ class StockEarningsSummaryPointText(StockEarningsText):
             FROM nlp_service.earnings_call_summaries
             WHERE summary_id = ANY(%(summary_ids)s)
         """
-        from agent_service.utils.postgres import get_psql
+        from agent_service.utils.async_db import get_async_db
 
-        db = get_psql()
         summary_ids = list({point.summary_id for point in earnings_summary_points})
-        rows = db.generic_read(sql, {"summary_ids": summary_ids})
+        rows = await get_async_db().generic_read(sql, {"summary_ids": summary_ids})
         summary_id_to_summary = {row["summary_id"]: row["summary"] for row in rows}
 
         str_lookup = {}
@@ -1381,7 +1387,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
     async def init_from_full_text_data(
         cls, earnings_summaries: List[StockEarningsSummaryText]
     ) -> List[Self]:
-        from agent_service.utils.postgres import get_psql
+        from agent_service.utils.async_db import get_async_db
 
         sql = """
             SELECT summary_id::TEXT, year, quarter,
@@ -1399,9 +1405,10 @@ class StockEarningsSummaryPointText(StockEarningsText):
             WHERE summary_id = ANY(%(summary_ids)s)
         """
 
-        db = get_psql()
         summary_id_to_summary = {s.id: s for s in earnings_summaries}
-        rows = db.generic_read(sql, {"summary_ids": list(summary_id_to_summary.keys())})
+        rows = await get_async_db().generic_read(
+            sql, {"summary_ids": list(summary_id_to_summary.keys())}
+        )
 
         points: List[Self] = []
         for row in rows:
@@ -1478,12 +1485,11 @@ class StockDescriptionText(StockText):
     async def _get_strs_lookup(
         cls, company_descriptions: List[StockDescriptionText]  # type: ignore
     ) -> Dict[TextIDType, str]:
-        from agent_service.utils.postgres import get_psql
+        from agent_service.utils.async_db import get_async_db
 
         stocks = [desc.id for desc in company_descriptions]
 
-        db = get_psql()
-        descriptions = db.get_company_descriptions(stocks)
+        descriptions = await get_async_db().get_company_descriptions(stocks)
 
         # For some reason SPIQ includes invalid characters for apostraphes. For
         # now just replace them here, ideally a data ingestion problem to fix.
@@ -1567,7 +1573,7 @@ class StockDescriptionSectionText(StockText):
     async def _get_strs_lookup(
         cls, sections: List[StockDescriptionSectionText]
     ) -> Dict[TextIDType, str]:
-        from agent_service.utils.postgres import get_psql
+        from agent_service.utils.async_db import get_async_db
 
         description_ids = [section.description_id for section in sections]
         sections_by_desc_ids: Dict[int, List[Tuple[int, str]]] = defaultdict(list)
@@ -1575,8 +1581,7 @@ class StockDescriptionSectionText(StockText):
         for section in sections:
             sections_by_desc_ids[section.description_id].append((int(section.id), section.header))
 
-        db = get_psql()
-        desc_lookup = db.get_company_descriptions(description_ids)
+        desc_lookup = await get_async_db().get_company_descriptions(description_ids)
 
         output = {}
         for gbi_id, desc in desc_lookup.items():

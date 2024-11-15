@@ -237,7 +237,7 @@ def get_stock_identifier_lookup_cache_key(
     category=ToolCategory.STOCK,
     use_cache=True,
     cache_key_fn=get_stock_identifier_lookup_cache_key,
-    cache_ttl=60 * 60,  # ignored in postgres currently
+    cache_ttl=60 * 60 * 24,
     cache_backend=PostgresCacheBackend(),
     tool_registry=ToolRegistry,
     is_visible=False,

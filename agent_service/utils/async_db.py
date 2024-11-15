@@ -2153,6 +2153,52 @@ class AsyncDB:
             qc_infos.append(info)
         return qc_infos
 
+    async def get_company_descriptions(self, gbi_ids: List[int]) -> Dict[int, str]:
+        sql = """
+        SELECT DISTINCT ON (ssm.gbi_id) ssm.gbi_id, cds.company_description_short, cds.last_updated
+        FROM spiq_security_mapping ssm
+        JOIN nlp_service.company_descriptions_short cds
+        ON cds.spiq_company_id = ssm.spiq_company_id
+        WHERE ssm.gbi_id = ANY(%(gbi_ids)s)
+        ORDER BY ssm.gbi_id, cds.last_updated DESC NULLS LAST;
+        """
+
+        long_sql = sql.replace("_short", "")
+
+        rows, rows_long = await asyncio.gather(
+            self.pg.generic_read(sql, {"gbi_ids": gbi_ids}),
+            self.pg.generic_read(long_sql, {"gbi_ids": gbi_ids}),
+        )
+
+        descriptions_rows = {row["gbi_id"]: row["company_description_short"] for row in rows}
+        descriptions = {gbi: descriptions_rows.get(gbi, "No description found") for gbi in gbi_ids}
+
+        # replace with long if it exists
+        for row in rows_long:
+            descriptions[row["gbi_id"]] = row["company_description"]
+        return descriptions
+
+    async def get_short_company_descriptions_for_gbi_ids(
+        self, gbi_ids: List[int]
+    ) -> Dict[int, Tuple[Optional[str], Optional[datetime.datetime]]]:
+        """
+        Given a list of gbi ids, return a mapping from gbi id to its company
+        description and last updated time. If the long description isn't
+        present, fall back to the short description.
+        """
+        sql = """
+        SELECT
+          ssm.gbi_id,
+          cds.company_description_short AS company_description,
+          cds.last_updated AT TIME ZONE 'UTC' AS last_updated
+        FROM spiq_security_mapping ssm
+        LEFT JOIN nlp_service.company_descriptions_short cds
+          ON ssm.spiq_company_id = cds.spiq_company_id
+        WHERE ssm.gbi_id = ANY(%s);
+        """
+        records = await self.generic_read(sql, params=[gbi_ids])
+        return {r["gbi_id"]: (r["company_description"], r["last_updated"]) for r in records}
+
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:
     if isinstance(db, Postgres):
