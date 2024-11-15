@@ -11,6 +11,7 @@ from typing import List, Optional
 
 import boto3
 import redis
+from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -196,6 +197,7 @@ def run_schedule_with_recurring_agent_updates(scheduler: BackgroundScheduler) ->
                 id=agent_info.context.agent_id,
                 name=f"start_agent_run_{agent_info.context.agent_id}",
                 replace_existing=True,
+                max_instances=1,
             )
         logger.info("Agent cronjobs scheduled.")
         scheduler.resume()
@@ -226,6 +228,7 @@ def main() -> None:
     )
     if TEST_MODE:
         logger.info("STARTING IN TEST MODE")
+        logging.getLogger("apscheduler").setLevel(logging.DEBUG)
         job_store = MemoryJobStore()
     jobstores = {
         "default": job_store,
@@ -235,7 +238,9 @@ def main() -> None:
         "max_instances": 1,
         "misfire_grace_time": MISFIRE_GRACE_PERIOD,
     }
+    executors = {"default": ThreadPoolExecutor(max_workers=1)}
     scheduler = BackgroundScheduler(
+        executors=executors,
         jobstores=jobstores,
         job_defaults=job_defaults,
         timezone=datetime.timezone.utc,

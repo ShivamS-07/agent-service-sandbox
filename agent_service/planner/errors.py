@@ -10,6 +10,14 @@ class AgentExecutionError(Exception):
     publish_result_status: bool = True
 
 
+class AgentExitEarlyError(AgentExecutionError):
+    """
+    Exit early without changing the status of the run.
+    """
+
+    publish_result_status = False
+
+
 class AgentRetryError(AgentExecutionError):
     pass
 

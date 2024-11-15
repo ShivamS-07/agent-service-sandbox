@@ -37,6 +37,7 @@ from agent_service.planner.constants import (
 from agent_service.planner.errors import (
     AgentCancelledError,
     AgentExecutionError,
+    AgentExitEarlyError,
     AgentRetryError,
     NonRetriableError,
 )
@@ -272,7 +273,7 @@ async def _run_execution_plan_impl(
         # Not allowed to run with the same ID if the run wasn't
         # errored. NOT_STARTED is acceptable since the run may have been
         # inserted before it started.
-        raise RuntimeError(
+        raise AgentExitEarlyError(
             f"Unable to retry a run that is in status={existing_run['status']}!!! {context=}"
         )
     else:
