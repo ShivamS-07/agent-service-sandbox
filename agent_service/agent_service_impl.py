@@ -476,8 +476,6 @@ class AgentServiceImpl:
 
         if req.is_help_requested:
             # Send the slack message after the chat message to prevent any delays
-            slack_channel = "support-woz" if self.env == PROD_TAG else "alfa-client-queries-dev"
-            ss = SlackSender(channel=slack_channel)
             user_email, user_slack_info = await get_user_info_slack_string(
                 pg=self.pg, user_id=requesting_user.user_id
             )
@@ -492,8 +490,11 @@ class AgentServiceImpl:
                 f"\nemail: {user_email}"
                 f"\nFullstory link: {fullstory_link}"
             )
-            # TODO make truly async
-            await asyncio.to_thread(ss.send_message, message_text=message_text)
+
+            slack_channel = "support-woz" if self.env == PROD_TAG else "alfa-client-queries-dev"
+            await self.slack_sender.send_message_async(
+                message_text=message_text, channel_override=slack_channel
+            )
 
         return UpdateAgentResponse(success=True)
 
@@ -798,7 +799,7 @@ class AgentServiceImpl:
                         f"\nfullstory_link: {user.fullstory_link.replace('https://', '')}"
                     )
                 six_hours_from_now = int(time.time() + (60 * 60 * 2))
-                self.slack_sender.send_message(
+                await self.slack_sender.send_message_async(
                     message_text=f"{req.prompt}\n"
                     f"Link: {self.base_url}/chat/{req.agent_id}\n"
                     f"canned_prompt_id: {req.canned_prompt_id}\n"
