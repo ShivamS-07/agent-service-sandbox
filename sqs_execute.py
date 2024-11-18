@@ -82,6 +82,7 @@ async def main() -> None:
                 "raw_message": message_string,
                 "message": converted_message_str,
             },
+            force=True,
         )
         if EMPTY_OUTPUT_FLAG.get():
             raise NoOutputException()
@@ -137,6 +138,7 @@ async def main() -> None:
                 "message": converted_message_str,
                 "error_msg": traceback.format_exc(),
             },
+            force=True,
         )
         exception_text = traceback.format_exc()
         with open("/exit_script/exception.txt", "w") as f:

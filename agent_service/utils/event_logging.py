@@ -13,8 +13,9 @@ def log_event(
     event_name: str,
     event_data: Optional[Dict[str, Any]] = None,
     event_namespace: Optional[str] = None,
+    force: bool = False,
 ) -> None:
-    if int(os.environ.get("FORCE_LOGGING", 0)) == 1:
+    if int(os.environ.get("FORCE_LOGGING", 0)) == 1 or force:
         ch = ClickhouseBase()
         if event_data is None:
             event_data = {}
