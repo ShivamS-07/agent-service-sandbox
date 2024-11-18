@@ -40,6 +40,12 @@ from agent_service.tools.stock_groups.utils import (
     get_stock_group_input_tables,
     remove_stock_group_columns,
 )
+from agent_service.tools.table_utils.join_utils import (
+    add_extra_group_cols,
+    check_for_index_overlap,
+    expand_dates_across_tables,
+    preprocess_heterogeneous_tables_before_joining,
+)
 from agent_service.tools.table_utils.prompts import (
     DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT,
     DATAFRAME_SCHEMA_GENERATOR_SYS_PROMPT,
@@ -762,7 +768,9 @@ class JoinTableArgs(ToolArgs):
     row_join: bool = False
 
 
-def _join_two_tables_vertically(first: Table, second: Table) -> Table:
+def _join_two_tables_vertically(first: Table, second: Table, add_group_col: bool = True) -> Table:
+    if add_group_col and check_for_index_overlap(first, second):
+        first, second = add_extra_group_cols(first, second)
     output_cols = []
     for col1, col2 in zip(first.columns, second.columns):
         if col1.metadata.col_type == col2.metadata.col_type:
@@ -780,39 +788,18 @@ def _join_two_tables_vertically(first: Table, second: Table) -> Table:
 def _join_two_tables(first: Table, second: Table) -> Table:
     first = copy.deepcopy(first)
     second = copy.deepcopy(second)
-    first_date_col = first.get_date_column()
-    second_date_col = second.get_date_column()
 
-    if (
-        first_date_col
-        and second_date_col
-        and first_date_col.metadata.col_type != second_date_col.metadata.col_type
-    ):
-        first_date_col_type = first_date_col.metadata.col_type
-        second_date_col_type = second_date_col.metadata.col_type
-        granularity_higherarchy = {
-            TableColumnType.YEAR: 1,
-            TableColumnType.QUARTER: 2,
-            TableColumnType.MONTH: 3,
-            TableColumnType.DATE: 4,
-            TableColumnType.DATETIME: 4,
-        }
-        if (
-            first_date_col_type in granularity_higherarchy
-            and second_date_col_type in granularity_higherarchy
-        ):
-            if (
-                granularity_higherarchy[first_date_col_type]
-                < granularity_higherarchy[second_date_col_type]
-            ):
-                # This means the first table is less granular, need to convert
-                # it to the second table's granularity
-                first = first.convert_table_to_time_granularity(second_date_col_type)
-            elif (
-                granularity_higherarchy[first_date_col_type]
-                > granularity_higherarchy[second_date_col_type]
-            ):
-                second = second.convert_table_to_time_granularity(first_date_col_type)
+    first, second = preprocess_heterogeneous_tables_before_joining(first, second)
+    first, second = expand_dates_across_tables(first, second)
+
+    # After preprocessing, check again to see if we should join the tables
+    # vertically. There may be cases where preprocessing allows this.
+    first_table_metadata = [col.metadata for col in first.columns]
+    second_table_metadata = [col.metadata for col in second.columns]
+
+    if first_table_metadata == second_table_metadata:
+        return _join_two_tables_vertically(first, second, add_group_col=False)
+
     have_stock_columns = (
         first.get_stock_column() is not None and second.get_stock_column is not None
     )

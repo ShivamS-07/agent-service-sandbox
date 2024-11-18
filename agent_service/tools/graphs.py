@@ -48,7 +48,10 @@ def consolidate_table_columns(table: Table) -> Table:
         if not date_col and col.metadata.col_type.is_date_type():
             date_col = col
             continue
-        if not security_col and col.metadata.col_type == TableColumnType.STOCK:
+        if not security_col and col.metadata.col_type in (
+            TableColumnType.STOCK,
+            TableColumnType.STRING,
+        ):
             security_col = col
             continue
         if col.metadata.col_type in (
@@ -58,16 +61,23 @@ def consolidate_table_columns(table: Table) -> Table:
             TableColumnType.DELTA,
             TableColumnType.PCT_DELTA,
             TableColumnType.PERCENT,
+            TableColumnType.INTEGER_WITH_UNIT,
+            TableColumnType.FLOAT_WITH_UNIT,
         ):
             metric_col = col
             for i, c in enumerate(col.data):
                 if date_col is not None:
                     quarter_col.append(date_col.data[i])
                 if security_col is not None:
-                    security = cast(StockID, security_col.data[i])
-                    label_col.append(
-                        f"{security.symbol + ' - ' if security.symbol else ''}{col.metadata.label}"
-                    )
+                    security = security_col.data[i]
+                    if isinstance(security, StockID):
+                        label_col.append(
+                            f"{security.symbol + ' - ' if security.symbol else ''}{col.metadata.label}"
+                        )
+                    else:
+                        label_col.append(
+                            f"{str(security) + ' - ' if security else ''}{col.metadata.label}"
+                        )
                 else:
                     label_col.append(col.metadata.label)
                 amount_col.append(c)

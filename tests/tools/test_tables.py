@@ -74,10 +74,10 @@ class TestTableTools(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [col.metadata.label for col in result.columns],
-            ["Date", "Security", "Close Price"],
+            ["Date", "Security", "Group", "Close Price"],
         )
         self.assertEqual(result.get_num_rows(), 27)
-        self.assertEqual(len(result.columns), 3)
+        self.assertEqual(len(result.columns), 4)
 
     async def test_join_stock_tables(self):
         args = JoinTableArgs(input_tables=[TEST_STOCK_TABLE1, TEST_STOCK_TABLE2])
