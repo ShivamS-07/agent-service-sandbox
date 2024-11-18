@@ -283,6 +283,8 @@ class Postgres(PostgresBase):
         if not rows:
             return None
 
+        if rows[0]["status"] is None:
+            rows[0]["status"] = Status.COMPLETE
         return rows[0]
 
     def get_running_plan_run(self, agent_id: str) -> Optional[Dict[str, str]]:

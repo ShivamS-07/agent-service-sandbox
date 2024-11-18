@@ -236,6 +236,7 @@ async def run_profile_match(
         await tool_log(
             f"Starting filtering with {len(aligned_text_groups.val.keys())} stocks",
             context=context,
+            associated_data=list(aligned_text_groups.val.keys()),
         )
 
     if is_using_complex_profile:
@@ -262,6 +263,7 @@ async def run_profile_match(
         await tool_log(
             f"Completed a surface level round of filtering. {len(stock_whitelist)} stocks remaining.",
             context=context,
+            associated_data=list(stock_whitelist),
         )
     llm = GPT(context=gpt_context, model=SONNET)
     stock_reason_map: Dict[StockID, Tuple[str, List[Citation]]] = {
@@ -293,6 +295,7 @@ async def run_profile_match(
         await tool_log(
             f"Completed a more in-depth round of filtering. {len(filtered_stocks)} stocks remaining.",
             context=context,
+            associated_data=list(filtered_stocks),
         )
 
     # No need for an else since we can guarantee at this point one is not None, appeases linter
