@@ -193,78 +193,35 @@ class TestData(TestExecutionPlanner):
         )
 
     @skip_in_ci
-    def test_tech_sector_stocks(self):
-        prompt = "Find stocks in the technology sector on Jan 10, 2024"
+    def test_consumer_discretionary_sector_stocks(self):
+        # this sector was chosen since there aren't many similar sector names
+        prompt = "Find stocks in the Consumer Discretionary sector in the QQQ on Jan 10, 2024"
+
+        def validate_tool_args(execution_log: DefaultDict[str, List[dict]]) -> None:
+            tool_name = "gics_sector_industry_filter"
+
+            args = execution_log[tool_name][0]
+            sector_id = args["sector_id"]
+
+            # validate sector_id in input
+            self.assertEqual(sector_id.sec_id, 25)
 
         def validate_output(prompt: str, output: IOType):
             output_stock_ids = get_output(output=output)
 
             expected_ids = [
-                124,
-                155,
-                691,
-                713,
-                714,
-                716,
-                719,
-                723,
-                1144,
-                1694,
-                2271,
-                2849,
-                3428,
-                4043,
-                4083,
-                4569,
-                5112,
-                5136,
-                5721,
-                5757,
-                5766,
-                6344,
-                6384,
-                6387,
-                6960,
-                6961,
-                6963,
-                7504,
-                7528,
-                7551,
-                7555,
-                8154,
-                8707,
-                9292,
-                10817,
-                10865,
-                10931,
-                11554,
-                11595,
-                11635,
-                12293,
-                12299,
-                12985,
-                13831,
-                14424,
-                14426,
-                15014,
-                15315,
-                18851,
-                18854,
-                19729,
-                21466,
-                22901,
-                26805,
-                27375,
-                28309,
-                28385,
-                29336,
-                29372,
-                30055,
-                30940,
-                31120,
-                31767,
-                35692,
-                514112,
+                149,
+                6976,
+                7547,
+                8712,
+                9351,
+                14438,
+                19839,
+                19864,
+                25508,
+                40168,
+                498886,
+                498965,
             ]
             self.assertEqual(
                 sorted([stock_id.gbi_id for stock_id in output_stock_ids]),
@@ -273,7 +230,47 @@ class TestData(TestExecutionPlanner):
             )
 
         self.prompt_test(
-            prompt=prompt, validate_output=validate_output, required_tools=["sector_filter"]
+            prompt=prompt,
+            validate_tool_args=validate_tool_args,
+            validate_output=validate_output,
+            required_tools=["sector_identifier_lookup", "gics_sector_industry_filter"],
+        )
+
+    @skip_in_ci
+    def test_education_sector_etfs(self):
+        # this sector was chosen since there aren't many similar sector names
+        prompt = (
+            "Find ETFs with at least 10% holdings in the Education Services sector on Jan 10, 2024"
+        )
+
+        def validate_tool_args(execution_log: DefaultDict[str, List[dict]]) -> None:
+            tool_name = "gics_sector_industry_filter"
+
+            args = execution_log[tool_name][0]
+            sector_id = args["sector_id"]
+            etf_min_sector_threshold = args["etf_min_sector_threshold"]
+
+            # validate sector_id in input
+            self.assertEqual(sector_id.sec_id, 25302010)
+            self.assertEqual(etf_min_sector_threshold, 10.0)
+
+        def validate_output(prompt: str, output: IOType):
+            output_etf_ids = get_output(output=output)
+
+            expected_ids = [18661, 26394, 413777, 430983, 499215, 508828, 523654]
+            self.assertEqual(
+                sorted([etf_id.gbi_id for etf_id in output_etf_ids]),
+                expected_ids,
+                msg="Output stocks don't match",
+            )
+
+        self.prompt_test(
+            prompt=prompt,
+            validate_tool_args=validate_tool_args,
+            validate_output=validate_output,
+            required_tools=["sector_identifier_lookup", "gics_sector_industry_filter"],
+            raise_output_validation_error=True,
+            raise_plan_validation_error=True,
         )
 
     @skip_in_ci

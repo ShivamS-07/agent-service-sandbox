@@ -57,43 +57,80 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
                     result = await sector_identifier_lookup(args, self.context)
                     self.assertEqual(result.sec_id, a, q)
 
-    @unittest.skip("This test is failing")
-    async def test_sector_exact_match(self):
+    async def test_sector_level_1_exact_match(self):
+        # match multiple because some names are very similar
         q_a = [
-            ("Real Estate", 60),
-            ("Energy", 10),
-            ("Materials", 15),
-            ("Industrials", 20),
-            ("Consumer Discretionary", 25),
-            ("Consumer Staples", 30),
-            ("Health Care", 35),
-            ("Financials", 40),
-            ("Information Technology", 45),
-            ("Communication Services", 50),
-            ("Utilities", 55),
-            ("Real Estate Management & Development", 6020),
-            ("Technology Hardware & Equipment", 4520),
-            ("Health Care Equipment & Services", 3510),
-            ("Transportation", 2030),
-            ("Chemicals", 151010),
-            ("Building Products", 201020),
-            ("Hotels, Restaurants & Leisure", 253010),
-            ("Biotechnology", 352010),
-            ("Software", 451030),
-            ("Gas Utilities", 551020),
-            # Level 4 GICS tests confuse GPT too easily
-            # ("Data Center REITs", 60108050),
-            # ("Application Software", 45103010),
-            # ("Food Retail", 30101030),
-            # ("Heavy Electrical Equipment", 20104010),
-            # ("Oil & Gas Drilling", 10101010),
+            ("Energy", [10, 1010]),
+            ("Materials", [15, 1510]),
+            ("Industrials", [20]),
+            ("Consumer Discretionary", [25]),
+            ("Consumer Staples", [30]),
+            ("Health Care", [35]),
+            ("Financials", [40]),
+            ("Information Technology", [45]),
+            ("Communication Services", [50, 5010]),
+            ("Utilities", [55, 5510]),
+            ("Real Estate", [60]),
         ]
 
         for q, a in q_a:
             args = SectorIdentifierLookupInput(sector_name=q)
             with self.subTest(q=q, a=a):
                 result = await sector_identifier_lookup(args, self.context)
-                self.assertEqual(result.sec_id, a, q)
+                self.assertTrue(result.sec_id in a)
+
+    async def test_sector_level_2_exact_match(self):
+        # match multiple because some names are very similar
+        q_a = [
+            ("Energy", [10, 1010]),
+            ("Materials", [15, 1510]),
+            ("Capital Goods", [2010]),
+            ("Transportation", [2030]),
+            ("Consumer Services", [2530]),
+            ("Food, Beverage & Tobacco", [3020]),
+            ("Pharmaceuticals, Biotechnology & Life Sciences", [3520]),
+            ("Banks", [4010, 401010]),
+            ("Insurance", [4030, 403010]),
+            ("Technology Hardware & Equipment", [4520]),
+            ("Media & Entertainment", [5020]),
+            ("Utilities", [55, 5510]),
+            ("Equity Real Estate Investment Trusts (REITs)", [6010]),
+            ("REITs", [6010]),
+        ]
+
+        for q, a in q_a:
+            args = SectorIdentifierLookupInput(sector_name=q)
+            with self.subTest(q=q, a=a):
+                result = await sector_identifier_lookup(args, self.context)
+                self.assertTrue(result.sec_id in a)
+
+    # possible that GPT mismatches, feel free to mark this as skip if failing
+    async def test_sector_level_3_exact_match(self):
+        # match multiple because some names are very similar
+        q_a = [
+            ("Oil, Gas & Consumable Fuels", [101020]),
+            ("Metals & Mining", [151040]),
+            ("Aerospace & Defense", [201010, 20101010]),
+            ("Transportation Infrastructure", [203050]),
+            ("Household Durables", [252010]),
+            ("Hotels, Restaurants & Leisure", [253010]),
+            ("Specialty Retail", [255040]),
+            ("Beverages", [302010]),
+            ("Health Care Providers & Services", [351020]),
+            ("Biotechnology", [352010, 35201010]),
+            ("Capital Markets", [402030]),
+            ("Electronic Equipment, Instruments & Components", [452030, 45203010, 45203015]),
+            ("Interactive Media & Services", [502030, 50203010]),
+            ("Gas Utilities", [551020, 55102010]),
+            ("Specialized REITs", [601080, 60108010]),
+        ]
+
+        for q, a in q_a:
+            args = SectorIdentifierLookupInput(sector_name=q)
+            with self.subTest(q=q, a=a):
+                result = await sector_identifier_lookup(args, self.context)
+                print(result.sec_id, a)
+                self.assertTrue(result.sec_id in a)
 
     async def test_get_default_stock_list(self):
         stocks = await get_default_stock_list(user_id=self.context.user_id)
