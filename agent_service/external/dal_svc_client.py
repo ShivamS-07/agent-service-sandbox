@@ -133,7 +133,7 @@ class DALServiceClient:
         response_content: Dict[str, Any] = await response.json()
 
         if response.status != 200:
-            logger.warn(
+            logger.warning(
                 f"Failed to fetch data from DAL: {response_content.get('message')} {response_content.get('detail')}"
             )
 

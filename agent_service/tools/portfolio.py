@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from data_access_layer.core.dao.portfolio.pa_dao import PortfolioAnalysisDAO
 from dateutil.relativedelta import relativedelta
 from pa_portfolio_service_proto_v1.marketplace_messages_pb2 import (
     ListAllAuthorizedStrategiesResponse,
@@ -54,6 +55,7 @@ from agent_service.tools.feature_data import get_latest_price
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.constants import get_B3_prefix
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -1219,25 +1221,118 @@ class GetStrategyStocksInput(ToolArgs):
 
 
 @tool(
-    description="Given the metadata of a strategy, this tool returns the list of stock identifiers that are inside the strategy. It should only be used after the tool `convert_strategy_mention_to_strategy` when the user asks for the stocks in their strategies.",  # noqa
+    description="Given the metadata of a strategy, this tool returns a Table of the quantitative rankings for the stocks inside the strategy. It should only be used after the tool `convert_strategy_mention_to_strategy` when the user asks for the stock rankings in a SPECIFIC strategy.",  # noqa
     category=ToolCategory.STRATEGY,
     tool_registry=ToolRegistry,
 )
-async def get_strategy_stocks(
+async def get_strategy_rankings(
     args: GetStrategyStocksInput, context: PlanRunContext
-) -> List[StockID]:
-    sql = """
-        SELECT valid_gbi_ids
-        FROM public.portfolios
-        WHERE id = %(portfolio_id)s
-    """
-    rows = get_psql().generic_read(sql, {"portfolio_id": args.strategy_metadata.strategy_id})
-    if not rows:
-        raise EmptyOutputError(message="No valid stocks found for the strategy")
+) -> StockTable:
+    # TODO: we can support PIT data later
+    today = (get_now_utc() + datetime.timedelta(days=1)).date()
+    pa_dao = PortfolioAnalysisDAO()
+    nc = pa_dao.get_data(
+        model_id=args.strategy_metadata.model_id,
+        portfolio_id=args.strategy_metadata.strategy_id,
+        fields=["rank"],
+        start_date=today,
+        end_date=today,
+        get_most_recent=True,
+        need_clean=True,
+    )
+    if nc is None:
+        raise EmptyOutputError(message="No ranking data found for the strategy")
 
-    stock_ids = await StockID.from_gbi_id_list(rows[0]["valid_gbi_ids"])
-    await tool_log(log=f"Found {len(stock_ids)} stocks", context=context)
-    return stock_ids
+    rank_date: datetime.date = nc.columns[0]
+    row_mask = np.where(~np.isnan(nc.np_data[:, 0, 0]))[0]
+    gbi_id_to_rank = {int(nc.rows[row_idx]): int(nc.np_data[row_idx, 0, 0]) for row_idx in row_mask}
+
+    await tool_log(log=f"Found {len(gbi_id_to_rank)} stocks ranked on {rank_date}", context=context)
+
+    stock_list = await StockID.from_gbi_id_list(list(gbi_id_to_rank.keys()))
+    df = pd.DataFrame(
+        data={
+            STOCK_ID_COL_NAME_DEFAULT: stock_list,
+            "Rank": [gbi_id_to_rank[stock.gbi_id] for stock in stock_list],
+        },
+    )
+    df.sort_values(by="Rank", ignore_index=True, inplace=True)
+    df["Rank"] += 1  # 0-based to 1-based
+
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Rank", col_type=TableColumnType.INTEGER),
+        ],
+    )
+    table.title = "Strategy Rankings"
+
+    return table
+
+
+@tool(
+    description="Given the metadata of a strategy, this tool returns a Table of the stocks along with their weight percentages inside the strategy. It should only be used after the tool `convert_strategy_mention_to_strategy` when the user asks for the stock holdings in a SPECIFIC strategy.",  # noqa
+    category=ToolCategory.STRATEGY,
+    tool_registry=ToolRegistry,
+)
+async def get_strategy_holdings(
+    args: GetStrategyStocksInput, context: PlanRunContext
+) -> StockTable:
+    # holdings is a bit tricky because it's daily data but the strategy isn't always LIVE
+    # `get_most_recent` will default to most recent rebalance date and when the frequency is not
+    # daily then the result is unmatched. Thus, we need to fetch the last signalDate and fetch a
+    # range of data from that date to today and use the last data point as the most recent one
+
+    today = (get_now_utc() + datetime.timedelta(days=1)).date()
+    pa_dao = PortfolioAnalysisDAO()
+    dates = pa_dao.get_dates_data(
+        model_id=args.strategy_metadata.model_id,
+        portfolio_id=args.strategy_metadata.strategy_id,
+        end_date=today.isoformat(),
+        fields=["signalDates"],
+    )
+    if not dates or "signalDates" not in dates or not dates["signalDates"]:
+        raise EmptyOutputError(message="No dates data found for the strategy")
+
+    start_date = datetime.date.fromisoformat(dates["signalDates"][-1])
+
+    nc = pa_dao.get_data(
+        model_id=args.strategy_metadata.model_id,
+        portfolio_id=args.strategy_metadata.strategy_id,
+        fields=["allocation"],
+        start_date=start_date,
+        end_date=today,
+        need_clean=True,
+    )
+    if nc is None:
+        raise EmptyOutputError(message="No holding data found for the strategy")
+
+    holding_date: datetime.date = nc.columns[-1]
+    row_mask = np.where(~np.isnan(nc.np_data[:, -1, 0]))[0]
+    gbi_id_to_weight = {int(nc.rows[row_idx]): nc.np_data[row_idx, -1, 0] for row_idx in row_mask}
+
+    await tool_log(log=f"Found {len(gbi_id_to_weight)} holdings on {holding_date}", context=context)
+
+    stock_list = await StockID.from_gbi_id_list(list(gbi_id_to_weight.keys()))
+    df = pd.DataFrame(
+        data={
+            STOCK_ID_COL_NAME_DEFAULT: stock_list,
+            "Weight": [gbi_id_to_weight[stock.gbi_id] for stock in stock_list],
+        },
+    )
+    df.sort_values(by="Weight", ascending=False, inplace=True, ignore_index=True)
+
+    table = StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="Weight", col_type=TableColumnType.PERCENT),
+        ],
+    )
+    table.title = "Strategy Holdings"
+
+    return table
 
 
 async def get_best_matched_strategy_name_by_gpt(
