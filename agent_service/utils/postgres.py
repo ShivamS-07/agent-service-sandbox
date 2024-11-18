@@ -1,4 +1,5 @@
 import datetime
+import json
 from collections import defaultdict
 from contextlib import contextmanager
 from functools import lru_cache
@@ -16,7 +17,7 @@ from agent_service.planner.planner_types import (
     SamplePlan,
 )
 from agent_service.types import ChatContext, Message, Notification, PlanRunContext
-from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
+from agent_service.utils.boosted_pg import BoostedPG, CursorType, InsertToTableArgs
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.sec.sec_api import SecurityMetadata
@@ -38,6 +39,85 @@ class Postgres(PostgresBase):
         environment: str = environment or EnvironmentUtils.aws_ssm_prefix
         super().__init__(environment, skip_commit=skip_commit)
         self._env = environment
+
+    def generic_jsonb_update(
+        self,
+        table_name: str,
+        jsonb_column: str,
+        field_updates: Dict[str, Any],
+        where: Dict[str, Any],
+        cursor: Optional[CursorType] = None,
+    ) -> None:
+        """
+        Update specific fields within a JSONB column for rows matching the where condition
+        Args:
+            table_name: Name of the table to update
+            jsonb_column: Name of the JSONB column to update
+            field_updates: Dictionary mapping paths to their new values.
+                         Supports both dot notation and array indexing:
+                         - Dot notation: "settings.theme"
+                         - Array indexing: "items[0].name"
+            where: Dictionary of column-value pairs to identify rows to update
+
+        Example:
+            # Update array element
+            generic_jsonb_update(
+                table_name="users",
+                jsonb_column="metadata",
+                field_updates={
+                    "items[0].name": "new_name",
+                    "settings.theme": "dark"
+                },
+                where={"id": "ted"}
+            )
+
+            Would translate to:
+            UPDATE users
+            SET metadata = jsonb_set(
+                jsonb_set(
+                    CAST(metadata AS jsonb),
+                    '{items,0,name}',
+                    '"new_name"',
+                    true
+                ),
+                '{settings,theme}',
+                '"dark"',
+                true
+            )
+            WHERE (id = 'ted')
+        """
+        if not field_updates:
+            return
+
+        # Build the nested jsonb_set calls
+        jsonb_sets = f"CAST({jsonb_column} AS jsonb)"
+        params = []
+        for path, value in field_updates.items():
+            # Convert path to PostgreSQL JSONB path format
+            # Handle array indexing: convert "items[0].name" to "{items,0,name}"
+            pg_path = path.replace("[", ",").replace("]", "")
+            pg_path = "{" + pg_path.replace(".", ",") + "}"
+
+            jsonb_sets = f"jsonb_set({jsonb_sets}, %s, %s, true)"
+            json_value = json.dumps(value)
+            params.extend([pg_path, json_value])
+
+        # Build WHERE clause
+        where_clauses = []
+        for key, value in where.items():
+            if value is None:
+                continue
+            where_clauses.append(f"{key} = %s")
+            params.append(value)
+        where_str = " AND ".join(where_clauses)
+
+        # Create SQL using nested jsonb_set calls
+        sql = f"UPDATE {table_name} SET {jsonb_column} = {jsonb_sets} WHERE ({where_str})"
+
+        if cursor:
+            cursor.execute(sql, params)
+        else:
+            self.generic_write(sql, params)
 
     ################################################################################################
     # Agent Service
@@ -813,3 +893,13 @@ class SyncBoostedPG(BoostedPG):
                     table_name=arg.table_name, values_to_insert=arg.rows, ignore_conficts=False
                 )
                 cursor.execute(sql, params)  # type: ignore
+
+    async def generic_jsonb_update(
+        self,
+        table_name: str,
+        jsonb_column: str,
+        field_updates: Dict[str, Any],
+        where: Dict[str, Any],
+        cursor: Optional[CursorType] = None,
+    ) -> None:
+        return self.db.generic_jsonb_update(table_name, jsonb_column, field_updates, where, cursor)

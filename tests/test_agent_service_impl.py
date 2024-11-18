@@ -19,6 +19,7 @@ from agent_service.endpoints.models import (
     SetAgentFeedBackRequest,
     UnlockAgentOutputRequest,
     UpdateAgentRequest,
+    UpdateAgentWidgetNameRequest,
 )
 from agent_service.planner.constants import FirstAction
 from agent_service.planner.planner_types import ExecutionPlan
@@ -853,3 +854,37 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         # Verify the search results
         self.assertEqual(len(search_results), 2)
         self.assertEqual(len(search_results[0]), 3)
+
+    def test_update_agent_widget_title(self):
+        TEST_AGENT_ID = "565de7d2-d050-4813-8610-3b474b06823e"
+        TEST_OUTPUT_ID = "4c25a13e-5977-4550-af33-62e1abb7277b"
+        NEW_WIDGET_TITLE = "New Widget Title"
+
+        # Change to new widget title
+        req = UpdateAgentWidgetNameRequest(
+            output_id=TEST_OUTPUT_ID, new_widget_title=NEW_WIDGET_TITLE
+        )
+        res = self.update_agent_widget_name(agent_id=TEST_AGENT_ID, req=req)
+        self.assertTrue(res.success)
+
+        # Retrieve the updated widget title
+        agent_output = self.loop.run_until_complete(
+            self.pg.get_agent_outputs_data_from_db(
+                agent_id=TEST_AGENT_ID, include_output=True, output_id=TEST_OUTPUT_ID
+            )
+        )
+
+        # Assert that output contains the new title
+        self.assertEqual(NEW_WIDGET_TITLE in agent_output[0]["output"], True)
+
+        # Assert that what's new contains the new title
+        self.assertEqual(
+            NEW_WIDGET_TITLE in agent_output[0]["run_metadata"]["run_summary_long"]["val"], True
+        )
+
+        # Assert that plan node contain the new title
+        new_title_in_nodes = False
+        for node in agent_output[0]["plan"]["nodes"]:
+            if "title" in node["args"] and NEW_WIDGET_TITLE == node["args"]["title"]:
+                new_title_in_nodes = True
+        self.assertEqual(new_title_in_nodes, True)

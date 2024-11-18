@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
+import re
 import time
 import uuid
 from collections import defaultdict
@@ -36,7 +37,7 @@ from agent_service.io_types import *  # noqa
 from agent_service.io_types.graph import GraphOutput
 from agent_service.io_types.output import Output
 from agent_service.io_types.table import TableOutput
-from agent_service.io_types.text import TextOutput
+from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
 from agent_service.types import ChatContext, Message, Notification, PlanRunContext
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
@@ -49,6 +50,7 @@ from agent_service.utils.output_utils.output_construction import get_output_from
 from agent_service.utils.postgres import Postgres, SyncBoostedPG
 from agent_service.utils.prompt_template import PromptTemplate, UserOrganization
 from agent_service.utils.sidebar_sections import SidebarSection
+from tests.skip_commit_boosted_db import SkipCommitBoostedPG
 
 logger = logging.getLogger(__name__)
 
@@ -149,9 +151,13 @@ class AsyncDB:
         else:
             return await self.get_agent_outputs_no_cache(agent_id, plan_run_id)
 
-    async def get_agent_outputs_no_cache(
-        self, agent_id: str, plan_run_id: Optional[str] = None
-    ) -> List[AgentOutput]:
+    async def get_agent_outputs_data_from_db(
+        self,
+        agent_id: str,
+        include_output: bool,
+        plan_run_id: Optional[str] = None,
+        output_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """
         if `plan_run_id` is None, get the latest run's outputs
         """
@@ -163,6 +169,12 @@ class AsyncDB:
             AND ao.output NOTNULL AND ao.is_intermediate = FALSE
             """
             params = {"plan_run_id": plan_run_id}
+        if output_id:
+            where_clause = """
+            ao.output_id = %(output_id)s
+            AND NOT ao.deleted
+            """
+            params = {"output_id": output_id}
         else:
             where_clause = """
                 ao.plan_run_id IN (
@@ -174,12 +186,24 @@ class AsyncDB:
             """
             params = {"agent_id": agent_id}
 
+        columns = [
+            "ao.plan_id::VARCHAR",
+            "ao.output_id::VARCHAR",
+            "ao.plan_run_id::VARCHAR",
+            "ao.task_id::VARCHAR",
+            "ao.is_intermediate",
+            "ao.live_plan_output",
+            "ao.created_at",
+            "pr.shared",
+            "pr.run_metadata",
+            "ep.plan",
+            "ep.locked_tasks",
+        ]
+        if include_output:
+            columns.append("ao.output")
+
         sql = f"""
-                SELECT ao.plan_id::VARCHAR, ao.output_id::VARCHAR, ao.plan_run_id::VARCHAR,
-                    ao.task_id::VARCHAR,
-                    ao.is_intermediate, ao.live_plan_output,
-                    ao.output, ao.created_at, pr.shared, pr.run_metadata,
-                    ep.plan, ep.locked_tasks
+                SELECT {", ".join(columns)}
                 FROM agent.agent_outputs ao
                 LEFT JOIN agent.plan_runs pr
                   ON ao.plan_run_id = pr.plan_run_id
@@ -188,8 +212,17 @@ class AsyncDB:
                 WHERE {where_clause}
                 ORDER BY created_at ASC;
                 """
-        start = time.perf_counter()
         rows = await self.pg.generic_read(sql, params)
+        return rows
+
+    async def get_agent_outputs_no_cache(
+        self, agent_id: str, plan_run_id: Optional[str] = None
+    ) -> List[AgentOutput]:
+
+        start = time.perf_counter()
+        rows = await self.get_agent_outputs_data_from_db(
+            agent_id=agent_id, include_output=True, plan_run_id=plan_run_id
+        )
         end = time.perf_counter()
         logger.info(f"Fetched outputs from DB for {agent_id=} in {(end - start):.2f}s")
         if not rows:
@@ -246,41 +279,11 @@ class AsyncDB:
         """
         if `plan_run_id` is None, get the latest run's outputs
         """
-        # download metadata for all outputs (no values)
-        if plan_run_id:
-            where_clause = """
-            ao.plan_run_id = %(plan_run_id)s
-            AND NOT ao.deleted
-            AND ao.output NOTNULL AND ao.is_intermediate = FALSE
-            """
-            params = {"plan_run_id": plan_run_id}
-        else:
-            where_clause = """
-                ao.plan_run_id IN (
-                        SELECT plan_run_id FROM agent.agent_outputs
-                        WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
-                        ORDER BY created_at DESC LIMIT 1
-                    )
-                AND NOT ao.deleted
-            """
-            params = {"agent_id": agent_id}
-
-        sql = f"""
-            SELECT ao.plan_id::VARCHAR, ao.output_id::VARCHAR, ao.plan_run_id::VARCHAR,
-                ao.task_id::VARCHAR,
-                ao.is_intermediate, ao.live_plan_output,
-                ao.created_at, pr.shared, pr.run_metadata,
-                ep.plan, ep.locked_tasks
-            FROM agent.agent_outputs ao
-            LEFT JOIN agent.plan_runs pr
-                ON ao.plan_run_id = pr.plan_run_id
-            LEFT JOIN agent.execution_plans ep
-                ON ao.plan_id = ep.plan_id
-            WHERE {where_clause}
-            ORDER BY created_at ASC;
-        """
         start = time.perf_counter()
-        rows_without_output = await self.pg.generic_read(sql, params)
+        # download metadata for all outputs (no values)
+        rows_without_output = await self.get_agent_outputs_data_from_db(
+            agent_id=agent_id, include_output=False, plan_run_id=plan_run_id
+        )
         end = time.perf_counter()
         logger.info(
             f"Total time to get output METADATA for {agent_id} from DB "
@@ -1062,6 +1065,111 @@ class AsyncDB:
             where={"agent_id": agent_id},
             values_to_update={"deleted": False},
         )
+
+    async def get_agent_widget_title(self, output_id: str) -> str:
+        sql = """
+        SELECT output::JSONB->'title' AS widget_title
+        FROM agent.agent_outputs
+        WHERE output_id = %(output_id)s
+        """
+        rows = await self.pg.generic_read(sql, {"output_id": output_id})
+        return rows[0]["widget_title"] if rows else ""
+
+    async def update_agent_widget_name(
+        self,
+        agent_id: str,
+        output_id: str,
+        old_widget_title: str,
+        new_widget_title: str,
+        cache: RedisCacheBackend,
+    ) -> None:
+
+        if not isinstance(self.pg, (AsyncPostgresBase, SkipCommitBoostedPG)):
+            raise ValueError(
+                "Only supported for AsyncPostgresBase and SkipCommitBoostedPG (testing)"
+            )
+
+        rows = await self.get_agent_outputs_data_from_db(
+            agent_id=agent_id, include_output=False, output_id=output_id
+        )
+
+        # atomically updating all the fields so that if one update were to fail,
+        # the other updates don't get applied
+        async with self.pg.transaction() as cursor:
+            if not rows:
+                logger.warning(f"No rows found for agent_id: {agent_id}, output_id: {output_id}")
+                return
+            output = rows[0]
+
+            await self.pg.generic_jsonb_update(
+                table_name="agent.agent_outputs",
+                jsonb_column="output",
+                field_updates={"title": new_widget_title},
+                where={"output_id": output_id},
+                cursor=cursor,
+            )
+
+            run_summary_long = output["run_metadata"]["run_summary_long"]
+            if run_summary_long:
+                run_summary_long = Text.model_validate_json(json.dumps(run_summary_long))
+                field_updates = {}
+
+                # replace the old title with the new title in the run summary long by
+                # replacing only the parent bullet point that matches `old_widget_title`
+                old_run_summary_long: str = run_summary_long.val
+                pattern = rf"(^- {re.escape(old_widget_title)}\s*$)"
+                new_run_summary_long = re.sub(
+                    pattern, rf"- {new_widget_title}", old_run_summary_long, flags=re.MULTILINE
+                )
+                field_updates.update({"run_summary_long.val": new_run_summary_long})
+
+                # update the citation text offsets since the new widget title has different length
+                citations = run_summary_long.history[0].citations
+                if citations and old_widget_title in old_run_summary_long:
+                    title_text_offset = len(new_widget_title) - len(old_widget_title)
+                    widget_name_index = old_run_summary_long.index(old_widget_title)
+                    new_citation_text_offsets = []
+                    for citation in citations:
+                        # only apply the offset to the citations that are after the widget title
+                        if citation.citation_text_offset >= widget_name_index:
+                            new_citation_text_offsets.append(
+                                citation.citation_text_offset + title_text_offset
+                            )
+                        else:
+                            new_citation_text_offsets.append(citation.citation_text_offset)
+                    field_updates.update(
+                        {
+                            f"run_summary_long.history[0].citations[{i}].citation_text_offset": offset
+                            for i, offset in enumerate(new_citation_text_offsets)
+                        }
+                    )
+
+                await self.pg.generic_jsonb_update(
+                    table_name="agent.plan_runs",
+                    jsonb_column="run_metadata",
+                    field_updates=field_updates,
+                    where={"plan_run_id": output["plan_run_id"]},
+                    cursor=cursor,
+                )
+
+            # update the title in execution plan so future plan runs will use the new title
+            exeuction_plan = ExecutionPlan.model_validate(output["plan"])
+            if exeuction_plan.nodes:
+                for i, plan_node in enumerate(exeuction_plan.nodes):
+                    if plan_node.is_output_node and plan_node.args["title"] == old_widget_title:
+                        # setting i to the index of the node with the old title
+                        break
+                await self.pg.generic_jsonb_update(
+                    table_name="agent.execution_plans",
+                    jsonb_column="plan",
+                    field_updates={f"nodes[{i}].args.title": new_widget_title},
+                    where={"plan_id": output["plan_id"]},
+                    cursor=cursor,
+                )
+
+        # invalidate the cache so we don't get the old title
+        if cache:
+            await cache.invalidate(output_id)
 
     @async_perf_logger
     async def get_user_all_agents(

@@ -1,13 +1,15 @@
-from typing import Any, Dict, List, Optional
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, List, Optional
 
-from gbi_common_py_utils.utils.postgres import PostgresBase
+from psycopg import Cursor
 
-from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
+from agent_service.utils.boosted_pg import BoostedPG, CursorType, InsertToTableArgs
+from agent_service.utils.postgres import Postgres
 
 
 class SkipCommitBoostedPG(BoostedPG):
     def __init__(self):
-        self.pg = PostgresBase(environment="DEV", skip_commit=True)
+        self.pg = Postgres(environment="DEV", skip_commit=True)
 
     async def generic_read(self, sql: str, params: Optional[Any] = None) -> List[Dict[str, Any]]:
         return self.pg.generic_read(sql, params)
@@ -36,3 +38,18 @@ class SkipCommitBoostedPG(BoostedPG):
             except Exception as e:
                 print(f"failed inserting into {arg.table_name}")
                 raise e
+
+    async def generic_jsonb_update(
+        self,
+        table_name: str,
+        jsonb_column: str,
+        field_updates: Dict[str, Any],
+        where: Dict[str, Any],
+        cursor: Optional[CursorType] = None,
+    ) -> None:
+        return self.pg.generic_jsonb_update(table_name, jsonb_column, field_updates, where, cursor)
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[Cursor]:
+        with self.pg.transaction_cursor() as cursor:
+            yield cursor

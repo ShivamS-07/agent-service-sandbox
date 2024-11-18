@@ -142,6 +142,8 @@ from agent_service.endpoints.models import (
     UpdateAgentDraftStatusResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
+    UpdateAgentWidgetNameRequest,
+    UpdateAgentWidgetNameResponse,
     UpdatePromptTemplateResponse,
     UpdateUserResponse,
     UploadFileResponse,
@@ -1188,6 +1190,35 @@ class AgentServiceImpl:
             context=ctx,
         )
         return RetryPlanRunResponse()
+
+    async def update_agent_widget_name(
+        self, agent_id: str, req: UpdateAgentWidgetNameRequest
+    ) -> UpdateAgentWidgetNameResponse:
+        old_widget_title = await self.pg.get_agent_widget_title(output_id=req.output_id)
+        if not old_widget_title:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Widget title not found"
+            )
+
+        await self.pg.update_agent_widget_name(
+            agent_id=agent_id,
+            output_id=req.output_id,
+            old_widget_title=old_widget_title,
+            new_widget_title=req.new_widget_title,
+            cache=cast(RedisCacheBackend, self.cache),
+        )
+
+        await send_chat_message(
+            db=self.pg,
+            message=Message(
+                agent_id=agent_id,
+                message="Widget name has been updated successfully.",
+                is_user_message=False,
+                visible_to_llm=False,
+            ),
+        )
+
+        return UpdateAgentWidgetNameResponse(success=True)
 
     def get_secure_ld_user(self, user_id: str) -> GetSecureUserResponse:
         ld_user = get_user_context(user_id=user_id)

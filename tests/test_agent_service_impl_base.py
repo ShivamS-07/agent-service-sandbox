@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.logs import init_stdout_logging
 from tests.skip_commit_boosted_db import SkipCommitBoostedPG
@@ -47,6 +48,8 @@ from agent_service.endpoints.models import (
     UnlockAgentOutputResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
+    UpdateAgentWidgetNameRequest,
+    UpdateAgentWidgetNameResponse,
 )
 from agent_service.utils.do_nothing_task_executor import DoNothingTaskExecutor
 
@@ -198,4 +201,11 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
     ) -> UnlockAgentOutputResponse:
         return self.loop.run_until_complete(
             self.agent_service_impl.unlock_agent_output(agent_id=agent_id, req=req)
+        )
+
+    def update_agent_widget_name(
+        self, agent_id: str, req: UpdateAgentWidgetNameRequest
+    ) -> UpdateAgentWidgetNameResponse:
+        return self.loop.run_until_complete(
+            self.agent_service_impl.update_agent_widget_name(agent_id=agent_id, req=req)
         )

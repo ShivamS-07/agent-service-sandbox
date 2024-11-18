@@ -155,6 +155,8 @@ from agent_service.endpoints.models import (
     UpdateAgentQCResponse,
     UpdateAgentRequest,
     UpdateAgentResponse,
+    UpdateAgentWidgetNameRequest,
+    UpdateAgentWidgetNameResponse,
     UpdateNotificationEmailsRequest,
     UpdateNotificationEmailsResponse,
     UpdatePromptTemplateRequest,
@@ -1208,6 +1210,23 @@ async def retry_plan_run(
         )
 
     return await application.state.agent_service_impl.retry_plan_run(req=req)
+
+
+@router.post(
+    "/agent/widget/update-name/{agent_id}",
+    response_model=UpdateAgentWidgetNameResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def update_agent_widget_name(
+    agent_id: str, req: UpdateAgentWidgetNameRequest, user: User = Depends(parse_header)
+) -> UpdateAgentWidgetNameResponse:
+    if not (user.is_super_admin or await is_user_agent_admin(user.user_id)):
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
+    return await application.state.agent_service_impl.update_agent_widget_name(
+        agent_id=agent_id, req=req
+    )
 
 
 @router.get(

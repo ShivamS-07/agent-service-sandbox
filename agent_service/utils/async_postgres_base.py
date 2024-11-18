@@ -2,11 +2,12 @@
 # Once we confirm this is working for agent service, we can move this into gbi common
 
 import asyncio
+import json
 import logging
 import traceback
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, cast
 
 import backoff
 import psycopg
@@ -15,7 +16,7 @@ from gbi_common_py_utils.config import get_config
 from psycopg.rows import dict_row
 from psycopg_pool.pool_async import AsyncConnectionPool
 
-from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
+from agent_service.utils.boosted_pg import BoostedPG, CursorType, InsertToTableArgs
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,17 @@ class AsyncPostgresBase(BoostedPG):
         async with (await self.pool()).connection() as conn:
             async with conn.cursor() as cursor:
                 yield cursor
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[psycopg.AsyncCursor]:
+        async with self.cursor() as cursor:
+            await cursor.execute("BEGIN")
+            try:
+                yield cursor
+                await cursor.execute("COMMIT")
+            except Exception as e:
+                await cursor.execute("ROLLBACK")
+                raise e
 
     async def delete_from_table_where(self, table_name: str, **kwargs: Any) -> None:
         """
@@ -262,3 +274,82 @@ class AsyncPostgresBase(BoostedPG):
                         table_name=arg.table_name, values_to_insert=arg.rows, ignore_conficts=False
                     )
                     await cursor.execute(sql, params)
+
+    async def generic_jsonb_update(
+        self,
+        table_name: str,
+        jsonb_column: str,
+        field_updates: Dict[str, Any],
+        where: Dict[str, Any],
+        cursor: Optional[CursorType] = None,
+    ) -> None:
+        """
+        Update specific fields within a JSONB column for rows matching the where condition
+        Args:
+            table_name: Name of the table to update
+            jsonb_column: Name of the JSONB column to update
+            field_updates: Dictionary mapping paths to their new values.
+                         Supports both dot notation and array indexing:
+                         - Dot notation: "settings.theme"
+                         - Array indexing: "items[0].name"
+            where: Dictionary of column-value pairs to identify rows to update
+
+        Example:
+            # Update array element
+            generic_jsonb_update(
+                table_name="users",
+                jsonb_column="metadata",
+                field_updates={
+                    "items[0].name": "new_name",
+                    "settings.theme": "dark"
+                },
+                where={"id": "ted"}
+            )
+
+            Would translate to:
+            UPDATE users
+            SET metadata = jsonb_set(
+                jsonb_set(
+                    CAST(metadata AS jsonb),
+                    '{items,0,name}',
+                    '"new_name"',
+                    true
+                ),
+                '{settings,theme}',
+                '"dark"',
+                true
+            )
+            WHERE (id = 'ted')
+        """
+        if not field_updates:
+            return
+
+        # Build the nested jsonb_set calls
+        jsonb_sets = f"CAST({jsonb_column} AS jsonb)"
+        params = []
+        for path, value in field_updates.items():
+            # Convert path to PostgreSQL JSONB path format
+            # Handle array indexing: convert "items[0].name" to "{items,0,name}"
+            pg_path = path.replace("[", ",").replace("]", "")
+            pg_path = "{" + pg_path.replace(".", ",") + "}"
+
+            jsonb_sets = f"jsonb_set({jsonb_sets}, %s, %s, true)"
+            json_value = json.dumps(value)
+            params.extend([pg_path, json_value])
+
+        # Build WHERE clause
+        where_clauses = []
+        for key, value in where.items():
+            if value is None:
+                continue
+            where_clauses.append(f"{key} = %s")
+            params.append(value)
+        where_str = " AND ".join(where_clauses)
+
+        # Create SQL using nested jsonb_set calls
+        sql = f"UPDATE {table_name} SET {jsonb_column} = {jsonb_sets} WHERE ({where_str})"
+
+        if cursor:
+            await cast(psycopg.AsyncCursor, cursor).execute(sql, params)
+        else:
+            await self.generic_write(sql, params)

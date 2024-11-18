@@ -1,10 +1,15 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple, Optional, Union
+
+from psycopg import AsyncCursor, Cursor
 
 
 class InsertToTableArgs(NamedTuple):
     table_name: str
     rows: List[Dict[str, Any]]
+
+
+CursorType = Union[Cursor, AsyncCursor]
 
 
 class BoostedPG(ABC):
@@ -32,4 +37,15 @@ class BoostedPG(ABC):
 
     @abstractmethod
     async def insert_atomic(self, to_insert: List[InsertToTableArgs]) -> None:
+        pass
+
+    @abstractmethod
+    async def generic_jsonb_update(
+        self,
+        table_name: str,
+        jsonb_column: str,
+        field_updates: Dict[str, Any],
+        where: Dict[str, Any],
+        cursor: Optional[CursorType] = None,
+    ) -> None:
         pass

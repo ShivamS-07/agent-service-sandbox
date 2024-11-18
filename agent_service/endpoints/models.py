@@ -601,6 +601,18 @@ class AgentEvent(BaseModel):
 
 
 ####################################################################################################
+# UpdateAgentWidgetName
+####################################################################################################
+class UpdateAgentWidgetNameRequest(BaseModel):
+    output_id: str
+    new_widget_title: str
+
+
+class UpdateAgentWidgetNameResponse(BaseModel):
+    success: bool
+
+
+####################################################################################################
 # Plan Run Sharing
 ####################################################################################################
 class SharePlanRunRequest(BaseModel):
