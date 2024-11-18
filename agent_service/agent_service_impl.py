@@ -69,6 +69,7 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationResponse,
     ExecutionPlanTemplate,
+    FindTemplatesRelatedToPromptResponse,
     GenPromptTemplateFromPlanResponse,
     GenTemplatePlanResponse,
     GetAgentDebugInfoResponse,
@@ -223,6 +224,7 @@ from agent_service.utils.feature_flags import (
     get_user_context,
     is_database_access_check_enabled_for_user,
 )
+from agent_service.utils.find_template import get_matched_templates
 from agent_service.utils.get_agent_outputs import get_agent_output
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.memory_handler import MemoryHandler, get_handler
@@ -2379,6 +2381,15 @@ class AgentServiceImpl:
     async def delete_prompt_template(self, template_id: str) -> DeletePromptTemplateResponse:
         await self.pg.delete_prompt_template(template_id=template_id)
         return DeletePromptTemplateResponse(template_id=template_id)
+
+    async def find_templates_related_to_prompt(
+        self, query: str, user: User, is_user_admin: bool
+    ) -> FindTemplatesRelatedToPromptResponse:
+        prompt_templates = await self.get_prompt_templates(user=user, is_user_admin=is_user_admin)
+        matched_templates = await get_matched_templates(
+            query=query, prompt_templates=prompt_templates
+        )
+        return FindTemplatesRelatedToPromptResponse(prompt_templates=matched_templates)
 
     async def get_user_has_alfa_access(self, user: User) -> bool:
         if user.is_admin or user.is_super_admin:

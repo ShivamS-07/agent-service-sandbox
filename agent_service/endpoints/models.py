@@ -1288,6 +1288,14 @@ class GenPromptTemplateFromPlanRequest(BaseModel):
     agent_id: str
 
 
+class FindTemplatesRelatedToPromptResponse(BaseModel):
+    prompt_templates: Optional[List[PromptTemplate]] = None
+
+
+class FindTemplatesRelatedToPromptRequest(BaseModel):
+    query: str
+
+
 ################################################
 # Quality Tool Classes
 ################################################

@@ -70,6 +70,8 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationRequest,
     EnableAgentAutomationResponse,
+    FindTemplatesRelatedToPromptRequest,
+    FindTemplatesRelatedToPromptResponse,
     GenPromptTemplateFromPlanRequest,
     GenPromptTemplateFromPlanResponse,
     GenTemplatePlanRequest,
@@ -1775,6 +1777,21 @@ async def gen_prompt_template_from_plan(
     return await application.state.agent_service_impl.gen_prompt_template_from_plan(
         plan_run_id=req.plan_run_id,
         agent_id=req.agent_id,
+    )
+
+
+@router.post(
+    "/template/find-templates-related-to-prompt",
+    response_model=FindTemplatesRelatedToPromptResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def find_templates_related_to_prompt(
+    req: FindTemplatesRelatedToPromptRequest, user: User = Depends(parse_header)
+) -> FindTemplatesRelatedToPromptResponse:
+    return await application.state.agent_service_impl.find_templates_related_to_prompt(
+        query=req.query,
+        user=user,
+        is_user_admin=user.is_super_admin or await is_user_agent_admin(user.user_id),
     )
 
 
