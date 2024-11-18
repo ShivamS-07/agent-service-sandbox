@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import WebStockText, WebText
+from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
 from agent_service.tools.product_comparison.brightdata_websearch import (
     get_news_urls_async,
@@ -20,19 +21,15 @@ NEWS_URLS_TO_SCRAPE = 10
 logger = logging.getLogger(__name__)
 
 
-class GeneralWebSearchInput(ToolArgs):
-    queries: List[str]
+def enabler_function(user_id: Optional[str]) -> bool:
+    result = get_ld_flag("web-search-tool", default=False, user_context=user_id)
+    logger.info(f"Web search tool being used: {result}")
+    return result
 
 
 class SingleStockWebSearchInput(ToolArgs):
     stock_id: StockID
     query: str
-
-
-def enabler_function(user_id: Optional[str]) -> bool:
-    result = get_ld_flag("web-search-tool", default=False, user_context=user_id)
-    logger.info(f"Web search tool being used: {result}")
-    return result
 
 
 @tool(
@@ -64,7 +61,7 @@ async def single_stock_web_search(
     for result in results:
         urls.extend(result)
 
-    search_results = await get_web_texts_async(urls)
+    search_results = await get_web_texts_async(urls=urls, plan_context=context)
     web_stock_text_results = [
         WebStockText(
             stock_id=stock_id,
@@ -76,6 +73,10 @@ async def single_stock_web_search(
         for web_text in search_results
     ]
     return web_stock_text_results
+
+
+class GeneralWebSearchInput(ToolArgs):
+    queries: List[str]
 
 
 @tool(
@@ -102,7 +103,41 @@ async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContex
         urls.extend(result)
 
     # currently, this returns a list of WebTexts
-    search_results = await get_web_texts_async(urls)
+    search_results = await get_web_texts_async(urls=urls, plan_context=context)
+    return search_results
+
+
+class SiteSpecificWebSearchInput(ToolArgs):
+    urls: List[str]
+
+
+@tool(
+    description=(
+        "This function takes in a list of urls and returns text entries from those urls. "
+        "Be sure to include the FULL URL of that is provided, this includes the domain as well as the routing! "
+        "Be sure to use all possible valid URLS that are provided from the prompt, if there are multiple provided "
+        "and you only use one, you will be FIRED!!! "
+        "If the client requests to get information from a specific URLs they input, USE THIS TOOL!!! "
+        "Again, it is VERY IMPORTANT that this tool is the web related tool called when URLS are used, other web "
+        "tools like general_web_search may be called alongside, but this tool MUST be called with the provided URLs. "
+        "You MUST call the summarize_texts tool sometime after this tool. "
+        "Again, it is VERY important that the summarize_texts tool is called before the end of a "
+        "plan containing this tool! DO not EVER directly output the returned text from this tool! "
+        "AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
+    ),
+    category=ToolCategory.WEB,
+    tool_registry=ToolRegistry,
+    enabled_checker_func=enabler_function,
+)
+async def site_specific_websearch(
+    args: SiteSpecificWebSearchInput, context: PlanRunContext
+) -> List[WebText]:
+    search_results = await get_web_texts_async(
+        urls=args.urls, plan_context=context, should_print_errors=True
+    )
+    if len(search_results) == 0:
+        raise EmptyOutputError(message="All provided URLs had an error")
+
     return search_results
 
 
@@ -116,13 +151,20 @@ async def main() -> None:
 
     queries = GeneralWebSearchInput(queries=[query_1, query_2, query_3, query_4])
     result = await general_web_search(queries, plan_context)
-    """
 
     query = SingleStockWebSearchInput(
         stock_id=StockID(gbi_id=714, symbol="AAPL", isin="US0378331005", company_name=""),
         query="news on apple",
     )
+
     result = await single_stock_web_search(query, plan_context)
+    """
+
+    url_1 = "https://jobs.apple.com/en-ca/search?location=new-york-city-NYC"
+    url_2 = "invalid url"
+    url_3 = "https://jobs.apple.com/en-ca/sea"
+    urls = SiteSpecificWebSearchInput(urls=[url_1, url_2, url_3])
+    result = await site_specific_websearch(urls, plan_context)
     print(result)
 
 

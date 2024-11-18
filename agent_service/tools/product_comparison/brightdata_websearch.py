@@ -21,6 +21,8 @@ from agent_service.tools.product_comparison.constants import (
     S3_BUCKET_BOOSTED_WEBSEARCH,
     URL_CACHE_TTL_HOURS,
 )
+from agent_service.tools.tool_log import tool_log
+from agent_service.types import PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
@@ -72,7 +74,7 @@ async def get_urls_async(
         tasks = []
         for url in urls:
             tasks.append(
-                async_fetch_json(session, url, headers, req_proxies["http"], timeout, ssl_context)
+                async_fetch_json(session, url, headers, proxies["http"], timeout, ssl_context)
             )
 
         results = await asyncio.gather(*tasks)
@@ -110,7 +112,7 @@ async def get_news_urls_async(
         tasks = []
         for url in urls:
             tasks.append(
-                async_fetch_json(session, url, headers, req_proxies["http"], timeout, ssl_context)
+                async_fetch_json(session, url, headers, proxies["http"], timeout, ssl_context)
             )
 
         results = await asyncio.gather(*tasks)
@@ -166,12 +168,23 @@ async def req_and_scrape(
     proxy: str,
     timeout: int,
     ssl_context: Any,
+    plan_context: PlanRunContext,
+    should_print_errors: Optional[bool] = False,
 ) -> Optional[WebText]:
     # use aiohttp to asynchronously make URL requests and scrape using BeautifulSoup
     try:
         async with session.get(
             url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context  # type: ignore
         ) as response:
+            if response.status != 200:
+                if should_print_errors:
+                    await tool_log(
+                        f"Failed to scrape from: {url}",
+                        context=plan_context,
+                    )
+                logger.error(f"Request Error {response.status}: {url}")
+                return None
+
             title: Optional[str] = None
             content_type = response.headers.get("Content-Type", "")
             if "application/pdf" in content_type:
@@ -229,15 +242,39 @@ async def req_and_scrape(
                 return None
 
     except aiohttp.ClientResponseError as e:
-        logger.info(f"HTTP error for {url}: {e.status} - {e.message}")
+        if should_print_errors:
+            await tool_log(
+                f"Failed to scrape from: {url}",
+                context=plan_context,
+            )
+        logger.error(f"HTTP error for {url}: {e.status} - {e.message}")
         return None
 
     except aiohttp.ClientConnectionError as e:
-        logger.info(f"Connection error for {url}: {e}")
+        if should_print_errors:
+            await tool_log(
+                f"Failed to scrape from: {url}",
+                context=plan_context,
+            )
+        logger.error(f"Connection error for {url}: {e}")
+        return None
+
+    except aiohttp.InvalidURL:
+        if should_print_errors:
+            await tool_log(
+                f"Failed to scrape from: {url}",
+                context=plan_context,
+            )
+        logger.error(f"Invalid URL: {url}")
         return None
 
     except Exception as e:
-        logger.info(f"An unexpected error occurred: {e}")
+        if should_print_errors:
+            await tool_log(
+                f"Failed to scrape from: {url}",
+                context=plan_context,
+            )
+        logger.error(f"An unexpected error occurred: {e}")
         return None
 
     obj = WebText(
@@ -260,7 +297,11 @@ async def req_and_scrape(
 # takes in URLs, returns a list of WebTexts
 @async_perf_logger
 async def get_web_texts_async(
-    urls: List[str], headers: Dict[str, str] = HEADER, timeout: int = 300
+    urls: List[str],
+    plan_context: PlanRunContext,
+    headers: Dict[str, str] = HEADER,
+    timeout: int = 300,
+    should_print_errors: bool = False,
 ) -> Any:
     logger = get_prefect_logger(__name__)
 
@@ -288,7 +329,8 @@ async def get_web_texts_async(
     }
     results: list[WebText] = list(url_to_obj.values())
 
-    uncached_urls = [url for url in urls if url not in url_to_obj]
+    # TODO bring back caching
+    uncached_urls = [url for url in urls]
     if uncached_urls:
         logger.info(f"Scrapping {len(uncached_urls)} uncached URLs out of {len(urls)}")
 
@@ -298,7 +340,15 @@ async def get_web_texts_async(
         ) as session, aioboto3.Session().client("s3") as s3_client:
             tasks = [
                 req_and_scrape(
-                    session, s3_client, url, headers, req_proxies["http"], timeout, ssl_context
+                    session,
+                    s3_client,
+                    url,
+                    headers,
+                    req_proxies["http"],
+                    timeout,
+                    ssl_context,
+                    plan_context,
+                    should_print_errors,
                 )
                 for url in uncached_urls
             ]
@@ -336,9 +386,10 @@ async def main() -> None:
     """
 
     query_1 = "nintendo switch 2"
-    query_2 = "Australia betting"
+    # query_2 = "Australia betting"
 
-    responses = await get_urls_async([query_1, query_2], 10)
+    # responses = await get_urls_async([query_1], 10)
+    responses = await get_news_urls_async([query_1], 10)
     print(responses)
 
 

@@ -79,7 +79,9 @@ def get_arg_dict(arg_str: str) -> Dict[str, str]:
     arg_indicies = [0, *[match.start() for match in ARGUMENT_RE.finditer(arg_str)], len(arg_str)]
     arg_dict = {}
     for i in range(len(arg_indicies) - 1):
-        key, value = arg_str[arg_indicies[i] : arg_indicies[i + 1]].strip(" ,").split("=")
+        key, value = (
+            arg_str[arg_indicies[i] : arg_indicies[i + 1]].strip(" ,").split("=", maxsplit=1)
+        )
         arg_dict[key.strip()] = value.strip()
     return arg_dict
 
