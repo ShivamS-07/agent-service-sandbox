@@ -652,18 +652,25 @@ class AgentServiceImpl:
             )
             await self.pg.insert_chat_messages(messages=[user_msg])
         except Exception as e:
-            LOGGER.exception(f"Failed to insert user message into DB with exception: {e}")
+            LOGGER.exception(
+                f"Failed to insert user message into DB for {agent_id=} with exception: {e}"
+            )
             return ChatWithAgentResponse(success=False, allow_retry=True)
 
         if req.is_first_prompt:
-            LOGGER.info("Creating future task to generate agent name and store in DB")
+            LOGGER.info(
+                f"Creating future task to generate agent name and store in DB for {agent_id=}"
+            )
             run_async_background(
                 self._generate_agent_name_and_store(user.user_id, agent_id, user_msg)  # 2s
             )
 
             if not req.skip_agent_response:
                 LOGGER.info(
-                    "Creating future tasks to generate initial response and send slack message"
+                    (
+                        "Creating future tasks to generate initial "
+                        f"response and send slack message, {agent_id=}"
+                    )
                 )
                 run_async_background(self._slack_chat_msg(req, user))  # 0.1s
                 await self._create_initial_response(user, agent_id, user_msg)  # 2s
@@ -717,15 +724,15 @@ class AgentServiceImpl:
     async def _create_initial_response(
         self, user: User, agent_id: str, user_msg: Message
     ) -> FirstAction:
-        LOGGER.info("Generating initial response from GPT (first prompt)")
+        LOGGER.info(f"Generating initial response from GPT (first prompt), {agent_id=}")
         chatbot = Chatbot(agent_id)
         chat_context = ChatContext(messages=[user_msg])
         action_decider = FirstActionDecider(agent_id=agent_id, skip_db_commit=True)
 
-        LOGGER.info("Deciding action")
+        LOGGER.info(f"Deciding action for {agent_id=}")
         action = await action_decider.decide_action(chat_context=chat_context)
 
-        LOGGER.info(f"Action decided: {action}. Now generating response")
+        LOGGER.info(f"Action decided: {action}. Now generating response for {agent_id=}")
         if action == FirstAction.REFER:
             gpt_resp = await chatbot.generate_first_response_refer(chat_context=chat_context)
         elif action == FirstAction.NOTIFICATION:
@@ -737,7 +744,7 @@ class AgentServiceImpl:
 
         gpt_msg = Message(agent_id=agent_id, message=gpt_resp, is_user_message=False)
 
-        LOGGER.info("Inserting GPT's response to DB and publishing GPT response")
+        LOGGER.info(f"Inserting GPT's response to DB and publishing GPT response for {agent_id=}")
         tasks = [
             self.pg.insert_chat_messages(messages=[gpt_msg]),
             send_chat_message(gpt_msg, self.pg, insert_message_into_db=False),
