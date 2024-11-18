@@ -65,11 +65,33 @@ class AsyncDB:
         return await self.pg.generic_write(sql, params)
 
     async def get_prev_outputs_for_agent_plan(
-        self, agent_id: str, plan_id: str, latest_plan_run_id: str
+        self,
+        agent_id: str,
+        plan_id: str,
+        latest_plan_run_id: str,
+        cutoff_dt: Optional[datetime.datetime],
     ) -> Optional[Tuple[List[IOType], datetime.datetime]]:
         """
         Returns the prior list of outputs for a plan, as well as the date the outputs were created.
         """
+        # we could do this in one larger sql, but decomposing it to make sure
+        # get_prev_outputs_for_agent_plan() and get_previous_plan_run() have similar
+        # implementations
+        # in the future we could harmonize the better
+
+        prev_plan_run_id, plan_run_created_at = await self.get_previous_plan_run(
+            agent_id=agent_id,
+            plan_id=plan_id,
+            latest_plan_run_id=latest_plan_run_id,
+            cutoff_dt=cutoff_dt,
+        )
+
+        if not prev_plan_run_id:
+            return None
+
+        # I suspect this '"output" NOTNULL' is hiding the case where an error occured in prev run
+        # but that probably means we should have reverted to an even earlier run
+        # that logic will be handled in get_previous_plan_run()
         sql = """
         SELECT plan_run_id,
           MAX(ao.created_at) AS prev_date,
@@ -78,21 +100,13 @@ class AsyncDB:
         WHERE agent_id = %(agent_id)s AND "output" NOTNULL AND is_intermediate = FALSE
                 AND NOT ao.deleted
                 AND plan_id = %(plan_id)s
-                AND plan_run_id IN
-                  (
-                    SELECT plan_run_id FROM agent.plan_runs
-                    WHERE plan_run_id != %(latest_plan_run_id)s
-                      AND agent_id = %(agent_id)s
-                      AND plan_id = %(plan_id)s
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                  )
+                AND plan_run_id = %(prev_plan_run_id)s
         GROUP BY plan_run_id
         LIMIT 1
         """
         rows = await self.pg.generic_read(
             sql,
-            {"agent_id": agent_id, "plan_id": plan_id, "latest_plan_run_id": latest_plan_run_id},
+            {"agent_id": agent_id, "plan_id": plan_id, "prev_plan_run_id": prev_plan_run_id},
         )
         if not rows:
             return None
@@ -113,6 +127,8 @@ class AsyncDB:
         if cutoff_dt:
             date_filter = " AND created_at < %(cutoff_dt)s"
 
+        # TODO should we be filtering to plan_runs_that are
+        # actually in the completed state (not error)
         sql = f"""
         SELECT plan_run_id, created_at FROM agent.plan_runs
         WHERE plan_run_id != %(latest_plan_run_id)s

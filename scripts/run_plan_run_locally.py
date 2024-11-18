@@ -242,17 +242,16 @@ async def run_plan_run_id_task_id(
             override_output_dict[task_id] = output
 
     print("==================================")
-    if "orig" in str(run_as_if_date).lower():
-        # use the original run date
-        if original_run_date:
-            context.as_of_date = original_run_date
-            enable_mock_time()
-            set_mock_time(original_run_date)
-            print(f"overriding current time to: {original_run_date=}")
-            # move time slightly forward
-            increment_mock_time()
+    if "today" in str(run_as_if_date).lower():
+        # run as today
+        print(f"running as today instead of {original_run_date=}")
+        context.as_of_date = None
+        disable_mock_time()
     elif isinstance(run_as_if_date, datetime.date):
-        start_time = datetime.datetime.combine(run_as_if_date, datetime.time(hour=7, minute=35))
+        st = datetime.time(hour=7, minute=35)
+        if original_run_date:
+            st = original_run_date.time()
+        start_time = datetime.datetime.combine(run_as_if_date, st)
         context.as_of_date = start_time
         enable_mock_time()
         set_mock_time(start_time)
@@ -260,10 +259,20 @@ async def run_plan_run_id_task_id(
         # move time slightly forward
         increment_mock_time()
     else:
-        # run as today
-        print(f"running as today instead of {original_run_date=}")
-        context.as_of_date = None
-        disable_mock_time()
+        # use the original run date
+        if not original_run_date:
+            print(f"WARNING: could not determine original run date!")
+            print(f"running as today instead of {original_run_date=}")
+            context.as_of_date = None
+            disable_mock_time()
+        else:
+            context.as_of_date = original_run_date
+            enable_mock_time()
+            set_mock_time(original_run_date)
+            print(f"overriding current time to: {original_run_date=}")
+            # move time slightly forward
+            increment_mock_time()
+
     print("==================================")
 
     # if you want to test update mode

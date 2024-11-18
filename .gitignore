@@ -1,4 +1,6 @@
-
+*#*
+*.orig
+*,cover
 .DS_Store
 src/python/*
 __pycache__/

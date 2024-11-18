@@ -497,11 +497,19 @@ class OutputDiffer:
                 agent_id=self.context.agent_id,
                 plan_id=self.context.plan_id,
                 latest_plan_run_id=self.context.plan_run_id,
+                cutoff_dt=self.context.as_of_date,
             )
             if prev_outputs_and_time is None:
                 # If this is the first run of the plan, or the previous output is
-                # misisng for some reason.
+                # missing for some reason.
                 logger.info("No previous output found, won't notify.")
+                # TODO in the case where this is not the first run of the plan
+                # (im sure there is some way to tell)
+                # BUT the prev output is missing for some reason (bug/error) etc,
+                # it actually would be most prudent to send a notification equivalent to
+                # a report for a new agent
+                # so client doesnt miss anything...
+
                 return [
                     OutputDiff(
                         diff_summary_message="",

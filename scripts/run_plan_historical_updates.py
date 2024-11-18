@@ -135,8 +135,6 @@ def parse_args() -> argparse.Namespace:
         help="specify an end date for running the agent",
     )
 
-    # TODO not implemented yet, default to using 1 day
-    """
     parser.add_argument(
         "--delta",
         type=int,
@@ -144,6 +142,7 @@ def parse_args() -> argparse.Namespace:
         help="how many y/m/d/w/h",
     )
 
+    """
     parser.add_argument(
         "--unit",
         type=str,
@@ -162,11 +161,13 @@ async def main() -> None:
     end_date = args.end_date
     start_date = args.start_date
 
+    days_increment = max(1, args.delta)
+
     await run_plan_historical_updates(
         agent_id=args.agent,
         start_date=args.start_date,
         end_date=args.end_date,
-        days_increment=1,
+        days_increment=days_increment,
         skip_commit=False,
     )
 

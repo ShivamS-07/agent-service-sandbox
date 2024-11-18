@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import datetime
 import logging
 import sys
 from pprint import pprint
@@ -17,7 +18,11 @@ from agent_service.planner.executor import (
     update_execution_after_input,
 )
 from agent_service.types import ChatContext, Message, PlanRunContext
-from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.agent_event_utils import publish_agent_name, send_chat_message
+from agent_service.utils.agent_name import generate_name_for_agent
+from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_postgres_base import AsyncPostgresBase
+from agent_service.utils.date_utils import enable_mock_time, get_now_utc, set_mock_time
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.output_utils.utils import output_for_log
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME, get_psql
@@ -27,6 +32,48 @@ logger = logging.getLogger(__name__)
 env = get_environment_tag()
 base_url = "alfa.boosted.ai" if env == "ALPHA" else "agent-dev.boosted.ai"
 channel = "alfa-client-queries" if env == "ALPHA" else "alfa-client-queries-dev"
+
+
+async def soft_delete_agent(agent_id: str) -> None:
+    # agent_service_impl.py::delete_agent()
+    async_pg = AsyncPostgresBase()
+    async_db = AsyncDB(async_pg)
+
+    await async_db.delete_agent_by_id(agent_id)  # soft delete
+    await send_chat_message(
+        message=Message(
+            agent_id=agent_id,
+            message="Analyst has been deleted successfully.",
+            is_user_message=False,
+            visible_to_llm=False,
+        ),
+        db=async_db,
+    )
+
+
+async def generate_agent_name_and_store(user_id: str, agent_id: str, user_msg: Message) -> str:
+    # agent_service_impl.py::_generate_agent_name_and_store()
+    async_pg = AsyncPostgresBase()
+    pg = AsyncDB(async_pg)
+
+    logger.info("Getting existing agents' names")
+    existing_agents = await pg.get_existing_agents_names(user_id)
+
+    logger.info("Calling GPT to generate agent name")
+    name = await generate_name_for_agent(
+        agent_id=agent_id,
+        chat_context=ChatContext(messages=[user_msg]),
+        existing_names=existing_agents,
+        user_id=user_id,
+    )
+
+    logger.info(f"Updating agent name to {name} in DB")
+
+    await asyncio.gather(
+        pg.update_agent_name(agent_id=agent_id, agent_name=name),
+        publish_agent_name(agent_id=agent_id, agent_name=name),
+    )
+    return name
 
 
 def remove_citations_from_output_iotype(output: IOType) -> None:
@@ -53,16 +100,23 @@ async def gen_and_run_plan(
     use_sample_plans: bool = True,
     mock_automation: bool = False,
     exclude_citations: bool = False,
+    as_of_date: Optional[datetime.date] = None,
 ) -> None:
     if not prompt:
         prompt = input("Enter a prompt for the agent> ")
 
     print(f"Creating execution plan for prompt: '{prompt}'")
 
+    if as_of_date:
+        start_time = datetime.datetime.combine(as_of_date, datetime.time(hour=7, minute=35))
+        enable_mock_time()
+        set_mock_time(start_time)
+        print(f"overriding current time to: {start_time=}")
+
     now = get_now_utc()
-    chat = ChatContext(messages=[Message(message=prompt, is_user_message=True)])
-    # if user_id is None:
-    #    user_id = str(uuid4())
+    message = Message(message=prompt, is_user_message=True)
+    chat = ChatContext(messages=[message])
+
     plan_id = str(uuid4())
 
     db = get_psql(skip_commit=False)
@@ -76,6 +130,8 @@ async def gen_and_run_plan(
         is_user_message=True,
         message_time=now,
     )
+
+    await generate_agent_name_and_store(user_id=user_id, agent_id=agent_id, user_msg=user_msg)
 
     db.insert_chat_messages([user_msg])
 
@@ -100,7 +156,8 @@ async def gen_and_run_plan(
     if not run_plan_without_confirmation:
         cont = input("Shall I continue? (y/n)> ")
         if cont.lower() != "y":
-            print("Exiting...")
+            print(f"Exiting, and cleaning up {agent_id=}")
+            await soft_delete_agent(agent_id)
             return
 
     print(f"Running execution plan... {plan_id=}, {plan_run_id=}")
@@ -113,6 +170,10 @@ async def gen_and_run_plan(
         skip_task_cache=False,
         run_tasks_without_prefect=True,
     )
+
+    if as_of_date:
+        context.as_of_date = start_time
+
     context.chat = chat
     print(f"{context=}")
     output, _ = await run_execution_plan_local(
@@ -129,11 +190,11 @@ async def gen_and_run_plan(
     print("Output from main run:")
     print(output_for_log(output))
 
+    print(f"created: https://{base_url}/chat/{agent_id}")
     # untested
     if multiple_inputs:
         while True:
             print(f"Successfully ran execution plan: {agent_id=} {plan_id=} {plan_run_id=}")
-            print(f"https://{base_url}/chat/{agent_id}")
             prompt = input("Enter a follow up prompt for the agent (type n to stop)> ")
 
             if prompt == "n":
@@ -212,6 +273,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
     )
+    parser.add_argument("-d", "--as-of-date", type=str, default="")
     parser.add_argument("-u", "--user_id", type=str)  # useful if tool needs user
     parser.add_argument("-c", "--do_chat", action="store_true", default=False)
     parser.add_argument("-e", "--retry_on_execution_error", action="store_true", default=False)
@@ -247,6 +309,16 @@ async def main() -> None:
     args = parse_args()
     continue_agent = True
 
+    as_of_date = args.as_of_date
+    if as_of_date:
+        try:
+            as_of_date = datetime.date.fromisoformat(as_of_date)
+        except Exception:
+            as_of_date = None
+            pass
+    else:
+        as_of_date = None
+
     agent_id = str(uuid4())
 
     create_agent(user_id=args.user_id, agent_id=agent_id)
@@ -264,6 +336,7 @@ async def main() -> None:
             use_sample_plans=not args.not_use_sample_plans,
             mock_automation=args.mock_automation,
             exclude_citations=args.exclude_citations,
+            as_of_date=as_of_date,
         )
         while True:
             should_continue = input("Try another prompt? (y/n)> ")
