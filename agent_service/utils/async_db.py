@@ -2188,6 +2188,7 @@ class AsyncDB:
         # Return the list of AgentQC objects
         return agent_qcs
 
+    @async_perf_logger
     async def get_agent_metadata_for_qc(
         self,
         live_only: bool = True,
@@ -2216,7 +2217,6 @@ class AsyncDB:
               'status', pr.status,
               'created_at', pr.created_at
             )
-          ORDER BY pr.created_at DESC
           ) AS plan_run_info
         FROM agent.agents a
         JOIN agent.plan_runs pr ON pr.agent_id = a.agent_id
@@ -2229,10 +2229,15 @@ class AsyncDB:
         """
 
         qc_infos = []
+        start = time.time()
         results = await self.pg.generic_read(sql, params)
+        logger.info(f"Fetch agent data for QC in {time.time() - start}")
         for row in results:
             if not row["plan_run_info"]:
                 continue
+            row["plan_run_info"] = sorted(
+                row["plan_run_info"], reverse=True, key=lambda run: run["created_at"]
+            )
             most_recent_run = row["plan_run_info"][0]
             info = AgentQCInfo(
                 agent_id=row["agent_id"],
