@@ -50,7 +50,6 @@ from agent_service.utils.output_utils.output_construction import get_output_from
 from agent_service.utils.postgres import Postgres, SyncBoostedPG
 from agent_service.utils.prompt_template import PromptTemplate, UserOrganization
 from agent_service.utils.sidebar_sections import SidebarSection
-from tests.skip_commit_boosted_db import SkipCommitBoostedPG
 
 logger = logging.getLogger(__name__)
 
@@ -1084,18 +1083,13 @@ class AsyncDB:
         cache: RedisCacheBackend,
     ) -> None:
 
-        if not isinstance(self.pg, (AsyncPostgresBase, SkipCommitBoostedPG)):
-            raise ValueError(
-                "Only supported for AsyncPostgresBase and SkipCommitBoostedPG (testing)"
-            )
-
         rows = await self.get_agent_outputs_data_from_db(
             agent_id=agent_id, include_output=False, output_id=output_id
         )
 
         # atomically updating all the fields so that if one update were to fail,
         # the other updates don't get applied
-        async with self.pg.transaction() as cursor:
+        async with self.pg.transaction() as cursor:  # type: ignore
             if not rows:
                 logger.warning(f"No rows found for agent_id: {agent_id}, output_id: {output_id}")
                 return
