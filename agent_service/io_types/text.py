@@ -1771,7 +1771,7 @@ class StockSecFilingSectionText(StockText):
         self.id = hash((self.filing_id, self.header))
 
     def get_original_text_id(self) -> TextIDType:
-        return self.db_id if self.db_id is not None else ""
+        return self.filing_id
 
     @classmethod
     async def init_from_full_text_data(
@@ -2043,7 +2043,7 @@ class StockOtherSecFilingSectionText(StockText):
         self.id = hash((self.filing_id, self.header))
 
     def get_original_text_id(self) -> TextIDType:
-        return self.db_id if self.db_id is not None else ""
+        return self.filing_id
 
     @classmethod
     async def init_from_full_text_data(

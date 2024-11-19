@@ -740,7 +740,8 @@ async def update_profile_match(
 
     final_stocks.sort(key=lambda stock: stock.history[-1].score.val, reverse=True)  # type: ignore
     await tool_log(
-        f"A total of {len(final_stocks)} passed the filter for '{profile_data_for_rubric}'", context
+        f"A total of {len(final_stocks)} stocks passed the filter for '{profile_data_for_rubric}'",
+        context,
     )
 
     return final_stocks
@@ -925,6 +926,9 @@ async def filter_and_rank_stocks_by_profile(
                 text_relevance_cache=text_relevance_cache,
                 debug_info=debug_info,
             )
+
+    except EmptyOutputError as e:
+        raise e
 
     except Exception as e:
         logger.warning(f"Error doing text diff from previous run: {e}")
@@ -1138,6 +1142,9 @@ async def per_idea_filter_and_rank_stocks_by_profile_match(
                 await tool_log(
                     f"Using previous run filter results for {using_cache_count} ideas", context
                 )
+
+    except EmptyOutputError as e:
+        raise e
     except Exception as e:
         logger.warning(f"Error doing text diff from previous run: {e}")
 
