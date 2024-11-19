@@ -42,7 +42,7 @@ class AsyncPostgresBase(BoostedPG):
         self,
         environment: Optional[str] = None,
         min_pool_size: int = 1,
-        max_pool_size: int = 3,
+        max_pool_size: int = 8,
     ):
         """
         min/max_pool_size: int
