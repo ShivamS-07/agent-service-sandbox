@@ -1,7 +1,8 @@
+import datetime
 import json
 import logging
 import random
-from datetime import datetime
+from typing import List
 
 import boto3
 from gbi_common_py_utils.utils.environment import (
@@ -12,11 +13,18 @@ from gbi_common_py_utils.utils.environment import (
 from gbi_common_py_utils.utils.event_logging import json_serial
 
 from agent_service.agent_quality_worker.constants import (
+    CS_REVIEWER_COLUMN,
     HORIZON_USERS_DEV,
     HORIZON_USERS_PROD,
+    MAX_REVIEWS,
 )
 from agent_service.agent_quality_worker.models import HorizonTabs
-from agent_service.endpoints.models import AgentQC, Status
+from agent_service.endpoints.models import (
+    AgentQC,
+    HorizonCriteria,
+    HorizonCriteriaOperator,
+    Status,
+)
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.constants import AGENT_QUALITY_WORKER_QUEUE
 from agent_service.utils.date_utils import get_now_utc
@@ -40,6 +48,56 @@ async def send_agent_quality_message(
     }
     queue = sqs.get_queue_by_name(QueueName=AGENT_QUALITY_WORKER_QUEUE)
     queue.send_message(MessageBody=json.dumps(message, default=json_serial))
+
+
+async def get_number_of_assigned(
+    user_id: str, db: AsyncDB, reviewer_column: str, num_days_lookback: int
+) -> int:
+    # Get the current date and calculate the date 7 days ago
+    now = datetime.datetime.now()
+    seven_days_ago = now - datetime.timedelta(days=num_days_lookback)
+
+    # Define the criteria for the 7-day lookback period and reviewer
+    criteria = [
+        HorizonCriteria(
+            column=reviewer_column,
+            operator=HorizonCriteriaOperator.equal,
+            arg1=user_id,
+            arg2=None,
+        ),
+        HorizonCriteria(
+            column="created_at",
+            operator=HorizonCriteriaOperator.between,
+            arg1=seven_days_ago,
+            arg2=now,
+        ),
+    ]
+
+    # Fetch results based on the criteria
+    _, count = await db.search_agent_qc(criteria, [])
+
+    return count
+
+
+async def get_users_with_assigned_counts_fewer_than(
+    user_ids: List[str],
+    db: AsyncDB,
+    reviewer_column: str,
+    num_days_lookback: int = 7,
+    max_allowed: int = MAX_REVIEWS,
+) -> List[str]:
+    # List to hold the count of assigned tickets for each user_id with count under 150
+    users = []
+
+    # Loop over each user_id and get the count using get_number_of_assigned
+    for user_id in user_ids:
+        count = await get_number_of_assigned(user_id, db, reviewer_column, num_days_lookback)
+
+        # Only add to dictionary the count per user is under 150/ by length
+        if count / len(user_ids) < max(1, int(max_allowed / len(user_ids))):
+            users.append(user_id)
+
+    return users
 
 
 async def assign_agent_quality_reviewers(
@@ -75,6 +133,15 @@ async def assign_agent_quality_reviewers(
         elif horizon_user.userType == HorizonTabs.PROD.value:
             reviewer_team_members.append(horizon_user.userId)
 
+    # get the list of reviews that have space to be assigned new tickets
+    cs_team_members = await get_users_with_assigned_counts_fewer_than(
+        user_ids=cs_team_members, db=db, reviewer_column=CS_REVIEWER_COLUMN
+    )
+
+    # if no CS free then return
+    if len(cs_team_members) == 0:
+        return
+
     # randomly choose the reviewer
     cs_reviewer = random.choice(cs_team_members)
     eng_reviewer = random.choice(eng_team_members)
@@ -89,7 +156,7 @@ async def assign_agent_quality_reviewers(
         cs_reviewer=cs_reviewer,
         eng_reviewer=eng_reviewer,
         prod_reviewer=prod_reviewer,
-        last_updated=datetime.now(),
+        last_updated=datetime.datetime.now(),
     )
 
     await db.update_agent_qc(agent_qc)

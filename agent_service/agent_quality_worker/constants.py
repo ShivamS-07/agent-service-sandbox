@@ -163,3 +163,8 @@ HORIZON_USERS_DEV: Dict[str, HorizonUser] = {
         userType=HorizonTabs.PROD,
     ),
 }
+
+CS_REVIEWER_COLUMN = "cs_reviewer"
+ENG_REVIEWER_COLUMN = "eng_reviewer"
+PROD_REVIEWER_COLUMN = "prod_reviewer"
+MAX_REVIEWS = 150
