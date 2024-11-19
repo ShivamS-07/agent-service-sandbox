@@ -70,7 +70,7 @@ google-generativeai = {version = "==0.8.3", index = "pypi"}
 botocore-stubs = "*"
 boto3-stubs = {extras = ["sqs", "cognito-idp", "s3"], version = "*"}
 types-aioboto3 = {extras = ["sqs", "cognito-idp", "s3"], version = "*"}
-llm-client= {version= "==1.0.4", index="gbi"}
+llm-client= {version= "==1.0.5", index="gbi"}
 
 [requires]
 python_version = "3.12"
