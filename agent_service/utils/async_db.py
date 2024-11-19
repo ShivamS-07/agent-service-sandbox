@@ -462,7 +462,22 @@ class AsyncDB:
         if not cancelled_ids:
             return
 
-        await self.pg.multi_row_insert(table_name="agent.cancelled_ids", rows=cancelled_ids)
+        tasks = [self.pg.multi_row_insert(table_name="agent.cancelled_ids", rows=cancelled_ids)]
+        if plan_run_id:
+            sql = """
+            UPDATE agent.plan_runs SET status = 'CANCELLED'
+            WHERE plan_run_id = %(plan_run_id)s
+            """
+            tasks.append(self.pg.generic_write(sql, params={"plan_run_id": plan_run_id}))
+
+        if plan_id:
+            sql = """
+            UPDATE agent.execution_plans SET status = 'CANCELLED'
+            WHERE plan_id = %(plan_id)s
+            """
+            tasks.append(self.pg.generic_write(sql, params={"plan_id": plan_id}))
+
+        await asyncio.gather(*tasks)
 
     async def is_cancelled(self, ids_to_check: List[str]) -> bool:
         """
