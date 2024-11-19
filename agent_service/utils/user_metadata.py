@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # if users are created before this date, they are ignored
 # so we only consider new users from this date onwards
-IGNORE_USERS_BEFORE_DATE = datetime.datetime(2024, 11, 1)
+IGNORE_USERS_BEFORE_DATE = datetime.datetime(2024, 11, 19)
 
 
 @lru_cache(maxsize=1)
