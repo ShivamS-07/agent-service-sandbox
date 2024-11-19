@@ -110,6 +110,11 @@ HORIZON_USERS_DEV: Dict[str, HorizonUser] = {
         name="simon-test-user",
         userType=HorizonTabs.CS,
     ),
+    "2ab84663-ee32-45e4-922b-82e0f089aab2": HorizonUser(
+        userId="2ab84663-ee32-45e4-922b-82e0f089aab2",
+        name="Richard",
+        userType=HorizonTabs.CS,
+    ),
     # DEV - ENG
     "f6fe6a54-c15c-4893-9909-90657be7f19f": HorizonUser(
         userId="f6fe6a54-c15c-4893-9909-90657be7f19f",
