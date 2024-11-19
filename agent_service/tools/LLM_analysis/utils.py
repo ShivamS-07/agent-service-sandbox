@@ -6,13 +6,10 @@ import Levenshtein
 
 from agent_service.GPT.constants import GPT4_O, GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
-from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import ComplexIOBase, IOTypeBase
 from agent_service.io_types.text import (
     DEFAULT_TEXT_TYPE,
     NewsText,
-    StockText,
-    Text,
     TextCitation,
     TextCitationGroup,
     TextGroup,
@@ -29,11 +26,8 @@ from agent_service.tools.LLM_analysis.prompts import (
     CHECK_TOPICALITY_MAIN_PROMPT,
     KEY_PHRASE_PROMPT,
     SECOND_ORDER_CITATION_PROMPT,
-    TEXT_SNIPPET_RELEVANCY_MAIN_PROMPT,
-    TEXT_SNIPPET_RELEVANCY_SYS_PROMPT,
 )
 from agent_service.types import PlanRunContext
-from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.output_utils.output_construction import PreparedOutput
 from agent_service.utils.prefect import get_prefect_logger
@@ -69,6 +63,25 @@ def find_best_sentence_match(snippet: str, sentences: List[str]) -> str:
             for sentence in sentences
         ]
     )[-1]
+
+
+async def get_best_snippet_match(citation_snippet: str, sentences: List[str], llm: GPT) -> str:
+    # get a key phrase to help find the right sentence
+    key_phrase = strip_units(
+        await llm.do_chat_w_sys_prompt(
+            Prompt(KEY_PHRASE_PROMPT, "KEY_PHRASE_PROMPT_STR").format(snippet=citation_snippet),
+            NO_PROMPT,
+        )
+    )
+    filtered_sentences = [sentence for sentence in sentences if key_phrase in sentence]
+    if len(filtered_sentences) == 1:  # use the only sentence with key phrase
+        citation_snippet = filtered_sentences[0]
+    else:
+        if len(filtered_sentences) == 0:  # bad key phrase too, use all sentences
+            filtered_sentences = sentences
+        # find (key phrase) sentence with smallest string distance to snippet
+        citation_snippet = find_best_sentence_match(citation_snippet, filtered_sentences)
+    return citation_snippet  # Now definitely in text
 
 
 def get_initial_breakdown(GPT_ouput: str) -> Tuple[str, Optional[Dict[str, List[Dict[str, Any]]]]]:
@@ -169,32 +182,10 @@ async def extract_citations_from_gpt_output(
                             if len(sentences) == 0:  # No text, something is wrong, just skip
                                 continue
 
-                            # get a key phrase to help find the right sentence
-                            key_phrase = strip_units(
-                                await llm.do_chat_w_sys_prompt(
-                                    Prompt(KEY_PHRASE_PROMPT, "KEY_PHRASE_PROMPT_STR").format(
-                                        snippet=citation_snippet
-                                    ),
-                                    NO_PROMPT,
-                                )
+                            citation_snippet = await get_best_snippet_match(
+                                citation_snippet, sentences, llm
                             )
-                            filtered_sentences = [
-                                sentence for sentence in sentences if key_phrase in sentence
-                            ]
-                            if (
-                                len(filtered_sentences) == 1
-                            ):  # use the only sentence with key phrase
-                                citation_snippet = filtered_sentences[0]
-                            else:
-                                if (
-                                    len(filtered_sentences) == 0
-                                ):  # bad key phrase too, use all sentences
-                                    filtered_sentences = sentences
-                                # find (key phrase) sentence with smallest string distance to snippet
-                                citation_snippet = find_best_sentence_match(
-                                    citation_snippet, filtered_sentences
-                                )
-                            idx = source_text_str.find(citation_snippet)  # Now definitely in text
+                            idx = source_text_str.find(citation_snippet)
                         citation_snippet_context = source_text_str[
                             max(0, idx - CITATION_SNIPPET_BUFFER_LEN) : idx
                             + len(citation_snippet)
@@ -277,79 +268,6 @@ async def get_second_order_citations(
                     new_citations.append(new_citation)
 
     return new_citations
-
-
-async def classify_stock_text_relevancy_for_profile(
-    text: str,
-    profiles_str: str,
-    company_name: str,
-    llm: GPT,
-) -> bool:
-
-    chopped_text_str = GPTTokenizer(model=llm.model).do_truncation_if_needed(
-        truncate_str=text,
-        other_prompt_strs=[
-            TEXT_SNIPPET_RELEVANCY_MAIN_PROMPT.template,
-            TEXT_SNIPPET_RELEVANCY_SYS_PROMPT.template,
-            company_name,
-            profiles_str,
-        ],
-    )
-
-    output = await llm.do_chat_w_sys_prompt(
-        main_prompt=TEXT_SNIPPET_RELEVANCY_MAIN_PROMPT.format(
-            company_name=company_name,
-            profiles=profiles_str,
-            text_snippet=chopped_text_str,
-        ),
-        sys_prompt=TEXT_SNIPPET_RELEVANCY_SYS_PROMPT.format(),
-        max_tokens=500,
-    )
-
-    try:
-        decision = int(output.strip()[0])
-        if decision == 1:
-            return True
-        else:
-            return False
-    except (json.JSONDecodeError, ValueError, IndexError):
-        logger = get_prefect_logger(__name__)
-        logger.warning(
-            f"Failed to get text snippet relevancy output, got '{output}'", exc_info=True
-        )
-        return False
-
-
-async def classify_stock_text_relevancies_for_profile(
-    texts: List[StockText], profiles_str: str, context: PlanRunContext
-) -> List[StockText]:
-    filtered_texts: List[StockText] = []
-    text_strs = await Text.get_all_strs(texts, include_header=True, include_timestamps=False)
-
-    llm = GPT(
-        model=GPT4_O_MINI,
-        context=create_gpt_context(GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID),
-    )
-
-    tasks = []
-    for i, text in enumerate(texts):
-        if isinstance(text, StockText):
-            text_str = text_strs[i]
-            if not text.stock_id:
-                continue
-            # If StockText, there must be a stock_id
-            company_name = text.stock_id.company_name
-            tasks.append(
-                classify_stock_text_relevancy_for_profile(
-                    text=text_str, profiles_str=profiles_str, company_name=company_name, llm=llm
-                )
-            )
-
-    results = await gather_with_concurrency(tasks, n=200)
-    for i, relevancy_descision in enumerate(results):
-        if relevancy_descision:
-            filtered_texts.append(texts[i])
-    return filtered_texts
 
 
 async def is_topical(topic: str, context: PlanRunContext) -> bool:

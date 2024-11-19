@@ -279,6 +279,7 @@ async def run_plan_historical_updates(
             print(f"Total time to run {current_date=}: {time.time() - run_start}")
         except Exception as e:
             logger.exception(f"Threw exception on  {current_date=}")
+            break
 
         # roll over to the next date/time increment
         increment_mock_time(time_increment)

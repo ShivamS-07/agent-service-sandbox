@@ -42,6 +42,9 @@ logger = logging.getLogger(__name__)
 NO_CHANGE_STOCK_LIST_DIFF = "No significant changes to the list of stocks."
 NO_UPDATE_MESSAGE = "No new updates."
 
+ADDED_HEADER = "**Newly Added Stocks:**"
+REMOVED_HEADER = "**Removed Stocks:**"
+
 
 class OutputDiff(BaseModel):
     diff_summary_message: str
@@ -315,13 +318,15 @@ class OutputDiffer:
         prev_run_time: datetime.datetime,
     ) -> OutputDiff:
 
+        all_citations: List[TextCitation] = []
+
         curr_stock_set = set(curr_stock_list)
         prev_stock_set = set(prev_stock_list)
         added_stocks = curr_stock_set - prev_stock_set
         removed_stocks = prev_stock_set - curr_stock_set
-        add_remove_output = []
+        add_remove_output = ["\n"]
         if added_stocks and self.context.diff_info:
-            added_output: List[str] = []
+            add_remove_output.append(ADDED_HEADER)
             added_stocks_count = 1
             for stock in added_stocks:
                 found = True
@@ -332,22 +337,34 @@ class OutputDiffer:
                         if task_id in self.context.diff_info and stock in self.context.diff_info[
                             task_id
                         ].get("added", []):
-                            added_output.append(
+                            add_remove_output.append(
                                 f"  {added_stocks_count}. **{stock.company_name}**  "
                             )
-                            added_output.append(self.context.diff_info[task_id]["added"][stock])
+                            if isinstance(self.context.diff_info[task_id]["added"][stock], str):
+                                add_remove_output.append(
+                                    self.context.diff_info[task_id]["added"][stock]
+                                )
+                            else:
+                                explanation, citations = self.context.diff_info[task_id]["added"][
+                                    stock
+                                ]
+                                add_remove_output.append(explanation)
+                                for citation in citations:
+                                    citation.citation_text_offset = (
+                                        len("".join(add_remove_output)) - 1
+                                    )
+                                all_citations.extend(citations)
                             found = True
                             break
                 if not found:
-                    added_output.append(f"  {added_stocks_count}. **{stock.company_name}**")
+                    add_remove_output.append(f"  {added_stocks_count}. **{stock.company_name}**")
+                add_remove_output.append("\n")
                 added_stocks_count += 1
-            if added_output:
-                add_remove_output.append("\n".join(["**Newly Added Stocks:**"] + added_output))
 
         final_str = None
         if removed_stocks and self.context.diff_info:
-            removed_output = []
             removed_stocks_count = 1
+            add_remove_output.append(REMOVED_HEADER)
             for stock in removed_stocks:
                 found = False
                 for history_entry in stock.history:
@@ -356,20 +373,32 @@ class OutputDiffer:
                         if task_id in self.context.diff_info and stock in self.context.diff_info[
                             task_id
                         ].get("removed", []):
-                            removed_output.append(
+                            add_remove_output.append(
                                 f"  {removed_stocks_count}. **{stock.company_name}**:  "
                             )
-                            removed_output.append(self.context.diff_info[task_id]["removed"][stock])
+                            if isinstance(self.context.diff_info[task_id]["removed"][stock], str):
+                                add_remove_output.append(
+                                    self.context.diff_info[task_id]["removed"][stock]
+                                )
+                            else:
+                                explanation, citations = self.context.diff_info[task_id]["removed"][
+                                    stock
+                                ]
+                                add_remove_output.append(explanation)
+                                for citation in citations:
+                                    citation.citation_text_offset = (
+                                        len("".join(add_remove_output)) - 1
+                                    )
+                                all_citations.extend(all_citations)
                             found = True
                             break
                 if not found:
-                    removed_output.append(f"  {removed_stocks_count}. **{stock.company_name}**")
+                    add_remove_output.append(f"  {removed_stocks_count}. **{stock.company_name}**")
+                add_remove_output.append("\n")
                 removed_stocks_count += 1
-            if removed_output:
-                add_remove_output.append("\n".join(["**Removed Stocks:**"] + removed_output))
 
         if add_remove_output:
-            final_str = f"\n{'\n'.join(add_remove_output)}\n"
+            final_str = "".join(add_remove_output)
 
             latest_output_str = await io_type_to_gpt_input(
                 curr_stock_list, use_abbreviated_output=False
@@ -412,7 +441,6 @@ class OutputDiffer:
 
         prev_stock_lookup = {stock: stock for stock in prev_stock_set}
 
-        all_citations: List[TextCitation] = []
         if len(curr_stock_set) > len(added_stocks):  # there are some shared stocks
             change_output = ["**Modified Stocks:**\n"]
             curr_offset += len(change_output[0])
@@ -423,10 +451,34 @@ class OutputDiffer:
                 temp_change_output = [f"  {modified_stocks_count}. **{stock.company_name}**\n"]
                 modified_stocks_count += 1
                 temp_offset = curr_offset + len(temp_change_output[0])
+
                 for new_history_entry in stock.history:
+
+                    if (
+                        new_history_entry.task_id is not None
+                        and self.context.diff_info
+                        and new_history_entry.task_id in self.context.diff_info
+                        and stock
+                        in self.context.diff_info[new_history_entry.task_id].get("modified", [])
+                    ):
+                        # Filter rank change
+                        if isinstance(self.context.diff_info[task_id]["modified"][stock], str):
+                            sentence = self.context.diff_info[task_id]["modified"][stock]
+                            citations = []
+                        else:
+                            sentence, citations = self.context.diff_info[task_id]["modified"][stock]
+
+                        bullet = f"      - {sentence}\n"
+                        temp_offset += len(bullet)
+                        if citations:
+                            for citation in citations:
+                                citation.citation_text_offset = temp_offset - 2
+                            all_citations.extend(citations)
+                        temp_change_output.append(bullet)
+
                     # we are only interested in the output of per stock summary
                     # recommendation and filter output NOT properly updated (yet)
-                    if (
+                    elif (
                         isinstance(new_history_entry.explanation, str)
                         and new_history_entry.citations
                         and new_history_entry.title
@@ -462,6 +514,7 @@ class OutputDiffer:
                                         citation.citation_text_offset = temp_offset - 2
                                     all_citations.extend(citations)
                                     temp_change_output.append(bullet)
+
                 if len(temp_change_output) > 1:
                     curr_offset = temp_offset
                     change_output.extend(temp_change_output)
