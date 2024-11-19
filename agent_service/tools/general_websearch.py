@@ -77,13 +77,17 @@ async def single_stock_web_search(
 
 class GeneralWebSearchInput(ToolArgs):
     queries: List[str]
+    urls: Optional[List[str]] = []
 
 
 @tool(
     description=(
         "This function takes in a list of string queries and returns text entries "
-        "of the top search results when such queries are made on the web. Unless not specified within a sample plan,"
-        "always call the summarize_texts tool sometime after this tool. Again, it is VERY important that the "
+        "of the top search results when such queries are made on the web. If a URL is provided, you may use this tool "
+        "and treat those URLS as supporting sources. "
+        "Place the URLs in a list as an input to this tool and be sure to use the provided URLs as sources. "
+        "Unless not specified within a sample plan, always call the summarize_texts tool sometime after this tool. "
+        "Again, it is VERY important that the "
         "summarize_texts tool is called before the end of a plan containing this tool! DO not EVER directly output "
         "the returned text from this tool! AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
     ),
@@ -98,7 +102,7 @@ async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContex
     ]
     results = await gather_with_concurrency(tasks)
 
-    urls: List[str] = []
+    urls: List[str] = args.urls or []
     for result in results:
         urls.extend(result)
 
@@ -160,10 +164,8 @@ async def main() -> None:
     result = await single_stock_web_search(query, plan_context)
     """
 
-    url_1 = "https://jobs.apple.com/en-ca/search?location=new-york-city-NYC"
-    url_2 = "invalid url"
-    url_3 = "https://jobs.apple.com/en-ca/sea"
-    urls = SiteSpecificWebSearchInput(urls=[url_1, url_2, url_3])
+    url_1 = "https://lexfridman.com/category/transcripts/"
+    urls = SiteSpecificWebSearchInput(urls=[url_1])
     result = await site_specific_websearch(urls, plan_context)
     print(result)
 

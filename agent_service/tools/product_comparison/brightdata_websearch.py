@@ -219,7 +219,7 @@ async def req_and_scrape(
                     soup.find_all(
                         True,
                         class_=re.compile(
-                            "authentica|button|footer|cookie" "|metadata|contact|form"
+                            r"authentica|button|footer|cookie|metadata|contact|^(\w+-)*form(-\w+)*$"
                         ),
                     )
                     or []
@@ -228,7 +228,7 @@ async def req_and_scrape(
                     soup.find_all(
                         True,
                         id=re.compile(
-                            "authentica|button|header|footer|cookie" "|metadata|contact|form"
+                            r"authentica|button|header|footer|cookie|metadata|contact|^(\w+-)*form(-\w+)*$"
                         ),
                     )
                     or []
@@ -329,8 +329,7 @@ async def get_web_texts_async(
     }
     results: list[WebText] = list(url_to_obj.values())
 
-    # TODO bring back caching
-    uncached_urls = [url for url in urls]
+    uncached_urls = [url for url in urls if url not in url_to_obj]
     if uncached_urls:
         logger.info(f"Scrapping {len(uncached_urls)} uncached URLs out of {len(urls)}")
 
