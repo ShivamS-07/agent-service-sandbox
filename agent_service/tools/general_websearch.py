@@ -164,7 +164,7 @@ async def main() -> None:
     result = await single_stock_web_search(query, plan_context)
     """
 
-    url_1 = "https://lexfridman.com/category/transcripts/"
+    url_1 = "https://patents.justia.com/assignee/pfizer-inc"
     urls = SiteSpecificWebSearchInput(urls=[url_1])
     result = await site_specific_websearch(urls, plan_context)
     print(result)

@@ -219,7 +219,7 @@ async def req_and_scrape(
                     soup.find_all(
                         True,
                         class_=re.compile(
-                            r"authentica|button|footer|cookie|metadata|contact|^(\w+-)*form(-\w+)*$"
+                            r"authentica|button|cookie|metadata|contact|^(\w+-)*form(-\w+)*$"
                         ),
                     )
                     or []
