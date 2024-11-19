@@ -13,11 +13,13 @@ def my_tool(args: MyToolInput, context: PlanRunContext) -> int:
 """
 
 import contextvars
+import datetime
 import enum
 import functools
 import inspect
 import logging
 import traceback
+import uuid
 from abc import ABC
 from collections import defaultdict
 from dataclasses import dataclass
@@ -80,12 +82,18 @@ async def log_tool_call_event(context: PlanRunContext, event_data: Dict[str, Any
         tool_name = event_data.get("tool_name")
         output = event_data.get("result")
         if args and tool_name:
+            start_time_utc: datetime.datetime = event_data.get("start_time_utc")  # type: ignore
+            end_time_utc: datetime.datetime = event_data.get("end_time_utc")  # type: ignore
             await async_db.insert_task_run_info(
                 context=context,
                 args=args,
                 debug_info=debug_info,
                 tool_name=tool_name,
                 output=output,
+                error_msg=event_data.get("error_msg"),
+                start_time_utc=start_time_utc,
+                end_time_utc=end_time_utc,
+                replay_id=str(uuid.uuid4()),
             )
     except Exception:
         logger.exception("Failed to store tool call in agent.task_run_info table!")

@@ -1621,7 +1621,7 @@ class AgentServiceImpl:
             self.ch.get_agent_debug_plan_selections(agent_id=agent_id),
             self.ch.get_agent_debug_plans(agent_id=agent_id),
             self.ch.get_agent_debug_worker_sqs_log(agent_id=agent_id),
-            self.ch.get_agent_debug_tool_calls(agent_id=agent_id),
+            self.pg.get_agent_debug_tool_calls(agent_id=agent_id),
             self.ch.get_agent_debug_cost_info(agent_id=agent_id),
             self.ch.get_agent_debug_gpt_service_info(agent_id=agent_id),
         ]

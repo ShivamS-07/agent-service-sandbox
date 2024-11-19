@@ -5,7 +5,7 @@ import logging
 import re
 import time
 import uuid
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from dateutil.parser import parse
@@ -45,6 +45,7 @@ from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres, SyncBoostedPG
@@ -287,6 +288,37 @@ class AsyncDB:
             outputs.append(output)
 
         return outputs
+
+    @async_perf_logger
+    async def get_agent_debug_tool_calls(self, agent_id: str) -> Dict[str, Any]:
+        sql = """
+        SELECT  plan_id, plan_run_id, task_id, tool_name, start_time_utc,
+        end_time_utc , error_msg, replay_id, debug_info
+        FROM agent.task_run_info
+        WHERE agent_id = %(agent_id)s
+        ORDER BY end_time_utc ASC
+        """
+        rows = await self.generic_read(sql, {"agent_id": agent_id})
+        res: Dict[str, Any] = OrderedDict()
+        tz = datetime.timezone.utc
+        for row in rows:
+            plan_run_id = row["plan_run_id"]
+            if plan_run_id not in res:
+                res[plan_run_id] = OrderedDict()
+            tool_name = row["tool_name"]
+            row["start_time_utc"] = row["start_time_utc"].replace(tzinfo=tz).isoformat()
+            row["end_time_utc"] = row["end_time_utc"].replace(tzinfo=tz).isoformat()
+            env_upper = EnvironmentUtils.aws_ssm_prefix.upper()
+            row["replay_command"] = (
+                f"ENVIRONMENT={env_upper} pipenv run python run_plan_task.py "
+                f"--env {env_upper} --replay-id {row['replay_id']}"
+            )
+            row[f"args_{row['replay_id']}"] = {}
+            row[f"result_{row['replay_id']}"] = {}
+            if row["debug_info"]:
+                row["debug_info"] = json.loads(row["debug_info"])
+            res[plan_run_id][f"{tool_name}_{row['task_id']}"] = row
+        return res
 
     async def get_agent_outputs_cache(
         self, cache: RedisCacheBackend, agent_id: str, plan_run_id: Optional[str] = None
@@ -993,14 +1025,21 @@ class AsyncDB:
         tool_name: str,
         args: str,
         output: Optional[str],
+        replay_id: str,
+        start_time_utc: datetime.datetime,
+        end_time_utc: datetime.datetime,
+        error_msg: Optional[str] = "",
         debug_info: Optional[str] = None,
     ) -> None:
         sql = """
         INSERT INTO agent.task_run_info (task_id, agent_id, plan_run_id,
-          tool_name, task_args, debug_info, output)
+          tool_name, task_args, debug_info, output, error_msg, start_time_utc, end_time_utc, replay_id, plan_id)
         VALUES (%(task_id)s, %(agent_id)s, %(plan_run_id)s,
-          %(tool_name)s, %(task_args)s, %(debug_info)s, %(output)s)
+          %(tool_name)s, %(task_args)s, %(debug_info)s, %(output)s, %(error_msg)s,
+          %(start_time_utc)s, %(end_time_utc)s, %(replay_id)s, %(plan_id)s)
         """
+        if not error_msg:
+            error_msg = ""
         await self.pg.generic_write(
             sql,
             {
@@ -1011,6 +1050,11 @@ class AsyncDB:
                 "task_args": args,
                 "debug_info": debug_info,
                 "output": output,
+                "error_msg": error_msg,
+                "end_time_utc": end_time_utc,
+                "start_time_utc": start_time_utc,
+                "replay_id": replay_id,
+                "plan_id": context.plan_id,
             },
         )
 
