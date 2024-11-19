@@ -184,7 +184,7 @@ class AsyncDB:
             AND ao.output NOTNULL AND ao.is_intermediate = FALSE
             """
             params = {"plan_run_id": plan_run_id}
-        if output_id:
+        elif output_id:
             where_clause = """
             ao.output_id = %(output_id)s
             AND NOT ao.deleted
