@@ -8,7 +8,6 @@ MSFT = StockID(gbi_id=6963, isin="", symbol="MSFT", company_name="Microsoft")
 FORD = StockID(gbi_id=4579, isin="", symbol="F", company_name="Ford")
 
 
-@unittest.skip("The tool is disabled")
 class TestPeers(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.context = PlanRunContext.get_dummy()
@@ -21,13 +20,16 @@ class TestPeers(unittest.IsolatedAsyncioTestCase):
     async def test_get_peers(self):
         args = GeneralPeersForStockInput(stock_id=MSFT)
         msft_peers = await get_general_peers(args, self.context)
-        self.assertGreater(len(msft_peers), 1)
-
-        args = GeneralPeersForStockInput(stock_id=MSFT, category="Operating Systems")
-        msft_os_peers = await get_general_peers(args, self.context)
-        self.assertGreater(len(msft_os_peers), 1)
-        self.assertGreater(len(msft_peers), len(msft_os_peers))
+        msft_peers_gbi_ids = [stock_id.gbi_id for stock_id in msft_peers]
+        self.assertGreater(len(msft_peers_gbi_ids), 1)
+        self.assertTrue(714 in msft_peers_gbi_ids)  # Apple
+        self.assertTrue(10096 in msft_peers_gbi_ids)  # Google
+        self.assertTrue(149 in msft_peers_gbi_ids)  # Amazon
 
         args = GeneralPeersForStockInput(stock_id=FORD)
         ford_peers = await get_general_peers(args, self.context)
-        self.assertGreater(len(ford_peers), 1)
+        ford_peers_gbi_ids = [stock_id.gbi_id for stock_id in ford_peers]
+        self.assertGreater(len(ford_peers_gbi_ids), 1)
+        self.assertTrue(25508 in ford_peers_gbi_ids)  # Tesla
+        self.assertTrue(25477 in ford_peers_gbi_ids)  # General Motors
+        self.assertTrue(389721 in ford_peers_gbi_ids)  # Toyota

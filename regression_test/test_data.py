@@ -419,3 +419,24 @@ class TestData(TestExecutionPlanner):
             required_tools=["get_10k_10q_sec_filings"],
             raise_plan_validation_error=True,
         )
+
+    @skip_in_ci
+    def test_nvidia_general_peers(self):
+        prompt = "Find me Nvidia's major competitors"
+
+        def validate_output(prompt: str, output: IOType):
+            output_stock_ids = get_output(output=output)
+
+            expected_ids = {124, 5766, 8707}  # {AMD, INTEL, QUALCOMM}
+            self.assertTrue(
+                expected_ids.issubset(set([etf_id.gbi_id for etf_id in output_stock_ids])),
+                msg="Competitors do not contain obvious ones",
+            )
+
+        self.prompt_test(
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["get_general_peers"],
+            raise_output_validation_error=True,
+            raise_plan_validation_error=True,
+        )
