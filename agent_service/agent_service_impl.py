@@ -2205,21 +2205,16 @@ class AgentServiceImpl:
         prompt_templates = []
         for template in prompt_templates_all:
             if template.plan is not None:
-                if is_user_admin:
-                    # if user is admin show all templates
+                # show templates that have no organization_id or match organization_id
+                if not template.organization_ids or user_org_id in template.organization_ids:
                     template.preview = get_plan_preview(template.plan)
                     prompt_templates.append(template)
-                else:
-                    # show templates that have no organization_id or match organization_id
-                    if not template.organization_ids or user_org_id in template.organization_ids:
-                        template.preview = get_plan_preview(template.plan)
-                        prompt_templates.append(template)
-                        continue
-                    # show those that have user_id matching the user
-                    if template.user_id and user.user_id == template.user_id:
-                        template.preview = get_plan_preview(template.plan)
-                        prompt_templates.append(template)
-                        continue
+                    continue
+                # show those that have user_id matching the user
+                if template.user_id and user.user_id == template.user_id:
+                    template.preview = get_plan_preview(template.plan)
+                    prompt_templates.append(template)
+                    continue
 
             else:
                 LOGGER.error("A prompt template has no plan")

@@ -19,7 +19,7 @@ from agent_service.io_types.text import (
     ThemeText,
 )
 from agent_service.planner.errors import EmptyInputError
-from agent_service.tool import ToolArgMetadata, ToolArgs, ToolCategory, tool
+from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.commentary.constants import (
     COMMENTARY_LLM,
     MAX_DEVELOPMENTS_PER_COMMENTARY,
@@ -113,28 +113,28 @@ class WriteCommentaryInput(ToolArgs):
     writing_format: Optional[str] = "Long"
 
     # hidden from planner
-    commentary_sys_prompt: str = COMMENTARY_SYS_PROMPT_STR_DEFAULT
-    commentary_main_prompt: str = COMMENTARY_PROMPT_MAIN_STR_DEFAULT
-    geography_prompt: str = GEOGRAPHY_PROMPT_STR_DEFAULT
-    portfolio_prompt: str = PORTFOLIO_PROMPT_STR_DEFAULT
-    universe_performance_prompt: str = UNIVERSE_PERFORMANCE_PROMPT_STR_DEFAULT
-    stock_stats_prompt: str = STOCKS_STATS_PROMPT_STR_DEFAULT
-    watchlist_prompt: str = WATCHLIST_PROMPT_STR_DEFAULT
-    client_type_prompt: str = CLIENTELE_TYPE_PROMPT_STR_DEFAULT
-    writing_format_prompt: str = WRITING_STYLE_PROMPT_STR_DEFAULT
+    # commentary_sys_prompt: str = COMMENTARY_SYS_PROMPT_STR_DEFAULT
+    # commentary_main_prompt: str = COMMENTARY_PROMPT_MAIN_STR_DEFAULT
+    # geography_prompt: str = GEOGRAPHY_PROMPT_STR_DEFAULT
+    # portfolio_prompt: str = PORTFOLIO_PROMPT_STR_DEFAULT
+    # universe_performance_prompt: str = UNIVERSE_PERFORMANCE_PROMPT_STR_DEFAULT
+    # stock_stats_prompt: str = STOCKS_STATS_PROMPT_STR_DEFAULT
+    # watchlist_prompt: str = WATCHLIST_PROMPT_STR_DEFAULT
+    # client_type_prompt: str = CLIENTELE_TYPE_PROMPT_STR_DEFAULT
+    # writing_format_prompt: str = WRITING_STYLE_PROMPT_STR_DEFAULT
 
     # tool arguments metadata
-    arg_metadata = {
-        "commentary_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
-        "commentary_main_prompt": ToolArgMetadata(hidden_from_planner=True),
-        "geography_prompt": ToolArgMetadata(hidden_from_planner=True),
-        "portfolio_prompt": ToolArgMetadata(hidden_from_planner=True),
-        "universe_performance_prompt": ToolArgMetadata(hidden_from_planner=True),
-        "stock_stats_prompt": ToolArgMetadata(hidden_from_planner=True),
-        "watchlist_prompt": ToolArgMetadata(hidden_from_planner=True),
-        "client_type_prompt": ToolArgMetadata(hidden_from_planner=True),
-        "writing_format_prompt": ToolArgMetadata(hidden_from_planner=True),
-    }
+    # arg_metadata = {
+    #     "commentary_sys_prompt": ToolArgMetadata(hidden_from_planner=True),
+    #     "commentary_main_prompt": ToolArgMetadata(hidden_from_planner=True),
+    #     "geography_prompt": ToolArgMetadata(hidden_from_planner=True),
+    #     "portfolio_prompt": ToolArgMetadata(hidden_from_planner=True),
+    #     "universe_performance_prompt": ToolArgMetadata(hidden_from_planner=True),
+    #     "stock_stats_prompt": ToolArgMetadata(hidden_from_planner=True),
+    #     "watchlist_prompt": ToolArgMetadata(hidden_from_planner=True),
+    #     "client_type_prompt": ToolArgMetadata(hidden_from_planner=True),
+    #     "writing_format_prompt": ToolArgMetadata(hidden_from_planner=True),
+    # }
 
 
 @tool(
@@ -177,11 +177,11 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         try:
             geography_prompt = Prompt(
                 name="GEOGRAPHY_PROMPT",
-                template=args.geography_prompt,
+                template=GEOGRAPHY_PROMPT_STR_DEFAULT,
             )
             portfolio_prompt = Prompt(
                 name="PORTFOLIO_PROMPT",
-                template=args.portfolio_prompt,
+                template=PORTFOLIO_PROMPT_STR_DEFAULT,
             )
             portfolio_prompt_filled = await prepare_portfolio_prompt(
                 portfolio_prompt, geography_prompt, portfolio_related_tables, context=context
@@ -200,7 +200,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         try:
             universe_performance_prompt = Prompt(
                 name="UNIVERSE_PERFORMANCE_PROMPT",
-                template=args.universe_performance_prompt,
+                template=UNIVERSE_PERFORMANCE_PROMPT_STR_DEFAULT,
             )
             universe_performance_prompt_filled = await prepare_universe_prompt(
                 universe_performance_prompt, universe_related_tables
@@ -247,7 +247,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
             )
             stocks_stats_prompt = Prompt(
                 name="STOCKS_STATS_PROMPT",
-                template=args.stock_stats_prompt,
+                template=STOCKS_STATS_PROMPT_STR_DEFAULT,
             )
             stocks_stats_prompt_filled = stocks_stats_prompt.format(
                 stock_stats=stocks_stats_df.to_string(index=False)
@@ -262,7 +262,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         watchlist_stock_names = [stock.company_name for stock in watchlist_stocks]
         watchlist_prompt = Prompt(
             name="WATCHLIST_PROMPT",
-            template=args.watchlist_prompt,
+            template=WATCHLIST_PROMPT_STR_DEFAULT,
         )
         watchlist_prompt_filled = watchlist_prompt.format(
             watchlist_stocks=", ".join([stock for stock in watchlist_stock_names])  # type: ignore
@@ -272,7 +272,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     client_type = args.client_type if args.client_type else "Simple"
     client_type_prompt = Prompt(
         name="CLIENTELE_TYPE_PROMPT",
-        template=args.client_type_prompt,
+        template=CLIENTELE_TYPE_PROMPT_STR_DEFAULT,
     )
     client_type_prompt_filled = client_type_prompt.format(
         client_type=CLIENTELE_TEXT_DICT.get(client_type, SIMPLE_CLIENTELE)
@@ -282,7 +282,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
     writing_format = args.writing_format if args.writing_format else "Long"
     writing_style_prompt = Prompt(
         name="WRITING_STYLE_PROMPT",
-        template=args.writing_format_prompt,
+        template=WRITING_STYLE_PROMPT_STR_DEFAULT,
     )
     writing_format_dict = (
         WRITING_FORMAT_PORTFOLIO_DICT if portfolio_related_tables else WRITING_FORMAT_GENERAL_DICT
@@ -298,11 +298,11 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
     # Prepare the main prompt using the above prompts
     commentary_sys_prompt = Prompt(
-        name="COMMENTARY_SYS_PROMPT", template=args.commentary_sys_prompt + CITATION_PROMPT
+        name="COMMENTARY_SYS_PROMPT", template=COMMENTARY_SYS_PROMPT_STR_DEFAULT + CITATION_PROMPT
     )
     commentary_main_prompt = Prompt(
         name="COMMENTARY_MAIN_PROMPT",
-        template=args.commentary_main_prompt
+        template=COMMENTARY_PROMPT_MAIN_STR_DEFAULT
         + CITATION_REMINDER
         + "\nNow, please write your commentary. ",
     )
