@@ -513,13 +513,14 @@ class Postgres(PostgresBase):
     ) -> None:
         sql = """
         INSERT INTO agent.agent_outputs
-          (output_id, agent_id, plan_id, plan_run_id, output, is_intermediate, live_plan_output)
+          (output_id, agent_id, plan_id, plan_run_id, output, is_intermediate, live_plan_output, created_at)
         VALUES
           (
              %(output_id)s, %(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(output)s, %(is_intermediate)s,
-             %(live_plan_output)s
+             %(live_plan_output)s, %(created_at)s
           )
         """
+        now = get_now_utc()
         self.generic_write(
             sql,
             params={
@@ -530,6 +531,7 @@ class Postgres(PostgresBase):
                 "output": dump_io_type(output),
                 "is_intermediate": is_intermediate,
                 "live_plan_output": live_plan_output,
+                "created_at": now,
             },
         )
 

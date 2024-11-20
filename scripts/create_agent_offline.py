@@ -321,6 +321,13 @@ async def main() -> None:
 
     agent_id = str(uuid4())
 
+    if as_of_date:
+        # teleport to the past before creating the agent in DB
+        start_time = datetime.datetime.combine(as_of_date, datetime.time(hour=7, minute=35))
+        enable_mock_time()
+        set_mock_time(start_time)
+        print(f"overriding current time to: {start_time=}")
+
     create_agent(user_id=args.user_id, agent_id=agent_id)
     while continue_agent:
         # add agent_id to the input
@@ -330,7 +337,7 @@ async def main() -> None:
             prompt=args.prompt,
             run_plan_without_confirmation=args.run_plan_no_confirm,
             verbose=args.verbose,
-            do_chat=args.do_chat,
+            do_chat=True,
             replan_execution_error=args.retry_on_execution_error,
             multiple_inputs=args.allow_additional_input,
             use_sample_plans=not args.not_use_sample_plans,

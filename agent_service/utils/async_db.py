@@ -240,7 +240,9 @@ class AsyncDB:
             agent_id=agent_id, include_output=True, plan_run_id=plan_run_id
         )
         end = time.perf_counter()
-        logger.info(f"Fetched outputs from DB for {agent_id=} in {(end - start):.2f}s")
+        logger.info(
+            f"Fetched outputs from DB for {agent_id=} {plan_run_id=} in {(end - start):.2f}s"
+        )
         if not rows:
             return []
 
@@ -249,13 +251,13 @@ class AsyncDB:
             load_io_type(row["output"]) if row["output"] else row["output"] for row in rows
         ]
         end = time.perf_counter()
-        logger.info(f"`load_io_type` for {agent_id=} in {(end - start):.2f}s")
+        logger.info(f"`load_io_type` for {agent_id=} {plan_run_id=} in {(end - start):.2f}s")
 
         start = end
         tasks = [get_output_from_io_type(output, pg=self.pg) for output in io_outputs]
         output_values = await asyncio.gather(*tasks)
         logger.info(
-            f"`get_output_from_io_type` for {agent_id=} in {time.perf_counter() - start:.2f}s"
+            f"`get_output_from_io_type` for {agent_id=} {plan_run_id=} in {time.perf_counter() - start:.2f}s"
         )
 
         outputs: List[AgentOutput] = []
@@ -334,9 +336,13 @@ class AsyncDB:
             agent_id=agent_id, include_output=False, plan_run_id=plan_run_id
         )
         end = time.perf_counter()
+
+        if not rows_without_output:
+            rows_without_output = []
+
         logger.info(
-            f"Total time to get output METADATA for {agent_id} from DB "
-            f"is {(end - start):.2f} seconds"
+            f"Total time to get output METADATA for {agent_id=} {plan_run_id=} from DB "
+            f"is {(end - start):.2f} seconds, found {len(rows_without_output)} rows"
         )
 
         if not rows_without_output:
@@ -358,9 +364,11 @@ class AsyncDB:
 
         end = time.perf_counter()
         logger.info(
-            f"Total time to get output VALUES for {agent_id} from CACHE "
-            f"is {(end - start):.2f} seconds"
+            f"Total time to get output VALUES for {agent_id=} {plan_run_id=} from CACHE "
+            f"is {(end - start):.2f} seconds, found {len(output_values)} rows"
         )
+
+        logger.info(f"{len(uncached_output_ids)} uncached ids need to be fetched")
 
         if uncached_output_ids:
             start = end
@@ -375,8 +383,8 @@ class AsyncDB:
 
             end = time.perf_counter()
             logger.info(
-                f"Total time to get uncached output VALUES for {agent_id} from DB is "
-                f"{(end - start):.2f} seconds"
+                f"Total time to get uncached output VALUES for {agent_id=} {plan_run_id=} from DB is "
+                f"{(end - start):.2f} seconds, found {len(output_rows)} rows"
             )
             start = end
 
@@ -388,7 +396,7 @@ class AsyncDB:
 
             end = time.perf_counter()
             logger.info(
-                f"Total time to `load_io_type` for uncached output VALUES for {agent_id} is "
+                f"Total time to `load_io_type` for uncached output VALUES for {agent_id=} {plan_run_id=} is "
                 f"{(end - start):.2f} seconds"
             )
             start = end
@@ -404,8 +412,8 @@ class AsyncDB:
 
             end = time.perf_counter()
             logger.info(
-                f"Total time to `get_output_from_io_type` for uncached output VALUES for {agent_id}"
-                f" is {(end - start):.2f} seconds"
+                "Total time to `get_output_from_io_type` for uncached output"
+                f" VALUES for {agent_id=} {plan_run_id=} is {(end - start):.2f} seconds"
             )
 
         outputs: List[AgentOutput] = []

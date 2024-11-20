@@ -408,6 +408,7 @@ async def filter_stocks_by_product_or_service(
     await tool_log(
         log=f"Number of stocks after first round of filtering: {len(filtered_stocks1)}",
         context=context,
+        associated_data=filtered_stocks1,
     )
     await tool_log(
         log="Filtering round 2...",
