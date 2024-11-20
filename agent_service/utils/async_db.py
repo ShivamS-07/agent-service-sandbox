@@ -2392,6 +2392,28 @@ class AsyncDB:
         records = await self.generic_read(sql, params=[gbi_ids])
         return {r["gbi_id"]: (r["company_description"], r["last_updated"]) for r in records}
 
+    @async_perf_logger
+    async def is_user_internal(self, user_id: str) -> bool:
+        sql = """
+        SELECT
+            (NOT o.is_client) AS user_is_internal
+        FROM user_service.users u
+        JOIN user_service.company_membership cm ON cm.user_id = u.id::TEXT
+        JOIN user_service.organizations o ON o.id::TEXT = cm.company_id
+        WHERE u.id = %(user_id)s
+        """
+
+        params = {"user_id": user_id}
+
+        start = time.time()
+        result = await self.pg.generic_read(sql, params)
+        logger.info(f"Fetch internal user status for user_id {user_id} in {time.time() - start}")
+
+        # Return user_is_internal directly, assuming result is non-empty
+        if result:
+            return result[0]["user_is_internal"]
+        return False
+
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:
     if isinstance(db, Postgres):

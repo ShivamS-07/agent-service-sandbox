@@ -115,6 +115,12 @@ async def assign_agent_quality_reviewers(
 
     env = get_environment_tag()
     is_dev = env in (DEV_TAG, LOCAL_TAG)
+
+    # Check if the user is internal and if the env is prod
+    # we want to stop internal queries from getting to triage
+    if not is_dev and db.is_user_internal(user_id):
+        return None
+
     horizon_users_dict = HORIZON_USERS_PROD
 
     if is_dev:
