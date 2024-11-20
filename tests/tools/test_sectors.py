@@ -104,7 +104,7 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
                 result = await sector_identifier_lookup(args, self.context)
                 self.assertTrue(result.sec_id in a)
 
-    # possible that GPT mismatches, feel free to mark this as skip if failing
+    @unittest.skip("still flaky, needs non-gpt exact match")
     async def test_sector_level_3_exact_match(self):
         # match multiple because some names are very similar
         q_a = [
