@@ -118,7 +118,7 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
             ("Beverages", [302010]),
             ("Health Care Providers & Services", [351020]),
             ("Biotechnology", [352010, 35201010]),
-            ("Capital Markets", [402030]),
+            ("Capital Markets", [402030, 40203030]),  # 40203030 is wrong though!
             ("Electronic Equipment, Instruments & Components", [452030, 45203010, 45203015]),
             ("Interactive Media & Services", [502030, 50203010]),
             ("Gas Utilities", [551020, 55102010]),

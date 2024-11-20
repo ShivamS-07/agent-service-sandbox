@@ -462,11 +462,18 @@ class OutputDiffer:
                         in self.context.diff_info[new_history_entry.task_id].get("modified", [])
                     ):
                         # Filter rank change
-                        if isinstance(self.context.diff_info[task_id]["modified"][stock], str):
-                            sentence = self.context.diff_info[task_id]["modified"][stock]
+                        if isinstance(
+                            self.context.diff_info[new_history_entry.task_id]["modified"][stock],
+                            str,
+                        ):
+                            sentence = self.context.diff_info[new_history_entry.task_id][
+                                "modified"
+                            ][stock]
                             citations = []
                         else:
-                            sentence, citations = self.context.diff_info[task_id]["modified"][stock]
+                            sentence, citations = self.context.diff_info[new_history_entry.task_id][
+                                "modified"
+                            ][stock]
 
                         bullet = f"      - {sentence}\n"
                         temp_offset += len(bullet)
