@@ -115,6 +115,7 @@ class PlanRunContext(BaseModel):
     skip_db_commit: bool = False
     skip_task_cache: bool = False
     run_tasks_without_prefect: bool = False
+    skip_task_logging: bool = False
 
     as_of_date: Optional[datetime.datetime] = None  # for testing
 

@@ -247,6 +247,7 @@ async def _run_execution_plan_impl(
     async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
     existing_run = db.get_plan_run(plan_run_id=context.plan_run_id)
     skip_tasks_with_existing_outputs = False
+    tasks_to_skip_logging = set()
 
     if existing_run and existing_run.get("status") in (
         Status.ERROR.value,
@@ -266,6 +267,7 @@ async def _run_execution_plan_impl(
         for (_, task_id), status_info in task_statuses.items():
             if status_info.status == Status.COMPLETE:
                 complete_task_ids.append(task_id)
+                tasks_to_skip_logging.add(task_id)
         override_task_work_log_id_lookup = await async_db.get_task_work_log_ids(
             agent_id=context.agent_id, task_ids=complete_task_ids, plan_id=context.plan_id
         )
@@ -398,6 +400,9 @@ async def _run_execution_plan_impl(
         # Create the context
         context.task_id = step.tool_task_id
         context.tool_name = step.tool_name
+        context.skip_task_logging = False
+        if step.tool_task_id in tasks_to_skip_logging:
+            context.skip_task_logging = True
 
         set_plan_run_context(context, scheduled_by_automation)
 

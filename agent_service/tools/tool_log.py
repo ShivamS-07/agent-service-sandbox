@@ -9,7 +9,7 @@ from agent_service.utils.prefect import get_prefect_logger
 async def tool_log(
     log: IOType, context: PlanRunContext, associated_data: Optional[IOType] = None
 ) -> None:
-    if not context.skip_db_commit:
+    if not context.skip_db_commit and not context.skip_task_logging:
         db = get_psql(skip_commit=context.skip_db_commit)
         db.write_tool_log(log=log, context=context, associated_data=associated_data)
     logger = get_prefect_logger(__name__)
