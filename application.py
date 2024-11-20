@@ -187,8 +187,6 @@ from agent_service.utils.default_task_executor import DefaultTaskExecutor
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.feature_flags import (
     agent_output_cache_enabled,
-    get_ld_flag,
-    get_user_context,
     is_user_agent_admin,
     user_has_qc_tool_access,
 )
@@ -1565,15 +1563,10 @@ async def get_user_has_access(
         return UserHasAccessResponse(success=False)
 
     # make sure user is not spoofed and it is their first login
-    if request.headers.get("realuserid") == user.user_id:
-        # TODO: remove this check once the flag is turned on for external users
-        if get_ld_flag(
-            flag_name="onboarding-email-sequence",
-            default=False,
-            user_context=get_user_context(user_id=user.user_id),
-        ):
-            if await is_user_first_login(user_id=user.user_id):
-                run_async_background(send_welcome_email(user_id=user.user_id))
+    if request.headers.get("realuserid") == user.user_id and await is_user_first_login(
+        user_id=user.user_id
+    ):
+        run_async_background(send_welcome_email(user_id=user.user_id))
 
     return UserHasAccessResponse(success=True)
 
