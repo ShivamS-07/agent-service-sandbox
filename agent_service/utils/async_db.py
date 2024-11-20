@@ -306,8 +306,10 @@ class AsyncDB:
             if plan_run_id not in res:
                 res[plan_run_id] = OrderedDict()
             tool_name = row["tool_name"]
-            row["start_time_utc"] = row["start_time_utc"].replace(tzinfo=tz).isoformat()
-            row["end_time_utc"] = row["end_time_utc"].replace(tzinfo=tz).isoformat()
+            if row.get("start_time_utc"):
+                row["start_time_utc"] = row["start_time_utc"].replace(tzinfo=tz).isoformat()
+            if row.get("end_time_utc"):
+                row["end_time_utc"] = row["end_time_utc"].replace(tzinfo=tz).isoformat()
             env_upper = EnvironmentUtils.aws_ssm_prefix.upper()
             row["replay_command"] = (
                 f"ENVIRONMENT={env_upper} pipenv run python run_plan_task.py "
