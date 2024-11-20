@@ -516,18 +516,18 @@ async def get_commentary_inputs(
                     context,
                 )
             )
-            # get portfolio performance in all levels
-            for performance_level in PORTFOLIO_PERFORMANCE_LEVELS:
-                tasks.append(
-                    get_portfolio_performance(  # type: ignore
-                        GetPortfolioPerformanceInput(
-                            portfolio_id=args.portfolio_id,
-                            date_range=args.date_range,
-                            performance_level=performance_level,
-                        ),
-                        context,
-                    )
+        # get portfolio performance in all levels
+        for performance_level in PORTFOLIO_PERFORMANCE_LEVELS:
+            tasks.append(
+                get_portfolio_performance(  # type: ignore
+                    GetPortfolioPerformanceInput(
+                        portfolio_id=args.portfolio_id,
+                        date_range=args.date_range,
+                        performance_level=performance_level,
+                    ),
+                    context,
                 )
+            )
 
     tasks_results = await gather_with_concurrency(tasks, n=len(tasks), return_exceptions=True)
     for task, result in zip(tasks, tasks_results):
