@@ -9,6 +9,7 @@ NASDAQ = "nasdaq"
 
 FILE_10K = "10-K"
 FILE_10Q = "10-Q"
+FILE_20F = "20-F"
 
 FILINGS = "filings"
 FORM_TYPE = "formType"

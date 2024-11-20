@@ -17,18 +17,17 @@ from agent_service.io_types.text import (
     StockSecFilingText,
     Text,
 )
-from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
-from agent_service.tools.regions import FilterStockRegionInput, filter_stocks_by_region
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
-from agent_service.utils.date_utils import parse_date_str_in_utc, timezoneify
+from agent_service.utils.date_utils import parse_date_str_in_utc
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.sec.constants import (
     FILE_10K,
     FILE_10Q,
+    FILE_20F,
     FILED_TIMESTAMP,
     FORM_TYPE,
 )
@@ -41,16 +40,14 @@ MATCH_RATIO = 70  # minimum ratio for fuzzy matching to map filing type (higher 
 
 async def get_sec_filings_helper(
     stock_ids: List[StockID],
+    form_types: Optional[List[str]],
     start_date: Optional[datetime.date],
     end_date: Optional[datetime.date],
-    form_types: List[str],
-) -> Dict[StockID, List[StockSecFilingText]]:
-    stock_filing_map = defaultdict(list)
-
-    gbi_id_to_stock_id = {stock.gbi_id: stock for stock in stock_ids}
-
+) -> Dict[StockID, List[Union[StockSecFilingText | StockOtherSecFilingText]]]:
     if not form_types:
         form_types = [FILE_10Q, FILE_10K]
+
+    gbi_id_to_stock_id = {stock.gbi_id: stock for stock in stock_ids}
 
     filing_gbi_pairs, filing_to_db_id = await SecFiling.get_filings(
         gbi_ids=list(gbi_id_to_stock_id.keys()),
@@ -59,20 +56,33 @@ async def get_sec_filings_helper(
         end_date=end_date,
     )
 
+    stock_filing_map = defaultdict(list)
     for filing_str, gbi_id in filing_gbi_pairs:
         stock_id = gbi_id_to_stock_id[gbi_id]
         db_id = filing_to_db_id.get(filing_str, None)
         filing_json = json.loads(filing_str)
         timestamp = parse_date_str_in_utc(filing_json[FILED_TIMESTAMP])
-        stock_filing_map[stock_id].append(
-            StockSecFilingText(
-                id=filing_str,
-                stock_id=stock_id,
-                db_id=db_id,
-                timestamp=timestamp,
-                form_type=filing_json.get(FORM_TYPE),
+        form_type = filing_json.get(FORM_TYPE)
+        if form_type in [FILE_10Q, FILE_10K]:
+            stock_filing_map[stock_id].append(
+                StockSecFilingText(
+                    id=filing_str,
+                    stock_id=stock_id,
+                    db_id=db_id,
+                    timestamp=timestamp,
+                    form_type=filing_json.get(FORM_TYPE),
+                )
             )
-        )
+        else:
+            stock_filing_map[stock_id].append(
+                StockOtherSecFilingText(
+                    id=filing_str,
+                    stock_id=stock_id,
+                    db_id=db_id,
+                    timestamp=timestamp,
+                    form_type=filing_json.get(FORM_TYPE),
+                )
+            )
 
     return stock_filing_map
 
@@ -97,7 +107,7 @@ class GetSecFilingsInput(ToolArgs):
     "It is especially useful for finding current information about less well-known "
     "companies which may have little or no news for a given period. "
     "Any documents published within the date_range are included. Date_range will "
-    "default to the last quarter, which includes the latest SEC filing."
+    "default to the last year. If the user is only looking for 10-Q, the date range will be the last quarter."
     "The output of this tool is not ordered by time. If the client needs to compare two filings, you "
     "must call this tool twice with two 3 month time ranges, do NOT do this in a single call! "
     " You should not pass a date_range containing dates after todays date into this function."
@@ -111,106 +121,21 @@ class GetSecFilingsInput(ToolArgs):
 async def get_10k_10q_sec_filings(
     args: GetSecFilingsInput, context: PlanRunContext
 ) -> List[StockSecFilingText]:
-    if args.date_range:
-        start_date = args.date_range.start_date
-        end_date = args.date_range.end_date
-    else:
-        start_date = None
-        end_date = None
-
-    us_stocks: List[StockID] = []
-    try:
-        us_stocks = await filter_stocks_by_region(
-            FilterStockRegionInput(stock_ids=args.stock_ids, region_name="USA"),
-            context=context,
-        )  # type: ignore
-    except EmptyOutputError:
-        us_stocks = []
-
-    stocks_str = f"{len(us_stocks)} US stocks"
-    if len(us_stocks) == 0:
-        return []
-    elif len(us_stocks) == 1:
-        us_stock = us_stocks[0]
-        stocks_str = us_stock.symbol if us_stock.symbol else us_stock.company_name
-
-    if len(us_stocks) != len(args.stock_ids):
-        await tool_log(
-            f"Only retrieving SEC filings for {stocks_str}",
-            context=context,
-        )
-
-    daterange_str = ""
-    use_latest_str = "the most recent "
-    if start_date and end_date:
-        daterange_str = f"from {start_date.isoformat()} to {end_date.isoformat()}"
-        use_latest_str = ""
-
-    form_types = [FILE_10Q, FILE_10K]
+    form_types: List[SecFilingType | str] = [FILE_10Q, FILE_10K, FILE_20F]
     if not args.must_include_10q:
         form_types.remove(FILE_10Q)
     if not args.must_include_10k:
         form_types.remove(FILE_10K)
+        form_types.remove(FILE_20F)
 
-    await tool_log(
-        f"Retrieving {use_latest_str} {",".join(form_types)} SEC filings for {stocks_str} {daterange_str}.",
+    return await get_sec_filings_with_type(
+        GetSecFilingsWithTypeInput(
+            stock_ids=args.stock_ids,
+            form_types=form_types,
+            date_range=args.date_range,
+        ),
         context=context,
-    )
-    stock_filing_map = await get_sec_filings_helper(us_stocks, start_date, end_date, form_types)
-    all_filings: List[StockSecFilingText] = []
-    for filings in stock_filing_map.values():
-        all_filings.extend(filings)
-
-    filing_list = [
-        f"{filing.to_citation_title()} ({filing.form_type}) "
-        + (f"- {filing.timestamp.strftime('%Y-%m-%d')}" if filing.timestamp else "")
-        for filing in all_filings
-    ]
-    if len(all_filings) == 0:
-        await tool_log(
-            log="No filings were retrieved for these stocks over this time period", context=context
-        )
-    else:
-        await tool_log(
-            log=f"Found {len(all_filings)} filing(s).",
-            context=context,
-            associated_data=filing_list,
-        )
-
-    return all_filings
-
-
-async def get_other_sec_filings_helper(
-    stock_ids: List[StockID],
-    form_types: List[str],
-    start_date: Optional[datetime.date],
-    end_date: Optional[datetime.date],
-) -> Dict[StockID, List[StockOtherSecFilingText]]:
-    gbi_id_to_stock_id = {stock.gbi_id: stock for stock in stock_ids}
-    filing_gbi_pairs, filing_to_db_id = await SecFiling.get_filings(
-        gbi_ids=list(gbi_id_to_stock_id.keys()),
-        form_types=form_types,
-        start_date=start_date,
-        end_date=end_date,
-    )
-
-    stock_filing_map = defaultdict(list)
-    for filing_str, gbi_id in filing_gbi_pairs:
-        stock_id = gbi_id_to_stock_id[gbi_id]
-        db_id = filing_to_db_id.get(filing_str, None)
-        filing_json = json.loads(filing_str)
-        timestamp = timezoneify(datetime.datetime.fromisoformat(filing_json[FILED_TIMESTAMP]))
-        stock_filing_map[stock_id].append(
-            StockOtherSecFilingText(
-                id=filing_str,
-                stock_id=stock_id,
-                db_id=db_id,
-                timestamp=timestamp,
-                form_type=filing_json.get(FORM_TYPE),
-            )
-        )
-
-    return stock_filing_map
+    )  # type: ignore
 
 
 class GetOtherSecFilingsInput(ToolArgs):
@@ -403,96 +328,54 @@ async def get_sec_filings_with_type(
         start_date = None
         end_date = None
 
-    us_stocks: List[StockID] = []
-    try:
-        us_stocks = await filter_stocks_by_region(
-            FilterStockRegionInput(stock_ids=args.stock_ids, region_name="USA"),
-            context=context,
-        )  # type: ignore
-    except EmptyOutputError:
-        us_stocks = []
-
-    stocks_str = f"{len(us_stocks)} US stocks"
-    if len(us_stocks) == 0:
+    num_input_stocks = len(args.stock_ids)
+    stocks_str = f"{len(args.stock_ids)} stocks"
+    if num_input_stocks == 0:
         return []
-    elif len(us_stocks) == 1:
-        us_stock = us_stocks[0]
-        stocks_str = us_stock.symbol if us_stock.symbol else us_stock.company_name
+    elif num_input_stocks == 1:
+        input_stock = args.stock_ids[0]
+        stocks_str = input_stock.symbol if input_stock.symbol else input_stock.company_name
 
-    elif len(us_stocks) != len(args.stock_ids):
-        await tool_log(
-            f"Only retrieving SEC filings for {stocks_str}",
-            context=context,
-        )
+    daterange_str = ""
+    use_latest_str = "the most recent "
+    if start_date and end_date:
+        daterange_str = f"from {start_date.isoformat()} to {end_date.isoformat()}"
+        use_latest_str = ""
 
+    form_types = [FILE_10Q, FILE_10K, FILE_20F]
     if args.form_types and len(args.form_types) > 0:
         form_types = []
         for form_type in args.form_types:
             form_types.append(form_type if isinstance(form_type, str) else form_type.name)
-        must_include_10q = FILE_10Q in form_types
-        must_include_10k = FILE_10K in form_types
-        sec_10k_10q_filings: List[StockSecFilingText] = []
-        if len(form_types) != len(args.form_types):
-            sec_10k_10q_filings = await get_10k_10q_sec_filings(
-                GetSecFilingsInput(
-                    stock_ids=us_stocks,
-                    date_range=args.date_range,
-                    must_include_10q=must_include_10q,
-                    must_include_10k=must_include_10k,
-                ),
-                context=context,
-            )  # type: ignore
-            form_types = [
-                form_type
-                for form_type in form_types
-                if form_type != FILE_10Q and form_type != FILE_10K
-            ]
 
-        form_types_str = f"{len(form_types)} types of"
-        if len(form_types) < 5:
-            form_types_str = ", ".join(form_types)
+    await tool_log(
+        f"Retrieving {use_latest_str} {", ".join(form_types)} SEC filings for {stocks_str} {daterange_str}.",
+        context=context,
+    )
 
-        daterange_str = ""
-        use_latest_str = "the most recent "
-        if start_date and end_date:
-            daterange_str = f"from {start_date.isoformat()} to {end_date.isoformat()}"
-            use_latest_str = ""
+    stock_filing_map = await get_sec_filings_helper(
+        args.stock_ids, form_types, start_date, end_date
+    )
+    sec_filings: List[Union[StockSecFilingText | StockOtherSecFilingText]] = []
+    for filings in stock_filing_map.values():
+        sec_filings.extend(filings)
 
+    if len(sec_filings) == 0:
         await tool_log(
-            f"Retrieving {use_latest_str}{form_types_str} SEC filing(s) for {stocks_str} {daterange_str}.",
+            log="No filings were retrieved for these stocks over this time period",
             context=context,
         )
-        stock_filing_map = await get_other_sec_filings_helper(
-            us_stocks, form_types, start_date, end_date
-        )
-        sec_filings: List[StockSecFilingText] = []
-        for filings in stock_filing_map.values():
-            sec_filings.extend(filings)
-
-        if len(sec_filings) == 0 and len(sec_10k_10q_filings) == 0:
-            await tool_log(
-                log="No filings were retrieved for these stocks over this time period",
-                context=context,
-            )
-        sec_filings.extend(sec_10k_10q_filings)
-
-        filing_list = [
-            f"{filing.to_citation_title()} ({filing.form_type}) "
-            + (f"- {filing.timestamp.strftime('%Y-%m-%d')}" if filing.timestamp else "")
-            for filing in sec_filings
-        ]
-        await tool_log(
-            log=f"Found {len(sec_filings)} filing(s).",
-            context=context,
-            associated_data=filing_list,
-        )
-
         return sec_filings
 
-    return await get_10k_10q_sec_filings(
-        GetSecFilingsInput(
-            stock_ids=us_stocks,
-            date_range=args.date_range,
-        ),
+    filing_list = [
+        f"{filing.to_citation_title()} ({filing.form_type}) "
+        + (f"- {filing.timestamp.strftime('%Y-%m-%d')}" if filing.timestamp else "")
+        for filing in sec_filings
+    ]
+    await tool_log(
+        log=f"Found {len(sec_filings)} filing(s).",
         context=context,
-    )  # type: ignore
+        associated_data=filing_list,
+    )
+
+    return sec_filings

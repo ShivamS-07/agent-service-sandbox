@@ -667,7 +667,6 @@ class SecFiling:
                     )
 
                 processed_full_content = html_to_text(full_content)
-                time.sleep(0.25)
 
                 if management_section or risk_factor_section:
                     # if there's at least 1 non-empty section, use the concatenated text
@@ -758,7 +757,6 @@ class SecFiling:
                     )
 
                 processed_full_content = html_to_text(full_content)
-                time.sleep(0.25)
 
                 if management_section or risk_factor_section:
                     # if there's at least 1 non-empty section, use the concatenated text
@@ -831,7 +829,6 @@ class SecFiling:
                 return_type=DEFAULT_FILING_FORMAT,
             )
             processed_html_text = html.unescape(html_text)
-            time.sleep(0.25)
             return processed_html_text
         except Exception as e:
             cik = filing.get(CIK, None)

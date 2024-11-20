@@ -1673,13 +1673,23 @@ class StockSecFilingText(StockText):
             be better than hitting API anyway
         3. Download the rest from the API
         """
+        if len(sec_filing_list) == 0:
+            return {}
 
         filing_json_to_text_obj = {filing.id: filing for filing in sec_filing_list}
 
         output: Dict[TextIDType, str] = {}
 
+        logger.info("Getting SEC filing text from text object (memory)")
+        for filing in sec_filing_list:
+            if filing.val is not None and filing.val != "":
+                output[filing.id] = filing.val
+        logger.info(f"Found {len(output)} SEC filings texts from memory")
+
         logger.info("Getting SEC filing text from DB using `db_id`")
-        db_id_to_filing_json = {f.db_id: f.id for f in sec_filing_list if f.db_id}
+        db_id_to_filing_json = {
+            f.db_id: f.id for f in sec_filing_list if f.db_id and f.id not in output
+        }
         output.update(await SecFiling.get_concat_10k_10q_sections_from_db(db_id_to_filing_json))  # type: ignore
         logger.info(f"Found {len(output)} SEC filings in DB")
 
@@ -1702,12 +1712,16 @@ class StockSecFilingText(StockText):
         filing_gbi_pairs = [
             (filing.id, filing.stock_id.gbi_id)
             for filing in sec_filing_list
-            if not filing.db_id and filing.stock_id
+            if filing.stock_id and filing.id not in output
         ]
         sec_output_docs, _ = await SecFiling.get_concat_10k_10q_sections_from_api(
             filing_gbi_pairs, insert_to_db=True
         )
         output.update(sec_output_docs)  # type: ignore
+
+        for filing in sec_filing_list:
+            if filing.id in output:
+                filing.val = output[filing.id]
 
         return output
 
@@ -1795,6 +1809,7 @@ class StockSecFilingSectionText(StockText):
                         db_id=filing.db_id,
                         timestamp=filing.timestamp,
                         form_type=filing.form_type,
+                        val=content,
                     )
                 )
 
@@ -1804,11 +1819,15 @@ class StockSecFilingSectionText(StockText):
     async def _get_strs_lookup(
         cls, sections: List[StockSecFilingSectionText]  # type: ignore
     ) -> Dict[TextIDType, str]:
-        # Full data in the DB since we only store `header`, not `content` to save space
+        outputs = {}
+
         filing_text_objs = {}
         header_to_sections: Dict[str, List[StockSecFilingSectionText]] = defaultdict(list)
         for section in sections:
-            if section.filing_id not in filing_text_objs:
+            if section.val is not None and section.val != "":
+                text_str = f"{section.header}: {section.val}"
+                outputs[section.id] = text_str
+            elif section.filing_id not in filing_text_objs:
                 filing_text_objs[section.filing_id] = StockSecFilingText(
                     id=section.filing_id,
                     stock_id=section.stock_id,
@@ -1822,7 +1841,6 @@ class StockSecFilingSectionText(StockText):
 
         filing_texts = await StockSecFilingText._get_strs_lookup(list(filing_text_objs.values()))
 
-        outputs = {}
         for filing_id, filing_text in filing_texts.items():
             split_sections = SecFiling.split_10k_10q_into_smaller_sections(filing_text)
             for header, content in split_sections.items():
@@ -1830,6 +1848,10 @@ class StockSecFilingSectionText(StockText):
                 for section in header_to_sections.get(header, []):
                     if section.filing_id == filing_id:
                         outputs[section.id] = text_str
+
+        for section in sections:
+            if section.id in outputs:
+                section.val = outputs[section.id]
 
         return outputs  # type: ignore
 
@@ -1908,16 +1930,26 @@ class StockOtherSecFilingText(StockSecFilingText):
             be better than hitting API anyway
         3. Download the rest from the API
         """
+        if len(sec_filing_list) == 0:
+            return {}
 
         filing_json_to_text_obj = {filing.id: filing for filing in sec_filing_list}
 
         # Get the available content from DB first
         output: Dict[TextIDType, str] = {}
 
+        logger.info("Getting SEC filing text from text object (memory)")
+        for filing in sec_filing_list:
+            if filing.val is not None and filing.val != "":
+                output[filing.id] = filing.val
+        logger.info(f"Found {len(output)} SEC filings texts from memory")
+
         try:
             # determine which filings we know we definitely can get from the DB
             logger.info("Getting SEC filing text from DB using `db_id`")
-            db_id_to_filing_json = {f.db_id: f.id for f in sec_filing_list if f.db_id}
+            db_id_to_filing_json = {
+                f.db_id: f.id for f in sec_filing_list if f.db_id and f.id not in output
+            }
             output.update(await SecFiling.get_filings_content_from_db(db_id_to_filing_json))  # type: ignore
             logger.info(f"Found {len(output)} SEC filings in DB")
 
@@ -1965,6 +1997,10 @@ class StockOtherSecFilingText(StockSecFilingText):
                     if filing.id not in output
                 }
             )
+
+        for filing in sec_filing_list:
+            if filing.id in output:
+                filing.val = output[filing.id]
 
         return output
 
@@ -2067,6 +2103,7 @@ class StockOtherSecFilingSectionText(StockText):
                         db_id=filing.db_id,
                         timestamp=filing.timestamp,
                         form_type=filing.form_type,
+                        val=content,
                     )
                 )
 
@@ -2076,12 +2113,16 @@ class StockOtherSecFilingSectionText(StockText):
     async def _get_strs_lookup(
         cls, sections: List[StockOtherSecFilingSectionText]  # type: ignore
     ) -> Dict[TextIDType, str]:
-        # Full data in the DB since we only store `header`, not `content` to save space
+        outputs = {}
+
         filing_text_objs = {}
         filing_to_section_ids: Dict[str, List[int]] = defaultdict(list)
         section_id_lookup = {section.id: section for section in sections}
         for section in sections:
-            if section.filing_id not in filing_text_objs:
+            if section.val is not None and section.val != "":
+                text_str = f"{section.header}: {section.val}"
+                outputs[section.id] = text_str
+            elif section.filing_id not in filing_text_objs:
                 filing_text_objs[section.filing_id] = StockOtherSecFilingText(
                     id=section.filing_id,
                     stock_id=section.stock_id,
@@ -2095,12 +2136,12 @@ class StockOtherSecFilingSectionText(StockText):
             list(filing_text_objs.values())
         )
 
-        outputs = {}
         for filing_id, filing_text in filing_texts.items():
             split_sections = get_sections(filing_text)
             for section_id in filing_to_section_ids.get(str(filing_id), []):
                 section = section_id_lookup[section_id]
-                outputs[section.id] = split_sections.get(section.header)
+                if section.header in split_sections:
+                    outputs[section.id] = split_sections[section.header]
 
         return outputs  # type: ignore
 
