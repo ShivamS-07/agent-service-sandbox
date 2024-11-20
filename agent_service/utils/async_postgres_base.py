@@ -45,6 +45,7 @@ class AsyncPostgresBase(BoostedPG):
         max_pool_size: int = 8,
         connection_timeout: float = 60.0,
         max_idle_time: float = 600.0,
+        read_only: bool = False,
     ):
         """
         min/max_pool_size: int
@@ -58,6 +59,7 @@ class AsyncPostgresBase(BoostedPG):
         self.connection_timeout = connection_timeout
         self.max_idle_time = max_idle_time
         self._pool: Optional[AsyncConnectionPool] = None
+        self.read_only = read_only
 
     async def pool(self) -> AsyncConnectionPool:
         if not self._pool:
@@ -76,6 +78,9 @@ class AsyncPostgresBase(BoostedPG):
             return
         try:
             db_config = get_config().app_db
+            host = db_config.host if not self.read_only else db_config.read_only_host
+            if not host:
+                host = db_config.host
             connection_args = {
                 "dbname": db_config.database,
                 "user": db_config.username,

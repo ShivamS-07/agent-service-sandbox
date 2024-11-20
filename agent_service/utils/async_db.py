@@ -2446,9 +2446,12 @@ async def get_latest_execution_plan_from_db(agent_id: str, db: Union[AsyncDB, Po
 
 
 ASYNC_DB: Optional[AsyncDB] = None
+ASYNC_RO_DB: Optional[AsyncDB] = None
 
 
-def get_async_db(sync_db: bool = False, skip_commit: bool = False) -> AsyncDB:
+def get_async_db(
+    sync_db: bool = False, skip_commit: bool = False, read_only: bool = False
+) -> AsyncDB:
     """Get the single AsyncDB instance based on the parameters.
 
     Args:
@@ -2457,7 +2460,15 @@ def get_async_db(sync_db: bool = False, skip_commit: bool = False) -> AsyncDB:
     that if it's True, it will use the SyncBoostedPG under the hood (because AsyncPostgresBase does
     not support skipping commit).
     """
-    global ASYNC_DB
+    global ASYNC_DB, ASYNC_RO_DB
+    if read_only:
+        if ASYNC_RO_DB is None:
+            if sync_db:
+                ASYNC_RO_DB = AsyncDB(pg=SyncBoostedPG(read_only=read_only))
+            else:
+                ASYNC_RO_DB = AsyncDB(pg=AsyncPostgresBase(read_only=read_only))
+        return ASYNC_RO_DB
+
     if ASYNC_DB is None:
         if sync_db or skip_commit:
             ASYNC_DB = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_commit))

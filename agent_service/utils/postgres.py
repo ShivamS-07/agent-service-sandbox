@@ -23,6 +23,7 @@ from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.sec.sec_api import SecurityMetadata
 
 PSQL_CONN = None
+PSQL_READ_ONLY_CONN = None
 PSQL_CONN_SKIP_COMMIT = None
 
 DEFAULT_AGENT_NAME = "New Chat"
@@ -35,9 +36,11 @@ class Postgres(PostgresBase):
     Otherwise please create specific db functions under each working directory
     """
 
-    def __init__(self, skip_commit: bool = False, environment: Optional[str] = None):
+    def __init__(
+        self, skip_commit: bool = False, environment: Optional[str] = None, read_only: bool = False
+    ):
         environment: str = environment or EnvironmentUtils.aws_ssm_prefix
-        super().__init__(environment, skip_commit=skip_commit)
+        super().__init__(environment, skip_commit=skip_commit, read_only=read_only)
         self._env = environment
 
     def generic_jsonb_update(
@@ -846,19 +849,23 @@ class Postgres(PostgresBase):
         return rows[0]["linked_portfolio_id"] if rows else None
 
 
-def get_psql(skip_commit: bool = False) -> Postgres:
+def get_psql(skip_commit: bool = False, read_only: bool = False) -> Postgres:
     """
     This method fetches the global Postgres connection, so we only need one.
     If it does not exist, then initialize the connection.
 
     Returns: Postgres object, which inherits from PostgresBase.
     """
-    global PSQL_CONN, PSQL_CONN_SKIP_COMMIT
+    global PSQL_CONN, PSQL_READ_ONLY_CONN, PSQL_CONN_SKIP_COMMIT
     if skip_commit:
         if PSQL_CONN_SKIP_COMMIT is None:
             PSQL_CONN_SKIP_COMMIT = Postgres(skip_commit=skip_commit)
         return PSQL_CONN_SKIP_COMMIT
 
+    elif read_only:
+        if PSQL_READ_ONLY_CONN is None:
+            PSQL_READ_ONLY_CONN = Postgres(skip_commit=skip_commit, read_only=read_only)
+        return PSQL_READ_ONLY_CONN
     else:
         if PSQL_CONN is None:
             PSQL_CONN = Postgres(skip_commit=skip_commit)
@@ -868,8 +875,8 @@ def get_psql(skip_commit: bool = False) -> Postgres:
 # TODO eventually we can get rid of this possibly? Essentially allows us to use
 # the AsyncDB functions anywhere. These will simply be blocking versions.
 class SyncBoostedPG(BoostedPG):
-    def __init__(self, skip_commit: bool = False) -> None:
-        self.db = get_psql(skip_commit=skip_commit)
+    def __init__(self, skip_commit: bool = False, read_only: bool = False) -> None:
+        self.db = get_psql(skip_commit=skip_commit, read_only=read_only)
 
     async def generic_read(self, sql: str, params: Optional[Any] = None) -> List[Dict[str, Any]]:
         return self.db.generic_read(sql, params)

@@ -33,7 +33,6 @@ from agent_service.tools.lists import CombineListsInput, add_lists
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import get_async_db
-from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.cache_utils import PostgresCacheBackend
 from agent_service.utils.date_utils import get_now_utc
@@ -486,7 +485,7 @@ async def stock_lookup_by_exact_gbi_alt_name(
     AND ms.to_z is null
     AND source_id = 0 -- boosted custom alt_name entries
     """
-    db = get_async_db()
+    db = get_async_db(read_only=True)
     rows = await db.generic_read(sql, {"search_term": args.stock_name})
     if rows:
         logger = get_prefect_logger(__name__)
@@ -544,7 +543,7 @@ async def stock_lookup_by_isin(
         AND ms.is_primary_trading_item = true
         AND ms.to_z is null
         """
-        db = get_async_db()
+        db = get_async_db(read_only=True)
         rows = await db.generic_read(sql, {"search_term": args.stock_name})
         if rows:
             # useful for debugging
@@ -616,7 +615,7 @@ async def stock_lookup_by_text_similarity(
         List[Dict[str, Any]]: DB rows representing the potentially matching stocks.
     """
     logger = get_prefect_logger(__name__)
-    db = get_async_db()
+    db = get_async_db(read_only=True)
     if not args.stock_name:
         raise ValueError("Cannot look up by text similarity if no stock name present")
 
@@ -833,7 +832,7 @@ async def stock_lookup_by_text_similarity(
 
 
 async def stock_lookup_by_gbi_id(gbi_id: int) -> Optional[Dict[str, Any]]:
-    db = get_async_db()
+    db = get_async_db(read_only=True)
     sql = """
     SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
     ms.name AS company_name
@@ -1040,7 +1039,7 @@ async def get_etf_list(args: GetETFUniverseInput, context: PlanRunContext) -> Li
     """
     logger = get_prefect_logger(__name__)
 
-    db = get_async_db()
+    db = get_async_db(read_only=True)
 
     sql = """
     SELECT gbi_id, spiq_company_id, name
@@ -1416,11 +1415,11 @@ async def get_metadata_for_stocks(
         dataframe: a table of stock identifiers and all metadata columns.
     """
 
-    db = AsyncPostgresBase()
+    db = get_async_db(read_only=True)
 
     gbi_ids = await StockID.to_gbi_id_list(stock_ids)
 
-    rows = await get_stock_metadata_rows(gbi_ids=gbi_ids, pg=db)
+    rows = await get_stock_metadata_rows(gbi_ids=gbi_ids, pg=db.pg)
     df = pd.DataFrame(rows)
 
     # the column names need to be changed to match the output column labels
@@ -1671,7 +1670,7 @@ async def get_stock_universe_table_from_universe_company_id(
         StockTable: The table of stock identifiers and weights in the universe.
     """
     # logger = get_prefect_logger(__name__)
-    db = get_async_db()
+    db = get_async_db(read_only=True)
     gbi_ids = []
     rows = []
 
@@ -1799,7 +1798,7 @@ async def get_stock_ids_from_company_ids(
         Dict[int, StockID]: Mapping from company ID to output stock ID
     """
     # logger = get_prefect_logger(__name__)
-    db = get_async_db()
+    db = get_async_db(read_only=True)
 
     # Find the stocks in the universe
     sql = """
@@ -2187,7 +2186,7 @@ async def get_stock_universe_gbi_stock_universe(
     Returns an optional dict representing the best gbi universe match
     """
     logger = get_prefect_logger(__name__)
-    db = get_async_db()
+    db = get_async_db(read_only=True)
 
     logger.info(f"looking in gbi_stock_universe for: '{args.universe_name}'")
     sql = """
@@ -2219,7 +2218,7 @@ async def get_stock_universe_from_etf_stock_match(
     Returns an optional dict representing the best ETF match
     """
     logger = get_prefect_logger(__name__)
-    db = get_async_db()
+    db = get_async_db(read_only=True)
 
     # Find the universe id/name by reusing the stock lookup, and then filter by ETF
     logger.info(f"Attempting to map '{args.universe_name}' to a stock universe")
@@ -2313,7 +2312,7 @@ async def stock_lookup_by_bloomberg_parsekey(
     if not args.stock_name:
         raise ValueError("Cannot look up by BBG parsekey if no stock name present")
     logger = get_prefect_logger(__name__)
-    db = get_async_db()
+    db = get_async_db(read_only=True)
 
     search_term = args.stock_name
     search_terms = search_term.split()
@@ -2386,7 +2385,7 @@ async def stock_lookup_by_ric_yahoo_codes(
     """
 
     logger = get_prefect_logger(__name__)
-    db = AsyncPostgresBase()
+    db = get_async_db(read_only=True)
 
     if not args.stock_name:
         raise ValueError("Cannot look up by RIC Yahoo if no stock name present")

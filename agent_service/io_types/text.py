@@ -440,7 +440,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
         """
         from agent_service.utils.async_db import get_async_db
 
-        db = get_async_db()
+        db = get_async_db(read_only=True)
         rows = []
         topic_ids = [t.id for t in normal_news_topics]
         for idx in range(0, len(normal_news_topics), 3000):
@@ -518,7 +518,7 @@ class StockNewsDevelopmentText(NewsText, StockText):
         """
         from agent_service.utils.async_db import get_async_db
 
-        db = get_async_db()
+        db = get_async_db(read_only=True)
 
         rows = await db.generic_read(sql, {"topic_ids": [topic.id for topic in news_topics]})
 
@@ -615,7 +615,7 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
             FROM nlp_service.stock_news
             WHERE news_id = ANY(%(news_ids)s)
         """
-        rows = await get_async_db().generic_read(
+        rows = await get_async_db(read_only=True).generic_read(
             sql, {"news_ids": [topic.id for topic in news_topics]}
         )
         return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
@@ -662,7 +662,7 @@ class NewsPoolArticleText(NewsText):
         """
         from agent_service.utils.async_db import get_async_db
 
-        rows = await get_async_db().generic_read(
+        rows = await get_async_db(read_only=True).generic_read(
             sql, {"news_ids": [topic.id for topic in news_pool]}
         )
         return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
@@ -819,7 +819,9 @@ class ThemeText(Text):
         """
         from agent_service.utils.async_db import get_async_db
 
-        rows = await get_async_db().generic_read(sql, {"theme_id": [topic.id for topic in themes]})
+        rows = await get_async_db(read_only=True).generic_read(
+            sql, {"theme_id": [topic.id for topic in themes]}
+        )
         return {row["theme_id"]: row["description"] for row in rows}
 
     @classmethod
@@ -861,7 +863,7 @@ class ThemeNewsDevelopmentText(NewsText):
         """
         from agent_service.utils.async_db import get_async_db
 
-        rows = await get_async_db().generic_read(
+        rows = await get_async_db(read_only=True).generic_read(
             sql, {"development_id": [topic.id for topic in themes]}
         )
         return {row["development_id"]: f"{row['label']}:\n{row['description']}" for row in rows}
@@ -909,7 +911,7 @@ class ThemeNewsDevelopmentArticlesText(NewsText):
         """
         from agent_service.utils.async_db import get_async_db
 
-        rows = await get_async_db().generic_read(
+        rows = await get_async_db(read_only=True).generic_read(
             sql, {"news_id": [topic.id for topic in developments]}
         )
         return {row["news_id"]: f"{row['headline']}:\n{row['summary']}" for row in rows}
@@ -984,7 +986,7 @@ class StockEarningsSummaryText(StockEarningsText):
         """
         from agent_service.utils.async_db import get_async_db
 
-        rows = await get_async_db().generic_read(
+        rows = await get_async_db(read_only=True).generic_read(
             sql, {"earnings_ids": [summary.id for summary in earnings_texts]}
         )
         str_lookup = {}
@@ -1337,7 +1339,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
         from agent_service.utils.async_db import get_async_db
 
         summary_ids = list({point.summary_id for point in earnings_summary_points})
-        rows = await get_async_db().generic_read(sql, {"summary_ids": summary_ids})
+        rows = await get_async_db(read_only=True).generic_read(sql, {"summary_ids": summary_ids})
         summary_id_to_summary = {row["summary_id"]: row["summary"] for row in rows}
 
         str_lookup = {}
@@ -1469,7 +1471,7 @@ class StockEarningsSummaryPointText(StockEarningsText):
         """
 
         summary_id_to_summary = {s.id: s for s in earnings_summaries}
-        rows = await get_async_db().generic_read(
+        rows = await get_async_db(read_only=True).generic_read(
             sql, {"summary_ids": list(summary_id_to_summary.keys())}
         )
 
@@ -1552,7 +1554,7 @@ class StockDescriptionText(StockText):
 
         stocks = [desc.id for desc in company_descriptions]
 
-        descriptions = await get_async_db().get_company_descriptions(stocks)
+        descriptions = await get_async_db(read_only=True).get_company_descriptions(stocks)
 
         # For some reason SPIQ includes invalid characters for apostraphes. For
         # now just replace them here, ideally a data ingestion problem to fix.
@@ -1644,7 +1646,7 @@ class StockDescriptionSectionText(StockText):
         for section in sections:
             sections_by_desc_ids[section.description_id].append((int(section.id), section.header))
 
-        desc_lookup = await get_async_db().get_company_descriptions(description_ids)
+        desc_lookup = await get_async_db(read_only=True).get_company_descriptions(description_ids)
 
         output = {}
         for gbi_id, desc in desc_lookup.items():
