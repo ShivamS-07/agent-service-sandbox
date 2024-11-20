@@ -309,10 +309,16 @@ class Postgres(PostgresBase):
         )
         return rows[0] if rows else None
 
-    def insert_plan_run(self, agent_id: str, plan_id: str, plan_run_id: str) -> None:
+    def insert_plan_run(
+        self,
+        agent_id: str,
+        plan_id: str,
+        plan_run_id: str,
+        initial_status: Status = Status.NOT_STARTED,
+    ) -> None:
         sql = """
-        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id, created_at)
-        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(created_at)s)
+        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id, created_at, status)
+        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(created_at)s, %(status)s)
         ON CONFLICT (plan_run_id) DO NOTHING
         """
 
@@ -323,6 +329,7 @@ class Postgres(PostgresBase):
                 "plan_id": plan_id,
                 "plan_run_id": plan_run_id,
                 "created_at": get_now_utc(),
+                "status": initial_status.value,
             },
         )
 
