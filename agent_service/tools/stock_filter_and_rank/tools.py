@@ -154,7 +154,7 @@ async def run_profile_match(
         no_info_stock_count = len(stocks) - len(stocks_with_texts)
         if no_info_stock_count > 0:
             await tool_log(
-                f"No new relevant information for {no_info_stock_count} stocks, skipping these stocks",
+                f"No relevant information for {no_info_stock_count} stocks, skipping these stocks",
                 context=context,
             )
 

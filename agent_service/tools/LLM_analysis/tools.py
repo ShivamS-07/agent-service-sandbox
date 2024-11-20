@@ -923,9 +923,7 @@ async def per_stock_group_summarize_texts(
 
     old_groups = []
 
-    prev_run_dict: Dict[StockGroup, Tuple[List[TextCitation], List[TextCitation], str]] = (
-        defaultdict()
-    )
+    prev_run_dict: Dict[str, Tuple[List[TextCitation], List[TextCitation], str]] = defaultdict()
 
     try:  # since everything associated with diffing is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "per_stock_group_summarize_texts")
@@ -938,9 +936,11 @@ async def per_stock_group_summarize_texts(
                 List[StockText],
                 await partition_to_smaller_text_sizes(cast(List[Text], prev_input_texts), context),
             )
-            prev_output_groups: StockGroups = prev_run_info.output.stock_group  # type:ignore
+            prev_output_groups = cast(
+                List[StockGroup], prev_run_info.output.stock_groups  # type:ignore
+            )
             old_output_groups_lookup: Dict[str, StockGroup] = {
-                group.name: group for group in prev_output_groups.stock_groups
+                group.name: group for group in prev_output_groups
             }
             curr_input_texts = set(args.texts)
             old_input_texts = set(prev_input_texts)
@@ -960,7 +960,7 @@ async def per_stock_group_summarize_texts(
                     for citation in all_old_citations
                     if citation.source_text in curr_input_texts
                 ]
-                prev_run_dict[stock_group] = (
+                prev_run_dict[stock_group.name] = (
                     remaining_citations,
                     all_old_citations,
                     old_summary,
@@ -1002,7 +1002,12 @@ async def per_stock_group_summarize_texts(
         )
 
     if prev_run_dict:
-        for group, (remaining_citations, all_old_citations, old_summary) in prev_run_dict.items():
+        for group_name, (
+            remaining_citations,
+            all_old_citations,
+            old_summary,
+        ) in prev_run_dict.items():
+            group = old_output_groups_lookup[group_name]
             group_set = set(group.stocks)
             if group.ref_stock:
                 group_set.add(group.ref_stock)  # include text data from target stock if any

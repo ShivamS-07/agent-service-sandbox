@@ -428,6 +428,7 @@ async def get_peer_group_for_stock(
     llm: GPT,
     context: PlanRunContext,
     category: Optional[str] = None,
+    crash_on_failure: bool = True,
 ) -> List[StockID]:
     logger = get_prefect_logger(__name__)
     stock_str = str(stock.gbi_id) + SEPARATOR + stock.company_name
@@ -490,7 +491,10 @@ async def get_peer_group_for_stock(
             peer_justifications[stock_id.gbi_id] = peer.get("justification", "")
 
     if len(peer_stock_ids) == 0:
-        raise ValueError(f"Could not find peers for stock {stock.company_name}")
+        if crash_on_failure:
+            raise ValueError(f"Could not find peers for stock {stock.company_name}")
+        else:
+            return []
 
     # validate that input stock belongs in peer group
     company_descriptions = {
@@ -523,10 +527,13 @@ async def get_peer_group_for_stock(
     # [0]: True or False, [1] justification
     validate_input_stock = validate_input_stock_gpt_resp.split("\n")
     if len(validate_input_stock) > 0 and validate_input_stock[0].lower() == "false":
-        raise ValueError(
-            f"{stock.company_name} does not belong in the"
-            f"generated peer group: {validate_input_stock[1]}"
-        )
+        if crash_on_failure:
+            raise ValueError(
+                f"{stock.company_name} does not belong in the"
+                f"generated peer group: {validate_input_stock[1]}"
+            )
+        else:
+            return []
 
     validated_peers: List[StockID] = []
     validate_tasks = []
@@ -567,6 +574,12 @@ async def get_peer_group_for_stock(
                     title=f"Connection to '{stock.company_name}'",
                 )
             )
+
+    if len(validated_peers) == 0:
+        if crash_on_failure:
+            raise ValueError(f"Could not find peers for stock {stock.company_name}")
+        else:
+            return []
 
     return validated_peers
 
@@ -637,22 +650,25 @@ async def per_stock_get_general_peers(
     for stock in wanted_stocks:
         tasks.append(
             get_peer_group_for_stock(
-                stock=stock,
-                llm=llm,
-                context=context,
-                category=None,
+                stock=stock, llm=llm, context=context, category=None, crash_on_failure=False
             )
         )
 
     results = await gather_with_concurrency(tasks, n=30)
     for target_stock, competitors in zip(wanted_stocks, results):
-        stock_groups.append(
-            StockGroup(
-                name=f"{target_stock.company_name if target_stock.company_name else target_stock.symbol} Competitors",
-                stocks=competitors,
-                ref_stock=target_stock,
+        if competitors:
+            stock_groups.append(
+                StockGroup(
+                    name=f"{target_stock.company_name} Competitors",
+                    stocks=competitors,
+                    ref_stock=target_stock,
+                )
             )
-        )
+        if len(competitors) == 0:
+            await tool_log(f"No peers found for {target_stock.symbol}, excluding", context)
+        else:
+            await tool_log(f"Found {len(competitors)} peer(s) for {target_stock.symbol}", context)
+
     return StockGroups(
         header="Target Stocks", stock_list_header="Peer Stocks", stock_groups=stock_groups
     )

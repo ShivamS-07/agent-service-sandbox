@@ -42,8 +42,8 @@ logger = logging.getLogger(__name__)
 NO_CHANGE_STOCK_LIST_DIFF = "No significant changes to the list of stocks."
 NO_UPDATE_MESSAGE = "No new updates."
 
-ADDED_HEADER = "**Newly Added Stocks:**"
-REMOVED_HEADER = "**Removed Stocks:**"
+ADDED_HEADER = "**Newly Added Stocks:**\n"
+REMOVED_HEADER = "**Removed Stocks:**\n"
 
 
 class OutputDiff(BaseModel):

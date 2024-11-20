@@ -74,6 +74,7 @@ from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
+from agent_service.utils.string_utils import clean_to_json_if_needed
 
 random.seed(RANDOM_SEED)
 
@@ -413,7 +414,7 @@ async def check_text_diff(
         try:
             result = await llm.do_chat_w_sys_prompt(main_prompt, FILTER_UPDATE_CHECK_SYS.format())
             score_str, explanation, citation_str = result.strip().split("\n")
-            citation_list = json.loads(citation_str)
+            citation_list = json.loads(clean_to_json_if_needed(citation_str))
             new_score = int(score_str)
             if new_score == prev_score_int or explanation == "No change":
                 # just return the cache
