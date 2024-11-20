@@ -43,6 +43,8 @@ class AsyncPostgresBase(BoostedPG):
         environment: Optional[str] = None,
         min_pool_size: int = 1,
         max_pool_size: int = 8,
+        connection_timeout: float = 60.0,
+        max_idle_time: float = 600.0,
     ):
         """
         min/max_pool_size: int
@@ -53,6 +55,8 @@ class AsyncPostgresBase(BoostedPG):
         self._environment = environment  # TODO use this
         self.min_pool_size = min_pool_size
         self.max_pool_size = max_pool_size
+        self.connection_timeout = connection_timeout
+        self.max_idle_time = max_idle_time
         self._pool: Optional[AsyncConnectionPool] = None
 
     async def pool(self) -> AsyncConnectionPool:
@@ -87,6 +91,8 @@ class AsyncPostgresBase(BoostedPG):
                 max_size=self.max_pool_size,
                 check=psycopg_pool.AsyncConnectionPool.check_connection,
                 kwargs=connection_args,
+                timeout=self.connection_timeout,
+                max_idle=self.max_idle_time,
             )
             await pool.open()
             await pool.wait()
