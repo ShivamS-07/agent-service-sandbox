@@ -38,6 +38,7 @@ from stock_universe_service_proto_v1.custom_data_service_pb2 import (
     ListDocumentsResponse,
 )
 
+from agent_service.agent_quality_worker.jira_integration import JiraIntegration
 from agent_service.canned_prompts.canned_prompts import CANNED_PROMPTS
 from agent_service.chatbot.chatbot import Chatbot
 from agent_service.endpoints.authz_helper import User
@@ -56,6 +57,8 @@ from agent_service.endpoints.models import (
     CheckCustomDocumentUploadQuotaResponse,
     CreateAgentResponse,
     CreateCustomNotificationRequest,
+    CreateJiraTicketRequest,
+    CreateJiraTicketResponse,
     CreatePromptTemplateResponse,
     CustomDocumentSummaryChunk,
     CustomNotification,
@@ -103,6 +106,7 @@ from agent_service.endpoints.models import (
     GetVariableCoverageResponse,
     GetVariableHierarchyResponse,
     HorizonCriteria,
+    JiraTicketCriteria,
     ListCustomDocumentsResponse,
     ListMemoryItemsResponse,
     LockAgentOutputRequest,
@@ -296,6 +300,7 @@ class AgentServiceImpl:
         clickhouse_db: Clickhouse,
         slack_sender: SlackSender,
         base_url: str,
+        jira_integration: JiraIntegration,
         env: str = LOCAL_TAG,
         cache: Optional[CacheBackend] = None,
     ):
@@ -305,6 +310,7 @@ class AgentServiceImpl:
         self.slack_sender = slack_sender
         self.base_url = base_url
         self.cache = cache
+        self.jira_integration = jira_integration
         self.env = env
 
     async def create_agent(
@@ -2476,3 +2482,36 @@ class AgentServiceImpl:
             live_only=req.live_only, start_dt=req.start_dt, end_dt=req.end_dt
         )
         return GetLiveAgentsQCResponse(agent_infos=infos)
+
+    async def create_jira_ticket(
+        self, request: CreateJiraTicketRequest
+    ) -> CreateJiraTicketResponse:
+        # Prepare the ticket criteria
+        criteria = JiraTicketCriteria(
+            project_key=request.project_key,
+            summary=request.summary,
+            description=request.description,
+            issue_type=request.issue_type,
+            assignee=request.assignee,
+            priority=request.priority,  # Default priority
+            labels=request.labels,  # Default labels
+        )
+
+        # Add any additional fields specified in the request
+        if request.additional_fields:
+            # Update optional common fields dynamically
+            for field, value in request.additional_fields.items():
+                if hasattr(criteria, field) and value is not None:
+                    setattr(criteria, field, value)
+                else:
+                    # Treat as a custom field if it doesn't match a known field
+                    if criteria.custom_fields is None:
+                        criteria.custom_fields = {}
+                    criteria.custom_fields[field] = value
+        issue = self.jira_integration.create_ticket(criteria)
+        if issue:
+            return CreateJiraTicketResponse(
+                ticket_id=issue[0].get("key", ""), ticket_url=issue[0].get("self", ""), success=True
+            )
+
+        return CreateJiraTicketResponse(ticket_id="", ticket_url="", success=False)

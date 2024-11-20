@@ -164,6 +164,9 @@ HORIZON_USERS_DEV: Dict[str, HorizonUser] = {
     ),
 }
 
+
+JIRA_USER = "joey.huang@gradientboostedinvestments.com"
+JIRA_URL = "https://gradientboostedinvestments.atlassian.net"
 CS_REVIEWER_COLUMN = "cs_reviewer"
 ENG_REVIEWER_COLUMN = "eng_reviewer"
 PROD_REVIEWER_COLUMN = "prod_reviewer"

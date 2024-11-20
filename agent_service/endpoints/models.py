@@ -1421,3 +1421,43 @@ class AgentQCInfo(BaseModel):
 
 class GetLiveAgentsQCResponse(BaseModel):
     agent_infos: List[AgentQCInfo]
+
+
+# Request model for creating a Jira ticket
+class CreateJiraTicketRequest(BaseModel):
+    project_key: str
+    summary: str
+    description: str
+    priority: str
+    labels: List[str] = ["automation", "python"]
+    issue_type: Optional[str] = "Task"
+    assignee: Optional[str] = None
+    additional_fields: Optional[Dict[str, Any]] = None
+
+
+# Response model for the created Jira ticket
+class CreateJiraTicketResponse(BaseModel):
+    ticket_id: str
+    ticket_url: str
+    success: bool
+
+
+class JiraTicketCriteria(BaseModel):
+    project_key: str  # The key of the project in which to create the issue
+    summary: str  # A short summary of the issue
+    description: str  # Detailed description of the issue
+    issue_type: Optional[str] = "Task"  # Type of issue, e.g., Bug, Task, Story
+    assignee: Optional[str] = None  # Username of the user assigned to the issue
+    reporter: Optional[str] = None  # Username of the reporter of the issue
+    priority: Optional[str] = None  # Priority of the issue, e.g., High, Medium, Low
+    labels: Optional[List[str]] = None  # List of labels for the issue
+    components: Optional[List[str]] = None  # Components involved, e.g., Backend, UI
+    versions: Optional[List[str]] = None  # Versions affected by the issue
+    fix_versions: Optional[List[str]] = None  # Versions in which the issue is fixed
+    due_date: Optional[str] = None  # Due date in YYYY-MM-DD format
+    environment: Optional[str] = None  # Environment where the issue occurs
+    timetracking: Optional[Dict[str, str]] = None  # Time tracking info
+    epic_link: Optional[str] = None  # Epic to which this issue belongs (Agile projects)
+    sprint_id: Optional[int] = None  # ID of the sprint to link the issue to
+    story_points: Optional[float] = None  # Story points for Agile projects
+    custom_fields: Optional[Dict[str, Any]] = None  # Additional custom fields as key-value pairs

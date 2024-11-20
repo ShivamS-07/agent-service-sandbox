@@ -3,6 +3,7 @@ import datetime
 import logging
 from typing import Dict, List, Optional
 
+from agent_service.agent_quality_worker.jira_integration import JiraIntegration
 from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
@@ -78,6 +79,7 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
             clickhouse_db=Clickhouse(),
             slack_sender=SlackSender(channel="tommy-test"),
             base_url="agent-dev.boosted.ai",
+            jira_integration=JiraIntegration(),
         )
 
     @classmethod

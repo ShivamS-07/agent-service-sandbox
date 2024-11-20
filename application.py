@@ -28,6 +28,7 @@ from sse_starlette.sse import AsyncContentStream, EventSourceResponse, ServerSen
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from agent_service.agent_quality_worker.jira_integration import JiraIntegration
 from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.authz_helper import (
     User,
@@ -50,6 +51,8 @@ from agent_service.endpoints.models import (
     CreateAgentRequest,
     CreateAgentResponse,
     CreateCustomNotificationRequest,
+    CreateJiraTicketRequest,
+    CreateJiraTicketResponse,
     CreatePromptTemplateRequest,
     CreatePromptTemplateResponse,
     CreateSectionRequest,
@@ -241,6 +244,7 @@ async def lifespan(application: FastAPIExtended) -> AsyncGenerator:
         slack_sender=SlackSender(channel=channel),
         base_url=base_url,
         cache=cache,
+        jira_integration=JiraIntegration(),
         env=env,
     )
 
@@ -2169,6 +2173,30 @@ async def update_agent_qc(
 
     # Return the list of AgentQC records in the response model format
     return UpdateAgentQCResponse(success=res)
+
+
+@router.post(
+    "/jira/create-ticket",
+    response_model=CreateJiraTicketResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_jira_ticket(
+    request: CreateJiraTicketRequest, user: User = Depends(parse_header)
+) -> CreateJiraTicketResponse:
+    """Create a Jira ticket with the specified details.
+
+    Args:
+        request (CreateJiraTicketRequest): The details for the Jira ticket.
+        user (User): The authenticated user making the request.
+    """
+    # Validate user access to QC tool
+    if not user_has_qc_tool_access(user_id=user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
+        )
+
+    # Call the JiraIntegration to create a ticket
+    return await application.state.agent_service_impl.create_jira_ticket(request)
 
 
 initialize_unauthed_endpoints(application)
