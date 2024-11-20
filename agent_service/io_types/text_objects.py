@@ -406,3 +406,23 @@ def extract_text_objects_from_text(text: str) -> Tuple[str, List[TextObjUnion]]:
 
     new_text = "".join(new_text_list)
     return new_text, text_obj_list
+
+
+def extract_ordered_text_object_parts_from_text(text: str) -> List[str | TextObjUnion]:
+    """
+    Given a text with embedded text objects like:
+    ```{"type": "portfolio", "id": "aaa...", "label": "best portfolio"}```
+    Extract the text and text objects in an ordered list
+    """
+    text_list: List[str | TextObjUnion] = []
+    for part in re.split(TEXT_OBJECT_REGEX, text):
+        if part.startswith("{") and part.endswith("}"):
+            try:
+                obj_dict = json.loads(part)
+                text_obj = TextObjWrapper.model_validate({"obj": obj_dict}).obj
+                text_list.append(text_obj)
+            except Exception:
+                text_list.append(part)
+        else:
+            text_list.append(part)
+    return text_list

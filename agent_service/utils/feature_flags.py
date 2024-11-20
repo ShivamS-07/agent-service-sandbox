@@ -168,6 +168,14 @@ def user_has_qc_tool_access(user_id: str, default: bool = False) -> bool:
     )
 
 
+def user_has_variable_dashboard_access(user_id: str, default: bool = False) -> bool:
+    return get_ld_flag(
+        flag_name="internal-variable-dashboard",
+        user_context=get_user_context(user_id),
+        default=default,
+    )
+
+
 def use_boosted_dag_for_run_execution_plan() -> bool:
     return get_ld_flag(flag_name="boosted-dag-run-execution-plan", user_context=None, default=False)
 

@@ -935,6 +935,18 @@ class GetVariableHierarchyResponse(BaseModel):
     flat_nodes: List[VariableHierarchyNode]
 
 
+class ExperimentalGetFormulaDataRequest(BaseModel):
+    markdown_formula: str
+    gbi_ids: List[int]
+    from_date: datetime.date
+    to_date: datetime.date
+
+
+class ExperimentalGetFormulaDataResponse(BaseModel):
+    output: TableOutput
+    output_graph: GraphOutput
+
+
 ####################################################################################################
 # Custom Documents
 ####################################################################################################

@@ -21,9 +21,11 @@ from typing import (
 )
 from uuid import uuid4
 
+import pandas as pd
 import pandoc
 import sentry_sdk
 from fastapi import HTTPException, Request, UploadFile, status
+from gbi_common_py_utils.numpy_common.numpy_cube import NumpyCube
 from gbi_common_py_utils.utils.environment import (
     LOCAL_TAG,
     PROD_TAG,
@@ -72,6 +74,7 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationResponse,
     ExecutionPlanTemplate,
+    ExperimentalGetFormulaDataResponse,
     FindTemplatesRelatedToPromptResponse,
     GenPromptTemplateFromPlanResponse,
     GenTemplatePlanResponse,
@@ -171,6 +174,7 @@ from agent_service.external.feature_coverage_svc_client import (
     get_feature_coverage_client,
 )
 from agent_service.external.feature_svc_client import (
+    experimental_get_formula_data,
     get_all_variable_hierarchy,
     get_all_variables_metadata,
 )
@@ -182,14 +186,29 @@ from agent_service.external.user_svc_client import (
     update_user,
 )
 from agent_service.external.webserver import get_ordered_securities
-from agent_service.io_type_utils import get_clean_type_name, load_io_type
+from agent_service.io_type_utils import (
+    TableColumnType,
+    get_clean_type_name,
+    load_io_type,
+)
 from agent_service.io_types.citations import CitationDetailsType, CitationType
+from agent_service.io_types.stock import StockID
+from agent_service.io_types.table import (
+    STOCK_ID_COL_NAME_DEFAULT,
+    StockTable,
+    TableColumnMetadata,
+)
+from agent_service.io_types.text_objects import (
+    VariableTextObject,
+    extract_ordered_text_object_parts_from_text,
+)
 from agent_service.planner.action_decide import FirstActionDecider
 from agent_service.planner.constants import CHAT_DIFF_TEMPLATE, FirstAction
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, Variable
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.tool import ToolCategory, ToolRegistry
+from agent_service.tools.graphs import MakeLineGraphArgs, make_line_graph
 from agent_service.types import (
     ChatContext,
     MemoryType,
@@ -251,7 +270,10 @@ from agent_service.utils.scheduling import (
 )
 from agent_service.utils.sidebar_sections import SidebarSection, find_sidebar_section
 from agent_service.utils.task_executor import TaskExecutor
-from agent_service.utils.variable_explorer_utils import VariableExplorerException
+from agent_service.utils.variable_explorer_utils import (
+    VariableExplorerBadInputError,
+    VariableExplorerException,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -2006,6 +2028,91 @@ class AgentServiceImpl:
             )
         except GRPCError as e:
             raise VariableExplorerException.from_grpc_error(e) from e
+
+    async def experimental_get_formula_data_impl(
+        self,
+        user: User,
+        markdown_formula: str,
+        stock_ids: List[int],
+        from_date: datetime.date,
+        to_date: datetime.date,
+    ) -> ExperimentalGetFormulaDataResponse:
+        try:
+            formula_parts = extract_ordered_text_object_parts_from_text(markdown_formula)
+            formula = ""
+            for part in formula_parts:
+                if isinstance(part, str):
+                    # for non-markdown parts of the formula, add as-is
+                    formula += part
+                elif isinstance(part, VariableTextObject):
+                    # variables are specified in formulas as `variable_id`
+                    formula += f"`{part.id}`"
+                else:
+                    raise VariableExplorerException(
+                        message=f"{type(part)=} is not supported in formula evaluation.",
+                    )
+            LOGGER.info(f"Processing formula as: {formula}")
+            resp = await experimental_get_formula_data(
+                user_id=user.user_id,
+                formula=formula,
+                stock_ids=stock_ids,
+                from_date=from_date,
+                to_date=to_date,
+            )
+            np_cube = NumpyCube.initialize_from_proto_bytes(resp.security_data, cols_are_dates=True)
+            data = np_cube.np_data[np_cube.row_map[formula], :, :]
+            df = pd.DataFrame(
+                data,
+                index=np_cube.columns,
+                columns=[int(s) for s in np_cube.fields],
+            )
+            df = df.dropna(axis="index", how="all")
+            df.index.rename("Date", inplace=True)
+            df.reset_index(inplace=True)
+            df = df.melt(
+                id_vars=["Date"],
+                var_name=STOCK_ID_COL_NAME_DEFAULT,
+                value_name=formula,
+            )
+            df[STOCK_ID_COL_NAME_DEFAULT] = await StockID.from_gbi_id_list(
+                list(df[STOCK_ID_COL_NAME_DEFAULT])
+            )
+
+            # We now have a dataframe with only a few columns: Date, Stock ID, Statistic Name
+            df = df[df[formula].notna()]
+            stock_table = StockTable.from_df_and_cols(
+                data=df,
+                columns=[
+                    TableColumnMetadata(label="Date", col_type=TableColumnType.DATE),
+                    TableColumnMetadata(
+                        label=STOCK_ID_COL_NAME_DEFAULT, col_type=TableColumnType.STOCK
+                    ),
+                    TableColumnMetadata(
+                        label=formula,
+                        col_type=TableColumnType.FLOAT,
+                        unit=None,
+                        data_src=[formula],
+                    ),
+                ],
+            )
+            stock_graph = await make_line_graph(
+                MakeLineGraphArgs(input_table=stock_table),
+                PlanRunContext.get_dummy(user_id=user.user_id),
+            )
+            pg = self.pg.pg
+            output_table = await stock_table.to_rich_output(pg=pg)
+            output_graph = await stock_graph.to_rich_output(pg=pg)  # type: ignore
+            return ExperimentalGetFormulaDataResponse(
+                output=output_table,  # type: ignore
+                output_graph=output_graph,  # type: ignore
+            )
+        except GRPCError as e:
+            raise VariableExplorerException.from_grpc_error(e) from e
+        except VariableExplorerBadInputError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=e.message,
+            )
 
     async def get_variable_coverage(
         self,

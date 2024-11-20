@@ -21,3 +21,11 @@ class VariableExplorerException(Exception):
         )
         e.reason = error.status.name
         return e
+
+
+class VariableExplorerBadInputError(Exception):
+    message: str
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message

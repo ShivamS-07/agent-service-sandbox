@@ -27,6 +27,8 @@ from feature_service_proto_v1.feature_metadata_service_pb2 import (
 )
 from feature_service_proto_v1.feature_service_grpc import FeatureServiceStub
 from feature_service_proto_v1.feature_service_pb2 import (
+    ExperimentalGetFormulaDataRequest,
+    ExperimentalGetFormulaDataResponse,
     GetFeatureDataRequest,
     GetFeatureDataResponse,
     TimeAxis,
@@ -44,6 +46,8 @@ from gbi_common_py_utils.utils.environment import (
     get_environment_tag,
 )
 from google.protobuf.json_format import MessageToDict
+from grpclib import GRPCError
+from grpclib import Status as GrpcStatus
 from grpclib.client import Channel
 
 from agent_service.external.grpc_utils import (
@@ -56,6 +60,7 @@ from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTable, TableColumnMetadata
 from agent_service.utils.logs import async_perf_logger
+from agent_service.utils.variable_explorer_utils import VariableExplorerBadInputError
 
 logger = logging.getLogger(__name__)
 
@@ -431,3 +436,35 @@ def nc_swap_rows_fields(nc: NumpyCube) -> None:
 
     # reset some other numpycube internals based on the above
     nc.map_rows_and_columns_and_fields()
+
+
+##############################################################################
+# Experimental: variable formulas Please do not use in client facing code.
+##############################################################################
+@grpc_retry
+@async_perf_logger
+async def experimental_get_formula_data(
+    user_id: str,
+    formula: str,
+    stock_ids: List[int],
+    from_date: datetime.date,
+    to_date: datetime.date,
+) -> ExperimentalGetFormulaDataResponse:
+    with _get_service_stub() as stub:
+        req = ExperimentalGetFormulaDataRequest(
+            formula=formula,
+            gbi_ids=stock_ids,
+            from_time=date_to_timestamp(from_date),
+            to_time=date_to_timestamp(to_date),
+        )
+        try:
+            resp: ExperimentalGetFormulaDataResponse = await stub.ExperimentalGetFormulaData(
+                req,
+                metadata=get_default_grpc_metadata(user_id=user_id),
+            )
+        except GRPCError as e:
+            if e.status != GrpcStatus.INVALID_ARGUMENT:
+                raise
+            else:
+                raise VariableExplorerBadInputError(e.message or "Invalid formula input@")
+        return resp

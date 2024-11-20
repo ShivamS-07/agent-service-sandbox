@@ -73,6 +73,8 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationRequest,
     EnableAgentAutomationResponse,
+    ExperimentalGetFormulaDataRequest,
+    ExperimentalGetFormulaDataResponse,
     FindTemplatesRelatedToPromptRequest,
     FindTemplatesRelatedToPromptResponse,
     GenPromptTemplateFromPlanRequest,
@@ -189,6 +191,7 @@ from agent_service.utils.feature_flags import (
     agent_output_cache_enabled,
     is_user_agent_admin,
     user_has_qc_tool_access,
+    user_has_variable_dashboard_access,
 )
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import get_psql
@@ -1882,6 +1885,33 @@ async def get_variable_coverage(
     """
     return await application.state.agent_service_impl.get_variable_coverage(
         user=user, feature_ids=req.feature_ids, universe_id=req.universe_id
+    )
+
+
+@router.post(
+    "/data/variables/evaluate-formula",
+    response_model=ExperimentalGetFormulaDataResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def experimental_variable_evaluate_formula(
+    req: ExperimentalGetFormulaDataRequest,
+    user: User = Depends(parse_header),
+) -> ExperimentalGetFormulaDataResponse:
+    """
+    Gets a formatted output for an experimental variable formula mode.
+    """
+    has_access = user_has_variable_dashboard_access(user_id=user.user_id)
+    if not has_access:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized."
+        )
+
+    return await application.state.agent_service_impl.experimental_get_formula_data_impl(
+        user=user,
+        markdown_formula=req.markdown_formula,
+        stock_ids=req.gbi_ids,
+        from_date=req.from_date,
+        to_date=req.to_date,
     )
 
 
