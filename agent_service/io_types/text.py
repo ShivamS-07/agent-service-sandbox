@@ -428,12 +428,75 @@ class StockNewsDevelopmentText(NewsText, StockText):
         cls,
         news_topics: List[StockNewsDevelopmentText],
     ) -> Dict[TextIDType, str]:  # type: ignore
+        normal_news_topics = [
+            t
+            for t in news_topics
+            if t.only_get_articles_start is None or t.only_get_articles_end is None
+        ]
+        sql = """
+            SELECT topic_id::TEXT, topic_label, (topic_descriptions->-1->>0)::TEXT AS description
+            FROM nlp_service.stock_news_topics
+            WHERE topic_id = ANY(%(topic_ids)s)
+        """
+        from agent_service.utils.async_db import get_async_db
+
+        db = get_async_db()
+        rows = []
+        topic_ids = [t.id for t in normal_news_topics]
+        for idx in range(0, len(normal_news_topics), 3000):
+            rows += await db.generic_read(sql, {"topic_ids": topic_ids[idx : idx + 3000]})
+
+        if len(normal_news_topics) < len(news_topics):
+            topic_ids_set = set(topic_ids)
+            topic_ids_w_articles = [t.id for t in news_topics if t.id not in topic_ids_set]
+            start_dates_w_articles = [
+                t.only_get_articles_start for t in news_topics if t.id not in topic_ids_set
+            ]
+            end_dates_w_articles = [
+                t.only_get_articles_end for t in news_topics if t.id not in topic_ids_set
+            ]
+
+            article_sql = """
+                WITH date_ranges AS (
+                    SELECT
+                        UNNEST(%(topic_ids)s::UUID[])::UUID AS topic_id,
+                        UNNEST(%(news_start_dates)s::TIMESTAMP[])::TIMESTAMP AS news_start_date,
+                        UNNEST(%(news_end_dates)s::TIMESTAMP[])::TIMESTAMP AS news_end_date
+                )
+                SELECT DISTINCT ON (snt.topic_id)
+                    snt.topic_id::VARCHAR,
+                    COALESCE(sn.headline, snt.topic_label) AS topic_label,
+                    COALESCE(sn.summary, (topic_descriptions->-1->>0)::TEXT) AS description
+                FROM nlp_service.stock_news_topics snt
+                INNER JOIN date_ranges dr ON snt.topic_id = dr.topic_id
+                LEFT JOIN nlp_service.stock_news sn ON sn.topic_id = snt.topic_id
+                    AND sn.published_at BETWEEN dr.news_start_date AND dr.news_end_date
+                ORDER BY snt.topic_id, snt.topic_label, sn.headline, sn.summary,
+                    sn.is_top_source DESC, sn.published_at DESC
+            """
+            for idx in range(0, len(topic_ids_w_articles), 300):
+                rows += await db.generic_read(
+                    article_sql,
+                    {
+                        "topic_ids": topic_ids_w_articles[idx : idx + 300],
+                        "news_start_dates": start_dates_w_articles[idx : idx + 300],
+                        "news_end_dates": end_dates_w_articles[idx : idx + 300],
+                    },
+                )
+
+        return {row["topic_id"]: f"{row['topic_label']}: {row['description']}" for row in rows}
+
+    @classmethod
+    async def _get_strs_lookup_old(
+        cls,
+        news_topics: List[StockNewsDevelopmentText],
+    ) -> Dict[TextIDType, str]:  # type: ignore
         news_topics_articles_only = {
             topic.id: (topic.only_get_articles_start, topic.only_get_articles_end)
             for topic in news_topics
             if topic.only_get_articles_start and topic.only_get_articles_end
         }
-        news_topics = [topic for topic in news_topics if not topic.only_get_articles_start]
+        news_topics = [topic for topic in news_topics if topic.id not in news_topics_articles_only]
         article_sql = """
         SELECT snt.topic_id::TEXT, (topic_descriptions->-1->>0)::TEXT AS description,
                snt.topic_label,

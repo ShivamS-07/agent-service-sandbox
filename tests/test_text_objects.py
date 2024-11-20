@@ -1,5 +1,6 @@
 # flake8: noqa
 import datetime
+import time
 import unittest
 from typing import List
 
@@ -7,7 +8,7 @@ from parameterized import param, parameterized
 
 from agent_service.io_type_utils import HistoryEntry, TableColumnType
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.text import Text
+from agent_service.io_types.text import StockNewsDevelopmentText, Text
 from agent_service.io_types.text_objects import (
     CitationTextObject,
     PortfolioTextObject,
@@ -280,3 +281,57 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
         actual_result, actual_objects = extract_text_objects_from_text(text)
         self.assertEqual(actual_result, expected_result)
         self.assertEqual(actual_objects, expected_text_objects)
+
+    @unittest.skip("Unskip to test locally")
+    async def test_get_strs_lookup_for_news_development(self):
+        news_topics = [
+            # MUST HAVE news
+            StockNewsDevelopmentText(
+                id="e4bc6d94-7c7f-4899-98f7-48e0eb02ae38",
+                only_get_articles_start=datetime.datetime(1900, 1, 1, tzinfo=datetime.timezone.utc),
+                only_get_articles_end=datetime.datetime(2050, 1, 31, tzinfo=datetime.timezone.utc),
+            ),
+            StockNewsDevelopmentText(
+                id="e5e23778-907b-48f5-8958-e255b08d5c3b",
+                only_get_articles_start=datetime.datetime(1900, 1, 1, tzinfo=datetime.timezone.utc),
+                only_get_articles_end=datetime.datetime(2050, 1, 31, tzinfo=datetime.timezone.utc),
+            ),
+            # None case
+            StockNewsDevelopmentText(
+                id="dfc9292a-3afd-40d2-8621-53fd323cec75",
+                only_get_articles_start=None,
+                only_get_articles_end=datetime.datetime(2050, 1, 31, tzinfo=datetime.timezone.utc),
+            ),
+            StockNewsDevelopmentText(
+                id="5cd90e65-8a27-4eca-9c24-1235a1e17836",
+                only_get_articles_start=datetime.datetime(1900, 1, 1, tzinfo=datetime.timezone.utc),
+                only_get_articles_end=None,
+            ),
+            StockNewsDevelopmentText(
+                id="a7d8c951-affd-4f08-99ad-ba0209176809",
+                only_get_articles_start=None,
+                only_get_articles_end=None,
+            ),
+            # No news
+            StockNewsDevelopmentText(
+                id="ae69db76-7bd9-45c4-89eb-1505511527a2",
+                only_get_articles_start=datetime.datetime(2050, 1, 1, tzinfo=datetime.timezone.utc),
+                only_get_articles_end=datetime.datetime(2050, 1, 31, tzinfo=datetime.timezone.utc),
+            ),
+            StockNewsDevelopmentText(
+                id="df412278-17f1-47c3-a523-88d4759e7e9c",
+                only_get_articles_start=datetime.datetime(1900, 1, 1, tzinfo=datetime.timezone.utc),
+                only_get_articles_end=datetime.datetime(1900, 1, 31, tzinfo=datetime.timezone.utc),
+            ),
+        ]
+
+        start = time.perf_counter()
+        res = await StockNewsDevelopmentText._get_strs_lookup(news_topics)
+        end = time.perf_counter()
+        print(f"Faster query time taken: {end - start:.2f} seconds")
+
+        res_slow = await StockNewsDevelopmentText._get_strs_lookup_old(news_topics)
+        end = time.perf_counter()
+        print(f"Slower query time taken: {end - start:.2f} seconds")
+
+        self.assertDictEqual(res, res_slow)
