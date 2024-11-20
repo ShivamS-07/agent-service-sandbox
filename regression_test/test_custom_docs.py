@@ -132,3 +132,59 @@ class TestCustomDocuments(TestExecutionPlanner):
             ],
             validate_tool_args=validate_tool_args,
         )
+
+    @skip_in_ci
+    def test_custom_documents_by_filename_and_id(self) -> None:
+        # Test that given both chipped and unchipped references to custom docs, the planner sends in all the
+        # correct files to the tool, which is the file id where applicable, and the file names otherwise.
+        prompt = (
+            "Summarize these custom docs:\n"
+            # Unchipped 1
+            "20230808_Wells_Fargo_TAP_TAP-_Peak_Debate_Forms (1).pdf and\n"
+            # Chipped 1
+            '```{"type": "custom_document", "id": "4400ab29-882b-4a36-b3b6-629a12314493", "label": "ARK Invest_Presentation_Big Ideas 2023_FINAL_V2 (2).pdf"}``` and\n'  # noqa
+            # Unchipped 2
+            "HRB Sellside Notes-part-8.pdf and \n"
+            # Chipped 2
+            '"{HRB Sellside Notes-part-5.pdf}" (Custom document ID: 4a24f3f1-f1dc-46ce-a655-6d5fd266a666)'
+            "Give me the output in bullet form"
+        )
+
+        def validate_output(prompt: str, output: IOType) -> None:
+            output_text = get_output(output=output)
+            self.assertIsInstance(output_text, Text)
+            self.assertGreater(len(output_text.val), 0)
+
+        def validate_tool_args(execution_log: DefaultDict[str, List[dict]]) -> None:
+            tool_name = "get_user_custom_documents_by_filename"
+
+            args = execution_log[tool_name][0]
+            actual_file_names = set(args["file_names"])
+            actual_file_ids = set(args["file_ids"])
+
+            # Validate that the tool got all the inputs file NAMES and IDs
+            expected_file_names = {
+                "20230808_Wells_Fargo_TAP_TAP-_Peak_Debate_Forms (1).pdf",
+                "HRB Sellside Notes-part-8.pdf",
+            }
+            self.assertSetEqual(
+                actual_file_names,
+                expected_file_names,
+            )
+            expected_file_ids = {
+                "4400ab29-882b-4a36-b3b6-629a12314493",
+                "4a24f3f1-f1dc-46ce-a655-6d5fd266a666",
+            }
+            self.assertSetEqual(
+                actual_file_ids,
+                expected_file_ids,
+            )
+
+        self.prompt_test(
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=[
+                "get_user_custom_documents_by_filename",
+            ],
+            validate_tool_args=validate_tool_args,
+        )

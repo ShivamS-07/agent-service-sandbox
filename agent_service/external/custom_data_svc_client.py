@@ -22,6 +22,8 @@ from stock_universe_service_proto_v1.custom_data_service_pb2 import (
     DeleteListingsResponse,
     GetCitationContextRequest,
     GetCitationContextResponse,
+    GetDocsByFileIdsRequest,
+    GetDocsByFileIdsResponse,
     GetDocsByFileNamesRequest,
     GetDocsByFileNamesResponse,
     GetDocsBySecurityRequest,
@@ -151,6 +153,24 @@ async def get_custom_docs_by_file_names(
             version="v2",
         )
         resp: GetDocsByFileNamesResponse = await stub.GetDocsByFileNames(
+            req,
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
+        return resp
+
+
+@grpc_retry
+@async_perf_logger
+async def get_custom_docs_by_file_ids(
+    user_id: str,
+    file_ids: List[str],
+) -> GetDocsByFileIdsResponse:
+    with _get_service_stub() as stub:
+        req = GetDocsByFileIdsRequest(
+            file_ids=file_ids,
+            version="v2",
+        )
+        resp: GetDocsByFileIdsResponse = await stub.GetDocsByFileIds(
             req,
             metadata=get_default_grpc_metadata(user_id=user_id),
         )

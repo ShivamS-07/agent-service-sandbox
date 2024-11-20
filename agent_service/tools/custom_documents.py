@@ -1,7 +1,12 @@
 from collections import defaultdict
 from typing import List, Optional
 
+from stock_universe_service_proto_v1.custom_data_service_pb2 import (
+    CustomDocumentSummary,
+)
+
 from agent_service.external.custom_data_svc_client import (
+    get_custom_docs_by_file_ids,
     get_custom_docs_by_file_names,
     get_custom_docs_by_security,
     get_custom_docs_by_topic,
@@ -173,23 +178,31 @@ async def get_user_custom_documents_by_topic(
 
 class GetCustomDocsByFileInput(ToolArgs):
     file_names: List[str]
+    file_ids: Optional[List[str]] = None
 
 
 @tool(
     description=(
-        "This function takes in a list of file names and returns all uploaded document"
-        " summaries associated with the exact file name. A file name can be any quoted string"
-        " that is specifically used in the context of identifying a file that the user"
-        " is interested in. File names usually end in an extension like '.pdf' or '.docx'."
-        " Make sure to never truncate or otherwise modify the file name - we will only match "
-        " exact file names from the user."
-        " If someone explicitly specifies a document name in the context of custom"
-        " documents or uploaded documents, this is the best tool to use."
-        " Do not use this tool if the user has not"
-        " specifically asked for custom documents or uploaded documents."
-        " Do not use this tool under any circumstances with an empty list of file names."
-        " Do not use the output of this function for in a stock filter function, the documents"
-        " do not contain information about associated stocks."
+        "This function returns uploaded document summaries given a list of file names "
+        "and optionally file IDs. File names represent the specific files of interest, "
+        "usually ending with extensions such as '.pdf' or '.docx'. File IDs are unique "
+        "identifiers for files and should be included in addition to file names ONLY if a document's ID is "
+        "explicitly mentioned in the user input! In such cases, you still MUST call this function to resolve "
+        "the file name and file ID to document summaries. For example, a user might specify a document "
+        "in the format: `'My file.pdf' (Custom document ID: <some ID>)`. When both file names and "
+        "file IDs are provided, this function will prioritize using the file IDs and then retrieve "
+        "any remaining documents using the file names."
+        "It MUST be used when the client mentions any 'custom documents' or 'uploaded documents' "
+        "in their request. This function will try to match the given file names and file IDs "
+        "with the uploaded documents associated with the client."
+        "Important Notes:"
+        " - You MUST include file names in the input, as file IDs alone are not sufficient."
+        " - File IDs should be provided alongside file names ONLY if explicitly mentioned "
+        "in the user's input."
+        " - The function returns only exact matches for file names or file IDs. Do not "
+        "truncate, modify, or preprocess the input values."
+        " - This function is not to be used for filtering documents by stocks, as the returned "
+        "documents do not contain stock-related information."
     ),
     category=ToolCategory.TEXT,
     tool_registry=ToolRegistry,
@@ -200,31 +213,56 @@ async def get_user_custom_documents_by_filename(
     """
     NOTE: for the initial version, we are looking for something quick and dirty.
     i.e. no integration with the portfolio picker as of now - just give it our best shot
-    to parse out the file name as a string and do some basic matching.
-    """
-    file_names = args.file_names
-    if len(file_names) == 0:
-        raise ValueError("No file names provided to query by custom doc name tool.")
+    to parse out the file name or file IDs and do some basic matching.
 
-    custom_doc_summaries = await get_custom_docs_by_file_names(
-        context.user_id,
-        file_names=file_names,
-    )
+    The logic here is to first grab the custom docs using the file IDs we have,
+    then grab the remaining custom docs with any unmatched file names.
+    """
+    file_names = set(args.file_names)
+    file_ids = args.file_ids if args.file_ids else []
+
+    if len(file_names) == 0 and len(file_ids) == 0:
+        raise ValueError("No file names/IDs provided to query by custom doc tool.")
+
+    # First priority - custom docs given their IDs
+    custom_docs_by_id: List[CustomDocumentSummary] = []
+    if file_ids:
+        by_id_resp = await get_custom_docs_by_file_ids(
+            context.user_id,
+            file_ids=file_ids,
+        )
+        custom_docs_by_id = list(by_id_resp.documents)
+
+    # Grab any remaining docs not specified by ID
+    fetched_file_names = {doc.file_name for doc in custom_docs_by_id if doc.file_name}
+    remaining_file_names = file_names - fetched_file_names
+
+    custom_docs_by_name: List[CustomDocumentSummary] = []
+    if remaining_file_names:
+        by_name_resp = await get_custom_docs_by_file_names(
+            context.user_id,
+            file_names=list(remaining_file_names),
+        )
+        custom_docs_by_name = list(by_name_resp.documents)
+
+    combined_docs = custom_docs_by_id + custom_docs_by_name
 
     # fill worklog by document name
-    docs_for_file_name = defaultdict(list)
-    for doc in custom_doc_summaries.documents:
-        docs_for_file_name[doc.file_name].append(doc)
+    docs_for_file = defaultdict(list)
+    for doc in combined_docs:
+        docs_for_file[doc.file_name].append(doc)
+
     for file in file_names:
-        num_chunks = len(docs_for_file_name.get(file, []))
+        num_chunks = len(docs_for_file.get(file, []))
         await tool_log(
             log=f'Got {num_chunks} document chunks for file: "{file}"',
             context=context,
         )
 
-    # get stocks and return the output format
-    cids = [document.spiq_company_id for document in custom_doc_summaries.documents]
+    # Get stocks and return the output format
+    cids = [document.spiq_company_id for document in combined_docs]
     cid_to_stock = await get_stock_ids_from_company_ids(context, cids)
+
     output: List[CustomDocumentSummaryText] = [
         CustomDocumentSummaryText(
             requesting_user=context.user_id,
@@ -232,8 +270,9 @@ async def get_user_custom_documents_by_filename(
             id=document.article_id,
             timestamp=timestamp_to_datetime(document.publication_time),
         )
-        for document in custom_doc_summaries.documents
+        for document in combined_docs
     ]
+
     if len(output) == 0:
-        raise EmptyOutputError(f"No user uploaded documents found for {file_names}.")
+        raise EmptyOutputError(f"No user uploaded documents found for {file_names} or {file_ids}.")
     return output

@@ -33,6 +33,7 @@ class TextObjectType(enum.StrEnum):
     WATCHLIST = "watchlist"
     PORTFOLIO = "portfolio"
     VARIABLE = "variable"
+    CUSTOM_DOCUMENT = "custom_document"
 
 
 @io_type
@@ -350,6 +351,16 @@ class VariableTextObject(TextObject):
 
     def format_for_gpt(self) -> str:
         return f'"{self.label}"'
+
+
+@io_type
+class CustomDocumentTextObject(TextObject):
+    type: Literal[TextObjectType.CUSTOM_DOCUMENT] = TextObjectType.CUSTOM_DOCUMENT
+    id: str
+    label: Optional[str] = None
+
+    def format_for_gpt(self) -> str:
+        return f'"{self.label}" (Custom document ID: {self.id})'
 
 
 @io_type

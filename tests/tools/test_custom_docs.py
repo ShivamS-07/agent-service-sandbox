@@ -59,3 +59,11 @@ class TestCustomDocuments(IsolatedAsyncioTestCase):
         )
         all_data = await get_user_custom_documents_by_filename(input, self.context)
         self.assertGreater(len(all_data), 0)
+
+    async def test_get_custom_doc_by_file_id(self):
+        input = GetCustomDocsByFileInput(
+            file_names=["20230808_Wells_Fargo_TAP_TAP-_Peak_Debate_Forms (1).pdf"],
+            file_ids=["c5f5f549-d0d2-4823-91c4-e703bf3c8079"],
+        )
+        all_data = await get_user_custom_documents_by_filename(input, self.context)
+        self.assertGreater(len(all_data), 0)
