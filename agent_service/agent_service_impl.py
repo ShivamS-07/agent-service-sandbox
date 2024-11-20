@@ -1296,15 +1296,25 @@ class AgentServiceImpl:
 
         return ListMemoryItemsResponse(success=True, items=memory_items)
 
-    async def get_autocomplete_items(self, user_id: str, text: str) -> GetAutocompleteItemsResponse:
-        # Use PA Service to get all portfolios + watchlists for the user in parallel
-        workspaces, resp = await asyncio.gather(
-            get_all_workspaces(user_id=user_id), get_all_watchlists(user_id=user_id)
-        )
-        watchlists = resp.watchlists
-
-        text_lower = text.lower()
+    async def get_autocomplete_items(
+        self, user_id: str, text: str, memory_type: Optional[MemoryType] = None
+    ) -> GetAutocompleteItemsResponse:
+        workspaces = []
         memory_items = []
+        watchlists = None
+        text_lower = text.lower()
+
+        if memory_type == MemoryType.PORTFOLIO:
+            workspaces = await get_all_workspaces(user_id=user_id)
+        elif memory_type == MemoryType.WATCHLIST:
+            resp = await get_all_watchlists(user_id=user_id)
+            watchlists = resp.watchlists
+        else:
+            # Use PA Service to get portfolios + watchlists for the user in parallel
+            workspaces, resp = await asyncio.gather(
+                get_all_workspaces(user_id=user_id), get_all_watchlists(user_id=user_id)
+            )
+            watchlists = resp.watchlists
 
         # Process workspaces
         for workspace in workspaces:
@@ -1319,16 +1329,17 @@ class AgentServiceImpl:
                 memory_items.append(memory_item)
 
         # Process watchlists
-        for watchlist in watchlists:
-            if text_lower in watchlist.name.lower():
-                memory_item = MemoryItem(
-                    id=watchlist.watchlist_id.id,
-                    name=watchlist.name,
-                    type=MemoryType.WATCHLIST,
-                    time_created=watchlist.created_at.ToDatetime(),
-                    time_updated=watchlist.last_updated.ToDatetime(),
-                )
-                memory_items.append(memory_item)
+        if watchlists:
+            for watchlist in watchlists:
+                if text_lower in watchlist.name.lower():
+                    memory_item = MemoryItem(
+                        id=watchlist.watchlist_id.id,
+                        name=watchlist.name,
+                        type=MemoryType.WATCHLIST,
+                        time_created=watchlist.created_at.ToDatetime(),
+                        time_updated=watchlist.last_updated.ToDatetime(),
+                    )
+                    memory_items.append(memory_item)
 
         return GetAutocompleteItemsResponse(success=True, items=memory_items)
 

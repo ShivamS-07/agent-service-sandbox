@@ -1367,7 +1367,7 @@ async def get_autocomplete_items(
     Gets autocomplete items
     """
     return await application.state.agent_service_impl.get_autocomplete_items(
-        user_id=user.user_id, text=req.text
+        user_id=user.user_id, text=req.text, memory_type=req.memory_type
     )
 
 

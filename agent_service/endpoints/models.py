@@ -9,7 +9,7 @@ from agent_service.io_types.graph import GraphOutput
 from agent_service.io_types.table import TableOutput
 from agent_service.io_types.text import TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
-from agent_service.types import Message
+from agent_service.types import MemoryType, Message
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.prompt_template import (
     OutputPreview,
@@ -856,6 +856,7 @@ class ListMemoryItemsResponse(BaseModel):
 
 class GetAutocompleteItemsRequest(BaseModel):
     text: str
+    memory_type: Optional[MemoryType] = None
 
 
 class GetAutocompleteItemsResponse(BaseModel):
