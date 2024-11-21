@@ -11,7 +11,7 @@ from agent_service.utils.event_logging import log_event
 
 
 async def get_user_info_slack_string(pg: AsyncDB, user_id: str) -> Tuple[str, str]:
-    user_info = await get_user_cached(user_id=user_id)
+    user_info = await get_user_cached(user_id=user_id, async_db=pg)
     if not user_info:
         raise ValueError(f"User not found: {user_id}")
 

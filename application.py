@@ -1645,7 +1645,15 @@ async def get_team_accounts(user: User = Depends(parse_header)) -> GetTeamAccoun
 async def get_user_has_access(
     request: Request, user: User = Depends(parse_header)
 ) -> UserHasAccessResponse:
-    is_admin = user.is_admin or user.is_super_admin or (await is_user_agent_admin(user.user_id))
+    is_admin = (
+        user.is_admin
+        or user.is_super_admin
+        or (
+            await is_user_agent_admin(
+                user.user_id, async_db=application.state.agent_service_impl.pg
+            )
+        )
+    )
 
     if not is_admin:
         has_access = await application.state.agent_service_impl.get_user_has_alfa_access(user=user)
@@ -1659,7 +1667,11 @@ async def get_user_has_access(
     if request.headers.get("realuserid") == user.user_id and await is_user_first_login(
         user_id=user.user_id
     ):
-        run_async_background(send_welcome_email(user_id=user.user_id))
+        run_async_background(
+            send_welcome_email(
+                user_id=user.user_id, async_db=application.state.agent_service_impl.pg
+            )
+        )
 
     return UserHasAccessResponse(success=True)
 
@@ -1904,7 +1916,10 @@ async def find_templates_related_to_prompt(
     return await application.state.agent_service_impl.find_templates_related_to_prompt(
         query=req.query,
         user=user,
-        is_user_admin=user.is_super_admin or await is_user_agent_admin(user.user_id),
+        is_user_admin=user.is_super_admin
+        or await is_user_agent_admin(
+            user.user_id, async_db=application.state.agent_service_impl.pg
+        ),
     )
 
 
@@ -1996,7 +2011,9 @@ async def experimental_variable_evaluate_formula(
     """
     Gets a formatted output for an experimental variable formula mode.
     """
-    has_access = user_has_variable_dashboard_access(user_id=user.user_id)
+    has_access = await user_has_variable_dashboard_access(
+        user_id=user.user_id, async_db=application.state.agent_service_impl.pg
+    )
     if not has_access:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized."
@@ -2380,7 +2397,9 @@ async def create_jira_ticket(
         user (User): The authenticated user making the request.
     """
     # Validate user access to QC tool
-    if not user_has_qc_tool_access(user_id=user.user_id):
+    if not await user_has_qc_tool_access(
+        user_id=user.user_id, async_db=application.state.agent_service_impl.pg
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
         )

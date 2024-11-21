@@ -449,8 +449,8 @@ async def send_agent_emails(
         queue.send_message(MessageBody=detailed_message.model_dump_json())
 
 
-async def send_welcome_email(user_id: str) -> None:
-    user = cast(User, await get_user_cached(user_id=user_id))
+async def send_welcome_email(user_id: str, async_db: AsyncDB | None = None) -> None:
+    user = cast(User, await get_user_cached(user_id=user_id, async_db=async_db))
 
     # This is HubSpot ID for the welcome email we're sending
     WELCOME_EMAIL_ID = 181851687081

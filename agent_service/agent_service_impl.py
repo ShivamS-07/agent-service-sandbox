@@ -639,7 +639,7 @@ class AgentServiceImpl:
 
     async def get_valid_notification_users(self, user_id: str) -> List[Account]:
         # first we get all the teams that the user is a part of
-        user = await get_user_cached(user_id)
+        user = await get_user_cached(user_id, async_db=self.pg)
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
@@ -1148,7 +1148,7 @@ class AgentServiceImpl:
 
         # Now automatically subscribe the agent owner to email notification
         # get the email for the user
-        user = await get_user_cached(user_id)
+        user = await get_user_cached(user_id, async_db=self.pg)
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
@@ -1882,7 +1882,7 @@ class AgentServiceImpl:
 
     async def get_users_info(self, user: User, user_ids: List[str]) -> List[Account]:
         if len(user_ids) == 1 and user_ids[0] == user.user_id:
-            cached_user = await get_user_cached(user.user_id)
+            cached_user = await get_user_cached(user.user_id, async_db=self.pg)
             if not cached_user:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -1890,7 +1890,9 @@ class AgentServiceImpl:
                 )
             users = [cached_user]
         else:
-            users = await get_users(user.user_id, user_ids, include_user_enabled=True)
+            users = await get_users(
+                user.user_id, user_ids, include_user_enabled=True, async_db=self.pg
+            )
             if not users:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Users not found")
 
@@ -1906,7 +1908,7 @@ class AgentServiceImpl:
         ]
 
     async def get_account_info(self, user: User) -> Account:
-        cached_user = await get_user_cached(user.user_id)
+        cached_user = await get_user_cached(user.user_id, async_db=self.pg)
         if not cached_user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -2575,7 +2577,7 @@ class AgentServiceImpl:
 
     async def get_user_has_alfa_access(self, user: User) -> bool:
         with sentry_sdk.start_span(op="get_user_cached", description="get_user_cached"):
-            cached_user = await get_user_cached(user_id=user.user_id)
+            cached_user = await get_user_cached(user_id=user.user_id, async_db=self.pg)
             if not cached_user:
                 return False
 

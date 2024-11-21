@@ -219,11 +219,14 @@ async def user_has_qc_tool_access(
     )
 
 
-def user_has_variable_dashboard_access(user_id: str, default: bool = False) -> bool:
-    return get_ld_flag(
+async def user_has_variable_dashboard_access(
+    user_id: str, default: bool = False, async_db: AsyncDB | None = None
+) -> bool:
+    return await get_ld_flag_async(
         flag_name="internal-variable-dashboard",
-        user_context=get_user_context(user_id),
+        user_id=user_id,
         default=default,
+        async_db=async_db,
     )
 
 

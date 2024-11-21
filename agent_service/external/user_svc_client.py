@@ -24,6 +24,7 @@ from user_service_proto_v1.user_service_pb2 import (
 from user_service_proto_v1.well_known_types_pb2 import UUID
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
+from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.cache_utils import InMemoryCacheBackend, RedisCacheBackend
 from agent_service.utils.feature_flags import is_user_agent_admin
@@ -71,11 +72,16 @@ def _get_service_stub() -> Generator[UserServiceStub, None, None]:
 ####################################################################################################
 @grpc_retry
 @async_perf_logger
-async def get_users(user_id: str, user_ids: List[str], include_user_enabled: bool) -> List[User]:
+async def get_users(
+    user_id: str, user_ids: List[str], include_user_enabled: bool, async_db: AsyncDB | None = None
+) -> List[User]:
     with _get_service_stub() as stub:
         metadata = [
             *get_default_grpc_metadata(user_id=user_id),
-            ("is-warren-agent-admin", "True" if await is_user_agent_admin(user_id) else "False"),
+            (
+                "is-warren-agent-admin",
+                "True" if await is_user_agent_admin(user_id, async_db=async_db) else "False",
+            ),
         ]
         res = await stub.GetUsers(
             GetUsersRequest(
@@ -116,7 +122,7 @@ USER_CACHE = InMemoryCacheBackend(maxsize=256, ttl=3600)
 
 
 @async_perf_logger
-async def get_user_cached(user_id: str) -> Optional[User]:
+async def get_user_cached(user_id: str, async_db: AsyncDB | None = None) -> Optional[User]:
     """
     Get user's information from cache if available, otherwise fetch from user service and cache it.
     NOTE that we only cache the user when they have access to Alfa.
@@ -129,7 +135,9 @@ async def get_user_cached(user_id: str) -> Optional[User]:
 
     redis_cache = get_redis_cache_for_user()
     if not redis_cache:
-        users = await get_users(user_id, user_ids=[user_id], include_user_enabled=True)
+        users = await get_users(
+            user_id, user_ids=[user_id], include_user_enabled=True, async_db=async_db
+        )
 
         user = users[0] if users else None
         if isinstance(user, User):
@@ -147,7 +155,9 @@ async def get_user_cached(user_id: str) -> Optional[User]:
     with sentry_sdk.start_span(
         op="user_service.get_users", description="Get user from User Service"
     ):
-        users = await get_users(user_id, user_ids=[user_id], include_user_enabled=True)
+        users = await get_users(
+            user_id, user_ids=[user_id], include_user_enabled=True, async_db=async_db
+        )
         if not users:
             return None
 
