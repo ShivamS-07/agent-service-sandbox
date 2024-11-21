@@ -73,6 +73,7 @@ async def log_tool_call_event(context: PlanRunContext, event_data: Dict[str, Any
     from agent_service.utils.async_db import AsyncDB, SyncBoostedPG
 
     async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
+    event_data["replay_id"] = str(uuid.uuid4())
     log_event(event_data=event_data, event_name="agent-service-tool-call")
     if context.skip_db_commit:
         return
@@ -93,7 +94,7 @@ async def log_tool_call_event(context: PlanRunContext, event_data: Dict[str, Any
                 error_msg=event_data.get("error_msg"),
                 start_time_utc=start_time_utc,
                 end_time_utc=end_time_utc,
-                replay_id=str(uuid.uuid4()),
+                replay_id=event_data["replay_id"],
             )
     except Exception:
         logger.exception("Failed to store tool call in agent.task_run_info table!")

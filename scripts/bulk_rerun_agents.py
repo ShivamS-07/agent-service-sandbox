@@ -3,7 +3,7 @@ import datetime
 import json
 import time
 from pprint import pprint
-from typing import Any
+from typing import Any, Optional
 
 import boto3
 from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
@@ -86,16 +86,32 @@ def get_plan_runs_most_recent_errored(pg: Postgres) -> list[AgentPlanRun]:
 
 def get_plan_runs_by_id(plan_run_ids: list[str], pg: Postgres) -> list[AgentPlanRun]:
     sql = """
-    SELECT agent_id::TEXT, plan_run_id::TEXT, message
+    SELECT DISTINCT ON (plan_run_id) agent_id::TEXT, plan_run_id::TEXT, message
     FROM boosted_dag.audit_log
     WHERE plan_run_id = ANY(%(plan_run_ids)s)
+    ORDER BY plan_run_id, started_at DESC
     """
     rows = pg.generic_read(sql, {"plan_run_ids": plan_run_ids})
     return [AgentPlanRun(**row) for row in rows]
 
 
+def get_most_recent_plan_runs_by_agent_id(agent_ids: list[str], pg: Postgres) -> list[AgentPlanRun]:
+    sql = """
+    SELECT DISTINCT ON (agent_id, plan_run_id) agent_id::TEXT, plan_run_id::TEXT, message
+    FROM boosted_dag.audit_log
+    WHERE agent_id = ANY(%(agent_ids)s)
+    ORDER BY agent_id, plan_run_id, started_at DESC
+    """
+    rows = pg.generic_read(sql, {"agent_id": agent_ids})
+    return [AgentPlanRun(**row) for row in rows]
+
+
 def replay_plan_runs(
-    runs: list[AgentPlanRun], queue: str, pg: Postgres, dry_run: bool = False
+    runs: list[AgentPlanRun],
+    queue: str,
+    pg: Postgres,
+    dry_run: bool = False,
+    version: Optional[str] = None,
 ) -> None:
     sqs = boto3.resource("sqs", region_name="us-west-2")
     print(f"Using SQS queue: '{queue}'\n")
@@ -106,6 +122,8 @@ def replay_plan_runs(
         message = json.loads(run.message)
         if "retry_id" in message:
             del message["retry_id"]
+        if version:
+            message["service_versions"] = {"agent_service_version": version}
         if dry_run:
             print("Would have sent:")
             pprint(message)
@@ -120,9 +138,16 @@ def replay_plan_runs(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--plan-run-ids", nargs="+", default=[])
-    parser.add_argument("-d", "--dry-run", action="store_true", default=False)
     parser.add_argument(
         "-a",
+        "--agent-ids",
+        nargs="+",
+        default=[],
+        help="Will rerun the most recent runs for these agent ID's.",
+    )
+    parser.add_argument("-d", "--dry-run", action="store_true", default=False)
+    parser.add_argument(
+        "-e",
         "--all-errored",
         action="store_true",
         default=False,
@@ -133,6 +158,12 @@ def parse_args() -> argparse.Namespace:
         "--retry-stuck-minutes",
         type=int,
         help="If set, will cancel and retry all LIVE plan runs stuck for more than the specified number of minutes",
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        type=str,
+        help="If set, will use the specified version when rerunning",
     )
     return parser.parse_args()
 
@@ -159,6 +190,10 @@ def main() -> None:
     if args.plan_run_ids:
         print(f"Fetching data for {len(args.plan_run_ids)} manually specified plan runs")
         runs.update(get_plan_runs_by_id(plan_run_ids=args.plan_run_ids, pg=pg))
+    if args.agent_ids:
+        res = get_most_recent_plan_runs_by_agent_id(agent_ids=args.agent_ids, pg=pg)
+        print(f"Found {len(res)} most recent runs for agents to rerun: {res}")
+        runs.update(res)
 
     if not runs:
         print("No runs found! Exiting.")
@@ -166,7 +201,7 @@ def main() -> None:
     print("\n#############################")
     print("Starting Reruns!!")
     print("#############################\n")
-    replay_plan_runs(list(runs), queue=dag_queue, pg=pg, dry_run=args.dry_run)
+    replay_plan_runs(list(runs), queue=dag_queue, pg=pg, dry_run=args.dry_run, version=args.version)
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import (
     IOType,
     dump_io_type,
+    load_io_type,
     split_io_type_into_components,
 )
 from agent_service.io_types.text import Text
@@ -246,8 +247,8 @@ async def _run_execution_plan_impl(
     db = get_psql(skip_commit=context.skip_db_commit)
     async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
     existing_run = db.get_plan_run(plan_run_id=context.plan_run_id)
-    skip_tasks_with_existing_outputs = False
-    tasks_to_skip_logging = set()
+    replaying_plan_run = False
+    complete_tasks_from_prior_run = set()
 
     if existing_run and existing_run.get("status") in (
         Status.ERROR.value,
@@ -255,22 +256,17 @@ async def _run_execution_plan_impl(
     ):
         # If there's an existing errored run with the same ID, that means that
         # we want to retry from the errored task.
-        skip_tasks_with_existing_outputs = True
+        replaying_plan_run = True
         logger.info(
             (
                 f"{context.plan_run_id=} already exists with status {existing_run['status']},"
                 " retrying run from latest non-complete step!"
             )
         )
-        complete_task_ids = []
         task_statuses = await async_db.get_task_run_statuses(plan_run_ids=[context.plan_run_id])
         for (_, task_id), status_info in task_statuses.items():
             if status_info.status == Status.COMPLETE:
-                complete_task_ids.append(task_id)
-                tasks_to_skip_logging.add(task_id)
-        override_task_work_log_id_lookup = await async_db.get_task_work_log_ids(
-            agent_id=context.agent_id, task_ids=complete_task_ids, plan_id=context.plan_id
-        )
+                complete_tasks_from_prior_run.add(task_id)
     elif existing_run and existing_run.get("status") != Status.NOT_STARTED.value:
         # Not allowed to run with the same ID if the run wasn't
         # errored. NOT_STARTED is acceptable since the run may have been
@@ -377,21 +373,22 @@ async def _run_execution_plan_impl(
             f" {context.plan_id=}"
         )
 
-        if (
-            skip_tasks_with_existing_outputs
-            and override_task_output_lookup
-            and step.tool_task_id in override_task_output_lookup
-            and override_task_output_lookup[step.tool_task_id] is not None
-        ):
-            # If the skip_tasks_with_existing_outputs flag is set, we want to
-            # FULLY skip these steps, don't even publish statuses or anything.
-            tool_output = override_task_output_lookup[step.tool_task_id]
-            if step.output_variable_name:
-                variable_lookup[step.output_variable_name] = tool_output
-            logger.info(f"Fully skipping step '{step.tool_name}' with id={step.tool_task_id}")
-            tasks[i].status = Status.COMPLETE
-            tasks[i].has_output = step.store_output
-            continue
+        if replaying_plan_run and step.tool_task_id in complete_tasks_from_prior_run:
+            # If this is a replay, try to just look up any task that's already
+            # had output stored
+            task_run_info = await async_db.get_task_run_info(
+                plan_run_id=context.plan_run_id, task_id=step.tool_task_id, tool_name=step.tool_name
+            )
+            if task_run_info:
+                _, tool_output_str, _, _ = task_run_info
+                if step.output_variable_name and tool_output_str:
+                    tool_output = load_io_type(tool_output_str)
+                    if tool_output:
+                        variable_lookup[step.output_variable_name] = tool_output
+                logger.info(f"Fully skipping step '{step.tool_name}' with id={step.tool_task_id}")
+                tasks[i].status = Status.COMPLETE
+                tasks[i].has_output = step.store_output
+                continue
 
         tool = ToolRegistry.get_tool(step.tool_name)
         # First, resolve the variables
@@ -401,8 +398,6 @@ async def _run_execution_plan_impl(
         context.task_id = step.tool_task_id
         context.tool_name = step.tool_name
         context.skip_task_logging = False
-        if step.tool_task_id in tasks_to_skip_logging:
-            context.skip_task_logging = True
 
         set_plan_run_context(context, scheduled_by_automation)
 

@@ -569,7 +569,10 @@ class AsyncDB:
         return outputs
 
     async def get_task_work_log_ids(
-        self, agent_id: str, task_ids: List[str], plan_id: str
+        self,
+        agent_id: str,
+        task_ids: List[str],
+        plan_id: str,
     ) -> Dict[str, str]:
         """
         Returns a dict from task_id to log_id.
@@ -579,6 +582,7 @@ class AsyncDB:
         FROM agent.work_logs
         WHERE agent_id = %(agent_id)s AND plan_id = %(plan_id)s
               AND task_id = ANY(%(task_ids)s)
+              AND is_task_output
         ORDER BY task_id, created_at DESC
         """
         rows = await self.pg.generic_read(
