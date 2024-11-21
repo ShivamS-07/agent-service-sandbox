@@ -1684,6 +1684,7 @@ class AgentServiceImpl:
             self.ch.get_agent_debug_plans(agent_id=agent_id),
             self.ch.get_agent_debug_worker_sqs_log(agent_id=agent_id),
             self.pg.get_agent_debug_tool_calls(agent_id=agent_id),
+            self.ch.get_agent_debug_tool_calls(agent_id=agent_id),
             self.ch.get_agent_debug_cost_info(agent_id=agent_id),
             self.ch.get_agent_debug_gpt_service_info(agent_id=agent_id),
         ]
@@ -1694,6 +1695,7 @@ class AgentServiceImpl:
             all_generated_plans,
             worker_sqs_log,
             tool_calls,
+            ch_tool_calls,
             cost_info,
             gpt_service_info,
         ) = await gather_with_concurrency(tasks, n=len(tasks))
@@ -1710,6 +1712,7 @@ class AgentServiceImpl:
             "processed for this agent, grouped by plan_id and plan_run_id. "
             "Includes all tool_calls.",
         )
+
         run_execution_plans: Dict[Any, Any] = defaultdict(dict)
         for _, value in worker_sqs_log["run_execution_plan"].items():
             top_level_key = f"plan_id={value['plan_id']}"
@@ -1722,11 +1725,28 @@ class AgentServiceImpl:
             run_execution_plans[top_level_key][inner_key]["sqs_info"] = value
             del value["plan_id"]
             del value["plan_run_id"]
+
+        for tool_call in ch_tool_calls.keys():
+            if tool_call not in tool_calls:
+                tool_calls[tool_call] = ch_tool_calls[tool_call]
+
+        plan_run_id_dict = {}
+        fetch_plan_run_ids = set()
+        for tool_plan_run_id, tool_value in tool_calls.items():
+            for tool_name, tool_call_dict in tool_value.items():
+                if tool_call_dict["plan_id"]:
+                    plan_run_id_dict[str(tool_call_dict["plan_run_id"])] = tool_call_dict["plan_id"]
+                else:
+                    fetch_plan_run_ids.add(str(tool_call_dict["plan_run_id"]))
+        if fetch_plan_run_ids:
+            fetched_plan_run_id_dict = await self.pg.get_plan_ids(list(fetch_plan_run_ids))
+            plan_run_id_dict.update(fetched_plan_run_id_dict)
+
         for tool_plan_run_id, tool_value in tool_calls.items():
             plan_id = ""
             pod_name = None
             for tool_name, tool_call_dict in tool_value.items():
-                plan_id = tool_call_dict["plan_id"]
+                plan_id = plan_run_id_dict[str(tool_call_dict["plan_run_id"])]
                 pod_name = tool_call_dict.get("pod_name")
                 del tool_call_dict["plan_id"]
                 del tool_call_dict["plan_run_id"]

@@ -2426,6 +2426,14 @@ class AsyncDB:
             return result[0]["user_is_internal"]
         return False
 
+    async def get_plan_ids(self, plan_run_ids: List[str]) -> Dict[str, str]:
+        sql = """
+        SELECT plan_run_id::TEXT, plan_id::TEXT from agent.plan_runs where plan_run_id = ANY(%(plan_run_ids)s)
+        """
+        rows = await self.pg.generic_read(sql, {"plan_run_ids": plan_run_ids})
+
+        return {row["plan_run_id"]: row["plan_id"] for row in rows}
+
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:
     if isinstance(db, Postgres):
