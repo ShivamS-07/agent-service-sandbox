@@ -22,6 +22,7 @@ from agent_service.io_types.text import (
     Text,
     TextCitation,
     TextGroup,
+    TextIDType,
 )
 from agent_service.planner.errors import BadInputError, EmptyInputError
 from agent_service.tool import ToolArgMetadata, ToolArgs, ToolCategory, tool
@@ -131,6 +132,7 @@ async def _initial_summarize_helper(
     llm: GPT,
     single_summary: bool = True,
     topic_filter: bool = True,
+    text_cache: Optional[Dict[TextIDType, str]] = None,
 ) -> Tuple[str, List[TextCitation]]:
     # create prompts
     summarize_sys_prompt = Prompt(
@@ -159,6 +161,7 @@ async def _initial_summarize_helper(
             args.topic,
             context.agent_id,
             model_for_filter_to_context=GPT4_O,
+            text_cache=text_cache,
         )
         if len(texts) == 0:  # filtered out all relevant texts
             if single_summary:
@@ -180,7 +183,11 @@ async def _initial_summarize_helper(
 
     text_group = TextGroup(val=texts)
     texts_str: str = await Text.get_all_strs(  # type: ignore
-        text_group, include_header=True, text_group_numbering=True, include_symbols=True
+        text_group,
+        include_header=True,
+        text_group_numbering=True,
+        include_symbols=True,
+        text_cache=text_cache,
     )
     if context.chat:
         chat_str = context.chat.get_gpt_input()
@@ -306,6 +313,7 @@ async def _update_summarize_helper(
     remaining_original_citation_count: int,
     single_summary: bool = True,
     topic_filter: bool = True,
+    text_cache: Optional[Dict[TextIDType, str]] = None,
 ) -> Tuple[str, List[TextCitation]]:
     logger = get_prefect_logger(__name__)
     last_original_citation_count = get_original_cite_count(original_citations)
@@ -315,6 +323,7 @@ async def _update_summarize_helper(
             args.topic,
             context.agent_id,
             model_for_filter_to_context=GPT4_O,
+            text_cache=text_cache,
         )
         if len(new_texts) == 0:
             if remaining_original_citation_count == 0:
@@ -328,11 +337,19 @@ async def _update_summarize_helper(
                 return old_summary, original_citations
     new_text_group = TextGroup(val=new_texts)
     new_texts_str: str = await Text.get_all_strs(
-        new_text_group, include_header=True, text_group_numbering=True, include_symbols=True
+        new_text_group,
+        include_header=True,
+        text_group_numbering=True,
+        include_symbols=True,
+        text_cache=text_cache,
     )  # type: ignore
     old_texts_group = TextGroup(val=old_texts, offset=len(new_texts))
     old_texts_str: str = await Text.get_all_strs(
-        old_texts_group, include_header=True, text_group_numbering=True, include_symbols=True
+        old_texts_group,
+        include_header=True,
+        text_group_numbering=True,
+        include_symbols=True,
+        text_cache=text_cache,
     )  # type: ignore
 
     if context.chat:
@@ -680,6 +697,9 @@ async def per_stock_summarize_texts(
 
     tasks = []
     summary_count = 0
+    text_cache: Dict[TextIDType, str] = {}
+    # Pre-fetch texts so the cache is populated
+    _ = await Text.get_all_strs(args.texts, text_cache=text_cache)
 
     for stock in args.stocks:
         if stock in text_dict:
@@ -703,6 +723,7 @@ async def per_stock_summarize_texts(
                             get_original_cite_count(remaining_citations),
                             single_summary=False,
                             topic_filter=topic_filter,
+                            text_cache=text_cache,
                         )
                     )
                 else:
@@ -720,6 +741,7 @@ async def per_stock_summarize_texts(
                             llm,
                             single_summary=False,
                             topic_filter=topic_filter,
+                            text_cache=text_cache,
                         )
                     )
                 else:
@@ -929,6 +951,9 @@ async def per_stock_group_summarize_texts(
     old_groups = []
 
     prev_run_dict: Dict[str, Tuple[List[TextCitation], List[TextCitation], str]] = defaultdict()
+    text_cache: Dict[TextIDType, str] = {}
+    # Pre-fetch texts so the cache is populated
+    _ = await Text.get_all_strs(args.texts, text_cache=text_cache)
 
     try:  # since everything associated with diffing is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "per_stock_group_summarize_texts")
@@ -1003,6 +1028,7 @@ async def per_stock_group_summarize_texts(
                 context,
                 llm,
                 single_summary=False,
+                text_cache=text_cache,
             )
         )
 
@@ -1048,6 +1074,7 @@ async def per_stock_group_summarize_texts(
                         all_old_citations,
                         get_original_cite_count(remaining_citations),
                         single_summary=False,
+                        text_cache=text_cache,
                     )
                 )
             else:
@@ -1313,12 +1340,14 @@ async def topic_filter_helper(
     agent_id: str,
     model_for_filter_to_context: Optional[str] = None,
     no_empty: bool = False,
+    text_cache: Optional[Dict[TextIDType, str]] = None,
 ) -> List[Text]:
-
     # sort first by timestamp so more likely to drop older, less relevant texts
     texts.sort(key=lambda x: x.timestamp.timestamp() if x.timestamp else 0, reverse=True)
 
-    text_strs: List[str] = await Text.get_all_strs(texts, include_header=True, include_symbols=True)  # type: ignore
+    text_strs: List[str] = await Text.get_all_strs(
+        texts, include_header=True, include_symbols=True, text_cache=text_cache
+    )  # type: ignore
     gpt_context = create_gpt_context(GptJobType.AGENT_TOOLS, agent_id, GptJobIdType.AGENT_ID)
     llm = GPT(context=gpt_context, model=GPT4_O_MINI)
     tokenizer = GPTTokenizer(GPT4_O_MINI)

@@ -45,6 +45,18 @@ def update_stuck_agent_status(pr: AgentPlanRun, pg: Postgres) -> None:
         },
     )
 
+    pg.generic_update(
+        "AGENT.TASK_RUNS",
+        {
+            "agent_id": pr.agent_id,
+            "plan_run_id": pr.plan_run_id,
+            "status": "RUNNING",
+        },
+        {
+            "status": "ERROR",
+        },
+    )
+
 
 def get_plan_runs_stuck_greater_than(
     duration: datetime.timedelta, pg: Postgres

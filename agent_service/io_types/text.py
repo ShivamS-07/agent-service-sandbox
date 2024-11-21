@@ -221,6 +221,7 @@ class Text(ComplexIOBase):
         text_group_numbering: bool = False,
         include_symbols: bool = False,
         include_timestamps: bool = True,  # only actually used if include_header is True
+        text_cache: Optional[Dict[TextIDType, str]] = None,
     ) -> Union[str, List[Any], Dict[Any, Any]]:
         # For any possible configuration of Texts or TextGroups in Lists, this converts that
         # configuration to the corresponding strings in list, in class specific batches
@@ -283,6 +284,7 @@ class Text(ComplexIOBase):
                     include_header=include_header,
                     timestamp_lookup=timestamp_lookup,
                     symbol_lookup=symbol_lookup,
+                    text_cache=text_cache,
                 )
                 for textclass, texts in categories.items()
             ]
@@ -324,8 +326,19 @@ class Text(ComplexIOBase):
         include_header: bool = False,
         timestamp_lookup: Optional[Dict[TextIDType, Optional[datetime.datetime]]] = None,
         symbol_lookup: Optional[Dict[TextIDType, str]] = None,
+        text_cache: Optional[Dict[TextIDType, str]] = None,
     ) -> Dict[TextIDType, str]:
-        strs_lookup = await cls._get_strs_lookup(texts)
+        if text_cache is None:
+            text_cache = {}
+        cached_text_lookup = {
+            text.id: text_cache[text.id] for text in texts if text.id in text_cache
+        }
+        non_cached_texts = [text for text in texts if text.id not in text_cache]
+        strs_lookup = {}
+        if non_cached_texts:
+            strs_lookup = await cls._get_strs_lookup(non_cached_texts)
+            text_cache.update(strs_lookup)
+        strs_lookup.update(cached_text_lookup)
         if include_header:
             for id, val in strs_lookup.items():
                 if timestamp_lookup and id in timestamp_lookup and timestamp_lookup[id] is not None:
@@ -1394,6 +1407,11 @@ class StockEarningsSummaryPointText(StockEarningsText):
                 text_citation.source_text.quarter = row["quarter"]  # type: ignore
                 citation_name = text_citation.source_text.to_citation_title()
 
+                if (
+                    text.summary_type not in summary_dict
+                    or len(summary_dict[text.summary_type]) <= text.summary_idx
+                ):
+                    continue
                 summary_point: Dict = summary_dict[text.summary_type][text.summary_idx]
                 if (
                     "references" not in summary_point
