@@ -727,7 +727,7 @@ async def per_stock_summarize_texts(
         f"Writing texts for {summary_count} stocks, topic: {args.topic}", context=context
     )
 
-    results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
+    results = await gather_with_concurrency(tasks, n=50)
     output = []
 
     for stock, (summary, citations) in zip(args.stocks, results):

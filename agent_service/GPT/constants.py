@@ -48,7 +48,7 @@ TEXT_RESPONSE_FORMAT = {"type": "text"}
 
 NO_PROMPT = Prompt(name="", template="").format()
 
-FILTER_CONCURRENCY = 300
+FILTER_CONCURRENCY = 100
 CHEAP_FILTER_CONCURRENCY = 300
 
 
