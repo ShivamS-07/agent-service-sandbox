@@ -1073,6 +1073,110 @@ class GetOrderedSecuritiesResponse(BaseModel):
     securities: List[MasterSecurity]
 
 
+class GetCompanyDescriptionResponse(BaseModel):
+    description: Optional[str]
+
+
+class GetHistoricalPricesRequest(BaseModel):
+    gbi_id: int
+    start_date: datetime.date
+    end_date: datetime.date
+
+
+class GetHistoricalPricesResponse(BaseModel):
+    class HistoricalPrice(BaseModel):
+        date: datetime.date
+        field: str
+        value: Optional[float]
+
+    prices: Optional[List[HistoricalPrice]] = None
+
+
+class GetRealTimePriceResponse(BaseModel):
+    class RealTimePrice(BaseModel):
+        gbiId: int
+        latestPrice: Optional[float]
+        lastClosePrice: Optional[float]
+        lastUpdate: Optional[datetime.datetime]
+        lastClosePriceUpdate: Optional[datetime.datetime]
+
+    price: Optional[dict] = None
+
+
+class GetSecurityResponse(BaseModel):
+    class SimpleSecurity(BaseModel):
+        gbiId: int
+        symbol: Optional[str]
+        name: Optional[str]
+        isin: Optional[str]
+        country: Optional[str]
+        currency: Optional[str]
+        primaryExchange: Optional[str]
+        sector: Optional[MasterSecuritySector]
+        securityType: Optional[str]
+
+    security: Optional[SimpleSecurity]
+
+
+class GetSecurityProsConsResponse(BaseModel):
+    class ProCon(BaseModel):
+        summary: str
+        details: str
+
+    pros: Optional[List[ProCon]]
+    cons: Optional[List[ProCon]]
+
+
+class GetEarningsSummaryResponse(BaseModel):
+    class EarningsReport(BaseModel):
+        class EarningsReportDetail(BaseModel):
+            class EarningsReportReference(BaseModel):
+                class EarningsReportReferenceLine(BaseModel):
+                    highlights: List[str]
+                    paragraphs: List[str]
+
+                valid: bool
+                referenceLines: List[EarningsReportReferenceLine]
+                justification: str
+
+            header: str
+            detail: str
+            sentiment: str
+            references: EarningsReportReference
+
+        date: datetime.datetime
+        title: str
+        details: List[EarningsReportDetail]
+        highlights: str
+        qaDetails: List[EarningsReportDetail]
+        qaHighlights: str
+        quarter: int
+        year: int
+
+    reports: Optional[List[EarningsReport]]
+
+
+class GetNewsSummaryRequest(BaseModel):
+    gbi_id: int
+    delta_horizon: str
+    show_hypotheses: bool = False
+
+
+class GetNewsSummaryResponse(BaseModel):
+    class SourceCount(BaseModel):
+        sourceId: str
+        sourceName: str
+        domainUrl: str
+        count: int
+        deltaCount: int
+        isTopSource: bool
+        sentiment: float
+
+    sentiment: float
+    summary: Optional[str]
+    sourceCounts: List[SourceCount]
+
+
 ####################################################################################################
 # User
 ####################################################################################################

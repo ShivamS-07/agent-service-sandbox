@@ -95,16 +95,25 @@ from agent_service.endpoints.models import (
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
     GetCompaniesResponse,
+    GetCompanyDescriptionResponse,
     GetCustomDocumentFileInfoResponse,
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
+    GetEarningsSummaryResponse,
+    GetHistoricalPricesRequest,
+    GetHistoricalPricesResponse,
     GetLiveAgentsQCResponse,
     GetMemoryContentResponse,
+    GetNewsSummaryRequest,
+    GetNewsSummaryResponse,
     GetOrderedSecuritiesRequest,
     GetOrderedSecuritiesResponse,
     GetPlanRunDebugInfoResponse,
     GetPromptTemplatesResponse,
+    GetRealTimePriceResponse,
     GetSecureUserResponse,
+    GetSecurityProsConsResponse,
+    GetSecurityResponse,
     GetTeamAccountsResponse,
     GetTestCaseInfoResponse,
     GetTestCasesResponse,
@@ -2064,6 +2073,67 @@ async def get_ordered_securities(
     req: GetOrderedSecuritiesRequest, user: User = Depends(parse_header)
 ) -> GetOrderedSecuritiesResponse:
     return await application.state.agent_service_impl.get_ordered_securities(req, user)
+
+
+@router.post(
+    "/stock/news-summary", response_model=GetNewsSummaryResponse, status_code=status.HTTP_200_OK
+)
+async def get_news_summary(
+    req: GetNewsSummaryRequest, user: User = Depends(parse_header)
+) -> GetNewsSummaryResponse:
+    return await application.state.agent_service_impl.get_news_summary(req, user)
+
+
+@router.post(
+    "/stock/historical-prices",
+    response_model=GetHistoricalPricesResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_historical_prices(
+    req: GetHistoricalPricesRequest, user: User = Depends(parse_header)
+) -> GetHistoricalPricesResponse:
+    return await application.state.agent_service_impl.get_historical_prices(req, user)
+
+
+@router.get(
+    "/stock/{gbi_id}/real-time-price",
+    response_model=GetRealTimePriceResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_real_time_price(
+    gbi_id: int, user: User = Depends(parse_header)
+) -> GetRealTimePriceResponse:
+    return await application.state.agent_service_impl.get_real_time_price(user=user, gbi_id=gbi_id)
+
+
+@router.get("/stock/{gbi_id}/company-description")
+async def get_company_description(
+    gbi_id: int, user: User = Depends(parse_header)
+) -> GetCompanyDescriptionResponse:
+    return await application.state.agent_service_impl.get_company_description(
+        user=user, gbi_id=gbi_id
+    )
+
+
+@router.get("/stock/{gbi_id}/pros-cons")
+async def get_security_pros_cons(
+    gbi_id: int, user: User = Depends(parse_header)
+) -> GetSecurityProsConsResponse:
+    return await application.state.agent_service_impl.get_security_pros_cons(
+        user=user, gbi_id=gbi_id
+    )
+
+
+@router.get("/stock/{gbi_id}/earnings-summary")
+async def get_earnings_summary(
+    gbi_id: int, user: User = Depends(parse_header)
+) -> GetEarningsSummaryResponse:
+    return await application.state.agent_service_impl.get_earnings_summary(user=user, gbi_id=gbi_id)
+
+
+@router.get("/stock/{gbi_id}/security")
+async def get_security(gbi_id: int, user: User = Depends(parse_header)) -> GetSecurityResponse:
+    return await application.state.agent_service_impl.get_security(user=user, gbi_id=gbi_id)
 
 
 @router.get(

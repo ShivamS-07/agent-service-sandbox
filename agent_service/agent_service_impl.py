@@ -91,17 +91,26 @@ from agent_service.endpoints.models import (
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
     GetCompaniesResponse,
+    GetCompanyDescriptionResponse,
     GetCustomDocumentFileInfoResponse,
     GetCustomDocumentFileResponse,
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
+    GetEarningsSummaryResponse,
+    GetHistoricalPricesRequest,
+    GetHistoricalPricesResponse,
     GetLiveAgentsQCResponse,
     GetMemoryContentResponse,
+    GetNewsSummaryRequest,
+    GetNewsSummaryResponse,
     GetOrderedSecuritiesRequest,
     GetOrderedSecuritiesResponse,
     GetPlanRunDebugInfoResponse,
     GetPlanRunOutputResponse,
+    GetRealTimePriceResponse,
     GetSecureUserResponse,
+    GetSecurityProsConsResponse,
+    GetSecurityResponse,
     GetTestCaseInfoResponse,
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
@@ -186,7 +195,16 @@ from agent_service.external.user_svc_client import (
     list_team_members,
     update_user,
 )
-from agent_service.external.webserver import get_ordered_securities
+from agent_service.external.webserver import (
+    get_company_description,
+    get_earnings_summary,
+    get_ordered_securities,
+    get_security,
+    get_security_pros_cons,
+    get_stock_historical_prices,
+    get_stock_news_summary,
+    get_stock_real_time_price,
+)
 from agent_service.io_type_utils import (
     TableColumnType,
     get_clean_type_name,
@@ -2576,6 +2594,79 @@ class AgentServiceImpl:
         return GetOrderedSecuritiesResponse(
             securities=[MasterSecurity(**security) for security in securities]
         )
+
+    async def get_news_summary(
+        self, req: GetNewsSummaryRequest, user: User
+    ) -> GetNewsSummaryResponse:
+        news_summary = await get_stock_news_summary(
+            user_id=user.user_id,
+            gbi_id=req.gbi_id,
+            delta_horizon=req.delta_horizon,
+            show_hypotheses=req.show_hypotheses,
+        )
+        if news_summary is None:
+            return GetNewsSummaryResponse(sentiment=0.0, summary=None, sourceCounts=[])
+        return GetNewsSummaryResponse(**news_summary)
+
+    async def get_company_description(
+        self, user: User, gbi_id: int
+    ) -> GetCompanyDescriptionResponse:
+        description = await get_company_description(user_id=user.user_id, gbi_id=gbi_id)
+        return GetCompanyDescriptionResponse(description=description)
+
+    async def get_security_pros_cons(self, user: User, gbi_id: int) -> GetSecurityProsConsResponse:
+        pros_cons = await get_security_pros_cons(user_id=user.user_id, gbi_id=gbi_id)
+        if pros_cons is None:
+            return GetSecurityProsConsResponse(pros=None, cons=None)
+        return GetSecurityProsConsResponse(
+            pros=(
+                [GetSecurityProsConsResponse.ProCon(**pro) for pro in pros_cons.get("pros", [])]
+                if pros_cons
+                else None
+            ),
+            cons=(
+                [GetSecurityProsConsResponse.ProCon(**con) for con in pros_cons.get("cons", [])]
+                if pros_cons
+                else None
+            ),
+        )
+
+    async def get_earnings_summary(self, user: User, gbi_id: int) -> GetEarningsSummaryResponse:
+        earnings_reports = await get_earnings_summary(user_id=user.user_id, gbi_id=gbi_id)
+        if earnings_reports is None:
+            return GetEarningsSummaryResponse(reports=None)
+        return GetEarningsSummaryResponse(
+            reports=[
+                GetEarningsSummaryResponse.EarningsReport(**report) for report in earnings_reports
+            ]
+        )
+
+    async def get_security(self, user: User, gbi_id: int) -> GetSecurityResponse:
+        security_dict = await get_security(user_id=user.user_id, gbi_id=gbi_id)
+        if security_dict is None:
+            return GetSecurityResponse(security=None)
+        return GetSecurityResponse(security=GetSecurityResponse.SimpleSecurity(**security_dict))
+
+    async def get_historical_prices(
+        self, req: GetHistoricalPricesRequest, user: User
+    ) -> GetHistoricalPricesResponse:
+        prices = await get_stock_historical_prices(
+            user_id=user.user_id,
+            gbi_id=req.gbi_id,
+            start_date=req.start_date,
+            end_date=req.end_date,
+        )
+        return GetHistoricalPricesResponse(
+            prices=(
+                [GetHistoricalPricesResponse.HistoricalPrice(**price) for price in prices]
+                if prices
+                else None
+            )
+        )
+
+    async def get_real_time_price(self, user: User, gbi_id: int) -> GetRealTimePriceResponse:
+        price = await get_stock_real_time_price(user_id=user.user_id, gbi_id=gbi_id)
+        return GetRealTimePriceResponse(price=price)
 
     async def search_agent_qcs(
         self,
