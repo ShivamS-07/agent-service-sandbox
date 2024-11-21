@@ -4,6 +4,7 @@ import datetime
 import json
 import logging
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, wait
 from io import BytesIO
 from typing import (
     Any,
@@ -20,7 +21,7 @@ from typing import (
 )
 from uuid import uuid4
 
-import aioboto3
+import boto3
 import mdutils
 from pydantic import Field, field_serializer
 from typing_extensions import Self
@@ -2303,16 +2304,23 @@ class WebText(Text):
     async def _get_strs_lookup(cls, texts: List[WebText]) -> Dict[TextIDType, str]:
         outputs = {}
 
-        async with aioboto3.Session().client("s3") as s3:
-            fileobjs = [BytesIO() for _ in texts]
-            tasks = [
-                s3.download_fileobj(Bucket="boosted-websearch", Key=str(text.id), Fileobj=fileobj)
+        s3_client = boto3.client("s3")
+        fileobjs = [BytesIO() for _ in texts]
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [
+                executor.submit(
+                    s3_client.download_fileobj,
+                    Bucket="boosted-websearch",
+                    Key=str(text.id),
+                    Fileobj=fileobj,
+                )
                 for text, fileobj in zip(texts, fileobjs)
             ]
-            _ = await gather_with_concurrency(tasks, n=10)
+            wait(futures)
 
-            for text, fileobj in zip(texts, fileobjs):
-                outputs[text.id] = fileobj.getvalue().decode("utf-8")
+        for text, fileobj in zip(texts, fileobjs):
+            outputs[text.id] = fileobj.getvalue().decode("utf-8")
 
         return outputs
 
