@@ -38,12 +38,12 @@ def expand_dates_across_tables(first: Table, second: Table) -> Tuple[Table, Tabl
             ):
                 # This means the first table is less granular, need to convert
                 # it to the second table's granularity
-                first = first.convert_table_to_time_granularity(second_date_col_type)
+                first = first.convert_table_to_time_granularity(second_date_col.metadata)
             elif (
                 granularity_hierarchy[first_date_col_type]
                 > granularity_hierarchy[second_date_col_type]
             ):
-                second = second.convert_table_to_time_granularity(first_date_col_type)
+                second = second.convert_table_to_time_granularity(first_date_col.metadata)
 
     return (first, second)
 

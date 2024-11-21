@@ -318,6 +318,7 @@ class Table(ComplexIOBase):
         df: pd.DataFrame,
         time_column: Any,
         target_type: TableColumnType,
+        target_col_name: str,
         stock_column: Optional[str] = None,
     ) -> pd.DataFrame:
         """Aggregate a daily DataFrame back to the specified target granularity."""
@@ -356,10 +357,11 @@ class Table(ComplexIOBase):
             df[time_column] = df[time_column].dt.year  # Keep only the year
             df[time_column] = df[time_column].astype(str)
 
-        df = df.rename(columns={time_column: target_type.title()})
+        df = df.rename(columns={time_column: target_col_name})
         return df
 
-    def convert_table_to_time_granularity(self, target_type: TableColumnType) -> "Table":
+    def convert_table_to_time_granularity(self, target_col: TableColumnMetadata) -> "Table":
+        target_type = target_col.col_type
         if not TableColumnType.is_date_type(target_type):
             return self
         date_col = self.get_date_column()
@@ -380,10 +382,14 @@ class Table(ComplexIOBase):
             df, time_column=time_column, current_type=current_type, stock_column=stock_col_name
         )
         df = self._aggregate_to_target_granularity(
-            df, time_column=time_column, target_type=target_type, stock_column=stock_col_name
+            df,
+            time_column=time_column,
+            target_type=target_type,
+            stock_column=stock_col_name,
+            target_col_name=str(target_col.label),
         )
 
-        date_col.metadata.label = target_type.title()
+        date_col.metadata.label = target_col.label
         date_col.metadata.col_type = target_type
         new_table = self.from_df_and_cols(columns=[col.metadata for col in self.columns], data=df)
         if isinstance(self, StockTable):
