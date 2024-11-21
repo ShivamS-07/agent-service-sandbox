@@ -770,6 +770,11 @@ class Planner:
                     f"Variable {val_or_name} is invalid type, got {variable.var_type}, expecting {expected_type}."
                 )
             output = variable
+        elif expected_type not in (str, int, float, bool):
+            if not check_type_is_valid(type(output), expected_type):
+                raise ExecutionPlanParsingError(
+                    f"Variable {val_or_name} is invalid type, got {type(output)}, expecting {expected_type}."
+                )
 
         return output
 
