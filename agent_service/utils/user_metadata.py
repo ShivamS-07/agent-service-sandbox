@@ -19,7 +19,6 @@ from agent_service.external.user_svc_client import (
 from agent_service.io_type_utils import IOType
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.cache_utils import RedisCacheBackend
-from agent_service.utils.feature_flags import is_user_agent_admin
 from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
@@ -66,8 +65,8 @@ async def is_user_first_login(user_id: str) -> IOType:
     user_metadata = cast(User, await get_user_cached(user_id))
     user_created_date = user_metadata.user_created.ToDatetime()
 
-    # ignore external users who are created before this date
-    if user_created_date < IGNORE_USERS_BEFORE_DATE and not await is_user_agent_admin(user_id):
+    # ignore users who are created before this date
+    if user_created_date < IGNORE_USERS_BEFORE_DATE:
         FIRST_LOGIN_CACHE[user_id] = False
         if redis_cache:
             run_async_background(redis_cache.set(cache_key, False))
