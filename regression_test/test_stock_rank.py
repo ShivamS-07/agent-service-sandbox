@@ -18,8 +18,8 @@ class TestStockRank(TestExecutionPlanner):
             for stock in ranked_stocks:
                 self.assertIsInstance(stock, StockID)
                 self.assertGreaterEqual(len(stock.history), 1)
-                self.assertIsInstance(stock.history[-1].explanation)
-                self.assertIsNone(stock.history[-1].score)
+                self.assertIsInstance(stock.history[-1].explanation, str)
+                self.assertIsNotNone(stock.history[-1].score)
 
         self.prompt_test(
             prompt=prompt,
@@ -38,8 +38,8 @@ class TestStockRank(TestExecutionPlanner):
             for stock in ranked_stocks:
                 self.assertIsInstance(stock, StockID)
                 self.assertGreaterEqual(len(stock.history), 1)
-                self.assertIsInstance(stock.history[-1].explanation)
-                self.assertIsNone(stock.history[-1].score)
+                self.assertIsInstance(stock.history[-1].explanation, str)
+                self.assertIsNotNone(stock.history[-1].score)
 
         self.prompt_test(
             prompt=prompt,
