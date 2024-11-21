@@ -1,5 +1,7 @@
 from datetime import date
-from typing import List, Type
+from typing import List, Optional, Type
+
+from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
 from agent_service.chatbot.prompts import (
     AGENT_DESCRIPTION_PROMPT,
@@ -56,11 +58,12 @@ class Chatbot:
         self,
         agent_id: str,
         model: str = GPT4_O,
+        gpt_service_stub: Optional[GPTServiceStub] = None,
         tool_registry: Type[ToolRegistry] = ToolRegistry,
     ) -> None:
         self.agent_id = agent_id
         context = chatbot_context(agent_id=agent_id)
-        self.llm = GPT(context, model)
+        self.llm = GPT(context, model, gpt_service_stub=gpt_service_stub)
         self.tool_registry = tool_registry
 
     @async_perf_logger

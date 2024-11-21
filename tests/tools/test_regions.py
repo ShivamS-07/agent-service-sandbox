@@ -1,5 +1,6 @@
 import unittest
 
+from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_types.stock import StockID
 from agent_service.tools.regions import (
     FilterStockContryOfDomicileInput,
@@ -36,6 +37,7 @@ RTWP = StockID(
 
 class TestRegions(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        set_use_global_stub(False)
         self.context = PlanRunContext.get_dummy()
 
         # uncomment for easier debugging

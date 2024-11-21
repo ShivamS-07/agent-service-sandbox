@@ -1,6 +1,7 @@
 import unittest
 from typing import Optional, Tuple
 
+from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_type_utils import IOType
 from agent_service.planner.executor import (
     create_execution_plan_local,
@@ -52,6 +53,10 @@ async def gen_and_run_plan(prompt: str, verbose: bool = False) -> Tuple[str, Opt
 
 class SimpleQueryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # uncomment for easier debugging
+        # from agent_service.utils.logs import init_stdout_logging
+        # init_stdout_logging()
+        set_use_global_stub(False)
         self.context = PlanRunContext.get_dummy()
 
     @unittest.skip(

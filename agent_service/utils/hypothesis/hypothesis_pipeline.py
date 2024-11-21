@@ -3,6 +3,8 @@ import datetime
 import logging
 from typing import Dict, List, Optional, Tuple, Union
 
+from gpt_service_proto_v1.service_grpc import GPTServiceStub
+
 from agent_service.GPT.constants import TEXT_3_LARGE
 from agent_service.io_types.text import (
     StockHypothesisCustomDocumentText,
@@ -56,6 +58,7 @@ class HypothesisPipeline:
         gbi_id: int,
         hypothesis_text: str,
         ref_time: Optional[datetime.datetime] = None,
+        gpt_service_stub: Optional[GPTServiceStub] = None,
     ) -> None:
         self.ref_time = ref_time if ref_time else get_now_utc()
 
@@ -64,7 +67,9 @@ class HypothesisPipeline:
 
         self.hypothesis = self.create_hypothesis_info(gbi_id, hypothesis_text)
 
-        self.llm = HypothesisAI(self.hypothesis, ref_time=self.ref_time)
+        self.llm = HypothesisAI(
+            self.hypothesis, ref_time=self.ref_time, gpt_service_stub=gpt_service_stub
+        )
 
     def create_hypothesis_info(self, gbi_id: int, hypothesis_text: str) -> HypothesisInfo:
         stock_metadata = self.pg.get_sec_metadata_from_gbi([gbi_id]).get(gbi_id)

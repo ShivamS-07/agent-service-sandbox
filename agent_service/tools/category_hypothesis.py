@@ -3,8 +3,10 @@ import re
 from collections import defaultdict
 from typing import Any, Awaitable, Dict, List, Optional, Tuple, Type, cast
 
+from gpt_service_proto_v1.service_grpc import GPTServiceStub
+
 from agent_service.GPT.constants import GPT4_O, GPT4_O_MINI, NO_PROMPT
-from agent_service.GPT.requests import GPT
+from agent_service.GPT.requests import GPT, _get_gpt_service_stub
 from agent_service.io_type_utils import (
     ComplexIOBase,
     HistoryEntry,
@@ -637,13 +639,17 @@ async def do_competitive_analysis(
 
     debug_info["input_topics"] = dump_io_type(topic_group.val)
 
+    gpt_service_stub = _get_gpt_service_stub()[0]
+
     if prev_internal_data and "revised hypothesis" in prev_internal_data:
         logger.info("Using existing revised hypothesis")
         revised_hypothesis = prev_internal_data["revised hypothesis"]
     else:
         # Step: Revise hypothesis to remove company specific information
         logger.info("Revising hypothesis to remove any company specific information")
-        revised_hypothesis = await revise_hypothesis(context=context, hypothesis=args.prompt)
+        revised_hypothesis = await revise_hypothesis(
+            context=context, hypothesis=args.prompt, gpt_service_stub=gpt_service_stub
+        )
         logger.info(f"Revised hypothesis: {revised_hypothesis}")  # Not visible to users
 
     debug_info["revised hypothesis"] = revised_hypothesis
@@ -675,6 +681,7 @@ async def do_competitive_analysis(
         categories=categories,
         gbi_id_to_description=gbi_id_to_short_description,
         topic_group=topic_group,
+        gpt_service_stub=gpt_service_stub,
     )
 
     # Step: Rank and summarize for each category
@@ -700,6 +707,7 @@ async def do_competitive_analysis(
             old_rankings=old_rankings,
             orig_topic_group=orig_topic_group,
             gbi_id_to_description=gbi_id_to_short_description,
+            gpt_service_stub=gpt_service_stub,
         )
     else:
         category_to_result = await rank_and_summarize_for_each_category(
@@ -710,6 +718,7 @@ async def do_competitive_analysis(
             categories=categories,
             category_idx_to_topic_group=category_idx_to_topic_group,
             gbi_id_to_description=gbi_id_to_short_description,
+            gpt_service_stub=gpt_service_stub,
         )
 
     debug_info["categories and ranks"] = dump_io_type(
@@ -778,6 +787,8 @@ async def generate_summary_for_competitive_analysis(
 ) -> Text:
     logger = get_prefect_logger(__name__)
 
+    gpt_service_stub = _get_gpt_service_stub()[0]
+
     logger.info("Generating the final summary")
     final_summary = await overall_summary(
         target_stock=args.competitive_analysis.actual_target_stock,
@@ -786,6 +797,7 @@ async def generate_summary_for_competitive_analysis(
         category_idx_to_result=args.competitive_analysis.category_idx_to_result,
         final_scores=args.competitive_analysis.final_scores,
         context=context,
+        gpt_service_stub=gpt_service_stub,
     )
 
     try:
@@ -884,7 +896,9 @@ async def download_content_for_text_data(
 
 
 @check_cancelled_decorator
-async def revise_hypothesis(context: PlanRunContext, hypothesis: str) -> str:
+async def revise_hypothesis(
+    context: PlanRunContext, hypothesis: str, gpt_service_stub: Optional[GPTServiceStub] = None
+) -> str:
     prompt_str = """
         Given the hypothesis, revise it to make it non company-specific. \
         For example, if the original hypothesis is 'Is Expedia the leader in the travel industry?', \
@@ -897,7 +911,9 @@ async def revise_hypothesis(context: PlanRunContext, hypothesis: str) -> str:
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    return await GPT(context=gpt_context, model=GPT4_O).do_chat_w_sys_prompt(
+    return await GPT(
+        context=gpt_context, model=GPT4_O, gpt_service_stub=gpt_service_stub
+    ).do_chat_w_sys_prompt(
         main_prompt=prompt.format(hypothesis=hypothesis),
         sys_prompt=NO_PROMPT,
     )
@@ -910,6 +926,7 @@ async def filter_and_classify_topics_into_category(
     categories: List[Category],
     gbi_id_to_description: Dict[int, str],
     topic_group: TopicGroup,
+    gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> Dict[int, TopicGroup]:
     logger = get_prefect_logger(__name__)
 
@@ -971,7 +988,7 @@ Here is the text:
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    gpt = GPT(context=gpt_context, model=GPT4_O_MINI)
+    gpt = GPT(context=gpt_context, model=GPT4_O_MINI, gpt_service_stub=gpt_service_stub)
 
     # Create GPT tasks
     # Don't want categories' weights to confuse GPT
@@ -1064,6 +1081,7 @@ async def rank_and_summarize_for_each_category(
     categories: List[Category],
     category_idx_to_topic_group: Dict[int, TopicGroup],
     gbi_id_to_description: Dict[int, str],
+    gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> Dict[int, RankingList]:
     if target_stock is not None:
 
@@ -1074,7 +1092,7 @@ async def rank_and_summarize_for_each_category(
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    gpt = GPT(context=gpt_context, model=GPT4_O)
+    gpt = GPT(context=gpt_context, model=GPT4_O, gpt_service_stub=gpt_service_stub)
 
     sorted_category_idxs = sorted(category_idx_to_topic_group.keys())
     category_tasks = []
@@ -1119,6 +1137,7 @@ async def update_rank_and_summarize_for_each_category(
     old_rankings: List[Tuple[int, RankingList]],
     orig_topic_group: TopicGroup,
     gbi_id_to_description: Dict[int, str],
+    gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> Dict[int, RankingList]:
     if target_stock is not None:
 
@@ -1129,7 +1148,7 @@ async def update_rank_and_summarize_for_each_category(
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    gpt = GPT(context=gpt_context, model=GPT4_O)
+    gpt = GPT(context=gpt_context, model=GPT4_O, gpt_service_stub=gpt_service_stub)
 
     category_tasks = []
     for category_idx, old_ranking in old_rankings:
@@ -1455,6 +1474,7 @@ async def overall_summary(
     category_idx_to_result: Dict[int, RankingList],
     final_scores: Dict[str, float],
     context: PlanRunContext,
+    gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> str:
     # Prompt
     prompt_str = """
@@ -1500,7 +1520,7 @@ async def overall_summary(
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
-    gpt = GPT(context=gpt_context, model=GPT4_O)
+    gpt = GPT(context=gpt_context, model=GPT4_O, gpt_service_stub=gpt_service_stub)
     resp = await gpt.do_chat_w_sys_prompt(
         main_prompt=prompt.format(
             hypothesis=hypothesis,

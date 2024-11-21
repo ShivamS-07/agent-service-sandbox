@@ -1,3 +1,7 @@
+from typing import Optional
+
+from gpt_service_proto_v1.service_grpc import GPTServiceStub
+
 from agent_service.GPT.constants import DEFAULT_SMART_MODEL
 from agent_service.GPT.requests import GPT
 from agent_service.planner.planner_types import ExecutionPlan
@@ -154,6 +158,7 @@ async def generate_template_from_plan(
     agent_id: str,
     db: AsyncDB,
     model: str = DEFAULT_SMART_MODEL,
+    gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> str:
     chat_history = await get_chat_history_from_db(agent_id=agent_id, db=db)
 
@@ -163,7 +168,7 @@ async def generate_template_from_plan(
         chat=chat_history.get_gpt_input(client_only=True),
     )
 
-    llm = GPT(context=chatbot_context(agent_id), model=model)
+    llm = GPT(context=chatbot_context(agent_id), model=model, gpt_service_stub=gpt_service_stub)
     prompt_str = await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt)
 
     return prompt_str
