@@ -263,9 +263,9 @@ from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import (
     get_custom_user_dict,
-    get_ld_flag,
+    get_ld_flag_async,
     get_secure_mode_hash,
-    get_user_context,
+    get_user_context_async,
     is_database_access_check_enabled_for_user,
 )
 from agent_service.utils.find_template import get_matched_templates
@@ -817,10 +817,11 @@ class AgentServiceImpl:
                     ),
                 )
             )
-            if get_ld_flag(
+            if await get_ld_flag_async(
                 flag_name="qc_tool_flag",
                 default=False,
-                user_context=get_user_context(user_id=user.user_id),
+                user_id=user.user_id,
+                async_db=self.pg,
             ):
                 prompt: str = str(user_msg.message)
 
@@ -1278,8 +1279,8 @@ class AgentServiceImpl:
 
         return UpdateAgentWidgetNameResponse(success=True)
 
-    def get_secure_ld_user(self, user_id: str) -> GetSecureUserResponse:
-        ld_user = get_user_context(user_id=user_id)
+    async def get_secure_ld_user(self, user_id: str) -> GetSecureUserResponse:
+        ld_user = await get_user_context_async(user_id=user_id, async_db=self.pg)
         return GetSecureUserResponse(
             hash=get_secure_mode_hash(ld_user),
             context=get_custom_user_dict(ld_user),
@@ -2573,9 +2574,6 @@ class AgentServiceImpl:
         return FindTemplatesRelatedToPromptResponse(prompt_templates=matched_templates)
 
     async def get_user_has_alfa_access(self, user: User) -> bool:
-        if user.is_admin or user.is_super_admin:
-            return True
-
         with sentry_sdk.start_span(op="get_user_cached", description="get_user_cached"):
             cached_user = await get_user_cached(user_id=user.user_id)
             if not cached_user:
@@ -2584,7 +2582,9 @@ class AgentServiceImpl:
         # 1. If people are permitted to access by User SVC, we return True
         # 2. Or if feature flag returns False (meaning everyone has access to Alfa), we return True
         return (cached_user.cognito_enabled.value and cached_user.has_alfa_access) or (
-            not is_database_access_check_enabled_for_user(user_id=user.user_id)
+            not await is_database_access_check_enabled_for_user(
+                user_id=user.user_id, async_db=self.pg
+            )
         )
 
     async def get_ordered_securities(

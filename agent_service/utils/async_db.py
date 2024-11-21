@@ -2454,7 +2454,11 @@ ASYNC_RO_DB: Optional[AsyncDB] = None
 
 
 def get_async_db(
-    sync_db: bool = False, skip_commit: bool = False, read_only: bool = False
+    sync_db: bool = False,
+    skip_commit: bool = False,
+    read_only: bool = False,
+    min_pool_size: int = 1,
+    max_pool_size: int = 8,
 ) -> AsyncDB:
     """Get the single AsyncDB instance based on the parameters.
 
@@ -2470,14 +2474,25 @@ def get_async_db(
             if sync_db:
                 ASYNC_RO_DB = AsyncDB(pg=SyncBoostedPG(read_only=read_only))
             else:
-                ASYNC_RO_DB = AsyncDB(pg=AsyncPostgresBase(read_only=read_only))
+                ASYNC_RO_DB = AsyncDB(
+                    pg=AsyncPostgresBase(
+                        read_only=read_only,
+                        min_pool_size=min_pool_size,
+                        max_pool_size=max_pool_size,
+                    )
+                )
         return ASYNC_RO_DB
 
     if ASYNC_DB is None:
         if sync_db or skip_commit:
             ASYNC_DB = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_commit))
         else:
-            ASYNC_DB = AsyncDB(pg=AsyncPostgresBase())
+            ASYNC_DB = AsyncDB(
+                pg=AsyncPostgresBase(
+                    min_pool_size=min_pool_size,
+                    max_pool_size=max_pool_size,
+                )
+            )
     else:
         if skip_commit:
             if (
@@ -2489,6 +2504,11 @@ def get_async_db(
             if sync_db and not isinstance(ASYNC_DB.pg, SyncBoostedPG):
                 ASYNC_DB = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_commit))
             elif not sync_db and not isinstance(ASYNC_DB.pg, AsyncPostgresBase):
-                ASYNC_DB = AsyncDB(pg=AsyncPostgresBase())
+                ASYNC_DB = AsyncDB(
+                    pg=AsyncPostgresBase(
+                        min_pool_size=min_pool_size,
+                        max_pool_size=max_pool_size,
+                    )
+                )
 
     return ASYNC_DB

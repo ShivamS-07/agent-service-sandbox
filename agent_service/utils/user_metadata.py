@@ -5,7 +5,6 @@ from functools import lru_cache
 from typing import Optional, cast
 
 import sentry_sdk
-from cachetools import TTLCache
 from gbi_common_py_utils.utils.redis import is_redis_available
 from user_service_proto_v1.user_service_pb2 import User
 
@@ -18,7 +17,7 @@ from agent_service.external.user_svc_client import (
 )
 from agent_service.io_type_utils import IOType
 from agent_service.utils.async_utils import run_async_background
-from agent_service.utils.cache_utils import RedisCacheBackend
+from agent_service.utils.cache_utils import InMemoryCacheBackend, RedisCacheBackend
 from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
@@ -39,12 +38,12 @@ def get_user_first_login_cache_client() -> Optional[RedisCacheBackend]:
     )
 
 
-FIRST_LOGIN_CACHE = TTLCache(maxsize=256, ttl=3600 * 24 * 7)  # 7 days
+FIRST_LOGIN_CACHE = InMemoryCacheBackend(maxsize=256, ttl=3600 * 24 * 7)  # 7 days
 
 
 @async_perf_logger
 async def is_user_first_login(user_id: str) -> IOType:
-    val = FIRST_LOGIN_CACHE.get(user_id)
+    val = await FIRST_LOGIN_CACHE.get(user_id)
     if val is False:  # we only cache False values
         logger.info(f"Get user {user_id} first login 'False' from in-memory TTL Cache!")
         return val
@@ -59,7 +58,7 @@ async def is_user_first_login(user_id: str) -> IOType:
         ):
             cached_result = await redis_cache.get(cache_key)
             if cached_result is False:
-                FIRST_LOGIN_CACHE[user_id] = False
+                await FIRST_LOGIN_CACHE.set(user_id, False)
                 return cached_result
 
     user_metadata = cast(User, await get_user_cached(user_id))
@@ -67,7 +66,7 @@ async def is_user_first_login(user_id: str) -> IOType:
 
     # ignore users who are created before this date
     if user_created_date < IGNORE_USERS_BEFORE_DATE:
-        FIRST_LOGIN_CACHE[user_id] = False
+        await FIRST_LOGIN_CACHE.set(user_id, False)
         if redis_cache:
             run_async_background(redis_cache.set(cache_key, False))
 
@@ -75,8 +74,7 @@ async def is_user_first_login(user_id: str) -> IOType:
 
     log = await get_onboarding_email_sequence_log(user_id=user_id)
     if log:
-        FIRST_LOGIN_CACHE[user_id] = False
-
+        await FIRST_LOGIN_CACHE.set(user_id, False)
         if redis_cache:
             run_async_background(redis_cache.set(cache_key, False))
 

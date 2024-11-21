@@ -5,7 +5,6 @@ from functools import lru_cache
 from typing import Generator, List, Optional, Tuple
 
 import sentry_sdk
-from cachetools import TTLCache
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
     LOCAL_TAG,
@@ -26,7 +25,7 @@ from user_service_proto_v1.well_known_types_pb2 import UUID
 
 from agent_service.external.grpc_utils import get_default_grpc_metadata, grpc_retry
 from agent_service.utils.async_utils import run_async_background
-from agent_service.utils.cache_utils import RedisCacheBackend
+from agent_service.utils.cache_utils import InMemoryCacheBackend, RedisCacheBackend
 from agent_service.utils.feature_flags import is_user_agent_admin
 from agent_service.utils.logs import async_perf_logger
 
@@ -113,8 +112,7 @@ def get_redis_cache_for_user() -> Optional[RedisCacheBackend]:
     )
 
 
-USER_CACHE_TTL = 3600
-USER_CACHE = TTLCache(maxsize=256, ttl=USER_CACHE_TTL)
+USER_CACHE = InMemoryCacheBackend(maxsize=256, ttl=3600)
 
 
 @async_perf_logger
@@ -124,7 +122,7 @@ async def get_user_cached(user_id: str) -> Optional[User]:
     NOTE that we only cache the user when they have access to Alfa.
     TTL sets to 1 hour in case someone is removed from Alfa.
     """
-    cached_user = USER_CACHE.get(user_id)
+    cached_user = await USER_CACHE.get(user_id)
     if isinstance(cached_user, User):
         logger.info(f"Get user from in-memory TTL Cache: {user_id}")
         return cached_user
@@ -135,7 +133,7 @@ async def get_user_cached(user_id: str) -> Optional[User]:
 
         user = users[0] if users else None
         if isinstance(user, User):
-            USER_CACHE[user_id] = user
+            await USER_CACHE.set(user_id, user)
 
         return user
 
@@ -143,7 +141,7 @@ async def get_user_cached(user_id: str) -> Optional[User]:
         key = get_user_key_func(user_id)
         user = await redis_cache.get(key=key)  # type: ignore
         if isinstance(user, User):
-            USER_CACHE[user_id] = user
+            await USER_CACHE.set(user_id, user)
             return user  # type: ignore
 
     with sentry_sdk.start_span(
@@ -155,15 +153,14 @@ async def get_user_cached(user_id: str) -> Optional[User]:
 
         user = users[0]
         if user.cognito_enabled.value and user.has_alfa_access:
-            run_async_background(redis_cache.set(key, user, ttl=USER_CACHE_TTL))
-            USER_CACHE[user_id] = user
+            await USER_CACHE.set(user_id, user)
+            run_async_background(redis_cache.set(key, user, ttl=3600 * 24))
 
         return user
 
 
 async def invalidate_user_cache(user_id: str) -> None:
-    if user_id in USER_CACHE:
-        del USER_CACHE[user_id]
+    await USER_CACHE.invalidate(user_id)
 
     redis_cache = get_redis_cache_for_user()
     if redis_cache:

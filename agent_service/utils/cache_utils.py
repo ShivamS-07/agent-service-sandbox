@@ -1,7 +1,9 @@
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterable, Optional, Union
 
+from cachetools import TTLCache
 from pydantic import BaseModel, Field
 
 from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
@@ -115,6 +117,36 @@ class PostgresCacheBackend(CacheBackend):
 
     async def multiset(self, key_val_map: Dict[str, IOType], ttl: Optional[int] = None) -> None:
         raise NotImplementedError("multiset not implemented for PostgresCacheBackend")
+
+
+class InMemoryCacheBackend(CacheBackend):
+    def __init__(self, maxsize: int, ttl: int) -> None:
+        self.client = TTLCache(maxsize=maxsize, ttl=ttl)
+        self.lock = asyncio.Lock()
+
+    async def get(self, key: str, ttl: Optional[int] = None) -> Optional[IOType]:
+        # TTLCache is just a dictionary with TTL logic, so not actual async
+        # haven't seen any good enough async-ttl library
+        return self.client.get(key)
+
+    async def multiget(
+        self, keys: Iterable[str], ttl: Optional[int] = None
+    ) -> Optional[Dict[str, IOType]]:
+        return {key: self.client.get(key) for key in keys}
+
+    async def set(self, key: str, val: IOType, ttl: Optional[int] = None) -> None:
+        # ttl is ignored here as it's set during object creation
+        # to be safe, use asyncio.lock here
+        async with self.lock:
+            self.client[key] = val
+
+    async def multiset(self, key_val_map: Dict[str, IOType], ttl: Optional[int] = None) -> None:
+        async with self.lock:
+            self.client.update(key_val_map)
+
+    async def invalidate(self, key: str) -> None:
+        async with self.lock:
+            self.client.pop(key)
 
 
 class OutputWrapper(BaseModel):

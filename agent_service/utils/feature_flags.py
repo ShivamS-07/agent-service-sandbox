@@ -4,18 +4,21 @@ from typing import Any, Dict, Optional, Union
 
 import ldclient
 import sentry_sdk
-from cachetools import TTLCache
+from async_lru import alru_cache
 from gbi_common_py_utils import get_config
 from gbi_common_py_utils.utils import ssm
 from gbi_common_py_utils.utils.feature_flags import (
     LDUser,
+    __create_user_map,
     create_anonymous_user,
     create_user_from_userid,
+    log_deprecated_user_profile_usage,
 )
 from gbi_common_py_utils.utils.redis import is_redis_available
 
+from agent_service.utils.async_db import AsyncDB, get_async_db
 from agent_service.utils.async_utils import run_async_background
-from agent_service.utils.cache_utils import RedisCacheBackend
+from agent_service.utils.cache_utils import InMemoryCacheBackend, RedisCacheBackend
 from agent_service.utils.postgres import get_psql
 from definitions import CONFIG_PATH
 
@@ -41,6 +44,25 @@ def get_user_context(user_id: str) -> LDUser:
     return create_user_from_userid(user_id=user_id, db=psql)
 
 
+@alru_cache(maxsize=128)
+async def get_user_context_async(user_id: str, async_db: AsyncDB | None) -> LDUser:
+    """
+    Retrieve a user context from a user id.
+    """
+    log_deprecated_user_profile_usage()
+
+    async_db = async_db or get_async_db(min_pool_size=1, max_pool_size=4)
+
+    sql = """
+        SELECT up.user_id, up.company_id::text, up.email, up.name
+        FROM user_profile.user_profile up
+        WHERE up.user_id = %s
+    """
+    recs = await async_db.generic_read(sql=sql, params=(user_id,))
+    mapping = __create_user_map(recs, keyset={user_id}, dict_key_lookup="user_id")
+    return mapping[user_id]
+
+
 def get_ld_flag(flag_name: str, default: Any, user_context: Union[None, str, LDUser]) -> Any:
     """
     Evaluate a flag for a user, defaulting to some value if the flag is not available.
@@ -62,6 +84,36 @@ def get_ld_flag(flag_name: str, default: Any, user_context: Union[None, str, LDU
         result_context = create_anonymous_user()
     else:
         result_context = user_context
+
+    result = client.variation(flag_name, result_context.to_dict(), default)
+    return result
+
+
+async def get_ld_flag_async(
+    flag_name: str, default: Any, user_id: str | None, async_db: AsyncDB | None
+) -> Any:
+    """
+    Evaluate a flag for a user, defaulting to some value if the flag is not available.
+    """
+    client = None
+    try:
+        client = ldclient.get()
+    except Exception:
+        __init_ld_client()
+        client = ldclient.get()
+
+    async_db = async_db or get_async_db(min_pool_size=1, max_pool_size=4)
+
+    if isinstance(user_id, str):
+        try:
+            result_context = await get_user_context_async(user_id, async_db)
+        except Exception:
+            logger.warning(f"Bad userID string input: {user_id}")
+            result_context = create_anonymous_user()
+    elif user_id is None:
+        result_context = create_anonymous_user()
+    else:
+        raise ValueError(f"User ID must be a string: {user_id}")
 
     result = client.variation(flag_name, result_context.to_dict(), default)
     return result
@@ -106,11 +158,10 @@ def get_user_agent_redis_cache() -> Optional[RedisCacheBackend]:
     )
 
 
-ADMIN_CACHE_TTL = 3600
-ADMIN_CACHE = TTLCache(maxsize=256, ttl=ADMIN_CACHE_TTL)
+ADMIN_CACHE = InMemoryCacheBackend(maxsize=256, ttl=600)
 
 
-async def is_user_agent_admin(user_id: str) -> bool:
+async def is_user_agent_admin(user_id: str, async_db: Optional[AsyncDB] = None) -> bool:
     """
     Users with flag on can access some agent windows owned by other users. Currently the endpoints
     are:
@@ -122,17 +173,17 @@ async def is_user_agent_admin(user_id: str) -> bool:
     - `get_agent_plan_output`
     - `stream_agent_events`
     """
-    cached_val = ADMIN_CACHE.get(user_id)
+    cached_val = await ADMIN_CACHE.get(user_id)
     if isinstance(cached_val, bool):
         logger.info(f"Get user {user_id} agent admin from in-memory TTL Cache: {cached_val}")
         return cached_val
 
     redis_cache = get_user_agent_redis_cache()
     if not redis_cache:
-        is_admin = get_ld_flag(
-            flag_name="warren-agent-admin", user_context=get_user_context(user_id), default=False
+        is_admin = await get_ld_flag_async(
+            flag_name="warren-agent-admin", user_id=user_id, default=False, async_db=async_db
         )
-        ADMIN_CACHE[user_id] = is_admin
+        await ADMIN_CACHE.set(user_id, is_admin)
         return is_admin
 
     with sentry_sdk.start_span(
@@ -140,20 +191,20 @@ async def is_user_agent_admin(user_id: str) -> bool:
     ):
         is_admin = await redis_cache.get(user_id)
         if isinstance(is_admin, bool):
-            ADMIN_CACHE[user_id] = is_admin
+            await ADMIN_CACHE.set(user_id, is_admin)
             return is_admin  # type: ignore
 
-    is_admin = get_ld_flag(
-        flag_name="warren-agent-admin",
-        user_context=get_user_context(user_id),
-        default=False,
+    is_admin = await get_ld_flag_async(
+        flag_name="warren-agent-admin", user_id=user_id, default=False, async_db=async_db
     )
-    run_async_background(redis_cache.set(user_id, is_admin, ttl=ADMIN_CACHE_TTL))
-    ADMIN_CACHE[user_id] = is_admin
+    run_async_background(redis_cache.set(user_id, is_admin, ttl=3600))
+    await ADMIN_CACHE.set(user_id, is_admin)
     return is_admin  # type: ignore
 
 
-def user_has_qc_tool_access(user_id: str, default: bool = False) -> bool:
+async def user_has_qc_tool_access(
+    user_id: str, default: bool = False, async_db: Optional[AsyncDB] = None
+) -> bool:
     """
     Users with flag on can access some agent windows owned by other users. Currently the endpoints
     are:
@@ -163,8 +214,8 @@ def user_has_qc_tool_access(user_id: str, default: bool = False) -> bool:
     - `update_agent_qc`
     """
 
-    return get_ld_flag(
-        flag_name="horizon-qc-tool", user_context=get_user_context(user_id), default=default
+    return await get_ld_flag_async(
+        flag_name="horizon-qc-tool", user_id=user_id, default=default, async_db=async_db
     )
 
 
@@ -184,7 +235,9 @@ def agent_output_cache_enabled() -> bool:
     return get_ld_flag(flag_name="agent-output-cache", user_context=None, default=False)
 
 
-def is_database_access_check_enabled_for_user(user_id: str) -> bool:
-    return get_ld_flag(
-        flag_name="database-access-check", user_context=get_user_context(user_id), default=False
+async def is_database_access_check_enabled_for_user(
+    user_id: str, async_db: Optional[AsyncDB] = None
+) -> bool:
+    return await get_ld_flag_async(
+        flag_name="database-access-check", user_id=user_id, default=False, async_db=async_db
     )

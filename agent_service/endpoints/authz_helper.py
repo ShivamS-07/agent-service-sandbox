@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional
 
 import jwt
 import sentry_sdk
-from cachetools import TTLCache
 from fastapi import HTTPException, Security, status
 from fastapi.security.api_key import APIKeyHeader
 from gbi_common_py_utils.utils.redis import is_redis_available
@@ -20,7 +19,7 @@ from agent_service.external.cognito_client import (
 from agent_service.external.grpc_utils import BOOSTED_ISS
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import run_async_background
-from agent_service.utils.cache_utils import RedisCacheBackend
+from agent_service.utils.cache_utils import InMemoryCacheBackend, RedisCacheBackend
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.string_utils import is_valid_uuid
 
@@ -166,8 +165,7 @@ def get_agent_owner_redis() -> Optional[RedisCacheBackend]:
     )
 
 
-AGENT_OWNER_CACHE_TTL = 3600 * 24
-AGENT_OWNER_CACHE = TTLCache(maxsize=256, ttl=AGENT_OWNER_CACHE_TTL)
+AGENT_OWNER_CACHE = InMemoryCacheBackend(maxsize=256, ttl=3600 * 8)
 
 
 async def get_agent_owner(
@@ -176,7 +174,7 @@ async def get_agent_owner(
     if no_cache:
         return await async_db.get_agent_owner(agent_id, include_deleted=False)
 
-    owner_id = AGENT_OWNER_CACHE.get(agent_id)
+    owner_id: str | None = await AGENT_OWNER_CACHE.get(agent_id)  # type: ignore
     if is_valid_uuid(owner_id):
         logger.info(f"Get agent {agent_id} owner from in-memory TTL Cache: {owner_id}!")
         return owner_id
@@ -185,28 +183,27 @@ async def get_agent_owner(
     if not redis_cache:
         owner_id = await async_db.get_agent_owner(agent_id, include_deleted=False)
         if owner_id:
-            AGENT_OWNER_CACHE[agent_id] = owner_id
+            await AGENT_OWNER_CACHE.set(agent_id, owner_id)
 
         return owner_id
 
     with sentry_sdk.start_span(op="redis.get", description="Get agent owner from Redis cache"):
-        owner_id = await redis_cache.get(agent_id)
+        owner_id = await redis_cache.get(agent_id)  # type: ignore
         if is_valid_uuid(owner_id):
-            AGENT_OWNER_CACHE[agent_id] = owner_id
+            await AGENT_OWNER_CACHE.set(agent_id, owner_id)
             return owner_id  # type: ignore
 
     with sentry_sdk.start_span(op="db.get_agent_owner", description="Get agent owner from DB"):
         owner_id = await async_db.get_agent_owner(agent_id, include_deleted=False)
         if owner_id:
-            AGENT_OWNER_CACHE[agent_id] = owner_id
-            run_async_background(redis_cache.set(agent_id, owner_id, ttl=AGENT_OWNER_CACHE_TTL))
+            await AGENT_OWNER_CACHE.set(agent_id, owner_id)
+            run_async_background(redis_cache.set(agent_id, owner_id, ttl=3600 * 24))
 
     return owner_id
 
 
 async def invalidate_agent_owner_cache(agent_id: str) -> None:
-    if agent_id in AGENT_OWNER_CACHE:
-        del AGENT_OWNER_CACHE[agent_id]
+    await AGENT_OWNER_CACHE.invalidate(agent_id)
 
     redis_cache = get_agent_owner_redis()
     if redis_cache:
