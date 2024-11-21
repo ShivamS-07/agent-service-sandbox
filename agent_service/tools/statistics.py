@@ -103,13 +103,16 @@ TIME_SERIES_TEMPLATE = (
     "Note that you are generating a time series between {start_date} and {end_date} for each stock."
 )
 
-SINGLE_DATE_TEMPLATE = (
-    "Note that you are generating a single point of data for {date} for each stock. Note that if the "
-    "user is asking for data in the past, the above date is the specific date in the past we want data for, "
-    "NOT today's date (However, if the user is asking for current date, it is today's date). "
-    "For example, if the user asked for the stock performance of the first month of previous fiscal quarter, "
-    "the provided date is the last day of that month. If you are mentioning a range in your calculation, the "
-    "provided date must be the last date in the range!"
+SINGLE_DATE_OTHER_TEMPLATE = (
+    "Note that you are generating a single point of data for {date} for each stock. Note that date is in "
+    "the past, the current date is {today}. You should interpret any relative date expression of the client's "
+    "using today, but make sure you mention in your calculation that you are generating a statistic for {date}, "
+    "not today! If you are doing a calculation involving more than one date in your calculation, {date} will "
+    " typically be the last relevant date."
+)
+
+SINGLE_DATE_TODAY_TEMPLATE = (
+    "Note that you are generating a single point of data for today, {date}, for each stock"
 )
 
 
@@ -401,8 +404,12 @@ async def get_statistic_data_for_companies(
         all_statistics = "\n".join(sorted(all_statistic_lookup, key=lambda x: len(x)))
         if is_timeseries:
             time_series_str = TIME_SERIES_TEMPLATE.format(start_date=start_date, end_date=end_date)
+        elif (
+            not args.date_range or not args.date_range.end_date or today == args.date_range.end_date
+        ):
+            time_series_str = SINGLE_DATE_TODAY_TEMPLATE.format(date=end_date)
         else:
-            time_series_str = SINGLE_DATE_TEMPLATE.format(date=start_date)
+            time_series_str = SINGLE_DATE_OTHER_TEMPLATE.format(date=end_date, today=today)
 
         main_prompt = DECOMPOSITION_MAIN_PROMPT.format(
             statistic_description=stat_ref,

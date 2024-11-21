@@ -1,5 +1,6 @@
 import copy
 import json
+from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 import Levenshtein
@@ -10,6 +11,8 @@ from agent_service.io_type_utils import ComplexIOBase, IOTypeBase
 from agent_service.io_types.text import (
     DEFAULT_TEXT_TYPE,
     NewsText,
+    StockText,
+    Text,
     TextCitation,
     TextCitationGroup,
     TextGroup,
@@ -19,6 +22,8 @@ from agent_service.tools.LLM_analysis.constants import (
     ANCHOR_REGEX,
     CITATION_HEADER,
     CITATION_SNIPPET_BUFFER_LEN,
+    MAX_TEXT_PER_SUMMARIZE,
+    PREFERRED_TEXT_TYPES,
     SENTENCE_REGEX,
     UNITS,
 )
@@ -282,3 +287,42 @@ async def is_topical(topic: str, context: PlanRunContext) -> bool:
         max_tokens=500,
     )
     return result.split("\n")[-1].strip().lower() != "no"
+
+
+def initial_filter_texts(texts: List[Text], max_texts: int = MAX_TEXT_PER_SUMMARIZE) -> List[Text]:
+    if len(texts) <= MAX_TEXT_PER_SUMMARIZE:
+        return texts
+    stock_text_lookup = defaultdict(list)
+    # diversify across stocks
+    for text in texts:
+        stock_text_lookup[
+            (
+                text.stock_id.gbi_id if isinstance(text, StockText) and text.stock_id else -1
+            )  # type:ignore
+        ].append(text)
+    per_stock_quota = max(
+        1, max_texts // len(stock_text_lookup)
+    )  # give each stock an initial quota
+    final_texts = []
+    for stock_texts in stock_text_lookup.values():
+        # prefer certain types, and then sort by timestamp
+        stock_texts.sort(
+            key=lambda x: (
+                any([isinstance(x, text_type) for text_type in PREFERRED_TEXT_TYPES]),
+                x.timestamp.timestamp() if x.timestamp else 0,
+            ),
+            reverse=True,
+        )
+        final_texts.extend(stock_texts[:per_stock_quota])
+
+    # fill the rest of the quota on a per stock basis
+    index = per_stock_quota
+    while len(final_texts) < MAX_TEXT_PER_SUMMARIZE:
+        for stock_texts in stock_text_lookup.values():
+            if len(stock_texts) > index:
+                final_texts.append(stock_texts[index])
+                if len(final_texts) == MAX_TEXT_PER_SUMMARIZE:
+                    break
+        index += 1
+
+    return final_texts

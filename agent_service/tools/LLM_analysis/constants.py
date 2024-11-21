@@ -1,6 +1,7 @@
 import re
 
 from agent_service.GPT.constants import GPT4_O
+from agent_service.io_types.text import StockEarningsSummaryPointText
 
 DEFAULT_LLM = GPT4_O
 
@@ -37,3 +38,6 @@ BRAINSTORM_DELIMITER = "!!!"
 IDEA = "IDEA"
 STOCK_TYPE = "STOCK_TYPE"
 TARGET_STOCK = "TARGET_STOCK"
+
+MAX_TEXT_PER_SUMMARIZE = 10000
+PREFERRED_TEXT_TYPES = [StockEarningsSummaryPointText]

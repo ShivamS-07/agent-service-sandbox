@@ -32,6 +32,7 @@ from agent_service.tool import (
 )
 from agent_service.tools.ideas.utils import ideas_enabled
 from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT, CITATION_REMINDER
+from agent_service.tools.LLM_analysis.utils import initial_filter_texts
 from agent_service.tools.stock_filter_and_rank.constants import (
     NONRELEVANT_COMPANY_EXPLANATION,
 )
@@ -1147,6 +1148,13 @@ async def per_idea_filter_and_rank_stocks_by_profile_match(
         raise e
     except Exception as e:
         logger.warning(f"Error doing text diff from previous run: {e}")
+
+    initial_split_text_count = len(split_texts)
+    split_texts = cast(List[StockText], initial_filter_texts(split_texts))  # type: ignore
+    if len(split_texts) != initial_split_text_count:
+        logger.warning(
+            f"Too many texts, filtered {initial_split_text_count} split texts to {len(split_texts)}"
+        )
 
     for profile in todo_profiles:
         profile_match_params = ProfileMatchParameters(

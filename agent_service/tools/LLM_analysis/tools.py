@@ -80,6 +80,7 @@ from agent_service.tools.LLM_analysis.utils import (
     get_all_text_citations,
     get_original_cite_count,
     get_second_order_citations,
+    initial_filter_texts,
     is_topical,
 )
 from agent_service.tools.news import (
@@ -148,9 +149,13 @@ async def _initial_summarize_helper(
     topic_phrase = args.topic_phrase
     stock_phrase = args.stock_phrase
     logger = get_prefect_logger(__name__)
+    texts = args.texts
+    texts = initial_filter_texts(texts)
+    if len(args.texts) != len(texts):
+        logger.warning(f"Too many texts, filtered {len(args.texts)} split texts to {len(texts)}")
     if args.topic and topic_filter:
         texts = await topic_filter_helper(
-            args.texts,
+            texts,
             args.topic,
             context.agent_id,
             model_for_filter_to_context=GPT4_O,
