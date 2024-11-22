@@ -289,7 +289,7 @@ class TestGraphTools(unittest.IsolatedAsyncioTestCase):
         prefer_pie.prefer_graph_type = GraphType.PIE
 
         cases = [
-            (TIMESERIES_TABLE_NO_DATASET, BarGraph),
+            (TIMESERIES_TABLE_NO_DATASET, LineGraph),
             (TIMESERIES_TABLE, LineGraph),
             (prefer_pie, PieGraph),
         ]

@@ -602,6 +602,9 @@ async def make_generic_graph(args: MakeGenericGraphArgs, context: PlanRunContext
         TableColumnType.FLOAT,
         TableColumnType.DATE,
         TableColumnType.DATETIME,
+        TableColumnType.MONTH,
+        TableColumnType.YEAR,
+        TableColumnType.QUARTER,
     ]
 
     # if we have a graph preference that the table itself had set, use that

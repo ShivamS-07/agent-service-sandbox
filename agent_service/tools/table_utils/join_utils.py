@@ -260,16 +260,11 @@ def check_for_index_overlap(first: Table, second: Table) -> bool:
     second_group_col = second.get_stock_column() or second.get_first_col_of_type(
         TableColumnType.STRING
     )
-    first_date_col = first.get_date_column()
-    second_date_col = second.get_date_column()
+    if not first_group_col or not second_group_col:
+        return False
 
-    for first_col, second_col in zip(
-        [first_group_col, first_date_col], [second_group_col, second_date_col]
-    ):
-        if not first_col or not second_col:
-            continue
-        if len(set(first_col.data).intersection(set(second_col.data))) > 0:
-            return True
+    if len(set(first_group_col.data).intersection(set(second_group_col.data))) > 0:
+        return True
 
     return False
 
