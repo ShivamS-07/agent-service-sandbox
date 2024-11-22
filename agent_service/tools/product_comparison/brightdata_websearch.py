@@ -3,6 +3,8 @@ import io
 import logging
 import re
 import ssl
+import traceback
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import aioboto3
@@ -24,6 +26,7 @@ from agent_service.tools.product_comparison.constants import (
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.event_logging import log_event
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -49,15 +52,31 @@ async def async_fetch_json(
     proxy: str,
     timeout: int,
     ssl_context: Any,
+    event_data: Dict[str, Any],
 ) -> Dict[str, Any]:
+    start_time = datetime.now(timezone.utc).isoformat()
     async with session.get(
         url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context  # type: ignore
     ) as response:
-        return await response.json()
+        result = await response.json()
+        end_time = datetime.now(timezone.utc).isoformat()
+        additional_event_data = {"start_time_utc": start_time, "end_time_utc": end_time}
+
+        if event_data:
+            log_event(
+                event_name="get_urls_for_web_scraping",
+                event_data={**event_data, **additional_event_data},
+            )
+
+        return result
 
 
 async def get_urls_async(
-    queries: List[str], num_results: int, headers: Dict[str, str] = HEADER, timeout: int = 60
+    queries: List[str],
+    num_results: int,
+    context: Optional[PlanRunContext] = None,
+    headers: Dict[str, str] = HEADER,
+    timeout: int = 60,
 ) -> List[str]:
     ssl_context = ssl.create_default_context()
     ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
@@ -73,8 +92,21 @@ async def get_urls_async(
     async with aiohttp.ClientSession(max_line_size=8190 * 5, max_field_size=8190 * 5) as session:
         tasks = []
         for url in urls:
+            if context:
+                event_data = {
+                    "agent_id": context.agent_id,
+                    "user_id": context.user_id,
+                    "plan_id": context.plan_id,
+                    "plan_run_id": context.plan_run_id,
+                    "tool_calling": context.tool_name,
+                    "url": url,
+                }
+            else:
+                event_data = {}
             tasks.append(
-                async_fetch_json(session, url, headers, proxies["http"], timeout, ssl_context)
+                async_fetch_json(
+                    session, url, headers, proxies["http"], timeout, ssl_context, event_data
+                )
             )
 
         results = await asyncio.gather(*tasks)
@@ -95,7 +127,11 @@ async def get_urls_async(
 
 
 async def get_news_urls_async(
-    queries: List[str], num_results: int, headers: Dict[str, str] = HEADER, timeout: int = 60
+    queries: List[str],
+    num_results: int,
+    context: Optional[PlanRunContext] = None,
+    headers: Dict[str, str] = HEADER,
+    timeout: int = 60,
 ) -> List[str]:
     ssl_context = ssl.create_default_context()
     ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
@@ -113,8 +149,21 @@ async def get_news_urls_async(
     async with aiohttp.ClientSession(max_line_size=8190 * 5, max_field_size=8190 * 5) as session:
         tasks = []
         for url in urls:
+            if context:
+                event_data = {
+                    "agent_id": context.agent_id,
+                    "user_id": context.user_id,
+                    "plan_id": context.plan_id,
+                    "plan_run_id": context.plan_run_id,
+                    "tool_calling": context.tool_name,
+                    "url": url,
+                }
+            else:
+                event_data = {}
             tasks.append(
-                async_fetch_json(session, url, headers, proxies["http"], timeout, ssl_context)
+                async_fetch_json(
+                    session, url, headers, proxies["http"], timeout, ssl_context, event_data
+                )
             )
 
         results = await asyncio.gather(*tasks)
@@ -175,11 +224,25 @@ async def req_and_scrape(
     plan_context: PlanRunContext,
     should_print_errors: Optional[bool] = False,
 ) -> Optional[WebText]:
+    start_time = datetime.now(timezone.utc).isoformat()
+    event_data = {
+        "agent_id": plan_context.agent_id,
+        "user_id": plan_context.user_id,
+        "plan_id": plan_context.plan_id,
+        "plan_run_id": plan_context.plan_run_id,
+        "tool_calling": plan_context.tool_name,
+        "url": url,
+        "start_time_utc": start_time,
+    }
+
     # use aiohttp to asynchronously make URL requests and scrape using BeautifulSoup
     try:
         async with session.get(
             url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context  # type: ignore
         ) as response:
+            end_time = datetime.now(timezone.utc).isoformat()
+            event_data["end_time_utc"] = end_time
+
             if response.status != 200:
                 if should_print_errors:
                     await tool_log(
@@ -187,6 +250,10 @@ async def req_and_scrape(
                         context=plan_context,
                     )
                 logger.error(f"Request Error {response.status}: {url}")
+                log_event(
+                    event_name="brd_request",
+                    event_data={**event_data, **{"error": f"Website response status: {response}"}},
+                )
                 return None
 
             title: Optional[str] = None
@@ -203,6 +270,11 @@ async def req_and_scrape(
 
                 if pdf_reader.metadata:
                     title = pdf_reader.metadata.title
+
+                log_event(
+                    event_name="brd_request",
+                    event_data={**event_data, **{"result_text": text}},
+                )
             elif "text/html" in content_type:
                 from bs4 import BeautifulSoup
 
@@ -241,8 +313,20 @@ async def req_and_scrape(
                     tag.decompose()
 
                 text = soup.get_text(" ")
+
+                log_event(
+                    event_name="brd_request",
+                    event_data={**event_data, **{"result_text": text}},
+                )
             else:
                 logger.info(f"Unsupported content type: {content_type}")
+                log_event(
+                    event_name="brd_request",
+                    event_data={
+                        **event_data,
+                        **{"error": f"Unsupported content type: {content_type}"},
+                    },
+                )
                 return None
 
     except aiohttp.ClientResponseError as e:
@@ -252,6 +336,14 @@ async def req_and_scrape(
                 context=plan_context,
             )
         logger.error(f"HTTP error for {url}: {e.status} - {e.message}")
+        end_time = datetime.now(timezone.utc).isoformat()
+        log_event(
+            event_name="brd_request",
+            event_data={
+                **event_data,
+                **{"end_time_utc": end_time, "error": traceback.format_exc()},
+            },
+        )
         return None
 
     except aiohttp.ClientConnectionError as e:
@@ -261,6 +353,14 @@ async def req_and_scrape(
                 context=plan_context,
             )
         logger.error(f"Connection error for {url}: {e}")
+        end_time = datetime.now(timezone.utc).isoformat()
+        log_event(
+            event_name="brd_request",
+            event_data={
+                **event_data,
+                **{"end_time_utc": end_time, "error": traceback.format_exc()},
+            },
+        )
         return None
 
     except aiohttp.InvalidURL:
@@ -270,6 +370,14 @@ async def req_and_scrape(
                 context=plan_context,
             )
         logger.error(f"Invalid URL: {url}")
+        end_time = datetime.now(timezone.utc).isoformat()
+        log_event(
+            event_name="brd_request",
+            event_data={
+                **event_data,
+                **{"end_time_utc": end_time, "error": traceback.format_exc()},
+            },
+        )
         return None
 
     except Exception as e:
@@ -279,6 +387,14 @@ async def req_and_scrape(
                 context=plan_context,
             )
         logger.error(f"An unexpected error occurred: {e}")
+        end_time = datetime.now(timezone.utc).isoformat()
+        log_event(
+            event_name="brd_request",
+            event_data={
+                **event_data,
+                **{"end_time_utc": end_time, "error": traceback.format_exc()},
+            },
+        )
         return None
 
     obj = WebText(

@@ -52,8 +52,8 @@ async def single_stock_web_search(
     stock_id = args.stock_id
 
     tasks = [
-        get_urls_async([query], URLS_TO_SCRAPE),
-        get_news_urls_async([query], NEWS_URLS_TO_SCRAPE),
+        get_urls_async([query], URLS_TO_SCRAPE, context=context),
+        get_news_urls_async([query], NEWS_URLS_TO_SCRAPE, context=context),
     ]
     results = await gather_with_concurrency(tasks)
 
@@ -97,8 +97,8 @@ class GeneralWebSearchInput(ToolArgs):
 )
 async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContext) -> List[WebText]:
     tasks = [
-        get_urls_async(args.queries, URLS_TO_SCRAPE),
-        get_news_urls_async(args.queries, NEWS_URLS_TO_SCRAPE),
+        get_urls_async(args.queries, URLS_TO_SCRAPE, context=context),
+        get_news_urls_async(args.queries, NEWS_URLS_TO_SCRAPE, context=context),
     ]
     results = await gather_with_concurrency(tasks)
 
