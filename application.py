@@ -99,16 +99,19 @@ from agent_service.endpoints.models import (
     GetCustomDocumentFileInfoResponse,
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
+    GetDividendYieldResponse,
     GetEarningsSummaryResponse,
     GetHistoricalPricesRequest,
     GetHistoricalPricesResponse,
     GetLiveAgentsQCResponse,
+    GetMarketDataResponse,
     GetMemoryContentResponse,
     GetNewsSummaryRequest,
     GetNewsSummaryResponse,
     GetOrderedSecuritiesRequest,
     GetOrderedSecuritiesResponse,
     GetPlanRunDebugInfoResponse,
+    GetPriceDataResponse,
     GetPromptTemplatesResponse,
     GetRealTimePriceResponse,
     GetSecureUserResponse,
@@ -2206,6 +2209,35 @@ async def get_real_time_price(
     gbi_id: int, user: User = Depends(parse_header)
 ) -> GetRealTimePriceResponse:
     return await application.state.agent_service_impl.get_real_time_price(user=user, gbi_id=gbi_id)
+
+
+@router.get(
+    "/stock/{gbi_id}/market-data",
+    response_model=GetMarketDataResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_market_data(gbi_id: int, user: User = Depends(parse_header)) -> GetMarketDataResponse:
+    return await application.state.agent_service_impl.get_market_data(user=user, gbi_id=gbi_id)
+
+
+@router.get(
+    "/stock/{gbi_id}/price-data",
+    response_model=GetPriceDataResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_price_data(gbi_id: int, user: User = Depends(parse_header)) -> GetPriceDataResponse:
+    return await application.state.agent_service_impl.get_price_data(user=user, gbi_id=gbi_id)
+
+
+@router.get(
+    "/stock/{gbi_id}/dividend-yield",
+    response_model=GetDividendYieldResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_dividend_yield(
+    gbi_id: int, user: User = Depends(parse_header)
+) -> GetDividendYieldResponse:
+    return await application.state.agent_service_impl.get_dividend_yield(user=user, gbi_id=gbi_id)
 
 
 @router.get("/stock/{gbi_id}/company-description")

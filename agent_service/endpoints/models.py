@@ -1092,6 +1092,33 @@ class GetHistoricalPricesResponse(BaseModel):
     prices: Optional[List[HistoricalPrice]] = None
 
 
+class GetMarketDataResponse(BaseModel):
+    class MarketData(BaseModel):
+        gbiId: int
+        date: str
+        field: str
+        value: Optional[float]
+
+    market_data: Optional[List[MarketData]] = None
+
+
+class GetDividendYieldResponse(BaseModel):
+    dividend_yield: Optional[float] = None
+
+
+class GetPriceDataResponse(BaseModel):
+    class PriceData(BaseModel):
+        gbiId: int
+        lastClosePrice: Optional[float]
+        marketCap: Optional[float]
+        percentWeight: Optional[float]
+        periodLowPrice: Optional[float]
+        periodHighPrice: Optional[float]
+        pricePercentile: Optional[float]
+
+    price_data: Optional[PriceData] = None
+
+
 class GetRealTimePriceResponse(BaseModel):
     class RealTimePrice(BaseModel):
         gbiId: int

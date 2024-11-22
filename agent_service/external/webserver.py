@@ -388,3 +388,119 @@ async def get_stock_real_time_price(user_id: str, gbi_id: int) -> Optional[dict]
     ):
         return None
     return resp["data"]["getRealTimePrices"][0]
+
+
+####################################################################################################
+# GetStockMarketData
+####################################################################################################
+@async_perf_logger
+async def get_stock_market_data(user_id: str, gbi_id: int) -> Optional[list[dict]]:
+    gql_query = """
+    query GetFeatureValues(
+        $gbiIds: [Int!]!
+        $featureIds: [String!]!
+        $startDate: String!
+        $endDate: String!
+        $getMostRecent: Boolean
+    ) {
+        featureValues(
+            gbiIds: $gbiIds
+            featureIds: $featureIds
+            startDate: $startDate
+            endDate: $endDate
+            getMostRecent: $getMostRecent
+        ) {
+            gbiId
+            date
+            field
+            value
+        }
+    }
+    """
+    variables = {
+        "gbiIds": [gbi_id],
+        "featureIds": ["spiq_close", "spiq_100161", "spiq_market_cap", "spiq_low", "spiq_high"],
+        "startDate": datetime.datetime.now().strftime("%Y-%m-%d"),
+        "endDate": datetime.datetime.now().strftime("%Y-%m-%d"),
+        "getMostRecent": True,
+    }
+    resp = await _get_graphql(user_id=user_id, query=gql_query, variables=variables)
+    if (
+        resp is None
+        or "data" not in resp
+        or "featureValues" not in resp["data"]
+        or len(resp["data"]["featureValues"]) == 0
+    ):
+        return None
+    return resp["data"]["featureValues"]
+
+
+####################################################################################################
+# GetStockDividendYield
+####################################################################################################
+@async_perf_logger
+async def get_stock_dividend_yield(user_id: str, gbi_id: int) -> Optional[float]:
+    gql_query = """
+    query GetStocksDividendYield($gbiIds: [Int!]!, $date: String!) {
+        bulkSecurityDividendYield(gbiIds: $gbiIds, date: $date) {
+            gbiId
+            dividendYield
+        }
+    }
+    """
+    variables = {
+        "gbiIds": [gbi_id],
+        "date": datetime.datetime.now().strftime("%Y-%m-%d"),
+    }
+    resp = await _get_graphql(user_id=user_id, query=gql_query, variables=variables)
+    if (
+        resp is None
+        or "data" not in resp
+        or "bulkSecurityDividendYield" not in resp["data"]
+        or len(resp["data"]["bulkSecurityDividendYield"]) == 0
+        or "dividendYield" not in resp["data"]["bulkSecurityDividendYield"][0]
+    ):
+        return None
+    return resp["data"]["bulkSecurityDividendYield"][0]["dividendYield"]
+
+
+####################################################################################################
+# GetStockPriceData
+####################################################################################################
+@async_perf_logger
+async def get_stock_price_data(user_id: str, gbi_id: int) -> Optional[dict]:
+    gql_query = """
+    query StocksPriceData(
+        $gbiIds: [Int!]!
+        $startDate: String!
+        $endDate: String!
+    ) {
+        bulkSecurityPriceData(
+            gbiIds: $gbiIds
+            startDate: $startDate
+            endDate: $endDate
+        ) {
+            gbiId
+            lastClosePrice
+            marketCap
+            percentWeight
+            periodLowPrice
+            periodHighPrice
+            pricePercentile
+        }
+    }
+    """
+    variables = {
+        "gbiIds": [gbi_id],
+        "startDate": (datetime.datetime.now() - datetime.timedelta(days=365)).strftime("%Y-%m-%d"),
+        "endDate": datetime.datetime.now().strftime("%Y-%m-%d"),
+    }
+    resp = await _get_graphql(user_id=user_id, query=gql_query, variables=variables)
+    if (
+        resp is None
+        or "data" not in resp
+        or "bulkSecurityPriceData" not in resp["data"]
+        or len(resp["data"]["bulkSecurityPriceData"]) == 0
+    ):
+        return None
+    return resp["data"]["bulkSecurityPriceData"][0]

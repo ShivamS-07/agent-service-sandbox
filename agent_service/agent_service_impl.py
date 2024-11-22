@@ -96,10 +96,12 @@ from agent_service.endpoints.models import (
     GetCustomDocumentFileResponse,
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
+    GetDividendYieldResponse,
     GetEarningsSummaryResponse,
     GetHistoricalPricesRequest,
     GetHistoricalPricesResponse,
     GetLiveAgentsQCResponse,
+    GetMarketDataResponse,
     GetMemoryContentResponse,
     GetNewsSummaryRequest,
     GetNewsSummaryResponse,
@@ -107,6 +109,7 @@ from agent_service.endpoints.models import (
     GetOrderedSecuritiesResponse,
     GetPlanRunDebugInfoResponse,
     GetPlanRunOutputResponse,
+    GetPriceDataResponse,
     GetRealTimePriceResponse,
     GetSecureUserResponse,
     GetSecurityProsConsResponse,
@@ -201,8 +204,11 @@ from agent_service.external.webserver import (
     get_ordered_securities,
     get_security,
     get_security_pros_cons,
+    get_stock_dividend_yield,
     get_stock_historical_prices,
+    get_stock_market_data,
     get_stock_news_summary,
+    get_stock_price_data,
     get_stock_real_time_price,
 )
 from agent_service.io_type_utils import (
@@ -2693,6 +2699,12 @@ class AgentServiceImpl:
         price = await get_stock_real_time_price(user_id=user.user_id, gbi_id=gbi_id)
         return GetRealTimePriceResponse(price=price)
 
+    async def get_price_data(self, user: User, gbi_id: int) -> GetPriceDataResponse:
+        price_data = await get_stock_price_data(user_id=user.user_id, gbi_id=gbi_id)
+        if price_data is None:
+            return GetPriceDataResponse(price_data=None)
+        return GetPriceDataResponse(price_data=GetPriceDataResponse.PriceData(**price_data))
+
     async def search_agent_qcs(
         self,
         filter_criteria: List[HorizonCriteria],
@@ -2707,6 +2719,20 @@ class AgentServiceImpl:
 
         # Return the list of AgentQC objects
         return agent_qcs, total_agent_qcs
+
+    async def get_market_data(self, user: User, gbi_id: int) -> GetMarketDataResponse:
+        market_data = await get_stock_market_data(user_id=user.user_id, gbi_id=gbi_id)
+        return GetMarketDataResponse(
+            market_data=(
+                [GetMarketDataResponse.MarketData(**data) for data in market_data]
+                if market_data
+                else None
+            )
+        )
+
+    async def get_dividend_yield(self, user: User, gbi_id: int) -> GetDividendYieldResponse:
+        dividend_yield = await get_stock_dividend_yield(user_id=user.user_id, gbi_id=gbi_id)
+        return GetDividendYieldResponse(dividend_yield=dividend_yield)
 
     async def update_qc_agent(self, agent_qc: AgentQC) -> bool:
         try:
