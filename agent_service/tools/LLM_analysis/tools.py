@@ -862,7 +862,7 @@ async def per_idea_summarize_texts(
 
     text_cache: Dict[TextIDType, str] = {}
     # Pre-fetch texts so the cache is populated
-    _ = await Text.get_all_strs(new_texts, text_cache=text_cache)
+    _ = await Text.get_all_strs(args.texts, text_cache=text_cache)
 
     tasks = []
     for idea in new_ideas:
