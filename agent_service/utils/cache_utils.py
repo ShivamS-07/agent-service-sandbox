@@ -146,7 +146,7 @@ class InMemoryCacheBackend(CacheBackend):
 
     async def invalidate(self, key: str) -> None:
         async with self.lock:
-            self.client.pop(key)
+            self.client.pop(key, None)
 
 
 class OutputWrapper(BaseModel):
