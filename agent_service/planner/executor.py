@@ -385,10 +385,12 @@ async def _run_execution_plan_impl(
                     tool_output = load_io_type(tool_output_str)
                     if tool_output:
                         variable_lookup[step.output_variable_name] = tool_output
-                logger.info(f"Fully skipping step '{step.tool_name}' with id={step.tool_task_id}")
-                tasks[i].status = Status.COMPLETE
-                tasks[i].has_output = step.store_output
-                continue
+                        logger.info(
+                            f"Fully skipping step '{step.tool_name}' with id={step.tool_task_id}"
+                        )
+                        tasks[i].status = Status.COMPLETE
+                        tasks[i].has_output = step.store_output
+                        continue
 
         tool = ToolRegistry.get_tool(step.tool_name)
         # First, resolve the variables
