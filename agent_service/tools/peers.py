@@ -593,6 +593,7 @@ class PerStockGeneralPeersInput(ToolArgs):
     description="""
     This function returns a StockGroups object where each of its StockGroups
     consists of a list of peer companies for one.
+    The inputs to this tool are a list of StockIDs, make sure you convert tickers to StockIDs.
     Peers are related to the input stock as competitors as well as
     other actors in similar business or market areas as the input stock.
     You should use this tool when client ask for competitors or peers of a list

@@ -19,6 +19,7 @@ from agent_service.io_types.text import (
     Text,
     TextCitation,
     TextGroup,
+    TextIDType,
     TopicProfiles,
 )
 from agent_service.tools.LLM_analysis.constants import (
@@ -141,10 +142,15 @@ async def classify_stock_text_relevancy_for_profile(
 
 
 async def classify_stock_text_relevancies_for_profile(
-    texts: List[StockText], profiles_str: str, context: PlanRunContext
+    texts: List[StockText],
+    profiles_str: str,
+    context: PlanRunContext,
+    text_cache: Optional[Dict[TextIDType, str]] = None,
 ) -> List[StockText]:
     filtered_texts: List[StockText] = []
-    text_strs = await Text.get_all_strs(texts, include_header=True, include_timestamps=False)
+    text_strs = await Text.get_all_strs(
+        texts, include_header=True, include_timestamps=False, text_cache=text_cache
+    )
 
     llm = GPT(
         model=GPT4_O_MINI,

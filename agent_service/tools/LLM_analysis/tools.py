@@ -860,6 +860,10 @@ async def per_idea_summarize_texts(
             f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
         )
 
+    text_cache: Dict[TextIDType, str] = {}
+    # Pre-fetch texts so the cache is populated
+    _ = await Text.get_all_strs(new_texts, text_cache=text_cache)
+
     tasks = []
     for idea in new_ideas:
         topic = args.topic_template.replace(IDEA, f"'{idea.title}'")
@@ -890,6 +894,7 @@ async def per_idea_summarize_texts(
                         all_old_citations,
                         get_original_cite_count(remaining_citations),
                         single_summary=False,
+                        text_cache=text_cache,
                     )
                 )
             else:

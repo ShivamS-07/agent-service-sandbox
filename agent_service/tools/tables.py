@@ -753,7 +753,11 @@ async def per_stock_group_transform_table(
 
     joined_table = stock_group_output_tables[0]
     for table in stock_group_output_tables[1:]:
-        joined_table = _join_two_tables_vertically(joined_table, table)
+        joined_table = _join_two_tables_vertically(joined_table, table, add_group_col=False)
+
+    await tool_log(
+        log=f"Transformed table has {len(joined_table.columns[0].data)} rows", context=context
+    )
 
     if joined_table.get_stock_column():
         return StockTable(columns=joined_table.columns)

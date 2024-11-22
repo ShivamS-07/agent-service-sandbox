@@ -20,6 +20,7 @@ from agent_service.io_types.text import (
     Text,
     TextCitation,
     TextGroup,
+    TextIDType,
     TopicProfiles,
 )
 from agent_service.planner.errors import EmptyInputError, EmptyOutputError
@@ -93,6 +94,7 @@ async def run_profile_match(
     crash_on_empty: bool = True,
     debug_info: Optional[Dict[str, Any]] = None,
     text_relevance_cache: Optional[List[Tuple[StockText, bool]]] = None,
+    text_cache: Optional[Dict[TextIDType, str]] = None,
 ) -> List[StockID]:
     if context.task_id is None:
         return []  # for mypy
@@ -124,11 +126,15 @@ async def run_profile_match(
     texts = await partition_to_smaller_text_sizes(texts, context=context)  # type: ignore
     split_texts_set = set(texts)
 
+    if text_cache is None:
+        text_cache = {}
+        _ = await Text.get_all_strs(texts, text_cache=text_cache)
+
     if text_relevance_cache is not None:
         text_relevance_dict = dict(text_relevance_cache)
         new_texts = [text for text in texts if text not in text_relevance_dict]
         filtered_down_texts = await classify_stock_text_relevancies_for_profile(
-            new_texts, profiles_str=profile_str, context=context  # type: ignore
+            new_texts, profiles_str=profile_str, context=context, text_cache=text_cache  # type: ignore
         )
         filtered_down_text_set = set(split_texts_set)
         text_relevance_cache += [
@@ -164,7 +170,10 @@ async def run_profile_match(
     )
 
     str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
-        aligned_text_groups.val, include_header=True, text_group_numbering=True
+        aligned_text_groups.val,
+        include_header=True,
+        text_group_numbering=True,
+        text_cache=text_cache,
     )
 
     # prepare prompts
@@ -1051,6 +1060,10 @@ async def per_idea_filter_and_rank_stocks_by_profile_match(
         List[StockText], await partition_to_smaller_text_sizes(args.stock_texts, context=context)  # type: ignore
     )
 
+    text_cache: Dict[TextIDType, str] = {}
+    # Pre-fetch texts so the cache is populated
+    _ = await Text.get_all_strs(split_texts, text_cache=text_cache)
+
     tasks = []
 
     # Disabled for ranking as it does not have update logic designed yet
@@ -1115,6 +1128,7 @@ async def per_idea_filter_and_rank_stocks_by_profile_match(
                                 detailed_log=False,
                                 debug_info=debug_dicts[profile.initial_idea],
                                 text_relevance_cache=text_relevance_cache,
+                                text_cache=text_cache,
                             )
                         )
                     else:
