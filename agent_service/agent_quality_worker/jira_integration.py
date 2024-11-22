@@ -54,6 +54,9 @@ class JiraIntegration:
             "summary": criteria.summary,
             "description": criteria.description,
             "issuetype": {"name": criteria.issue_type or "Task"},
+            "priority": {"name": criteria.priority or "TBD"},
+            "parent": {"key": criteria.parent},
+            "customfield_10115": criteria.story_points,  # story_points custom field
         }
 
         # Add any additional custom fields

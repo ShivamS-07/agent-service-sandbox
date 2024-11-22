@@ -2731,6 +2731,7 @@ class AgentServiceImpl:
             assignee=request.assignee,
             priority=request.priority,  # Default priority
             labels=request.labels,  # Default labels
+            parent=request.parent,
         )
 
         # Add any additional fields specified in the request

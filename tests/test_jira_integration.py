@@ -18,11 +18,10 @@ class TestJiraIntegration(unittest.TestCase):
         """
         # Step 1: Define criteria for the Jira ticket
         criteria = JiraTicketCriteria(
-            project_key="QL24",
+            project_key="HT",  # Horizon Tool project - specifically used for testing
             summary="Automated Ticket Creation",
             description="This ticket was created through the API with custom criteria.",
             issue_type="Bug",
-            assignee="william.ngana@gradientboostedinvestments.com",
             priority="High",
             labels=["automation", "python"],
         )

@@ -2230,7 +2230,7 @@ class AsyncDB:
         if pagination:
             sql += " LIMIT %(page_size)s OFFSET %(page_index)s"
             sql_params["page_size"] = pagination.page_size
-            sql_params["page_index"] = pagination.page_index
+            sql_params["page_index"] = pagination.page_size * pagination.page_index
 
         records = await self.pg.generic_read(sql, sql_params)
         agent_qcs = []
