@@ -263,9 +263,8 @@ class TestHomeScreenQueries(TestExecutionPlanner):
                 validate_output=validate_output,
                 required_tools=[
                     "stock_identifier_lookup",
-                    "get_date_range",
                     "get_earnings_call_summaries",
-                    "get_all_news_developments_about_companies",
+                    "get_latest_news_for_companies",
                     "add_lists",
                     "summarize_texts",
                     "prepare_output",

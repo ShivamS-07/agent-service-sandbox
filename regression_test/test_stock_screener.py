@@ -22,7 +22,7 @@ class TestStockScreener(TestExecutionPlanner):
             validate_output=validate_output,
             required_tools=[
                 "get_statistic_data_for_companies",
-                "get_all_news_developments_about_companies",
+                "get_latest_news_for_companies",
                 "get_earnings_call_summaries",
             ],
         )

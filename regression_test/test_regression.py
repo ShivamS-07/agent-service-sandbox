@@ -159,7 +159,7 @@ class TestExecutionPlanner(unittest.TestCase):
         only_validate_plan: bool = os.getenv("RUN_IN_CI", False),
     ):
         test_name = inspect.stack()[1].function
-        user_id = user_id or "6c14fe54-de50-4d05-9533-57541715064f"
+        user_id = user_id or "f0d605d8-41b3-481f-b0df-5ad71dc5e110"
         agent_id = str(uuid.uuid4())
         shared_log_data = {
             "user_id": user_id,
