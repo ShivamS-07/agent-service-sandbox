@@ -1258,7 +1258,10 @@ class AsyncDB:
 
     @async_perf_logger
     async def get_user_all_agents(
-        self, user_id: Optional[str] = None, agent_ids: Optional[List[str]] = None
+        self,
+        user_id: Optional[str] = None,
+        agent_ids: Optional[List[str]] = None,
+        include_deleted: bool = False,
     ) -> List[AgentInfo]:
         """
         This function retrieves all agents for a given user, optionally filtered
@@ -1270,7 +1273,11 @@ class AsyncDB:
 
         Returns: A list of all agents for the user, optionally filtered.
         """
-        agent_where_clauses = ["not deleted"]
+        if not include_deleted:
+            agent_where_clauses = ["not deleted"]
+        else:
+            agent_where_clauses = []
+
         params: Dict[str, Any] = {}
         if user_id:
             params["user_id"] = user_id

@@ -404,9 +404,9 @@ class AgentServiceImpl:
             section.index = i
         return GetAllAgentsResponse(agents=agents, sections=sections)
 
-    async def get_agent(self, agent_id: str) -> AgentInfo:
+    async def get_agent(self, agent_id: str, is_admin: bool = False) -> AgentInfo:
         agents, cost_info = await asyncio.gather(
-            self.pg.get_user_all_agents(agent_ids=[agent_id]),
+            self.pg.get_user_all_agents(agent_ids=[agent_id], include_deleted=is_admin),
             self.ch.get_agents_cost_info(agent_ids=[agent_id]),
         )
 

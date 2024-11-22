@@ -581,15 +581,19 @@ async def get_all_agents(user: User = Depends(parse_header)) -> GetAllAgentsResp
 @router.get("/agent/get-agent/{agent_id}", response_model=AgentInfo, status_code=status.HTTP_200_OK)
 async def get_agent(agent_id: str, user: User = Depends(parse_header)) -> AgentInfo:
     logger.info(f"Validating if {user.user_id=} has access to {agent_id=}.")
-    if not (
-        user.is_super_admin
+    is_admin = (
+        user.is_admin
+        or user.is_super_admin
         or await is_user_agent_admin(user.user_id, async_db=application.state.agent_service_impl.pg)
-    ):
+    )
+    if not is_admin:
         await validate_user_agent_access(
             user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
         )
 
-    return await application.state.agent_service_impl.get_agent(agent_id=agent_id)
+    return await application.state.agent_service_impl.get_agent(
+        agent_id=agent_id, is_admin=is_admin
+    )
 
 
 @router.get(
