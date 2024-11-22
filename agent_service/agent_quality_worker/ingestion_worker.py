@@ -66,7 +66,7 @@ async def get_number_of_assigned(
             arg2=None,
         ),
         HorizonCriteria(
-            column="created_at",
+            column="aqc.created_at",
             operator=HorizonCriteriaOperator.between,
             arg1=seven_days_ago,
             arg2=now,
@@ -104,6 +104,8 @@ async def assign_agent_quality_reviewers(
     agent_id: str, plan_id: str, user_id: str, status: str, skip_db_commit: bool = False
 ) -> None:
     db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
+
+    logging.info(f"Retrieving Agent QC for agent_id: {agent_id}, plan_id: {plan_id}")
     # get the correct quality agent
     # we can potentially get multiple for
     # one agent id
@@ -119,6 +121,9 @@ async def assign_agent_quality_reviewers(
     # Check if the user is internal and if the env is prod
     # we want to stop internal queries from getting to triage
     if not is_dev and db.is_user_internal(user_id):
+        logging.info(
+            f"Agent created by internal user, skipping assignment for agent_id: {agent_id}"
+        )
         return None
 
     horizon_users_dict = HORIZON_USERS_PROD
@@ -146,6 +151,7 @@ async def assign_agent_quality_reviewers(
 
     # if no CS free then return
     if len(cs_team_members) == 0:
+        logging.info(f"CS has no allocation, skipping assignment for agent_id: {agent_id}")
         return
 
     # randomly choose the reviewer
@@ -166,3 +172,4 @@ async def assign_agent_quality_reviewers(
     )
 
     await db.update_agent_qc(agent_qc)
+    logging.info(f"Successfully assigned reviewers for agent_id: {agent_id}")
