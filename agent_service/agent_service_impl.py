@@ -218,8 +218,11 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
 )
 from agent_service.io_types.text_objects import (
+    PortfolioTextObject,
     VariableTextObject,
+    WatchlistTextObject,
     extract_ordered_text_object_parts_from_text,
+    extract_text_objects_from_text,
 )
 from agent_service.planner.action_decide import FirstActionDecider
 from agent_service.planner.constants import CHAT_DIFF_TEMPLATE, FirstAction
@@ -2515,6 +2518,31 @@ class AgentServiceImpl:
             message_author=user.real_user_id,
         )
         await self.pg.insert_chat_messages(messages=[user_msg])
+
+        # check if portfolio or watchlist names need to be updated in default plan
+
+        watchlisit_name_in_template, portfolio_name_in_template = None, None
+
+        _, text_objects = extract_text_objects_from_text(template_prompt)
+        for obj in text_objects:
+            if isinstance(obj, WatchlistTextObject):
+                watchlisit_name_in_template = obj.label
+                watchlisit_id_in_template = obj.id
+            if isinstance(obj, PortfolioTextObject):
+                portfolio_name_in_template = obj.label
+                portfolio_id_in_template = obj.id
+
+        for node in plan.nodes:
+            if node.tool_name == "get_user_watchlist_stocks":
+                watchlisit_name_in_plan = node.args.get("watchlist_name")
+                if watchlisit_name_in_template != watchlisit_name_in_plan:
+                    node.args["watchlist_name"] = watchlisit_name_in_template
+                    node.args["watchlist_id"] = watchlisit_id_in_template
+            if node.tool_name == "convert_portfolio_mention_to_portfolio_id":
+                portfolio_name_in_plan = node.args.get("portfolio_name")
+                if portfolio_name_in_template != portfolio_name_in_plan:
+                    node.args["portfolio_name"] = portfolio_name_in_template
+                    node.args["portfolio_uuid"] = portfolio_id_in_template
 
         # Write complete plan to db and let FE know the plan is ready
         # FE cancellation button will show up after this point
