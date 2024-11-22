@@ -10,6 +10,7 @@ from user_service_proto_v1.user_service_pb2 import User
 from agent_service.agent_quality_worker.ingestion_worker import (
     send_agent_quality_message,
 )
+from agent_service.endpoints.authz_helper import User as AuthzUser
 from agent_service.endpoints.models import (
     AgentEvent,
     AgentNameEvent,
@@ -37,11 +38,12 @@ from agent_service.endpoints.models import (
     TaskStatus,
     TaskStatusEvent,
 )
-from agent_service.endpoints.utils import get_plan_preview
+from agent_service.endpoints.utils import get_base_url, get_plan_preview
 from agent_service.external.user_svc_client import get_user_cached
 from agent_service.io_type_utils import load_io_type
 from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, OutputWithID, PlanStatus
+from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.types import Message, Notification, PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
@@ -138,7 +140,14 @@ async def send_chat_message(
 
 
 async def update_agent_help_requested(
-    agent_id: str, user_id: str, help_requested: bool, db: AsyncDB
+    agent_id: str,
+    user_id: str,
+    help_requested: bool,
+    db: AsyncDB,
+    send_message: Optional[Message] = None,
+    send_slack_if_requested: bool = True,
+    slack_sender: Optional[SlackSender] = None,
+    requesting_user: Optional[AuthzUser] = None,
 ) -> None:
     await db.update_agent_help_requested(agent_id=agent_id, help_requested=help_requested)
     event = NotificationEvent(
@@ -146,6 +155,31 @@ async def update_agent_help_requested(
         event=NotifyHelpStatusEvent(agent_id=agent_id, is_help_requested=help_requested),
     )
     await publish_notification_event(user_id=user_id, serialized_event=event.model_dump_json())
+    if send_message:
+        await send_chat_message(
+            message=send_message,
+            db=db,
+        )
+    if help_requested and send_slack_if_requested:
+        env = get_environment_tag()
+        slack_channel = "support-woz" if env == PROD_TAG else "alfa-client-queries-dev"
+        slack_sender = slack_sender or SlackSender(channel=slack_channel)
+        user_email, user_slack_info = await get_user_info_slack_string(pg=db, user_id=user_id)
+        agent_link = f"{get_base_url()}/chat/{agent_id}"
+        fullstory_link = "N.A."
+        if requesting_user and requesting_user.fullstory_link:
+            fullstory_link = requesting_user.fullstory_link.replace("https://", "")
+        message_text = (
+            f"User requested help with agent!"
+            f"\nAgent Link: {agent_link}"
+            f"\n{user_slack_info}"
+            f"\nemail: {user_email}"
+            f"\nFullstory link: {fullstory_link}"
+        )
+
+        await slack_sender.send_message_async(
+            message_text=message_text, channel_override=slack_channel
+        )
 
 
 async def publish_agent_name(agent_id: str, agent_name: str) -> None:

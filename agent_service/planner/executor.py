@@ -54,7 +54,13 @@ from agent_service.planner.planner_types import (
 from agent_service.planner.prompts import QUICK_THOUGHTS_PROMPT
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.tool import ToolRegistry, log_tool_call_event
-from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.types import (
+    ChatContext,
+    Message,
+    MessageMetadata,
+    MessageSpecialFormatting,
+    PlanRunContext,
+)
 from agent_service.utils.agent_event_utils import (
     get_agent_task_logs,
     publish_agent_execution_plan,
@@ -65,6 +71,7 @@ from agent_service.utils.agent_event_utils import (
     publish_agent_task_status,
     send_agent_emails,
     send_chat_message,
+    update_agent_help_requested,
 )
 from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
 from agent_service.utils.async_utils import (
@@ -75,7 +82,11 @@ from agent_service.utils.cache_utils import get_redis_cache_backend_for_output
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
-from agent_service.utils.feature_flags import agent_output_cache_enabled, get_ld_flag
+from agent_service.utils.feature_flags import (
+    agent_output_cache_enabled,
+    get_ld_flag,
+    get_ld_flag_async,
+)
 from agent_service.utils.gpt_logging import (
     GptJobIdType,
     GptJobType,
@@ -538,6 +549,40 @@ async def _run_execution_plan_impl(
                 if retrying:
                     raise AgentRetryError("Plan run attempt failed, retrying")
 
+                if (
+                    not scheduled_by_automation
+                    and await get_ld_flag_async(
+                        flag_name="get-analyst-help",
+                        user_id=context.user_id,
+                        default=False,
+                        async_db=async_db,
+                    )
+                    and await get_ld_flag_async(
+                        flag_name="auto-request-help-woz",
+                        user_id=context.user_id,
+                        default=False,
+                        async_db=async_db,
+                    )
+                ):
+                    await update_agent_help_requested(
+                        agent_id=context.agent_id,
+                        user_id=context.user_id,
+                        help_requested=True,
+                        db=async_db,
+                        send_message=Message(
+                            agent_id=context.agent_id,
+                            message=(
+                                "I ran into an issue while running the plan, "
+                                "I've alerted a human to help."
+                            ),
+                            is_user_message=False,
+                            visible_to_llm=False,
+                            message_metadata=MessageMetadata(
+                                formatting=MessageSpecialFormatting.HELP_REQUESTED
+                            ),
+                        ),
+                    )
+
                 logger.error("All retry attempts failed!")
                 raise e
 
@@ -881,6 +926,26 @@ async def create_execution_plan(
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.FAILED, db=db
         )
+        if await get_ld_flag_async(
+            flag_name="get-analyst-help", user_id=user_id, default=False, async_db=db
+        ) and await get_ld_flag_async(
+            flag_name="auto-request-help-woz", user_id=user_id, default=False, async_db=db
+        ):
+            await update_agent_help_requested(
+                agent_id=agent_id,
+                user_id=user_id,
+                help_requested=True,
+                db=db,
+                send_message=Message(
+                    agent_id=agent_id,
+                    message=("Having trouble coming up with a plan, I've alerted a human to help."),
+                    is_user_message=False,
+                    visible_to_llm=False,
+                    message_metadata=MessageMetadata(
+                        formatting=MessageSpecialFormatting.HELP_REQUESTED
+                    ),
+                ),
+            )
         raise RuntimeError("Failed to create execution plan!")
 
     if not plan_run_id:
@@ -1369,6 +1434,28 @@ async def rewrite_execution_plan(
         await publish_agent_plan_status(
             agent_id=agent_id, plan_id=plan_id, status=PlanStatus.FAILED, db=db
         )
+        if await get_ld_flag_async(
+            flag_name="get-analyst-help", user_id=user_id, default=False, async_db=db
+        ) and await get_ld_flag_async(
+            flag_name="auto-request-help-woz", user_id=user_id, default=False, async_db=db
+        ):
+            await update_agent_help_requested(
+                agent_id=agent_id,
+                user_id=user_id,
+                help_requested=True,
+                db=db,
+                send_message=Message(
+                    agent_id=agent_id,
+                    message=(
+                        "Having trouble coming up with a new plan, I've alerted a human to help."
+                    ),
+                    is_user_message=False,
+                    visible_to_llm=False,
+                    message_metadata=MessageMetadata(
+                        formatting=MessageSpecialFormatting.HELP_REQUESTED
+                    ),
+                ),
+            )
         raise RuntimeError("Failed to replan!")
 
     logger.info(f"Finished rewriting execution plan for {agent_id=}")

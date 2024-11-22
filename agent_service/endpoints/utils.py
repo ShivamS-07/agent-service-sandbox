@@ -3,6 +3,8 @@ import logging
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from gbi_common_py_utils.utils.environment import get_environment_tag
+
 from agent_service.endpoints.models import (
     PlanRun,
     PlanRunStatusInfo,
@@ -28,6 +30,11 @@ from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.prompt_template import OutputPreview, OutputType
 
 logger = logging.getLogger(__name__)
+
+
+def get_base_url() -> str:
+    env = get_environment_tag()
+    return "alfa.boosted.ai" if env == "ALPHA" else "agent-dev.boosted.ai"
 
 
 @async_perf_logger

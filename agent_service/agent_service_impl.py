@@ -493,15 +493,6 @@ class AgentServiceImpl:
         if not owner_user_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
 
-        await update_agent_help_requested(
-            agent_id=agent_id,
-            user_id=owner_user_id,
-            help_requested=req.is_help_requested,
-            db=self.pg,
-        )
-        if not req.send_chat_message:
-            return UpdateAgentResponse(success=True)
-
         message_metadata = MessageMetadata()
         if req.is_help_requested:
             message_metadata.formatting = MessageSpecialFormatting.HELP_REQUESTED
@@ -514,39 +505,23 @@ class AgentServiceImpl:
             if req.resolved_by_cs:
                 message_metadata.formatting = MessageSpecialFormatting.HELP_RESOLVED
                 message = "A human has addressed the issue I was having. I should be all set!"
-
-        await send_chat_message(
-            message=Message(
-                agent_id=agent_id,
-                message=message,
-                is_user_message=False,
-                visible_to_llm=False,
-                message_metadata=message_metadata,
-            ),
-            db=self.pg,
+        message_obj = Message(
+            agent_id=agent_id,
+            message=message,
+            is_user_message=False,
+            visible_to_llm=False,
+            message_metadata=message_metadata,
         )
-
-        if req.is_help_requested:
-            # Send the slack message after the chat message to prevent any delays
-            user_email, user_slack_info = await get_user_info_slack_string(
-                pg=self.pg, user_id=requesting_user.user_id
-            )
-            agent_link = f"{self.base_url}/chat/{agent_id}"
-            fullstory_link = "N.A."
-            if requesting_user.fullstory_link:
-                fullstory_link = requesting_user.fullstory_link.replace("https://", "")
-            message_text = (
-                f"User requested help with agent!"
-                f"\nAgent Link: {agent_link}"
-                f"\n{user_slack_info}"
-                f"\nemail: {user_email}"
-                f"\nFullstory link: {fullstory_link}"
-            )
-
-            slack_channel = "support-woz" if self.env == PROD_TAG else "alfa-client-queries-dev"
-            await self.slack_sender.send_message_async(
-                message_text=message_text, channel_override=slack_channel
-            )
+        await update_agent_help_requested(
+            agent_id=agent_id,
+            user_id=owner_user_id,
+            help_requested=req.is_help_requested,
+            db=self.pg,
+            send_message=message_obj,
+            slack_sender=self.slack_sender,
+            send_slack_if_requested=True,
+            requesting_user=requesting_user,
+        )
 
         return UpdateAgentResponse(success=True)
 
