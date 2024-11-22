@@ -226,6 +226,7 @@ class WebScraper:
     async def explore_page(self, urls: List[str], product_specs: Dict) -> Dict:
         tasks = []
         for url in urls:
+            title = url
             try:
                 response = brd_request(url)
                 content_type = response.headers.get("Content-Type")

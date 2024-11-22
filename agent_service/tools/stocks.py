@@ -1673,6 +1673,7 @@ async def get_stock_universe_table_from_universe_company_id(
     db = get_async_db(read_only=True)
     gbi_ids = []
     rows = []
+    deduped_rows_by_company = []
 
     if date_range:
         start_date = date_range.start_date

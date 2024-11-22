@@ -464,6 +464,7 @@ async def transform_table(
             and len(output_table.columns) == 3
             and len(set(stock_column.data)) != len(stock_column.data)
         ):
+            other_column = output_table.columns[-1]
             for other_column in output_table.columns:  # should be last column, but just in case
                 if other_column != date_column and other_column != stock_column:
                     break

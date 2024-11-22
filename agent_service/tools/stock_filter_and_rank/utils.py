@@ -416,6 +416,9 @@ async def check_text_diff(
     )
     retry = 0
     success = False
+    explanation = NONRELEVANT_COMPANY_EXPLANATION
+    new_score = 0
+    final_citations: List[TextCitation] = []
     while not success:
         try:
             result = await llm.do_chat_w_sys_prompt(main_prompt, FILTER_UPDATE_CHECK_SYS.format())
@@ -426,7 +429,11 @@ async def check_text_diff(
                 # just return the cache
                 return CheckOutput(stock=stock, text_relevance_cache=text_relevance_cache)
             final_citations = []
+
             for citation_dict in citation_list:
+                citation_snippet = None
+                citation_snippet_context = None
+
                 cited_text = text_group.convert_citation_num_to_text(int(citation_dict["num"]))
                 if cited_text is None:
                     continue

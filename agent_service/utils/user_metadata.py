@@ -68,6 +68,7 @@ async def is_user_first_login(user_id: str) -> IOType:
     if user_created_date < IGNORE_USERS_BEFORE_DATE:
         await FIRST_LOGIN_CACHE.set(user_id, False)
         if redis_cache:
+            # static analysis: ignore[missing_await]
             run_async_background(redis_cache.set(cache_key, False))
 
         return False
@@ -76,6 +77,7 @@ async def is_user_first_login(user_id: str) -> IOType:
     if log:
         await FIRST_LOGIN_CACHE.set(user_id, False)
         if redis_cache:
+            # static analysis: ignore[missing_await]
             run_async_background(redis_cache.set(cache_key, False))
 
         return False

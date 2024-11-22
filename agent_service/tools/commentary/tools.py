@@ -343,6 +343,7 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
         main_prompt=main_prompt, sys_prompt=commentary_sys_prompt.format(), no_cache=True
     )
     # Extract citations from the GPT output
+    commentary_text = ""
     try:
         commentary_text, citations = await extract_citations_from_gpt_output(
             result, all_text_group, context
@@ -445,10 +446,9 @@ async def get_commentary_inputs(
             themes_texts_list = themes_texts_list[:MAX_THEMES_PER_COMMENTARY]
             inputs.extend(themes_texts_list)
 
+            tasks.append(get_theme_related_texts(themes_texts_list, args.date_range, context))
         except Exception as e:
             logger.exception(f"Failed to get top themes: {e}")
-
-        tasks.append(get_theme_related_texts(themes_texts_list, args.date_range, context))
 
     # If no topics are provided, use universe_name as topic
     if not args.topics and args.universe_name:

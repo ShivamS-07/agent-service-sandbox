@@ -78,10 +78,12 @@ async def get_urls_async(
             )
 
         results = await asyncio.gather(*tasks)
-        results = [result for result in results if result is not None]
 
     result_urls = set()
-    for result in results:
+    for result, url in zip(results, urls):
+        if result is None:
+            logger.info(f"skipping None result for {url=}")
+            continue
         try:
             # google regular search results have the link under "organic", Google News results have it under "news"
             items = [item for item in result.get("organic", [])]  # type: ignore
@@ -116,10 +118,12 @@ async def get_news_urls_async(
             )
 
         results = await asyncio.gather(*tasks)
-        results = [result for result in results if result is not None]
 
     result_urls = set()
-    for result in results:
+    for result, url in zip(results, urls):
+        if result is None:
+            logger.info(f"skipping None result for {url=}")
+            continue
         try:
             items = [item for item in result.get("news", [])]
             result_urls.update([item["link"] for item in items])

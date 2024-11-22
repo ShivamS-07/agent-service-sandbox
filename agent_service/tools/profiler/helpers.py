@@ -102,7 +102,8 @@ async def write_industry_impact_table(
 
     # Very rare but seems that sometimes a column is skipped
     tries = 0
-    while tries < 3:
+    max_tries = 3
+    while tries < max_tries:
         chopped_texts_str = GPTTokenizer(model=llm.model).do_truncation_if_needed(
             truncate_str=text_data,
             other_prompt_strs=[
@@ -124,9 +125,12 @@ async def write_industry_impact_table(
         df = pd.read_csv(StringIO(result.strip("`'\"\n")), sep="\t", index_col=0)
 
         if set([impact["name"] for impact in impacts]) == set(df.columns):
-            break
+            return df
         else:
             tries += 1
+
+    logger.warning(f"exhausted {tries} retry attempts, returning empty dataframe")
+    df = pd.DataFrame()
     return df
 
 

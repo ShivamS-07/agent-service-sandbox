@@ -813,6 +813,7 @@ async def per_idea_summarize_texts(
     new_ideas = args.ideas  # default to redoing everything
 
     old_ideas = []
+    new_texts = []
 
     prev_run_dict: Dict[Idea, Tuple[List[TextCitation], List[TextCitation], str]] = defaultdict()
 
@@ -954,7 +955,8 @@ async def per_stock_group_summarize_texts(
     new_groups = args.stock_groups.stock_groups  # default to redoing everything
 
     old_groups = []
-
+    new_texts = []
+    old_output_groups_lookup: Dict[str, StockGroup] = {}
     prev_run_dict: Dict[str, Tuple[List[TextCitation], List[TextCitation], str]] = defaultdict()
     text_cache: Dict[TextIDType, str] = {}
     # Pre-fetch texts so the cache is populated
@@ -974,9 +976,7 @@ async def per_stock_group_summarize_texts(
             prev_output_groups = cast(
                 List[StockGroup], prev_run_info.output.stock_groups  # type:ignore
             )
-            old_output_groups_lookup: Dict[str, StockGroup] = {
-                group.name: group for group in prev_output_groups
-            }
+            old_output_groups_lookup = {group.name: group for group in prev_output_groups}
             curr_input_texts = set(args.texts)
             old_input_texts = set(prev_input_texts)
             new_texts = list(curr_input_texts - old_input_texts)

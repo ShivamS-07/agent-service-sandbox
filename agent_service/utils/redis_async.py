@@ -172,6 +172,7 @@ class AsyncRedisCache:
         """
 
         inputs = {}
+        redis_key = ""
         for key, val in key_val_map.items():
             try:
                 redis_key = self._make_redis_key(key, key_prefix)

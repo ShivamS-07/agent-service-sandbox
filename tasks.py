@@ -12,6 +12,7 @@ def checkformat(c):
 def check(c):
     checkformat(c)
     mypy(c)
+    pyanalyze(c)
 
 
 @task
@@ -66,6 +67,7 @@ def testregressionslowci(c):
 def testregression(c):
     c.run(
         "pipenv run python -m pytest -n 32 --dist worksteal -v regression_test --log-level=CRITICAL"
+        " --durations=0 --durations-min=5.0"
     )
 
 
@@ -114,3 +116,29 @@ def mypy(c):
     c.run(
         f"mypy --no-incremental {disable_for_unpublished_proto_changes} --config-file pyproject.toml ."
     )
+
+
+pyanalyze_files_dirs = [
+    "agent_service/tools/",
+    "agent_service/utils/",
+]
+
+
+@task
+def pyanalyze(c):
+    # mypy Not detecting UnboundLocalError / uninitialized vars / doesn't analyze branches
+    # https://github.com/python/mypy/issues/2400#issuecomment-798477686
+
+    # https://github.com/quora/pyanalyze
+    # there will be some false positives, often it is better to pretend they are real
+    # and just declare & initialize the variable higher up
+    # but you can also use this comment to ignore a line: # static analysis: ignore
+    print("pyanalyze")
+    pyanalyze_files_str = " ".join(pyanalyze_files_dirs)
+    errors = [
+        "possibly_undefined_name",
+        "missing_await",
+    ]
+
+    errors_str = "-e " + " -e ".join(errors)
+    c.run(f"python -m pyanalyze --disable-all {errors_str} {pyanalyze_files_str}")

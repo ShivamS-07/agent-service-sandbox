@@ -626,6 +626,7 @@ class SecFiling:
 
         rows_to_insert = []
 
+        ch = None
         if insert_to_db:
             ch = Clickhouse()
 
@@ -685,7 +686,7 @@ class SecFiling:
                 }
 
                 rows_to_insert.append(row_to_insert)
-                if insert_to_db:
+                if insert_to_db and ch is not None:
                     try:
                         await ch.multi_row_insert(
                             table_name="sec.sec_filings",
@@ -716,6 +717,7 @@ class SecFiling:
 
         rows_to_insert = []
 
+        ch = None
         if insert_to_db:
             ch = Clickhouse()
 
@@ -779,7 +781,7 @@ class SecFiling:
                 }
 
                 rows_to_insert.append(row_to_insert)
-                if insert_to_db:
+                if insert_to_db and ch is not None:
                     try:
                         await ch.multi_row_insert(
                             table_name="sec.sec_filings_parsed",

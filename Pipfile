@@ -14,6 +14,7 @@ flake8 = {version = "==7.0.0", index = "pypi"}
 invoke = {version = "==2.2.0", index = "pypi"}
 isort = {version = "==5.13.2", index="pypi"}
 mypy = {version = "==1.11.1", index="pypi"}
+pyanalyze = {version = "*", index="pypi"}
 pytest = {version = "==8.3.3", index="pypi"}
 pytest-xdist = {version = "==3.6.1", index="pypi"}
 parameterized = {version = "==0.9.0", index="pypi"}

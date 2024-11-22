@@ -89,6 +89,9 @@ def generate_columns_for_kpi(
         long_unit = kpi_data.long_unit
         unit = kpi_data.unit
         row_descs = None  # type: ignore
+    else:
+        logger.warning(f"returning empty list, kpi_data has unexpected type: {type(kpi_data)}")
+        return []
 
     columns: List[TableColumnMetadata] = []
     if long_unit == "Amount":

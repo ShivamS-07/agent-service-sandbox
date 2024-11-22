@@ -408,6 +408,7 @@ class AsyncDB:
                 output_values.append((output_id, non_cached_output))
                 inputs_to_cache[output_id] = non_cached_output
 
+            # static analysis: ignore[missing_await]
             run_async_background(cache.multiset(inputs_to_cache, ttl=3600 * 24))  # type: ignore
 
             end = time.perf_counter()
@@ -1238,6 +1239,7 @@ class AsyncDB:
             # update the title in execution plan so future plan runs will use the new title
             exeuction_plan = ExecutionPlan.model_validate(output["plan"])
             if exeuction_plan.nodes:
+                i = 0
                 for i, plan_node in enumerate(exeuction_plan.nodes):
                     if plan_node.is_output_node and plan_node.args["title"] == old_widget_title:
                         # setting i to the index of the node with the old title

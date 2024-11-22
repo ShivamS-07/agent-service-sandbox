@@ -91,13 +91,15 @@ async def get_best_snippet_match(citation_snippet: str, sentences: List[str], ll
 
 def get_initial_breakdown(GPT_ouput: str) -> Tuple[str, Optional[Dict[str, List[Dict[str, Any]]]]]:
     lines = GPT_ouput.replace("\n\n", "\n").split("\n")
-    if (
-        ANCHOR_HEADER in lines or CITATION_HEADER in lines
-    ):  # GPT told not to do this, but it sometimes does anyway
-        if ANCHOR_HEADER in lines:
-            header_index = lines.index(ANCHOR_HEADER)
-        elif CITATION_HEADER in lines:
-            header_index = lines.index(CITATION_HEADER)
+
+    header_index = None
+    # GPT told not to do this, but it sometimes does anyway
+    if ANCHOR_HEADER in lines:
+        header_index = lines.index(ANCHOR_HEADER)
+    elif CITATION_HEADER in lines:
+        header_index = lines.index(CITATION_HEADER)
+
+    if header_index is not None:
         main_text = "\n".join(lines[:header_index]).strip()
         citation_dict = "\n".join(lines[header_index + 1 :])
     else:

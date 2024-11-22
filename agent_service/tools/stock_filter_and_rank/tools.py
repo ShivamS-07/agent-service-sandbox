@@ -287,6 +287,9 @@ async def run_profile_match(
         profile_data_for_rubric = profile.topic
     elif isinstance(profile, str):
         profile_data_for_rubric = profile
+    else:
+        raise Exception(f"logic error: profile must be a str or TopicProfile not: {type(profile)}")
+
     if not profile_rubric:
         profile_rubric = await get_profile_rubric(profile_data_for_rubric, context.agent_id)
 
@@ -374,6 +377,8 @@ async def update_profile_match(
         profile_data_for_rubric = profile.topic
     elif isinstance(profile, str):
         profile_data_for_rubric = profile
+    else:
+        raise Exception(f"logic error: profile must be a str or TopicProfile not: {type(profile)}")
 
     if not profile_rubric:
         profile_rubric = await get_profile_rubric(profile_data_for_rubric, context.agent_id)
@@ -562,6 +567,7 @@ async def update_profile_match(
     text_group_dict = {}
 
     removed = 0
+    old_output = None
 
     for stock in no_major_new_texts_stocks:
         if stock.gbi_id in prev_output_lookup:
@@ -862,6 +868,7 @@ async def filter_and_rank_stocks_by_profile(
         bottom_m=args.bottom_m,
     )
 
+    caller_input_dataclass = None
     # this is only needed for efficient updates when switching, can be removed later
     if args.caller_func:
         caller_func_name = args.caller_func
@@ -887,7 +894,11 @@ async def filter_and_rank_stocks_by_profile(
     TOOL_DEBUG_INFO.set(debug_info)
 
     result = None
-
+    prev_stocks = []
+    prev_stock_texts = []
+    text_relevance_cache = []
+    full_output: List[StockID] = []
+    profile_rubric: Dict[int, str] = {}
     try:  # since everything associated with diffing is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "filter_and_rank_stocks_by_profile")
         if prev_run_info is not None:

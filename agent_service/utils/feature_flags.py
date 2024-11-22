@@ -197,6 +197,7 @@ async def is_user_agent_admin(user_id: str, async_db: Optional[AsyncDB] = None) 
     is_admin = await get_ld_flag_async(
         flag_name="warren-agent-admin", user_id=user_id, default=False, async_db=async_db
     )
+    # static analysis: ignore[missing_await]
     run_async_background(redis_cache.set(user_id, is_admin, ttl=3600))
     await ADMIN_CACHE.set(user_id, is_admin)
     return is_admin  # type: ignore

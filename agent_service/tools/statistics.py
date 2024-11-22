@@ -457,6 +457,8 @@ async def get_statistic_data_for_companies(
     added_timespan = decomp_json["extra_timespan"]
 
     add_real_time_prices = False
+    rt_stock_column = None
+    rt_price_column = None
     if (
         stat_list == ["Close Price"]
         and (  # we are looking for up-to-date data
@@ -566,7 +568,7 @@ async def get_statistic_data_for_companies(
     else:
         comp_table = comp_tables[0]
 
-    if add_real_time_prices:
+    if add_real_time_prices and rt_stock_column is not None and rt_price_column is not None:
         extra_dates = [today] * len(rt_stock_column.data)
         for column in comp_table.columns:  # add the extra data to the table
             if column.metadata.label == "Security":
@@ -746,6 +748,8 @@ async def beat_or_miss_earnings_filter(
     elif args.mode == "revenue":
         actual_stat = ACTUAL_REVENUE
         expected_stat = EXPECTED_REVENUE
+    else:
+        raise Exception(f"unsupported {args.mode=}")
 
     actual_EPS = await get_statistic_data(
         context=context,
@@ -915,6 +919,8 @@ async def get_expected_revenue_growth(
     elif args.mode == "revenue":
         actual_stat = ACTUAL_REVENUE
         expected_stat = EXPECTED_REVENUE
+    else:
+        raise Exception(f"unsupported {args.mode=}")
 
     actual_revenue = await get_statistic_data(
         context=context,
@@ -1069,7 +1075,7 @@ def get_per_stock_data(table: StockTable) -> Dict[StockID, Dict[str, float]]:
 
     output_dict: Dict[StockID, Dict[str, float]] = defaultdict(dict)
     for stock, quarter, currency in zip(
-        stock_column.data, quarter_column.data, currency_column.data
+        stock_column.data, quarter_column.data, currency_column.data  # static analysis: ignore
     ):
         if currency is not None:
             output_dict[stock][quarter] = currency  # type:ignore

@@ -2,7 +2,7 @@ import datetime
 import functools
 import json
 from threading import Lock
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional, cast
 
 import pandas as pd
 from cachetools import TTLCache, cached
@@ -270,6 +270,11 @@ class MacroFeatureDataInput(ToolArgs):
     enabled=False,
 )
 async def get_macro_statistic_data(args: MacroFeatureDataInput, context: PlanRunContext) -> Table:
+
+    latest_date = get_latest_date()
+    start_date = latest_date
+    end_date = latest_date
+
     if args.date_range:
         args.start_date = args.date_range.start_date
         args.end_date = args.date_range.end_date
@@ -342,6 +347,10 @@ async def get_statistic_data_for_companies(
     Returns:
         Table: The requested data.
     """
+    latest_date = get_latest_date()
+    start_date = latest_date
+    end_date = latest_date
+
     if args.date_range:
         args.start_date = args.date_range.start_date
         args.end_date = args.date_range.end_date
@@ -430,9 +439,17 @@ async def get_statistic_data(
     # make sure at least one chunk is sent - empty gbiid list is allowed for global
     # macro series.
     gbi_id_chunks = list(chunk(gbi_ids, n=300)) or [[]]
+
+    # pyanalyze is worried about this loop running on the empty list
+    result = None
+    is_global = False
+    index_name = "Date"
+    index_type = TableColumnType.DATE
+    prefer_graph_type = GraphType.LINE
+
     for chunk_i, gbi_id_chunk in enumerate(gbi_id_chunks):
         logger.info(f"Fetching {statistic_id=} for {chunk_i + 1} / {len(gbi_id_chunks)} chunks.")
-        result: GetFeatureDataResponse = await get_feature_data(
+        result = await get_feature_data(
             user_id=context.user_id,
             statistic_ids=[statistic_id.stat_id],
             stock_ids=gbi_id_chunk,
@@ -443,6 +460,7 @@ async def get_statistic_data(
             target_currency=use_currency,
         )
 
+        result = cast(GetFeatureDataResponse, result)
         # make the dataframe with index = dates, columns = stock ids
         # or columns = statistic id (for global features)
         # since we are requesting data for a single statistic_id, we can do a simple check
@@ -468,6 +486,9 @@ async def get_statistic_data(
                 data_time_axis = gl_data.time_axis
                 global_data = np_sheet
                 break
+
+        global_data = cast(NumpySheet, global_data)
+
         assert data_time_axis is not None
         index_name = "Date"
         index_type = TableColumnType.DATE
@@ -512,6 +533,9 @@ async def get_statistic_data(
     assert len(df_chunks) > 0
     df = pd.concat(df_chunks, axis=1)
     df = df.dropna(axis="index", how="all")
+
+    if result is None:
+        raise Exception("Logic Error")
 
     # wrangle units
     units = dict(result.feature_value_units).get(statistic_id.stat_id, FEATURE_VALUE_UNITS_UNIT)

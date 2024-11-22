@@ -201,6 +201,7 @@ class VisAlphaClickHouseClient:
         cid = gbi_cid_lookup[gbi_id]
         pids = [str(kpi.pid) for kpi in kpis]
         periods = []
+        fiscal_year = False
         if quarter and year:
             fiscal_year = True
             periods = _generate_periods(

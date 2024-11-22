@@ -357,6 +357,7 @@ async def prepare_portfolio_prompt(
     """
     This function prepares the portfolio prompt for the commentary
     """
+    portfolio_holdings_expanded_df = pd.DataFrame()
     table_mapping: Dict[str, pd.DataFrame] = {}
     for table in portfolio_related_tables:
         if table.title == PORTFOLIO_HOLDING_TABLE_NAME_EXPANDED:
@@ -584,13 +585,12 @@ async def prepare_main_prompt(
 async def get_top_bottom_stocks(
     tables: List[Table], top_n_stocks: int, table_title: str
 ) -> List[StockID]:
-    perf_df_found = False
+    perf_df = None
     for table in tables:
         if table.title == table_title:
             perf_df = table.to_df()
-            perf_df_found = True
 
-    if not perf_df_found:
+    if perf_df is None:
         raise ValueError(f"Performance table ({table_title}) for stock level not found in tables.")
 
     # get top and bottom 3 contributers and performers

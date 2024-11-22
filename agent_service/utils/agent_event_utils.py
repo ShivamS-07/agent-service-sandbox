@@ -257,6 +257,7 @@ async def publish_agent_output(
     await publish_agent_event(agent_id=context.agent_id, serialized_event=event.model_dump_json())
 
     if cache_backend and not context.skip_db_commit:
+        # static analysis: ignore[missing_await]
         run_async_background(
             cache_backend.multiset(
                 key_val_map={

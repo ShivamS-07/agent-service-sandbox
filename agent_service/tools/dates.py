@@ -293,6 +293,8 @@ async def get_n_width_date_range_near_date(
     if isinstance(args.range_ending_on, datetime.datetime):
         args.range_ending_on = args.range_ending_on.date()
 
+    start_date = get_now_utc().date()
+    end_date = start_date
     if args.range_starting_from and args.range_ending_on:
         start_date = args.range_starting_from
         end_date = args.range_ending_on
