@@ -89,10 +89,13 @@ async def get_default_text_data_for_stocks(
 
     if not args.date_range:
         # perform web search IF there is no date_range
-        if get_ld_flag(
-            flag_name="web-search-tool",
-            default=False,
-            user_context=get_user_context(user_id=context.user_id),
+        if (
+            get_ld_flag(
+                flag_name="web-search-tool",
+                default=False,
+                user_context=get_user_context(user_id=context.user_id),
+            )
+            and context.user_settings.include_web_results
         ):
             await tool_log(
                 log="Getting company descriptions and news developments from the web",

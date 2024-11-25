@@ -299,6 +299,9 @@ async def _run_execution_plan_impl(
         db=async_db,
     )
 
+    # Load the user agent settings
+    context.user_settings = await async_db.get_user_agent_settings(user_id=context.user_id)
+
     if agent_output_cache_enabled() and os.getenv("REDIS_HOST") and not context.skip_db_commit:
         logger.info(f"Using redis output cache. Connecting to {os.getenv('REDIS_HOST')}")
         redis_cache_backend = get_redis_cache_backend_for_output(auto_close_connection=True)

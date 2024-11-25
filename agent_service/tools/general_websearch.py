@@ -11,6 +11,7 @@ from agent_service.tools.product_comparison.brightdata_websearch import (
     get_urls_async,
     get_web_texts_async,
 )
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.feature_flags import get_ld_flag
@@ -48,6 +49,9 @@ class SingleStockWebSearchInput(ToolArgs):
 async def single_stock_web_search(
     args: SingleStockWebSearchInput, context: PlanRunContext
 ) -> List[WebStockText]:
+    if not context.user_settings.include_web_results:
+        await tool_log("Skipping web search due to user setting", context=context)
+        return []
     query = args.query
     stock_id = args.stock_id
 
@@ -96,6 +100,9 @@ class GeneralWebSearchInput(ToolArgs):
     enabled_checker_func=enabler_function,
 )
 async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContext) -> List[WebText]:
+    if not context.user_settings.include_web_results:
+        await tool_log("Skipping web search due to user setting", context=context)
+        return []
     tasks = [
         get_urls_async(args.queries, URLS_TO_SCRAPE, context=context),
         get_news_urls_async(args.queries, NEWS_URLS_TO_SCRAPE, context=context),
@@ -136,6 +143,9 @@ class SiteSpecificWebSearchInput(ToolArgs):
 async def site_specific_websearch(
     args: SiteSpecificWebSearchInput, context: PlanRunContext
 ) -> List[WebText]:
+    if not context.user_settings.include_web_results:
+        await tool_log("Skipping web search due to user setting", context=context)
+        return []
     search_results = await get_web_texts_async(
         urls=args.urls, plan_context=context, should_print_errors=True
     )

@@ -456,13 +456,14 @@ async def get_latest_news_for_companies(
 ) -> List[StockText]:
     tasks = []
 
-    for stock_id in args.stock_ids:
-        tasks.append(
-            single_stock_web_search(
-                SingleStockWebSearchInput(stock_id=stock_id, query=stock_id.company_name),
-                context=context,
+    if context.user_settings.include_web_results:
+        for stock_id in args.stock_ids:
+            tasks.append(
+                single_stock_web_search(
+                    SingleStockWebSearchInput(stock_id=stock_id, query=stock_id.company_name),
+                    context=context,
+                )
             )
-        )
 
     if args.get_developments:
         tasks.append(
@@ -653,10 +654,13 @@ async def get_news_and_web_pages_for_topics(
         )
     ]
 
-    if get_ld_flag(
-        flag_name="web-search-tool",
-        default=False,
-        user_context=get_user_context(user_id=context.user_id),
+    if (
+        get_ld_flag(
+            flag_name="web-search-tool",
+            default=False,
+            user_context=get_user_context(user_id=context.user_id),
+        )
+        and context.user_settings.include_web_results
     ):
         tasks.append(
             general_web_search(

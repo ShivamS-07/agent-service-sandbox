@@ -9,6 +9,7 @@ from collections import OrderedDict, defaultdict
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from dateutil.parser import parse
+from psycopg.sql import SQL, Identifier, Placeholder
 
 from agent_service.endpoints.models import (
     AgentFeedback,
@@ -19,6 +20,7 @@ from agent_service.endpoints.models import (
     AgentQC,
     AgentQCInfo,
     AgentSchedule,
+    AgentUserSettingsSetRequest,
     CustomNotification,
     HorizonCriteria,
     HorizonCriteriaOperator,
@@ -39,7 +41,14 @@ from agent_service.io_types.output import Output
 from agent_service.io_types.table import TableOutput
 from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
-from agent_service.types import ChatContext, Message, Notification, PlanRunContext
+from agent_service.types import (
+    AgentUserSettings,
+    AgentUserSettingsSource,
+    ChatContext,
+    Message,
+    Notification,
+    PlanRunContext,
+)
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
@@ -1255,6 +1264,68 @@ class AsyncDB:
         # invalidate the cache so we don't get the old title
         if cache:
             await cache.invalidate(output_id)
+
+    async def get_user_agent_settings(self, user_id: str) -> AgentUserSettings:
+        sql = """
+        SELECT entity_type, include_web_results FROM agent.user_settings
+        WHERE entity_id = %(user_id)s
+        OR entity_id::TEXT IN
+          (SELECT company_id FROM user_service.company_membership WHERE user_id = %(user_id)s::TEXT)
+        LIMIT 2
+        """
+        rows = await self.pg.generic_read(sql, {"user_id": user_id})
+        if not rows:
+            return AgentUserSettings()
+        if len(rows) == 1:
+            row = rows[0]
+            row.pop("entity_type")
+            return AgentUserSettings(**row)
+        entity_type_row_map = {}
+        # Prioritize user over company settings
+        for row in rows:
+            entity_type = row.pop("entity_type")
+            entity_type_row_map[entity_type] = row
+        if AgentUserSettingsSource.USER in entity_type_row_map:
+            return AgentUserSettings(**entity_type_row_map[AgentUserSettingsSource.USER])
+        if AgentUserSettingsSource.COMPANY in entity_type_row_map:
+            return AgentUserSettings(**entity_type_row_map[AgentUserSettingsSource.COMPANY])
+
+        return AgentUserSettings()
+
+    async def update_user_agent_settings(
+        self,
+        entity_id: str,
+        entity_type: AgentUserSettingsSource,
+        settings: AgentUserSettingsSetRequest,
+    ) -> None:
+        # Convert settings to a dictionary, filtering out None values
+        settings_dict = {
+            key: value for key, value in settings.model_dump().items() if value is not None
+        }
+        if not settings_dict:
+            return
+
+        columns = settings_dict.keys()
+        values = [settings_dict[col] for col in columns]
+        # Construct the ON CONFLICT update clause
+        update_clause = SQL(", ").join(
+            SQL("{} = EXCLUDED.{}").format(Identifier(col), Identifier(col)) for col in columns
+        )
+
+        query = SQL(
+            """
+            INSERT INTO agent.user_settings (entity_id, entity_type, {columns})
+            VALUES (%s, %s, {placeholders})
+            ON CONFLICT (entity_id) DO UPDATE
+            SET {update_clause}
+            """
+        ).format(
+            columns=SQL(", ").join(map(Identifier, columns)),
+            placeholders=SQL(", ").join(Placeholder() for _ in columns),
+            update_clause=update_clause,
+        )
+
+        await self.generic_write(query, [entity_id, entity_type] + values)  # type: ignore
 
     @async_perf_logger
     async def get_user_all_agents(

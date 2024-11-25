@@ -88,6 +88,15 @@ class ChatContext(BaseModel):
         return None
 
 
+class AgentUserSettingsSource(enum.StrEnum):
+    USER = "user"
+    COMPANY = "company"
+
+
+class AgentUserSettings(BaseModel):
+    include_web_results: bool = True
+
+
 class PlanRunContext(BaseModel):
     # TODO contains all necessary ID's, as well as chat context
     agent_id: str
@@ -118,6 +127,8 @@ class PlanRunContext(BaseModel):
     skip_task_logging: bool = False
 
     as_of_date: Optional[datetime.datetime] = None  # for testing
+
+    user_settings: AgentUserSettings = AgentUserSettings()
 
     @staticmethod
     def get_dummy(
