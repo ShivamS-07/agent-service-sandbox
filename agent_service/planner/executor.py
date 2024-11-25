@@ -607,7 +607,9 @@ async def _run_execution_plan_impl(
 
         if not step.is_output_node:
             if step.store_output:
-                db.write_tool_split_outputs(outputs_with_ids=outputs_with_ids, context=context)
+                await async_db.write_tool_split_outputs(
+                    outputs_with_ids=outputs_with_ids, context=context
+                )
         else:
             # We have an output node
             live_plan_output = False

@@ -376,7 +376,9 @@ def reset_plan_run_status_if_needed(
         plan_run_status = Status.ERROR
     elif any(task.status == Status.CANCELLED for task in full_tasks):
         plan_run_status = Status.CANCELLED
-    elif any(task.status == Status.RUNNING for task in full_tasks):
+    elif plan_run_status != Status.ERROR and any(
+        task.status == Status.RUNNING for task in full_tasks
+    ):
         plan_run_status = Status.RUNNING
     return plan_run_status
 

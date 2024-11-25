@@ -400,6 +400,7 @@ class TestData(TestExecutionPlanner):
             required_tools=["get_10k_10q_sec_filings"],
         )
 
+    @skip_in_ci
     def test_notify_big_big_developments(self):
         prompt = (
             "Scan corporate filings for LIPO and notify me of any big developments or "

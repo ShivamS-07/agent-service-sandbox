@@ -40,7 +40,12 @@ from agent_service.io_types.graph import GraphOutput
 from agent_service.io_types.output import Output
 from agent_service.io_types.table import TableOutput
 from agent_service.io_types.text import Text, TextOutput
-from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
+from agent_service.planner.planner_types import (
+    ExecutionPlan,
+    OutputWithID,
+    PlanStatus,
+    RunMetadata,
+)
 from agent_service.types import (
     AgentUserSettings,
     AgentUserSettingsSource,
@@ -299,6 +304,26 @@ class AsyncDB:
             outputs.append(output)
 
         return outputs
+
+    async def write_tool_split_outputs(
+        self, outputs_with_ids: List[OutputWithID], context: PlanRunContext
+    ) -> None:
+        now = get_now_utc()
+        time_delta = datetime.timedelta(seconds=0.01)
+        rows = [
+            {
+                "agent_id": context.agent_id,
+                "plan_id": context.plan_id,
+                "plan_run_id": context.plan_run_id,
+                "log_id": output.output_id,
+                "task_id": output.task_id,
+                "log_data": dump_io_type(output.output),
+                "is_task_output": True,
+                "created_at": now + idx * time_delta,  # preserve order
+            }
+            for idx, output in enumerate(outputs_with_ids)
+        ]
+        await self.pg.multi_row_insert(table_name="agent.work_logs", rows=rows)
 
     @async_perf_logger
     async def get_agent_debug_tool_calls(self, agent_id: str) -> Dict[str, Any]:
