@@ -13,6 +13,7 @@ from gbi_common_py_utils.utils.environment import (
 )
 from pydantic import BaseModel
 
+from agent_service.external.utils import get_http_session
 from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ def get_base_url() -> str:
 class FeatureCoverageServiceClient:
     def __init__(self) -> None:
         self.url_base = get_base_url()
-        self.session = aiohttp.ClientSession()
+        self.session = get_http_session()
 
     @backoff.on_exception(
         backoff.constant,

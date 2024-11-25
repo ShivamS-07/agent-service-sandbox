@@ -185,6 +185,7 @@ from agent_service.endpoints.models import (
     UserHasAccessResponse,
 )
 from agent_service.external.grpc_utils import create_jwt
+from agent_service.external.utils import get_http_session
 from agent_service.GPT.requests import _get_gpt_service_stub
 from agent_service.io_types.citations import CitationType, GetCitationDetailsResponse
 from agent_service.slack.slack_sender import SlackSender
@@ -264,7 +265,13 @@ async def lifespan(application: FastAPIExtended) -> AsyncGenerator:
     yield
 
     if cache:
+        logger.warning("Closing redis connection")
         await cache.client.client.close()  # explicitly close redis connection
+
+    session = get_http_session()
+    if session:
+        logger.warning("Closing AIO HTTP session")
+        await session.close()
 
 
 application = FastAPIExtended(title="Agent Service", lifespan=lifespan)

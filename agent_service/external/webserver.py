@@ -3,7 +3,6 @@ import logging
 from functools import lru_cache
 from typing import Optional
 
-import aiohttp
 from gbi_common_py_utils.utils.environment import (
     DEV_TAG,
     LOCAL_TAG,
@@ -12,6 +11,7 @@ from gbi_common_py_utils.utils.environment import (
 )
 
 from agent_service.external.grpc_utils import create_jwt
+from agent_service.external.utils import get_http_session
 from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
@@ -40,31 +40,31 @@ async def _get_graphql(user_id: str, query: str, variables: dict) -> Optional[di
         headers = {"Authorization": f"Cognito {jwt_token}"}
         json_req = {"query": query, "variables": variables}
         base_url = get_url()
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url=f"{base_url}/api/graphql",
-                json=json_req,
-                headers=headers,
-            ) as resp:
-                if not resp.ok:
-                    logger.error(
-                        f"Response is not OK in _get_graphql.\n"
-                        f"Query: {query}\n"
-                        f"variables: {variables}:\n"
-                    )
-                    return None
+        session = get_http_session()
+        async with session.post(
+            url=f"{base_url}/api/graphql",
+            json=json_req,
+            headers=headers,
+        ) as resp:
+            if not resp.ok:
+                logger.error(
+                    f"Response is not OK in _get_graphql.\n"
+                    f"Query: {query}\n"
+                    f"variables: {variables}:\n"
+                )
+                return None
 
-                json_resp = await resp.json()
-                if "errors" in json_resp:
-                    logger.error(
-                        f"Error in _get_graphql.\n"
-                        f"Query: {query}\n"
-                        f"variables: {variables}:\n"
-                        f"{json_resp['errors']}"
-                    )
-                    return None
+            json_resp = await resp.json()
+            if "errors" in json_resp:
+                logger.error(
+                    f"Error in _get_graphql.\n"
+                    f"Query: {query}\n"
+                    f"variables: {variables}:\n"
+                    f"{json_resp['errors']}"
+                )
+                return None
 
-                return json_resp
+            return json_resp
     except Exception as e:
         logger.exception(
             f"Exception in _get_graphql.\n" f"Query: {query}\n" f"variables: {variables}:\n" f"{e}"

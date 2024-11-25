@@ -13,6 +13,7 @@ from gbi_common_py_utils.utils.environment import (
 )
 from pydantic import BaseModel
 
+from agent_service.external.utils import get_http_session
 from agent_service.types import ActionType
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ def get_base_url() -> str:
 class DALServiceClient:
     def __init__(self) -> None:
         self.url_base = get_base_url()
-        self.session = aiohttp.ClientSession()
+        self.session = get_http_session()
 
     async def _post(
         self, endpoint: str, body: dict, headers: Optional[dict] = None

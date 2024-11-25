@@ -6,6 +6,7 @@ import requests
 from gbi_common_py_utils.utils.ssm import get_param
 
 from agent_service.external.user_svc_client import get_user_cached
+from agent_service.external.utils import get_http_session
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.event_logging import log_event
 
@@ -90,7 +91,7 @@ class SlackSender:
         channel_override: Optional[str] = None,
     ) -> None:
         if self.session is None:
-            self.session = aiohttp.ClientSession()
+            self.session = get_http_session()
 
         if channel_override is not None:
             channel = channel_override
