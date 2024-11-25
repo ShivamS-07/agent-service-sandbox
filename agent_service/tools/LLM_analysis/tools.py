@@ -133,6 +133,7 @@ async def _initial_summarize_helper(
     single_summary: bool = True,
     topic_filter: bool = True,
     text_cache: Optional[Dict[TextIDType, str]] = None,
+    plan_str: Optional[str] = None,
 ) -> Tuple[str, List[TextCitation]]:
     # create prompts
     summarize_sys_prompt = Prompt(
@@ -209,11 +210,12 @@ async def _initial_summarize_helper(
 
     topic = args.topic
     if topic:
-        plan_str = (
-            get_psql(skip_commit=context.skip_db_commit)
-            .get_execution_plan_for_run(context.plan_run_id)
-            .get_formatted_plan(numbered=True)
-        )
+        if not plan_str:
+            plan_str = (
+                get_psql(skip_commit=context.skip_db_commit)
+                .get_execution_plan_for_run(context.plan_run_id)
+                .get_formatted_plan(numbered=True)
+            )
 
         topic_str = topic_phrase.format(
             topic=topic, plan_str=plan_str, brainstorm_reminder=brainstorm_reminder
@@ -314,6 +316,7 @@ async def _update_summarize_helper(
     single_summary: bool = True,
     topic_filter: bool = True,
     text_cache: Optional[Dict[TextIDType, str]] = None,
+    plan_str: Optional[str] = None,
 ) -> Tuple[str, List[TextCitation]]:
     logger = get_prefect_logger(__name__)
     last_original_citation_count = get_original_cite_count(original_citations)
@@ -358,11 +361,12 @@ async def _update_summarize_helper(
         chat_str = ""
     topic = args.topic
     if topic:
-        plan_str = (
-            get_psql(skip_commit=context.skip_db_commit)
-            .get_execution_plan_for_run(context.plan_run_id)
-            .get_formatted_plan(numbered=True)
-        )
+        if not plan_str:
+            plan_str = (
+                get_psql(skip_commit=context.skip_db_commit)
+                .get_execution_plan_for_run(context.plan_run_id)
+                .get_formatted_plan(numbered=True)
+            )
 
         topic_str = TOPIC_PHRASE_STR_DEFAULT.format(
             topic=topic, plan_str=plan_str, brainstorm_reminder=""
@@ -500,7 +504,7 @@ async def _update_summarize_helper(
     ):
         # if the retries failed and we still ended up with a bad result, just try a new regular summarization
         logger.warning("Failed to do summary update, falling back to from-scratch summary")
-        return await _initial_summarize_helper(args, context, llm)
+        return await _initial_summarize_helper(args, context, llm, plan_str=plan_str)
 
     if citations is None:
         citations = []
@@ -701,6 +705,12 @@ async def per_stock_summarize_texts(
     # Pre-fetch texts so the cache is populated
     _ = await Text.get_all_strs(args.texts, text_cache=text_cache)
 
+    plan_str = (
+        get_psql(skip_commit=context.skip_db_commit)
+        .get_execution_plan_for_run(context.plan_run_id)
+        .get_formatted_plan(numbered=True)
+    )
+
     for stock in args.stocks:
         if stock in text_dict:
             if stock in prev_run_dict:
@@ -742,6 +752,7 @@ async def per_stock_summarize_texts(
                             single_summary=False,
                             topic_filter=topic_filter,
                             text_cache=text_cache,
+                            plan_str=plan_str,
                         )
                     )
                 else:
@@ -1007,6 +1018,12 @@ async def per_stock_group_summarize_texts(
             f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
         )
 
+    plan_str = (
+        get_psql(skip_commit=context.skip_db_commit)
+        .get_execution_plan_for_run(context.plan_run_id)
+        .get_formatted_plan(numbered=True)
+    )
+
     tasks = []
     for group in new_groups:
         group_set = set(group.stocks)
@@ -1034,6 +1051,7 @@ async def per_stock_group_summarize_texts(
                 llm,
                 single_summary=False,
                 text_cache=text_cache,
+                plan_str=plan_str,
             )
         )
 
@@ -1080,6 +1098,7 @@ async def per_stock_group_summarize_texts(
                         get_original_cite_count(remaining_citations),
                         single_summary=False,
                         text_cache=text_cache,
+                        plan_str=plan_str,
                     )
                 )
             else:
