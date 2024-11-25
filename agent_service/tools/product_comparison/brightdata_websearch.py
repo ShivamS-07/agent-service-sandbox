@@ -496,19 +496,21 @@ async def get_web_texts_async(
 
 
 async def main() -> None:
-    """
     urls = [
-        "https://jobs.apple.com/en-us/search?location=new-york-city-NYC&page=2",
+        "jobs.apple.com/en-ca/search?location=new-york-city-NYC",
     ]
+    context = PlanRunContext.get_dummy()
 
-    responses = await get_web_texts_async(urls)
+    responses = await get_web_texts_async(urls, context)
+
     """
-
     query_1 = "nintendo switch 2"
     # query_2 = "Australia betting"
 
     # responses = await get_urls_async([query_1], 10)
     responses = await get_news_urls_async([query_1], 10)
+    """
+
     print(responses)
 
 

@@ -22,6 +22,12 @@ NEWS_URLS_TO_SCRAPE = 10
 logger = logging.getLogger(__name__)
 
 
+def prepend_url_with_https(url: str) -> str:
+    if not url.startswith("https://") and not url.startswith("http://"):
+        return "https://" + url
+    return url
+
+
 def enabler_function(user_id: Optional[str]) -> bool:
     result = get_ld_flag("web-search-tool", default=False, user_context=user_id)
     logger.info(f"Web search tool being used: {result}")
@@ -109,7 +115,7 @@ async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContex
     ]
     results = await gather_with_concurrency(tasks)
 
-    urls: List[str] = args.urls or []
+    urls: List[str] = [prepend_url_with_https(url) for url in (args.urls or [])]
     for result in results:
         urls.extend(result)
 
@@ -146,8 +152,9 @@ async def site_specific_websearch(
     if not context.user_settings.include_web_results:
         await tool_log("Skipping web search due to user setting", context=context)
         return []
+    urls = [prepend_url_with_https(url) for url in args.urls]
     search_results = await get_web_texts_async(
-        urls=args.urls, plan_context=context, should_print_errors=True
+        urls=urls, plan_context=context, should_print_errors=True
     )
     if len(search_results) == 0:
         raise EmptyOutputError(message="All provided URLs had an error")
@@ -157,15 +164,17 @@ async def site_specific_websearch(
 
 async def main() -> None:
     plan_context = PlanRunContext.get_dummy()
+
     """
     query_1 = "nintendo switch 2 news"
     query_2 = "Australia betting news"
     query_3 = "top legal tech stocks"
     query_4 = "countries which have prominent effects on the stock market"
 
-    queries = GeneralWebSearchInput(queries=[query_1, query_2, query_3, query_4])
+    queries = GeneralWebSearchInput(queries=[query_1, query_2])
     result = await general_web_search(queries, plan_context)
-
+    """
+    """
     query = SingleStockWebSearchInput(
         stock_id=StockID(gbi_id=714, symbol="AAPL", isin="US0378331005", company_name=""),
         query="news on apple",
@@ -173,10 +182,10 @@ async def main() -> None:
 
     result = await single_stock_web_search(query, plan_context)
     """
-
-    url_1 = "https://patents.justia.com/assignee/pfizer-inc"
+    url_1 = "http://jobs.apple.com/en-ca/search?location=new-york-city-NYC"
     urls = SiteSpecificWebSearchInput(urls=[url_1])
     result = await site_specific_websearch(urls, plan_context)
+
     print(result)
 
 
