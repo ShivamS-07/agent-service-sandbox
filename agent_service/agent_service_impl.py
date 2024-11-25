@@ -656,6 +656,7 @@ class AgentServiceImpl:
         prompt: str,
         user: User,
         plan_id: str,
+        is_spoofed: Optional[bool] = False,
     ) -> None:
         agent_quality_id = str(uuid4())
         try:
@@ -670,6 +671,7 @@ class AgentServiceImpl:
                 query_order=0,
                 plan_id=plan_id,
                 fullstory_link=user.fullstory_link.replace("https://", ""),
+                is_spoofed=is_spoofed if is_spoofed else False,
             )
             await self.pg.insert_agent_qc(agent_qc=agent_qc)
         except Exception:
@@ -810,10 +812,15 @@ class AgentServiceImpl:
                 async_db=self.pg,
             ):
                 prompt: str = str(user_msg.message)
+                is_spoofed = user_msg.is_user_message and user_msg.message_author != user.user_id
 
                 run_async_background(
                     self.agent_quality_ingestion(
-                        agent_id=agent_id, prompt=prompt, user=user, plan_id=plan_id
+                        agent_id=agent_id,
+                        prompt=prompt,
+                        user=user,
+                        plan_id=plan_id,
+                        is_spoofed=is_spoofed,
                     )
                 )
 

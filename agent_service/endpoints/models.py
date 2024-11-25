@@ -1504,6 +1504,7 @@ class AgentQC(BaseModel):
     owner_organization_name: Optional[str] = None
     prod_priority: Optional[str] = None
     prod_notes: Optional[str] = None
+    is_spoofed: bool
 
 
 class HorizonCriteriaOperator(enum.StrEnum):

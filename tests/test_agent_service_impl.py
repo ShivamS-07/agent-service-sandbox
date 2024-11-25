@@ -738,6 +738,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
             problem_area="test problem",
             created_at=datetime.now(),
             last_updated=datetime.now(),
+            is_spoofed=False,
         )
 
         # Insert the AgentQC record
@@ -781,6 +782,7 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
                 score_rating=2,
                 created_at=datetime.now(),
                 last_updated=datetime.now(),
+                is_spoofed=False,
             )
             self.loop.run_until_complete(self.pg.insert_agent_qc(new_agent_qc))
 

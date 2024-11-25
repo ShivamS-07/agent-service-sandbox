@@ -11,7 +11,6 @@ class TestJiraIntegration(unittest.TestCase):
         # Set up JiraIntegration instance for all tests
         cls.jira_integration = JiraIntegration()
 
-    @unittest.skip("Not working")
     def test_create_ticket_success(self):
         """
         Test creating a Jira ticket and transitioning it to 'Done' status.
@@ -37,4 +36,5 @@ class TestJiraIntegration(unittest.TestCase):
         self.assertIsNotNone(ticket_url, "Ticket URL is None - creation might have failed")
 
         # Step 3: Delete the ticket
-        self.jira_integration.delete_ticket(ticket_key=ticket_key)
+        # Don't delete for now as it messes up Jira automations
+        # self.jira_integration.delete_ticket(ticket_key=ticket_key)

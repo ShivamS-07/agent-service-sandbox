@@ -109,11 +109,17 @@ async def assign_agent_quality_reviewers(
     # get the correct quality agent
     # we can potentially get multiple for
     # one agent id
-    agent_qc_id = await db.get_agent_qc_id_by_agent_id(agent_id=agent_id, plan_id=plan_id)
+    agent_qc_id, is_spoofed = await db.get_agent_qc_id_by_agent_id(
+        agent_id=agent_id, plan_id=plan_id
+    )
 
     if not agent_qc_id:
         logging.info(f"Agent QC not found for {agent_qc_id=}")
         return
+
+    if is_spoofed:
+        logging.info(f"Agent is spoofed, skipping assignment for agent_id: {agent_id}")
+        return None
 
     env = get_environment_tag()
     is_dev = env in (DEV_TAG, LOCAL_TAG)
@@ -169,6 +175,8 @@ async def assign_agent_quality_reviewers(
         eng_reviewer=eng_reviewer,
         prod_reviewer=prod_reviewer,
         last_updated=datetime.datetime.now(),
+        # this field can't be updated but should be False here regardless
+        is_spoofed=False,
     )
 
     await db.update_agent_qc(agent_qc)
