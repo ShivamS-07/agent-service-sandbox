@@ -264,6 +264,7 @@ async def _run_execution_plan_impl(
     if existing_run and existing_run.get("status") in (
         Status.ERROR.value,
         Status.NO_RESULTS_FOUND.value,
+        Status.CANCELLED.value,
     ):
         # If there's an existing errored run with the same ID, that means that
         # we want to retry from the errored task.

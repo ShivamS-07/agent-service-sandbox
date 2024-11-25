@@ -53,6 +53,7 @@ from agent_service.endpoints.models import (
     AgentInfo,
     AgentMetadata,
     AgentQC,
+    AgentUserSettingsSetRequest,
     AvailableVariable,
     CannedPrompt,
     ChatWithAgentRequest,
@@ -238,6 +239,7 @@ from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_st
 from agent_service.tool import ToolCategory, ToolRegistry
 from agent_service.tools.graphs import MakeLineGraphArgs, make_line_graph
 from agent_service.types import (
+    AgentUserSettingsSource,
     ChatContext,
     MemoryType,
     Message,
@@ -1883,6 +1885,14 @@ class AgentServiceImpl:
             )
         success = await update_user(user_id, name, username, email)
         return UpdateUserResponse(success=success)
+
+    async def update_user_settings(
+        self, user: User, req: AgentUserSettingsSetRequest
+    ) -> UpdateUserResponse:
+        await self.pg.update_user_agent_settings(
+            entity_id=user.user_id, entity_type=AgentUserSettingsSource.USER, settings=req
+        )
+        return UpdateUserResponse(success=True)
 
     async def get_users_info(self, user: User, user_ids: List[str]) -> List[Account]:
         if len(user_ids) == 1 and user_ids[0] == user.user_id:

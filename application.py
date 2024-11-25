@@ -42,6 +42,7 @@ from agent_service.endpoints.models import (
     AgentHelpRequest,
     AgentInfo,
     AgentQC,
+    AgentUserSettingsSetRequest,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     CheckCustomDocumentUploadQuotaResponse,
@@ -1600,6 +1601,18 @@ async def generate_jwt(user_id: str, user: User = Depends(parse_header)) -> str:
 
 
 # Account Endpoints
+
+
+@router.patch(
+    "/user/settings",
+    response_model=UpdateUserResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def update_user_settings(
+    req: AgentUserSettingsSetRequest,
+    user: User = Depends(parse_header),
+) -> UpdateUserResponse:
+    return await application.state.agent_service_impl.update_user_settings(user=user, req=req)
 
 
 @router.post(
