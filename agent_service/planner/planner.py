@@ -12,6 +12,7 @@ from agent_service.GPT.constants import DEFAULT_SMART_MODEL, GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import IOType, PrimitiveType, check_type_is_valid
 from agent_service.planner.constants import (
+    ALWAYS_AVAILABLE_TOOL_CATEGORIES,
     ARGUMENT_RE,
     ASSIGNMENT_RE,
     INITIAL_PLAN_TRIES,
@@ -40,13 +41,15 @@ from agent_service.planner.prompts import (
     PLAN_SAMPLE_TEMPLATE,
     PLANNER_MAIN_PROMPT,
     PLANNER_SYS_PROMPT,
+    SELECT_TOOLS_MAIN_PROMPT,
+    SELECT_TOOLS_SYS_PROMPT,
     USER_INPUT_APPEND_MAIN_PROMPT,
     USER_INPUT_APPEND_SYS_PROMPT,
     USER_INPUT_REPLAN_MAIN_PROMPT,
     USER_INPUT_REPLAN_SYS_PROMPT,
 )
 from agent_service.planner.utils import get_similar_sample_plans
-from agent_service.tool import Tool, ToolRegistry
+from agent_service.tool import Tool, ToolCategory, ToolRegistry
 
 # Make sure all tools are imported for the planner
 from agent_service.tools import *  # noqa
@@ -55,6 +58,7 @@ from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.async_utils import gather_with_concurrency, gather_with_stop
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
+from agent_service.utils.feature_flags import get_ld_flag
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
@@ -102,7 +106,10 @@ class Planner:
         self.smart_llm = GPT(self.context, DEFAULT_SMART_MODEL)
         self.fast_llm = GPT(self.context, GPT4_O)
         self.tool_registry = tool_registry
-        self.tool_string = tool_registry.get_tool_str(self.user_id)
+        self.tool_string_function_only = tool_registry.get_tool_str(
+            self.user_id, filter_input=True, skip_list=ALWAYS_AVAILABLE_TOOL_CATEGORIES
+        )
+        self.full_tool_string = tool_registry.get_tool_str(self.user_id)
         self.send_chat = send_chat
         self.skip_db_commit = skip_db_commit
         self.db = get_psql(skip_commit=skip_db_commit)
@@ -126,7 +133,11 @@ class Planner:
         logger.info("Writing plan")
         first_round_tasks = [
             self._create_initial_plan(
-                chat_context, plan_id=plan_id, llm=self.fast_llm, sample_plans=sample_plans_str
+                chat_context,
+                plan_id=plan_id,
+                llm=self.fast_llm,
+                sample_plans=sample_plans_str,
+                filter_tools=True,
             )
             for _ in range(INITIAL_PLAN_TRIES)
         ]
@@ -207,6 +218,7 @@ class Planner:
         plan_id: Optional[str] = None,
         llm: Optional[GPT] = None,
         sample_plans: str = "",
+        filter_tools: bool = False,
     ) -> Optional[ExecutionPlan]:
         logger = get_prefect_logger(__name__)
         execution_plan_start = get_now_utc().isoformat()
@@ -215,7 +227,10 @@ class Planner:
 
         prompt = chat_context.get_gpt_input()
         plan_str = await self._query_GPT_for_initial_plan(
-            chat_context.get_gpt_input(), llm=llm, sample_plans=sample_plans
+            chat_context.get_gpt_input(),
+            llm=llm,
+            sample_plans=sample_plans,
+            filter_tools=filter_tools,
         )
         agent_id = get_agent_id_from_chat_context(context=chat_context)
 
@@ -560,16 +575,26 @@ class Planner:
         return new_plan
 
     async def _query_GPT_for_initial_plan(
-        self, user_input: str, llm: GPT, sample_plans: str = ""
+        self, user_input: str, llm: GPT, sample_plans: str = "", filter_tools: bool = False
     ) -> str:
+
+        if filter_tools and get_ld_flag(
+            "planner-tool-filtering-enabled", default=False, user_context=self.user_id
+        ):
+            tool_str = await self.get_filtered_tool_str(user_input, sample_plans)
+        else:
+            tool_str = self.full_tool_string
+
         sys_prompt = PLANNER_SYS_PROMPT.format(
             guidelines=PLAN_GUIDELINES,
             example=PLAN_EXAMPLE,
-            tools=self.tool_string,
         )
 
         main_prompt = PLANNER_MAIN_PROMPT.format(
-            message=user_input, sample_plans=sample_plans, rules=PLAN_RULES
+            message=user_input,
+            sample_plans=sample_plans,
+            rules=PLAN_RULES,
+            tools=tool_str,
         )
         return await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
@@ -591,7 +616,7 @@ class Planner:
             rules=PLAN_RULES,
             guidelines=PLAN_GUIDELINES,
             example=PLAN_EXAMPLE,
-            tools=self.tool_string,
+            tools=self.full_tool_string,
         )
 
         main_prompt = main_prompt_template.format(
@@ -610,7 +635,7 @@ class Planner:
             rules=PLAN_RULES,
             guidelines=PLAN_GUIDELINES,
             example=PLAN_EXAMPLE,
-            tools=self.tool_string,
+            tools=self.full_tool_string,
         )
 
         main_prompt = ERROR_REPLAN_MAIN_PROMPT.format(
@@ -655,6 +680,24 @@ class Planner:
             sample_plans_str = ""
 
         return sample_plans_str
+
+    @async_perf_logger
+    async def get_filtered_tool_str(self, input_str: str, sample_plans: str) -> str:
+        main_prompt = SELECT_TOOLS_MAIN_PROMPT.format(
+            request=input_str, tools=self.tool_string_function_only, sample_plans=sample_plans
+        )
+        result = await self.fast_llm.do_chat_w_sys_prompt(
+            main_prompt, SELECT_TOOLS_SYS_PROMPT.format(), no_cache=True
+        )
+        not_wanted_categories = []
+        for cat in result.split("\n"):
+            try:
+                not_wanted_cat = ToolCategory(cat.strip())
+            except ValueError:
+                continue
+            not_wanted_categories.append(not_wanted_cat)
+        tool_str = self.tool_registry.get_tool_str(self.user_id, skip_list=not_wanted_categories)
+        return tool_str
 
     def _try_parse_str_literal(self, val: str) -> Optional[str]:
         if (val.startswith('"') and val.endswith('"')) or (

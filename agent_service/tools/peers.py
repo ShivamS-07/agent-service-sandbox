@@ -119,7 +119,7 @@ class PeersForStockInput(ToolArgs):
     Thus get_earnings_call_summaries does not need to be called in order to get the summarized connection.
     Important!!! This tool should only be used when the user specifically mentions earnings.
     """,
-    category=ToolCategory.STOCK,
+    category=ToolCategory.PEERS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -194,7 +194,7 @@ async def get_affected_peers(
     Thus get_earnings_call_summaries does not need to be called in order to get the summarized connection.
     Important!!! This tool should only be used when the user specifically mentions earnings.
     """,
-    category=ToolCategory.STOCK,
+    category=ToolCategory.PEERS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -270,7 +270,7 @@ class PeersConnections(ToolArgs):
     in Table format. This table includes the affected stock, the affecting stock,
     and the connection between the two.
     """,
-    category=ToolCategory.STOCK,
+    category=ToolCategory.PEERS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -372,7 +372,7 @@ class GeneralPeersForStockInput(ToolArgs):
      If the client mentions a specific number of peers that they want, include
      that as max_num_peers, otherwise all peers will be returned
     """,
-    category=ToolCategory.STOCK,
+    category=ToolCategory.PEERS,
     tool_registry=ToolRegistry,
 )
 async def get_general_peers(
@@ -609,7 +609,7 @@ class PerStockGeneralPeersInput(ToolArgs):
     If the client mentions a specific number of peers that they want, include
     that as max_num_peers, otherwise all peers will be returned for each stock
     """,
-    category=ToolCategory.STOCK,
+    category=ToolCategory.PEERS,
     tool_registry=ToolRegistry,
 )
 async def per_stock_get_general_peers(

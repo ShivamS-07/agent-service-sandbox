@@ -95,7 +95,7 @@ class GetCompanyProfilesForTopic(ToolArgs):
 
 @tool(
     description=GENERATE_PROFILE_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.STOCK_FILTERS,
 )
 async def generate_profiles(
     args: GetCompanyProfilesForTopic, context: PlanRunContext
@@ -113,7 +113,7 @@ class PerIdeaGetCompanyProfilesForTopic(ToolArgs):
 
 @tool(
     description=PER_IDEA_GENERATE_PROFILE_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.IDEAS,
     enabled=True,
     enabled_checker_func=ideas_enabled,
 )

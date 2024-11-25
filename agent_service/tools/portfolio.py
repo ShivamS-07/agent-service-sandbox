@@ -139,7 +139,7 @@ async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
         "If `expand_etfs` set to True, the function will expand ETFs into stock level "
         "and adjust the weights accordingly. "
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.PORTFOLIO,
     tool_registry=ToolRegistry,
     is_visible=False,
 )
@@ -580,7 +580,7 @@ class GetPortfolioBenchmarkHoldingsInput(ToolArgs):
         "If set to True, the function will expand ETFs into stock level and adjust the weights accordingly. "
         "Only set this flag to True if user explicitly wants to see the expanded ETFs or on stock level. "
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.PORTFOLIO,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -667,7 +667,7 @@ class GetPortfolioBenchmarkPerformanceInput(ToolArgs):
         "Table schema for security performance level: "
         "Security: StockID, return: float, benchmark-weight: float, weighted-return: float"
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.PORTFOLIO,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -737,7 +737,7 @@ class GetPortfolioTradesInput(ToolArgs):
         "If you need a list of portfolio holdings, MAKE SURE you use the `get_portfolio_holdings` tool! "
         "Output will contain the following columns: Security, Date, Action, Allocation Change. "
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.PORTFOLIO,
     tool_registry=ToolRegistry,
     is_visible=False,
 )

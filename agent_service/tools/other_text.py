@@ -74,7 +74,7 @@ class GetAllTextDataForStocksInput(ToolArgs):
         " documents can only be found for dates in the past up to the present, including todays date."
         " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
     ),
-    category=ToolCategory.TEXT,
+    category=ToolCategory.TEXT_RETRIEVAL,
     tool_registry=ToolRegistry,
     is_visible=False,
     store_output=False,
@@ -190,7 +190,7 @@ async def get_default_text_data_for_stocks(
 
 @tool(
     description="",
-    category=ToolCategory.TEXT,
+    category=ToolCategory.TEXT_RETRIEVAL,
     tool_registry=ToolRegistry,
     enabled=False,
     store_output=False,

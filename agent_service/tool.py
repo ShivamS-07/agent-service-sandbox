@@ -209,13 +209,15 @@ class Tool:
 
 
 class ToolCategory(enum.StrEnum):
-    MISC = "misc"
     NEWS = "news"
     STOCK = "stocks"
+    STOCK_GROUPS = "stock groups"
+    STOCK_FILTERS = "stock filters"
+    STOCK_SENTIMENT = "stock sentiment"
+    PEERS = "peers"
     LIST = "lists"
     DATES = "dates"
-    LLM_ANALYSIS = "LLM analysis"
-    USER = "user"
+    TEXT_WRITER = "text writer"
     EARNINGS = "earnings"
     STATISTICS = "statistics"
     TABLE = "table"
@@ -224,9 +226,10 @@ class ToolCategory(enum.StrEnum):
     COMMENTARY = "commentary"
     PORTFOLIO = "portfolio"
     GRAPH = "graph"
-    TEXT = "text"
+    TEXT_RETRIEVAL = "text"
+    CUSTOM_DOCS = "custom documents"
     AUTOMATION = "automation"
-    KPI = "key performance indicators"
+    KPI = "KPIs"
     SEC_FILINGS = "SEC Filings"
     COMPETITIVE_ANALYSIS = "competitive_analysis"
     IDEAS = "ideas"
@@ -234,44 +237,57 @@ class ToolCategory(enum.StrEnum):
     STRATEGY = "strategy"
 
     def get_description(self) -> str:
-        if self == ToolCategory.MISC:
-            return "Other tools"
+        if self == ToolCategory.GRAPH:
+            return "Tools for doing graphs and charts"
 
         if self == ToolCategory.STOCK:
-            return "Tools for stock lookup"
+            return "Tools for basic stock and ETF lookup"
 
-        if self == ToolCategory.TEXT:
-            return "Other tools for retrieving texts"
+        if self == ToolCategory.STOCK_GROUPS:
+            return (
+                "Tools for related to grouping stocks, including sectors, industries, and countries"
+            )
+
+        if self == ToolCategory.STOCK_FILTERS:
+            return "Tools for filtering stocks"
+
+        if self == ToolCategory.STOCK_SENTIMENT:
+            return "Tools for identifying the sentiment associated with stocks, including recommendations"
+
+        if self == ToolCategory.PEERS:
+            return "Tools that involve company peers and competitors"
+
+        if self == ToolCategory.TEXT_RETRIEVAL:
+            return "Other tools for general text retrieval, when specific type is not specified"
+
+        if self == ToolCategory.CUSTOM_DOCS:
+            return (
+                "Tools for retrieving custom (uploadied) user documents, including analyst reports"
+            )
 
         if self == ToolCategory.LIST:
-            return "Tools for manipulating lists"
+            return "Tools for manipulating lists (of stocks, texts, etc.)"
 
         if self == ToolCategory.DATES:
             return "Tools related to dates"
 
-        if self == ToolCategory.LLM_ANALYSIS:
-            return "Tools that use LLMs to analyze data"
-
-        if self == ToolCategory.USER:
-            return "Tools that get information about the user"
+        if self == ToolCategory.TEXT_WRITER:
+            return "Tools that use LLMs to analyze text data and produce written texts"
 
         if self == ToolCategory.EARNINGS:
             return "Tools that involve earnings calls"
 
         if self == ToolCategory.STATISTICS:
             return (
-                "Tools that work with the database of stock statistic, do "
-                "not use tools under this category under any circumstances "
-                "to find information on company or industry specific metrics, "
-                "you must use the tools under the 'key performance indicators category' "
-                "instead."
+                "Tools that work with the database of statistics, potentially relevant to "
+                "any quantitative analysis"
             )
 
         if self == ToolCategory.TABLE:
-            return "Tools that do operations over tables"
-
-        if self == ToolCategory.GRAPH:
-            return "Tools that create or deal with graphs"
+            return (
+                "Tools that do operations over tables, required for most calculations"
+                " and filtering and rankings of stocks based on statistics"
+            )
 
         if self == ToolCategory.OUTPUT:
             return "Tools that prepare final outputs for visualization"
@@ -286,7 +302,7 @@ class ToolCategory(enum.StrEnum):
             return "Tools that involve writing commentary"
 
         if self == ToolCategory.PORTFOLIO:
-            return "Tools that involve portfolios"
+            return "Tools that involve user portfolios and watchlists"
 
         if self == ToolCategory.AUTOMATION:
             return "Tools that involve automating tasks and notifying users"
@@ -312,7 +328,7 @@ class ToolCategory(enum.StrEnum):
             return "Tools that involve web searching"
 
         if self == ToolCategory.STRATEGY:
-            return "Tools that relate to strategies (or it could be called B1/quant strategies)"
+            return "Tools that relate to quantitative strategies/model from Boosted 1"
 
         return ""
 
@@ -328,19 +344,19 @@ class ToolRegistry:
     _TOOL_NAME_TO_CATEGORY: Dict[str, ToolCategory] = {}
 
     @classmethod
-    def register_tool(cls, tool: Tool, category: ToolCategory = ToolCategory.MISC) -> None:
+    def register_tool(cls, tool: Tool, category: ToolCategory = ToolCategory.STOCK) -> None:
         cls._REGISTRY_CATEGORY_MAP[category][tool.name] = tool
         cls._REGISTRY_ALL_TOOLS_MAP[tool.name] = tool
         cls._TOOL_NAME_TO_CATEGORY[tool.name] = category
 
     @classmethod
     def get_tool_in_category(
-        cls, tool_name: str, category: ToolCategory = ToolCategory.MISC
+        cls, tool_name: str, category: ToolCategory = ToolCategory.STOCK
     ) -> Tool:
         return cls._REGISTRY_CATEGORY_MAP[category][tool_name]
 
     @classmethod
-    def get_all_tools_in_category(cls, category: ToolCategory = ToolCategory.MISC) -> List[Tool]:
+    def get_all_tools_in_category(cls, category: ToolCategory = ToolCategory.STOCK) -> List[Tool]:
         return list(cls._REGISTRY_CATEGORY_MAP[category].values())
 
     @classmethod
@@ -352,9 +368,21 @@ class ToolRegistry:
         return tool_name in cls._REGISTRY_ALL_TOOLS_MAP
 
     @classmethod
-    def get_tool_str(cls, user_id: Optional[str] = None) -> str:
+    def get_tool_str(
+        cls,
+        user_id: Optional[str] = None,
+        filter_input: bool = False,
+        skip_list: Optional[List[ToolCategory]] = None,
+    ) -> str:
+        """Returns a string representation of the tool library. The user_id is used to control which
+        tools are visible to individual users. If filter_input is true, the string is going to be input
+        to the tool filter and so we do not include the full description of each tool but do include the
+        category names, so GPT can choose them. The skip list is a list of tool categories which will
+        not be included, also used for tool filtering."""
         output = []
         for tool_category, tool_dict in cls._REGISTRY_CATEGORY_MAP.items():
+            if skip_list and tool_category in skip_list:
+                continue
             tool_descriptions = []
             for tool in tool_dict.values():
                 if not tool.enabled:
@@ -363,9 +391,14 @@ class ToolRegistry:
                     continue
                     # If there is a checker, only continue if there is a user ID which results in a true checker
                 tool_descriptions.append(tool.to_function_header())
-                tool_descriptions.append(f"# {tool.description}")
+                if not filter_input:
+                    tool_descriptions.append(f"# {tool.description}")
             if tool_descriptions:
-                output.append(f"## {tool_category.get_description()}")
+                if filter_input:
+                    output.append(f"## {tool_category}: {tool_category.get_description()}")
+                else:
+                    output.append(f"## {tool_category.get_description()}")
+
                 output.extend(tool_descriptions)
 
         return "\n".join(output)
@@ -388,7 +421,7 @@ def _handle_tool_result(val: IOType, context: PlanRunContext) -> None:
 
 def tool(
     description: str,
-    category: ToolCategory = ToolCategory.MISC,
+    category: ToolCategory = ToolCategory.STOCK,
     use_cache: bool = False,
     use_cache_fn: Optional[Callable[[T, PlanRunContext], bool]] = None,
     cache_key_fn: Callable[[str, T, PlanRunContext], CacheKeyType] = default_cache_key_func,

@@ -20,7 +20,7 @@ from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table, TableColumn, TableColumnMetadata
 from agent_service.io_types.text import KPIText, TextCitation
 from agent_service.planner.errors import EmptyInputError
-from agent_service.tool import ToolArgs, tool
+from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.prefect import get_prefect_logger
 
@@ -130,7 +130,8 @@ asks for yearly data and no date range is provided, then it is of absolute, utmo
 importance that you use a default date range of 5 years.
 Note that if the client mentions wanting to overlay one kind of data with another,
 you should first construct a table with all the required data and then create a single graph.
-"""
+""",
+    category=ToolCategory.GRAPH,
 )
 async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> LineGraph:
     cols = args.input_table.columns
@@ -290,7 +291,8 @@ pie chart, make sure you do a table transform to replace "revenue" with "other r
 by removing the part of the sales that is car sales, before you call this function, this
 function will NOT do that transformation for you, it just directly graphs the number that
 are provided to it in the input table.
-"""
+""",
+    category=ToolCategory.GRAPH,
 )
 async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> PieGraph:
     if len(args.input_table.columns) < 2:
@@ -451,7 +453,8 @@ function. (The table can be indexed by arbitrary, low numbers of labels)
 Note that the input must be a Table! If the source data is stock pricing data, financial data, or
 economic time series data, then a date range should be used to acquire the data rather than a
 single date or no date.
-"""
+""",
+    category=ToolCategory.GRAPH,
 )
 async def make_bar_graph(args: MakeBarGraphArgs, context: PlanRunContext) -> BarGraph:
     cols = args.input_table.columns
@@ -586,7 +589,8 @@ In this case, this tool will decide the type of graph to use depending on the ta
 Note that the input must be a Table! If the source data is stock pricing data, financial data, or
 economic time series data, then a date range should be used to acquire the data rather than a
 single date or no date.
-"""
+""",
+    category=ToolCategory.GRAPH,
 )
 async def make_generic_graph(args: MakeGenericGraphArgs, context: PlanRunContext) -> Graph:
     cols = args.input_table.columns

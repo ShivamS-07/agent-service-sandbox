@@ -43,7 +43,7 @@ def get_test_registry() -> Type[ToolRegistry]:
             " function you must make sure to apply all relevant filters on the texts, do not use "
             " this function to filter large quantities of text"
         ),
-        category=ToolCategory.LLM_ANALYSIS,
+        category=ToolCategory.TEXT_WRITER,
         tool_registry=TestRegistry,
     )
     async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> Text:
@@ -62,7 +62,7 @@ def get_test_registry() -> Type[ToolRegistry]:
             " function many times with smaller topics. Use filter_items_by_topic if you have things other "
             "than texts that you want to filter"
         ),
-        category=ToolCategory.LLM_ANALYSIS,
+        category=ToolCategory.STOCK_FILTERS,
         tool_registry=TestRegistry,
     )
     async def filter_texts_by_topic(
@@ -159,7 +159,7 @@ def get_test_registry() -> Type[ToolRegistry]:
             "This function returns a list of stock identifiers for all stocks in the provided "
             "users portfolios or all portfolios if portfolio_name is an empty list (the default value)"
         ),
-        category=ToolCategory.USER,
+        category=ToolCategory.PORTFOLIO,
         tool_registry=TestRegistry,
     )
     async def get_user_portfolio_stocks(
@@ -409,7 +409,7 @@ def get_test_registry() -> Type[ToolRegistry]:
             "This function takes any list of items which has some corresponding associated texts"
             " and uses an LLM to filter to only those objects relevant to the provided topic."
         ),
-        category=ToolCategory.LLM_ANALYSIS,
+        category=ToolCategory.STOCK_FILTERS,
         tool_registry=TestRegistry,
     )
     async def filter_items_by_topic(

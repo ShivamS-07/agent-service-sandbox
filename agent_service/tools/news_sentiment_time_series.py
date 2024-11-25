@@ -72,7 +72,7 @@ async def _get_news_sentiment_helper(
         " The output is a StockTable with columns: Security, Date, Sentiment."
         " The output StockTable must be converted to a Line Graph for visualization."
     ),
-    category=ToolCategory.NEWS,
+    category=ToolCategory.STOCK_SENTIMENT,
     tool_registry=ToolRegistry,
 )
 async def get_news_sentiment_time_series(

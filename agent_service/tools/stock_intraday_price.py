@@ -31,7 +31,7 @@ class GetStockIntradayPriceInput(ToolArgs):
         " table transform tool you will be fired."
         " This tool does NOT provide market cap, use get_statistic_data_for_companies for that."
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
 )
 async def get_stock_intraday_prices(

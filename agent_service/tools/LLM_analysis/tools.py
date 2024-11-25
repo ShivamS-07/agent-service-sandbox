@@ -525,7 +525,7 @@ async def _update_summarize_helper(
 
 @tool(
     description=SUMMARIZE_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.TEXT_WRITER,
     reads_chat=True,
     update_instructions=SUMMARIZE_UPDATE_INSTRUCTIONS,
 )
@@ -618,7 +618,7 @@ class PerStockSummarizeTextInput(ToolArgs):
 
 @tool(
     description=PER_STOCK_SUMMARIZE_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.TEXT_WRITER,
     reads_chat=True,
 )
 async def per_stock_summarize_texts(
@@ -820,7 +820,7 @@ class PerIdeaSummarizeTextInput(ToolArgs):
 
 @tool(
     description=PER_IDEA_SUMMARIZE_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.IDEAS,
     reads_chat=True,
     enabled=True,
     enabled_checker_func=ideas_enabled,
@@ -964,7 +964,7 @@ class PerStockGroupSummarizeTextInput(ToolArgs):
 
 @tool(
     description=PER_STOCK_GROUP_SUMMARIZE_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.STOCK_GROUPS,
     reads_chat=True,
 )
 async def per_stock_group_summarize_texts(
@@ -1170,7 +1170,7 @@ class CompareTextInput(ToolArgs):
 
 @tool(
     description=COMPARISON_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.TEXT_WRITER,
     reads_chat=True,
     update_instructions=COMPARISON_UPDATE_INSTRUCTIONS,
 )
@@ -1302,7 +1302,7 @@ class AnswerQuestionInput(ToolArgs):
 
 @tool(
     description=ANSWER_QUESTION_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.TEXT_WRITER,
 )
 async def answer_question_with_text_data(
     args: AnswerQuestionInput, context: PlanRunContext
@@ -1489,7 +1489,7 @@ class FilterNewsByTopicInput(ToolArgs):
 
 @tool(
     description=FILTER_BY_TOPIC_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.NEWS,
 )
 async def filter_news_by_topic(
     args: FilterNewsByTopicInput, context: PlanRunContext

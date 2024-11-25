@@ -1077,7 +1077,7 @@ class GetCountryInput(ToolArgs):
         " If you want to filter on a country or region do not use this function,"
         " you should use the filter_stocks_by_region instead"
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_GROUPS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -1118,7 +1118,7 @@ async def get_country_for_stocks(args: GetCountryInput, context: PlanRunContext)
         " If you want to filter on a country or region or country of domicile do not use this function,"
         " you should use the filter_stocks_by_country_of_domicile instead"
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_GROUPS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -1163,7 +1163,7 @@ class GetCurrencyInput(ToolArgs):
         " Use this function to add currency to a dataset before display"
         " or for further processing"
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_GROUPS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -1245,7 +1245,7 @@ class GetSectorInput(ToolArgs):
         " If you want to filter on a sector do not use this function,"
         " you should use the sector_filter instead"
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_GROUPS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -1288,7 +1288,7 @@ class GetIndustryGroupInput(ToolArgs):
         " If you want to filter on an Industry group do not use this function,"
         " you should use the sector_filter instead"
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_GROUPS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -1332,7 +1332,7 @@ class GetIndustryInput(ToolArgs):
         " If you want to filter on an Industry do not use this function,"
         " you should use the sector_filter instead"
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_GROUPS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -1374,7 +1374,7 @@ class GetSubIndustryInput(ToolArgs):
         " If you want to filter on a Sub Industry do not use this function,"
         " you should use the sector_filter instead"
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_GROUPS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -1871,7 +1871,7 @@ class GetRiskExposureForStocksInput(ToolArgs):
         " has increased or decreased across time"
         " it can only tell you the current exposure."
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STATISTICS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -2000,7 +2000,7 @@ class GrowthFilterInput(ToolArgs):
         " 'low growth' should be interpreted as min_value = -10, max_value = -1 ."
         " 'good growth' should be interpreted the same as high growth."
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_FILTERS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -2102,7 +2102,7 @@ class ValueFilterInput(ToolArgs):
         " 'undervalued' should be interpreted as min_value = 1, max_value = 10 ."
         " 'good value' should be interpreted the same as high value."
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_FILTERS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )

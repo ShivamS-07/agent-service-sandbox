@@ -17,7 +17,7 @@ class GetStockDescriptionInput(ToolArgs):
         "A stock description generally contains basic, general information about the company's "
         "operations, including major products, services, and holdings, the regions they operate in, etc. "
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.TEXT_RETRIEVAL,
     tool_registry=ToolRegistry,
 )
 async def get_company_descriptions(

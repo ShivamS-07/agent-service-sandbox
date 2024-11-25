@@ -233,7 +233,7 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "to True in your arguments to this tool when the client limits their request, if you do not and a client gets "
         "a company outside the range they are asking for, you will be fired!"
     ),
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.STOCK_FILTERS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -769,7 +769,7 @@ class GetCoreCompanyProduct(ToolArgs):
         "if you fail to use this tool and instead make up an incorrect core product for a company!!! "
         "The return value is a string that can be passed as product_str to the product filter tool."
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_FILTERS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )

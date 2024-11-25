@@ -47,7 +47,7 @@ WATCHLIST_REMOVE_STOCK_DIFF = "{company} was removed from the watchlist: {watchl
         "watchlist is included in chat! "
         "E.g. 'My watchlist' (Watchlist ID: <some UUID>)."
     ),
-    category=ToolCategory.USER,
+    category=ToolCategory.PORTFOLIO,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -195,7 +195,7 @@ async def get_user_watchlist_stocks(
         "It should ONLY be used when the user mentions 'all watchlists' or something similar. "
         "When a watchlist name is mentioned, you MUST use the tool 'get_user_watchlist_stocks'."
     ),
-    category=ToolCategory.USER,
+    category=ToolCategory.PORTFOLIO,
     tool_registry=ToolRegistry,
     is_visible=True,
 )

@@ -641,7 +641,7 @@ class GetStockRecommendationsInput(ToolArgs):
         "outputed by this tool are displayed it looks like a table to the client, so you do not need to take any "
         "other steps to convert the output to a table!!!"
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_SENTIMENT,
     tool_registry=ToolRegistry,
     reads_chat=True,
     update_instructions=(

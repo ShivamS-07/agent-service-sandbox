@@ -775,7 +775,7 @@ class FilterStocksByProfileMatch(ToolArgs):
 
 @tool(
     description=FILTER_BY_PROFILE_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.STOCK_FILTERS,
     enabled=False,
 )
 async def filter_stocks_by_profile_match(
@@ -804,7 +804,7 @@ class RankStocksByProfileInput(ToolArgs):
 
 @tool(
     description=RANK_STOCKS_BY_PROFILE_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.STOCK_FILTERS,
     enabled=False,
 )
 async def rank_stocks_by_profile(
@@ -853,7 +853,7 @@ class FilterAndRankStocksByProfileInput(ToolArgs):
 
 @tool(
     description=FILTER_AND_RANK_STOCKS_BY_PROFILE_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.STOCK_FILTERS,
 )
 async def filter_and_rank_stocks_by_profile(
     args: FilterAndRankStocksByProfileInput, context: PlanRunContext
@@ -996,7 +996,7 @@ class PerIdeaFilterStocksByProfileMatch(ToolArgs):
 
 @tool(
     description=PER_TOPIC_FILTER_BY_PROFILE_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.STOCK_FILTERS,
     enabled=False,
     enabled_checker_func=ideas_enabled,
 )
@@ -1045,7 +1045,7 @@ class PerIdeaFilterAndRankStocksByProfileMatch(ToolArgs):
 
 @tool(
     description=PER_IDEA_FILTER_AND_RANK_STOCKS_BY_PROFILE_MATCH_DESCRIPTION,
-    category=ToolCategory.LLM_ANALYSIS,
+    category=ToolCategory.IDEAS,
     enabled=True,
     enabled_checker_func=ideas_enabled,
 )

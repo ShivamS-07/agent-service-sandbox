@@ -505,7 +505,7 @@ COUNTRY_SYS_PROMPT = Prompt(
         " For countries, use the standard 3-letter ISO country code."
         " The function returns the filtered list of stock IDs."
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_FILTERS,
     tool_registry=ToolRegistry,
 )
 async def filter_stocks_by_region(
@@ -604,7 +604,7 @@ async def filter_stocks_by_region(
         " (e.g., 'United States', 'Canada', China) and It filters the list of stocks by the given country"
         " The function returns the filtered list of stock IDs."
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_FILTERS,
     tool_registry=ToolRegistry,
 )
 async def filter_stocks_by_country_of_domicile(

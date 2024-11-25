@@ -61,7 +61,7 @@ class GetStockSectorInput(ToolArgs):
         " sectors, do not use this function, you should use the get_sector_for_stocks"
         " instead."
     ),
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_GROUPS,
     tool_registry=ToolRegistry,
     is_visible=True,
 )
@@ -219,7 +219,7 @@ This function supports the following GICS classifications:
 
 {get_all_gics_str()}
 """,
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_GROUPS,
     tool_registry=ToolRegistry,
 )
 async def sector_identifier_lookup(
@@ -302,7 +302,7 @@ class SectorFilterInput(ToolArgs):
     description="""
 This function was renamed to gics_sector_industry_filter
 """,
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_FILTERS,
     tool_registry=ToolRegistry,
     enabled=False,
 )
@@ -336,7 +336,7 @@ this new list. Listen carefully, you must not use this tool only and assume you 
 you will do exactly the opposite of what the client wants, the plan will fail, and you will be
 fired!!!!
 """,
-    category=ToolCategory.STOCK,
+    category=ToolCategory.STOCK_FILTERS,
     tool_registry=ToolRegistry,
 )
 async def gics_sector_industry_filter(

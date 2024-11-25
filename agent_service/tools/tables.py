@@ -700,7 +700,7 @@ class PerStockGroupTransformTableInput(ToolArgs):
     The output of this tool is always a table. Make sure you always label the output variable of this
     tool as a table, e.g. sector_performance_table.
 """,
-    category=ToolCategory.TABLE,
+    category=ToolCategory.STOCK_GROUPS,
 )
 async def per_stock_group_transform_table(
     args: PerStockGroupTransformTableInput, context: PlanRunContext

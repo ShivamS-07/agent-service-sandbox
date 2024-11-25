@@ -291,7 +291,7 @@ class GetUniverseHoldingsInput(ToolArgs):
         "Table schema: "
         "Security: StockID, weight: float"
     ),
-    category=ToolCategory.STATISTICS,
+    category=ToolCategory.STOCK,
     tool_registry=ToolRegistry,
     enabled=True,
 )

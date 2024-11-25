@@ -42,7 +42,7 @@ class GetCustomDocsInput(ToolArgs):
         " documents can only be found for dates in the past up to the present, including todays date."
         " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
     ),
-    category=ToolCategory.TEXT,
+    category=ToolCategory.CUSTOM_DOCS,
     tool_registry=ToolRegistry,
 )
 async def get_user_custom_documents(
@@ -127,7 +127,7 @@ class GetCustomDocsByTopicInput(ToolArgs):
         " documents can only be found for dates in the past up to the present, including todays date."
         " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
     ),
-    category=ToolCategory.TEXT,
+    category=ToolCategory.CUSTOM_DOCS,
     tool_registry=ToolRegistry,
 )
 async def get_user_custom_documents_by_topic(
@@ -204,7 +204,7 @@ class GetCustomDocsByFileInput(ToolArgs):
         " - This function is not to be used for filtering documents by stocks, as the returned "
         "documents do not contain stock-related information."
     ),
-    category=ToolCategory.TEXT,
+    category=ToolCategory.CUSTOM_DOCS,
     tool_registry=ToolRegistry,
 )
 async def get_user_custom_documents_by_filename(

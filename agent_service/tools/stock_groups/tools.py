@@ -30,7 +30,7 @@ class CreateStockGroupsFromTableInput(ToolArgs):
     header: str
 
 
-@tool(description=CREATE_STOCK_GROUPS_DESCRIPTION, category=ToolCategory.STOCK, enabled=True)
+@tool(description=CREATE_STOCK_GROUPS_DESCRIPTION, category=ToolCategory.STOCK_GROUPS, enabled=True)
 async def create_stock_groups_from_table(
     args: CreateStockGroupsFromTableInput, context: PlanRunContext
 ) -> StockGroups:
@@ -106,7 +106,9 @@ class CollapseStockGroupsToList(ToolArgs):
     stock_groups: StockGroups
 
 
-@tool(description=COLLAPSE_STOCK_GROUPS_DESCRIPTION, category=ToolCategory.STOCK, enabled=True)
+@tool(
+    description=COLLAPSE_STOCK_GROUPS_DESCRIPTION, category=ToolCategory.STOCK_GROUPS, enabled=True
+)
 async def collapse_stock_groups_to_stock_list(
     args: CollapseStockGroupsToList, context: PlanRunContext
 ) -> List[StockID]:
