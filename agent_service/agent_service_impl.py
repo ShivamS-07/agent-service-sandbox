@@ -99,6 +99,7 @@ from agent_service.endpoints.models import (
     GetDebugToolResultResponse,
     GetDividendYieldResponse,
     GetEarningsSummaryResponse,
+    GetExecutiveEarningsSummaryResponse,
     GetHistoricalPricesRequest,
     GetHistoricalPricesResponse,
     GetLiveAgentsQCResponse,
@@ -110,6 +111,7 @@ from agent_service.endpoints.models import (
     GetOrderedSecuritiesResponse,
     GetPlanRunDebugInfoResponse,
     GetPlanRunOutputResponse,
+    GetPreviousEarningsResponse,
     GetPriceDataResponse,
     GetRealTimePriceResponse,
     GetSecureUserResponse,
@@ -120,6 +122,7 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
     GetToolLibraryResponse,
+    GetUpcomingEarningsResponse,
     GetVariableCoverageResponse,
     GetVariableHierarchyResponse,
     HorizonCriteria,
@@ -202,7 +205,9 @@ from agent_service.external.user_svc_client import (
 from agent_service.external.webserver import (
     get_company_description,
     get_earnings_summary,
+    get_executive_earnings_summary,
     get_ordered_securities,
+    get_previous_earnings,
     get_security,
     get_security_pros_cons,
     get_stock_dividend_yield,
@@ -211,6 +216,7 @@ from agent_service.external.webserver import (
     get_stock_news_summary,
     get_stock_price_data,
     get_stock_real_time_price,
+    get_upcoming_earnings,
 )
 from agent_service.io_type_utils import (
     TableColumnType,
@@ -2750,6 +2756,34 @@ class AgentServiceImpl:
     async def get_dividend_yield(self, user: User, gbi_id: int) -> GetDividendYieldResponse:
         dividend_yield = await get_stock_dividend_yield(user_id=user.user_id, gbi_id=gbi_id)
         return GetDividendYieldResponse(dividend_yield=dividend_yield)
+
+    async def get_executive_earnings_summary(
+        self, user: User, gbi_id: int
+    ) -> GetExecutiveEarningsSummaryResponse:
+        changes = await get_executive_earnings_summary(user_id=user.user_id, gbi_id=gbi_id)
+        if changes is None:
+            return GetExecutiveEarningsSummaryResponse(changes=None)
+        return GetExecutiveEarningsSummaryResponse(
+            changes=[
+                GetExecutiveEarningsSummaryResponse.SummaryChange(**change) for change in changes
+            ]
+        )
+
+    async def get_previous_earnings(self, user: User, gbi_id: int) -> GetPreviousEarningsResponse:
+        earnings = await get_previous_earnings(user_id=user.user_id, gbi_id=gbi_id)
+        if earnings is None:
+            return GetPreviousEarningsResponse(earnings=None)
+        return GetPreviousEarningsResponse(
+            earnings=GetPreviousEarningsResponse.PreviousEarnings(**earnings)
+        )
+
+    async def get_upcoming_earnings(self, user: User, gbi_id: int) -> GetUpcomingEarningsResponse:
+        earnings = await get_upcoming_earnings(user_id=user.user_id, gbi_id=gbi_id)
+        if earnings is None:
+            return GetUpcomingEarningsResponse(earnings=None)
+        return GetUpcomingEarningsResponse(
+            earnings=GetUpcomingEarningsResponse.UpcomingEarnings(**earnings)
+        )
 
     async def update_qc_agent(self, agent_qc: AgentQC) -> bool:
         try:

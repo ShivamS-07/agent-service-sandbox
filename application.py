@@ -102,6 +102,7 @@ from agent_service.endpoints.models import (
     GetDebugToolResultResponse,
     GetDividendYieldResponse,
     GetEarningsSummaryResponse,
+    GetExecutiveEarningsSummaryResponse,
     GetHistoricalPricesRequest,
     GetHistoricalPricesResponse,
     GetLiveAgentsQCResponse,
@@ -112,6 +113,7 @@ from agent_service.endpoints.models import (
     GetOrderedSecuritiesRequest,
     GetOrderedSecuritiesResponse,
     GetPlanRunDebugInfoResponse,
+    GetPreviousEarningsResponse,
     GetPriceDataResponse,
     GetPromptTemplatesResponse,
     GetRealTimePriceResponse,
@@ -124,6 +126,7 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
     GetToolLibraryResponse,
+    GetUpcomingEarningsResponse,
     GetUsersRequest,
     GetUsersResponse,
     GetVariableCoverageRequest,
@@ -2262,6 +2265,33 @@ async def get_dividend_yield(
     gbi_id: int, user: User = Depends(parse_header)
 ) -> GetDividendYieldResponse:
     return await application.state.agent_service_impl.get_dividend_yield(user=user, gbi_id=gbi_id)
+
+
+@router.get("/stock/{gbi_id}/executive-earnings-summary")
+async def get_executive_earnings_summary(
+    gbi_id: int, user: User = Depends(parse_header)
+) -> GetExecutiveEarningsSummaryResponse:
+    return await application.state.agent_service_impl.get_executive_earnings_summary(
+        user=user, gbi_id=gbi_id
+    )
+
+
+@router.get("/stock/{gbi_id}/previous-earnings")
+async def get_previous_earnings(
+    gbi_id: int, user: User = Depends(parse_header)
+) -> GetPreviousEarningsResponse:
+    return await application.state.agent_service_impl.get_previous_earnings(
+        user=user, gbi_id=gbi_id
+    )
+
+
+@router.get("/stock/{gbi_id}/upcoming-earnings")
+async def get_upcoming_earnings(
+    gbi_id: int, user: User = Depends(parse_header)
+) -> GetUpcomingEarningsResponse:
+    return await application.state.agent_service_impl.get_upcoming_earnings(
+        user=user, gbi_id=gbi_id
+    )
 
 
 @router.get("/stock/{gbi_id}/company-description")
