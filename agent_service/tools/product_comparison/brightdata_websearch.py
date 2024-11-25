@@ -44,6 +44,9 @@ proxies = {"http": proxy_url, "https": proxy_url}
 
 CERTIFICATE_LOCATION = "agent_service/tools/product_comparison/brd_certificate.crt"
 
+WEB_SEARCH_FETCH_URLS_TIMEOUT = 30
+WEB_SEARCH_PULL_SITES_TIMEOUT = 60
+
 
 async def async_fetch_json(
     session: aiohttp.ClientSession,
@@ -76,7 +79,7 @@ async def get_urls_async(
     num_results: int,
     context: Optional[PlanRunContext] = None,
     headers: Dict[str, str] = HEADER,
-    timeout: int = 60,
+    timeout: int = WEB_SEARCH_FETCH_URLS_TIMEOUT,
 ) -> List[str]:
     ssl_context = ssl.create_default_context()
     ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
@@ -109,12 +112,12 @@ async def get_urls_async(
                 )
             )
 
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
     result_urls = set()
     for result, url in zip(results, urls):
-        if result is None:
-            logger.info(f"skipping None result for {url=}")
+        if result is None or isinstance(result, BaseException):
+            logger.info(f"skipping bad result for {url=}")
             continue
         try:
             # google regular search results have the link under "organic", Google News results have it under "news"
@@ -131,7 +134,7 @@ async def get_news_urls_async(
     num_results: int,
     context: Optional[PlanRunContext] = None,
     headers: Dict[str, str] = HEADER,
-    timeout: int = 60,
+    timeout: int = WEB_SEARCH_FETCH_URLS_TIMEOUT,
 ) -> List[str]:
     ssl_context = ssl.create_default_context()
     ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
@@ -166,12 +169,12 @@ async def get_news_urls_async(
                 )
             )
 
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
     result_urls = set()
     for result, url in zip(results, urls):
-        if result is None:
-            logger.info(f"skipping None result for {url=}")
+        if result is None or isinstance(result, BaseException):
+            logger.info(f"skipping bad result for {url=}")
             continue
         try:
             items = [item for item in result.get("news", [])]
@@ -273,7 +276,10 @@ async def req_and_scrape(
 
                 log_event(
                     event_name="brd_request",
-                    event_data={**event_data, **{"result_text": text}},
+                    event_data={
+                        **event_data,
+                        **{"result_text": text, "content_type": content_type},
+                    },
                 )
             elif "text/html" in content_type:
                 from bs4 import BeautifulSoup
@@ -316,7 +322,10 @@ async def req_and_scrape(
 
                 log_event(
                     event_name="brd_request",
-                    event_data={**event_data, **{"result_text": text}},
+                    event_data={
+                        **event_data,
+                        **{"result_text": text, "content_type": content_type},
+                    },
                 )
             else:
                 logger.info(f"Unsupported content type: {content_type}")
@@ -420,7 +429,7 @@ async def get_web_texts_async(
     urls: List[str],
     plan_context: PlanRunContext,
     headers: Dict[str, str] = HEADER,
-    timeout: int = 300,
+    timeout: int = WEB_SEARCH_PULL_SITES_TIMEOUT,
     should_print_errors: bool = False,
 ) -> Any:
     logger = get_prefect_logger(__name__)
@@ -471,8 +480,12 @@ async def get_web_texts_async(
                 )
                 for url in uncached_urls
             ]
-            uncached_res = await asyncio.gather(*tasks)
-            uncached_res = [res for res in uncached_res if res is not None]
+            uncached_res = await asyncio.gather(*tasks, return_exceptions=True)
+            uncached_res = [
+                res
+                for res in uncached_res
+                if res is not None and not isinstance(res, BaseException)
+            ]
 
             if uncached_res:
                 logger.info(

@@ -152,9 +152,10 @@ async def site_specific_websearch(
     if not context.user_settings.include_web_results:
         await tool_log("Skipping web search due to user setting", context=context)
         return []
+    # Extra time since the user specified this exact site.
     urls = [prepend_url_with_https(url) for url in args.urls]
     search_results = await get_web_texts_async(
-        urls=urls, plan_context=context, should_print_errors=True
+        urls=urls, plan_context=context, should_print_errors=True, timeout=120
     )
     if len(search_results) == 0:
         raise EmptyOutputError(message="All provided URLs had an error")

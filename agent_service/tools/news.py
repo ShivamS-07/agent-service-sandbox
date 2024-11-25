@@ -475,7 +475,7 @@ async def get_latest_news_for_companies(
             )
         )
 
-    results = await gather_with_concurrency(tasks)
+    results = await gather_with_concurrency(tasks, n=100)
 
     texts: List[StockText] = []
     for result in results:

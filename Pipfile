@@ -14,7 +14,7 @@ flake8 = {version = "==7.0.0", index = "pypi"}
 invoke = {version = "==2.2.0", index = "pypi"}
 isort = {version = "==5.13.2", index="pypi"}
 mypy = {version = "==1.11.1", index="pypi"}
-pyanalyze = {version = "*", index="pypi"}
+pyanalyze = {version = "==0.13.1", index="pypi"}
 pytest = {version = "==8.3.3", index="pypi"}
 pytest-xdist = {version = "==3.6.1", index="pypi"}
 parameterized = {version = "==0.9.0", index="pypi"}
@@ -74,6 +74,7 @@ google-generativeai = {version = "==0.8.3", index = "pypi"}
 botocore-stubs = "*"
 boto3-stubs = {extras = ["sqs", "cognito-idp", "s3"], version = "*"}
 types-aioboto3 = {extras = ["sqs", "cognito-idp", "s3"], version = "*"}
+aiohttp = {version = "~=3.11", extras=["speedups"], index = "pypi"}
 
 [requires]
 python_version = "3.12"
