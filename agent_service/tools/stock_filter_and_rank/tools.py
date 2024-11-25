@@ -1,6 +1,9 @@
 import copy
 import json
+import traceback
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
+
+from gbi_common_py_utils.utils.pagerduty import PD_WARNING, notify_agent_pg
 
 from agent_service.GPT.constants import GPT4_O_MINI, SONNET
 from agent_service.GPT.requests import GPT
@@ -67,6 +70,7 @@ from agent_service.tools.stock_filter_and_rank.utils import (
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils import environment
 from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
@@ -953,6 +957,20 @@ async def filter_and_rank_stocks_by_profile(
 
     except Exception as e:
         logger.warning(f"Error doing text diff from previous run: {e}")
+        notify_agent_pg(
+            summary="Failed to update per stock summary",
+            severity=PD_WARNING,
+            source=environment.get_environment_tag(),
+            component="AgentError",
+            classt="AgentUpdateError",
+            group="AgentUpdateError-ProfileFilter",
+            custom_details={
+                "agent": context.agent_id,
+                "plan_run": context.plan_run_id,
+                "task": context.task_id,
+                "error": "".join(traceback.TracebackException.from_exception(e).format()),
+            },
+        )
 
     if result is None:
         result = await run_profile_match(

@@ -1,7 +1,10 @@
 import asyncio
 import datetime
+import traceback
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple, cast
+
+from gbi_common_py_utils.utils.pagerduty import PD_WARNING, notify_agent_pg
 
 from agent_service.GPT.constants import (
     FILTER_CONCURRENCY,
@@ -94,6 +97,7 @@ from agent_service.tools.stocks import (
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
+from agent_service.utils import environment
 from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
@@ -698,6 +702,20 @@ async def per_stock_summarize_texts(
         logger.warning(
             f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
         )
+        notify_agent_pg(
+            summary="Failed to update per stock summary",
+            severity=PD_WARNING,
+            source=environment.get_environment_tag(),
+            component="AgentError",
+            classt="AgentUpdateError",
+            group="AgentUpdateError-Summarize",
+            custom_details={
+                "agent": context.agent_id,
+                "plan_run": context.plan_run_id,
+                "task": context.task_id,
+                "error": "".join(traceback.TracebackException.from_exception(e).format()),
+            },
+        )
 
     tasks = []
     summary_count = 0
@@ -761,9 +779,16 @@ async def per_stock_summarize_texts(
         else:
             tasks.append(identity(None))
 
-    await tool_log(
-        f"Writing texts for {summary_count} stocks, topic: {args.topic}", context=context
-    )
+    if prev_run_dict:
+        await tool_log(
+            f"Updating texts for {len(prev_run_dict)} stocks, topic: {args.topic}", context
+        )
+    if not prev_run_dict or len(prev_run_dict) != summary_count:
+        update_count = len(prev_run_dict) if prev_run_dict else 0
+        await tool_log(
+            f"Writing texts for {summary_count - update_count} stocks, topic: {args.topic}",
+            context=context,
+        )
 
     results = await gather_with_concurrency(tasks, n=50)
     output = []
