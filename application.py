@@ -94,33 +94,16 @@ from agent_service.endpoints.models import (
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
     GetCompaniesResponse,
-    GetCompanyDescriptionResponse,
     GetCustomDocumentFileInfoResponse,
-    GetDividendYieldResponse,
-    GetEarningsSummaryResponse,
-    GetExecutiveEarningsSummaryResponse,
-    GetHistoricalPricesRequest,
-    GetHistoricalPricesResponse,
     GetLiveAgentsQCResponse,
-    GetMarketDataResponse,
     GetMemoryContentResponse,
-    GetNewsSummaryRequest,
-    GetNewsSummaryResponse,
-    GetOrderedSecuritiesRequest,
-    GetOrderedSecuritiesResponse,
-    GetPreviousEarningsResponse,
-    GetPriceDataResponse,
     GetPromptTemplatesResponse,
-    GetRealTimePriceResponse,
     GetSecureUserResponse,
-    GetSecurityProsConsResponse,
-    GetSecurityResponse,
     GetTeamAccountsResponse,
     GetTestCaseInfoResponse,
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
-    GetUpcomingEarningsResponse,
     GetUsersRequest,
     GetUsersResponse,
     GetVariableCoverageRequest,
@@ -179,7 +162,7 @@ from agent_service.endpoints.models import (
     UploadFileResponse,
     UserHasAccessResponse,
 )
-from agent_service.endpoints.routers import debug
+from agent_service.endpoints.routers import debug, stock
 from agent_service.endpoints.routers.utils import get_agent_svc_impl
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.external.utils import get_http_session
@@ -2052,134 +2035,6 @@ async def get_custom_doc_quota(
     )
 
 
-@router.post(
-    "/stock/get-ordered-securities",
-    response_model=GetOrderedSecuritiesResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_ordered_securities(
-    req: GetOrderedSecuritiesRequest, user: User = Depends(parse_header)
-) -> GetOrderedSecuritiesResponse:
-    return await application.state.agent_service_impl.get_ordered_securities(req, user)
-
-
-@router.post(
-    "/stock/news-summary", response_model=GetNewsSummaryResponse, status_code=status.HTTP_200_OK
-)
-async def get_news_summary(
-    req: GetNewsSummaryRequest, user: User = Depends(parse_header)
-) -> GetNewsSummaryResponse:
-    return await application.state.agent_service_impl.get_news_summary(req, user)
-
-
-@router.post(
-    "/stock/historical-prices",
-    response_model=GetHistoricalPricesResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_historical_prices(
-    req: GetHistoricalPricesRequest, user: User = Depends(parse_header)
-) -> GetHistoricalPricesResponse:
-    return await application.state.agent_service_impl.get_historical_prices(req, user)
-
-
-@router.get(
-    "/stock/{gbi_id}/real-time-price",
-    response_model=GetRealTimePriceResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_real_time_price(
-    gbi_id: int, user: User = Depends(parse_header)
-) -> GetRealTimePriceResponse:
-    return await application.state.agent_service_impl.get_real_time_price(user=user, gbi_id=gbi_id)
-
-
-@router.get(
-    "/stock/{gbi_id}/market-data",
-    response_model=GetMarketDataResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_market_data(gbi_id: int, user: User = Depends(parse_header)) -> GetMarketDataResponse:
-    return await application.state.agent_service_impl.get_market_data(user=user, gbi_id=gbi_id)
-
-
-@router.get(
-    "/stock/{gbi_id}/price-data",
-    response_model=GetPriceDataResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_price_data(gbi_id: int, user: User = Depends(parse_header)) -> GetPriceDataResponse:
-    return await application.state.agent_service_impl.get_price_data(user=user, gbi_id=gbi_id)
-
-
-@router.get(
-    "/stock/{gbi_id}/dividend-yield",
-    response_model=GetDividendYieldResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_dividend_yield(
-    gbi_id: int, user: User = Depends(parse_header)
-) -> GetDividendYieldResponse:
-    return await application.state.agent_service_impl.get_dividend_yield(user=user, gbi_id=gbi_id)
-
-
-@router.get("/stock/{gbi_id}/executive-earnings-summary")
-async def get_executive_earnings_summary(
-    gbi_id: int, user: User = Depends(parse_header)
-) -> GetExecutiveEarningsSummaryResponse:
-    return await application.state.agent_service_impl.get_executive_earnings_summary(
-        user=user, gbi_id=gbi_id
-    )
-
-
-@router.get("/stock/{gbi_id}/previous-earnings")
-async def get_previous_earnings(
-    gbi_id: int, user: User = Depends(parse_header)
-) -> GetPreviousEarningsResponse:
-    return await application.state.agent_service_impl.get_previous_earnings(
-        user=user, gbi_id=gbi_id
-    )
-
-
-@router.get("/stock/{gbi_id}/upcoming-earnings")
-async def get_upcoming_earnings(
-    gbi_id: int, user: User = Depends(parse_header)
-) -> GetUpcomingEarningsResponse:
-    return await application.state.agent_service_impl.get_upcoming_earnings(
-        user=user, gbi_id=gbi_id
-    )
-
-
-@router.get("/stock/{gbi_id}/company-description")
-async def get_company_description(
-    gbi_id: int, user: User = Depends(parse_header)
-) -> GetCompanyDescriptionResponse:
-    return await application.state.agent_service_impl.get_company_description(
-        user=user, gbi_id=gbi_id
-    )
-
-
-@router.get("/stock/{gbi_id}/pros-cons")
-async def get_security_pros_cons(
-    gbi_id: int, user: User = Depends(parse_header)
-) -> GetSecurityProsConsResponse:
-    return await application.state.agent_service_impl.get_security_pros_cons(
-        user=user, gbi_id=gbi_id
-    )
-
-
-@router.get("/stock/{gbi_id}/earnings-summary")
-async def get_earnings_summary(
-    gbi_id: int, user: User = Depends(parse_header)
-) -> GetEarningsSummaryResponse:
-    return await application.state.agent_service_impl.get_earnings_summary(user=user, gbi_id=gbi_id)
-
-
-@router.get("/stock/{gbi_id}/security")
-async def get_security(gbi_id: int, user: User = Depends(parse_header)) -> GetSecurityResponse:
-    return await application.state.agent_service_impl.get_security(user=user, gbi_id=gbi_id)
-
-
 @router.get(
     "/agent/qc/{id}",
     response_model=List[AgentQC],
@@ -2353,6 +2208,7 @@ async def create_jira_ticket(
 initialize_unauthed_endpoints(application)
 application.include_router(router)
 application.include_router(debug.router)
+application.include_router(stock.router)
 
 
 def parse_args() -> argparse.Namespace:
