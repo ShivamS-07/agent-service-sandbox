@@ -165,14 +165,13 @@ async def site_specific_websearch(
 
 async def main() -> None:
     plan_context = PlanRunContext.get_dummy()
-
     """
     query_1 = "nintendo switch 2 news"
     query_2 = "Australia betting news"
     query_3 = "top legal tech stocks"
     query_4 = "countries which have prominent effects on the stock market"
 
-    queries = GeneralWebSearchInput(queries=[query_1, query_2])
+    queries = GeneralWebSearchInput(queries=[query_2])
     result = await general_web_search(queries, plan_context)
     """
     """

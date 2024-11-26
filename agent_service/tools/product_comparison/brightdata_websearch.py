@@ -7,11 +7,11 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-import aioboto3
 import aiohttp
+import boto3
 import requests
 from gbi_common_py_utils.utils.ssm import get_param
-from types_aiobotocore_s3 import S3Client
+from mypy_boto3_s3.client import S3Client
 
 from agent_service.io_types.text import WebText
 from agent_service.tools.product_comparison.constants import (
@@ -412,11 +412,11 @@ async def req_and_scrape(
 
     clean_text = remove_excess_formatting(text)
 
-    # upload to s3
-    await s3_client.upload_fileobj(
-        Fileobj=io.BytesIO(clean_text.encode("utf-8")),
-        Bucket=S3_BUCKET_BOOSTED_WEBSEARCH,
-        Key=str(obj.id),
+    await asyncio.to_thread(
+        s3_client.upload_fileobj,
+        io.BytesIO(clean_text.encode("utf-8")),
+        S3_BUCKET_BOOSTED_WEBSEARCH,
+        str(obj.id),
     )
 
     # Return the response object
@@ -461,11 +461,10 @@ async def get_web_texts_async(
     uncached_urls = [url for url in urls if url not in url_to_obj]
     if uncached_urls:
         logger.info(f"Scrapping {len(uncached_urls)} uncached URLs out of {len(urls)}")
-
-        # Create a ClientSession with proxy support
         async with aiohttp.ClientSession(
             max_line_size=8190 * 5, max_field_size=8190 * 5
-        ) as session, aioboto3.Session().client("s3") as s3_client:
+        ) as session:
+            s3_client = boto3.client("s3")
             tasks = [
                 req_and_scrape(
                     session,
