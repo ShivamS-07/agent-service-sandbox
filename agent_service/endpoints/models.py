@@ -237,17 +237,16 @@ class RemoveNotificationEmailsResponse(BaseModel):
     success: bool
 
 
-class AgentNotificationEmail(BaseModel):
-    email: str
-    user_id: str | None
-    agent_id: str
-
-
 class NotificationUser(BaseModel):
     user_id: str
     username: str
     name: str
     email: str
+
+
+####################################################################################################
+# Agent Email
+####################################################################################################
 
 
 class AgentNotificationBody(BaseModel):
@@ -271,6 +270,12 @@ class AgentSubscriptionMessage(BaseModel):
     agent_data: List[AgentNotificationData]
 
 
+class AgentNotificationEmail(BaseModel):
+    email: str
+    user_id: str | None
+    agent_id: str
+
+
 class OnboardingEmailMessage(BaseModel):
     message_type: str = "onboarding_email_event"
     user_name: str
@@ -283,6 +288,16 @@ class ForwardingEmailMessage(BaseModel):
     message_type: str = "forwarding_email_event"
     notification_key: str
     recipient_email: str
+
+
+class PlanRunFinishEmailMessage(BaseModel):
+    message_type: str = "plan_run_finish_email_event"
+    agent_id: str
+    agent_owner: str
+    plan_run_id: str
+    agent_name: str
+    short_summary: str
+    output_titles: str
 
 
 ####################################################################################################

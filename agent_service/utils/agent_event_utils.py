@@ -1,11 +1,9 @@
 import asyncio
 import logging
-from typing import List, Optional, Union, cast
+from typing import List, Optional, Union
 from uuid import uuid4
 
-import boto3
 from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
-from user_service_proto_v1.user_service_pb2 import User
 
 from agent_service.agent_quality_worker.ingestion_worker import (
     send_agent_quality_message,
@@ -14,21 +12,16 @@ from agent_service.endpoints.authz_helper import User as AuthzUser
 from agent_service.endpoints.models import (
     AgentEvent,
     AgentNameEvent,
-    AgentNotificationBody,
-    AgentNotificationData,
     AgentOutput,
     AgentQuickThoughtsEvent,
-    AgentSubscriptionMessage,
     EventType,
     ExecutionPlanTemplate,
     ExecutionStatusEvent,
-    ForwardingEmailMessage,
     MessageEvent,
     NewPlanEvent,
     NotificationEvent,
     NotifyHelpStatusEvent,
     NotifyMessageEvent,
-    OnboardingEmailMessage,
     OutputEvent,
     PlanRunTaskLog,
     PlanStatusEvent,
@@ -39,7 +32,6 @@ from agent_service.endpoints.models import (
     TaskStatusEvent,
 )
 from agent_service.endpoints.utils import get_base_url, get_plan_preview
-from agent_service.external.user_svc_client import get_user_cached
 from agent_service.io_type_utils import load_io_type
 from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, OutputWithID, PlanStatus
@@ -49,7 +41,6 @@ from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.cache_utils import CacheBackend
-from agent_service.utils.constants import NOTIFICATION_SERVICE_QUEUE
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
@@ -60,8 +51,6 @@ from agent_service.utils.redis_queue import (
 )
 
 logger = logging.getLogger(__name__)
-sqs = boto3.resource("sqs", region_name="us-west-2")
-queue = sqs.get_queue_by_name(QueueName=NOTIFICATION_SERVICE_QUEUE)
 
 
 async def send_chat_message(
@@ -424,87 +413,3 @@ async def get_agent_task_logs(
         )
 
     return []
-
-
-async def send_agent_emails(
-    pg: AsyncDB,
-    agent_id: str,
-    email_subject: str,
-    plan_run_id: str,
-    run_summary_short: str,
-    run_summary_long: str,
-) -> None:
-    """
-    Args:
-        pg: Async database
-        agent_id: The agent id to retrieve the owner for
-        plan_run_id: The plan run id
-        run_summary_short: Short summary of run
-        run_summary_long: Long Summary of run (What's new section on report)
-
-    Returns: None this function checks at the completion of a plan and checks
-    if the agent has email subscriptions and sends a message to the notification service
-    to send the email
-    """
-    # Get agent Information
-    agent_name = await pg.get_agent_name(agent_id=agent_id)
-    agent_owner = await pg.get_agent_owner(agent_id=agent_id)
-    agent_subs = await pg.get_agent_subscriptions(agent_id=agent_id)
-    # if we have any agent subscriptions then send an sqs message
-    # Do not automatically include the agent owner in the emailing list
-    if agent_subs:
-        # share the plan
-        await pg.set_plan_run_share_status(plan_run_id=plan_run_id, status=True)
-
-        # create a subscription message
-        detailed_email_user_id_pairs = set()
-        for agent_sub in agent_subs:
-            if agent_sub.user_id:
-                detailed_email_user_id_pairs.add((agent_sub.user_id, agent_sub.email))
-            else:
-                detailed_email_user_id_pairs.add(("", agent_sub.email))
-
-        detailed_message = AgentSubscriptionMessage(
-            user_id_email_pairs=list(detailed_email_user_id_pairs),
-            agent_data=[
-                AgentNotificationData(
-                    agent_name=agent_name,
-                    agent_id=agent_id,
-                    email_subject=email_subject if email_subject else agent_name,
-                    plan_run_id=plan_run_id,
-                    agent_owner=agent_owner if agent_owner else "",
-                    notification_body=AgentNotificationBody(
-                        summary_title=run_summary_short if run_summary_short else "",
-                        summary_body=run_summary_long if run_summary_long else "",
-                    ),
-                )
-            ],
-        )
-
-        queue.send_message(MessageBody=detailed_message.model_dump_json())
-
-
-async def send_welcome_email(user_id: str, async_db: AsyncDB | None = None) -> None:
-    user = cast(User, await get_user_cached(user_id=user_id, async_db=async_db))
-
-    # This is HubSpot ID for the welcome email we're sending
-    WELCOME_EMAIL_ID = 181851687081
-
-    message = OnboardingEmailMessage(
-        user_name=user.name,
-        user_id=user_id,
-        email=user.email,
-        hubspot_email_id=WELCOME_EMAIL_ID,
-    )
-
-    queue.send_message(MessageBody=message.model_dump_json())
-
-
-def forward_existing_email(notification_key: str, recipient_email: str) -> None:
-    # only forward emails in prod environment
-    if get_environment_tag() == PROD_TAG:
-        message = ForwardingEmailMessage(
-            notification_key=notification_key,
-            recipient_email=recipient_email,
-        )
-        queue.send_message(MessageBody=message.model_dump_json())

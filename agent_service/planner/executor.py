@@ -34,6 +34,7 @@ from agent_service.planner.constants import (
     CHAT_DIFF_TEMPLATE,
     EXECUTION_TRIES,
     NO_CHANGE_MESSAGE,
+    PLAN_RUN_EMAIL_THRESHOLD_SECONDS,
 )
 from agent_service.planner.errors import (
     AgentCancelledError,
@@ -69,7 +70,6 @@ from agent_service.utils.agent_event_utils import (
     publish_agent_plan_status,
     publish_agent_quick_thoughts,
     publish_agent_task_status,
-    send_agent_emails,
     send_chat_message,
     update_agent_help_requested,
 )
@@ -81,6 +81,7 @@ from agent_service.utils.async_utils import (
 from agent_service.utils.cache_utils import get_redis_cache_backend_for_output
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.email_utils import AgentEmail
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import (
     agent_output_cache_enabled,
@@ -260,6 +261,7 @@ async def _run_execution_plan_impl(
     existing_run = db.get_plan_run(plan_run_id=context.plan_run_id)
     replaying_plan_run = False
     complete_tasks_from_prior_run = set()
+    plan_run_start_time = time.time()
 
     if existing_run and existing_run.get("status") in (
         Status.ERROR.value,
@@ -684,6 +686,7 @@ async def _run_execution_plan_impl(
     full_diff_summary = None
     full_diff_summary_output = None
     short_diff_summary = "Summary generation in progress..."
+    agent_email_handler = AgentEmail(db=async_db)
 
     gpt_context = create_gpt_context(
         GptJobType.AGENT_CHATBOT, context.agent_id, GptJobIdType.AGENT_ID
@@ -725,6 +728,23 @@ async def _run_execution_plan_impl(
             ),
             db=db,
         )
+
+        # send reminder email if plan run took longer than 10 minutes (600 seconds)
+        if (
+            time.time() - plan_run_start_time > PLAN_RUN_EMAIL_THRESHOLD_SECONDS
+            and await get_ld_flag_async(
+                flag_name="send-plan-run-finish-email",
+                user_id=context.user_id,
+                default=False,
+                async_db=async_db,
+            )
+        ):
+            await agent_email_handler.send_plan_run_finish_email(
+                agent_id=context.agent_id,
+                plan_run_id=context.plan_run_id,
+                short_summary=short_diff_summary,
+                output_titles=[output.title for output in final_outputs],  # type: ignore
+            )
     elif scheduled_by_automation:
         logger.info("Generating diff message...")
         custom_notifications = await async_db.get_all_agent_custom_notifications(context.agent_id)
@@ -814,8 +834,7 @@ async def _run_execution_plan_impl(
                     sys_prompt=NO_PROMPT,
                 )
 
-                await send_agent_emails(
-                    pg=async_db,
+                await agent_email_handler.send_agent_emails(
                     agent_id=context.agent_id,
                     email_subject=email_subject,
                     plan_run_id=context.plan_run_id,

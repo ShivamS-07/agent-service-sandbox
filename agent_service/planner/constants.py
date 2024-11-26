@@ -15,6 +15,8 @@ MIN_SUCCESSFUL_FOR_STOP = 2
 
 WORKLOG_INTERVAL = 0.5  # every X seconds send a worklog event to FE
 
+PLAN_RUN_EMAIL_THRESHOLD_SECONDS = 600  # 10 minutes
+
 
 class FollowupAction(StrEnum):
     NONE = "NONE"

@@ -12,7 +12,7 @@ from agent_service.endpoints.models import (
     RemoveNotificationEmailsRequest,
     RemoveNotificationEmailsResponse,
 )
-from agent_service.utils.agent_event_utils import forward_existing_email
+from agent_service.utils.email_utils import AgentEmail
 
 application: FastAPI = None  # type: ignore
 router = APIRouter(prefix="/api")
@@ -63,7 +63,9 @@ async def remove_agent_notification_emails(
         # prevents multiple forwarding emails from being sent if user refreshes unsubscribe page
         if email in notification_emails.emails:
             EMAIL_REVIEW = "email-review@boosted.ai"
-            forward_existing_email(notification_key=notification_key, recipient_email=EMAIL_REVIEW)
+            AgentEmail().forward_existing_email(
+                notification_key=notification_key, recipient_email=EMAIL_REVIEW
+            )
             await application.state.agent_service_impl.delete_agent_notification_emails(
                 agent_id=agent_id, email=email
             )

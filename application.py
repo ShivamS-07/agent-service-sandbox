@@ -167,7 +167,6 @@ from agent_service.endpoints.routers.utils import get_agent_svc_impl
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.external.utils import get_http_session
 from agent_service.io_types.citations import CitationType, GetCitationDetailsResponse
-from agent_service.utils.agent_event_utils import send_welcome_email
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.custom_documents_utils import (
@@ -175,6 +174,7 @@ from agent_service.utils.custom_documents_utils import (
     CustomDocumentQuotaExceededException,
 )
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.email_utils import AgentEmail
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.feature_flags import (
     is_user_agent_admin,
@@ -1537,8 +1537,8 @@ async def get_user_has_access(
         user_id=user.user_id
     ):
         run_async_background(
-            send_welcome_email(
-                user_id=user.user_id, async_db=application.state.agent_service_impl.pg
+            AgentEmail(db=application.state.agent_service_impl.pg).send_welcome_email(
+                user_id=user.user_id
             )
         )
 

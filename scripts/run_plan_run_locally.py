@@ -24,6 +24,7 @@ from agent_service.utils.date_utils import (
     increment_mock_time,
     set_mock_time,
 )
+from agent_service.utils.email_utils import AgentEmail
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.postgres import Postgres, get_psql
 
@@ -291,8 +292,8 @@ async def run_plan_run_id_task_id(
         patch(target="agent_service.planner.executor.publish_agent_task_status"),  # noqa
         patch(target="agent_service.planner.executor.publish_agent_plan_status"),  # noqa
         patch(target="agent_service.planner.executor.publish_agent_output"),  # noqa
-        patch(target="agent_service.planner.executor.send_agent_emails"),  # noqa
         patch(target="agent_service.planner.executor.send_chat_message"),  # noqa
+        patch.object(AgentEmail, "send_agent_emails"),  # noqa
     ):
         cc.return_value = False
         db = get_psql(skip_commit=context.skip_db_commit)
