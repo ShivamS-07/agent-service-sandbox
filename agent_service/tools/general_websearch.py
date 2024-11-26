@@ -41,8 +41,9 @@ class SingleStockWebSearchInput(ToolArgs):
 
 @tool(
     description=(
-        "This function takes in a StockID and a single query which contain search details and "
+        "This function takes in a StockID and a single query which contain search details ALONGSIDE the stock name and "
         "returns text entries of the top search results when the query is made on the web. "
+        "Be SURE that the stock name is included in the query or we won't know what stock is being referred to! "
         "Unless not specified within a sample plan, always call the summarize_texts tool sometime after this tool. "
         "Again, it is VERY important that the "
         "summarize_texts tool is called before the end of a plan containing this tool! DO not EVER directly output "
