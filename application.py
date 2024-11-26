@@ -28,7 +28,6 @@ from sse_starlette.sse import AsyncContentStream, EventSourceResponse, ServerSen
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from agent_service.agent_quality_worker.jira_integration import JiraIntegration
 from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.authz_helper import (
     User,
@@ -83,7 +82,6 @@ from agent_service.endpoints.models import (
     GenTemplatePlanRequest,
     GenTemplatePlanResponse,
     GetAccountInfoResponse,
-    GetAgentDebugInfoResponse,
     GetAgentFeedBackResponse,
     GetAgentOutputResponse,
     GetAgentsQCRequest,
@@ -98,8 +96,6 @@ from agent_service.endpoints.models import (
     GetCompaniesResponse,
     GetCompanyDescriptionResponse,
     GetCustomDocumentFileInfoResponse,
-    GetDebugToolArgsResponse,
-    GetDebugToolResultResponse,
     GetDividendYieldResponse,
     GetEarningsSummaryResponse,
     GetExecutiveEarningsSummaryResponse,
@@ -112,7 +108,6 @@ from agent_service.endpoints.models import (
     GetNewsSummaryResponse,
     GetOrderedSecuritiesRequest,
     GetOrderedSecuritiesResponse,
-    GetPlanRunDebugInfoResponse,
     GetPreviousEarningsResponse,
     GetPriceDataResponse,
     GetPromptTemplatesResponse,
@@ -125,7 +120,6 @@ from agent_service.endpoints.models import (
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
-    GetToolLibraryResponse,
     GetUpcomingEarningsResponse,
     GetUsersRequest,
     GetUsersResponse,
@@ -140,8 +134,6 @@ from agent_service.endpoints.models import (
     MarkNotificationsAsReadResponse,
     MarkNotificationsAsUnreadRequest,
     MarkNotificationsAsUnreadResponse,
-    ModifyPlanRunArgsRequest,
-    ModifyPlanRunArgsResponse,
     NotificationEmailsResponse,
     RearrangeSectionRequest,
     RearrangeSectionResponse,
@@ -187,25 +179,21 @@ from agent_service.endpoints.models import (
     UploadFileResponse,
     UserHasAccessResponse,
 )
+from agent_service.endpoints.routers import debug
+from agent_service.endpoints.routers.utils import get_agent_svc_impl
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.external.utils import get_http_session
-from agent_service.GPT.requests import _get_gpt_service_stub
 from agent_service.io_types.citations import CitationType, GetCitationDetailsResponse
-from agent_service.slack.slack_sender import SlackSender
 from agent_service.utils.agent_event_utils import send_welcome_email
-from agent_service.utils.async_db import get_async_db
 from agent_service.utils.async_utils import run_async_background
-from agent_service.utils.cache_utils import get_redis_cache_backend_for_output
-from agent_service.utils.clickhouse import Clickhouse
+from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.custom_documents_utils import (
     CustomDocumentException,
     CustomDocumentQuotaExceededException,
 )
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.default_task_executor import DefaultTaskExecutor
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.feature_flags import (
-    agent_output_cache_enabled,
     is_user_agent_admin,
     user_has_qc_tool_access,
     user_has_variable_dashboard_access,
@@ -240,36 +228,13 @@ async def lifespan(application: FastAPIExtended) -> AsyncGenerator:
     get_keyid_to_key_map()
 
     logger.info("Starting server...")
-    env = get_environment_tag()
-    base_url = "alfa.boosted.ai" if env == "ALPHA" else "agent-dev.boosted.ai"
-    channel = "alfa-client-queries" if env == "ALPHA" else "alfa-client-queries-dev"
-
-    cache = None
-    if agent_output_cache_enabled() and os.getenv("REDIS_HOST"):
-        logger.info(f"Using redis output cache. Connecting to {os.getenv('REDIS_HOST')}")
-        cache = get_redis_cache_backend_for_output()
-
-    logger.info("Warming up AsyncDB connection")
-    async_db = get_async_db(min_pool_size=1, max_pool_size=4)
-    await async_db.pg.generic_read("SELECT * FROM agent.agents LIMIT 1")
-
-    application.state.agent_service_impl = AgentServiceImpl(
-        task_executor=DefaultTaskExecutor(),
-        gpt_service_stub=_get_gpt_service_stub()[0],
-        async_db=async_db,
-        clickhouse_db=Clickhouse(),
-        slack_sender=SlackSender(channel=channel),
-        base_url=base_url,
-        cache=cache,
-        jira_integration=JiraIntegration(),
-        env=env,
-    )
+    application.state.agent_service_impl = get_agent_svc_impl()
 
     yield
 
-    if cache:
-        logger.warning("Closing redis connection")
-        await cache.client.client.close()  # explicitly close redis connection
+    if isinstance(application.state.agent_service_impl.cache, RedisCacheBackend):
+        # explicitly close redis connection
+        await application.state.agent_service_impl.cache.client.client.close()
 
     session = get_http_session()
     if session:
@@ -1325,115 +1290,6 @@ async def get_secure_ld_user(user: User = Depends(parse_header)) -> GetSecureUse
     Get a secure mode hash and LD user context.
     """
     return await application.state.agent_service_impl.get_secure_ld_user(user_id=user.user_id)
-
-
-@router.get(
-    "/debug/{agent_id}",
-    response_model=GetAgentDebugInfoResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_agent_debug_info(
-    agent_id: str, user: User = Depends(parse_header)
-) -> GetAgentDebugInfoResponse:
-    if not user.is_super_admin and not await is_user_agent_admin(
-        user.user_id, async_db=application.state.agent_service_impl.pg
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
-        )
-    return await application.state.agent_service_impl.get_agent_debug_info(agent_id=agent_id)
-
-
-@router.get(
-    "/debug/get-plan-run-debug-info/{agent_id}/{plan_run_id}",
-    response_model=GetPlanRunDebugInfoResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_plan_run_debug_info(
-    agent_id: str, plan_run_id: str, user: User = Depends(parse_header)
-) -> GetPlanRunDebugInfoResponse:
-    """Return detailed information about a plan run for debugging purposes,
-    include the list of tools, inputs, outputs
-    """
-    if not (
-        user.is_super_admin
-        or await is_user_agent_admin(user.user_id, async_db=application.state.agent_service_impl.pg)
-    ):
-        await validate_user_agent_access(
-            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
-        )
-
-    return await application.state.agent_service_impl.get_plan_run_debug_info(
-        agent_id=agent_id, plan_run_id=plan_run_id
-    )
-
-
-@router.post(
-    "/debug/modify-plan-run-args/{agent_id}/{plan_run_id}",
-    response_model=ModifyPlanRunArgsResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def modify_plan_run_args(
-    agent_id: str,
-    plan_run_id: str,
-    req: ModifyPlanRunArgsRequest,
-    user: User = Depends(parse_header),
-) -> ModifyPlanRunArgsResponse:
-    """Duplicate the plan with modified input variables and rerun it"""
-    if not (
-        user.is_super_admin
-        or await is_user_agent_admin(user.user_id, async_db=application.state.agent_service_impl.pg)
-    ):
-        await validate_user_agent_access(
-            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
-        )
-
-    return await application.state.agent_service_impl.modify_plan_run_args(
-        agent_id=agent_id, plan_run_id=plan_run_id, user_id=user.user_id, req=req
-    )
-
-
-@router.get(
-    "/debug/args/{replay_id}",
-    response_model=GetDebugToolArgsResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_agent_debug_args(
-    replay_id: str, user: User = Depends(parse_header)
-) -> GetDebugToolArgsResponse:
-    if not user.is_super_admin and not await is_user_agent_admin(
-        user.user_id, async_db=application.state.agent_service_impl.pg
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
-        )
-    return await application.state.agent_service_impl.get_debug_tool_args(replay_id=replay_id)
-
-
-@router.get(
-    "/debug/result/{replay_id}",
-    response_model=GetDebugToolResultResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_agent_debug_result(
-    replay_id: str, user: User = Depends(parse_header)
-) -> GetDebugToolResultResponse:
-    if not user.is_super_admin and not await is_user_agent_admin(
-        user.user_id, async_db=application.state.agent_service_impl.pg
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
-        )
-    return await application.state.agent_service_impl.get_debug_tool_result(replay_id=replay_id)
-
-
-@router.get(
-    "/debug/tool/get-tool-library",
-    response_model=GetToolLibraryResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_tool_library(user: User = Depends(parse_header)) -> GetToolLibraryResponse:
-    return await application.state.agent_service_impl.get_tool_library(user=user)
 
 
 @router.get(
@@ -2496,6 +2352,7 @@ async def create_jira_ticket(
 
 initialize_unauthed_endpoints(application)
 application.include_router(router)
+application.include_router(debug.router)
 
 
 def parse_args() -> argparse.Namespace:
