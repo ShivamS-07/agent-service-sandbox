@@ -395,12 +395,12 @@ application.add_middleware(ProcessTimeMiddleware)
 # Test endpoints
 ####################################################################################################
 @router.get("/", response_class=HTMLResponse, status_code=200)
-def confirm_working() -> str:
+async def confirm_working() -> str:
     return "<html>Agent Service is online</html>"
 
 
 @router.get("/health")
-def health() -> str:
+async def health() -> str:
     return "OK"
 
 
