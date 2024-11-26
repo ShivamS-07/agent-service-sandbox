@@ -2373,7 +2373,7 @@ class AgentServiceImpl:
         companies = await self.pg.get_all_companies()
         return GetCompaniesResponse(companies=companies)
 
-    async def get_prompt_templates(self, user: User, is_user_admin: bool) -> List[PromptTemplate]:
+    async def get_prompt_templates(self, user: User) -> List[PromptTemplate]:
         prompt_templates_all = await self.pg.get_prompt_templates()
         user_info = await self.get_account_info(user)
         user_org_id = user_info.organization_id
@@ -2619,9 +2619,9 @@ class AgentServiceImpl:
         return DeletePromptTemplateResponse(template_id=template_id)
 
     async def find_templates_related_to_prompt(
-        self, query: str, user: User, is_user_admin: bool
+        self, query: str, user: User
     ) -> FindTemplatesRelatedToPromptResponse:
-        prompt_templates = await self.get_prompt_templates(user=user, is_user_admin=is_user_admin)
+        prompt_templates = await self.get_prompt_templates(user=user)
         matched_templates = await get_matched_templates(
             query=query, prompt_templates=prompt_templates
         )

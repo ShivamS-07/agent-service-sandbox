@@ -53,8 +53,6 @@ from agent_service.endpoints.models import (
     CreateCustomNotificationRequest,
     CreateJiraTicketRequest,
     CreateJiraTicketResponse,
-    CreatePromptTemplateRequest,
-    CreatePromptTemplateResponse,
     CreateSectionRequest,
     CreateSectionResponse,
     CustomNotification,
@@ -65,8 +63,6 @@ from agent_service.endpoints.models import (
     DeleteCustomDocumentsRequest,
     DeleteCustomDocumentsResponse,
     DeleteMemoryResponse,
-    DeletePromptTemplateRequest,
-    DeletePromptTemplateResponse,
     DeleteSectionRequest,
     DeleteSectionResponse,
     DisableAgentAutomationRequest,
@@ -75,12 +71,6 @@ from agent_service.endpoints.models import (
     EnableAgentAutomationResponse,
     ExperimentalGetFormulaDataRequest,
     ExperimentalGetFormulaDataResponse,
-    FindTemplatesRelatedToPromptRequest,
-    FindTemplatesRelatedToPromptResponse,
-    GenPromptTemplateFromPlanRequest,
-    GenPromptTemplateFromPlanResponse,
-    GenTemplatePlanRequest,
-    GenTemplatePlanResponse,
     GetAccountInfoResponse,
     GetAgentFeedBackResponse,
     GetAgentOutputResponse,
@@ -93,11 +83,9 @@ from agent_service.endpoints.models import (
     GetAvailableVariablesResponse,
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
-    GetCompaniesResponse,
     GetCustomDocumentFileInfoResponse,
     GetLiveAgentsQCResponse,
     GetMemoryContentResponse,
-    GetPromptTemplatesResponse,
     GetSecureUserResponse,
     GetTeamAccountsResponse,
     GetTestCaseInfoResponse,
@@ -127,8 +115,6 @@ from agent_service.endpoints.models import (
     RestoreAgentResponse,
     RetryPlanRunRequest,
     RetryPlanRunResponse,
-    RunTemplatePlanRequest,
-    RunTemplatePlanResponse,
     SearchAgentQCRequest,
     SearchAgentQCResponse,
     SetAgentFeedBackRequest,
@@ -155,14 +141,12 @@ from agent_service.endpoints.models import (
     UpdateAgentWidgetNameResponse,
     UpdateNotificationEmailsRequest,
     UpdateNotificationEmailsResponse,
-    UpdatePromptTemplateRequest,
-    UpdatePromptTemplateResponse,
     UpdateUserRequest,
     UpdateUserResponse,
     UploadFileResponse,
     UserHasAccessResponse,
 )
-from agent_service.endpoints.routers import debug, stock
+from agent_service.endpoints.routers import debug, stock, template
 from agent_service.endpoints.routers.utils import get_agent_svc_impl
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.external.utils import get_http_session
@@ -1641,157 +1625,6 @@ async def rearrange_section(
     return RearrangeSectionResponse(success=True)
 
 
-@router.get(
-    "/template/get-all-companies",
-    response_model=GetCompaniesResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_all_companies(user: User = Depends(parse_header)) -> GetCompaniesResponse:
-    is_user_admin = user.is_super_admin or await is_user_agent_admin(
-        user.user_id, async_db=application.state.agent_service_impl.pg
-    )
-    if not is_user_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="User does not have access"
-        )
-    return await application.state.agent_service_impl.get_all_companies(user)
-
-
-@router.get(
-    "/template/get-prompt-templates",
-    response_model=GetPromptTemplatesResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_prompt_templates(user: User = Depends(parse_header)) -> GetPromptTemplatesResponse:
-    is_user_admin = user.is_super_admin or await is_user_agent_admin(
-        user.user_id, async_db=application.state.agent_service_impl.pg
-    )
-    templates = await application.state.agent_service_impl.get_prompt_templates(user, is_user_admin)
-    return GetPromptTemplatesResponse(prompt_templates=templates)
-
-
-@router.post(
-    "/template/create-prompt-template",
-    response_model=CreatePromptTemplateRequest,
-    status_code=status.HTTP_200_OK,
-)
-async def create_prompt_template(
-    req: CreatePromptTemplateRequest, user: User = Depends(parse_header)
-) -> CreatePromptTemplateResponse:
-    return await application.state.agent_service_impl.create_prompt_template(
-        name=req.name,
-        user=user,
-        description=req.description,
-        prompt=req.prompt,
-        category=req.category,
-        plan_run_id=req.plan_run_id,
-        organization_ids=req.organization_ids,
-        cadence_tag=req.cadence_tag,
-        notification_criteria=req.notification_criteria,
-    )
-
-
-@router.post(
-    "/template/generate-template-plan",
-    response_model=GenTemplatePlanResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def gen_template_plan(
-    req: GenTemplatePlanRequest, user: User = Depends(parse_header)
-) -> GenTemplatePlanResponse:
-    return await application.state.agent_service_impl.gen_template_plan(
-        template_prompt=req.template_prompt,
-        user=user,
-    )
-
-
-@router.post(
-    "/template/run-template-plan",
-    response_model=RunTemplatePlanResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def create_agent_and_run_template(
-    req: RunTemplatePlanRequest, user: User = Depends(parse_header)
-) -> RunTemplatePlanResponse:
-
-    return await application.state.agent_service_impl.create_agent_and_run_template(
-        template_prompt=req.template_prompt,
-        notification_criteria=req.notification_criteria,
-        plan=req.plan,
-        is_draft=req.is_draft,
-        cadence_description=req.cadence_description,
-        user=user,
-    )
-
-
-@router.post(
-    "/template/delete-template-prompt",
-    response_model=DeletePromptTemplateResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def delete_prompt_template(
-    req: DeletePromptTemplateRequest, user: User = Depends(parse_header)
-) -> DeletePromptTemplateResponse:
-
-    return await application.state.agent_service_impl.delete_prompt_template(
-        template_id=req.template_id
-    )
-
-
-@router.post(
-    "/template/update-template-prompt",
-    response_model=UpdatePromptTemplateResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def update_prompt_template(
-    req: UpdatePromptTemplateRequest, user: User = Depends(parse_header)
-) -> UpdatePromptTemplateResponse:
-
-    return await application.state.agent_service_impl.update_prompt_template(
-        template_id=req.template_id,
-        name=req.name,
-        description=req.description,
-        category=req.category,
-        prompt=req.prompt,
-        plan=req.plan,
-        cadence_tag=req.cadence_tag,
-        notification_criteria=req.notification_criteria,
-        organization_ids=req.organization_ids,
-    )
-
-
-@router.post(
-    "/template/gen-template-from-plan",
-    response_model=GenPromptTemplateFromPlanResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def gen_prompt_template_from_plan(
-    req: GenPromptTemplateFromPlanRequest, user: User = Depends(parse_header)
-) -> GenPromptTemplateFromPlanResponse:
-    return await application.state.agent_service_impl.gen_prompt_template_from_plan(
-        plan_run_id=req.plan_run_id,
-        agent_id=req.agent_id,
-    )
-
-
-@router.post(
-    "/template/find-templates-related-to-prompt",
-    response_model=FindTemplatesRelatedToPromptResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def find_templates_related_to_prompt(
-    req: FindTemplatesRelatedToPromptRequest, user: User = Depends(parse_header)
-) -> FindTemplatesRelatedToPromptResponse:
-    return await application.state.agent_service_impl.find_templates_related_to_prompt(
-        query=req.query,
-        user=user,
-        is_user_admin=user.is_super_admin
-        or await is_user_agent_admin(
-            user.user_id, async_db=application.state.agent_service_impl.pg
-        ),
-    )
-
-
 @router.post(
     "/copy-agent",
     response_model=CopyAgentToUsersResponse,
@@ -2209,6 +2042,7 @@ initialize_unauthed_endpoints(application)
 application.include_router(router)
 application.include_router(debug.router)
 application.include_router(stock.router)
+application.include_router(template.router)
 
 
 def parse_args() -> argparse.Namespace:
