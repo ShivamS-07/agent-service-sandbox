@@ -18,10 +18,14 @@ COGNITO_URLS = [USER_POOL_JWKS_URL]
 COGNITO_USER_ID = "custom:user_id"
 
 
+class CognitoRetriableException(Exception):
+    pass
+
+
 @alru_cache(maxsize=256)
 @backoff.on_exception(
     backoff.expo,  # 1s, 2s, 4s
-    exception=Exception,
+    exception=CognitoRetriableException,
     max_tries=3,
     logger=logger,
     jitter=backoff.random_jitter,
@@ -33,7 +37,13 @@ async def get_cognito_user_id_from_access_token(access_token: str) -> str:
 
     with sentry_sdk.start_span(op="aws.cognito.get_user", description="get_user"):
         async with COGNITO_SESSION.client("cognito-idp") as cognito_client:
-            cognito_user = await cognito_client.get_user(AccessToken=access_token)
+            try:
+                cognito_user = await cognito_client.get_user(AccessToken=access_token)
+            except (
+                cognito_client.exceptions.TooManyRequestsException,
+                cognito_client.exceptions.InternalErrorException,
+            ) as e:
+                raise CognitoRetriableException from e
 
             user_attributes = cognito_user.get("UserAttributes", [])
             user_id = next(
@@ -46,6 +56,8 @@ async def get_cognito_user_id_from_access_token(access_token: str) -> str:
             )
 
             if not user_id:
-                raise ValueError(f'Could not get field "custom:user_id" from {access_token}')
+                raise CognitoRetriableException(
+                    f'Could not get field "custom:user_id" from {access_token}'
+                )
 
             return user_id
