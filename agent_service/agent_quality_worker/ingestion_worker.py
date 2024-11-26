@@ -1,3 +1,4 @@
+import bisect
 import datetime
 import json
 import logging
@@ -79,7 +80,7 @@ async def get_number_of_assigned(
     return count
 
 
-async def get_users_with_assigned_counts_fewer_than(
+async def get_users_with_least_assigned_counts(
     user_ids: List[str],
     db: AsyncDB,
     reviewer_column: str,
@@ -87,17 +88,21 @@ async def get_users_with_assigned_counts_fewer_than(
     max_allowed: int = MAX_REVIEWS,
 ) -> List[str]:
     # List to hold the count of assigned tickets for each user_id with count under 150
-    users = []
+    users: List[dict] = []
 
     # Loop over each user_id and get the count using get_number_of_assigned
     for user_id in user_ids:
         count = await get_number_of_assigned(user_id, db, reviewer_column, num_days_lookback)
 
         # Only add to dictionary the count per user is under 150/ by length
-        if count / len(user_ids) < max(1, int(max_allowed / len(user_ids))):
-            users.append(user_id)
+        if count < max(1, int(max_allowed / len(user_ids))):
+            bisect.insort(users, {"id": user_id, "count": count}, key=lambda x: x["count"])
 
-    return users
+    if len(users) == 0:
+        return []
+
+    fewest_assigned = users[0]["count"]
+    return [user["id"] for user in users if user["count"] == fewest_assigned]
 
 
 async def assign_agent_quality_reviewers(
@@ -123,10 +128,11 @@ async def assign_agent_quality_reviewers(
 
     env = get_environment_tag()
     is_dev = env in (DEV_TAG, LOCAL_TAG)
+    is_user_internal = await db.is_user_internal(user_id)
 
     # Check if the user is internal and if the env is prod
     # we want to stop internal queries from getting to triage
-    if not is_dev and db.is_user_internal(user_id):
+    if not is_dev and is_user_internal:
         logging.info(
             f"Agent created by internal user, skipping assignment for agent_id: {agent_id}"
         )
@@ -150,8 +156,8 @@ async def assign_agent_quality_reviewers(
         elif horizon_user.userType == HorizonTabs.PROD.value:
             reviewer_team_members.append(horizon_user.userId)
 
-    # get the list of reviews that have space to be assigned new tickets
-    cs_team_members = await get_users_with_assigned_counts_fewer_than(
+    # get the list of reviewers with the least assigned
+    cs_team_members = await get_users_with_least_assigned_counts(
         user_ids=cs_team_members, db=db, reviewer_column=CS_REVIEWER_COLUMN
     )
 

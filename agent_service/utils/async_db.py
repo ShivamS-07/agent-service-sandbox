@@ -2537,6 +2537,8 @@ class AsyncDB:
         # Return user_is_internal directly, assuming result is non-empty
         if result:
             return result[0]["user_is_internal"]
+
+        logger.info(f"Failed to find determine is_user_internal for: {user_id}")
         return False
 
     async def get_plan_ids(self, plan_run_ids: List[str]) -> Dict[str, str]:
