@@ -1976,6 +1976,7 @@ class GrowthFilterInput(ToolArgs):
     stock_ids: Optional[List[StockID]] = None
     min_value: float = 1
     max_value: float = 10
+    stocks_to_keep: Optional[int] = None
 
 
 @tool(
@@ -1989,6 +1990,9 @@ class GrowthFilterInput(ToolArgs):
         " growth, do not use it for specific statistics, even if they are growth-related"
         " set min_value 1 to get 'high growth', 2 to get 'very high growth'"
         " 3 to get 'extremely high growth'."
+        " stocks_to_keep will trim the final list of stocks to length stocks_to_keep and"
+        " is useful when the client wants a specific number of growth stocks. It defaults"
+        " to None, in which case the list is not trimmed."
         " This tool is useful for finding growth stocks."
         " It can be combined with 'value_filter' tool to find GARP/Growth at a Reasonable Price."
         " This function should only be used to determining the general growthiness of a stock."
@@ -2075,6 +2079,9 @@ async def growth_filter(args: GrowthFilterInput, context: PlanRunContext) -> Lis
     except Exception as e:
         logger.warning(f"Error creating diff info from previous run: {e}")
 
+    if args.stocks_to_keep:
+        stock_list = stock_list[: args.stocks_to_keep]
+
     return stock_list
 
 
@@ -2082,6 +2089,7 @@ class ValueFilterInput(ToolArgs):
     stock_ids: Optional[List[StockID]] = None
     min_value: float = 1
     max_value: float = 10
+    stocks_to_keep: Optional[int] = None
 
 
 @tool(
@@ -2095,6 +2103,9 @@ class ValueFilterInput(ToolArgs):
         " value, do not use it for specific statistics, even if they are value-related"
         " set min_value 1 to get 'high value', 2 to get 'very high value'"
         " 3 to get 'extremely high value'."
+        " stocks_to_keep will trim the final list of stocks to length stocks_to_keep and"
+        " is useful when the client wants a specific number of value stocks. It defaults"
+        " to None, in which case the list is not trimmed."
         " This tool is useful for finding value stocks."
         " It can be combined with 'growth_filter' tool to find GARP/Growth at a Reasonable Price."
         " 'overvalued stocks' should be interpreted as min_value = -10, max_value = -1 ."
@@ -2176,6 +2187,9 @@ async def value_filter(args: ValueFilterInput, context: PlanRunContext) -> List[
 
     except Exception as e:
         logger.warning(f"Error creating diff info from previous run: {e}")
+
+    if args.stocks_to_keep:
+        stock_list = stock_list[: args.stocks_to_keep]
 
     return stock_list
 
