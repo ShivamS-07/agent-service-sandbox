@@ -1169,6 +1169,49 @@ class GetSecurityResponse(BaseModel):
     security: Optional[SimpleSecurity]
 
 
+class GetNewsTopicsRequest(BaseModel):
+    gbi_id: int
+    delta_horizon: str
+    show_hypotheses: bool = False
+
+
+class GetNewsTopicsResponse(BaseModel):
+    class NewsTopic(BaseModel):
+        class DailyNewsCount(BaseModel):
+            date: datetime.date
+            newsCount: int
+
+        class NewsItem(BaseModel):
+            newsId: str
+            headline: str
+            isTopSource: bool
+            publishedAt: datetime.datetime
+            source: str
+            url: str
+
+        dailyNewsCounts: List[DailyNewsCount]
+        newsItems: List[NewsItem]
+        originalTopicImpact: Optional[int]
+        originalTopicPolarity: Optional[str]
+        topicId: str
+        topicLabel: str
+        topicDescription: str
+        topicImpact: int
+        topicRating: float
+        topicPolarity: str
+        topicStatus: str
+        previousTopicPolarity: Optional[str]
+        isCrossCompanyTopic: bool
+        topicStockRationale: str
+
+    class SentimentHistory(BaseModel):
+        date: datetime.date
+        sentimentScore: float
+
+    topics: Optional[List[NewsTopic]]
+    sentimentHistory: Optional[List[SentimentHistory]]
+
+
 class GetSecurityProsConsResponse(BaseModel):
     class ProCon(BaseModel):
         summary: str

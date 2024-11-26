@@ -107,6 +107,8 @@ from agent_service.endpoints.models import (
     GetMemoryContentResponse,
     GetNewsSummaryRequest,
     GetNewsSummaryResponse,
+    GetNewsTopicsRequest,
+    GetNewsTopicsResponse,
     GetOrderedSecuritiesRequest,
     GetOrderedSecuritiesResponse,
     GetPlanRunDebugInfoResponse,
@@ -214,6 +216,7 @@ from agent_service.external.webserver import (
     get_stock_historical_prices,
     get_stock_market_data,
     get_stock_news_summary,
+    get_stock_news_topics,
     get_stock_price_data,
     get_stock_real_time_price,
     get_upcoming_earnings,
@@ -2661,6 +2664,17 @@ class AgentServiceImpl:
         if news_summary is None:
             return GetNewsSummaryResponse(sentiment=0.0, summary=None, sourceCounts=[])
         return GetNewsSummaryResponse(**news_summary)
+
+    async def get_news_topics(self, req: GetNewsTopicsRequest, user: User) -> GetNewsTopicsResponse:
+        news_topics = await get_stock_news_topics(
+            user_id=user.user_id,
+            gbi_id=req.gbi_id,
+            delta_horizon=req.delta_horizon,
+            show_hypotheses=req.show_hypotheses,
+        )
+        if news_topics is None:
+            return GetNewsTopicsResponse(topics=None, sentimentHistory=None)
+        return GetNewsTopicsResponse(**news_topics)
 
     async def get_company_description(
         self, user: User, gbi_id: int

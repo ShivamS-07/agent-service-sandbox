@@ -12,6 +12,8 @@ from agent_service.endpoints.models import (
     GetMarketDataResponse,
     GetNewsSummaryRequest,
     GetNewsSummaryResponse,
+    GetNewsTopicsRequest,
+    GetNewsTopicsResponse,
     GetOrderedSecuritiesRequest,
     GetOrderedSecuritiesResponse,
     GetPreviousEarningsResponse,
@@ -154,3 +156,15 @@ async def get_earnings_summary(
 async def get_security(gbi_id: int, user: User = Depends(parse_header)) -> GetSecurityResponse:
     agent_svc_impl = get_agent_svc_impl()
     return await agent_svc_impl.get_security(user=user, gbi_id=gbi_id)
+
+
+@router.post(
+    "/news-topics",
+    response_model=GetNewsTopicsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_news_topics(
+    req: GetNewsTopicsRequest, user: User = Depends(parse_header)
+) -> GetNewsTopicsResponse:
+    agent_svc_impl = get_agent_svc_impl()
+    return await agent_svc_impl.get_news_topics(req=req, user=user)

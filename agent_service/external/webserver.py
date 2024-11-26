@@ -327,6 +327,68 @@ async def get_stock_news_summary(
 
 
 ####################################################################################################
+# GetStockNewsTopics
+####################################################################################################
+@async_perf_logger
+async def get_stock_news_topics(
+    user_id: str, gbi_id: int, delta_horizon: str, show_hypotheses: bool = False
+) -> Optional[dict]:
+    gql_query = """
+    query GetStockNewsTopics(
+        $gbiId: Int!
+        $deltaHorizon: String!
+        $showHypotheses: Boolean!
+    ) {
+        getStockNewsTopics(
+            gbiId: $gbiId
+            deltaHorizon: $deltaHorizon
+            showHypotheses: $showHypotheses
+        ) {
+            topics {
+                topicId
+                topicLabel
+                topicDescription
+                topicImpact
+                topicPolarity
+                topicRating
+                topicStatus
+                previousTopicPolarity
+                newsItems {
+                    headline
+                    isTopSource
+                    newsId
+                    publishedAt
+                    source
+                    url
+                }
+                dailyNewsCounts {
+                    date
+                    newsCount
+                }
+                isCrossCompanyTopic
+                topicStockRationale
+                originalTopicImpact
+                originalTopicPolarity
+            }
+            sentimentHistory {
+                date
+                sentimentScore
+            }
+        }
+    }
+    """
+    variables = {
+        "gbiId": gbi_id,
+        "deltaHorizon": delta_horizon,
+        "showHypotheses": show_hypotheses,
+    }
+    resp = await _get_graphql(user_id=user_id, query=gql_query, variables=variables)
+    if resp is None or "data" not in resp or "getStockNewsTopics" not in resp["data"]:
+        return None
+    return resp["data"]["getStockNewsTopics"]
+
+
+####################################################################################################
 # GetStockHistoricalPrices
 ####################################################################################################
 @async_perf_logger
