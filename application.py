@@ -37,14 +37,12 @@ from agent_service.endpoints.authz_helper import (
     validate_user_plan_run_access,
 )
 from agent_service.endpoints.models import (
-    AddCustomDocumentsResponse,
     AgentHelpRequest,
     AgentInfo,
     AgentQC,
     AgentUserSettingsSetRequest,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
-    CheckCustomDocumentUploadQuotaResponse,
     ConvertMarkdownRequest,
     CopyAgentToUsersRequest,
     CopyAgentToUsersResponse,
@@ -60,9 +58,6 @@ from agent_service.endpoints.models import (
     DeleteAgentOutputRequest,
     DeleteAgentOutputResponse,
     DeleteAgentResponse,
-    DeleteCustomDocumentsRequest,
-    DeleteCustomDocumentsResponse,
-    DeleteMemoryResponse,
     DeleteSectionRequest,
     DeleteSectionResponse,
     DisableAgentAutomationRequest,
@@ -78,14 +73,10 @@ from agent_service.endpoints.models import (
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
-    GetAutocompleteItemsRequest,
-    GetAutocompleteItemsResponse,
     GetAvailableVariablesResponse,
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
-    GetCustomDocumentFileInfoResponse,
     GetLiveAgentsQCResponse,
-    GetMemoryContentResponse,
     GetSecureUserResponse,
     GetTeamAccountsResponse,
     GetTestCaseInfoResponse,
@@ -97,8 +88,6 @@ from agent_service.endpoints.models import (
     GetVariableCoverageRequest,
     GetVariableCoverageResponse,
     GetVariableHierarchyResponse,
-    ListCustomDocumentsResponse,
-    ListMemoryItemsResponse,
     LockAgentOutputRequest,
     LockAgentOutputResponse,
     MarkNotificationsAsReadRequest,
@@ -108,8 +97,6 @@ from agent_service.endpoints.models import (
     NotificationEmailsResponse,
     RearrangeSectionRequest,
     RearrangeSectionResponse,
-    RenameMemoryRequest,
-    RenameMemoryResponse,
     RenameSectionRequest,
     RenameSectionResponse,
     RestoreAgentResponse,
@@ -146,17 +133,19 @@ from agent_service.endpoints.models import (
     UploadFileResponse,
     UserHasAccessResponse,
 )
-from agent_service.endpoints.routers import debug, stock, template
+from agent_service.endpoints.routers import (
+    custom_documents,
+    debug,
+    memory,
+    stock,
+    template,
+)
 from agent_service.endpoints.routers.utils import get_agent_svc_impl
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.external.utils import get_http_session
 from agent_service.io_types.citations import CitationType, GetCitationDetailsResponse
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.cache_utils import RedisCacheBackend
-from agent_service.utils.custom_documents_utils import (
-    CustomDocumentException,
-    CustomDocumentQuotaExceededException,
-)
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.email_utils import AgentEmail
 from agent_service.utils.environment import EnvironmentUtils
@@ -1260,91 +1249,6 @@ async def get_secure_ld_user(user: User = Depends(parse_header)) -> GetSecureUse
 
 
 @router.get(
-    "/memory/list-memory-items",
-    response_model=ListMemoryItemsResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def list_memory_items(user: User = Depends(parse_header)) -> ListMemoryItemsResponse:
-    """
-    List memory items
-    """
-    return await application.state.agent_service_impl.list_memory_items(user_id=user.user_id)
-
-
-@router.post(
-    "/memory/get-autocomplete-items",
-    response_model=GetAutocompleteItemsResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_autocomplete_items(
-    req: GetAutocompleteItemsRequest,
-    user: User = Depends(parse_header),
-) -> GetAutocompleteItemsResponse:
-    """
-    Gets autocomplete items
-    """
-    return await application.state.agent_service_impl.get_autocomplete_items(
-        user_id=user.user_id, text=req.text, memory_type=req.memory_type
-    )
-
-
-@router.get(
-    "/memory/get-memory-content/{type}/{id}",
-    response_model=GetMemoryContentResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_memory_content(
-    type: str,
-    id: str,
-    user: User = Depends(parse_header),
-) -> GetMemoryContentResponse:
-    """
-    Gets preview of memory content (output in text or table form)
-    Args:
-        type (str): memory type (portfolio / watchlist)
-        id (str): the ID of the memory type
-    """
-    return await application.state.agent_service_impl.get_memory_content(
-        user_id=user.user_id, type=type, id=id
-    )
-
-
-@router.delete(
-    "/memory/delete-memory/{type}/{id}",
-    response_model=DeleteMemoryResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def delete_memory(
-    type: str,
-    id: str,
-    user: User = Depends(parse_header),
-) -> DeleteMemoryResponse:
-    """
-    Delete memory item
-    """
-    return await application.state.agent_service_impl.delete_memory(
-        user_id=user.user_id, type=type, id=id
-    )
-
-
-@router.post(
-    "/memory/rename-memory",
-    response_model=RenameMemoryResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def rename_memory(
-    req: RenameMemoryRequest,
-    user: User = Depends(parse_header),
-) -> RenameMemoryResponse:
-    """
-    Rename memory item
-    """
-    return await application.state.agent_service_impl.rename_memory(
-        user_id=user.user_id, type=req.type, id=req.id, new_name=req.new_name
-    )
-
-
-@router.get(
     "/regression-test/{service_version}",
     response_model=GetTestSuiteRunInfoResponse,
     status_code=status.HTTP_200_OK,
@@ -1730,144 +1634,6 @@ async def experimental_variable_evaluate_formula(
     )
 
 
-# custom doc endpoints
-@router.get(
-    "/custom-documents",
-    response_model=ListCustomDocumentsResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def list_custom_docs(
-    user: User = Depends(parse_header),
-) -> ListCustomDocumentsResponse:
-    """
-    Gets custom document file content as a byte stream
-    Args:
-        file_id (str): the file's ID
-    """
-    try:
-        return await application.state.agent_service_impl.list_custom_documents(user=user)
-    except CustomDocumentException as e:
-        logger.exception("Error while listing custom docs")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.message)
-
-
-@router.get(
-    "/custom-documents/{file_id}/download",
-    response_class=Response,
-    status_code=status.HTTP_200_OK,
-)
-async def get_custom_doc_file(
-    file_id: str,
-    preview: bool = False,
-    user: User = Depends(parse_header),
-) -> Response:
-    """
-    Gets custom document file content as a byte stream
-    Args:
-        file_id (str): the file's ID
-    Query Params:
-        preview (bool): whether to return a previewable version of the file
-                        ie: a PDF for files more complex than txt.
-    """
-    try:
-        resp = await application.state.agent_service_impl.get_custom_doc_file_content(
-            user=user, file_id=file_id, return_previewable_file=preview
-        )
-        return Response(content=resp.content, media_type=resp.file_type)
-    except CustomDocumentException as e:
-        logger.exception(f"Error while downloading custom doc {file_id}; {preview=}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.message
-        ) from e
-
-
-@router.get(
-    "/custom-documents/{file_id}/info",
-    response_model=GetCustomDocumentFileInfoResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_custom_doc_details(
-    file_id: str, user: User = Depends(parse_header)
-) -> GetCustomDocumentFileInfoResponse:
-    """
-    Gets custom document details
-    Args:
-        file_id (str): the file's ID
-    """
-    try:
-        return await application.state.agent_service_impl.get_custom_doc_file_info(
-            user=user, file_id=file_id
-        )
-    except CustomDocumentException as e:
-        logger.exception(f"Error while getting custom doc metadata {file_id}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.message)
-
-
-@router.post(
-    "/custom-documents/add-documents",
-    response_model=AddCustomDocumentsResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def add_custom_docs(
-    files: list[UploadFile], base_path: Optional[str] = "", user: User = Depends(parse_header)
-) -> AddCustomDocumentsResponse:
-    """
-    Uploads custom documents; will overwrite/reprocess existing files if uploaded again
-    Args:
-        body should be multipart/form-data with
-            - `files` key containing the file(s) to upload
-            - `base_path` (optional) key containing the base path (directory) to upload the files to
-                          when omitted (default behaviour), files are uploaded to the root path for the user
-    """
-    try:
-        return await application.state.agent_service_impl.add_custom_documents(
-            user=user, files=files, base_path=base_path, allow_overwrite=True
-        )
-    except CustomDocumentQuotaExceededException as e:
-        logger.warning(
-            f"User {user.user_id} attempted to upload custom documents over quota: {e.message}"
-        )
-        raise HTTPException(status_code=status.HTTP_507_INSUFFICIENT_STORAGE, detail=e.message)
-
-
-@router.post(
-    "/custom-documents/delete-documents",
-    response_model=DeleteCustomDocumentsResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def delete_custom_docs(
-    req: DeleteCustomDocumentsRequest, user: User = Depends(parse_header)
-) -> DeleteCustomDocumentsResponse:
-    """
-    Deletes custom documents
-    """
-    if req.file_paths is None or len(req.file_paths) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="No file paths provided"
-        )
-    resp = await application.state.agent_service_impl.delete_custom_documents(
-        user=user, file_paths=req.file_paths
-    )
-    return resp
-
-
-@router.get(
-    "/custom-documents/quota",
-    response_model=CheckCustomDocumentUploadQuotaResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_custom_doc_quota(
-    candidate_total_size: Optional[int] = 0, user: User = Depends(parse_header)
-) -> CheckCustomDocumentUploadQuotaResponse:
-    """
-    Gets the available custom document upload quota for the user and checks if they have capacity
-    for the candidate size of file(s) provided
-    """
-    return await application.state.agent_service_impl.check_document_upload_quota(
-        user=user, candidate_total_size=candidate_total_size
-    )
-
-
 @router.get(
     "/agent/qc/{id}",
     response_model=List[AgentQC],
@@ -2043,6 +1809,8 @@ application.include_router(router)
 application.include_router(debug.router)
 application.include_router(stock.router)
 application.include_router(template.router)
+application.include_router(memory.router)
+application.include_router(custom_documents.router)
 
 
 def parse_args() -> argparse.Namespace:
