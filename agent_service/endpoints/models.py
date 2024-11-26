@@ -1178,6 +1178,7 @@ class GetEarningsSummaryResponse(BaseModel):
             header: str
             detail: str
             sentiment: str
+            isAligned: bool
             references: EarningsReportReference
 
         date: datetime.datetime

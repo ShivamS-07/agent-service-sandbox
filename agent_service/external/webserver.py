@@ -184,6 +184,7 @@ async def get_earnings_summary(user_id: str, gbi_id: int) -> Optional[list[dict]
                 highlights
                 qaDetails {
                     header
+                    isAligned
                     detail
                     sentiment
                     references {
