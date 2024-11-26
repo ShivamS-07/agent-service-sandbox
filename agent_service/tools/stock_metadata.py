@@ -16,6 +16,10 @@ class GetStockDescriptionInput(ToolArgs):
         "Given a list of stock ID's, return a list of descriptions for the stocks. "
         "A stock description generally contains basic, general information about the company's "
         "operations, including major products, services, and holdings, the regions they operate in, etc. "
+        "You must never, ever call prepare_output on company descriptions directly, you must always pass"
+        "them to other tools for processing, by default if the client asks for a description of a company "
+        "pass the output of this tool on the summarize_texts tool, which will provide proper "
+        "summarization and formating."
     ),
     category=ToolCategory.TEXT_RETRIEVAL,
     tool_registry=ToolRegistry,

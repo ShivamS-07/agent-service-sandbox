@@ -42,4 +42,4 @@ CHAT_DIFF_TEMPLATE = "Report updated with important changes found:\n{diff}"
 
 MAX_SAMPLE_INPUT_MULTIPLER = 4
 
-ALWAYS_AVAILABLE_TOOL_CATEGORIES = [ToolCategory.OUTPUT]
+ALWAYS_AVAILABLE_TOOL_CATEGORIES = [ToolCategory.OUTPUT, ToolCategory.LIST, ToolCategory.STOCK]
