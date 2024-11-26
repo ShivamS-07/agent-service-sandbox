@@ -2,8 +2,8 @@ SAMPLES_TO_SEND_TO_RUBRIC_GEN = (
     3  # Sets the amount of sample company summaries we send to generate the rubric
 )
 RANDOM_SEED = 421  # Seed for function calls from random library
-PAIRWISE_CONCURRENCY = 250
-TIEBREAKER_CONCURRENCY = 250
+PAIRWISE_CONCURRENCY = 100
+TIEBREAKER_CONCURRENCY = 100
 EVALUATE_AND_SUMMARIZE_CONCURRENCY = 150
 
 NONRELEVANT_COMPANY_EXPLANATION = (
