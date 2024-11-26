@@ -1082,10 +1082,11 @@ class AsyncDB:
     ) -> None:
         sql = """
         INSERT INTO agent.task_run_info (task_id, agent_id, plan_run_id,
-          tool_name, task_args, debug_info, output, error_msg, start_time_utc, end_time_utc, replay_id, plan_id)
+          tool_name, task_args, debug_info, output, error_msg, start_time_utc, end_time_utc, replay_id, plan_id,
+          context)
         VALUES (%(task_id)s, %(agent_id)s, %(plan_run_id)s,
           %(tool_name)s, %(task_args)s, %(debug_info)s, %(output)s, %(error_msg)s,
-          %(start_time_utc)s, %(end_time_utc)s, %(replay_id)s, %(plan_id)s)
+          %(start_time_utc)s, %(end_time_utc)s, %(replay_id)s, %(plan_id)s, %(context)s)
         """
         if not error_msg:
             error_msg = ""
@@ -1104,6 +1105,7 @@ class AsyncDB:
                 "start_time_utc": start_time_utc,
                 "replay_id": replay_id,
                 "plan_id": context.plan_id,
+                "context": context.model_dump_json(),
             },
         )
 
