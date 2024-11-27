@@ -44,9 +44,9 @@ class SingleStockWebSearchInput(ToolArgs):
         "This function takes in a StockID and a single query which contain search details ALONGSIDE the stock name and "
         "returns text entries of the top search results when the query is made on the web. "
         "Be SURE that the stock name is included in the query or we won't know what stock is being referred to! "
-        "Unless not specified within a sample plan, always call the summarize_texts tool sometime after this tool. "
-        "Again, it is VERY important that the "
-        "summarize_texts tool is called before the end of a plan containing this tool! DO not EVER directly output "
+        "Unless not specified within a sample plan, always call some text processing tool sometime after this tool. "
+        "Again, it is VERY important that a "
+        "text processing tool is called before the end of a plan containing this tool! DO not EVER directly output "
         "the returned text from this tool! AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
     ),
     category=ToolCategory.WEB,
@@ -97,9 +97,9 @@ class GeneralWebSearchInput(ToolArgs):
         "of the top search results when such queries are made on the web. If a URL is provided, you may use this tool "
         "and treat those URLS as supporting sources. "
         "Place the URLs in a list as an input to this tool and be sure to use the provided URLs as sources. "
-        "Unless not specified within a sample plan, always call the summarize_texts tool sometime after this tool. "
-        "Again, it is VERY important that the "
-        "summarize_texts tool is called before the end of a plan containing this tool! DO not EVER directly output "
+        "Unless not specified within a sample plan, always call a text processing tool sometime after this tool. "
+        "Again, it is VERY important that a "
+        "text processing tool is called before the end of a plan containing this tool! DO not EVER directly output "
         "the returned text from this tool! AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
     ),
     category=ToolCategory.WEB,
@@ -138,8 +138,8 @@ class SiteSpecificWebSearchInput(ToolArgs):
         "If the client requests to get information from a specific URLs they input, USE THIS TOOL!!! "
         "Again, it is VERY IMPORTANT that this tool is the web related tool called when URLS are used, other web "
         "tools like general_web_search may be called alongside, but this tool MUST be called with the provided URLs. "
-        "You MUST call the summarize_texts tool sometime after this tool. "
-        "Again, it is VERY important that the summarize_texts tool is called before the end of a "
+        "You MUST call a text processing tool sometime after this tool. "
+        "Again, it is VERY important that a text processing tool is called before the end of a "
         "plan containing this tool! DO not EVER directly output the returned text from this tool! "
         "AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
     ),

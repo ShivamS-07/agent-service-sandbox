@@ -49,6 +49,7 @@ class TableColumnMetadata(ComplexIOBase):
     unit: Optional[str] = None
     row_descs: Optional[Dict[int, List[RowDescription]]] = None
     data_src: List[str] = []
+    cell_citations: Dict[int, List[Citation]] = {}
 
     @classmethod
     def to_gpt_schema(cls) -> Dict[str, str]:
@@ -526,6 +527,22 @@ class Table(ComplexIOBase):
             )
             table_citations.extend(col_citations)
 
+            citation_row_map = {
+                cit: idx
+                for idx, cit_list in col.metadata.cell_citations.items()
+                for cit in cit_list
+            }
+            mapped_cell_citations = await Citation.resolve_all_citations_mapped(
+                citations=list(citation_row_map.keys()), db=pg
+            )
+            table_citations.extend(
+                [
+                    out_cit
+                    for out_cit_list in mapped_cell_citations.values()
+                    for out_cit in out_cit_list
+                ]
+            )
+
             output_col = col.to_output_column()
             # Next handle special transformations
             if col.metadata.col_type == TableColumnType.STOCK:
@@ -547,7 +564,14 @@ class Table(ComplexIOBase):
             fixed_cols.extend(additional_cols)
 
             # include references to the relevant citations
-            output_col.citation_refs = [cit.id for cit in col_citations]
+            output_col.citation_refs = [CitationIDWithRow(cit_id=cit.id) for cit in col_citations]
+            output_col.citation_refs.extend(
+                [
+                    CitationIDWithRow(row_index=citation_row_map[cit], cit_id=output_cit.id)
+                    for cit in mapped_cell_citations.keys()
+                    for output_cit in mapped_cell_citations[cit]
+                ]
+            )
             output_cols.append(output_col)
             output_cols.extend(additional_output_cols)
             is_first_col = False
@@ -682,6 +706,11 @@ class StockTable(Table):
                 ]
 
 
+class CitationIDWithRow(BaseModel):
+    cit_id: CitationID
+    row_index: Optional[int] = None
+
+
 class TableOutputColumn(BaseModel):
     """
     Column metadata necessary for the frontend.
@@ -695,7 +724,7 @@ class TableOutputColumn(BaseModel):
     # highlighted for all rows.
     is_highlighted: bool = False
     # Refers back to citations in the base TableOutput object.
-    citation_refs: List[CitationID] = []
+    citation_refs: List[CitationIDWithRow] = []
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, TableOutputColumn):

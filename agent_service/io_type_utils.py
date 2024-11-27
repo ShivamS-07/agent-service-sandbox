@@ -85,7 +85,11 @@ class TableColumnType(enum.StrEnum):
         not obvious).
         """
         return (
-            "- 'currency': A column containing a price or other float with a currency attached. "
+            "- 'integer': A generic integer.\n"
+            "- 'string': A generic string.\n"
+            "- 'float': A generic float.\n"
+            "- 'bool': A generic bool.\n"
+            "- 'currency': A column containing a price or other float with a currency attached."
             "In this case the 'unit' is the currency ISO, please keep that consistent.\n"
             "- 'date/datetime': A column containing a python date or datetime object."
             "- 'quarter': A column containing a year + financial quarter represented as a string (yyyyQq)."
@@ -191,6 +195,10 @@ class Citation(SerializeableBase, ABC):
 
     @abstractmethod
     def __hash__(self) -> int:
+        pass
+
+    @abstractmethod
+    def __eq__(self, other: Any) -> bool:
         pass
 
     @classmethod

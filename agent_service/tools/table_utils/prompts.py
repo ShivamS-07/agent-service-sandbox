@@ -1,3 +1,4 @@
+from agent_service.io_type_utils import TableColumnType
 from agent_service.utils.prompt_utils import Prompt
 
 DATAFRAME_SCHEMA_GENERATOR_MAIN_PROMPT = Prompt(
@@ -677,4 +678,162 @@ UPDATE_DATAFRAME_TRANSFORMER_MAIN_PROMPT_STR = "You are financial analyst in cha
 UPDATE_DATAFRAME_TRANSFORMER_MAIN_PROMPT = Prompt(
     name="UPDATE_DATAFRAME_TRANSFORMER_MAIN_PROMPT",
     template=UPDATE_DATAFRAME_TRANSFORMER_MAIN_PROMPT_STR,
+)
+
+TEXT_TO_TABLE_CITATION_PROMPT_STR = """
+
+Information in your output text that is derived from sources must be cited, you may use your
+judgement to determine if a specific claim must be cited, but err on the side of more
+citations. Individual texts in your collection of sources are delimited by ***, and each one starts
+with a Text Number and mentions the type. Follow the instructions below to do proper citation, which
+consists of two major steps.
+Step 1:
+ When you are writing your text, at the end of each CSV value (in every row and every column) which
+contains information taken from one of the provided source texts, you may output one and only one
+citation anchor. Note that a CSV cell is a SINGLE value within a row. A citation anchor consists of
+a space before the preceding cell value, an opening square bracket, an anchor id of exactly two
+letters, a comma, a one digit whole number indicating the count of citations to be inserted at that
+point, a close square bracket, and then a period or newline. To demonstrate, here is an example of
+some csv text with citation anchors:
+
+Date Col (date),Header Col 1 (string),Header Col 2 (integer)
+"2024-01-01","some value [aa,1]", "1234 [ab,3]"
+
+Notice how the citation anchors come inside the quotes, but always at the end of each cell. The 1
+indicates a single citation needs to be inserted at this point [aa,1] and the 3 indicates there are
+3 corresponding citations for [ab,3]. The next one would have anchor id `ad` [ad,2]. Each citation
+anchor you insert will use a different 2 letter identifier (e.g. [aa,1], [ab,1]...[ba,1],
+[bb,1]...[zy,1], [zz,1]). The citation ids in citation anchors are unique identifiers for each
+anchor citation determined by the ordering of anchors in the output, they do not have any other
+meaning, in particular they are NOT associated with the source texts in any way. The first anchor
+appearing in your output csv will always have the anchor id `aa`, the second anchor citation will
+have an anchor id of `ab`, the third `ac`, etc. Again, it is a unique identifier, so you may use the
+letter(s) in each citation anchor (or letter pair) only once! That is, if you have one sentence with
+[aa,1] at the end, you MUST NOT have another anchor citation with just `aa` as the citation letter;
+even if you cite the same source text again later, you will use a different letter for the anchor
+id! If you reuse the letters in anchor citations across multiple anchor citations we will fail to
+parse the document and you will be fired. Again, the number in the citation anchor (the 3 in [ab,3]
+indicates the COUNT of distinct, non-overlapping text snippets from the source documents that you
+are citing at this anchor. It is NOT the associated Text Number(s) for the sources, which you will
+indicate in Step 2. If you output the Text Number of any source text during the first step (when you
+are creating the csv), we will fail to parse the document and you will be fired. The citation count
+must be greater than 0, and no more than 5. Very Important: the citation anchor is a placeholder for
+one or more citations, it is not a citation itself, and so you must insert only one citation anchor
+at the end of any csv cell, you must use a whole number to indicate the count of citations at that
+point, and then indicate the specific citations at the end of the document, in the anchor
+mapping. Most cells in your output csv will likely have a citation anchor, but do not insert a
+citation anchor for those that do not provide some specific information taken from one of the
+numbered source texts. At this stage, you are not providing any information about which specific
+source you have used. Remember that you can cite ANY csv cells (not just rows)!! Use your best
+judgement for which cells require citations, but err on the side of more citations.
+Step 2:
+ After you have completed writing your csv output, on the final line of your output, you will output
+a json mapping (called the anchor mapping) which maps from the two letter anchor ids used in your
+citation anchors to a list of json mappings, where each of these mappings (called citation mappings)
+corresponds to an individual citation. Since every anchor corresponds to a situation where at least
+one source text was used, you should have at least one citation per citation anchor, and you will
+often have more. Your list of citations for each anchor (again, there is only one anchor per
+sentence!) must directly relate to the value being shown, however if two citations cover the same
+simple facts, you must only include one. You should generally have the same number of citations in
+your list as you indicated in the corresponding anchor in your csv output. Generally, however, more
+citations under a single anchor is NOT better unless they are providing important new information,
+and you must never, ever have more than 5 for each citation anchor. Every citation mapping will have
+a `num` key, the value of which is an integer which is the Text Number of the source text for the
+citation. When the source text is news, e.g. News Development Summaries or News Articles, which are
+typically only a couple of sentences long, you will include only the `num` key. For instance, if you
+have just one anchor whose preceding sentence contains information from two news topics (i.e [aa,2])
+which are tagged as Text Numbers 3 and 6, your anchor mapping would look like this:
+{{"aa":[{{"num":3}}, {{"num":6}}]}}. Note that values of the anchor mapping must be lists even if
+you have only one citation for your anchor. If you are citing this way, you may only cite a source
+text once at the anchor point, do not include multiple citations of the same text at the same anchor
+point if the citation mappings are the same. However, for longer source texts you will need to
+specifically indicate the part of the source text that provides the information that you are using
+(the ONLY exception to this is why you are citing the text to say that it did NOT contain
+information the client was looking for; if so, leave the snippet key out). To do this, you will
+include another key, `snippet`, whose value will be a single short snippet copied verbatim (word for
+word) from a single contiguous span of the relevant source text. This should be the span of text
+from the source text that best expresses the information that you used in your csv output from this
+source text in the cell which ends at the anchor point, however it is even more important it is an
+exact copy of a span of text in the source text. When you are outputting a snippet for your
+citation, you must output the snippet first, and then the num corresponding to the Text Number;
+after you output the snippet, please double check the Text Number for the source document the
+snippet came from and make 100% sure you have selected the correct Text Number for that snippet. If
+it is still missing key information used in the associated sentence in your output, you should add
+another citation mapping from the same text. Again, it is okay to add more citations that you
+originally planned if you need to fully cover the information in your output csv, as long as the
+citations are not redundant. If the csv cell you produced contains an amount (i.e. a dollar value),
+your snippet must include that amount. If the number is only available in a table, your snippet may
+consist of simply that number from the table, nothing else, but if the exact number you need to cite
+from a table is also in the text, you must cite the text and not the table. You should avoid
+including more than two sentences in your snippet. Again, you must copy your snippet exactly
+verbatim from a single contiguous span of the source text. Each time you add a word to your snippet,
+you must look back at the part of the source text you are copying from and be 100% sure you are
+adding exactly the same next word, you may only add what appears next in the original source text
+and you must NEVER leave anything out once you start copying. The ONLY change you may make is when
+you need to escape characters to make a valid json string (for example, you\'ll need to add a \\
+before any "). Important: after the snippet string is loaded, it must be an exact substring of the
+original source text. If it isn\'t, the entire citation project will fail and you will be
+fired. Your snippet must be entirely identical to the original source text, down to the individual
+punctuation marks; you must only copy and never combine, shorten, reword or reorganize the snippet,
+you must not even add or modify a single punctuation mark, or change capitalization. Even if there
+is a formatting error in the source text, you must copy that error. It is absolutely critical that
+you preserve the original span of text from the source exactly, down to each individual character of
+your snippet. It must be a perfect copy. Also, you must never, ever include a snippet that includes
+a newline, your anchor json mapping must always be on a single line (Do not delete newlines, you
+must just avoid selecting snippets which include them, stop copying when you hit one).  If you are
+including a snippet, you may include multiple citations of the same source text at a single anchor
+as long as they provide distinct information and there is no overlap in their snippet strings (but
+they must be separate citations, do not add their snippets together into a single citation!). You
+must always include a snippet when you pull information from any source text larger than a
+paragraph, and you must never include a snippet for smaller texts (news). You should never, ever
+include a snippet that is simply the entire source text. Don\'t forget to provide at least one
+citation mapping for each of the anchors, the anchor mapping should have exactly as many key/value
+parts as there are anchors in your csv! You must never, ever leave out the anchor mapping, if you
+have no anchors (and hence no citations), output a totally mapping citation mapping. Again your
+anchor mapping (which contains any citation mappings) must be a valid json object on a single
+line. You must never, ever add any kind of header before the anchor mapping even if there are other
+headers in the document (it is not part of your text and will be removed from it when we parse) and
+you must not add any other wrappers (no ```json!!!)."""
+
+TEXT_TO_TABLE_MAIN_PROMPT = Prompt(
+    name="TEXT_TO_TABLE_MAIN_PROMPT",
+    template="""
+You are a financial analyst tasked with synthesizing a number of texts into a csv table. The csv
+output should have a header line with column titles. ALL csv cells should be wrapped in quotes,
+ESPECIALLY if they have commas inside them already. Citation anchors should appear INSIDE of quotes
+for each cell!!!! Your header cells should also always contain their type in parentheses! If there's
+no data for what is asked for, you should NEVER output an empty cell, always write something even if
+it's just telling the user there's no data. You will be fired if you do not follow these instructions.
+
+The description of the table you should create is:
+    {table_description}
+
+Here are the document(s), delimited by -----:
+-----
+{texts}
+-----
+Here is the transcript of your interaction with the client, delimited by ----:
+----
+{chat_context}
+----
+
+For reference, today's date is {today}.
+""",
+)
+
+TEXT_TO_TABLE_SYS_PROMPT = Prompt(
+    name="TEXT_TO_TABLE_SYS_PROMPT",
+    template=f"""
+You are a financial analyst tasked with synthesizing a number of texts into a csv table. The csv
+output should have a header line with column titles.
+
+After each column title, put the column type in parentheses. The list of all possible columm types
+are below. Try to make the csv data match as closely as possible to the expected type (for example,
+a price delta or something similar should be normalized to between zero and one before using the
+'delta' column type). Never ever choose two column types, just do your best and choose the one the
+fits the best. Column types:
+{TableColumnType.get_type_explanations()}
+
+{TEXT_TO_TABLE_CITATION_PROMPT_STR}
+""",
 )

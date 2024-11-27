@@ -128,13 +128,18 @@ async def extract_citations_from_gpt_output(
     GPT_output: str,
     text_group: TextGroup,
     context: PlanRunContext,
+    premade_anchor_dict: Optional[dict[str, List[dict[str, Any]]]] = None,
 ) -> Tuple[str, Optional[List[TextCitation]]]:
     logger = get_prefect_logger(__name__)
     llm = GPT(
         model=GPT4_O_MINI,
         context=create_gpt_context(GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID),
     )
-    main_text, anchor_citation_dict = get_initial_breakdown(GPT_output)
+    if not premade_anchor_dict:
+        main_text, anchor_citation_dict = get_initial_breakdown(GPT_output)
+    else:
+        main_text = GPT_output
+        anchor_citation_dict = premade_anchor_dict
     if anchor_citation_dict is None:
         return main_text, anchor_citation_dict
     final_text_bits = []
