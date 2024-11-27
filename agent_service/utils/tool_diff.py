@@ -45,20 +45,20 @@ async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional
             cutoff_dt=search_dt,
         )
 
-        read_from_postgres = False
+        read_from_postgres = True
         if previous_run_id is None or previous_run_time is None:
             return None
 
         ch_db = Clickhouse()
 
-        logger.info("Checking clickhouse for prior run info")
-        io = await ch_db.get_io_for_tool_run(previous_run_id, context.task_id, tool_name)
+        logger.info("Checking postgres for prior run info")
+        io = await pg_db.get_task_run_info(
+            plan_run_id=previous_run_id, task_id=context.task_id, tool_name=tool_name
+        )
         if io is None:
-            logger.info("Checking postgres for prior run info")
-            io = await pg_db.get_task_run_info(
-                plan_run_id=previous_run_id, task_id=context.task_id, tool_name=tool_name
-            )
-            read_from_postgres = True
+            logger.info("Checking clickhouse for prior run info")
+            io = await ch_db.get_io_for_tool_run(previous_run_id, context.task_id, tool_name)
+            read_from_postgres = False
 
         search_dt = previous_run_time - ONE_MINUTE  # look back before the last run time
         tries += 1

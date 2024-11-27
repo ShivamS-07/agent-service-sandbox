@@ -6,7 +6,7 @@ from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass, field
 from math import ceil, floor
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union, cast
 
 from agent_service.GPT.constants import FILTER_CONCURRENCY, GPT4_O, GPT4_O_MINI, SONNET
 from agent_service.GPT.requests import GPT
@@ -505,12 +505,24 @@ async def do_rewrite(
             optional_texts.append(text)
 
     required_text_group = TextGroup(val=required_texts)  # type: ignore
-    required_text_str = await Text.get_all_strs(
-        required_text_group, include_header=True, text_group_numbering=True, include_symbols=True
+    required_text_str = cast(
+        str,
+        await Text.get_all_strs(
+            required_text_group,
+            include_header=True,
+            text_group_numbering=True,
+            include_symbols=True,
+        ),
     )
     optional_text_group = TextGroup(val=optional_texts, offset=len(required_texts))  # type: ignore
-    optional_text_str = await Text.get_all_strs(
-        optional_text_group, include_header=True, text_group_numbering=True, include_symbols=True
+    optional_text_str = cast(
+        str,
+        await Text.get_all_strs(
+            optional_text_group,
+            include_header=True,
+            text_group_numbering=True,
+            include_symbols=True,
+        ),
     )
 
     if is_complex_profile:
@@ -523,10 +535,22 @@ async def do_rewrite(
     else:
         polarity_str = FILTER_REWRITE_POSITIVE_STR
 
+    chopped_optional_text_str = GPTTokenizer(model=llm.model).do_truncation_if_needed(
+        optional_text_str,
+        [
+            FILTER_UPDATE_REWRITE_MAIN.template,
+            sys_prompt.filled_prompt,
+            check_output.stock.company_name,
+            required_text_str,
+            profile_str,
+            polarity_str,
+        ],
+    )
+
     main_prompt = FILTER_UPDATE_REWRITE_MAIN.format(
         company_name=check_output.stock.company_name,
         required_texts=required_text_str,
-        optional_texts=optional_text_str,
+        optional_texts=chopped_optional_text_str,
         profile_str=profile_str,
         polarity_str=polarity_str,
         today=(
@@ -552,11 +576,13 @@ async def do_rewrite(
             result, merged_group, context
         )
         retries += 1
+        if not citations:
+            logger.warning(f"Failed to extract citations from {result}")
 
     return check_output.stock.inject_history_entry(
         HistoryEntry(
             explanation=rationale,
-            citations=citations,  # type: ignore
+            citations=citations if citations else [],  # type: ignore
             score=Score(val=check_output.new_score / MAX_RUBRIC_SCORE),
             task_id=context.task_id,
             title=f"Connection to '{profile_str}'",
@@ -595,7 +621,8 @@ def finalize_updates(
         if ranking:
             final_score = (
                 final_output_lookup[stock].history[-1].score.val * MAX_RUBRIC_SCORE  # type: ignore
-                if final_output_lookup[stock].history[-1].score is not None
+                if stock in final_output_lookup
+                and final_output_lookup[stock].history[-1].score is not None
                 else 0.0
             )
             final_score_int = convert_score_to_int(final_score)
