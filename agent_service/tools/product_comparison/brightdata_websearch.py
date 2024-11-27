@@ -67,7 +67,7 @@ async def async_fetch_json(
 
         if event_data:
             log_event(
-                event_name="get_urls_for_web_scraping",
+                event_name="brd_request",
                 event_data={**event_data, **additional_event_data},
             )
 
@@ -101,6 +101,7 @@ async def get_urls_async(
                     "user_id": context.user_id,
                     "plan_id": context.plan_id,
                     "plan_run_id": context.plan_run_id,
+                    "request_type": "serp_api",
                     "tool_calling": context.tool_name,
                     "url": url,
                 }
@@ -158,6 +159,7 @@ async def get_news_urls_async(
                     "user_id": context.user_id,
                     "plan_id": context.plan_id,
                     "plan_run_id": context.plan_run_id,
+                    "request_type": "serp_api",
                     "tool_calling": context.tool_name,
                     "url": url,
                 }
@@ -233,6 +235,7 @@ async def req_and_scrape(
         "user_id": plan_context.user_id,
         "plan_id": plan_context.plan_id,
         "plan_run_id": plan_context.plan_run_id,
+        "request_type": "web_unlocker",
         "tool_calling": plan_context.tool_name,
         "url": url,
         "start_time_utc": start_time,
