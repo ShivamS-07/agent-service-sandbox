@@ -182,7 +182,7 @@ async def get_default_text_data_for_stocks(
         _get_user_custom_documents(),
     )
 
-    await tool_log(log="Combining all text data", context=context)
+    await tool_log(log=f"Combining all text data, size: {len(all_data)}", context=context)
     if len(all_data) == 0:
         await tool_log(log="Found no data for the provided stocks", context=context)
     return all_data
