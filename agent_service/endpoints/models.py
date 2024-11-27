@@ -294,7 +294,15 @@ class PlanRunFinishEmailMessage(BaseModel):
     message_type: str = "plan_run_finish_email_event"
     agent_id: str
     agent_owner: str
-    plan_run_id: str
+    agent_name: str
+    short_summary: str
+    output_titles: str
+
+
+class HelpRequestResolvedEmailMessage(BaseModel):
+    message_type: str = "help_request_resolved_email_event"
+    agent_id: str
+    agent_owner: str
     agent_name: str
     short_summary: str
     output_titles: str

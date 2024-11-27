@@ -10,10 +10,12 @@ from agent_service.endpoints.models import (
     AgentNotificationData,
     AgentSubscriptionMessage,
     ForwardingEmailMessage,
+    HelpRequestResolvedEmailMessage,
     OnboardingEmailMessage,
     PlanRunFinishEmailMessage,
 )
 from agent_service.external.user_svc_client import get_user_cached
+from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.constants import NOTIFICATION_SERVICE_QUEUE
 
@@ -133,9 +135,44 @@ class AgentEmail:
         message = PlanRunFinishEmailMessage(
             agent_id=agent_id,
             agent_owner=agent_owner if agent_owner else "",
-            plan_run_id=plan_run_id,
             agent_name=agent_name,
             short_summary=short_summary,
+            output_titles=output_titles_str,
+        )
+        self.queue.send_message(MessageBody=message.model_dump_json())
+
+    async def send_help_request_resolved_email(self, agent_id: str) -> None:
+        """Sends a help request resolved email to the agent owner"""
+        if not self.db:
+            logger.warning("No db provided, skipping email sending")
+            return
+
+        agent_name = await self.db.get_agent_name(agent_id=agent_id)
+        agent_owner = await self.db.get_agent_owner(agent_id=agent_id)
+        outputs = await self.db.get_agent_outputs_data_from_db(
+            agent_id=agent_id, include_output=False
+        )
+
+        if not outputs:
+            logger.warning(f"No outputs found for agent {agent_id}")
+            return
+
+        exeuction_plan = ExecutionPlan.model_validate(outputs[0]["plan"])
+        output_titles: List[str] = [
+            node.args["title"] for node in exeuction_plan.nodes if node.is_output_node  # type: ignore
+        ]
+
+        # Limit the number of titles to 3 so the email doesn't get too long
+        if len(output_titles) > 3:
+            output_titles_str = ", ".join(output_titles[:3]) + ", etc"
+        else:
+            output_titles_str = ", ".join(output_titles)
+
+        message = HelpRequestResolvedEmailMessage(
+            agent_id=agent_id,
+            agent_owner=agent_owner if agent_owner else "",
+            agent_name=agent_name,
+            short_summary=outputs[0]["run_metadata"]["run_summary_short"],
             output_titles=output_titles_str,
         )
         self.queue.send_message(MessageBody=message.model_dump_json())

@@ -282,6 +282,7 @@ from agent_service.utils.custom_documents_utils import (
     custom_doc_listing_proto_to_model,
 )
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.email_utils import AgentEmail
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import (
     get_custom_user_dict,
@@ -523,6 +524,9 @@ class AgentServiceImpl:
             if req.resolved_by_cs:
                 message_metadata.formatting = MessageSpecialFormatting.HELP_RESOLVED
                 message = "A human has addressed the issue I was having. I should be all set!"
+
+                # send email to user to notify that help request has been resolved
+                await AgentEmail(db=self.pg).send_help_request_resolved_email(agent_id=agent_id)
         message_obj = Message(
             agent_id=agent_id,
             message=message,
