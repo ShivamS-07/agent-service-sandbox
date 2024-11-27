@@ -13,7 +13,7 @@ QUICK_THOUGHTS_RELEVANT_SYSTEM_PROMPT = Prompt(
         "Your response must be a single word: 'yes' or 'no'. "
         "Here are some more guidelines to help you decide: "
         "\n- If client's ask is too long and complex with specified steps, "
-        "it is not relevant for google search. "
+        "it is not relevant for google search."
         "\n- If want's any analysis related to their portfolio, "
         "it is not relevant for google search (e.g. 'how is my portfolio doing?', "
         "'write a commentary on my portoflio X'). "

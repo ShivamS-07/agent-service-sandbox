@@ -30,7 +30,7 @@ TEMPLATE_FROM_PLAN_SYS_PROMPT = Prompt(
         "or a watchlist ID, or a specific watchlist name, "
         'use <option-dropdown type="watchlist"></option-dropdown> tag in your prompt. '
         "\n- If user mentions a company or stock name, either by name or symbol, "
-        "use <option-dropdown type='stock'></option-dropdown> tag in your prompt. "
+        "use <option-dropdown type='stock' value='stock_name'></option-dropdown> tag in your prompt. "
         "If a stock symbol or company name is mentioned multiple times, "
         "use the tag ONLY for the first mention, "
         "and then use 'target stock' or 'target company' or similar term for the rest without any tag. "
@@ -46,7 +46,9 @@ TEMPLATE_FROM_PLAN_SYS_PROMPT = Prompt(
         "\n- Do not use any markdown formatting such as bold ('**'), italics ('*'), underline ('__'), newlines ('\\n')"
         ", or similar formatting in the prompt. It is forbidden to use '*' and '_' in the prompt. "
         "\n- The prompt should include all tool parameters/variables that are filled or interpreted directly "
-        "based on the client messages. "
+        "based on the client messages. Do not include specific names for portfolio and watchlist in their tags, "
+        "only type keyword should be used, for example, <option-dropdown type='portfolio'></option-dropdown>, "
+        "or <option-dropdown type='watchlist'></option-dropdown>. "
         "\n- Do not repeat a tool parameter/variable in the prompt if it is already mentioned in the prompt. "
         "For example, if the client message already mentions a specific stock symbol, "
         "do not repeat it in the prompt. "
@@ -54,8 +56,8 @@ TEMPLATE_FROM_PLAN_SYS_PROMPT = Prompt(
         "without any additional explanations or titles. "
         "\n- Here is a few examples of a template prompt based on given plan and user messages. "
         "Pay attention how the "
-        "response template is formed based on the plan and user message:"
-        "\n\nExample 1: "
+        "response template is formed based on the plan and user message: "
+        "\n\nExample 1:"
         "\n##Execution Plan:\n"
         '1. spx_stocks = get_stock_universe(universe_name="SPX")  # Get stocks in the SPX index '
         '2. last_week_range = get_date_range(date_range_str="last week")  # Get the date range for the last week'
@@ -88,7 +90,7 @@ TEMPLATE_FROM_PLAN_SYS_PROMPT = Prompt(
         "Write a summary of news in the <code>last week</code> focusing on topics "
         "<code>US election poll predictions</code> "
         "and its impact on the market <code>SPY</code> index. "
-        "In a separate section, show <code>my portfolio</code> holding. "
+        "In a separate section, show <option-dropdown type='portfolio'></option-dropdown> holdings. "
         'In a new section include a brief analysis of how <option-dropdown type="stock" value="Nvidia"> '
         "</option-dropdown> prices are impacted by the US election result."
         "\n\nExample 2: "

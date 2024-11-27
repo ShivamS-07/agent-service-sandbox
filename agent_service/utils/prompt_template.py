@@ -34,7 +34,9 @@ class PromptTemplate(BaseModel):
     notification_criteria: Optional[List[str]] = None
     user_id: Optional[str] = None
     organization_ids: Optional[List[str]] = None
+    recommended_company_ids: Optional[List[str]] = None
     preview: Optional[List[OutputPreview]] = None
+    description_embedding: Optional[List[float]] = None
 
 
 class UserOrganization(BaseModel):

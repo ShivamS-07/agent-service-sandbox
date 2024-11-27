@@ -1891,7 +1891,8 @@ class AsyncDB:
         SET created_at = %(created_at)s,
             name = %(name)s, description = %(description)s, prompt = %(prompt)s,
             category = %(category)s, plan = %(plan)s, organization_ids = %(organization_ids)s,
-            cadence_tag = %(cadence_tag)s, notification_criteria = %(notification_criteria)s
+            recommended_company_ids = %(recommended_company_ids)s, cadence_tag = %(cadence_tag)s,
+            notification_criteria = %(notification_criteria)s
 
         WHERE template_id = %(template_id)s
         """
@@ -1907,6 +1908,7 @@ class AsyncDB:
                 "cadence_tag": prompt_template.cadence_tag,
                 "notification_criteria": prompt_template.notification_criteria,
                 "organization_ids": prompt_template.organization_ids,
+                "recommended_company_ids": prompt_template.recommended_company_ids,
                 "template_id": prompt_template.template_id,
             },
         )
@@ -1916,10 +1918,11 @@ class AsyncDB:
         INSERT INTO agent.prompt_templates
           (template_id, name, description, prompt,
           category, created_at, plan, cadence_tag, notification_criteria,
-          organization_ids, user_id)
+          organization_ids, recommended_company_ids, user_id, description_embedding)
         VALUES (%(template_id)s, %(name)s, %(description)s, %(prompt)s,
                 %(category)s, %(created_at)s, %(plan)s, %(cadence_tag)s, %(notification_criteria)s,
-                %(organization_ids)s, %(user_id)s)
+                %(organization_ids)s, %(recommended_company_ids)s,
+                %(user_id)s, %(description_embedding)s)
         """
         await self.pg.generic_write(
             sql,
@@ -1934,14 +1937,64 @@ class AsyncDB:
                 "cadence_tag": prompt_template.cadence_tag,
                 "notification_criteria": prompt_template.notification_criteria,
                 "organization_ids": prompt_template.organization_ids,
+                "recommended_company_ids": prompt_template.recommended_company_ids,
                 "user_id": prompt_template.user_id,
+                "description_embedding": prompt_template.description_embedding,
             },
         )
+
+    async def get_prompt_templates_matched_query(
+        self, query_embedding: List[float]
+    ) -> List[PromptTemplate]:
+        sql = """
+        SELECT template_id::TEXT, name::TEXT, description::TEXT, prompt::TEXT, category, created_at,
+            plan, cadence_tag::TEXT, notification_criteria, organization_ids, user_id, description_embedding,
+            recommended_company_ids,
+            1 - (%(query_embedding)s::VECTOR <=> description_embedding) AS similarity
+        FROM agent.prompt_templates
+        ORDER BY similarity DESC
+        LIMIT 10
+        """
+        rows = await self.pg.generic_read(sql=sql, params={"query_embedding": query_embedding})
+        if not rows:
+            return []
+        res = []
+        for row in rows:
+            res.append(
+                PromptTemplate(
+                    template_id=row["template_id"],
+                    name=row["name"],
+                    description=row["description"],
+                    prompt=row["prompt"],
+                    category=row["category"],
+                    created_at=row["created_at"],
+                    organization_ids=(
+                        [str(company_id) for company_id in row["organization_ids"]]
+                        if row["organization_ids"]
+                        else None
+                    ),
+                    plan=ExecutionPlan.model_validate(row["plan"]),
+                    cadence_tag=str(row["cadence_tag"]),
+                    notification_criteria=(
+                        [str(row) for row in row["notification_criteria"]]
+                        if row["notification_criteria"]
+                        else None
+                    ),
+                    user_id=str(row["user_id"]) if row["user_id"] else None,
+                    recommended_company_ids=(
+                        [str(company_id) for company_id in row["recommended_company_ids"]]
+                        if row["recommended_company_ids"]
+                        else None
+                    ),
+                )
+            )
+
+        return res
 
     async def get_prompt_templates(self) -> List[PromptTemplate]:
         sql = """
         SELECT template_id::TEXT, name::TEXT, description::TEXT, prompt::TEXT, category, created_at,
-            plan, cadence_tag::TEXT, notification_criteria, organization_ids, user_id
+            plan, cadence_tag::TEXT, notification_criteria, organization_ids, user_id, recommended_company_ids
         FROM agent.prompt_templates
         ORDER BY name ASC
         """
@@ -1971,6 +2024,11 @@ class AsyncDB:
                         else None
                     ),
                     user_id=str(row["user_id"]) if row["user_id"] else None,
+                    recommended_company_ids=(
+                        [str(company_id) for company_id in row["recommended_company_ids"]]
+                        if row["recommended_company_ids"]
+                        else None
+                    ),
                 )
             )
 

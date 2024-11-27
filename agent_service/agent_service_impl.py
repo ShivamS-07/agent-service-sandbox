@@ -221,6 +221,8 @@ from agent_service.external.webserver import (
     get_stock_real_time_price,
     get_upcoming_earnings,
 )
+from agent_service.GPT.constants import DEFAULT_EMBEDDING_MODEL
+from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import (
     TableColumnType,
     get_clean_type_name,
@@ -288,7 +290,6 @@ from agent_service.utils.feature_flags import (
     get_user_context_async,
     is_database_access_check_enabled_for_user,
 )
-from agent_service.utils.find_template import get_matched_templates
 from agent_service.utils.get_agent_outputs import get_agent_output
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.memory_handler import MemoryHandler, get_handler
@@ -2376,8 +2377,14 @@ class AgentServiceImpl:
         companies = await self.pg.get_all_companies()
         return GetCompaniesResponse(companies=companies)
 
-    async def get_prompt_templates(self, user: User) -> List[PromptTemplate]:
-        prompt_templates_all = await self.pg.get_prompt_templates()
+    async def get_prompt_templates(
+        self, user: User, query_embedding: Optional[List[float]] = None
+    ) -> List[PromptTemplate]:
+        prompt_templates_all = (
+            await self.pg.get_prompt_templates()
+            if not query_embedding
+            else await self.pg.get_prompt_templates_matched_query(query_embedding)
+        )
         user_info = await self.get_account_info(user)
         user_org_id = user_info.organization_id
 
@@ -2394,10 +2401,20 @@ class AgentServiceImpl:
                     template.preview = get_plan_preview(template.plan)
                     prompt_templates.append(template)
                     continue
+                # show those that have recommended_company_ids matching the user company
+                if (
+                    template.recommended_company_ids
+                    and user_org_id in template.recommended_company_ids
+                ):
+                    template.preview = get_plan_preview(template.plan)
+                    prompt_templates.append(template)
+                    continue
 
             else:
                 LOGGER.error("A prompt template has no plan")
-
+        # only return the first 3 templates if embedding is provided
+        if query_embedding:
+            prompt_templates = prompt_templates[:3]
         return prompt_templates
 
     async def update_prompt_template(
@@ -2411,6 +2428,7 @@ class AgentServiceImpl:
         cadence_tag: str,
         notification_criteria: Optional[List[str]] = None,
         organization_ids: Optional[List[str]] = None,
+        recommended_company_ids: Optional[List[str]] = None,
     ) -> UpdatePromptTemplateResponse:
         prompt_template = PromptTemplate(
             template_id=template_id,
@@ -2422,6 +2440,7 @@ class AgentServiceImpl:
             cadence_tag=cadence_tag,
             notification_criteria=notification_criteria,
             organization_ids=organization_ids,
+            recommended_company_ids=recommended_company_ids,
             created_at=get_now_utc(),
         )
         await self.pg.update_prompt_template(prompt_template)
@@ -2438,10 +2457,15 @@ class AgentServiceImpl:
         cadence_tag: str,
         notification_criteria: Optional[List[str]] = None,
         organization_ids: Optional[List[str]] = None,
+        recommended_company_ids: Optional[List[str]] = None,
     ) -> CreatePromptTemplateResponse:
 
         # extract plan from agent_id and plan_id
         _, plan = await self.pg.get_execution_plan_for_run(plan_run_id)
+
+        # create description embedding
+        llm = GPT(model=DEFAULT_EMBEDDING_MODEL)
+        description_embedding = await llm.embed_text(description)
 
         # create prompt template object
         now = get_now_utc()
@@ -2457,6 +2481,8 @@ class AgentServiceImpl:
             cadence_tag=cadence_tag,
             notification_criteria=notification_criteria,
             organization_ids=organization_ids,
+            recommended_company_ids=recommended_company_ids,
+            description_embedding=description_embedding,
         )
         # add template to db
         await self.pg.insert_prompt_template(prompt_template)
@@ -2470,8 +2496,10 @@ class AgentServiceImpl:
             category=prompt_template.category,
             plan_run_id=plan_run_id,
             organization_ids=organization_ids,
+            recommended_company_ids=recommended_company_ids,
             cadence_tag=cadence_tag,
             notification_criteria=notification_criteria,
+            description_embedding=description_embedding,
         )
 
     async def gen_prompt_template_from_plan(
@@ -2542,12 +2570,20 @@ class AgentServiceImpl:
         for node in plan.nodes:
             if node.tool_name == "get_user_watchlist_stocks":
                 watchlisit_name_in_plan = node.args.get("watchlist_name")
-                if watchlisit_name_in_template != watchlisit_name_in_plan:
+                if (
+                    watchlisit_name_in_template != watchlisit_name_in_plan
+                    and watchlisit_id_in_template
+                    and watchlisit_name_in_template
+                ):
                     node.args["watchlist_name"] = watchlisit_name_in_template
                     node.args["watchlist_id"] = watchlisit_id_in_template
             if node.tool_name == "convert_portfolio_mention_to_portfolio_id":
                 portfolio_name_in_plan = node.args.get("portfolio_name")
-                if portfolio_name_in_template != portfolio_name_in_plan:
+                if (
+                    portfolio_name_in_template != portfolio_name_in_plan
+                    and portfolio_id_in_template
+                    and portfolio_name_in_template
+                ):
                     node.args["portfolio_name"] = portfolio_name_in_template
                     node.args["portfolio_uuid"] = portfolio_id_in_template
 
@@ -2624,10 +2660,14 @@ class AgentServiceImpl:
     async def find_templates_related_to_prompt(
         self, query: str, user: User
     ) -> FindTemplatesRelatedToPromptResponse:
-        prompt_templates = await self.get_prompt_templates(user=user)
-        matched_templates = await get_matched_templates(
-            query=query, prompt_templates=prompt_templates
+
+        # get query embeddings
+        llm = GPT(model=DEFAULT_EMBEDDING_MODEL)
+        query_embedding = await llm.embed_text(query)
+        matched_templates = await self.get_prompt_templates(
+            user=user, query_embedding=query_embedding
         )
+
         return FindTemplatesRelatedToPromptResponse(prompt_templates=matched_templates)
 
     async def get_user_has_alfa_access(self, user: User) -> bool:

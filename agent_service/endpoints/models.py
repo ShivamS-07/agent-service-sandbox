@@ -1453,6 +1453,7 @@ class CreatePromptTemplateRequest(BaseModel):
     plan_run_id: str
     cadence_tag: str
     organization_ids: Optional[List[str]] = None
+    recommended_company_ids: Optional[List[str]] = None
     notification_criteria: Optional[List[str]] = None
 
 
@@ -1461,12 +1462,14 @@ class CreatePromptTemplateResponse(BaseModel):
     user_id: str
     name: str
     description: str
+    description_embedding: List[float]
     prompt: str
     category: str
     created_at: datetime.datetime
     plan_run_id: str
     cadence_tag: str
     organization_ids: Optional[List[str]] = None
+    recommended_company_ids: Optional[List[str]] = None
     notification_criteria: Optional[List[str]] = None
 
 
@@ -1480,6 +1483,7 @@ class UpdatePromptTemplateRequest(BaseModel):
     cadence_tag: str
     notification_criteria: Optional[List[str]] = None
     organization_ids: Optional[List[str]] = None
+    recommended_company_ids: Optional[List[str]] = None
 
 
 class UpdatePromptTemplateResponse(BaseModel):

@@ -71,6 +71,7 @@ async def create_prompt_template(
         organization_ids=req.organization_ids,
         cadence_tag=req.cadence_tag,
         notification_criteria=req.notification_criteria,
+        recommended_company_ids=req.recommended_company_ids,
     )
 
 
@@ -134,6 +135,7 @@ async def update_prompt_template(
         cadence_tag=req.cadence_tag,
         notification_criteria=req.notification_criteria,
         organization_ids=req.organization_ids,
+        recommended_company_ids=req.recommended_company_ids,
     )
 
 

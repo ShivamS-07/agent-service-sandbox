@@ -406,6 +406,8 @@ async def get_commentary_inputs(
     if not args.stock_ids and not args.topics and not args.universe_name and not args.portfolio_id:
         args.universe_name = "S&P 500"
 
+    print("universe_name", args.universe_name)
+
     # If macroeconomic is True, get the top themes and related texts
     if args.macroeconomic:
         try:
