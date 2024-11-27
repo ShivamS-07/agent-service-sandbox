@@ -5,6 +5,7 @@ from agent_service.endpoints.authz_helper import User, parse_header
 from agent_service.endpoints.models import (
     GetCompanyDescriptionResponse,
     GetDividendYieldResponse,
+    GetEarningsStatusResponse,
     GetEarningsSummaryResponse,
     GetExecutiveEarningsSummaryResponse,
     GetHistoricalPricesRequest,
@@ -16,7 +17,6 @@ from agent_service.endpoints.models import (
     GetNewsTopicsResponse,
     GetOrderedSecuritiesRequest,
     GetOrderedSecuritiesResponse,
-    GetPreviousEarningsResponse,
     GetPriceDataResponse,
     GetRealTimePriceResponse,
     GetSecurityProsConsResponse,
@@ -112,12 +112,12 @@ async def get_executive_earnings_summary(
     return await agent_svc_impl.get_executive_earnings_summary(user=user, gbi_id=gbi_id)
 
 
-@router.get("/{gbi_id}/previous-earnings")
-async def get_previous_earnings(
+@router.get("/{gbi_id}/earnings-status")
+async def get_earnings_status(
     gbi_id: int, user: User = Depends(parse_header)
-) -> GetPreviousEarningsResponse:
+) -> GetEarningsStatusResponse:
     agent_svc_impl = get_agent_svc_impl()
-    return await agent_svc_impl.get_previous_earnings(user=user, gbi_id=gbi_id)
+    return await agent_svc_impl.get_earnings_status(user=user, gbi_id=gbi_id)
 
 
 @router.get("/{gbi_id}/upcoming-earnings")

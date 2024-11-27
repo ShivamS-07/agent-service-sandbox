@@ -1259,8 +1259,8 @@ class GetExecutiveEarningsSummaryResponse(BaseModel):
     changes: Optional[List[SummaryChange]]
 
 
-class GetPreviousEarningsResponse(BaseModel):
-    class PreviousEarnings(BaseModel):
+class GetEarningsStatusResponse(BaseModel):
+    class EarningsStatus(BaseModel):
         providerDataPresent: Optional[bool]
         providerLatestYear: Optional[int]
         providerLatestQuarter: Optional[int]
@@ -1268,7 +1268,7 @@ class GetPreviousEarningsResponse(BaseModel):
         latestSummaryGenerated: Optional[datetime.datetime]
         latestSummaryStatus: Optional[str]
 
-    earnings: Optional[PreviousEarnings]
+    earnings: Optional[EarningsStatus]
 
 
 class GetUpcomingEarningsResponse(BaseModel):

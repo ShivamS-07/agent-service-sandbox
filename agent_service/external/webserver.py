@@ -601,12 +601,12 @@ async def get_executive_earnings_summary(user_id: str, gbi_id: int) -> Optional[
 
 
 ####################################################################################################
-# GetPreviousEarnings
+# GetEarningsStatus
 ####################################################################################################
 @async_perf_logger
-async def get_previous_earnings(user_id: str, gbi_id: int) -> Optional[dict]:
+async def get_earnings_status(user_id: str, gbi_id: int) -> Optional[dict]:
     gql_query = """
-    query StocksPreviousEarnings($gbiId: Int!) {
+    query StocksEarningsStatus($gbiId: Int!) {
         getEarningsDataStatus(gbiId: $gbiId) {
             providerDataPresent
             providerLatestYear

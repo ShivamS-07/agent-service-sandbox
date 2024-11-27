@@ -98,6 +98,7 @@ from agent_service.endpoints.models import (
     GetDebugToolArgsResponse,
     GetDebugToolResultResponse,
     GetDividendYieldResponse,
+    GetEarningsStatusResponse,
     GetEarningsSummaryResponse,
     GetExecutiveEarningsSummaryResponse,
     GetHistoricalPricesRequest,
@@ -113,7 +114,6 @@ from agent_service.endpoints.models import (
     GetOrderedSecuritiesResponse,
     GetPlanRunDebugInfoResponse,
     GetPlanRunOutputResponse,
-    GetPreviousEarningsResponse,
     GetPriceDataResponse,
     GetRealTimePriceResponse,
     GetSecureUserResponse,
@@ -206,10 +206,10 @@ from agent_service.external.user_svc_client import (
 )
 from agent_service.external.webserver import (
     get_company_description,
+    get_earnings_status,
     get_earnings_summary,
     get_executive_earnings_summary,
     get_ordered_securities,
-    get_previous_earnings,
     get_security,
     get_security_pros_cons,
     get_stock_dividend_yield,
@@ -2823,12 +2823,12 @@ class AgentServiceImpl:
             ]
         )
 
-    async def get_previous_earnings(self, user: User, gbi_id: int) -> GetPreviousEarningsResponse:
-        earnings = await get_previous_earnings(user_id=user.user_id, gbi_id=gbi_id)
+    async def get_earnings_status(self, user: User, gbi_id: int) -> GetEarningsStatusResponse:
+        earnings = await get_earnings_status(user_id=user.user_id, gbi_id=gbi_id)
         if earnings is None:
-            return GetPreviousEarningsResponse(earnings=None)
-        return GetPreviousEarningsResponse(
-            earnings=GetPreviousEarningsResponse.PreviousEarnings(**earnings)
+            return GetEarningsStatusResponse(earnings=None)
+        return GetEarningsStatusResponse(
+            earnings=GetEarningsStatusResponse.EarningsStatus(**earnings)
         )
 
     async def get_upcoming_earnings(self, user: User, gbi_id: int) -> GetUpcomingEarningsResponse:
