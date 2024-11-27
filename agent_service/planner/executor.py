@@ -455,11 +455,18 @@ async def _run_execution_plan_impl(
                 step_args = tool.input_type(**resolved_args)
             except Exception:
                 logger.exception("Failed to validate tool args on cached run")
+
+            result_dump = None
+            try:
+                result_dump = dump_io_type(override_task_output_lookup[step.tool_task_id])
+            except Exception:
+                logger.exception("Failed to serialize the result on cached run")
+
             event_data: Dict[str, Any] = {
                 "tool_name": step.tool_name,
                 "args": step_args.model_dump_json(serialize_as_any=True) if step_args else None,
                 "context": context.model_dump_json(),
-                "result": dump_io_type(override_task_output_lookup[step.tool_task_id]),
+                "result": result_dump,
                 "end_time_utc": get_now_utc().isoformat(),
                 "start_time_utc": get_now_utc().isoformat(),
             }

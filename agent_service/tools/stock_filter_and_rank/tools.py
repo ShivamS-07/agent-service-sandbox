@@ -1,4 +1,5 @@
 import copy
+import inspect
 import json
 import traceback
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
@@ -956,19 +957,31 @@ async def filter_and_rank_stocks_by_profile(
         raise e
 
     except Exception as e:
-        logger.warning(f"Error doing text diff from previous run: {e}")
+        logger.exception(f"Error doing text diff from previous run: {e}")
+        # some of the exception messages are long and contain unique info,
+        # truncate it to try to prevent that from making too many unique pagers
+        error_dedupe_str = str(type(e)) + " " + str(e)[:75]
+        func_name = __name__
+        frame = inspect.currentframe()
+        if frame:
+            # defined to be potentially null, in practice it never is
+            func_name = frame.f_code.co_name
+        classt = "AgentUpdateError"
+        group = f"{classt}-{func_name}-{error_dedupe_str}"
         notify_agent_pg(
-            summary="Failed to update per stock summary",
+            summary=f"{func_name}: Failed to update per stock summary: {error_dedupe_str}",
             severity=PD_WARNING,
             source=environment.get_environment_tag(),
             component="AgentError",
-            classt="AgentUpdateError",
-            group="AgentUpdateError-ProfileFilter",
+            classt=classt,
+            group=group,
             custom_details={
+                "_reminder": "This pager is deduped, check #oncall-info for more examples",
                 "agent": context.agent_id,
                 "plan_run": context.plan_run_id,
                 "task": context.task_id,
                 "error": "".join(traceback.TracebackException.from_exception(e).format()),
+                "pagerduty_dedupe_key": group,
             },
         )
 
