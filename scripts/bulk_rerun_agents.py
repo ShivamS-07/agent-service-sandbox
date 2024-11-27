@@ -124,6 +124,7 @@ def replay_plan_runs(
     pg: Postgres,
     dry_run: bool = False,
     version: Optional[str] = None,
+    no_gpt_cache: bool = False,
 ) -> None:
     sqs = boto3.resource("sqs", region_name="us-west-2")
     print(f"Using SQS queue: '{queue}'\n")
@@ -132,6 +133,8 @@ def replay_plan_runs(
         print(f"Updating status for {run.plan_run_id=}")
         update_stuck_agent_status(pr=run, pg=pg)
         message = json.loads(run.message)
+        if no_gpt_cache:
+            message["no_gpt_cache"] = True
         if "retry_id" in message:
             del message["retry_id"]
         if version:
@@ -177,6 +180,13 @@ def parse_args() -> argparse.Namespace:
         type=str,
         help="If set, will use the specified version when rerunning",
     )
+    parser.add_argument(
+        "-x",
+        "--no-gpt-cache",
+        action="store_true",
+        default=False,
+        help="If set, will bypass the GPT cache on rerun",
+    )
     return parser.parse_args()
 
 
@@ -213,7 +223,14 @@ def main() -> None:
     print("\n#############################")
     print("Starting Reruns!!")
     print("#############################\n")
-    replay_plan_runs(list(runs), queue=dag_queue, pg=pg, dry_run=args.dry_run, version=args.version)
+    replay_plan_runs(
+        list(runs),
+        queue=dag_queue,
+        pg=pg,
+        dry_run=args.dry_run,
+        version=args.version,
+        no_gpt_cache=args.no_gpt_cache,
+    )
 
 
 if __name__ == "__main__":

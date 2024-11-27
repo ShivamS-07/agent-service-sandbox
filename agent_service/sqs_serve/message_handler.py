@@ -16,6 +16,9 @@ class MessageHandler:
     async def handle_message(self, message: Dict) -> Dict:
         method = message.get("method")
         arguments = message["arguments"]
+        no_cache = message.get("no_gpt_cache")
+        if no_cache:
+            os.environ["NO_GPT_CACHE"] = "1"
         pod_start = os.getenv("STARTED_AT")
         pod_start_dt = None
         if pod_start:
