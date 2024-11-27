@@ -40,7 +40,6 @@ from agent_service.endpoints.models import (
     AgentHelpRequest,
     AgentInfo,
     AgentQC,
-    AgentUserSettingsSetRequest,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
     ConvertMarkdownRequest,
@@ -66,7 +65,6 @@ from agent_service.endpoints.models import (
     EnableAgentAutomationResponse,
     ExperimentalGetFormulaDataRequest,
     ExperimentalGetFormulaDataResponse,
-    GetAccountInfoResponse,
     GetAgentFeedBackResponse,
     GetAgentOutputResponse,
     GetAgentsQCRequest,
@@ -78,13 +76,10 @@ from agent_service.endpoints.models import (
     GetChatHistoryResponse,
     GetLiveAgentsQCResponse,
     GetSecureUserResponse,
-    GetTeamAccountsResponse,
     GetTestCaseInfoResponse,
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
-    GetUsersRequest,
-    GetUsersResponse,
     GetVariableCoverageRequest,
     GetVariableCoverageResponse,
     GetVariableHierarchyResponse,
@@ -128,10 +123,7 @@ from agent_service.endpoints.models import (
     UpdateAgentWidgetNameResponse,
     UpdateNotificationEmailsRequest,
     UpdateNotificationEmailsResponse,
-    UpdateUserRequest,
-    UpdateUserResponse,
     UploadFileResponse,
-    UserHasAccessResponse,
 )
 from agent_service.endpoints.routers import (
     custom_documents,
@@ -139,15 +131,14 @@ from agent_service.endpoints.routers import (
     memory,
     stock,
     template,
+    user,
 )
 from agent_service.endpoints.routers.utils import get_agent_svc_impl
 from agent_service.external.grpc_utils import create_jwt
 from agent_service.external.utils import get_http_session
 from agent_service.io_types.citations import CitationType, GetCitationDetailsResponse
-from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.email_utils import AgentEmail
 from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.feature_flags import (
     is_user_agent_admin,
@@ -156,7 +147,6 @@ from agent_service.utils.feature_flags import (
 )
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.sentry_utils import init_sentry
-from agent_service.utils.user_metadata import is_user_first_login
 from no_auth_endpoints import initialize_unauthed_endpoints
 
 DEFAULT_IP = "0.0.0.0"
@@ -1337,102 +1327,6 @@ async def generate_jwt(user_id: str, user: User = Depends(parse_header)) -> str:
     return create_jwt(user_id=user_id, expiry_hours=1)
 
 
-# Account Endpoints
-
-
-@router.patch(
-    "/user/settings",
-    response_model=UpdateUserResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def update_user_settings(
-    req: AgentUserSettingsSetRequest,
-    user: User = Depends(parse_header),
-) -> UpdateUserResponse:
-    return await application.state.agent_service_impl.update_user_settings(user=user, req=req)
-
-
-@router.post(
-    "/user/update-user",
-    response_model=UpdateUserResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def update_user(
-    req: UpdateUserRequest,
-    user: User = Depends(parse_header),
-) -> UpdateUserResponse:
-    return await application.state.agent_service_impl.update_user(
-        user_id=user.user_id, name=req.name, username=req.username, email=req.email
-    )
-
-
-@router.get(
-    "/user/get-account-info", response_model=GetAccountInfoResponse, status_code=status.HTTP_200_OK
-)
-async def get_account_info(user: User = Depends(parse_header)) -> GetAccountInfoResponse:
-    account = await application.state.agent_service_impl.get_account_info(user=user)
-    return GetAccountInfoResponse(account=account)
-
-
-@router.post("/user/get-users", response_model=GetUsersResponse, status_code=status.HTTP_200_OK)
-async def get_users_info(
-    req: GetUsersRequest, user: User = Depends(parse_header)
-) -> GetUsersResponse:
-    accounts = await application.state.agent_service_impl.get_users_info(
-        user=user, user_ids=req.user_ids
-    )
-    return GetUsersResponse(accounts=accounts)
-
-
-@router.get(
-    "/user/get-team-accounts",
-    response_model=GetTeamAccountsResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_team_accounts(user: User = Depends(parse_header)) -> GetTeamAccountsResponse:
-    accounts = await application.state.agent_service_impl.get_valid_notification_users(
-        user_id=user.user_id
-    )
-    return GetTeamAccountsResponse(accounts=accounts)
-
-
-@router.get(
-    "/user/has-access", response_model=UserHasAccessResponse, status_code=status.HTTP_200_OK
-)
-async def get_user_has_access(
-    request: Request, user: User = Depends(parse_header)
-) -> UserHasAccessResponse:
-    is_admin = (
-        user.is_admin
-        or user.is_super_admin
-        or (
-            await is_user_agent_admin(
-                user.user_id, async_db=application.state.agent_service_impl.pg
-            )
-        )
-    )
-
-    if not is_admin:
-        has_access = await application.state.agent_service_impl.get_user_has_alfa_access(user=user)
-    else:
-        has_access = True
-
-    if not has_access:
-        return UserHasAccessResponse(success=False)
-
-    # make sure user is not spoofed and it is their first login
-    if request.headers.get("realuserid") == user.user_id and await is_user_first_login(
-        user_id=user.user_id
-    ):
-        run_async_background(
-            AgentEmail(db=application.state.agent_service_impl.pg).send_welcome_email(
-                user_id=user.user_id
-            )
-        )
-
-    return UserHasAccessResponse(success=True)
-
-
 @router.post(
     "/convert/markdown",
     response_class=Response,
@@ -1811,6 +1705,7 @@ application.include_router(stock.router)
 application.include_router(template.router)
 application.include_router(memory.router)
 application.include_router(custom_documents.router)
+application.include_router(user.router)
 
 
 def parse_args() -> argparse.Namespace:
