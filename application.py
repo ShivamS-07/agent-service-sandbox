@@ -62,14 +62,11 @@ from agent_service.endpoints.models import (
     DisableAgentAutomationResponse,
     EnableAgentAutomationRequest,
     EnableAgentAutomationResponse,
-    ExperimentalGetFormulaDataRequest,
-    ExperimentalGetFormulaDataResponse,
     GetAgentFeedBackResponse,
     GetAgentOutputResponse,
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
     GetAllAgentsResponse,
-    GetAvailableVariablesResponse,
     GetCannedPromptsResponse,
     GetChatHistoryResponse,
     GetSecureUserResponse,
@@ -77,9 +74,6 @@ from agent_service.endpoints.models import (
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
-    GetVariableCoverageRequest,
-    GetVariableCoverageResponse,
-    GetVariableHierarchyResponse,
     LockAgentOutputRequest,
     LockAgentOutputResponse,
     MarkNotificationsAsReadRequest,
@@ -120,6 +114,7 @@ from agent_service.endpoints.models import (
 )
 from agent_service.endpoints.routers import (
     custom_documents,
+    data,
     debug,
     memory,
     qc,
@@ -137,7 +132,6 @@ from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.feature_flags import (
     is_user_agent_admin,
     user_has_qc_tool_access,
-    user_has_variable_dashboard_access,
 )
 from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.sentry_utils import init_sentry
@@ -1446,82 +1440,6 @@ async def copy_agent(
     return CopyAgentToUsersResponse(user_id_to_new_agent_id_map=response_dict)
 
 
-# variables/data endpoints
-@router.get(
-    "/data/variables/available-variables",
-    response_model=GetAvailableVariablesResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_available_variable(
-    user: User = Depends(parse_header),
-) -> GetAvailableVariablesResponse:
-    """
-    Retrieves relevant metadata about all variables available to the user.
-    """
-    return await application.state.agent_service_impl.get_all_available_variables(user=user)
-
-
-@router.get(
-    "/data/variables/hierarchy",
-    response_model=GetVariableHierarchyResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_all_variable_hierarchy(
-    user: User = Depends(parse_header),
-) -> GetVariableHierarchyResponse:
-    """
-    Retrieves all variable display hierarchies in a flat format.
-    """
-    return await application.state.agent_service_impl.get_variable_hierarchy(user=user)
-
-
-@router.post(
-    "/data/variables/coverage",
-    response_model=GetVariableCoverageResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_variable_coverage(
-    req: GetVariableCoverageRequest,
-    user: User = Depends(parse_header),
-) -> GetVariableCoverageResponse:
-    """
-    Retrieves coverage information for all available variables.
-    Default universe SPY
-    """
-    return await application.state.agent_service_impl.get_variable_coverage(
-        user=user, feature_ids=req.feature_ids, universe_id=req.universe_id
-    )
-
-
-@router.post(
-    "/data/variables/evaluate-formula",
-    response_model=ExperimentalGetFormulaDataResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def experimental_variable_evaluate_formula(
-    req: ExperimentalGetFormulaDataRequest,
-    user: User = Depends(parse_header),
-) -> ExperimentalGetFormulaDataResponse:
-    """
-    Gets a formatted output for an experimental variable formula mode.
-    """
-    has_access = await user_has_variable_dashboard_access(
-        user_id=user.user_id, async_db=application.state.agent_service_impl.pg
-    )
-    if not has_access:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized."
-        )
-
-    return await application.state.agent_service_impl.experimental_get_formula_data_impl(
-        user=user,
-        markdown_formula=req.markdown_formula,
-        stock_ids=req.gbi_ids,
-        from_date=req.from_date,
-        to_date=req.to_date,
-    )
-
-
 @router.post(
     "/jira/create-ticket",
     response_model=CreateJiraTicketResponse,
@@ -1557,6 +1475,7 @@ application.include_router(memory.router)
 application.include_router(custom_documents.router)
 application.include_router(user.router)
 application.include_router(qc.router)
+application.include_router(data.router)
 
 
 def parse_args() -> argparse.Namespace:
