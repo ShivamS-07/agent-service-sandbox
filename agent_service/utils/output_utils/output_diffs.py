@@ -355,7 +355,7 @@ class OutputDiffer:
                                     citation.citation_text_offset = (
                                         len("".join(add_remove_output)) - 1
                                     )
-                                all_citations.extend(citations)
+                                all_citations.extend(citations[:5])
                             found = True
                             break
                 if not found:
@@ -391,7 +391,7 @@ class OutputDiffer:
                                     citation.citation_text_offset = (
                                         len("".join(add_remove_output)) - 1
                                     )
-                                all_citations.extend(all_citations)
+                                all_citations.extend(citations[:5])
                             found = True
                             break
                 if not found:
@@ -482,7 +482,7 @@ class OutputDiffer:
                         if citations:
                             for citation in citations:
                                 citation.citation_text_offset = temp_offset - 2
-                            all_citations.extend(citations)
+                            all_citations.extend(citations[:5])
                         temp_change_output.append(bullet)
 
                     # we are only interested in the output of per stock summary
@@ -521,7 +521,7 @@ class OutputDiffer:
                                     temp_offset += len(bullet)
                                     for citation in citations:
                                         citation.citation_text_offset = temp_offset - 2
-                                    all_citations.extend(citations)
+                                    all_citations.extend(citations[:5])
                                     temp_change_output.append(bullet)
 
                 if len(temp_change_output) > 1:
