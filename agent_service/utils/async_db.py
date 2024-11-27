@@ -9,6 +9,11 @@ from collections import OrderedDict, defaultdict
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from dateutil.parser import parse
+from gbi_common_py_utils.utils.environment import (
+    DEV_TAG,
+    LOCAL_TAG,
+    get_environment_tag,
+)
 from psycopg.sql import SQL, Identifier, Placeholder
 
 from agent_service.endpoints.models import (
@@ -2263,12 +2268,37 @@ class AsyncDB:
             values_to_update=values_to_update,
         )
 
+    async def boosted_internal_users(self) -> List[str]:
+        """
+        Returns the list of Internal Boosted Users
+        """
+        BOOSTED_ORG_ID_DEV = "40bb9e63-5719-443c-aad1-3270c0d237e5"
+        BOOSTED_ORG_ID_PROD = "101f7a87-9138-4458-8e0d-618a8e11826d"
+
+        sql = """
+            SELECT u.id FROM user_service.users u
+            LEFT JOIN user_service.company_membership cm ON u.id::TEXT = cm.user_id::TEXT
+            WHERE cm.company_id = %(boosted_org_id)s
+        """
+
+        env = get_environment_tag()
+        is_dev = env in (DEV_TAG, LOCAL_TAG)
+
+        users = await self.pg.generic_read(
+            sql, params={"boosted_org_id": BOOSTED_ORG_ID_DEV if is_dev else BOOSTED_ORG_ID_PROD}
+        )
+
+        return [str(user["id"]) for user in users]
+
     async def search_agent_qc(
         self,
         filter_criteria: List[HorizonCriteria],
         search_criteria: List[HorizonCriteria],
         pagination: Optional[Pagination] = None,
     ) -> Tuple[List[AgentQC], int]:
+        # Need to do complicated users join since some users belong to more than one company in
+        #   user_service.company_membership, resulting in duplicate rows, so this will prevent
+        #   erroneous join with company_membership for internal users
         sql = """
         SELECT
             COUNT(*) over () as total_agent_qcs,
@@ -2280,13 +2310,22 @@ class AsyncDB:
             aqc.eng_solution_difficulty, aqc.jira_link, aqc.slack_link, aqc.fullstory_link, aqc.duplicate_agent::TEXT,
             aqc.created_at, aqc.last_updated, aqc.cs_reviewed, aqc.eng_reviewed, aqc.prod_reviewed,
             aqc.prod_priority, aqc.prod_notes, aqc.is_spoofed,
-            us.cognito_username, us.name AS owner_name, org.name AS owner_organization_name,
+            users.cognito_username, users.owner_name AS owner_name,
+            users.owner_organization_name AS owner_organization_name,
             json_agg(af.*) AS agent_feedbacks
         FROM agent.agent_qc aqc
         LEFT JOIN agent.agents ag ON aqc.agent_id = ag.agent_id
-        LEFT JOIN user_service.users us ON aqc.user_id = us.id
-        LEFT JOIN user_service.company_membership cm ON aqc.user_id::TEXT = cm.user_id
-        LEFT JOIN user_service.organizations org ON cm.company_id = org.id::TEXT
+        LEFT JOIN (
+            SELECT u.id, u.cognito_username, u.name AS owner_name, org.name AS owner_organization_name
+            FROM user_service.users u
+                LEFT JOIN user_service.company_membership cm ON u.id::TEXT = cm.user_id::TEXT
+                LEFT JOIN user_service.organizations org ON cm.company_id = org.id::TEXT
+                WHERE NOT u.id::TEXT = ANY(%(boosted_user_ids)s)
+            UNION
+            SELECT u.id, u.cognito_username, u.name as owner_name, 'Boosted.ai' as owner_organization_name
+            FROM user_service.users u
+                WHERE u.id::TEXT = ANY(%(boosted_user_ids)s)
+        ) AS users ON users.id::TEXT = aqc.user_id::TEXT
         LEFT JOIN agent.feedback af ON aqc.agent_id = af.agent_id AND aqc.plan_id = af.plan_id
         """
 
@@ -2325,9 +2364,11 @@ class AsyncDB:
             logger.warning(f"Unknown operator {criterion.operator=}")
             return ""
 
-        sql_params: Dict[str, Any] = {}
+        boosted_user_ids = await self.boosted_internal_users()
+
+        sql_params: Dict[str, Any] = {"boosted_user_ids": boosted_user_ids}
         if len(filter_criteria) > 0 or len(search_criteria) > 0:
-            sql += "\nWHERE"
+            sql += " WHERE "
 
         # Dynamically add conditions based on HorizonCriteria, use AND between conditions
         for idx, criteria in enumerate(filter_criteria):
@@ -2339,7 +2380,7 @@ class AsyncDB:
 
         # Use OR between conditions
         for idx, criteria in enumerate(search_criteria):
-            if idx == 0 and len(sql_params) > 0:
+            if idx == 0 and len(filter_criteria) > 0:
                 sql += " AND ("
             elif idx != 0:
                 sql += " OR"
@@ -2352,8 +2393,9 @@ class AsyncDB:
 
         # Always sort by latest agent ran
         sql += """
-            GROUP BY aqc.agent_qc_id, us.cognito_username, us.name, org.name, ag.agent_name
-            ORDER BY aqc.created_at DESC
+            GROUP BY aqc.agent_qc_id, users.cognito_username, users.owner_name,
+                users.owner_organization_name, ag.agent_name
+            ORDER BY aqc.created_at desc
         """
 
         if pagination:
@@ -2550,11 +2592,14 @@ class AsyncDB:
         result = await self.pg.generic_read(sql, params)
         logger.info(f"Fetch internal user status for user_id {user_id} in {time.time() - start}")
 
-        # Return user_is_internal directly, assuming result is non-empty
-        if result:
-            return result[0]["user_is_internal"]
+        # Some users belong to more than one company in the table, need to loop to determine if any are internal
+        for res in result:
+            if res["user_is_internal"]:
+                return True
 
-        logger.info(f"Failed to find determine is_user_internal for: {user_id}")
+        if not result:
+            logger.warning(f"is_user_internal : Failed to find row for: {user_id} , assuming False")
+
         return False
 
     async def get_plan_ids(self, plan_run_ids: List[str]) -> Dict[str, str]:

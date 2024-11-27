@@ -65,20 +65,10 @@ HORIZON_USERS_PROD: Dict[str, HorizonUser] = {
         name="Richard",
         userType=HorizonTabs.ENG,
     ),
-    # DEV - PRODUCT
+    # PROD - PRODUCT
     "3726119c-92cd-4c5f-97c5-23ed908e78be": HorizonUser(
         userId="3726119c-92cd-4c5f-97c5-23ed908e78be",
         name="Alex",
-        userType=HorizonTabs.PROD,
-    ),
-    "c47aa9c0-9cc3-4b5c-bd48-6fd43d9a4f49": HorizonUser(
-        userId="c47aa9c0-9cc3-4b5c-bd48-6fd43d9a4f49",
-        name="Stu",
-        userType=HorizonTabs.PROD,
-    ),
-    "1c293abd-2485-48b9-b78a-6094f4ef6c5b": HorizonUser(
-        userId="1c293abd-2485-48b9-b78a-6094f4ef6c5b",
-        name="April",
         userType=HorizonTabs.PROD,
     ),
 }

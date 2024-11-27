@@ -55,7 +55,7 @@ async def get_number_of_assigned(
     user_id: str, db: AsyncDB, reviewer_column: str, num_days_lookback: int
 ) -> int:
     # Get the current date and calculate the date 7 days ago
-    now = datetime.datetime.now()
+    now = get_now_utc()
     seven_days_ago = now - datetime.timedelta(days=num_days_lookback)
 
     # Define the criteria for the 7-day lookback period and reviewer
