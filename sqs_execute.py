@@ -18,6 +18,7 @@ from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
+from agent_service.utils.logs import init_stdout_logging
 from agent_service.utils.s3_upload import download_json_from_s3
 
 
@@ -43,6 +44,7 @@ class NoOutputException(AgentExecutionError):
 
 
 async def main() -> None:
+    init_stdout_logging()
     message_string = ""
     start_time_utc = get_now_utc().isoformat()
     start_time = time.time()

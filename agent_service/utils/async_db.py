@@ -1109,6 +1109,22 @@ class AsyncDB:
             },
         )
 
+    async def get_task_outputs_from_replay_ids(self, replay_ids: List[str]) -> Dict[str, Any]:
+        sql = """
+            SELECT
+                task_id::TEXT,
+                output
+            FROM agent.task_run_info
+            WHERE
+                replay_id = ANY(%(replay_ids)s)
+                AND output IS NOT NULL
+        """
+        rows = await self.generic_read(sql, params={"replay_ids": replay_ids})
+        res = {}
+        for row in rows:
+            res[row["task_id"]] = load_io_type(row["output"])
+        return res
+
     async def get_task_run_statuses(
         self, plan_run_ids: List[str]
     ) -> Dict[Tuple[str, str], TaskRunStatusInfo]:

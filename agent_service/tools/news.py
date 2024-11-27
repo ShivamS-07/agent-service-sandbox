@@ -1,6 +1,7 @@
 import datetime
 import logging
 from collections import defaultdict
+from copy import deepcopy
 from dataclasses import dataclass
 from math import floor
 from typing import Dict, Generator, List, Optional, Tuple
@@ -457,11 +458,13 @@ async def get_latest_news_for_companies(
     tasks = []
 
     if context.user_settings.include_web_results:
+        web_search_context = deepcopy(context)
+        web_search_context.skip_task_logging = True
         for stock_id in args.stock_ids:
             tasks.append(
                 single_stock_web_search(
                     SingleStockWebSearchInput(stock_id=stock_id, query=stock_id.company_name),
-                    context=context,
+                    context=web_search_context,
                 )
             )
 

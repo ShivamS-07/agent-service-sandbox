@@ -323,23 +323,33 @@ async def _run_execution_plan_impl(
         except Exception:
             logger.exception("Unable to fetch task outputs using work_logs table")
 
-    clickhouse_task_id_output_map = {}
+    replay_id_task_id_output_map = {}
     if override_task_output_id_lookup:
         try:
-            clickhouse_task_id_output_map = await Clickhouse().get_task_outputs_from_replay_ids(
+            replay_id_task_id_output_map = await Clickhouse().get_task_outputs_from_replay_ids(
                 replay_ids=list(override_task_output_id_lookup.values())
             )
         except Exception:
             logger.exception("Unable to fetch task outputs using replay ID's from clickhouse")
 
-    # Override clickhouse values with postgres values if both are present
+        try:
+            pg_task_id_output_map = await async_db.get_task_outputs_from_replay_ids(
+                replay_ids=list(override_task_output_id_lookup.values())
+            )
+            replay_id_task_id_output_map.update(pg_task_id_output_map)
+        except Exception:
+            logger.exception("Unable to fetch task outputs using replay ID's from postgres")
+
+    # Override work log values with those from clickhouse/task_run_info since
+    # they are more accurate. We should only use work log values if we have no
+    # other choice (no other data exists).
     override_task_output_lookup = {
-        key: val for key, val in clickhouse_task_id_output_map.items() if val is not None
-    }
-    worklog_task_id_output_map = {
         key: val for key, val in worklog_task_id_output_map.items() if val is not None
     }
-    override_task_output_lookup.update(worklog_task_id_output_map)
+    better_task_id_output_map = {
+        key: val for key, val in replay_id_task_id_output_map.items() if val is not None
+    }
+    override_task_output_lookup.update(better_task_id_output_map)
 
     locked_task_ids = set(plan.locked_task_ids)
 
