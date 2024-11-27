@@ -461,13 +461,20 @@ async def get_peer_group_for_stock(
                 # filter out non-public companies
                 if (
                     peer_obj["company_name"]
-                    and peer_obj["isin"] != "None"
-                    and peer_obj["symbol"] != "None"
+                    and str(peer_obj["isin"]) not in ["None", ""]
+                    and str(peer_obj["symbol"]) not in ["None", ""]
                     and peer_obj["justification"]
                 ):
                     initial_peer_group.append(peer_obj)
-            except IndexError:
-                logger.warning(f"Peers parsing failed for line: {initial_peer}, skipping")
+            except IndexError as e:
+                logger.warning(
+                    f"Peers parsing failed: {repr(e)} - for line: {initial_peer}, skipping"
+                )
+                continue
+            except json.decoder.JSONDecodeError as e:
+                logger.warning(
+                    f"Peers parsing failed: {repr(e)} - for line: {initial_peer}, skipping"
+                )
                 continue
 
     # Dict[gbi_id, StockID]
