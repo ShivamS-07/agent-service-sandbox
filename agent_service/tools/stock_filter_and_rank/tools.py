@@ -39,6 +39,7 @@ from agent_service.tools.ideas.utils import ideas_enabled
 from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT, CITATION_REMINDER
 from agent_service.tools.LLM_analysis.utils import initial_filter_texts
 from agent_service.tools.stock_filter_and_rank.constants import (
+    MIN_STOCKS_FOR_RANKING,
     NONRELEVANT_COMPANY_EXPLANATION,
 )
 from agent_service.tools.stock_filter_and_rank.prompts import (
@@ -60,6 +61,7 @@ from agent_service.tools.stock_filter_and_rank.utils import (
     check_text_diff,
     classify_stock_text_relevancies_for_profile,
     dedup_stocks,
+    discuss_profile_fit_for_stocks,
     do_rewrite,
     evaluate_profile_fit_for_stocks,
     finalize_updates,
@@ -100,9 +102,15 @@ async def run_profile_match(
     debug_info: Optional[Dict[str, Any]] = None,
     text_relevance_cache: Optional[List[Tuple[StockText, bool]]] = None,
     text_cache: Optional[Dict[TextIDType, str]] = None,
+    no_filter: bool = False,
 ) -> List[StockID]:
     if context.task_id is None:
         return []  # for mypy
+
+    if profile_match_parameters.rank_stocks:
+        log_verb = "Ranking"
+    else:
+        log_verb = "Filtering"
 
     profile_str: str = ""
     if isinstance(profile, TopicProfiles):
@@ -112,14 +120,14 @@ async def run_profile_match(
         )
         if do_tool_log:
             await tool_log(
-                f"Filtering stocks for advanced profile with topic: {profile.topic}",
+                f"{log_verb} stocks for advanced profile with topic: {profile.topic}",
                 context=context,
             )
     elif isinstance(profile, str):
         is_using_complex_profile = False
         profile_str = profile
         if do_tool_log:
-            await tool_log(f"Filtering stocks for simple profile: {profile_str}", context=context)
+            await tool_log(f"{log_verb} stocks for simple profile: {profile_str}", context=context)
     else:
         raise ValueError(
             "profile must be either a string or a TopicProfiles object "
@@ -214,7 +222,7 @@ async def run_profile_match(
     stock_whitelist: Set[StockID] = set()
     if do_tool_log and detailed_log:
         await tool_log(
-            f"Starting filtering with {len(aligned_text_groups.val.keys())} stocks",
+            f"Starting {log_verb.lower()} with {len(aligned_text_groups.val.keys())} stocks",
             context=context,
             associated_data=list(aligned_text_groups.val.keys()),
         )
@@ -226,25 +234,26 @@ async def run_profile_match(
         simple_profile_filter_sys_prompt = profile_filter_sys_prompt
         complex_profile_filter_sys_prompt = None
 
-    for stock, is_relevant in zip(
-        aligned_text_groups.val.keys(),
-        await evaluate_profile_fit_for_stocks(
-            profile=profile_str,
-            aligned_text_groups=aligned_text_groups,
-            str_lookup=str_lookup,
-            llm=cheap_llm,
-            context=context,
-        ),
-    ):
-        if is_relevant:
-            stock_whitelist.add(stock)
+    if not no_filter:
+        for stock, is_relevant in zip(
+            aligned_text_groups.val.keys(),
+            await evaluate_profile_fit_for_stocks(
+                profile=profile_str,
+                aligned_text_groups=aligned_text_groups,
+                str_lookup=str_lookup,
+                llm=cheap_llm,
+                context=context,
+            ),
+        ):
+            if is_relevant:
+                stock_whitelist.add(stock)
 
-    if do_tool_log and detailed_log:
-        await tool_log(
-            f"Completed a surface level round of filtering. {len(stock_whitelist)} stocks remaining.",
-            context=context,
-            associated_data=list(stock_whitelist),
-        )
+        if do_tool_log and detailed_log:
+            await tool_log(
+                f"Completed a surface level round of filtering. {len(stock_whitelist)} stock(s) remaining.",
+                context=context,
+                associated_data=list(stock_whitelist),
+            )
     llm = GPT(context=gpt_context, model=SONNET)
     stock_reason_map: Dict[StockID, Tuple[str, List[Citation]]] = {
         stock: (reason, citations)
@@ -271,17 +280,54 @@ async def run_profile_match(
         stock for stock in aligned_text_groups.val.keys() if stock in stock_reason_map
     ]
 
-    if do_tool_log and detailed_log:
+    if stock_whitelist and do_tool_log and detailed_log:
         await tool_log(
-            f"Completed a more in-depth round of filtering. {len(filtered_stocks)} stocks remaining.",
+            f"Completed a more in-depth round of filtering. {len(filtered_stocks)} stock(s) remaining.",
             context=context,
             associated_data=list(filtered_stocks),
         )
 
+    filtered_stocks_set = set(filtered_stocks)
+
+    needed_stocks = max(
+        MIN_STOCKS_FOR_RANKING,
+        profile_match_parameters.top_n if profile_match_parameters.top_n else 0,
+        profile_match_parameters.bottom_m if profile_match_parameters.bottom_m else 0,
+    )
+
+    if profile_match_parameters.rank_stocks and len(filtered_stocks) < needed_stocks:
+        if len(stock_whitelist) > needed_stocks:
+            to_include_stocks = [
+                stock for stock in stock_whitelist if stock not in filtered_stocks_set
+            ]
+        else:
+            to_include_stocks = [
+                stock for stock in stocks_with_texts if stock not in filtered_stocks_set
+            ]
+
+        if to_include_stocks:
+            extra_stock_reason_map = await discuss_profile_fit_for_stocks(
+                aligned_text_groups,
+                str_lookup,
+                profile_str,
+                is_using_complex_profile,
+                llm=llm,
+                stock_whitelist=set(to_include_stocks),
+                context=context,
+            )
+            if not no_filter:
+                await tool_log(
+                    f"Added {len(extra_stock_reason_map)} stock(s) back to list for ranking due to low filtered counts",
+                    context=context,
+                )
+            stock_reason_map.update(extra_stock_reason_map)
+            filtered_stocks_set.update(extra_stock_reason_map)
+            filtered_stocks = list(filtered_stocks_set)
+
     # Add all the filtered out stocks back in to populate their history entries
     all_stocks = filtered_stocks
     for stock in stocks:
-        if stock not in filtered_stocks:
+        if stock not in filtered_stocks_set:
             stock_reason_map[stock] = NONRELEVANT_COMPANY_EXPLANATION, []
             all_stocks.append(stock)
 
@@ -342,10 +388,16 @@ async def run_profile_match(
 
     final_stocks.sort(key=lambda stock: stock.history[-1].score.val, reverse=True)  # type: ignore
     if do_tool_log:
-        await tool_log(
-            f"A total of {len(final_stocks)} stocks passed the filter for '{profile_data_for_rubric}'",
-            context,
-        )
+        if profile_match_parameters.rank_stocks:
+            await tool_log(
+                f"A total of {len(final_stocks)} stocks ranked for '{profile_data_for_rubric}'",
+                context,
+            )
+        else:
+            await tool_log(
+                f"A total of {len(final_stocks)} stocks passed the filter for '{profile_data_for_rubric}'",
+                context,
+            )
 
     return final_stocks
 
@@ -408,7 +460,7 @@ async def update_profile_match(
     new_stocks = [stock for stock in stocks if stock not in old_stocks]
     if new_stocks:
         if detailed_log:
-            await tool_log(log=f"Applying filter to {len(new_stocks)} new stocks", context=context)
+            await tool_log(log=f"Processing {len(new_stocks)} new stocks", context=context)
         sub_match_parameters = copy.copy(profile_match_parameters)
         sub_match_parameters.rank_stocks = False
 
@@ -760,10 +812,16 @@ async def update_profile_match(
         )
 
     final_stocks.sort(key=lambda stock: stock.history[-1].score.val, reverse=True)  # type: ignore
-    await tool_log(
-        f"A total of {len(final_stocks)} stocks passed the filter for '{profile_data_for_rubric}'",
-        context,
-    )
+    if profile_match_parameters.rank_stocks:
+        await tool_log(
+            f"A total of {len(final_stocks)} stocks ranked for '{profile_data_for_rubric}'",
+            context,
+        )
+    else:
+        await tool_log(
+            f"A total of {len(final_stocks)} stocks passed the filter for '{profile_data_for_rubric}'",
+            context,
+        )
 
     return final_stocks
 
@@ -834,6 +892,7 @@ class FilterAndRankStocksByProfileInput(ToolArgs):
     score_threshold: int = 0
     top_n: Optional[int] = None
     bottom_m: Optional[int] = None
+    no_filter: bool = False
 
     # prompt arguments (hidden from planner)
     profile_filter_main_prompt: str = PROFILE_FILTER_MAIN_PROMPT_STR_DEFAULT
@@ -996,6 +1055,7 @@ async def filter_and_rank_stocks_by_profile(
             profile_match_parameters=profile_match_params,
             context=context,
             debug_info=debug_info,
+            no_filter=args.no_filter,
         )
     return result or []
 

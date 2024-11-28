@@ -112,7 +112,8 @@ SINGLE_DATE_OTHER_TEMPLATE = (
 )
 
 SINGLE_DATE_TODAY_TEMPLATE = (
-    "Note that you are generating a single point of data for today, {date}, for each stock"
+    "Note that you are generating a single point of data for today, {date}, for each stock. If you are doing "
+    "a calculation involving more than one date in your calculation, {date} will typically be the last relevant date."
 )
 
 

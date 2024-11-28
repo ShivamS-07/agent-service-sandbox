@@ -46,6 +46,7 @@ from agent_service.tools.stock_filter_and_rank.constants import (
     UPDATE_REWRITE_RETRIES,
 )
 from agent_service.tools.stock_filter_and_rank.prompts import (
+    COMPLEX_PROFILE_DISCUSSION_SYS_PROMPT,
     COMPLEX_REWRITE_UPDATE_SYS,
     FILTER_REWRITE_NEGATIVE_STR,
     FILTER_REWRITE_POSITIVE_STR,
@@ -53,6 +54,7 @@ from agent_service.tools.stock_filter_and_rank.prompts import (
     FILTER_UPDATE_CHECK_SYS,
     FILTER_UPDATE_REWRITE_MAIN,
     FILTER_UPDATE_TEMPLATE,
+    PROFILE_DISCUSSION_MAIN_PROMPT,
     PROFILE_EXPOSURE_TEXT_EVALUATER_MAIN_PROMPT,
     PROFILE_EXPOSURE_TEXT_EVALUATER_SYS_PROMPT,
     PROFILE_RUBRIC_EXAMPLES_MAIN_INSTRUCTION,
@@ -61,6 +63,7 @@ from agent_service.tools.stock_filter_and_rank.prompts import (
     PROFILE_RUBRIC_GENERATION_SYS_OBJ,
     RUBRIC_EVALUATION_MAIN_OBJ,
     RUBRIC_EVALUATION_SYS_OBJ,
+    SIMPLE_PROFILE_DISCUSSION_SYS_PROMPT,
     SIMPLE_REWRITE_UPDATE_SYS,
     TEXT_SNIPPET_RELEVANCY_MAIN_PROMPT,
     TEXT_SNIPPET_RELEVANCY_SYS_PROMPT,
@@ -287,6 +290,74 @@ async def profile_filter_stock_match(
         output_tuples.append((is_match, rationale, citations))  # type:ignore
 
     return output_tuples
+
+
+async def discuss_profile_fit_for_stocks(
+    aligned_text_groups: StockAlignedTextGroups,
+    str_lookup: Dict[StockID, str],
+    profile: str,
+    is_using_complex_profile: bool,
+    llm: GPT,
+    context: PlanRunContext,
+    stock_whitelist: Set[StockID],
+) -> Dict[StockID, Tuple[str, List[Citation]]]:
+    # Add a placeholder company name as a safety buffer
+    tokenizer = GPTTokenizer(GPT4_O)
+    used = 0
+    if is_using_complex_profile:
+        sys_prompt = COMPLEX_PROFILE_DISCUSSION_SYS_PROMPT
+    else:
+        sys_prompt = SIMPLE_PROFILE_DISCUSSION_SYS_PROMPT
+    used = tokenizer.get_token_length(
+        "\n".join(
+            [
+                PROFILE_DISCUSSION_MAIN_PROMPT.template,
+                sys_prompt.template,
+                profile,
+                "Placeholder Company Name",
+            ]
+        )
+    )
+
+    tasks = []
+    for stock in aligned_text_groups.val:
+        text_str = str_lookup[stock]
+        text_str = tokenizer.chop_input_to_allowed_length(text_str, used)
+        if text_str == "" or (stock_whitelist is not None and stock not in stock_whitelist):
+            tasks.append(identity(""))
+        else:
+            tasks.append(
+                llm.do_chat_w_sys_prompt(
+                    PROFILE_DISCUSSION_MAIN_PROMPT.format(
+                        company_name=stock.company_name,
+                        texts=text_str,
+                        profile_str=profile,
+                        today=(
+                            context.as_of_date.date().isoformat()
+                            if context.as_of_date
+                            else datetime.date.today().isoformat()
+                        ),
+                    ),
+                    sys_prompt.format(),
+                )
+            )
+
+    results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
+
+    output_dict: Dict[StockID, Tuple[str, List[TextCitation]]] = {}
+    for result, (stock, text_group) in zip(results, aligned_text_groups.val.items()):
+        try:
+            rationale, citation_anchor_map = result.strip().replace("\n\n", "\n").split("\n")
+            rationale, citations = await extract_citations_from_gpt_output(
+                "\n".join([rationale, citation_anchor_map]), text_group, context
+            )
+            if citations:
+                output_dict[stock] = rationale, citations
+
+        except Exception as e:
+            logger.warning(f"Failed to load discussion with citations due to {e}")
+
+    return output_dict  # type: ignore
 
 
 async def evaluate_profile_fit_for_stock(

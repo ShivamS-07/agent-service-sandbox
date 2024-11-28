@@ -231,8 +231,8 @@ class ToolCategory(enum.StrEnum):
     AUTOMATION = "automation"
     KPI = "KPIs"
     SEC_FILINGS = "SEC Filings"
-    COMPETITIVE_ANALYSIS = "competitive_analysis"
-    IDEAS = "ideas"
+    COMPETITIVE_ANALYSIS = "competitive analysis"
+    IDEAS = "brainstorm ideas"
     WEB = "web search"
     STRATEGY = "strategy"
 
