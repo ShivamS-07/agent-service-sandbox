@@ -606,7 +606,7 @@ async def do_rewrite(
     else:
         polarity_str = FILTER_REWRITE_POSITIVE_STR
 
-    chopped_optional_text_str = GPTTokenizer(model=llm.model).do_truncation_if_needed(
+    chopped_optional_text_str = GPTTokenizer(model=GPT4_O).do_truncation_if_needed(
         optional_text_str,
         [
             FILTER_UPDATE_REWRITE_MAIN.template,
