@@ -34,6 +34,7 @@ from agent_service.tools.LLM_analysis.utils import (
 )
 from agent_service.tools.stock_filter_and_rank.constants import (
     EVALUATE_AND_SUMMARIZE_CONCURRENCY,
+    MAX_ATTEMPTS_FOR_RUBRIC_GEN,
     MAX_RUBRIC_SCORE,
     MAX_UPDATE_CHECK_RETRIES,
     NONRELEVANT_COMPANY_EXPLANATION,
@@ -1145,32 +1146,67 @@ async def get_profile_rubric(
             profile=profile, additional_instruction=""
         )
 
-    result = await llm.do_chat_w_sys_prompt(
-        main_prompt=main_prompt,
-        sys_prompt=sys_prompt,
-        max_tokens=2000,
-    )
-    # We don't care about the justification at the top, just meant to keep
-    # GPT whipped
     rubric_dict = {k: "" for k in range(1, 6)}
-    rubric_str = result.split(RUBRIC_DELIMITER)[1].strip()
+    try:
+        result = await llm.do_chat_w_sys_prompt(
+            main_prompt=main_prompt,
+            sys_prompt=sys_prompt,
+            max_tokens=2000,
+        )
 
-    # We output the rubric from the LLM by starting the description of
-    # each level with "Level" as follows:
-    #
-    #   Level 1: Description
-    #   Level 2: Description
-    #   ...
-    #
-    # Splitting by "Level " then helps to grab all the level descriptions
-    # along with the level number associated with it, we then apply
-    # some indexing to grab the Description component and strip trailing
-    # line breaks
-    for entry in rubric_str.split("Level "):
-        # Check if empty string
-        if entry:
-            if isinstance(rubric_dict.get(int(entry[0]), None), str):
-                rubric_dict[int(entry[0])] = entry[2:].strip()
+        # We don't care about the justification at the top, just meant to keep
+        # GPT whipped
+        rubric_str = result.split(RUBRIC_DELIMITER)[1].strip()
+
+        # We output the rubric from the LLM by starting the description of
+        # each level with "Level" as follows:
+        #
+        #   Level 1: Description
+        #   Level 2: Description
+        #   ...
+        #
+        # Splitting by "Level " then helps to grab all the level descriptions
+        # along with the level number associated with it, we then apply
+        # some indexing to grab the Description component and strip trailing
+        # line breaks
+        for entry in rubric_str.split("Level "):
+            # Check if empty string
+            if entry:
+                if isinstance(rubric_dict.get(int(entry[0]), None), str):
+                    rubric_dict[int(entry[0])] = entry[2:].strip()
+    except IndexError:
+        # If it fails we'll turn off cache and try the whole thing again
+        max_attempts = MAX_ATTEMPTS_FOR_RUBRIC_GEN
+        attempts = 0
+        rubric_str = None
+        generated_rubric = False
+        result = None
+        while attempts < max_attempts:
+            result = await llm.do_chat_w_sys_prompt(
+                main_prompt=main_prompt, sys_prompt=sys_prompt, max_tokens=2000, no_cache=True
+            )
+
+            try:
+                rubric_dict = {k: "" for k in range(1, 6)}
+                rubric_str = result.split(RUBRIC_DELIMITER)[1].strip()
+
+                for entry in rubric_str.split("Level "):
+                    # Check if empty string
+                    if entry:
+                        if isinstance(rubric_dict.get(int(entry[0]), None), str):
+                            rubric_dict[int(entry[0])] = entry[2:].strip()
+                generated_rubric = True
+                break
+            except (IndexError, ValueError):
+                attempts += 1
+
+        if not generated_rubric:
+            if result is not None:
+                logger.error(f"Failed to generate rubric, got {result}")
+            else:
+                logger.error("Failed to generate rubric, GPT crashed without output")
+            raise IndexError("Rubric could not be generated during profile filter and rank")
+
     return rubric_dict
 
 
@@ -1223,24 +1259,26 @@ async def stocks_rubric_score_assignment(
     for stock, score in zip(stocks_evaluated, scores):
         try:
             level_score, _ = score.split(SCORE_OUTPUT_DELIMITER)
-        except ValueError:
+            rubric_assigned_score = SCORE_MAPPING[level_score]
+        except (ValueError, IndexError):
             logger.warning(f"Failed to extract score for from rubric, got {score}")
-            level_score = "1"
-        else:
-            stock_citations = stock_text_lookup[stock][1]
-            if stock_citations is None:
-                stock_citations = []
-            final_scoring_stocks.append(
-                stock.inject_history_entry(
-                    HistoryEntry(
-                        explanation=stock_text_lookup[stock][0],
-                        title=f"Connection to '{profile}'",
-                        score=Score(val=SCORE_MAPPING[level_score]),
-                        citations=stock_citations,
-                        task_id=context.task_id,
-                    )
+            rubric_assigned_score = 0.2
+
+        stock_citations = stock_text_lookup[stock][1]
+        if stock_citations is None:
+            stock_citations = []
+
+        final_scoring_stocks.append(
+            stock.inject_history_entry(
+                HistoryEntry(
+                    explanation=stock_text_lookup[stock][0],
+                    title=f"Connection to '{profile}'",
+                    score=Score(val=rubric_assigned_score),
+                    citations=stock_citations,
+                    task_id=context.task_id,
                 )
             )
+        )
 
     # Add the stocks we skipped due to lack of relevant information from its documents
     final_scoring_stocks.extend(skipped_stocks)

@@ -12,6 +12,8 @@ NONRELEVANT_COMPANY_EXPLANATION = (
 
 MIN_STOCKS_FOR_RANKING = 3
 
+MAX_ATTEMPTS_FOR_RUBRIC_GEN = 3
+
 # Constants to help out with scoring filtered stocks by profile
 SCORE_OUTPUT_DELIMITER = "___"
 RUBRIC_DELIMITER = "RUBRIC_OUTPUT"
