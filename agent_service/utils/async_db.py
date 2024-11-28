@@ -37,7 +37,12 @@ from agent_service.endpoints.models import (
     TaskRunStatusInfo,
     TaskStatus,
 )
-from agent_service.io_type_utils import IOType, dump_io_type, load_io_type
+from agent_service.io_type_utils import (
+    IOType,
+    dump_io_type,
+    load_io_type,
+    safe_dump_io_type,
+)
 
 # Make sure all io_types are registered
 from agent_service.io_types import *  # noqa
@@ -315,6 +320,8 @@ class AsyncDB:
     ) -> None:
         now = get_now_utc()
         time_delta = datetime.timedelta(seconds=0.01)
+
+        errmsg = "Failed to serialize the output for log"
         rows = [
             {
                 "agent_id": context.agent_id,
@@ -322,7 +329,7 @@ class AsyncDB:
                 "plan_run_id": context.plan_run_id,
                 "log_id": output.output_id,
                 "task_id": output.task_id,
-                "log_data": dump_io_type(output.output),
+                "log_data": safe_dump_io_type(output.output, errmsg),
                 "is_task_output": True,
                 "created_at": now + idx * time_delta,  # preserve order
             }

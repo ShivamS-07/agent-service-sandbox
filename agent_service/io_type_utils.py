@@ -1,6 +1,7 @@
 import datetime
 import enum
 import json
+import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from copy import deepcopy
@@ -29,6 +30,8 @@ from typing_extensions import Annotated, Self, TypeAliasType
 from agent_service.io_types.output import CitationOutput, Output
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
+
+logger = logging.getLogger(__name__)
 
 SimpleType = Union[int, str, bool, float]
 
@@ -544,6 +547,17 @@ async def split_io_type_into_components(
 
 def dump_io_type(val: IOType) -> str:
     return json.dumps(_dump_io_type_helper(val))
+
+
+def safe_dump_io_type(val: IOType, errmsg: Optional[str] = None) -> Optional[str]:
+    s = None
+    try:
+        s = dump_io_type(val)
+    except Exception:
+        if not errmsg:
+            errmsg = "failed to serialize"
+        logger.exception(errmsg)
+    return s
 
 
 def load_io_type(val: str) -> Optional[IOType]:

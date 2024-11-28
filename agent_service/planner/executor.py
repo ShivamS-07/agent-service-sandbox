@@ -18,8 +18,8 @@ from agent_service.GPT.requests import GPT, set_plan_run_context
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import (
     IOType,
-    dump_io_type,
     load_io_type,
+    safe_dump_io_type,
     split_io_type_into_components,
 )
 from agent_service.io_types.text import Text
@@ -456,11 +456,8 @@ async def _run_execution_plan_impl(
             except Exception:
                 logger.exception("Failed to validate tool args on cached run")
 
-            result_dump = None
-            try:
-                result_dump = dump_io_type(override_task_output_lookup[step.tool_task_id])
-            except Exception:
-                logger.exception("Failed to serialize the result on cached run")
+            errmsg = "Failed to serialize the result on cached run"
+            result_dump = safe_dump_io_type(override_task_output_lookup[step.tool_task_id], errmsg)
 
             event_data: Dict[str, Any] = {
                 "tool_name": step.tool_name,
