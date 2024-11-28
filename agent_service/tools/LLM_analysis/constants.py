@@ -20,8 +20,8 @@ NO_CITATIONS_DIFF = (
     "is no longer among the documents reviewed in this pass"
 )
 
-NO_SUMMARY = "No information available"
-NO_SUMMARY_FOR_STOCK = "No information available for this stock"
+NO_SUMMARY = "No relevant information"
+NO_SUMMARY_FOR_STOCK = "No relevant information for this stock"
 
 ANCHOR_REGEX = re.compile(r" ?\[([a-z]{1,2}),\d{1,2}\]([\.\?\!]?)")
 # not worth adding NLTK for just this one case, so just use a regex

@@ -794,7 +794,7 @@ async def per_stock_summarize_texts(
     output = []
 
     for stock, (summary, citations) in zip(args.stocks, results):
-        if summary == NO_SUMMARY:
+        if summary.strip() == NO_SUMMARY:
             summary = NO_SUMMARY_FOR_STOCK
         stock = stock.inject_history_entry(
             HistoryEntry(
