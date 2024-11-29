@@ -269,27 +269,21 @@ def check_for_index_overlap(first: Table, second: Table) -> bool:
     return False
 
 
-def add_extra_group_cols(first: Table, second: Table) -> Tuple[Table, Table]:
-    first_group_col = first.get_stock_column() or first.get_first_col_of_type(
-        TableColumnType.STRING
-    )
-    second_group_col = second.get_stock_column() or second.get_first_col_of_type(
-        TableColumnType.STRING
-    )
-    first_date_col = first.get_date_column()
-    second_date_col = second.get_date_column()
+def add_extra_group_cols(table: Table, table_name: str) -> Table:
+    group_col = table.get_stock_column() or table.get_first_col_of_type(TableColumnType.STRING)
+    date_col = table.get_date_column()
 
     # This is VERY hacky, and is really just a last resort to prevent weirdness
     new_cols = []
     new_col_added = False
-    for col in first.columns:
-        if col in (first_group_col, first_date_col):
+    for col in table.columns:
+        if col in (group_col, date_col):
             new_cols.append(col)
             continue
         if not new_col_added:
             new_cols.append(
                 TableColumn(
-                    data=["Group 1"] * len(col.data),
+                    data=[table_name] * len(col.data),
                     metadata=TableColumnMetadata(
                         label=DEFAULT_GROUP_COL_NAME, col_type=TableColumnType.STRING
                     ),
@@ -298,25 +292,6 @@ def add_extra_group_cols(first: Table, second: Table) -> Tuple[Table, Table]:
             new_col_added = True
         new_cols.append(col)
 
-    first.columns = new_cols
+    table.columns = new_cols
 
-    new_cols = []
-    new_col_added = False
-    for col in second.columns:
-        if col in (second_group_col, second_date_col):
-            new_cols.append(col)
-            continue
-        if not new_col_added:
-            new_cols.append(
-                TableColumn(
-                    data=["Group 2"] * len(col.data),
-                    metadata=TableColumnMetadata(
-                        label=DEFAULT_GROUP_COL_NAME, col_type=TableColumnType.STRING
-                    ),
-                )
-            )
-            new_col_added = True
-        new_cols.append(col)
-    second.columns = new_cols
-
-    return first, second
+    return table

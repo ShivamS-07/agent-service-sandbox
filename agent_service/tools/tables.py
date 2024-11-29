@@ -771,11 +771,27 @@ class JoinTableArgs(ToolArgs):
     # If true, join vertically instead of horizontally, resulting in more rows
     # instead of more columns.
     row_join: bool = False
+    table_names: Optional[List[str]] = None
 
 
-def _join_two_tables_vertically(first: Table, second: Table, add_group_col: bool = True) -> Table:
+def _join_two_tables_vertically(
+    first: Table,
+    second: Table,
+    table_names: Optional[List[str]] = None,
+    idx: int = 0,
+    add_group_col: bool = True,
+) -> Table:
     if add_group_col and check_for_index_overlap(first, second):
-        first, second = add_extra_group_cols(first, second)
+        if idx == 0:
+            first_name = table_names[0] if table_names else f"Group {idx + 1}"
+            first = add_extra_group_cols(first, first_name)
+        second_name = (
+            table_names[idx + 1]
+            if table_names and len(table_names) > idx + 1
+            else f"Group {idx + 2}"
+        )
+        second = add_extra_group_cols(second, second_name)
+
     output_cols = []
     for col1, col2 in zip(first.columns, second.columns):
         if col1.metadata.col_type == col2.metadata.col_type:
@@ -790,7 +806,9 @@ def _join_two_tables_vertically(first: Table, second: Table, add_group_col: bool
     return output_table
 
 
-def _join_two_tables(first: Table, second: Table) -> Table:
+def _join_two_tables(
+    first: Table, second: Table, table_names: Optional[List[str]] = None, idx: int = 0
+) -> Table:
     first = copy.deepcopy(first)
     second = copy.deepcopy(second)
 
@@ -916,12 +934,19 @@ def _join_two_tables(first: Table, second: Table) -> Table:
     merged with this first. By default, the assumption is that the tables share only
     some columns, not all of them, and we want to create a table with all the columns
     of both.
-    If we are joining two tables with the same columns and just want to create a table
-    which has the rows from both tables, use row_join = True, this will commonly be used
+    If we are joining tables with the same columns and just want to create a table
+    which has the rows from all tables, use row_join = True, this will commonly be used
     when we are constructing a final output table for comparison of the performance
     of different stock groups/baskets.
     When the task is joining tables to have more columns in a single table, the row_join
     must be False.
+    If we are joining tables where we need to distinguish the data from the input tables in the
+    output in a way that wouldn't be represented in the column names (for instance, creating a
+    bar chart which compares the sector allocation of stock indexes), you should include
+    names of the input tables as an aligned list of strings in the optional argument
+    table_names (e.g. ["S&P 500", "TSX"]). You do NOT need to do this when you are just
+    directly combining the output of the company statistics tool.
+
 """,
     category=ToolCategory.TABLE,
 )
@@ -954,8 +979,8 @@ async def join_tables(args: JoinTableArgs, context: PlanRunContext) -> Union[Tab
         _join_table_func = _join_two_tables_vertically
 
     joined_table = args.input_tables[0]
-    for table in args.input_tables[1:]:
-        joined_table = _join_table_func(joined_table, table)
+    for idx, table in enumerate(args.input_tables[1:]):
+        joined_table = _join_table_func(joined_table, table, args.table_names, idx)
 
     if joined_table.get_stock_column():
         return StockTable(columns=joined_table.columns)
