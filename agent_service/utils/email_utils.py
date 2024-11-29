@@ -116,7 +116,7 @@ class AgentEmail:
             self.queue.send_message(MessageBody=message.model_dump_json())
 
     async def send_plan_run_finish_email(
-        self, agent_id: str, plan_run_id: str, short_summary: str, output_titles: List[str]
+        self, agent_id: str, short_summary: str, output_titles: List[str]
     ) -> None:
         """Sends a plan run finish email to the agent owner"""
         if not self.db:

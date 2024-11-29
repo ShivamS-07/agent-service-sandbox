@@ -178,6 +178,24 @@ async def send_notification_slack_message(
         )
 
 
+async def send_slow_execution_message(
+    agent_id: str,
+    plan_run_id: str,
+    db: Union[Postgres, AsyncDB],
+) -> None:
+    await asyncio.sleep(PLAN_RUN_EMAIL_THRESHOLD_SECONDS)
+    await send_chat_message(
+        message=Message(
+            agent_id=agent_id,
+            message="I'm sorry this is taking so long. I'll send an email to you when your report is ready.",
+            is_user_message=False,
+            visible_to_llm=False,
+            plan_run_id=plan_run_id,
+        ),
+        db=db,
+    )
+
+
 @plan_run_deco  # type: ignore
 async def run_execution_plan(
     plan: ExecutionPlan,
@@ -262,6 +280,23 @@ async def _run_execution_plan_impl(
     replaying_plan_run = False
     complete_tasks_from_prior_run = set()
     plan_run_start_time = time.time()
+
+    # Schedule message to be sent after 10 minutes
+    send_plan_run_finish_email = await get_ld_flag_async(
+        flag_name="send-plan-run-finish-email",
+        user_id=context.user_id,
+        default=False,
+        async_db=async_db,
+    )
+    message_task = None
+    if send_plan_run_finish_email:
+        message_task = asyncio.create_task(
+            send_slow_execution_message(
+                agent_id=context.agent_id,
+                plan_run_id=context.plan_run_id,
+                db=async_db,
+            )
+        )
 
     if existing_run and existing_run.get("status") in (
         Status.ERROR.value,
@@ -746,19 +781,23 @@ async def _run_execution_plan_impl(
         # send reminder email if plan run took longer than 10 minutes (600 seconds)
         if (
             time.time() - plan_run_start_time > PLAN_RUN_EMAIL_THRESHOLD_SECONDS
-            and await get_ld_flag_async(
-                flag_name="send-plan-run-finish-email",
-                user_id=context.user_id,
-                default=False,
-                async_db=async_db,
-            )
+            and send_plan_run_finish_email
         ):
             await agent_email_handler.send_plan_run_finish_email(
                 agent_id=context.agent_id,
-                plan_run_id=context.plan_run_id,
                 short_summary=short_diff_summary,
                 output_titles=[output.title for output in final_outputs],  # type: ignore
             )
+        else:
+            # Cancel the scheduled low execution message if execution completes before 10 minutes
+            if message_task and not message_task.done():
+                message_task.cancel()
+                try:
+                    # ensuring the task is properly cancelled
+                    await message_task
+                except asyncio.CancelledError:
+                    pass
+
     elif scheduled_by_automation:
         logger.info("Generating diff message...")
         custom_notifications = await async_db.get_all_agent_custom_notifications(context.agent_id)
