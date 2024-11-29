@@ -68,6 +68,7 @@ from agent_service.tools.stock_filter_and_rank.utils import (
     get_profile_rubric,
     profile_filter_stock_match,
     rank_individual_levels,
+    remove_extra_history,
     reset_relevance_cache_ids,
     stocks_rubric_score_assignment,
 )
@@ -365,7 +366,9 @@ async def run_profile_match(
 
     if debug_info is not None:
         debug_info["profile_rubric"] = json.dumps(profile_rubric)
-        debug_info["text_relevance_cache"] = dump_io_type(text_relevance_cache)
+        debug_info["text_relevance_cache"] = dump_io_type(
+            remove_extra_history(text_relevance_cache)
+        )
         debug_info["full_stock_list"] = dump_io_type(final_stocks)
 
     final_stocks = apply_score_threshold(
@@ -777,7 +780,9 @@ async def update_profile_match(
     if debug_info is not None:
         debug_info["full_stock_list"] = dump_io_type(final_stocks)
         debug_info["profile_rubric"] = json.dumps(profile_rubric)
-        debug_info["text_relevance_cache"] = dump_io_type(text_relevance_cache)
+        debug_info["text_relevance_cache"] = dump_io_type(
+            remove_extra_history(text_relevance_cache)
+        )
 
     final_stocks = apply_score_threshold(
         final_stocks, profile_match_parameters.filter_score_threshold
@@ -1241,7 +1246,7 @@ async def per_idea_filter_and_rank_stocks_by_profile_match(
                             profile_rubric
                         )
                         debug_dicts[profile.initial_idea]["text_relevance_cache"] = dump_io_type(
-                            text_relevance_cache
+                            remove_extra_history(text_relevance_cache)
                         )
 
                     old_group = prev_group_lookup[profile.topic]

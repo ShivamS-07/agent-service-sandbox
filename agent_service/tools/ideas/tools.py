@@ -7,7 +7,7 @@ from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import HistoryEntry
 from agent_service.io_types.idea import Idea
 from agent_service.io_types.text import Text, TextGroup
-from agent_service.planner.errors import EmptyInputError
+from agent_service.planner.errors import EmptyInputError, EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.ideas.constants import (
     CHEAP_LMM_BATCH_THRESHOLD,
@@ -294,6 +294,9 @@ async def brainstorm_ideas_from_text(
         )
     result = await gather_with_concurrency(tasks)
     initial_ideas = [idea for idea_groups in result for idea in idea_groups]
+
+    if len(initial_ideas) < 2:
+        raise EmptyOutputError("Failed to brainstorm ideas from provided texts")
 
     # cluster ideas across the runs
     clustered_ideas = await cluster_ideas(args.idea_definition, initial_ideas)

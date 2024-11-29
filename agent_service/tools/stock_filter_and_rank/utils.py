@@ -1338,3 +1338,16 @@ async def apply_ranking_parameters(
             stock for stock in ranked_stocks if stock.history[-1].score.val != 0  # type: ignore
         ]
         return non_zero_ranked_stocks
+
+
+def remove_extra_history(
+    relevance_cache: List[Tuple[StockText, bool]]
+) -> List[Tuple[StockText, bool]]:
+    # Drop history for text relevance cache which doesn't need it since it is just a look up
+    new_relevance_cache = []
+    for text, is_relevant in relevance_cache:
+        text.history = []
+        if text.stock_id:
+            text.stock_id.history = []
+        new_relevance_cache.append((text, is_relevant))
+    return new_relevance_cache
