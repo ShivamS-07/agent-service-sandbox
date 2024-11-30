@@ -123,6 +123,7 @@ async def _handle_table_col(
 
     for i, val in enumerate(values):
         if citation_dict:
+            val = str(val)
             val, citations = await _extract_citation_from_value(
                 val=val, citation_dict=citation_dict, context=context, text_group=text_group
             )
