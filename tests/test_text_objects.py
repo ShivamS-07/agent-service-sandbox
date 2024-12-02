@@ -57,7 +57,7 @@ class TestTextObjects(unittest.IsolatedAsyncioTestCase):
                         index=10, end_index=13, gbi_id=714, symbol="", company_name="", isin=""
                     ),
                 ],
-                expected_result='This```{"type": "citation", "citation_id": "cit1"}``` week ```{"gbi_id": 714, "symbol": "", "company_name": "", "isin": "", "sector": null, "subindustry": null, "exchange": null, "type": "stock", "text": "AAPL"}``` increased',  # noqa
+                expected_result='This```{"type": "citation", "citation_id": "cit1"}``` week ```{"gbi_id": 714, "symbol": "", "company_name": "", "isin": "", "sector": null, "subindustry": null, "exchange": null, "security_type": null, "type": "stock", "text": "AAPL"}``` increased',  # noqa
             ),
         ]
     )

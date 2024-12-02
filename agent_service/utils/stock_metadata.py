@@ -14,6 +14,7 @@ class StockMetadata(BaseModel):
     sector: Optional[str] = None
     subindustry: Optional[str] = None
     exchange: Optional[str] = None
+    security_type: Optional[str] = None
 
 
 # TODO cache this
@@ -40,6 +41,7 @@ async def get_stock_metadata_rows(
         msc.symbol,
         msc.name AS company_name,
         msc.isin,
+        msc.security_type,
         msc.exchange,
         gics1.name AS sector,
         gics4.name AS subindustry,
@@ -59,6 +61,7 @@ async def get_stock_metadata_rows(
             ms.name,
             ssm.exchange,
             ms.symbol,
+            ms.security_type,
             ms.security_region AS country,
             ms.region AS country_of_domicile,
             ms.isin AS isin,

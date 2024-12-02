@@ -215,6 +215,7 @@ class TextObject(SerializeableBase):
             text_object.sector = metadata.sector
             text_object.subindustry = metadata.subindustry
             text_object.exchange = metadata.exchange
+            text_object.security_type = metadata.security_type
 
         return text_objects
 
