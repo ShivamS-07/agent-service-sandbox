@@ -119,6 +119,16 @@ class TableColumnType(enum.StrEnum):
             TableColumnType.MONTH,
         )
 
+    def is_float_type(self) -> bool:
+        return self in (
+            TableColumnType.FLOAT,
+            TableColumnType.FLOAT_WITH_UNIT,
+            TableColumnType.CURRENCY,
+            TableColumnType.PERCENT,
+            TableColumnType.DELTA,
+            TableColumnType.PCT_DELTA,
+        )
+
 
 class SerializeableBase(BaseModel, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)

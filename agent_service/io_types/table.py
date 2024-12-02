@@ -459,6 +459,61 @@ class Table(ComplexIOBase):
         df.set_index(keys=[col.label for col in key_cols], inplace=True)
         return df.transpose().to_dict(orient="list")  # type: ignore
 
+    @staticmethod
+    def _convert_int_func(val: Any) -> Optional[int]:
+        try:
+            if isinstance(val, str):
+                val = val.replace(",", "")
+            return int(val)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _convert_float_func(val: Any) -> Optional[float]:
+        try:
+            if isinstance(val, str):
+                val = val.replace(",", "")
+            val = float(val)
+            if np.isnan(val):
+                return None
+            return val
+        except Exception:
+            return None
+
+    @staticmethod
+    def _val_to_dt(
+        val: Any, convert_to_date: bool = False
+    ) -> Optional[Union[datetime.date, datetime.datetime]]:
+        if val is None:
+            return None
+        if isinstance(val, pd.Timestamp):
+            val = val.to_pydatetime() if not convert_to_date else val.date()
+        return val
+
+    def fix_table_types(self, stocks_are_hashable_objs: bool = False) -> None:
+        new_cols = []
+        for col in self.columns:
+            col_meta = col.metadata
+            vals = col.data
+            if col_meta.col_type == TableColumnType.DATE:
+                vals = [self._val_to_dt(ts, convert_to_date=True) for ts in col.data]
+            elif col_meta.col_type == TableColumnType.DATETIME:
+                vals = [self._val_to_dt(ts) for ts in col.data]
+            elif col_meta.col_type == TableColumnType.STOCK:
+                if stocks_are_hashable_objs:
+                    stocks = cast(List[str], col.data)
+                    stocks = [StockID.from_hashable(stock) for stock in stocks]
+                    vals = stocks  # type: ignore
+                col = StockTableColumn(metadata=col.metadata, data=vals, title=col.title)  # type: ignore
+            elif col_meta.col_type in (TableColumnType.INTEGER, TableColumnType.INTEGER_WITH_UNIT):
+                vals = [self._convert_int_func(val) for val in col.data]
+            elif col_meta.col_type.is_float_type():
+                vals = [self._convert_float_func(val) for val in col.data]
+
+            col.data = vals  # type: ignore
+            new_cols.append(col)
+        self.columns = new_cols
+
     @classmethod
     def from_df_and_cols(
         cls,
@@ -467,15 +522,6 @@ class Table(ComplexIOBase):
         stocks_are_hashable_objs: bool = False,
         ignore_extra_cols: bool = False,
     ) -> Self:
-        def _val_to_dt(
-            val: Any, convert_to_date: bool = False
-        ) -> Optional[Union[datetime.date, datetime.datetime]]:
-            if val is None:
-                return None
-            if isinstance(val, pd.Timestamp):
-                val = val.to_pydatetime() if not convert_to_date else val.date()
-            return val
-
         if data.empty:
             data = pd.DataFrame({col.label: [] for col in columns})
         out_columns: List[TableColumn] = []
@@ -491,21 +537,12 @@ class Table(ComplexIOBase):
                     f"Requested label: {df_col=} not in dataframe cols: {data.columns}"
                 )
 
-            if col_meta.col_type == TableColumnType.DATE:
-                vals = [_val_to_dt(ts, convert_to_date=True) for ts in data[df_col].to_list()]
-                out_columns.append(DateTableColumn(metadata=col_meta, data=vals))
-            elif col_meta.col_type == TableColumnType.DATETIME:
-                vals = [_val_to_dt(ts) for ts in data[df_col].to_list()]
-                out_columns.append(DatetimeTableColumn(metadata=col_meta, data=vals))  # type: ignore
-            elif col_meta.col_type == TableColumnType.STOCK:
-                stocks = data[df_col].to_list()
-                if stocks_are_hashable_objs:
-                    stocks = [StockID.from_hashable(stock) for stock in stocks]
-                out_columns.append(StockTableColumn(metadata=col_meta, data=stocks))
-            else:
-                out_columns.append(TableColumn(metadata=col_meta, data=data[df_col].to_list()))
+            vals = data[df_col].to_list()
+            out_columns.append(TableColumn(metadata=col_meta, data=vals))
 
-        return cls(columns=out_columns)
+        res = cls(columns=out_columns)
+        res.fix_table_types(stocks_are_hashable_objs=stocks_are_hashable_objs)
+        return res
 
     async def to_rich_output(self, pg: BoostedPG, title: str = "") -> Output:
         fixed_cols: List[TableColumn] = []
@@ -602,6 +639,7 @@ class Table(ComplexIOBase):
         # a row-based schema.
         fixed_table = Table(columns=final_cols)
         fixed_table.dedup_columns()
+        fixed_table.fix_table_types()
         all_gbi_ids = {
             stock.gbi_id
             for col in fixed_table.columns
