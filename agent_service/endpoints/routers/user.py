@@ -13,6 +13,7 @@ from agent_service.endpoints.models import (
     UserHasAccessResponse,
 )
 from agent_service.endpoints.routers.utils import get_agent_svc_impl
+from agent_service.types import AgentUserSettings
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.email_utils import AgentEmail
 from agent_service.utils.feature_flags import is_user_agent_admin
@@ -28,6 +29,12 @@ async def update_user_settings(
 ) -> UpdateUserResponse:
     agent_svc_impl = get_agent_svc_impl()
     return await agent_svc_impl.update_user_settings(user=user, req=req)
+
+
+@router.get("/settings", response_model=AgentUserSettings, status_code=status.HTTP_200_OK)
+async def get_user_settings(user: User = Depends(parse_header)) -> AgentUserSettings:
+    agent_svc_impl = get_agent_svc_impl()
+    return await agent_svc_impl.get_user_settings(user=user)
 
 
 @router.post("/update-user", response_model=UpdateUserResponse, status_code=status.HTTP_200_OK)

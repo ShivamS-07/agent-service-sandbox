@@ -250,6 +250,7 @@ from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_st
 from agent_service.tool import ToolCategory, ToolRegistry
 from agent_service.tools.graphs import MakeLineGraphArgs, make_line_graph
 from agent_service.types import (
+    AgentUserSettings,
     AgentUserSettingsSource,
     ChatContext,
     MemoryType,
@@ -1906,6 +1907,9 @@ class AgentServiceImpl:
             )
         success = await update_user(user_id, name, username, email)
         return UpdateUserResponse(success=success)
+
+    async def get_user_settings(self, user: User) -> AgentUserSettings:
+        return await self.pg.get_user_agent_settings(user_id=user.user_id)
 
     async def update_user_settings(
         self, user: User, req: AgentUserSettingsSetRequest
