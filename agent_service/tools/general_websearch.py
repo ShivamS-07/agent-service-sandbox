@@ -83,6 +83,7 @@ async def single_stock_web_search(
         )
         for web_text in search_results
     ]
+    await tool_log(f"Found {len(web_stock_text_results)} results using web search", context=context)
     return web_stock_text_results
 
 
@@ -122,6 +123,7 @@ async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContex
 
     # currently, this returns a list of WebTexts
     search_results = await get_web_texts_async(urls=urls, plan_context=context)
+    await tool_log(f"Found {len(search_results)} results using web search", context=context)
     return search_results
 
 
