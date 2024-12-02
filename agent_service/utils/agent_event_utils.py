@@ -137,7 +137,11 @@ async def update_agent_help_requested(
     send_slack_if_requested: bool = True,
     slack_sender: Optional[SlackSender] = None,
     requesting_user: Optional[AuthzUser] = None,
+    send_if_already_help_requested: bool = False,
 ) -> None:
+    if not send_if_already_help_requested and (await db.is_agent_help_requested(agent_id=agent_id)):
+        logger.warning(f"{user_id=} requested help for {agent_id=}, but help already requested")
+        return
     await db.update_agent_help_requested(agent_id=agent_id, help_requested=help_requested)
     event = NotificationEvent(
         user_id=user_id,

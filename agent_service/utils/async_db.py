@@ -951,6 +951,15 @@ class AsyncDB:
         """
         await self.pg.generic_write(sql, params={"agent_id": agent_id, "is_draft": is_draft})
 
+    async def is_agent_help_requested(self, agent_id: str) -> bool:
+        sql = """
+        SELECT help_requested FROM agent.agents WHERE agent_id = %(agent_id)s
+        """
+        rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
+        if not rows:
+            return False
+        return rows[0]["help_requested"]
+
     async def update_agent_help_requested(self, agent_id: str, help_requested: bool) -> None:
         sql = """
         UPDATE agent.agents SET help_requested = %(help_requested)s WHERE agent_id = %(agent_id)s
