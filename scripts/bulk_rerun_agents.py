@@ -125,6 +125,7 @@ def replay_plan_runs(
     dry_run: bool = False,
     version: Optional[str] = None,
     no_gpt_cache: bool = False,
+    memory_multiplier: Optional[float] = None,
 ) -> None:
     sqs = boto3.resource("sqs", region_name="us-west-2")
     print(f"Using SQS queue: '{queue}'\n")
@@ -139,6 +140,8 @@ def replay_plan_runs(
             del message["retry_id"]
         if version:
             message["service_versions"] = {"agent_service_version": version}
+        if memory_multiplier:
+            message["memory_multiplier"] = memory_multiplier
         if dry_run:
             print("Would have sent:")
             pprint(message)
@@ -187,6 +190,12 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="If set, will bypass the GPT cache on rerun",
     )
+    parser.add_argument(
+        "-m",
+        "--memory-multiplier",
+        type=float,
+        help="If set, will multiply the memory by the specified amount when rerunning",
+    )
     return parser.parse_args()
 
 
@@ -230,6 +239,7 @@ def main() -> None:
         dry_run=args.dry_run,
         version=args.version,
         no_gpt_cache=args.no_gpt_cache,
+        memory_multiplier=args.memory_multiplier,
     )
 
 

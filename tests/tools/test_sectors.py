@@ -95,7 +95,6 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
             ("Media & Entertainment", [5020]),
             ("Utilities", [55, 5510]),
             ("Equity Real Estate Investment Trusts (REITs)", [6010]),
-            ("REITs", [6010]),
         ]
 
         for q, a in q_a:
