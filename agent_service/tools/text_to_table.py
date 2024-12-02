@@ -31,6 +31,7 @@ from agent_service.tools.table_utils.prompts import (
 )
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.constants import CURRENCY_SYMBOL_TO_ISO, ISO_CURRENCY_CODES
 from agent_service.utils.feature_flags import get_ld_flag
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
@@ -40,6 +41,7 @@ from agent_service.utils.text_utils import partition_to_smaller_text_sizes
 logger = logging.getLogger(__name__)
 
 COL_HEADER_REGEX = re.compile(r"\(([^)]+)\)")
+NUMBER_EXTRACT_REGEX = re.compile(r"(\D*)(\d+)\s*(\w*)")
 
 
 class TextToTableArgs(ToolArgs):
@@ -71,6 +73,34 @@ async def _extract_citation_from_value(
         val, text_group=text_group, context=context, premade_anchor_dict=citation_dict
     )
     return val, (citations or [])
+
+
+def extract_number_with_unit_from_text(
+    val: str,
+    return_int: bool = False,
+) -> Tuple[float | int | None, Optional[str]]:
+    val = val.replace(",", "")
+    m = re.search(NUMBER_EXTRACT_REGEX, val)
+    if not m:
+        return (None, None)
+    currency_symbol = m.group(1)
+    num_val = m.group(2)
+    unit = m.group(3)
+    if unit not in ISO_CURRENCY_CODES:
+        unit = None
+    if not unit and currency_symbol in CURRENCY_SYMBOL_TO_ISO:
+        unit = CURRENCY_SYMBOL_TO_ISO[currency_symbol]
+
+    num: float | int | None = None
+    try:
+        if return_int:
+            num = int(num_val)
+        else:
+            num = float(num_val)
+    except Exception:
+        pass
+
+    return (num, unit)
 
 
 async def _lookup_helper_wrapper(
@@ -113,6 +143,7 @@ async def _handle_table_col(
     new_vals = []
     cell_citations: dict[int, List[TextCitation]] = {}
     stock_metadata: dict[str, StockID] = {}
+    unit_set = set()
     if col_type == TableColumnType.STOCK:
         stock_metadata = await _lookup_stocks(stocks=values.tolist(), context=context)
         if len(stock_metadata) < len(values):
@@ -132,9 +163,29 @@ async def _handle_table_col(
         if stock_metadata and val in stock_metadata:
             val = stock_metadata[val]
 
+        if (
+            isinstance(val, str)
+            and col_type.is_float_type()
+            or col_type in (TableColumnType.INTEGER, TableColumnType.INTEGER_WITH_UNIT)
+        ):
+            num_val, unit = extract_number_with_unit_from_text(
+                val=val, return_int=not col_type.is_float_type()  # type: ignore
+            )
+            if num_val:
+                val = num_val
+                if unit:
+                    unit_set.add(unit)
+            else:
+                logger.warning("Failed to extract a number, falling back to a string column")
+                col_type = TableColumnType.STRING
+
         new_vals.append(val)
 
-    col_meta = TableColumnMetadata(label=col_name, col_type=col_type)
+    unit = None
+    if len(unit_set) == 1:
+        # Only add a unit to the column if all values agree
+        unit = unit_set.pop()
+    col_meta = TableColumnMetadata(label=col_name, col_type=col_type, unit=unit)
     col_meta.cell_citations = cell_citations  # type: ignore
     return col_meta, new_vals
 
@@ -152,7 +203,9 @@ be fed into an LLM to produce a Table output. You should use this tool if the
 user explicitly asks for something to be displayed as a table, or if they ask
 for some graphing or transformation that requires a table but you only have text
 data. You can also use this tool if you need a list of StockID from the texts,
-just pair it with the tool to extract stocks from a table.
+just pair it with the tool to extract stocks from a table. You also should never
+use this tool on a summarized text. ONLY use it on texts taken directly from
+their sources, with no intervening processing.
 """,
     category=ToolCategory.TABLE,
     enabled_checker_func=enabler_function,
