@@ -88,36 +88,31 @@ async def get_default_text_data_for_stocks(
     all_data: List[StockText] = []
 
     if not args.date_range:
-        # perform web search IF there is no date_range
-        if (
-            get_ld_flag(
-                flag_name="web-search-tool",
-                default=False,
-                user_context=get_user_context(user_id=context.user_id),
-            )
-            and context.user_settings.include_web_results
-        ):
-            await tool_log(
-                log="Getting company descriptions and news developments from the web",
-                context=context,
-            )
-            try:
-                news_data = await get_latest_news_for_companies(
-                    GetLatestNewsForCompaniesInput(
-                        stock_ids=stock_ids,
-                        get_developments=False,
-                    ),
-                    context=context,
-                )
-                all_data.extend(news_data)  # type: ignore
-            except Exception as e:
-                logger.exception(f"failed to get web news due to error: {e}")
-
         today = context.as_of_date.date() if context.as_of_date else datetime.date.today()
         start_date = today - datetime.timedelta(days=90)
         # Add an extra day to be sure we don't miss anything with timezone weirdness
         end_date = today + datetime.timedelta(days=1)
         args.date_range = DateRange(start_date=start_date, end_date=end_date)
+
+    async def _get_web_results() -> None:
+        await tool_log(
+            log="Getting company descriptions and news developments from the web",
+            context=context,
+        )
+        try:
+            news_data = await get_latest_news_for_companies(
+                GetLatestNewsForCompaniesInput(
+                    stock_ids=stock_ids,
+                    topic="",
+                    get_developments=False,
+                    num_google_urls=8 if len(args.stock_ids) <= 10 else 4,
+                    num_news_urls=4 if len(args.stock_ids) <= 10 else 2,
+                ),
+                context=context,
+            )
+            all_data.extend(news_data)  # type: ignore
+        except Exception as e:
+            logger.exception(f"failed to get web news due to error: {e}")
 
     async def _get_company_descriptions() -> None:
         try:
@@ -174,13 +169,26 @@ async def get_default_text_data_for_stocks(
         except Exception as e:
             logger.exception(f"failed to get user custom documents due to error: {e}")
 
-    await asyncio.gather(
+    tasks = [
         _get_company_descriptions(),
         _get_all_news_developments_about_companies(),
         _get_earnings_call_summaries(),
         _get_10k_10q_sec_filings(),
         _get_user_custom_documents(),
-    )
+    ]
+
+    if (
+        args.date_range.end_date >= datetime.date.today() - datetime.timedelta(days=1)
+        and get_ld_flag(
+            flag_name="web-search-tool",
+            default=False,
+            user_context=get_user_context(user_id=context.user_id),
+        )
+        and context.user_settings.include_web_results
+    ):
+        tasks.append(_get_web_results())
+
+    await asyncio.gather(*tasks)
 
     await tool_log(log=f"Combining all text data, size: {len(all_data)}", context=context)
     if len(all_data) == 0:

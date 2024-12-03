@@ -25,6 +25,7 @@ from agent_service.tools.product_comparison.constants import (
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.logs import async_perf_logger
@@ -80,6 +81,7 @@ async def get_urls_async(
     context: Optional[PlanRunContext] = None,
     headers: Dict[str, str] = HEADER,
     timeout: int = WEB_SEARCH_FETCH_URLS_TIMEOUT,
+    log_event_dict: Optional[dict] = None,
 ) -> List[str]:
     ssl_context = ssl.create_default_context()
     ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
@@ -104,6 +106,7 @@ async def get_urls_async(
                     "request_type": "serp_api",
                     "tool_calling": context.tool_name,
                     "url": url,
+                    **(log_event_dict or {}),
                 }
             else:
                 event_data = {}
@@ -136,6 +139,7 @@ async def get_news_urls_async(
     context: Optional[PlanRunContext] = None,
     headers: Dict[str, str] = HEADER,
     timeout: int = WEB_SEARCH_FETCH_URLS_TIMEOUT,
+    log_event_dict: Optional[dict] = None,
 ) -> List[str]:
     ssl_context = ssl.create_default_context()
     ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
@@ -162,6 +166,7 @@ async def get_news_urls_async(
                     "request_type": "serp_api",
                     "tool_calling": context.tool_name,
                     "url": url,
+                    **(log_event_dict or {}),
                 }
             else:
                 event_data = {}
@@ -228,6 +233,7 @@ async def req_and_scrape(
     ssl_context: Any,
     plan_context: PlanRunContext,
     should_print_errors: Optional[bool] = False,
+    log_event_dict: Optional[dict] = None,
 ) -> Optional[WebText]:
     start_time = datetime.now(timezone.utc).isoformat()
     event_data = {
@@ -239,6 +245,7 @@ async def req_and_scrape(
         "tool_calling": plan_context.tool_name,
         "url": url,
         "start_time_utc": start_time,
+        **(log_event_dict or {}),
     }
 
     # use aiohttp to asynchronously make URL requests and scrape using BeautifulSoup
@@ -281,7 +288,7 @@ async def req_and_scrape(
                     event_name="brd_request",
                     event_data={
                         **event_data,
-                        **{"result_text": text, "content_type": content_type},
+                        **{"content_type": content_type},
                     },
                 )
             elif "text/html" in content_type:
@@ -327,7 +334,7 @@ async def req_and_scrape(
                     event_name="brd_request",
                     event_data={
                         **event_data,
-                        **{"result_text": text, "content_type": content_type},
+                        **{"content_type": content_type},
                     },
                 )
             else:
@@ -434,6 +441,7 @@ async def get_web_texts_async(
     headers: Dict[str, str] = HEADER,
     timeout: int = WEB_SEARCH_PULL_SITES_TIMEOUT,
     should_print_errors: bool = False,
+    log_event_dict: Optional[dict] = None,
 ) -> Any:
     logger = get_prefect_logger(__name__)
 
@@ -479,10 +487,11 @@ async def get_web_texts_async(
                     ssl_context,
                     plan_context,
                     should_print_errors,
+                    log_event_dict,
                 )
                 for url in uncached_urls
             ]
-            uncached_res = await asyncio.gather(*tasks, return_exceptions=True)
+            uncached_res = await gather_with_concurrency(tasks, n=100, return_exceptions=True)
             uncached_res = [
                 res
                 for res in uncached_res

@@ -20,12 +20,20 @@ from agent_service.io_types.text import (
     Text,
 )
 from agent_service.planner.errors import EmptyOutputError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import (
+    ToolArgMetadata,
+    ToolArgs,
+    ToolCategory,
+    ToolRegistry,
+    tool,
+)
 from agent_service.tools.general_websearch import (
+    NEWS_URLS_TO_SCRAPE,
+    URLS_TO_SCRAPE,
+    GeneralStockWebSearchInput,
     GeneralWebSearchInput,
-    SingleStockWebSearchInput,
+    general_stock_web_search,
     general_web_search,
-    single_stock_web_search,
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -256,6 +264,8 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         "with articles between the start date and the end date that are relevant to the"
         " provided list of stocks, the output is a list of news developments. "
         "The default date_range is the last week. "
+        "You should use the function which also performs web searches in addition to getting developments "
+        "unless the client specifically asks for developments or doesn't want web searches! "
         "Never, ever pass an empty list of stocks to this function, you must only use this "
         "function when you have a specific list of stocks you want news for. If you have a general "
         "topic you want news about, use the tool which gets news for topics. "
@@ -421,16 +431,36 @@ def web_search_enabled(user_id: Optional[str]) -> bool:
 
 class GetLatestNewsForCompaniesInput(ToolArgs):
     stock_ids: List[StockID]
+    topic: Optional[str] = ""
+    date_range: Optional[DateRange] = None
     get_developments: Optional[bool] = True
+    num_google_urls: int = URLS_TO_SCRAPE
+    num_news_urls: int = NEWS_URLS_TO_SCRAPE
+    arg_metadata = {
+        "num_google_urls": ToolArgMetadata(hidden_from_planner=True),
+        "num_news_urls": ToolArgMetadata(hidden_from_planner=True),
+    }
 
 
 @tool(
     description=(
-        "This function searches the web for articles relevant to a list of stocks, "
-        "as well as calls an internal API which provides latest news developments. "
-        "The output is a list of Stock Texts obtained from both sources (web and developments). "
-        "This function must be called over get_all_news_developments_about_companies unless there is a date_range "
-        "or the user doesn't want web searches. This is your go to function when the client asks for news on a stock. "
+        "This function must be called over get_all_news_developments_about_companies unless stated otherwise below. "
+        "This function searches the web for articles relevant to a list of stocks within a month to the current date "
+        "as well as calls an internal API which provides latest news developments, The output is a list of Stock Texts "
+        "obtained from both sources (web and developments). "
+        "These outputted stock texts must be summarized before being shown to the client. "
+        "If the client specifies they want 'recent news' (news from yesterday, last x days, last week, "
+        "last x weeks, last month, last x months), USE THIS TOOL! If you don't use this tool, you will be fired!!!!"
+        "The input is a list of StockIDs as well as a single topic which is then appended to the end of each StockID "
+        "in the list of StockIDs. Each topic + stockID is then searched for on the web and we end up with the "
+        "results. The topic should be text which helps to guide the search towards the client's original prompt, be "
+        "sure the topic phrase makes sense to appear after a company name. Examples of this company + topic combo "
+        "include Samsung latest news, Apple mobile phone release or Huawei marketplace in the USA. "
+        "This is your go to function when the client asks for news on a stock. This function must be called "
+        "over get_all_news_developments_about_companies unless the user doesn't want web searches. "
+        "You should use this tool if the date range refers to recent times (yesterday, last x days, last week, "
+        "last x weeks, last month, last x months). "
+        "The fetched information will be from last month! "
         "If you only want news developments, call get_all_news_developments_about_companies instead"
         "If get_all_news_developments_about_companies is being called sometime before or after this function,"
         "set get_developments = False since we don't want to get the info twice, otherwise it should be True. "
@@ -445,8 +475,9 @@ class GetLatestNewsForCompaniesInput(ToolArgs):
         "Never, ever use get_default_text_data_for_stock as a substitute for this tool if the "
         "client says they want to look 'news' data for companies, you must use this tool "
         "even if multiple data sources are mentioned."
-        "Remember that this tool will always fetch the latest information on stocks, so use this if the client is "
-        "looking for information within the last month."
+        "it is VERY important that a text summarization tool is called before the end of a plan containing this tool! "
+        "DO not EVER directly output the returned text from this tool! "
+        "AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL or you will be fired, always summarize first!!!"
     ),
     category=ToolCategory.NEWS,
     tool_registry=ToolRegistry,
@@ -457,13 +488,25 @@ async def get_latest_news_for_companies(
 ) -> List[StockText]:
     tasks = []
 
+    # by taking in a daterange, this tool is better used by the planner
+    current_day = datetime.date.today()
     if context.user_settings.include_web_results:
         web_search_context = deepcopy(context)
         web_search_context.skip_task_logging = True
-        for stock_id in args.stock_ids:
+        if (
+            not args.date_range
+            or args.date_range.end_date >= current_day - datetime.timedelta(days=1)
+            or args.date_range.start_date <= datetime.date(2010, 1, 1)
+        ):
+            logger.info("Using websearch for latest news search")
             tasks.append(
-                single_stock_web_search(
-                    SingleStockWebSearchInput(stock_id=stock_id, query=stock_id.company_name),
+                general_stock_web_search(
+                    GeneralStockWebSearchInput(
+                        stock_ids=args.stock_ids,
+                        topic=(args.topic or ""),
+                        num_google_urls=args.num_google_urls if len(args.stock_ids) <= 10 else 2,
+                        num_news_urls=args.num_news_urls if len(args.stock_ids) <= 10 else 4,
+                    ),
                     context=web_search_context,
                 )
             )
@@ -610,6 +653,12 @@ class GetNewsAndWebPagesForTopicsInput(ToolArgs):
     topics: List[str]
     date_range: Optional[DateRange] = None
     max_num_articles_per_topic: Optional[int] = None
+    num_google_urls: int = URLS_TO_SCRAPE
+    num_news_urls: int = NEWS_URLS_TO_SCRAPE
+    arg_metadata = {
+        "num_google_urls": ToolArgMetadata(hidden_from_planner=True),
+        "num_news_urls": ToolArgMetadata(hidden_from_planner=True),
+    }
 
 
 @tool(
@@ -667,7 +716,11 @@ async def get_news_and_web_pages_for_topics(
     ):
         tasks.append(
             general_web_search(
-                GeneralWebSearchInput(queries=[topic for topic in args.topics]),
+                GeneralWebSearchInput(
+                    queries=[topic for topic in args.topics],
+                    num_google_urls=args.num_google_urls,
+                    num_news_urls=args.num_news_urls,
+                ),
                 context=context,
             )
         )

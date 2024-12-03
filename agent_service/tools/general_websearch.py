@@ -5,7 +5,13 @@ from typing import List, Optional
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import WebStockText, WebText
 from agent_service.planner.errors import EmptyOutputError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import (
+    ToolArgMetadata,
+    ToolArgs,
+    ToolCategory,
+    ToolRegistry,
+    tool,
+)
 from agent_service.tools.product_comparison.brightdata_websearch import (
     get_news_urls_async,
     get_urls_async,
@@ -16,8 +22,8 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.feature_flags import get_ld_flag
 
-URLS_TO_SCRAPE = 5
-NEWS_URLS_TO_SCRAPE = 10
+URLS_TO_SCRAPE = 4
+NEWS_URLS_TO_SCRAPE = 8
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +36,14 @@ def prepend_url_with_https(url: str) -> str:
 
 def enabler_function(user_id: Optional[str]) -> bool:
     result = get_ld_flag("web-search-tool", default=False, user_context=user_id)
-    logger.info(f"Web search tool being used: {result}")
     return result
 
 
 class SingleStockWebSearchInput(ToolArgs):
     stock_id: StockID
     query: str
+    num_google_urls: int = URLS_TO_SCRAPE
+    num_news_urls: int = NEWS_URLS_TO_SCRAPE
 
 
 @tool(
@@ -51,6 +58,7 @@ class SingleStockWebSearchInput(ToolArgs):
     ),
     category=ToolCategory.WEB,
     tool_registry=ToolRegistry,
+    enabled=False,
     enabled_checker_func=enabler_function,
 )
 async def single_stock_web_search(
@@ -61,10 +69,16 @@ async def single_stock_web_search(
         return []
     query = args.query
     stock_id = args.stock_id
-
     tasks = [
-        get_urls_async([query], URLS_TO_SCRAPE, context=context),
-        get_news_urls_async([query], NEWS_URLS_TO_SCRAPE, context=context),
+        get_urls_async(
+            [query],
+            args.num_google_urls,
+            context=context,
+            log_event_dict={"gbi_id": stock_id.gbi_id},
+        ),
+        get_news_urls_async(
+            [query], args.num_news_urls, context=context, log_event_dict={"gbi_id": stock_id.gbi_id}
+        ),
     ]
     results = await gather_with_concurrency(tasks)
 
@@ -72,7 +86,9 @@ async def single_stock_web_search(
     for result in results:
         urls.extend(result)
 
-    search_results = await get_web_texts_async(urls=urls, plan_context=context)
+    search_results = await get_web_texts_async(
+        urls=urls, plan_context=context, log_event_dict={"gbi_id": stock_id.gbi_id}
+    )
     web_stock_text_results = [
         WebStockText(
             stock_id=stock_id,
@@ -83,13 +99,83 @@ async def single_stock_web_search(
         )
         for web_text in search_results
     ]
-    await tool_log(f"Found {len(web_stock_text_results)} results using web search", context=context)
     return web_stock_text_results
+
+
+class GeneralStockWebSearchInput(ToolArgs):
+    stock_ids: List[StockID]
+    topic: str
+    num_google_urls: int = URLS_TO_SCRAPE
+    num_news_urls: int = NEWS_URLS_TO_SCRAPE
+    arg_metadata = {
+        "num_google_urls": ToolArgMetadata(hidden_from_planner=True),
+        "num_news_urls": ToolArgMetadata(hidden_from_planner=True),
+    }
+
+
+@tool(
+    description=(
+        "This function takes in a list of StockIDs and a single topic which is then appended to the end of each StockID"
+        " in the list of StockIDs. Each topic + stockID is then searched for on the web and we end up with the "
+        "results. The topic should be text which helps to guide the search towards the client's original prompt, be "
+        "sure the topic phrase makes sense to appear after a company name. Examples of this company + topic combo "
+        "include Samsung latest news, Apple mobile phone release or Huawei marketplace in the USA. "
+        "Unless not specified within a sample plan, always call the summarize_texts tool sometime after this tool. "
+        "Again, it is VERY important that the "
+        "summarize_texts tool is called before the end of a plan containing this tool! DO not EVER directly output "
+        "the returned text from this tool! AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
+    ),
+    category=ToolCategory.WEB,
+    tool_registry=ToolRegistry,
+    enabled_checker_func=enabler_function,
+)
+async def general_stock_web_search(
+    args: GeneralStockWebSearchInput, context: PlanRunContext
+) -> List[WebStockText]:
+    if not context.user_settings.include_web_results:
+        await tool_log("Skipping web search due to user setting", context=context)
+        return []
+
+    if len(args.stock_ids) == 0:
+        logger.error("No stocks were inputted for latest news search")
+        return []
+
+    tasks = []
+    for stock_id in args.stock_ids:
+        tasks.append(
+            single_stock_web_search(
+                SingleStockWebSearchInput(
+                    stock_id=stock_id,
+                    query=f"{stock_id.company_name} {args.topic}",
+                    num_google_urls=args.num_google_urls,
+                    num_news_urls=args.num_news_urls,
+                ),
+                context=context,
+            )
+        )
+
+    results = await gather_with_concurrency(tasks, n=100)
+    texts: List[WebStockText] = []
+    for result in results:
+        texts.extend(result)
+
+    if len(texts) == 0:
+        logger.error("Found no web articles for the provided stocks and topic")
+
+    await tool_log(f"Found {len(texts)} results using web search", context=context)
+    return texts
 
 
 class GeneralWebSearchInput(ToolArgs):
     queries: List[str]
     urls: Optional[List[str]] = []
+    num_google_urls: int = URLS_TO_SCRAPE
+    num_news_urls: int = NEWS_URLS_TO_SCRAPE
+
+    arg_metadata = {
+        "num_google_urls": ToolArgMetadata(hidden_from_planner=True),
+        "num_news_urls": ToolArgMetadata(hidden_from_planner=True),
+    }
 
 
 @tool(
@@ -112,8 +198,8 @@ async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContex
         await tool_log("Skipping web search due to user setting", context=context)
         return []
     tasks = [
-        get_urls_async(args.queries, URLS_TO_SCRAPE, context=context),
-        get_news_urls_async(args.queries, NEWS_URLS_TO_SCRAPE, context=context),
+        get_urls_async(args.queries, args.num_google_urls, context=context),
+        get_news_urls_async(args.queries, args.num_news_urls, context=context),
     ]
     results = await gather_with_concurrency(tasks)
 
