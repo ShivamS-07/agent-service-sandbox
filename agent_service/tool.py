@@ -240,74 +240,74 @@ class ToolCategory(enum.StrEnum):
         if self == ToolCategory.GRAPH:
             return "Tools for doing graphs and charts"
 
-        if self == ToolCategory.STOCK:
+        elif self == ToolCategory.STOCK:
             return "Tools for basic stock and ETF lookup"
 
-        if self == ToolCategory.STOCK_GROUPS:
+        elif self == ToolCategory.STOCK_GROUPS:
             return (
                 "Tools for related to grouping stocks, including sectors, industries, and countries"
             )
 
-        if self == ToolCategory.STOCK_FILTERS:
+        elif self == ToolCategory.STOCK_FILTERS:
             return "Tools for filtering stocks"
 
-        if self == ToolCategory.STOCK_SENTIMENT:
+        elif self == ToolCategory.STOCK_SENTIMENT:
             return "Tools for identifying the sentiment associated with stocks, including recommendations"
 
-        if self == ToolCategory.PEERS:
+        elif self == ToolCategory.PEERS:
             return "Tools that involve company peers and competitors"
 
-        if self == ToolCategory.TEXT_RETRIEVAL:
+        elif self == ToolCategory.TEXT_RETRIEVAL:
             return "Other tools for general text retrieval, when specific type is not specified"
 
-        if self == ToolCategory.CUSTOM_DOCS:
+        elif self == ToolCategory.CUSTOM_DOCS:
             return (
                 "Tools for retrieving custom (uploadied) user documents, including analyst reports"
             )
 
-        if self == ToolCategory.LIST:
+        elif self == ToolCategory.LIST:
             return "Tools for manipulating lists (of stocks, texts, etc.)"
 
-        if self == ToolCategory.DATES:
+        elif self == ToolCategory.DATES:
             return "Tools related to dates"
 
-        if self == ToolCategory.TEXT_WRITER:
+        elif self == ToolCategory.TEXT_WRITER:
             return "Tools that use LLMs to analyze text data and produce written texts"
 
-        if self == ToolCategory.EARNINGS:
+        elif self == ToolCategory.EARNINGS:
             return "Tools that involve earnings calls"
 
-        if self == ToolCategory.STATISTICS:
+        elif self == ToolCategory.STATISTICS:
             return (
                 "Tools that work with the database of statistics, potentially relevant to "
                 "any quantitative analysis"
             )
 
-        if self == ToolCategory.TABLE:
+        elif self == ToolCategory.TABLE:
             return (
                 "Tools that do operations over tables, required for most calculations"
                 " and filtering and rankings of stocks based on statistics"
             )
 
-        if self == ToolCategory.OUTPUT:
+        elif self == ToolCategory.OUTPUT:
             return "Tools that prepare final outputs for visualization"
 
-        if self == ToolCategory.NEWS:
+        elif self == ToolCategory.NEWS:
             return "Tools that involve news"
 
-        if self == ToolCategory.THEME:
+        elif self == ToolCategory.THEME:
             return "Tools that involve macroeconomic themes"
 
-        if self == ToolCategory.COMMENTARY:
+        elif self == ToolCategory.COMMENTARY:
             return "Tools that involve writing commentary"
 
-        if self == ToolCategory.PORTFOLIO:
+        elif self == ToolCategory.PORTFOLIO:
             return "Tools that involve user portfolios and watchlists"
 
-        if self == ToolCategory.AUTOMATION:
+        elif self == ToolCategory.AUTOMATION:
             return "Tools that involve automating tasks and notifying users"
 
-        if self == ToolCategory.KPI:
+        elif self == ToolCategory.KPI:
             return (
                 "Tools that involve metrics that are company, market, industry, "
                 "segment, or product specific. There are not general or broad line items "
@@ -315,21 +315,22 @@ class ToolCategory(enum.StrEnum):
                 "under the 'statistics' category."
             )
 
-        if self == ToolCategory.SEC_FILINGS:
+        elif self == ToolCategory.SEC_FILINGS:
             return "Tools that involve SEC filings"
 
-        if self == ToolCategory.COMPETITIVE_ANALYSIS:
+        elif self == ToolCategory.COMPETITIVE_ANALYSIS:
             return "Tools used in determining the relative ranking of companies in particular product markets"
 
-        if self == ToolCategory.IDEAS:
+        elif self == ToolCategory.IDEAS:
             return "Tools that involve brainstormed ideas"
 
-        if self == ToolCategory.WEB:
+        elif self == ToolCategory.WEB:
             return "Tools that involve web searching"
 
-        if self == ToolCategory.STRATEGY:
+        elif self == ToolCategory.STRATEGY:
             return "Tools that relate to quantitative strategies/model from Boosted 1"
 
+        raise ValueError(f"ToolCategory is set to an Unsupported or Unimplemented type: {self}")
         return ""
 
 
@@ -344,19 +345,17 @@ class ToolRegistry:
     _TOOL_NAME_TO_CATEGORY: Dict[str, ToolCategory] = {}
 
     @classmethod
-    def register_tool(cls, tool: Tool, category: ToolCategory = ToolCategory.STOCK) -> None:
+    def register_tool(cls, tool: Tool, category: ToolCategory) -> None:
         cls._REGISTRY_CATEGORY_MAP[category][tool.name] = tool
         cls._REGISTRY_ALL_TOOLS_MAP[tool.name] = tool
         cls._TOOL_NAME_TO_CATEGORY[tool.name] = category
 
     @classmethod
-    def get_tool_in_category(
-        cls, tool_name: str, category: ToolCategory = ToolCategory.STOCK
-    ) -> Tool:
+    def get_tool_in_category(cls, tool_name: str, category: ToolCategory) -> Tool:
         return cls._REGISTRY_CATEGORY_MAP[category][tool_name]
 
     @classmethod
-    def get_all_tools_in_category(cls, category: ToolCategory = ToolCategory.STOCK) -> List[Tool]:
+    def get_all_tools_in_category(cls, category: ToolCategory) -> List[Tool]:
         return list(cls._REGISTRY_CATEGORY_MAP[category].values())
 
     @classmethod
