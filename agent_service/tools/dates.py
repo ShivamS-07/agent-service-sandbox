@@ -223,7 +223,10 @@ async def get_date_range(args: GetDateRangeInput, context: PlanRunContext) -> Da
         f" and an end date of {date_range_json[END_DATE]}",
         context=context,
     )
-    return DateRange(start_date=date_range_json[START_DATE], end_date=date_range_json[END_DATE])
+    return DateRange(
+        start_date=DateRange.clean_and_convert_str_to_date(date_range_json[START_DATE]),
+        end_date=DateRange.clean_and_convert_str_to_date(date_range_json[END_DATE]),
+    )
 
 
 class DateRangeInput(ToolArgs):
