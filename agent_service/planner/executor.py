@@ -409,6 +409,9 @@ async def _run_execution_plan_impl(
     )
     node_parent_map: Dict[ToolExecutionNode, Set[ToolExecutionNode]] = plan.get_node_parent_map()
     chatbot = Chatbot(agent_id=context.agent_id)
+
+    existing_output_titles = db.get_agent_output_titles(agent_id=context.agent_id)
+    new_output_titles = {}
     ###########################################
     # PLAN RUN BEGINS
     ###########################################
@@ -682,6 +685,10 @@ async def _run_execution_plan_impl(
             final_outputs.extend(split_outputs)
             final_outputs_with_ids.extend(outputs_with_ids)
 
+            new_output_titles.update(
+                {output.output.title: output.output_id for output in outputs_with_ids}  # type: ignore
+            )
+
         if log_all_outputs:
             logger.info(f"Output of step '{step.tool_name}': {output_for_log(tool_output)}")
 
@@ -763,10 +770,11 @@ async def _run_execution_plan_impl(
             output_json=True,
         )
 
-        message = await chatbot.generate_execution_complete_response(
-            chat_context=chat_context,
-            execution_plan=plan,
-            outputs=final_outputs,
+        # add widget chip to the chat message to link to the new widgets
+        message = chatbot.generate_execution_complete_response(
+            existing_output_titles=existing_output_titles,
+            new_output_titles=new_output_titles,
+            plan_run_id=context.plan_run_id,
         )
         await send_chat_message(
             message=Message(

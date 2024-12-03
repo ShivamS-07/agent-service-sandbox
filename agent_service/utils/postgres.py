@@ -848,6 +848,21 @@ class Postgres(PostgresBase):
         rows = self.generic_read(sql, params={"workspace_id": workspace_id})
         return rows[0]["linked_portfolio_id"] if rows else None
 
+    def get_agent_output_titles(self, agent_id: str) -> Dict[str, str]:
+        sql = """
+        SELECT (output::jsonb)->>'title' AS title, output_id::TEXT
+        FROM agent.agent_outputs
+        WHERE plan_run_id = (
+            SELECT plan_run_id
+            FROM agent.agent_outputs
+            WHERE agent_id = %(agent_id)s
+            ORDER BY created_at DESC
+            LIMIT 1
+        )
+        """
+        rows = self.generic_read(sql, params={"agent_id": agent_id})
+        return {row["title"]: row["output_id"] for row in rows}
+
 
 def get_psql(skip_commit: bool = False, read_only: bool = False) -> Postgres:
     """

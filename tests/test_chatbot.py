@@ -109,11 +109,10 @@ class TestPlans(IsolatedAsyncioTestCase):
         )
         print("postplan_response: ", postplan_response)
         chat_context.messages.append(Message(message=postplan_response, is_user_message=False))
-        fake_output = [
-            "Meta released a new open source model Llama 3 while Microsoft continues to milk OpenAI for all their worth. By comparison, all the news about Apple is how they are getting left in dust by everyone else. Losers!"  # noqa: E501
-        ]
-        complete_response = await chatbot.generate_execution_complete_response(
-            chat_context, execution_plan, fake_output
+        complete_response = chatbot.generate_execution_complete_response(
+            existing_output_titles={},
+            new_output_titles={"Summary of AAPL news": "123"},
+            plan_run_id="123",
         )
         print("complete_response: ", complete_response)
         chat_context.messages.append(Message(message=complete_response, is_user_message=False))

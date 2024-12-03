@@ -39,7 +39,7 @@ class FirstAction(StrEnum):
     NONE = "NONE"
 
 
-NO_CHANGE_MESSAGE = "Report updated, but no important differences found."
+NO_CHANGE_MESSAGE = "Agent analysis completed, but no important differences found."
 CHAT_DIFF_TEMPLATE = "Report updated with important changes found:\n{diff}"
 
 MAX_SAMPLE_INPUT_MULTIPLER = 4

@@ -1,12 +1,11 @@
+import json
 from datetime import date
-from typing import List, Optional, Type
+from typing import Optional, Type
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
 from agent_service.chatbot.prompts import (
     AGENT_DESCRIPTION_PROMPT,
-    COMPLETE_EXECUTION_MAIN_PROMPT,
-    COMPLETE_EXECUTION_SYS_PROMPT,
     ERROR_REPLAN_POSTPLAN_MAIN_PROMPT,
     ERROR_REPLAN_POSTPLAN_SYS_PROMPT,
     ERROR_REPLAN_PREPLAN_MAIN_PROMPT,
@@ -40,7 +39,6 @@ from agent_service.chatbot.prompts import (
 )
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.planner.planner_types import (
     ErrorInfo,
     ExecutionPlan,
@@ -48,7 +46,6 @@ from agent_service.planner.planner_types import (
 )
 from agent_service.tool import ToolRegistry
 from agent_service.types import ChatContext
-from agent_service.utils.async_utils import gather_with_concurrency, to_awaitable
 from agent_service.utils.gpt_logging import chatbot_context
 from agent_service.utils.logs import async_perf_logger
 
@@ -143,31 +140,6 @@ class Chatbot:
             tools=self.tool_registry.get_tool_str(),
         )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=500)
-        return result
-
-    async def generate_execution_complete_response(
-        self, chat_context: ChatContext, execution_plan: ExecutionPlan, outputs: List[IOType]
-    ) -> str:
-        output_list = await gather_with_concurrency(
-            [
-                (
-                    output.to_gpt_input()
-                    if isinstance(output, ComplexIOBase)
-                    else to_awaitable(str(output))
-                )
-                for output in outputs
-            ]
-        )
-        output_str = "\n".join(list(output_list))
-        main_prompt = COMPLETE_EXECUTION_MAIN_PROMPT.format(
-            chat_context=chat_context.get_gpt_input(),
-            plan=execution_plan.get_plan_steps_for_gpt(),
-            output=output_str,
-        )
-        sys_prompt = COMPLETE_EXECUTION_SYS_PROMPT.format(
-            agent_description=await self.prepare_agent_description()
-        )
-        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=100)
         return result
 
     async def generate_input_update_no_action_response(self, chat_context: ChatContext) -> str:
@@ -280,3 +252,23 @@ class Chatbot:
             today=str(date.today().strftime("%Y-%m-%d"))
         ).filled_prompt
         return agent_description
+
+    def generate_execution_complete_response(
+        self, existing_output_titles: dict, new_output_titles: dict, plan_run_id: str
+    ) -> str:
+        chat_anchor_links = [
+            {
+                "type": "output_widget",
+                "name": title,
+                "output_id": output_id,
+                "plan_run_id": plan_run_id,
+            }
+            for title, output_id in new_output_titles.items()
+            if title not in existing_output_titles
+        ]
+        chat_anchor_link_str = ", ".join(
+            "```" + json.dumps(chat_anchor_link) + "```" for chat_anchor_link in chat_anchor_links
+        )
+        FOLLOW_UP_QUESTION = "Need anything else?"
+        message = f"The report for {chat_anchor_link_str} is ready. {FOLLOW_UP_QUESTION}"
+        return message
