@@ -236,7 +236,7 @@ async def sector_identifier_lookup(
 
     all_sectors = get_all_gics_classifications()
     lookup_prompt = SECTOR_LOOKUP_PROMPT.format(
-        lookup_list=json.dumps(all_sectors, indent=4), text_input=args.sector_name
+        lookup_list=json.dumps(all_sectors, sort_keys=True, indent=4), text_input=args.sector_name
     )
 
     result = await llm.do_chat_w_sys_prompt(
