@@ -105,8 +105,8 @@ async def get_default_text_data_for_stocks(
                     stock_ids=stock_ids,
                     topic="",
                     get_developments=False,
-                    num_google_urls=8 if len(args.stock_ids) <= 10 else 4,
-                    num_news_urls=4 if len(args.stock_ids) <= 10 else 2,
+                    num_google_urls=4 if len(args.stock_ids) <= 10 else 2,
+                    num_news_urls=8 if len(args.stock_ids) <= 10 else 4,
                 ),
                 context=context,
             )
