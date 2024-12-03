@@ -887,7 +887,7 @@ async def _run_execution_plan_impl(
 
                 email_subject_prompt = EMAIL_SUBJECT_MAIN_PROMPT.format(
                     email_content=(
-                        short_diff_summary + "\n" + whats_new_summary if whats_new_summary else ""
+                        short_diff_summary + "\n" + (whats_new_summary if whats_new_summary else "")
                     )
                 )
                 email_subject = await llm.do_chat_w_sys_prompt(
