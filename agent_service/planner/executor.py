@@ -445,9 +445,13 @@ async def _run_execution_plan_impl(
                 plan_run_id=context.plan_run_id, task_id=step.tool_task_id, tool_name=step.tool_name
             )
             if task_run_info:
+                logger.info(f"{step=} , {str(task_run_info)[:1000]=}")
                 _, tool_output_str, _, _ = task_run_info
                 if step.output_variable_name and tool_output_str:
                     tool_output = load_io_type(tool_output_str)
+                    logger.info(
+                        f"{step=} , {str(tool_output_str)[:1000]=} , {repr(tool_output)[:1000]=}"
+                    )
                     if tool_output:
                         variable_lookup[step.output_variable_name] = tool_output
                         logger.info(
@@ -480,6 +484,7 @@ async def _run_execution_plan_impl(
             db=async_db,
         )
 
+        logger.info(f"{repr(tool_output)[:1000]=}")
         # if the tool output already exists in the map, just use that
         if (
             override_task_output_lookup
@@ -509,10 +514,19 @@ async def _run_execution_plan_impl(
         else:
             # Run the tool, store its output, errors and replan
             try:
-                step_args = tool.input_type(**resolved_args)
+                try:
+                    step_args = tool.input_type(**resolved_args)
+                except Exception as e:
+                    logger.error(f"Could not create args: {tool.input_type=}")
+                    logger.error(f"{resolved_args=}")
+                    logger.error(f"{variable_lookup=}")
+                    logger.error(f"{step=}")
+                    raise e
+
                 if execution_log is not None:
                     execution_log[step.tool_name].append(resolved_args)
                 tool_output = await tool.func(args=step_args, context=context)
+                logger.info(f"{step.tool_name=} {repr(tool_output)[:1000]=}")
             except NonRetriableError as nre:
                 logger.exception(f"Step '{step.tool_name}' failed due to {nre}")
 
@@ -550,6 +564,7 @@ async def _run_execution_plan_impl(
                 await send_chat_message(message=msg, db=db)
                 raise
             except AgentCancelledError as ace:
+                logger.info("agent cancelled")
                 await publish_agent_execution_status(
                     agent_id=context.agent_id,
                     plan_run_id=context.plan_run_id,
@@ -588,6 +603,7 @@ async def _run_execution_plan_impl(
                         db=async_db,
                     )
 
+                    logger.info("Execution plan has been cancelled")
                     # NEVER replan if the plan is already cancelled.
                     raise AgentCancelledError("Execution plan has been cancelled")
 
@@ -605,6 +621,7 @@ async def _run_execution_plan_impl(
                     retrying = await handle_error_in_execution(context, e, step, do_chat)
 
                 if retrying:
+                    logger.warning("Plan run attempt failed, retrying")
                     raise AgentRetryError("Plan run attempt failed, retrying")
 
                 if (
@@ -694,6 +711,10 @@ async def _run_execution_plan_impl(
 
         # Store the output in the associated variable
         if step.output_variable_name:
+            logger.info(
+                f"Storing output of {step.tool_name=} into {step.output_variable_name=}"
+                f" value: {repr(tool_output)[:1000]}"
+            )
             variable_lookup[step.output_variable_name] = tool_output
 
         # Update the chat context in case of new messages

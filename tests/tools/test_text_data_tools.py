@@ -4,7 +4,9 @@ from unittest import IsolatedAsyncioTestCase
 
 from agent_service.io_types.stock import StockID
 from agent_service.tools.other_text import (
+    GetAllStocksFromTextInput,
     GetAllTextDataForStocksInput,
+    get_all_stocks_from_text,
     get_default_text_data_for_stocks,
 )
 from agent_service.types import PlanRunContext
@@ -34,3 +36,19 @@ class TestTextData(IsolatedAsyncioTestCase):
         for text in all_data:
             types.add(type(text))
         self.assertEqual(len(types), 4)
+
+    async def test_get_all_stocks_from_text(self):
+        stock_text_data = await get_default_text_data_for_stocks(
+            args=GetAllTextDataForStocksInput(
+                stock_ids=[StockID(gbi_id=2781, symbol="", isin="", company_name="")]
+            ),
+            context=self.context,
+        )
+        data = await get_all_stocks_from_text(
+            args=GetAllStocksFromTextInput(
+                stock_texts=stock_text_data,
+            ),
+            context=self.context,
+        )
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0].gbi_id, 2781)

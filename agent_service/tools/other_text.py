@@ -207,3 +207,31 @@ async def get_all_text_data_for_stocks(
     args: GetAllTextDataForStocksInput, context: PlanRunContext
 ) -> List[StockText]:
     return await get_default_text_data_for_stocks(args, context)  # type: ignore
+
+
+class GetAllStocksFromTextInput(ToolArgs):
+    stock_texts: List[StockText]
+
+
+@tool(
+    description=("This function takes a lists of stock texts and returns a list of stock ids."),
+    category=ToolCategory.STOCK,
+    tool_registry=ToolRegistry,
+    enabled=True,
+    store_output=False,
+)
+async def get_all_stocks_from_text(
+    args: GetAllStocksFromTextInput, context: PlanRunContext
+) -> List[StockID]:
+    groups: dict[int, StockID] = {}
+    for stock_text in args.stock_texts:
+        if stock_text is None or stock_text.stock_id is None:
+            continue
+
+        gbi_id = stock_text.stock_id.gbi_id
+        stock_id = stock_text.stock_id
+        if gbi_id not in groups:
+            groups[gbi_id] = stock_id
+        else:
+            groups[gbi_id]._extend_history_from(stock_id)
+    return list(groups.values())
