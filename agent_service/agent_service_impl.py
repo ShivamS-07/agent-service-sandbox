@@ -100,6 +100,9 @@ from agent_service.endpoints.models import (
     GetDividendYieldResponse,
     GetEarningsStatusResponse,
     GetEarningsSummaryResponse,
+    GetEtfAllocationsResponse,
+    GetEtfHoldingsResponse,
+    GetEtfSummaryResponse,
     GetExecutiveEarningsSummaryResponse,
     GetHistoricalPricesRequest,
     GetHistoricalPricesResponse,
@@ -208,6 +211,9 @@ from agent_service.external.webserver import (
     get_company_description,
     get_earnings_status,
     get_earnings_summary,
+    get_etf_allocations,
+    get_etf_holdings,
+    get_etf_summary,
     get_executive_earnings_summary,
     get_ordered_securities,
     get_security,
@@ -2846,6 +2852,26 @@ class AgentServiceImpl:
         return GetUpcomingEarningsResponse(
             earnings=GetUpcomingEarningsResponse.UpcomingEarnings(**earnings)
         )
+
+    async def get_etf_summary(self, user: User, gbi_id: int) -> GetEtfSummaryResponse:
+        summary = await get_etf_summary(user_id=user.user_id, gbi_id=gbi_id)
+        if summary is None:
+            return GetEtfSummaryResponse(summary=None)
+        return GetEtfSummaryResponse(summary=GetEtfSummaryResponse.EtfSummary(**summary))
+
+    async def get_etf_allocations(self, user: User, gbi_id: int) -> GetEtfAllocationsResponse:
+        allocations = await get_etf_allocations(user_id=user.user_id, gbi_id=gbi_id)
+        if allocations is None:
+            return GetEtfAllocationsResponse(allocations=None)
+        return GetEtfAllocationsResponse(
+            allocations=GetEtfAllocationsResponse.EtfAllocations(**allocations)
+        )
+
+    async def get_etf_holdings(self, user: User, gbi_id: int) -> GetEtfHoldingsResponse:
+        holdings = await get_etf_holdings(user_id=user.user_id, gbi_id=gbi_id)
+        if holdings is None:
+            return GetEtfHoldingsResponse(holdings_data=None)
+        return GetEtfHoldingsResponse(holdings_data=GetEtfHoldingsResponse.EtfHoldings(**holdings))
 
     async def update_qc_agent(self, agent_qc: AgentQC) -> bool:
         try:

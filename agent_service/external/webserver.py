@@ -655,3 +655,179 @@ async def get_upcoming_earnings(user_id: str, gbi_id: int) -> Optional[dict]:
     ):
         return None
     return resp["data"]["bulkUpcomingEarningsReports"][0]
+
+
+####################################################################################################
+# GetEtfSummary
+####################################################################################################
+@async_perf_logger
+async def get_etf_summary(user_id: str, gbi_id: int) -> Optional[dict]:
+    gql_query = """
+    query GetETFSummary($gbiId: Int!) {
+        etfSummary(etfId: $gbiId) {
+            description
+            benchmarks {
+                id
+                name
+            }
+            markets {
+                id
+                name
+            }
+            styles {
+                id
+                name
+            }
+            spiqSectors {
+                id
+                name
+            }
+            dividendFrequency {
+            id
+                name
+            }
+            lastYear {
+                low
+                high
+            }
+            lastDay {
+                low
+                high
+            }
+            lastClosePrice
+            consensusPriceTarget
+            size
+            average3MDailyVolume
+            dividendYield
+            netExpenseRatio
+            inceptionDate
+            activeUntilDate
+            performanceAsOfDate
+        }
+    }
+    """
+    variables = {
+        "gbiId": gbi_id,
+    }
+    resp = await _get_graphql(user_id=user_id, query=gql_query, variables=variables)
+    if resp is None or "data" not in resp or "etfSummary" not in resp["data"]:
+        return None
+    return resp["data"]["etfSummary"]
+
+
+####################################################################################################
+# GetEtfAllocations
+####################################################################################################
+@async_perf_logger
+async def get_etf_allocations(user_id: str, gbi_id: int) -> Optional[dict]:
+    gql_query = """
+    query etfAllocations($etfGbiId: Int!, $startDate: String, $endDate: String) {
+        etfAllocations(
+            etfGbiId: $etfGbiId
+            startDate: $startDate
+            endDate: $endDate
+        ) {
+            marketCapAllocations {
+                allocations {
+                    marketCap {
+                        label
+                        maxMarketCap
+                        minMarketCap
+                    }
+                    weight
+                }
+                asOfDate
+                etfGbiId
+            }
+            sectorRegionAllocations {
+                startDate
+                endDate
+                isoCurrency
+                regionAllocations {
+                    country {
+                        name
+                    }
+                    isoCountryCode
+                    endGrossWeight
+                    endShortWeight
+                    endLongWeight
+                    endNetWeight
+                }
+                sectorAllocations {
+                    sector {
+                        name
+                    }
+                    sectorId
+                    endGrossWeight
+                    endShortWeight
+                    endLongWeight
+                    endNetWeight
+                }
+            }
+        }
+    }
+    """
+    variables = {
+        "etfGbiId": gbi_id,
+        "startDate": datetime.datetime.now().strftime("%Y-%m-%d"),
+        "endDate": datetime.datetime.now().strftime("%Y-%m-%d"),
+    }
+    resp = await _get_graphql(user_id=user_id, query=gql_query, variables=variables)
+    if resp is None or "data" not in resp or "etfAllocations" not in resp["data"]:
+        return None
+    return resp["data"]["etfAllocations"]
+
+
+####################################################################################################
+# GetEtfHoldings
+####################################################################################################
+@async_perf_logger
+async def get_etf_holdings(user_id: str, gbi_id: int) -> Optional[dict]:
+    gql_query = """
+    query EtfHoldingsForDate(
+        $etfIds: [Int!]!
+        $asOfDate: String!
+        $flattenFundOfFunds: Boolean
+    ) {
+        etfHoldingsForDate(
+            etfIds: $etfIds
+            asofDate: $asOfDate
+            flattenFundOfFunds: $flattenFundOfFunds
+        ) {
+            asOfDate
+            holdings {
+                security {
+                    gbiId
+                    country
+                    currency
+                    isin
+                    name
+                    primaryExchange
+                    sector {
+                        id
+                        name
+                        topParentName
+                    }
+                    symbol
+                    securityType
+                }
+                gbiId
+                weight
+            }
+        }
+    }
+    """
+    variables = {
+        "etfIds": [gbi_id],
+        "asOfDate": datetime.datetime.now().strftime("%Y-%m-%d"),
+        "flattenFundOfFunds": False,
+    }
+    resp = await _get_graphql(user_id=user_id, query=gql_query, variables=variables)
+    if (
+        resp is None
+        or "data" not in resp
+        or "etfHoldingsForDate" not in resp["data"]
+        or len(resp["data"]["etfHoldingsForDate"]) == 0
+    ):
+        return None
+    return resp["data"]["etfHoldingsForDate"][0]

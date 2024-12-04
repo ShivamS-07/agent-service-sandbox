@@ -1085,20 +1085,22 @@ class MasterSecuritySector(BaseModel):
 class MasterSecurity(BaseModel):
     # use camelCase to match the GQL definition
     gbiId: int
-    symbol: Optional[str]
-    isin: Optional[str]
-    name: Optional[str]
-    currency: Optional[str]
-    country: Optional[str]
-    primaryExchange: Optional[str]
-    gics: Optional[int]
-    assetType: Optional[str]
-    securityType: Optional[str]
-    from_: Optional[str] = Field(alias="from")  # `from` is a reserved keyword -> `from x import y`
-    to: Optional[str]
-    sector: Optional[MasterSecuritySector]
-    isPrimaryTradingItem: Optional[bool]
-    hasRecommendations: Optional[bool]
+    symbol: Optional[str] = None
+    isin: Optional[str] = None
+    name: Optional[str] = None
+    currency: Optional[str] = None
+    country: Optional[str] = None
+    primaryExchange: Optional[str] = None
+    gics: Optional[int] = None
+    assetType: Optional[str] = None
+    securityType: Optional[str] = None
+    from_: Optional[str] = Field(
+        alias="from", default=None
+    )  # `from` is a reserved keyword -> `from x import y`
+    to: Optional[str] = None
+    sector: Optional[MasterSecuritySector] = None
+    isPrimaryTradingItem: Optional[bool] = None
+    hasRecommendations: Optional[bool] = None
 
 
 class GetOrderedSecuritiesResponse(BaseModel):
@@ -1308,6 +1310,106 @@ class GetNewsSummaryResponse(BaseModel):
     sentiment: float
     summary: Optional[str]
     sourceCounts: List[SourceCount]
+
+
+####################################################################################################
+# ETF
+####################################################################################################
+
+
+class GetEtfSummaryResponse(BaseModel):
+    class EtfSummary(BaseModel):
+        class EtfDataItem(BaseModel):
+            id: str
+            name: str
+
+        class EtfLowHighPrice(BaseModel):
+            low: float
+            high: float
+
+        activeUntilDate: Optional[str] = None
+        average3MDailyVolume: Optional[float] = None
+        benchmarks: Optional[List[EtfDataItem]] = None
+        consensusPriceTarget: Optional[float] = None
+        description: Optional[str] = None
+        dividendFrequency: Optional[EtfDataItem] = None
+        dividendYield: Optional[float] = None
+        inceptionDate: Optional[str] = None
+        lastClosePrice: Optional[float] = None
+        lastDay: Optional[EtfLowHighPrice] = None
+        lastYear: Optional[EtfLowHighPrice] = None
+        markets: Optional[List[EtfDataItem]] = None
+        netExpenseRatio: Optional[float] = None
+        performanceAsOfDate: Optional[str] = None
+        size: Optional[float] = None
+        spiqSectors: Optional[List[EtfDataItem]] = None
+        styles: Optional[List[EtfDataItem]] = None
+
+    summary: Optional[EtfSummary] = None
+
+
+class GetEtfHoldingsResponse(BaseModel):
+    class EtfHoldings(BaseModel):
+        class Holding(BaseModel):
+            gbiId: int
+            security: Optional[MasterSecurity] = None
+            weight: Optional[float]
+
+        asOfDate: datetime.date
+        holdings: Optional[List[Holding]] = None
+
+    holdings_data: Optional[EtfHoldings] = None
+
+
+class GetEtfAllocationsResponse(BaseModel):
+    class EtfAllocations(BaseModel):
+        class MarketCapAllocation(BaseModel):
+            class MarketCapAllocationItem(BaseModel):
+                class MarketCapItem(BaseModel):
+                    label: str
+                    maxMarketCap: float
+                    minMarketCap: float
+
+                marketCap: MarketCapItem
+                weight: float
+
+            asOfDate: datetime.date
+            etfGbiId: int
+            allocations: Optional[List[MarketCapAllocationItem]] = None
+
+        class SectorRegionAllocation(BaseModel):
+            class SectorAllocationItem(BaseModel):
+                class SectorItem(BaseModel):
+                    name: str
+
+                sector: SectorItem
+                sectorId: int
+                endGrossWeight: float
+                endShortWeight: float
+                endLongWeight: float
+                endNetWeight: float
+
+            class RegionAllocationItem(BaseModel):
+                class CountryItem(BaseModel):
+                    name: str
+
+                country: CountryItem
+                isoCountryCode: str
+                endGrossWeight: float
+                endShortWeight: float
+                endLongWeight: float
+                endNetWeight: float
+
+            startDate: datetime.date
+            endDate: datetime.date
+            isoCurrency: str
+            sectorAllocations: Optional[List[SectorAllocationItem]] = None
+            regionAllocations: Optional[List[RegionAllocationItem]] = None
+
+        marketCapAllocations: Optional[MarketCapAllocation] = None
+        sectorRegionAllocations: Optional[SectorRegionAllocation] = None
+
+    allocations: Optional[EtfAllocations] = None
 
 
 ####################################################################################################

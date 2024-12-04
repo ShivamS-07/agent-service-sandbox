@@ -116,6 +116,7 @@ from agent_service.endpoints.routers import (
     custom_documents,
     data,
     debug,
+    etf,
     memory,
     qc,
     stock,
@@ -1476,6 +1477,7 @@ application.include_router(custom_documents.router)
 application.include_router(user.router)
 application.include_router(qc.router)
 application.include_router(data.router)
+application.include_router(etf.router)
 
 
 def parse_args() -> argparse.Namespace:
