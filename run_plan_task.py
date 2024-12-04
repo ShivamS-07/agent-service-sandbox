@@ -109,7 +109,7 @@ def fetch_args_from_postgres_replay_id(
     return (
         tool.input_type.model_validate_json(row["task_args"]),
         (
-            PlanRunContext.model_validate_json(row["context"])
+            PlanRunContext.model_validate(row["context"])
             if row["context"]
             else PlanRunContext(
                 agent_id=row["agent_id"],

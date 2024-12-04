@@ -117,7 +117,7 @@ async def run_profile_match(
     if isinstance(profile, TopicProfiles):
         is_using_complex_profile = True
         profile_str = await Text.get_all_strs(  # type: ignore
-            profile, include_header=False, text_group_numbering=False
+            profile, include_header=False, text_group_numbering=False, text_cache=text_cache
         )
         if do_tool_log:
             await tool_log(
@@ -140,10 +140,6 @@ async def run_profile_match(
     texts = await partition_to_smaller_text_sizes(texts, context=context)  # type: ignore
     split_texts_set = set(texts)
 
-    if text_cache is None:
-        text_cache = {}
-        _ = await Text.get_all_strs(texts, text_cache=text_cache)
-
     if text_relevance_cache is not None:
         text_relevance_dict = dict(text_relevance_cache)
         new_texts = [text for text in texts if text not in text_relevance_dict]
@@ -159,7 +155,7 @@ async def run_profile_match(
                 filtered_down_texts_tmp.append(text)  # type: ignore
     else:
         filtered_down_texts_tmp = await classify_stock_text_relevancies_for_profile(
-            texts, profiles_str=profile_str, context=context  # type: ignore
+            texts, profiles_str=profile_str, context=context, text_cache=text_cache  # type: ignore
         )
 
         filtered_down_text_set = set(filtered_down_texts_tmp)
@@ -425,6 +421,7 @@ async def update_profile_match(
     crash_on_empty: bool = True,
     text_relevance_cache: Optional[List[Tuple[StockText, bool]]] = None,
     debug_info: Optional[Dict[str, Any]] = None,
+    text_cache: Optional[Dict[TextIDType, str]] = None,
 ) -> List[StockID]:
 
     stocks = dedup_stocks(stocks)
@@ -450,7 +447,7 @@ async def update_profile_match(
     if isinstance(profile, TopicProfiles):
         is_using_complex_profile = True
         profile_str = await Text.get_all_strs(  # type: ignore
-            profile, include_header=False, text_group_numbering=False
+            profile, include_header=False, text_group_numbering=False, text_cache=text_cache
         )
     elif isinstance(profile, str):
         is_using_complex_profile = False
@@ -544,6 +541,7 @@ async def update_profile_match(
                     prev_output_lookup.get(stock.gbi_id),
                     llm,
                     context,
+                    text_cache=text_cache,
                 )
             )
         else:
@@ -685,7 +683,10 @@ async def update_profile_match(
     aligned_text_groups = StockAlignedTextGroups(val=text_group_dict)
 
     str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
-        aligned_text_groups.val, include_header=True, text_group_numbering=True
+        aligned_text_groups.val,
+        include_header=True,
+        text_group_numbering=True,
+        text_cache=text_cache,
     )
 
     profile_filter_main_prompt = Prompt(
@@ -971,6 +972,11 @@ async def filter_and_rank_stocks_by_profile(
     text_relevance_cache = []
     full_output: List[StockID] = []
     profile_rubric: Dict[int, str] = {}
+
+    text_cache: Dict[TextIDType, str] = {}
+    # Pre-fetch texts so the cache is populated
+    _ = await Text.get_all_strs(args.stock_texts, text_cache=text_cache)
+
     try:  # since everything associated with diffing is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "filter_and_rank_stocks_by_profile")
         if prev_run_info is not None:
@@ -1002,6 +1008,9 @@ async def filter_and_rank_stocks_by_profile(
                 elif caller_func_name == "rank_stocks_by_profile":
                     prev_stock_texts = prev_args.stock_texts
 
+                # Pre-fetch texts so the cache is populated
+                _ = await Text.get_all_strs(prev_stock_texts, text_cache=text_cache)
+
         if prev_run_info is not None:
             result = await update_profile_match(
                 stocks=args.stocks,
@@ -1018,6 +1027,7 @@ async def filter_and_rank_stocks_by_profile(
                 context=context,
                 text_relevance_cache=text_relevance_cache,
                 debug_info=debug_info,
+                text_cache=text_cache,
             )
 
     except EmptyOutputError as e:
@@ -1301,6 +1311,7 @@ async def per_idea_filter_and_rank_stocks_by_profile_match(
                 detailed_log=False,
                 crash_on_empty=False,
                 debug_info=debug_dicts[profile.initial_idea] if profile.initial_idea else {},
+                text_cache=text_cache,
             )
         )
 

@@ -456,10 +456,11 @@ async def check_text_diff(
     prev_output: Optional[StockID],
     llm: GPT,
     context: PlanRunContext,
+    text_cache: Optional[Dict[TextIDType, str]] = None,
 ) -> CheckOutput:
     company_name = stock.company_name
     filtered_new_texts = await classify_stock_text_relevancies_for_profile(
-        new_texts, profiles_str=profile_str, context=context  # type: ignore
+        new_texts, profiles_str=profile_str, context=context, text_cache=text_cache  # type: ignore
     )
 
     filtered_text_set = set(filtered_new_texts)
@@ -566,6 +567,7 @@ async def do_rewrite(
     profile_str: str,
     llm: GPT,
     context: PlanRunContext,
+    text_cache: Optional[Dict[TextIDType, str]] = None,
 ) -> StockID:
     required_text_set = set([citation.source_text for citation in check_output.citations])
     required_texts = []
@@ -584,6 +586,7 @@ async def do_rewrite(
             include_header=True,
             text_group_numbering=True,
             include_symbols=True,
+            text_cache=text_cache,
         ),
     )
     optional_text_group = TextGroup(val=optional_texts, offset=len(required_texts))  # type: ignore
@@ -594,6 +597,7 @@ async def do_rewrite(
             include_header=True,
             text_group_numbering=True,
             include_symbols=True,
+            text_cache=text_cache,
         ),
     )
 
