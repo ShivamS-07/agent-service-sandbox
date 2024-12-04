@@ -147,7 +147,7 @@ async def run_profile_match(
     if text_relevance_cache is not None:
         text_relevance_dict = dict(text_relevance_cache)
         new_texts = [text for text in texts if text not in text_relevance_dict]
-        filtered_down_texts = await classify_stock_text_relevancies_for_profile(
+        filtered_down_texts_tmp = await classify_stock_text_relevancies_for_profile(
             new_texts, profiles_str=profile_str, context=context, text_cache=text_cache  # type: ignore
         )
         filtered_down_text_set = set(split_texts_set)
@@ -156,15 +156,18 @@ async def run_profile_match(
         ]
         for text in texts:
             if text in text_relevance_dict and text_relevance_dict[text]:  # type: ignore
-                filtered_down_texts.append(text)  # type: ignore
+                filtered_down_texts_tmp.append(text)  # type: ignore
     else:
-        filtered_down_texts = await classify_stock_text_relevancies_for_profile(
+        filtered_down_texts_tmp = await classify_stock_text_relevancies_for_profile(
             texts, profiles_str=profile_str, context=context  # type: ignore
         )
 
-        filtered_down_text_set = set(filtered_down_texts)
+        filtered_down_text_set = set(filtered_down_texts_tmp)
         text_relevance_cache = [(text, text in filtered_down_text_set) for text in texts]  # type: ignore
 
+    filtered_down_texts: List[StockText] = [
+        text for text in filtered_down_texts_tmp if text.stock_id is not None
+    ]
     stocks_with_texts: List[StockID] = []
     gbi_ids_with_texts = set([text.stock_id.gbi_id for text in filtered_down_texts])  # type: ignore
     for stock in stocks:
