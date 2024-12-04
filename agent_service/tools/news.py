@@ -29,6 +29,8 @@ from agent_service.tool import (
 )
 from agent_service.tools.general_websearch import (
     NEWS_URLS_TO_SCRAPE,
+    REDUCED_NEWS_URLS_TO_SCRAPE,
+    REDUCED_URLS_TO_SCRAPE,
     URLS_TO_SCRAPE,
     GeneralStockWebSearchInput,
     GeneralWebSearchInput,
@@ -504,8 +506,16 @@ async def get_latest_news_for_companies(
                     GeneralStockWebSearchInput(
                         stock_ids=args.stock_ids,
                         topic=(args.topic or ""),
-                        num_google_urls=args.num_google_urls if len(args.stock_ids) <= 10 else 2,
-                        num_news_urls=args.num_news_urls if len(args.stock_ids) <= 10 else 4,
+                        num_google_urls=(
+                            args.num_google_urls
+                            if len(args.stock_ids) <= 10
+                            else REDUCED_URLS_TO_SCRAPE
+                        ),
+                        num_news_urls=(
+                            args.num_news_urls
+                            if len(args.stock_ids) <= 10
+                            else REDUCED_NEWS_URLS_TO_SCRAPE
+                        ),
                     ),
                     context=web_search_context,
                 )

@@ -5,7 +5,7 @@ import re
 import ssl
 import traceback
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 import boto3
@@ -46,7 +46,7 @@ proxies = {"http": proxy_url, "https": proxy_url}
 CERTIFICATE_LOCATION = "agent_service/tools/product_comparison/brd_certificate.crt"
 
 WEB_SEARCH_FETCH_URLS_TIMEOUT = 30
-WEB_SEARCH_PULL_SITES_TIMEOUT = 60
+WEB_SEARCH_PULL_SITES_TIMEOUT = 20
 
 
 async def async_fetch_json(
@@ -198,7 +198,9 @@ req_proxy_url = f"http://{req_user}:{req_pass}@{host}:{port}"
 req_proxies = {"http": req_proxy_url, "https": req_proxy_url}
 
 
-def brd_request(url: str, headers: Dict[str, str] = HEADER, timeout: int = 5) -> Any:
+def brd_request(
+    url: str, headers: Dict[str, str] = HEADER, timeout: int = WEB_SEARCH_PULL_SITES_TIMEOUT
+) -> Any:
     response = requests.get(
         url,
         proxies=req_proxies,
@@ -222,6 +224,60 @@ def remove_excess_formatting(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
+async def scrape_from_pdf(pdf_binary_data: bytes) -> Tuple[str, str]:
+    from PyPDF2 import PdfReader
+
+    pdf_file = io.BytesIO(pdf_binary_data)
+    pdf_reader = PdfReader(pdf_file)
+    text = ""
+    title = ""
+
+    for page in pdf_reader.pages:
+        text += page.extract_text()
+
+    if pdf_reader.metadata:
+        title = pdf_reader.metadata.title or ""
+
+    return title, text
+
+
+async def scrape_from_http(html_content: str) -> Tuple[str, str]:
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html_content, "html.parser")
+    title = ""
+    if soup.title:
+        title = soup.title.string
+
+    # use the main tag, if not possible, use the whole document
+    soup = soup.find("main") or soup
+
+    # Find tags to decompose since they likely contain no relevant text
+    tags_to_decompose = soup.find_all(["header", "footer", "button", "nav", "aside"]) or []
+    tags_to_decompose.extend(
+        soup.find_all(
+            True,
+            class_=re.compile(r"authentica|button|cookie|metadata|contact|^(\w+-)*form(-\w+)*$"),
+        )
+        or []
+    )
+    tags_to_decompose.extend(
+        soup.find_all(
+            True,
+            id=re.compile(
+                r"authentica|button|header|footer|cookie|metadata|contact|^(\w+-)*form(-\w+)*$"
+            ),
+        )
+        or []
+    )
+    for tag in tags_to_decompose:
+        tag.decompose()
+
+    text = soup.get_text(" ")
+    return title, text
+
+
+# retry system!
 @async_perf_logger
 async def req_and_scrape(
     session: aiohttp.ClientSession,
@@ -235,189 +291,176 @@ async def req_and_scrape(
     should_print_errors: Optional[bool] = False,
     log_event_dict: Optional[dict] = None,
 ) -> Optional[WebText]:
-    start_time = datetime.now(timezone.utc).isoformat()
-    event_data = {
-        "agent_id": plan_context.agent_id,
-        "user_id": plan_context.user_id,
-        "plan_id": plan_context.plan_id,
-        "plan_run_id": plan_context.plan_run_id,
-        "request_type": "web_unlocker",
-        "tool_calling": plan_context.tool_name,
-        "url": url,
-        "start_time_utc": start_time,
-        **(log_event_dict or {}),
-    }
+    need_retry = False
+    title = ""
+    text = ""
 
-    # use aiohttp to asynchronously make URL requests and scrape using BeautifulSoup
+    # first try, no proxy, short timeout
     try:
         async with session.get(
-            url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context  # type: ignore
+            url, headers=headers, timeout=5, ssl=ssl_context  # type: ignore
         ) as response:
-            end_time = datetime.now(timezone.utc).isoformat()
-            event_data["end_time_utc"] = end_time
-
             if response.status != 200:
-                if should_print_errors:
-                    await tool_log(
-                        f"Failed to scrape from: {url}",
-                        context=plan_context,
-                    )
-                logger.error(f"Request Error {response.status}: {url}")
-                log_event(
-                    event_name="brd_request",
-                    event_data={**event_data, **{"error": f"Website response status: {response}"}},
-                )
-                return None
+                raise Exception(f"Request Error {response.status}: {url}")
 
-            title: Optional[str] = None
             content_type = response.headers.get("Content-Type", "")
             if "application/pdf" in content_type:
-                from PyPDF2 import PdfReader
-
                 pdf_binary_data = await response.read()
-                pdf_file = io.BytesIO(pdf_binary_data)
-                pdf_reader = PdfReader(pdf_file)
-                text = ""
-                for page in pdf_reader.pages:
-                    text += page.extract_text()
-
-                if pdf_reader.metadata:
-                    title = pdf_reader.metadata.title
-
-                log_event(
-                    event_name="brd_request",
-                    event_data={
-                        **event_data,
-                        **{"content_type": content_type},
-                    },
-                )
+                title, text = await scrape_from_pdf(pdf_binary_data)
             elif "text/html" in content_type:
-                from bs4 import BeautifulSoup
-
                 html_content = await response.text()
-                soup = BeautifulSoup(html_content, "html.parser")
-
-                if soup.title:
-                    title = soup.title.string
-
-                # use the main tag, if not possible, use the whole document
-                soup = soup.find("main") or soup
-
-                # Find tags to decompose since they likely contain no relevant text
-                tags_to_decompose = (
-                    soup.find_all(["header", "footer", "button", "nav", "aside"]) or []
-                )
-                tags_to_decompose.extend(
-                    soup.find_all(
-                        True,
-                        class_=re.compile(
-                            r"authentica|button|cookie|metadata|contact|^(\w+-)*form(-\w+)*$"
-                        ),
-                    )
-                    or []
-                )
-                tags_to_decompose.extend(
-                    soup.find_all(
-                        True,
-                        id=re.compile(
-                            r"authentica|button|header|footer|cookie|metadata|contact|^(\w+-)*form(-\w+)*$"
-                        ),
-                    )
-                    or []
-                )
-                for tag in tags_to_decompose:
-                    tag.decompose()
-
-                text = soup.get_text(" ")
-
-                log_event(
-                    event_name="brd_request",
-                    event_data={
-                        **event_data,
-                        **{"content_type": content_type},
-                    },
-                )
+                title, text = await scrape_from_http(html_content)
             else:
                 logger.info(f"Unsupported content type: {content_type}")
-                log_event(
-                    event_name="brd_request",
-                    event_data={
-                        **event_data,
-                        **{"error": f"Unsupported content type: {content_type}"},
-                    },
-                )
                 return None
 
-    except aiohttp.ClientResponseError as e:
-        if should_print_errors:
-            await tool_log(
-                f"Failed to scrape from: {url}",
-                context=plan_context,
-            )
-        logger.error(f"HTTP error for {url}: {e.status} - {e.message}")
-        end_time = datetime.now(timezone.utc).isoformat()
-        log_event(
-            event_name="brd_request",
-            event_data={
-                **event_data,
-                **{"end_time_utc": end_time, "error": traceback.format_exc()},
-            },
-        )
-        return None
-
-    except aiohttp.ClientConnectionError as e:
-        if should_print_errors:
-            await tool_log(
-                f"Failed to scrape from: {url}",
-                context=plan_context,
-            )
-        logger.error(f"Connection error for {url}: {e}")
-        end_time = datetime.now(timezone.utc).isoformat()
-        log_event(
-            event_name="brd_request",
-            event_data={
-                **event_data,
-                **{"end_time_utc": end_time, "error": traceback.format_exc()},
-            },
-        )
-        return None
-
-    except aiohttp.InvalidURL:
-        if should_print_errors:
-            await tool_log(
-                f"Failed to scrape from: {url}",
-                context=plan_context,
-            )
-        logger.error(f"Invalid URL: {url}")
-        end_time = datetime.now(timezone.utc).isoformat()
-        log_event(
-            event_name="brd_request",
-            event_data={
-                **event_data,
-                **{"end_time_utc": end_time, "error": traceback.format_exc()},
-            },
-        )
-        return None
-
     except Exception as e:
-        if should_print_errors:
-            await tool_log(
-                f"Failed to scrape from: {url}",
-                context=plan_context,
+        logger.error(f"An error occurred for {url}: {e}, retrying with proxy")
+        need_retry = True
+
+    # use brightdata requests on the second time around
+    if need_retry:
+        start_time = datetime.now(timezone.utc).isoformat()
+        event_data = {
+            "agent_id": plan_context.agent_id,
+            "user_id": plan_context.user_id,
+            "plan_id": plan_context.plan_id,
+            "plan_run_id": plan_context.plan_run_id,
+            "request_type": "web_unlocker",
+            "tool_calling": plan_context.tool_name,
+            "url": url,
+            "start_time_utc": start_time,
+            **(log_event_dict or {}),
+        }
+        try:
+            async with session.get(
+                url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context  # type: ignore
+            ) as response:
+                end_time = datetime.now(timezone.utc).isoformat()
+                event_data["end_time_utc"] = end_time
+
+                if response.status != 200:
+                    if should_print_errors:
+                        await tool_log(
+                            f"Failed to scrape from: {url}",
+                            context=plan_context,
+                        )
+                    logger.error(f"Request Error {response.status}: {url}")
+                    log_event(
+                        event_name="brd_request",
+                        event_data={
+                            **event_data,
+                            **{"error": f"Website response status: {response}"},
+                        },
+                    )
+                    return None
+
+                content_type = response.headers.get("Content-Type", "")
+                if "application/pdf" in content_type:
+                    pdf_binary_data = await response.read()
+                    title, text = await scrape_from_pdf(pdf_binary_data)
+
+                    log_event(
+                        event_name="brd_request",
+                        event_data={
+                            **event_data,
+                            **{"content_type": content_type},
+                        },
+                    )
+                elif "text/html" in content_type:
+                    html_content = await response.text()
+                    title, text = await scrape_from_http(html_content)
+
+                    log_event(
+                        event_name="brd_request",
+                        event_data={
+                            **event_data,
+                            **{"content_type": content_type},
+                        },
+                    )
+                else:
+                    logger.info(f"Unsupported content type: {content_type}")
+                    log_event(
+                        event_name="brd_request",
+                        event_data={
+                            **event_data,
+                            **{"error": f"Unsupported content type: {content_type}"},
+                        },
+                    )
+                    return None
+
+        except aiohttp.ClientResponseError as e:
+            if should_print_errors:
+                await tool_log(
+                    f"Failed to scrape from: {url}",
+                    context=plan_context,
+                )
+            logger.error(f"HTTP error for {url}: {e.status} - {e.message}")
+            end_time = datetime.now(timezone.utc).isoformat()
+            log_event(
+                event_name="brd_request",
+                event_data={
+                    **event_data,
+                    **{"end_time_utc": end_time, "error": traceback.format_exc()},
+                },
             )
-        logger.error(f"An unexpected error occurred: {e}")
-        end_time = datetime.now(timezone.utc).isoformat()
-        log_event(
-            event_name="brd_request",
-            event_data={
-                **event_data,
-                **{"end_time_utc": end_time, "error": traceback.format_exc()},
-            },
-        )
-        return None
+            return None
+
+        except aiohttp.ClientConnectionError as e:
+            if should_print_errors:
+                await tool_log(
+                    f"Failed to scrape from: {url}",
+                    context=plan_context,
+                )
+            logger.error(f"Connection error for {url}: {e}")
+            end_time = datetime.now(timezone.utc).isoformat()
+            log_event(
+                event_name="brd_request",
+                event_data={
+                    **event_data,
+                    **{"end_time_utc": end_time, "error": traceback.format_exc()},
+                },
+            )
+            return None
+
+        except aiohttp.InvalidURL:
+            if should_print_errors:
+                await tool_log(
+                    f"Failed to scrape from: {url}",
+                    context=plan_context,
+                )
+            logger.error(f"Invalid URL: {url}")
+            end_time = datetime.now(timezone.utc).isoformat()
+            log_event(
+                event_name="brd_request",
+                event_data={
+                    **event_data,
+                    **{"end_time_utc": end_time, "error": traceback.format_exc()},
+                },
+            )
+            return None
+
+        except Exception as e:
+            if should_print_errors:
+                await tool_log(
+                    f"Failed to scrape from: {url}",
+                    context=plan_context,
+                )
+            logger.error(f"An unexpected error occurred for {url}: {e}")
+            end_time = datetime.now(timezone.utc).isoformat()
+            log_event(
+                event_name="brd_request",
+                event_data={
+                    **event_data,
+                    **{"end_time_utc": end_time, "error": traceback.format_exc()},
+                },
+            )
+            return None
 
     obj = WebText(
-        url=url, title=title, timestamp=get_now_utc()
+        url=url,
+        title=title,
+        timestamp=get_now_utc(),
     )  # we don't save `text` in the obj and pass around
 
     clean_text = remove_excess_formatting(text)
@@ -468,7 +511,6 @@ async def get_web_texts_async(
         for row in rows
     }
     results: list[WebText] = list(url_to_obj.values())
-
     uncached_urls = [url for url in urls if url not in url_to_obj]
     if uncached_urls:
         logger.info(f"Scrapping {len(uncached_urls)} uncached URLs out of {len(urls)}")
@@ -491,7 +533,7 @@ async def get_web_texts_async(
                 )
                 for url in uncached_urls
             ]
-            uncached_res = await gather_with_concurrency(tasks, n=100, return_exceptions=True)
+            uncached_res = await gather_with_concurrency(tasks, n=25, return_exceptions=True)
             uncached_res = [
                 res
                 for res in uncached_res

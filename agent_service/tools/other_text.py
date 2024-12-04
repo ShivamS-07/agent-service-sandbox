@@ -14,6 +14,12 @@ from agent_service.tools.earnings import (
     GetEarningsCallDataInput,
     get_earnings_call_summaries,
 )
+from agent_service.tools.general_websearch import (
+    NEWS_URLS_TO_SCRAPE,
+    REDUCED_NEWS_URLS_TO_SCRAPE,
+    REDUCED_URLS_TO_SCRAPE,
+    URLS_TO_SCRAPE,
+)
 from agent_service.tools.news import (
     GetLatestNewsForCompaniesInput,
     GetNewsDevelopmentsAboutCompaniesInput,
@@ -105,8 +111,14 @@ async def get_default_text_data_for_stocks(
                     stock_ids=stock_ids,
                     topic="",
                     get_developments=False,
-                    num_google_urls=4 if len(args.stock_ids) <= 10 else 2,
-                    num_news_urls=8 if len(args.stock_ids) <= 10 else 4,
+                    num_google_urls=(
+                        URLS_TO_SCRAPE if len(args.stock_ids) <= 10 else REDUCED_URLS_TO_SCRAPE
+                    ),
+                    num_news_urls=(
+                        NEWS_URLS_TO_SCRAPE
+                        if len(args.stock_ids) <= 10
+                        else REDUCED_NEWS_URLS_TO_SCRAPE
+                    ),
                 ),
                 context=context,
             )

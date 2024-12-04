@@ -25,6 +25,9 @@ from agent_service.utils.feature_flags import get_ld_flag
 URLS_TO_SCRAPE = 4
 NEWS_URLS_TO_SCRAPE = 8
 
+REDUCED_URLS_TO_SCRAPE = 2
+REDUCED_NEWS_URLS_TO_SCRAPE = 4
+
 logger = logging.getLogger(__name__)
 
 
