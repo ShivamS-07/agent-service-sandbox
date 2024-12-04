@@ -1497,7 +1497,7 @@ class GetStockUniverseInput(ToolArgs):
     # name of the universe to lookup
     universe_name: str
     date_range: Optional[DateRange] = None
-    dedup_companies: bool = True
+    dedup_companies: bool = False
 
 
 @tool(
@@ -1513,7 +1513,9 @@ class GetStockUniverseInput(ToolArgs):
         " as a string directly."
         " If a client asks for the companies in the universe "
         " you must set dedup_companies to True. If a client asks for the stocks in a universe "
-        " you must set dedup_companies to False. "
+        " you must set dedup_companies to False. It is of the utmost importance that if a client "
+        " asks for stocks in a universe (like stocks in the SPY ETF), you set dedup_companies "
+        " to false."
         " If the client wants to filter over stocks but does not specify an initial set"
         " of stocks, you should call this tool with 'S&P 500'."
         " You can also use this tool to get the holdings of an ETF or stock."
