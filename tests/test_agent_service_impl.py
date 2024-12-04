@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
     AgentFeedback,
+    AgentHelpRequest,
     AgentNotificationEmail,
     AgentQC,
     ChatWithAgentRequest,
@@ -892,3 +893,24 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
             if "title" in node["args"] and NEW_WIDGET_TITLE == node["args"]["title"]:
                 new_title_in_nodes = True
         self.assertEqual(new_title_in_nodes, True)
+
+    def test_help_requests(self):
+        test_user = str(uuid.uuid4())
+        user = User(user_id=test_user, is_admin=False, is_super_admin=False, auth_token="")
+        TEST_AGENT_ID = "565de7d2-d050-4813-8610-3b474b06823e"
+        self.set_agent_help_requested(
+            agent_id=TEST_AGENT_ID,
+            req=AgentHelpRequest(is_help_requested=True),
+            requesting_user=user,
+        )
+        self.assertTrue(
+            self.loop.run_until_complete(self.pg.is_agent_help_requested(agent_id=TEST_AGENT_ID))
+        )
+        self.set_agent_help_requested(
+            agent_id=TEST_AGENT_ID,
+            req=AgentHelpRequest(is_help_requested=False),
+            requesting_user=user,
+        )
+        self.assertFalse(
+            self.loop.run_until_complete(self.pg.is_agent_help_requested(agent_id=TEST_AGENT_ID))
+        )

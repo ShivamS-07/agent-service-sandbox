@@ -25,6 +25,7 @@ from grpclib.client import Channel
 from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
+    AgentHelpRequest,
     AgentInfo,
     ChatWithAgentRequest,
     ChatWithAgentResponse,
@@ -214,4 +215,13 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
     ) -> UpdateAgentWidgetNameResponse:
         return self.loop.run_until_complete(
             self.agent_service_impl.update_agent_widget_name(agent_id=agent_id, req=req)
+        )
+
+    def set_agent_help_requested(
+        self, agent_id: str, req: AgentHelpRequest, requesting_user: User
+    ) -> UpdateAgentResponse:
+        return self.loop.run_until_complete(
+            self.agent_service_impl.set_agent_help_requested(
+                agent_id=agent_id, req=req, requesting_user=requesting_user
+            )
         )
