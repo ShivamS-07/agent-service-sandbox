@@ -300,6 +300,8 @@ async def _get_earning_transcript_lookup_from_ch(
 ) -> Dict[int, Dict[Tuple[int, int], Any]]:
 
     transcript_db_data_lookup: Dict[int, Dict[Tuple[int, int], Any]] = defaultdict(dict)
+    if len(events) == 0:
+        return transcript_db_data_lookup
     oldest_event = min(events, key=lambda x: (x.year, x.quarter))
     latest_event = max(events, key=lambda x: (x.year, x.quarter))
 
