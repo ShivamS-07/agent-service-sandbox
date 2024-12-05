@@ -42,7 +42,7 @@ from agent_service.utils.date_utils import get_now_utc, parse_date_str_in_utc
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 
-MAX_ALLOWED_EARNINGS_FOR_REAL_TIME_GEN = 20
+MAX_ALLOWED_EARNINGS_FOR_REAL_TIME_GEN = 0
 CLICKHOUSE_WAIT_TIME = 10
 
 
@@ -140,9 +140,9 @@ async def _get_earnings_summary_helper(
     params = {"company_ids": company_ids}
     rows = await async_db.generic_read(earning_summary_sql, params)
 
-    by_stock_lookup = defaultdict(list)
-    for row in rows:
-        by_stock_lookup[row["gbi_id"]].append(row)
+    comp_id_to_gbi_mapping: Dict[int, List[int]] = defaultdict(list)
+    for gbi_id, comp_id in gbi_to_comp_id_lookup.items():
+        comp_id_to_gbi_mapping[comp_id].append(gbi_id)
 
     # Get all earning events we expect to have for the even date range
     if start_date and end_date:
@@ -190,13 +190,18 @@ async def _get_earnings_summary_helper(
                 )
             ).earnings_event_info
         )
-
     # Create a lookup for gbi_ids and the year-quarter earnings they should have along with the associated event
     all_earning_fiscal_quarters = defaultdict(set)
     earning_events_lookup: Dict[int, Any] = defaultdict(dict)
     for event in earning_call_events:
         all_earning_fiscal_quarters[event.gbi_id].add((event.year, event.quarter))
         earning_events_lookup[event.gbi_id][(event.year, event.quarter)] = event
+
+    by_stock_lookup = defaultdict(list)
+    for row in rows:
+        for gbi_id in comp_id_to_gbi_mapping[row["spiq_company_id"]]:
+            if (row["year"], row["quarter"]) in earning_events_lookup.get(gbi_id, {}).keys():
+                by_stock_lookup[gbi_id].append(row)
 
     comp_id_to_earnings: Dict[int, List[StockEarningsText]] = defaultdict(list)
     for stock_id in stock_ids:
@@ -284,13 +289,23 @@ async def _get_earnings_summary_helper(
     else:
         await tool_log(
             log=(
-                f"Too many unavailable earning summaries ({len(events_without_summaries)}), "
+                f"Some earning summaries are not processed ({len(events_without_summaries)}), "
                 "using earning call transcripts inplace of the missing summaries for now..."
             ),
             context=context,
         )
         finalized_output = await get_earnings_full_transcripts(
             user_id, stock_ids, events_without_summaries, event_id_to_stock_id_lookup, output
+        )
+    num_companies_without_events = 0
+    for stock_id, events in finalized_output.items():
+        if len(events) == 0:
+            num_companies_without_events += 1
+            print(stock_id.gbi_id, stock_id.company_name)
+    if num_companies_without_events > 0:
+        await tool_log(
+            log=(f"Earnings unavailable for {num_companies_without_events} companies"),
+            context=context,
         )
     return finalized_output
 
@@ -302,6 +317,7 @@ async def _get_earning_transcript_lookup_from_ch(
     transcript_db_data_lookup: Dict[int, Dict[Tuple[int, int], Any]] = defaultdict(dict)
     if len(events) == 0:
         return transcript_db_data_lookup
+
     oldest_event = min(events, key=lambda x: (x.year, x.quarter))
     latest_event = max(events, key=lambda x: (x.year, x.quarter))
 
