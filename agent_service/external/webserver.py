@@ -894,3 +894,50 @@ async def get_etf_holdings_stats(user_id: str, gbi_id: int) -> Optional[dict]:
     if resp is None or "data" not in resp or "etfFundHoldingsStatistics" not in resp["data"]:
         return None
     return resp["data"]["etfFundHoldingsStatistics"]
+
+
+####################################################################################################
+# GetEtfSimilarEtfs
+####################################################################################################
+@async_perf_logger
+async def get_etf_similar_etfs(user_id: str, gbi_id: int) -> Optional[dict]:
+    gql_query = """
+    query GetSimilarETFs($etfId: Int!, $maxResults: Int!, $compareToEtfs: [Int!]) {
+        etfSimilarity(
+            etfId: $etfId
+            maxResults: $maxResults
+            compareToEtfs: $compareToEtfs
+        ) {
+            etfId
+            security {
+                gbiId
+                name
+                symbol
+                securityType
+                countryInfo {
+                    name
+                }
+            }
+            overallSimilarityScore
+            riskSimilarityScore
+            sectorSimilarityScore
+            factorSimilarityScore
+            priceSimilarityScore
+            expenseRatio
+        }
+    }
+    """
+    variables = {
+        "etfId": gbi_id,
+        "maxResults": 0,
+        "compareToEtfs": [],
+    }
+    resp = await _get_graphql(user_id=user_id, query=gql_query, variables=variables)
+    if (
+        resp is None
+        or "data" not in resp
+        or "etfSimilarity" not in resp["data"]
+        or len(resp["data"]["etfSimilarity"]) == 0
+    ):
+        return None
+    return resp["data"]["etfSimilarity"]

@@ -1083,6 +1083,10 @@ class MasterSecuritySector(BaseModel):
 
 
 class MasterSecurity(BaseModel):
+    class MasterSecurityCountryInfo(BaseModel):
+        name: Optional[str] = None
+        isoCountryCode: Optional[str] = None
+
     # use camelCase to match the GQL definition
     gbiId: int
     symbol: Optional[str] = None
@@ -1101,6 +1105,8 @@ class MasterSecurity(BaseModel):
     sector: Optional[MasterSecuritySector] = None
     isPrimaryTradingItem: Optional[bool] = None
     hasRecommendations: Optional[bool] = None
+    # only request countryInfo if needed, it is batch mapped
+    countryInfo: Optional[MasterSecurityCountryInfo] = None
 
 
 class GetOrderedSecuritiesResponse(BaseModel):
@@ -1436,6 +1442,20 @@ class GetEtfHoldingsStatsResponse(BaseModel):
         overallStatistics: Optional[OverallStat] = None
 
     stats: Optional[HoldingStats] = None
+
+
+class GetEtfSimilarEtfsResponse(BaseModel):
+    class EtfSimilarEtf(BaseModel):
+        etfId: int
+        security: Optional[MasterSecurity] = None
+        overallSimilarityScore: Optional[float] = None
+        riskSimilarityScore: Optional[float] = None
+        sectorSimilarityScore: Optional[float] = None
+        factorSimilarityScore: Optional[float] = None
+        priceSimilarityScore: Optional[float] = None
+        expenseRatio: Optional[float] = None
+
+    similar_etfs: Optional[List[EtfSimilarEtf]] = None
 
 
 ####################################################################################################

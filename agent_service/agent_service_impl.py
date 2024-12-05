@@ -103,6 +103,7 @@ from agent_service.endpoints.models import (
     GetEtfAllocationsResponse,
     GetEtfHoldingsResponse,
     GetEtfHoldingsStatsResponse,
+    GetEtfSimilarEtfsResponse,
     GetEtfSummaryResponse,
     GetExecutiveEarningsSummaryResponse,
     GetHistoricalPricesRequest,
@@ -215,6 +216,7 @@ from agent_service.external.webserver import (
     get_etf_allocations,
     get_etf_holdings,
     get_etf_holdings_stats,
+    get_etf_similar_etfs,
     get_etf_summary,
     get_executive_earnings_summary,
     get_ordered_securities,
@@ -2894,6 +2896,14 @@ class AgentServiceImpl:
         if stats is None:
             return GetEtfHoldingsStatsResponse(stats=None)
         return GetEtfHoldingsStatsResponse(stats=GetEtfHoldingsStatsResponse.HoldingStats(**stats))
+
+    async def get_etf_similar_etfs(self, user: User, gbi_id: int) -> GetEtfSimilarEtfsResponse:
+        similar_etfs = await get_etf_similar_etfs(user_id=user.user_id, gbi_id=gbi_id)
+        if similar_etfs is None:
+            return GetEtfSimilarEtfsResponse(similar_etfs=None)
+        return GetEtfSimilarEtfsResponse(
+            similar_etfs=[GetEtfSimilarEtfsResponse.EtfSimilarEtf(**etf) for etf in similar_etfs]
+        )
 
     async def update_qc_agent(self, agent_qc: AgentQC) -> bool:
         try:
