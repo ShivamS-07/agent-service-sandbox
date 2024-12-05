@@ -244,7 +244,7 @@ async def create_final_idea(
     result = await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt)
 
     lines = result.strip().split("\n")
-    title = lines[0]
+    title = lines[0].strip("# ")
     initial_text = "\n".join(lines[1:])
     final_text, citations = await extract_citations_from_gpt_output(
         initial_text, text_group, context
