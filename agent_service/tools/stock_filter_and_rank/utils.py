@@ -565,6 +565,7 @@ async def do_rewrite(
     relevant_texts: List[StockText],
     is_complex_profile: bool,
     profile_str: str,
+    profile_title: str,
     llm: GPT,
     context: PlanRunContext,
     text_cache: Optional[Dict[TextIDType, str]] = None,
@@ -661,7 +662,7 @@ async def do_rewrite(
             citations=citations if citations else [],  # type: ignore
             score=Score(val=check_output.new_score / MAX_RUBRIC_SCORE),
             task_id=context.task_id,
-            title=f"Connection to '{profile_str}'",
+            title=f"Connection to '{profile_title}'",
         )
     )
 

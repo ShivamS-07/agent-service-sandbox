@@ -617,7 +617,13 @@ async def update_profile_match(
         ]
         rewrite_tasks.append(
             do_rewrite(
-                check_result, relevant_texts, is_using_complex_profile, profile_str, llm, context
+                check_result,
+                relevant_texts,
+                is_using_complex_profile,
+                profile_str,
+                profile_data_for_rubric,
+                llm,
+                context,
             )
         )
 
