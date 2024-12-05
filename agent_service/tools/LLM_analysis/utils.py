@@ -22,6 +22,8 @@ from agent_service.tools.LLM_analysis.constants import (
     ANCHOR_REGEX,
     CITATION_HEADER,
     CITATION_SNIPPET_BUFFER_LEN,
+    CSV_BLOCK,
+    JSON_BLOCK,
     MAX_TEXT_PER_SUMMARIZE,
     PREFERRED_TEXT_TYPES,
     SENTENCE_REGEX,
@@ -93,15 +95,24 @@ def get_initial_breakdown(GPT_ouput: str) -> Tuple[str, Optional[Dict[str, List[
     lines = GPT_ouput.replace("\n\n", "\n").split("\n")
 
     header_index = None
+    json_search = None
+    csv_search = None
     # GPT told not to do this, but it sometimes does anyway
     if ANCHOR_HEADER in lines:
         header_index = lines.index(ANCHOR_HEADER)
     elif CITATION_HEADER in lines:
         header_index = lines.index(CITATION_HEADER)
+    else:
+        lines_text = "\n".join(lines).strip()
+        json_search = JSON_BLOCK.search(lines_text)
+        csv_search = CSV_BLOCK.search(lines_text)
 
     if header_index is not None:
         main_text = "\n".join(lines[:header_index]).strip()
         citation_dict = "\n".join(lines[header_index + 1 :])
+    elif json_search is not None and csv_search is not None:
+        main_text = csv_search.group(1)
+        citation_dict = json_search.group(1)
     else:
         main_text = "\n".join(lines[:-1])
         citation_dict = lines[-1]

@@ -28,6 +28,8 @@ ANCHOR_REGEX = re.compile(r" ?\[([a-z]{1,2}),\d{1,2}\]([\.\?\!]?)")
 SENTENCE_REGEX = re.compile(r"(?<=[^A-Z].[.?!]) +(?=[A-Z])")
 ANCHOR_HEADER = "### Anchor Mapping"
 CITATION_HEADER = "### Citation Mapping"
+CSV_BLOCK = re.compile("```csv([^`]+)```")
+JSON_BLOCK = re.compile("```json([^`]+)```")
 UNITS = ["thousand", "million", "billion", "trillion"]
 CITATION_SNIPPET_BUFFER_LEN = 100
 MAX_CITATION_TRIES = 5

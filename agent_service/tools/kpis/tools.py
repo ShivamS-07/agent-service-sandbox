@@ -555,7 +555,6 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
     overlapping_kpi_list: List[KPIText] = []
 
     tasks = []
-    gbi_id_stock_id_map = {}
     company_info_lookup = await get_company_data_and_kpis_for_stocks(
         args.stock_ids, context=context
     )
@@ -569,15 +568,14 @@ async def get_relevant_kpis_for_multiple_stocks_given_topic(
                     stock_id, company_info, args.shared_metric, llm, context, True
                 )
             )
-            gbi_id_stock_id_map[stock_id.gbi_id] = stock_id
 
     company_kpi_lists = await gather_with_concurrency(tasks, n=20)
 
-    flattened_array: List[KPIText] = [item for sublist in company_kpi_lists for item in sublist]
-
-    for stock_id, company_kpi in zip(args.stock_ids, flattened_array):
-        if company_kpi is not None:
-            overlapping_kpi_list.append(company_kpi)
+    for sublist in company_kpi_lists:
+        if sublist is not None:
+            for item in sublist:
+                if item is not None:
+                    overlapping_kpi_list.append(item)
 
     await tool_log(log=f"Found {len(overlapping_kpi_list)} relevant KPIs", context=context)
     return EquivalentKPITexts(val=overlapping_kpi_list, general_kpi_name=args.shared_metric)

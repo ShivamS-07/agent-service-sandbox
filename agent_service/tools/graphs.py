@@ -168,6 +168,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
                 TableColumnType.PERCENT,
                 TableColumnType.INTEGER_WITH_UNIT,
                 TableColumnType.FLOAT_WITH_UNIT,
+                TableColumnType.SCORE,
             )
         ):
             # We only have a dataset column if we have > 2 columns. Otherwise we
@@ -185,6 +186,7 @@ async def make_line_graph(args: MakeLineGraphArgs, context: PlanRunContext) -> L
             TableColumnType.PERCENT,
             TableColumnType.INTEGER_WITH_UNIT,
             TableColumnType.FLOAT_WITH_UNIT,
+            TableColumnType.SCORE,
         ):
             data_col = (col, df_col)
 

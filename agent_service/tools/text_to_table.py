@@ -272,7 +272,6 @@ async def text_to_table(args: TextToTableArgs, context: PlanRunContext) -> Table
     text, citation_dict = get_initial_breakdown(result)
 
     text = strip_code_backticks(text)
-
     df = pd.read_csv(StringIO(text))
     metadatas = []
     new_df_data: dict[PrimitiveType, list[Any]] = {}
