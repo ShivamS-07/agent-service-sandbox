@@ -102,6 +102,7 @@ from agent_service.endpoints.models import (
     GetEarningsSummaryResponse,
     GetEtfAllocationsResponse,
     GetEtfHoldingsResponse,
+    GetEtfHoldingsStatsResponse,
     GetEtfSummaryResponse,
     GetExecutiveEarningsSummaryResponse,
     GetHistoricalPricesRequest,
@@ -213,6 +214,7 @@ from agent_service.external.webserver import (
     get_earnings_summary,
     get_etf_allocations,
     get_etf_holdings,
+    get_etf_holdings_stats,
     get_etf_summary,
     get_executive_earnings_summary,
     get_ordered_securities,
@@ -2880,6 +2882,12 @@ class AgentServiceImpl:
         if holdings is None:
             return GetEtfHoldingsResponse(holdings_data=None)
         return GetEtfHoldingsResponse(holdings_data=GetEtfHoldingsResponse.EtfHoldings(**holdings))
+
+    async def get_etf_holdings_stats(self, user: User, gbi_id: int) -> GetEtfHoldingsStatsResponse:
+        stats = await get_etf_holdings_stats(user_id=user.user_id, gbi_id=gbi_id)
+        if stats is None:
+            return GetEtfHoldingsStatsResponse(stats=None)
+        return GetEtfHoldingsStatsResponse(stats=GetEtfHoldingsStatsResponse.HoldingStats(**stats))
 
     async def update_qc_agent(self, agent_qc: AgentQC) -> bool:
         try:

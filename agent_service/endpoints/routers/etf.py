@@ -5,6 +5,7 @@ from agent_service.endpoints.authz_helper import User, parse_header
 from agent_service.endpoints.models import (
     GetEtfAllocationsResponse,
     GetEtfHoldingsResponse,
+    GetEtfHoldingsStatsResponse,
     GetEtfSummaryResponse,
 )
 from agent_service.endpoints.routers.utils import get_agent_svc_impl
@@ -28,6 +29,14 @@ async def get_etf_holdings(
 ) -> GetEtfHoldingsResponse:
     agent_svc_impl = get_agent_svc_impl()
     return await agent_svc_impl.get_etf_holdings(user=user, gbi_id=gbi_id)
+
+
+@router.get("/{gbi_id}/holdings-stats")
+async def get_etf_holdings_stats(
+    gbi_id: int, user: User = Depends(parse_header)
+) -> GetEtfHoldingsStatsResponse:
+    agent_svc_impl = get_agent_svc_impl()
+    return await agent_svc_impl.get_etf_holdings_stats(user=user, gbi_id=gbi_id)
 
 
 @router.get(

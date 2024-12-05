@@ -831,3 +831,66 @@ async def get_etf_holdings(user_id: str, gbi_id: int) -> Optional[dict]:
     ):
         return None
     return resp["data"]["etfHoldingsForDate"][0]
+
+
+####################################################################################################
+# GetEtfHoldingsStats
+####################################################################################################
+@async_perf_logger
+async def get_etf_holdings_stats(user_id: str, gbi_id: int) -> Optional[dict]:
+    gql_query = """
+    query GetEtfFundHoldingsStatistics(
+        $etfGbiId: Int!
+        $recommendationHorizon: RecommendationHorizon!
+        $flattenFundOfFunds: Boolean
+    ) {
+        etfFundHoldingsStatistics(
+            etfGbiId: $etfGbiId
+            recommendationHorizon: $recommendationHorizon
+            flattenFundOfFunds: $flattenFundOfFunds
+        ) {
+            etfGbiId
+            asOfDate
+            individualStatistics {
+                current
+                dividendYield
+                previous
+                security {
+                    gbiId
+                    weight
+                    security {
+                        gbiId
+                        country
+                        currency
+                        isin
+                        name
+                        primaryExchange
+                        sector {
+                            id
+                            name
+                            topParentName
+                        }
+                        symbol
+                        securityType
+                    }
+                }
+            }
+            overallStatistics {
+                marketCap
+                priceToBook
+                priceToCashFlow
+                priceToEarnings
+                salesToEv
+            }
+        }
+    }
+    """
+    variables = {
+        "etfGbiId": gbi_id,
+        "recommendationHorizon": "RecommendationHorizon1M",
+        "flattenFundOfFunds": False,
+    }
+    resp = await _get_graphql(user_id=user_id, query=gql_query, variables=variables)
+    if resp is None or "data" not in resp or "etfFundHoldingsStatistics" not in resp["data"]:
+        return None
+    return resp["data"]["etfFundHoldingsStatistics"]

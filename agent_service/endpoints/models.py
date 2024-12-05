@@ -1412,6 +1412,32 @@ class GetEtfAllocationsResponse(BaseModel):
     allocations: Optional[EtfAllocations] = None
 
 
+class GetEtfHoldingsStatsResponse(BaseModel):
+    class HoldingStats(BaseModel):
+        class IndividualStat(BaseModel):
+            class StatSecurity(BaseModel):
+                gbiId: int
+                weight: Optional[float] = None
+                security: Optional[MasterSecurity] = None
+
+            dividendYield: Optional[float] = None
+            security: Optional[StatSecurity] = None
+
+        class OverallStat(BaseModel):
+            marketCap: Optional[float] = None
+            priceToBook: Optional[float] = None
+            priceToCashFlow: Optional[float] = None
+            priceToEarnings: Optional[float] = None
+            salesToEv: Optional[float] = None
+
+        etfGbiId: int
+        asOfDate: datetime.date
+        individualStatistics: Optional[List[IndividualStat]] = None
+        overallStatistics: Optional[OverallStat] = None
+
+    stats: Optional[HoldingStats] = None
+
+
 ####################################################################################################
 # User
 ####################################################################################################
