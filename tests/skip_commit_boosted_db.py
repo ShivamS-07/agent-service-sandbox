@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, List, Optional
 
+from gbi_common_py_utils.utils.environment import get_environment_tag
 from psycopg import Cursor
 
 from agent_service.utils.boosted_pg import BoostedPG, CursorType, InsertToTableArgs
@@ -9,7 +10,7 @@ from agent_service.utils.postgres import Postgres
 
 class SkipCommitBoostedPG(BoostedPG):
     def __init__(self):
-        self.pg = Postgres(environment="DEV", skip_commit=True)
+        self.pg = Postgres(environment=get_environment_tag(), skip_commit=True)
 
     async def generic_read(self, sql: str, params: Optional[Any] = None) -> List[Dict[str, Any]]:
         return self.pg.generic_read(sql, params)

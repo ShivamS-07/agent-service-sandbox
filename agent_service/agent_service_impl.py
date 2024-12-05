@@ -1740,9 +1740,17 @@ class AgentServiceImpl:
             del value["plan_id"]
             del value["plan_run_id"]
 
-        for tool_call in ch_tool_calls.keys():
-            if tool_call not in tool_calls:
-                tool_calls[tool_call] = ch_tool_calls[tool_call]
+        # In case our postgres and clickhouse have any data inconsistencies, we'll
+        # use the union of the two for tool calls
+        for plan_run_id_str, ch_tool_value in ch_tool_calls.items():
+            # From clickhouse it returns str, whereas in postgres they are UUIDs
+            plan_run_id = uuid.UUID(plan_run_id_str)
+            if plan_run_id in tool_calls:
+                for tool_name_task_id, tool_call_dict in ch_tool_value.items():
+                    if tool_name_task_id not in tool_calls[plan_run_id]:
+                        tool_calls[plan_run_id][tool_name_task_id] = tool_call_dict
+            else:
+                tool_calls[plan_run_id] = ch_tool_value
 
         plan_run_id_dict = {}
         fetch_plan_run_ids = set()
