@@ -467,6 +467,11 @@ class GetEarningsCallDataInput(ToolArgs):
 that were published within the provided date range. This should only be used when \
 a user explicitly asks for the full earnings transcript. Otherwise earnings data should \
 be retrieved through the `get_earnings_call_summaries` tool. \
+The user must explicitly ask for the full earning transcript, without summary to use this tool. \
+Do not use this tool if the client mentions `summarizing`, in that case, \
+use the `get_earnings_call_summaries` tool. \
+You will be fired if you use this tool and then try to summarize it because \
+that would indicate that the user wanted to summarize the output of this text. \
 You should first use the tool `get_date_range` to create a DateRange object if there is a specific \
 date range mentioned in the client's messages. If no date range is provided or can be inferred from \
 the client's messages, you should set `date_range` to None, and it defaults to the last quarter under \
@@ -541,9 +546,12 @@ async def get_earnings_call_full_transcripts(
 @tool(
     description="""This tool returns a list of all earnings call **summaries** for one or more stocks \
 that were published within the provided date range. \
-If the client simply mentions `earnings calls`, you will get data using this tool unless \
-the term `transcript` is specifically used, at which point you would use the transcript tool. \
+If the client simply mentions `earnings calls` or mentions `summarizing` earnings call information, \
+you will get data using this tool unless \
+the client asks for the full transcript, at which point you would use the transcript tool. \'
 Again, this tool is the default tool for getting earnings call information!
+If the client wants to summarize earnings call information, you should use this tool, you should
+only use the transcript tool if the clients wants the entire transcript text.
 Never, ever use get_default_text_data_for_stock as a substitute for this tool if the client says they want
 to look 'earnings' data, you must use either this tool, or the transcript tool if the word transcript
 is also used.
