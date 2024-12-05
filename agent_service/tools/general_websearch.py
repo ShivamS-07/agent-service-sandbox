@@ -18,7 +18,7 @@ from agent_service.tools.product_comparison.brightdata_websearch import (
     get_web_texts_async,
 )
 from agent_service.tools.tool_log import tool_log
-from agent_service.types import PlanRunContext
+from agent_service.types import AgentUserSettings, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.feature_flags import get_ld_flag
 
@@ -37,9 +37,13 @@ def prepend_url_with_https(url: str) -> str:
     return url
 
 
-def enabler_function(user_id: Optional[str]) -> bool:
-    result = get_ld_flag("web-search-tool", default=False, user_context=user_id)
-    return result
+def enabler_function(user_id: Optional[str], user_settings: Optional[AgentUserSettings]) -> bool:
+    result = (
+        get_ld_flag("web-search-tool", default=False, user_context=user_id)
+        and user_settings
+        and user_settings.include_web_results
+    )
+    return bool(result)
 
 
 class SingleStockWebSearchInput(ToolArgs):

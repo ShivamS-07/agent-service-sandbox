@@ -276,7 +276,7 @@ from agent_service.utils.agent_event_utils import (
     update_agent_help_requested,
 )
 from agent_service.utils.agent_name import generate_name_for_agent
-from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_db import AsyncDB, get_async_db
 from agent_service.utils.async_utils import (
     async_wrap,
     gather_with_concurrency,
@@ -1832,11 +1832,17 @@ class AgentServiceImpl:
 
     async def get_tool_library(self, user: Optional[User] = None) -> GetToolLibraryResponse:
         tools = []
+
+        async_db = get_async_db(read_only=True)
+        user_settings = (
+            await async_db.get_user_agent_settings(user_id=user.user_id) if user else None
+        )
+
         for tool_name, tool in ToolRegistry._REGISTRY_ALL_TOOLS_MAP.items():
             if not tool.enabled:
                 continue
             elif tool.enabled_checker_func and not (
-                user and tool.enabled_checker_func(user.user_id)
+                user and tool.enabled_checker_func(user.user_id, user_settings)
             ):
                 continue
 

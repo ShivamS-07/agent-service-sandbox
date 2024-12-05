@@ -20,7 +20,7 @@ from agent_service.tools.product_comparison.prompts import (
     WEB_SCRAPE_IMPORTANT_SPECS_SYS_PROMPT_OBJ,
 )
 from agent_service.tools.product_comparison.websearch import WebScraper
-from agent_service.types import PlanRunContext
+from agent_service.types import AgentUserSettings, PlanRunContext
 from agent_service.utils.feature_flags import get_ld_flag
 from agent_service.utils.postgres import SyncBoostedPG
 from agent_service.utils.string_utils import repair_json_if_needed
@@ -56,10 +56,13 @@ async def get_important_specs(
     return json.loads(repair_json_if_needed(result))
 
 
-def enabler_function(user_id: Optional[str]) -> bool:
-    result = get_ld_flag("product-comparison-tool", default=False, user_context=user_id)
-    logger.info(f"product comparison tool enabled?: {result}")
-    return result
+def enabler_function(user_id: Optional[str], user_settings: Optional[AgentUserSettings]) -> bool:
+    result = (
+        get_ld_flag("product-comparison-tool", default=False, user_context=user_id)
+        and user_settings
+        and user_settings.include_web_results
+    )
+    return bool(result)
 
 
 @tool(

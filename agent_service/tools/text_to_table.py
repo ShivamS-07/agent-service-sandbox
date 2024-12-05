@@ -29,7 +29,7 @@ from agent_service.tools.table_utils.prompts import (
     TEXT_TO_TABLE_MAIN_PROMPT,
     TEXT_TO_TABLE_SYS_PROMPT,
 )
-from agent_service.types import PlanRunContext
+from agent_service.types import AgentUserSettings, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.constants import CURRENCY_SYMBOL_TO_ISO, ISO_CURRENCY_CODES
 from agent_service.utils.feature_flags import get_ld_flag
@@ -190,7 +190,7 @@ async def _handle_table_col(
     return col_meta, new_vals
 
 
-def enabler_function(user_id: Optional[str]) -> bool:
+def enabler_function(user_id: Optional[str], user_settings: Optional[AgentUserSettings]) -> bool:
     return get_ld_flag("enable-text-to-table-tool", default=False, user_context=user_id)
 
 

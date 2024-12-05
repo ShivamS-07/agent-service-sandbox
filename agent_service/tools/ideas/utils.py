@@ -8,6 +8,7 @@ from agent_service.tools.ideas.constants import (
     MAX_TEXT_GROUP_TOKENS,
     MIN_TEXT_GROUP_TOKENS,
 )
+from agent_service.types import AgentUserSettings
 from agent_service.utils.feature_flags import get_ld_flag
 
 
@@ -43,7 +44,7 @@ async def create_small_text_groups(input_texts: List[Text]) -> List[List[Text]]:
     return output_text_groups
 
 
-def ideas_enabled(user_id: Optional[str]) -> bool:
+def ideas_enabled(user_id: Optional[str], user_settings: Optional[AgentUserSettings]) -> bool:
     result = get_ld_flag("agent-svc-ideas-tools-enabled", default=False, user_context=user_id)
     return result
 

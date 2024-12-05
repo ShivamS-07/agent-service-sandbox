@@ -52,7 +52,7 @@ from agent_service.io_type_utils import (
 )
 from agent_service.io_types.stock import StockID
 from agent_service.planner.errors import AgentExecutionError
-from agent_service.types import PlanRunContext
+from agent_service.types import AgentUserSettings, PlanRunContext
 from agent_service.utils.cache_utils import (
     DEFAULT_CACHE_TTL,
     CacheBackend,
@@ -184,7 +184,9 @@ class Tool:
     is_output_tool: bool = False
     store_output: bool = True
     enabled: bool = True
-    enabled_checker_func: Optional[Callable[[Optional[str]], bool]] = None
+    enabled_checker_func: Optional[Callable[[Optional[str], Optional[AgentUserSettings]], bool]] = (
+        None
+    )
 
     def to_function_header(self) -> str:
         """
@@ -372,6 +374,7 @@ class ToolRegistry:
         user_id: Optional[str] = None,
         filter_input: bool = False,
         skip_list: Optional[List[ToolCategory]] = None,
+        user_settings: Optional[AgentUserSettings] = None,
     ) -> str:
         """Returns a string representation of the tool library. The user_id is used to control which
         tools are visible to individual users. If filter_input is true, the string is going to be input
@@ -386,7 +389,9 @@ class ToolRegistry:
             for tool in tool_dict.values():
                 if not tool.enabled:
                     continue
-                elif tool.enabled_checker_func and not (tool.enabled_checker_func(user_id)):
+                elif tool.enabled_checker_func and not (
+                    tool.enabled_checker_func(user_id, user_settings)
+                ):
                     continue
                     # If there is a checker, only continue if there is a user ID which results in a true checker
                 tool_descriptions.append(tool.to_function_header())
@@ -431,7 +436,9 @@ def tool(
     create_prefect_task: bool = False,
     is_visible: bool = True,
     enabled: bool = True,
-    enabled_checker_func: Optional[Callable[[Optional[str]], bool]] = None,
+    enabled_checker_func: Optional[
+        Callable[[Optional[str], Optional[AgentUserSettings]], bool]
+    ] = None,
     reads_chat: bool = False,
     update_instructions: Optional[str] = None,
     tool_registry: Type[ToolRegistry] = ToolRegistry,

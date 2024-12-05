@@ -53,7 +53,7 @@ from agent_service.tool import Tool, ToolCategory, ToolRegistry
 
 # Make sure all tools are imported for the planner
 from agent_service.tools import *  # noqa
-from agent_service.types import ChatContext, Message
+from agent_service.types import AgentUserSettings, ChatContext, Message
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.async_utils import gather_with_concurrency, gather_with_stop
 from agent_service.utils.date_utils import get_now_utc
@@ -99,6 +99,7 @@ class Planner:
         tool_registry: Type[ToolRegistry] = ToolRegistry,
         send_chat: bool = True,
         skip_db_commit: bool = False,
+        user_settings: Optional[AgentUserSettings] = None,
     ) -> None:
         self.agent_id = agent_id
         self.user_id = user_id
@@ -106,10 +107,16 @@ class Planner:
         self.smart_llm = GPT(self.context, DEFAULT_SMART_MODEL)
         self.fast_llm = GPT(self.context, GPT4_O)
         self.tool_registry = tool_registry
+        self.user_settings = user_settings
         self.tool_string_function_only = tool_registry.get_tool_str(
-            self.user_id, filter_input=True, skip_list=ALWAYS_AVAILABLE_TOOL_CATEGORIES
+            self.user_id,
+            filter_input=True,
+            skip_list=ALWAYS_AVAILABLE_TOOL_CATEGORIES,
+            user_settings=self.user_settings,
         )
-        self.full_tool_string = tool_registry.get_tool_str(self.user_id)
+        self.full_tool_string = tool_registry.get_tool_str(
+            self.user_id, user_settings=self.user_settings
+        )
         self.send_chat = send_chat
         self.skip_db_commit = skip_db_commit
         self.db = get_psql(skip_commit=skip_db_commit)
@@ -696,7 +703,9 @@ class Planner:
             except ValueError:
                 continue
             not_wanted_categories.append(not_wanted_cat)
-        tool_str = self.tool_registry.get_tool_str(self.user_id, skip_list=not_wanted_categories)
+        tool_str = self.tool_registry.get_tool_str(
+            self.user_id, skip_list=not_wanted_categories, user_settings=self.user_settings
+        )
         return tool_str
 
     def _try_parse_str_literal(self, val: str) -> Optional[str]:

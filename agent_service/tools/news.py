@@ -38,7 +38,7 @@ from agent_service.tools.general_websearch import (
     general_web_search,
 )
 from agent_service.tools.tool_log import tool_log
-from agent_service.types import PlanRunContext
+from agent_service.types import AgentUserSettings, PlanRunContext
 from agent_service.utils.async_db import AsyncDB, get_async_db
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc, parse_date_str_in_utc
@@ -426,9 +426,13 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
     )
 
 
-def web_search_enabled(user_id: Optional[str]) -> bool:
-    result = get_ld_flag("web-search-tool", default=False, user_context=user_id)
-    return result
+def web_search_enabled(user_id: Optional[str], user_settings: Optional[AgentUserSettings]) -> bool:
+    result = (
+        get_ld_flag("web-search-tool", default=False, user_context=user_id)
+        and user_settings
+        and user_settings.include_web_results
+    )
+    return bool(result)
 
 
 class GetLatestNewsForCompaniesInput(ToolArgs):
