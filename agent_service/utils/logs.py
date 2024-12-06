@@ -24,7 +24,7 @@ def init_logging(
     # add thread id to confirm parallel threads are running
     if not formatter:
         formatter = logging.Formatter(
-            fmt="%(asctime)s %(process)8d %(thread)d %(levelname)8s  %(name)s : %(message)s"
+            fmt="%(asctime)s %(process)8d %(thread)d %(levelname)8s  %(name)s %(filename)s:%(lineno)d : %(message)s"
         )
     log_handler.setFormatter(formatter)
     if disable_prefect_logging:
