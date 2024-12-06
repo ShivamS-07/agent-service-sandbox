@@ -287,10 +287,10 @@ async def run_plan_run_id_task_id(
 
     with (
         patch(target="agent_service.planner.executor.check_cancelled") as cc,
-        patch(target="agent_service.planner.executor.publish_agent_execution_plan"),  # noqa
+        patch(target="agent_service.planner.plan_creation.publish_agent_execution_plan"),  # noqa
         patch(target="agent_service.planner.executor.publish_agent_execution_status"),  # noqa
         patch(target="agent_service.planner.executor.publish_agent_task_status"),  # noqa
-        patch(target="agent_service.planner.executor.publish_agent_plan_status"),  # noqa
+        patch(target="agent_service.planner.plan_creation.publish_agent_plan_status"),  # noqa
         patch(target="agent_service.planner.executor.publish_agent_output"),  # noqa
         patch(target="agent_service.planner.executor.send_chat_message"),  # noqa
         patch.object(AgentEmail, "send_agent_emails"),  # noqa

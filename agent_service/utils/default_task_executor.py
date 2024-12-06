@@ -1,7 +1,7 @@
 from typing import Optional
 
 from agent_service.planner.constants import FollowupAction
-from agent_service.planner.executor import update_execution_after_input
+from agent_service.planner.plan_creation import update_execution_after_input
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import ChatContext, PlanRunContext
 from agent_service.utils.async_db import AsyncDB

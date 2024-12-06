@@ -210,19 +210,27 @@ async def publish_agent_output(
     context: PlanRunContext,
     live_plan_output: bool = False,
     is_intermediate: bool = False,
-    db: Optional[Postgres] = None,
+    db: Optional[Union[Postgres, AsyncDB]] = None,
     is_locked: bool = False,
     cache_backend: Optional[CacheBackend] = None,
 ) -> None:
     if not db:
         db = get_psql()
 
-    db.write_agent_multi_outputs(
-        outputs_with_ids=outputs_with_ids,
-        context=context,
-        is_intermediate=is_intermediate,
-        live_plan_output=live_plan_output,
-    )
+    if isinstance(db, Postgres):
+        db.write_agent_multi_outputs(
+            outputs_with_ids=outputs_with_ids,
+            context=context,
+            is_intermediate=is_intermediate,
+            live_plan_output=live_plan_output,
+        )
+    else:
+        await db.write_agent_multi_outputs(
+            outputs_with_ids=outputs_with_ids,
+            context=context,
+            is_intermediate=is_intermediate,
+            live_plan_output=live_plan_output,
+        )
 
     async_pg = AsyncPostgresBase()
     coros = [get_output_from_io_type(o.output, pg=async_pg) for o in outputs_with_ids]

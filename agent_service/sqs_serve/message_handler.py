@@ -4,7 +4,8 @@ from typing import Dict
 
 from dateutil.parser import parse
 
-from agent_service.planner.executor import create_execution_plan, run_execution_plan
+from agent_service.planner.executor import run_execution_plan
+from agent_service.planner.plan_creation import create_execution_plan
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
 

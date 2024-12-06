@@ -12,9 +12,9 @@ from gbi_common_py_utils.utils.environment import get_environment_tag
 # from agent_service.agent_service_impl import AgentServiceImpl
 from agent_service.endpoints.models import AgentInfo
 from agent_service.io_type_utils import ComplexIOBase, IOType
-from agent_service.planner.executor import (
+from agent_service.planner.executor import run_execution_plan_local
+from agent_service.planner.plan_creation import (
     create_execution_plan_local,
-    run_execution_plan_local,
     update_execution_after_input,
 )
 from agent_service.types import ChatContext, Message, PlanRunContext

@@ -387,6 +387,15 @@ class Status(enum.StrEnum):
     NO_RESULTS_FOUND = "NO_RESULTS_FOUND"
 
 
+class PlanRunInfo(BaseModel):
+    agent_id: str
+    plan_id: str
+    plan_run_id: str
+    created_at: datetime.datetime
+    is_shared: bool = False
+    status: Status = Status.COMPLETE
+
+
 class PlanRunStatusInfo(BaseModel):
     # Used internally only
     plan_run_id: str

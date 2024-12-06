@@ -1,6 +1,6 @@
 import json
 import random
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Union
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
@@ -10,11 +10,31 @@ from agent_service.planner.prompts import (
     SAMPLE_PLANS_MAIN_PROMPT,
     SAMPLE_PLANS_SYS_PROMPT,
 )
+from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.logs import async_perf_logger
-from agent_service.utils.postgres import get_psql
+from agent_service.utils.postgres import Postgres, get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.string_utils import clean_to_json_if_needed
+
+
+async def check_cancelled(
+    db: Union[Postgres, AsyncDB],
+    agent_id: Optional[str] = None,
+    plan_id: Optional[str] = None,
+    plan_run_id: Optional[str] = None,
+) -> bool:
+    if not agent_id and not plan_id and not plan_run_id:
+        return False
+
+    ids = [val for val in (plan_id, plan_run_id) if val is not None]
+    if isinstance(db, Postgres):
+        return db.is_cancelled(ids_to_check=ids) or db.is_agent_deleted(agent_id=agent_id)
+    else:
+        res = await gather_with_concurrency(
+            [db.is_cancelled(ids_to_check=ids), db.is_agent_deleted(agent_id=agent_id)]
+        )
+        return res[0] or res[1]
 
 
 async def _get_similar_plans(gpt: GPT, sample_plans: List[SamplePlan], input: str) -> Set[str]:

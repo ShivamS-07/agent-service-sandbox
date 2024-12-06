@@ -20,10 +20,8 @@ from agent_service.endpoints.models import AgentInfo
 from agent_service.GPT.constants import CLIENT_NAMESPACE, DEFAULT_CHEAP_MODEL
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import IOType, dump_io_type
-from agent_service.planner.executor import (
-    create_execution_plan_local,
-    run_execution_plan_local,
-)
+from agent_service.planner.executor import run_execution_plan_local
+from agent_service.planner.plan_creation import create_execution_plan_local
 from agent_service.planner.planner import plan_to_json
 from agent_service.planner.planner_types import ExecutionPlan, SamplePlan
 from agent_service.planner.utils import get_similar_sample_plans

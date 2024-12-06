@@ -3,10 +3,8 @@ from typing import Optional, Tuple
 
 from agent_service.GPT.requests import set_use_global_stub
 from agent_service.io_type_utils import IOType
-from agent_service.planner.executor import (
-    create_execution_plan_local,
-    run_execution_plan_local,
-)
+from agent_service.planner.executor import run_execution_plan_local
+from agent_service.planner.plan_creation import create_execution_plan_local
 from agent_service.types import ChatContext, Message, PlanRunContext
 
 

@@ -30,7 +30,9 @@ from agent_service.endpoints.models import (
     HorizonCriteria,
     HorizonCriteriaOperator,
     Pagination,
+    PlanRunInfo,
     PlanRunStatusInfo,
+    PlanRunTaskLog,
     QuickThoughts,
     SetAgentFeedBackRequest,
     Status,
@@ -1035,13 +1037,91 @@ class AsyncDB:
             },
         )
 
+    async def get_agent_output_titles(self, agent_id: str) -> Dict[str, str]:
+        sql = """
+        SELECT (output::jsonb)->>'title' AS title, output_id::TEXT
+        FROM agent.agent_outputs
+        WHERE plan_run_id = (
+            SELECT plan_run_id
+            FROM agent.agent_outputs
+            WHERE agent_id = %(agent_id)s
+            ORDER BY created_at DESC
+            LIMIT 1
+        )
+        """
+        rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
+        return {row["title"]: row["output_id"] for row in rows}
+
+    async def write_agent_multi_outputs(
+        self,
+        outputs_with_ids: List[OutputWithID],
+        context: PlanRunContext,
+        is_intermediate: bool = False,
+        live_plan_output: bool = False,
+    ) -> None:
+        now = get_now_utc()
+        time_delta = datetime.timedelta(seconds=0.01)
+        rows = [
+            {
+                "output_id": output_with_id.output_id,
+                "agent_id": context.agent_id,
+                "plan_id": context.plan_id,
+                "plan_run_id": context.plan_run_id,
+                "task_id": output_with_id.task_id,
+                "output": dump_io_type(output_with_id.output),
+                "is_intermediate": is_intermediate,
+                "live_plan_output": live_plan_output,
+                "created_at": now + idx * time_delta,  # preserve order
+            }
+            for idx, output_with_id in enumerate(outputs_with_ids)
+        ]
+        await self.pg.multi_row_insert(table_name="agent.agent_outputs", rows=rows)
+
+    async def get_task_logs(
+        self,
+        agent_id: str,
+        plan_run_id: str,
+        task_id: str,
+    ) -> List[PlanRunTaskLog]:
+        sql = """
+            SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, task_id::VARCHAR,
+                log_id::VARCHAR, log_message, created_at, (log_data NOTNULL) AS has_output
+            FROM agent.work_logs
+            WHERE agent_id = %(agent_id)s
+              AND plan_run_id = %(plan_run_id)s
+              AND task_id = %(task_id)s
+              AND NOT is_task_output
+            ORDER BY created_at DESC
+        """
+        rows = await self.pg.generic_read(
+            sql, params={"agent_id": agent_id, "plan_run_id": plan_run_id, "task_id": task_id}
+        )
+        if not rows:
+            return []
+        log_rows = []
+        for row in rows:
+            message = load_io_type(row["log_message"])
+            message_str = (await message.get()).val if isinstance(message, Text) else str(message)
+            log_rows.append(
+                PlanRunTaskLog(
+                    log_id=row["log_id"],
+                    log_message=message_str,
+                    created_at=row["created_at"],
+                    has_output=row["has_output"],
+                )
+            )
+        return sorted(
+            log_rows,
+            key=lambda tl: tl.created_at,
+        )
+
     async def update_plan_run(
         self, agent_id: str, plan_id: str, plan_run_id: str, status: Status = Status.NOT_STARTED
     ) -> None:
         now_utc = get_now_utc()
         sql = """
-        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id, status)
-        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(status)s)
+        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id, created_at, status)
+        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(now_utc)s, %(status)s)
         ON CONFLICT (plan_run_id) DO UPDATE SET
           agent_id = EXCLUDED.agent_id,
           plan_id = EXCLUDED.plan_id,
@@ -1067,6 +1147,32 @@ class AsyncDB:
         """
         rows = await self.pg.generic_read(sql, {"plan_run_ids": plan_run_ids})
         return {row["plan_run_id"]: PlanRunStatusInfo(**row) for row in rows}
+
+    async def get_plan_run_info(self, plan_run_id: str) -> Optional[PlanRunInfo]:
+        """
+        Given a plan_run_id, return the plan run's info.
+        """
+        sql = """
+        SELECT agent_id::VARCHAR, plan_id::VARCHAR, created_at, shared, status
+        FROM agent.plan_runs WHERE plan_run_id = %(plan_run_id)s LIMIT 1
+        """
+        params: Dict[str, Any] = {"plan_run_id": plan_run_id}
+        rows = await self.pg.generic_read(sql, params=params)
+
+        if not rows:
+            return None
+
+        if rows[0]["status"] is None:
+            rows[0]["status"] = Status.COMPLETE
+        row = rows[0]
+        return PlanRunInfo(
+            agent_id=row["agent_id"],
+            plan_run_id=plan_run_id,
+            plan_id=row["plan_id"],
+            created_at=row["created_at"],
+            is_shared=row["shared"],
+            status=Status(row["status"]),
+        )
 
     async def get_task_run_info(
         self, plan_run_id: str, task_id: str, tool_name: str
