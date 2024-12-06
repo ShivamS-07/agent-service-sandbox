@@ -20,6 +20,8 @@ from agent_service.chatbot.prompts import (
     INITIAL_PLAN_FAILED_SUGGESTIONS_MAIN_PROMPT,
     INITIAL_PLAN_FAILED_SUGGESTIONS_SYS_PROMPT,
     INITIAL_PLAN_FAILED_SYS_PROMPT,
+    INITIAL_POSTPLAN_INCOMPLETE_MAIN_PROMPT,
+    INITIAL_POSTPLAN_INCOMPLETE_SYS_PROMPT,
     INITIAL_POSTPLAN_MAIN_PROMPT,
     INITIAL_POSTPLAN_SYS_PROMPT,
     INITIAL_PREPLAN_MAIN_PROMPT,
@@ -117,6 +119,20 @@ class Chatbot:
             agent_description=await self.prepare_agent_description()
         )
         result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=100)
+        return result
+
+    async def generate_initial_postplan_incomplete_response(
+        self, chat_context: ChatContext, execution_plan: ExecutionPlan, missing_str: str
+    ) -> str:
+        main_prompt = INITIAL_POSTPLAN_INCOMPLETE_MAIN_PROMPT.format(
+            chat_context=chat_context.get_gpt_input(),
+            plan=execution_plan.get_plan_steps_for_gpt(),
+            missing=missing_str,
+        )
+        sys_prompt = INITIAL_POSTPLAN_INCOMPLETE_SYS_PROMPT.format(
+            agent_description=await self.prepare_agent_description()
+        )
+        result = await self.llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, max_tokens=130)
         return result
 
     async def generate_initial_plan_failed_response(self, chat_context: ChatContext) -> str:

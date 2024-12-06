@@ -12,7 +12,11 @@ from agent_service.planner.action_decide import (
     FirstActionDecider,
     FollowupActionDecider,
 )
-from agent_service.planner.constants import FirstAction, FollowupAction
+from agent_service.planner.constants import (
+    PASS_CHECK_OUTPUT,
+    FirstAction,
+    FollowupAction,
+)
 from agent_service.planner.errors import AgentCancelledError
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan, PlanStatus
@@ -103,6 +107,7 @@ async def create_execution_plan(
     )
 
     logger = get_prefect_logger(__name__)
+    chatbot = Chatbot(agent_id=agent_id)
     context = plan_create_context(agent_id, user_id, plan_id)
     user_settings = await db.get_user_agent_settings(user_id=user_id)
     planner = Planner(
@@ -133,7 +138,6 @@ async def create_execution_plan(
         raise AgentCancelledError("Plan creation has been cancelled.")
     if plan is None:
         if do_chat:
-            chatbot = Chatbot(agent_id=agent_id)
             message = await chatbot.generate_initial_plan_failed_response_suggestions(
                 chat_context=chat_context
             )
@@ -169,6 +173,70 @@ async def create_execution_plan(
     if not plan_run_id:
         plan_run_id = str(uuid4())
 
+    incomplete_plan = False
+
+    if get_ld_flag("plan_completeness_check_enabled", default=False, user_context=user_id) and plan:
+        try:  # this is all optional so keep it in a try/except
+            first_check_result = await planner.plan_completeness_check(chat_context, plan)
+            if PASS_CHECK_OUTPUT not in first_check_result:
+                logger.warning(f"Plan failed completeness check:\n{first_check_result}")
+                if do_chat:
+                    chatbot = Chatbot(agent_id=agent_id)
+                    message = await chatbot.generate_initial_midplan_response(
+                        chat_context=await get_chat_history_from_db(agent_id, db)
+                    )
+                    await send_chat_message(
+                        message=Message(
+                            agent_id=agent_id,
+                            message=message,
+                            is_user_message=False,
+                            plan_run_id=plan_run_id,
+                        ),
+                        db=db,
+                    )
+                new_plan = await planner.rewrite_plan_for_completeness(
+                    chat_context, plan, first_check_result, plan_id
+                )
+                if new_plan:
+                    second_check_result = await planner.plan_completeness_check(
+                        chat_context, new_plan
+                    )
+                    success = PASS_CHECK_OUTPUT in second_check_result
+                else:
+                    logger.info("Plan completeness replan failed to parse")
+                    success = False
+                    second_check_result = None
+                if success and new_plan:
+                    logger.info("Plan completeness replan succeeded")
+                    plan = new_plan
+                else:
+                    if new_plan and second_check_result:
+                        logger.info(
+                            "Plan completeness replan failed to address all incompleteness:\n"
+                            + second_check_result
+                        )
+                        plan = new_plan
+                        final_missing = second_check_result
+                    else:
+                        final_missing = first_check_result
+                    if do_chat and plan:
+                        message = await chatbot.generate_initial_postplan_incomplete_response(
+                            chat_context=await get_chat_history_from_db(agent_id, db),
+                            execution_plan=plan,
+                            missing_str=final_missing,
+                        )
+                        await send_chat_message(
+                            message=Message(
+                                agent_id=agent_id,
+                                message=message,
+                                is_user_message=False,
+                                plan_run_id=plan_run_id,
+                            ),
+                            db=db,
+                        )
+        except Exception as e:
+            logger.warning(f"Pass for completeness failed: {e}")
+
     ctx = PlanRunContext(
         agent_id=agent_id,
         plan_id=plan_id,
@@ -193,13 +261,13 @@ async def create_execution_plan(
         "\n"
     )
 
-    if do_chat:
-        if await check_cancelled(db=db, agent_id=agent_id, plan_id=plan_id):
-            await publish_agent_plan_status(
-                agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
-            )
-            raise AgentCancelledError("Plan creation has been cancelled.")
+    if await check_cancelled(db=db, agent_id=agent_id, plan_id=plan_id):
+        await publish_agent_plan_status(
+            agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
+        )
+        raise AgentCancelledError("Plan creation has been cancelled.")
 
+    if do_chat and not incomplete_plan:
         logger.info("Generating initial postplan response...")
         chatbot = Chatbot(agent_id=agent_id)
         message = await chatbot.generate_initial_postplan_response(

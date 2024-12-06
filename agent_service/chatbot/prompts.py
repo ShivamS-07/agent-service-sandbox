@@ -88,7 +88,8 @@ INITIAL_MIDPLAN_SYS_PROMPT_STR = (
     "and will need more time, but you are still hopeful you can find a plan that works. "
     "You must make it clear that you are still working on generating a plan. "
     "Do not give any specifics on the problems you're having. "
-    "Note that the client has not spoken, so you should not start with an acknowledgment as if they had. "
+    "Note that often the client has not spoken, so you should not start with an acknowledgment as if they had. "
+    "If you have already said something about the plan taking longer, make sure your output is consistent with that. "
     "Keep it as brief as possible: your total response including any follow-up question should be no more than 30 words. "
     "Do not mention the term `information need` or `plan` in your response. "
 )
@@ -123,6 +124,38 @@ INITIAL_POSTPLAN_MAIN_PROMPT_STR = (
     "inform the client of your progress and any assumptions you have made so far. "
     "Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\n"
     "And here are the steps of your plan:\n---\n{plan}\n---\n"
+    "Now write your short and concise response to the client: "
+)
+
+### Initial Postplan Response
+
+INITIAL_POSTPLAN_INCOMPLETE_SYS_PROMPT_STR = (
+    "{agent_description}"
+    "You have been provided with a client request for information, and have generated an initial plan "
+    "that partially satisfies that information need. "
+    "However, you have also identified areas where your plan is lacking. "
+    "You should tell the client that you've finished making the plan but you weren't able to fully satisfy their request. "
+    "Briefly mention any failures to satisfy the client's needs. If you can do this concisely while still quoting the "
+    "client's request directly, you must do so, otherwise you should paraphrase."
+    "If there are several, please focus on a few of the most important ones "
+    "(ones that involve a major output that is missing). "
+    "Refer the client to the worklog for specifics of what the plan does contain. "
+    "Finally, tell the client that you are beginning to execute the plan despite its flaws. "
+    "Please do not use the exact wording from these instructions, rephrase. "
+    "Do not mention the term `information need` or `plan` in your response. "
+    "Keep it as brief as possible: your total response should be no more than 80 words. "
+    "You do not need to greet the client. "
+    "DO NOT give an answer to the client's question in this step. "
+)
+
+INITIAL_POSTPLAN_INCOMPLETE_MAIN_PROMPT_STR = (
+    "Given the following interaction with the client, a plan you have just generated that paritally satisfies "
+    "their information needs, and an investigation of missing elements that you have carried out, "
+    "inform the the client that you are going forward with this partial plan despite its flaws, "
+    "which you should enumerate. "
+    "Here is transcript of your interaction with the client so far, delimited by ---:\n---\n{chat_context}\n---\n"
+    "And here are the steps of your plan:\n---\n{plan}\n---\n"
+    "And here is a discussion of the plan's inadequencies:\n---\n{missing}\n---\n"
     "Now write your short and concise response to the client: "
 )
 
@@ -408,6 +441,14 @@ INITIAL_MIDPLAN_MAIN_PROMPT = Prompt(INITIAL_MIDPLAN_MAIN_PROMPT_STR, "INITIAL_M
 INITIAL_POSTPLAN_SYS_PROMPT = Prompt(INITIAL_POSTPLAN_SYS_PROMPT_STR, "INITIAL_POSTPLAN_SYS_PROMPT")
 INITIAL_POSTPLAN_MAIN_PROMPT = Prompt(
     INITIAL_POSTPLAN_MAIN_PROMPT_STR, "INITIAL_POSTPLAN_MAIN_PROMPT"
+)
+
+
+INITIAL_POSTPLAN_INCOMPLETE_SYS_PROMPT = Prompt(
+    INITIAL_POSTPLAN_INCOMPLETE_SYS_PROMPT_STR, "INITIAL_POSTPLAN_INCOMPLETE_SYS_PROMPT"
+)
+INITIAL_POSTPLAN_INCOMPLETE_MAIN_PROMPT = Prompt(
+    INITIAL_POSTPLAN_INCOMPLETE_MAIN_PROMPT_STR, "INITIAL_POSTPLAN_INCOMPLETE_MAIN_PROMPT"
 )
 
 INITIAL_PLAN_FAILED_SYS_PROMPT = Prompt(

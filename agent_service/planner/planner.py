@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_
 from uuid import uuid4
 
 from agent_service.chatbot.chatbot import Chatbot
-from agent_service.GPT.constants import DEFAULT_SMART_MODEL, GPT4_O
+from agent_service.GPT.constants import DEFAULT_SMART_MODEL, GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import IOType, PrimitiveType, check_type_is_valid
 from agent_service.planner.constants import (
@@ -17,6 +17,7 @@ from agent_service.planner.constants import (
     ASSIGNMENT_RE,
     INITIAL_PLAN_TRIES,
     MIN_SUCCESSFUL_FOR_STOP,
+    PASS_CHECK_OUTPUT,
     FollowupAction,
 )
 from agent_service.planner.planner_types import (
@@ -31,6 +32,9 @@ from agent_service.planner.planner_types import (
 from agent_service.planner.prompts import (
     BREAKDOWN_NEED_MAIN_PROMPT,
     BREAKDOWN_NEED_SYS_PROMPT,
+    COMPLETENESS_CHECK_PROMPT,
+    COMPLETENESS_REPLAN_MAIN_PROMPT,
+    COMPLETENESS_REPLAN_SYS_PROMPT,
     ERROR_REPLAN_MAIN_PROMPT,
     ERROR_REPLAN_SYS_PROMPT,
     PICK_BEST_PLAN_MAIN_PROMPT,
@@ -557,7 +561,7 @@ class Planner:
                     "old_plan_str": old_plan_str,
                 },
             )
-        except Exception:
+        except Exception as e:
             log_event(
                 event_name="agent_plan_generated",
                 event_data={
@@ -576,6 +580,116 @@ class Planner:
             )
             logger.warning(
                 f"Failed to validate replan with original LLM output string: {new_plan_str}"
+                f"\nException: {e}"
+            )
+            return None
+
+        return new_plan
+
+    @async_perf_logger
+    async def plan_completeness_check(
+        self, chat_context: ChatContext, last_plan: ExecutionPlan
+    ) -> str:
+        return await self.fast_llm.do_chat_w_sys_prompt(
+            COMPLETENESS_CHECK_PROMPT.format(
+                input=chat_context.get_gpt_input(),
+                plan=last_plan.get_formatted_plan(),
+                pass_phrase=PASS_CHECK_OUTPUT,
+            ),
+            NO_PROMPT,
+        )
+
+    @async_perf_logger
+    async def rewrite_plan_for_completeness(
+        self,
+        chat_context: ChatContext,
+        last_plan: ExecutionPlan,
+        missing_str: str,
+        plan_id: str,
+    ) -> Optional[ExecutionPlan]:
+        logger = get_prefect_logger(__name__)
+
+        logger.info("Rewriting plan for completness")
+        first_round_tasks = [
+            self._rewrite_plan_for_completeness(
+                chat_context,
+                missing_str,
+                last_plan,
+                plan_id=plan_id,
+            )
+            for _ in range(INITIAL_PLAN_TRIES)
+        ]
+        first_round_results = await gather_with_stop(first_round_tasks, MIN_SUCCESSFUL_FOR_STOP)
+
+        if first_round_results:
+            logger.info(
+                f"{len(first_round_results)} of {INITIAL_PLAN_TRIES} rewrite runs succeeded"
+            )
+            first_round_results = list(set(first_round_results))  # get rid of complete duplicates
+            # GPT 4O seems to have done it now need to just pick
+            if len(first_round_results) > 1:
+                best_plan = await self._pick_best_plan(
+                    chat_context, first_round_results, plan_id=plan_id
+                )
+            else:
+                best_plan = first_round_results[0]
+
+            return best_plan
+        else:
+            return None
+
+    @async_perf_logger
+    async def _rewrite_plan_for_completeness(
+        self,
+        chat_context: ChatContext,
+        missing_str: str,
+        last_plan: ExecutionPlan,
+        plan_id: str,
+    ) -> Optional[ExecutionPlan]:
+        execution_plan_start = get_now_utc().isoformat()
+        agent_id = get_agent_id_from_chat_context(context=chat_context)
+        logger = get_prefect_logger(__name__)
+        old_plan_str = last_plan.get_formatted_plan()
+        chat_str = chat_context.get_gpt_input()
+        new_plan_str = await self._query_GPT_for_new_plan_for_completeness(
+            chat_str, missing_str, old_plan_str
+        )
+
+        try:
+            steps = self._parse_plan_str(new_plan_str)
+            new_plan = self._validate_and_construct_plan(steps)
+            log_event(
+                event_name="agent_plan_generated",
+                event_data={
+                    "started_at_utc": execution_plan_start,
+                    "finished_at_utc": get_now_utc().isoformat(),
+                    "execution_plan": plan_to_json(plan=new_plan),
+                    "plan_str": new_plan_str,
+                    "agent_id": agent_id,
+                    "model_id": self.smart_llm.model,
+                    "missing_str": missing_str,
+                    "plan_id": plan_id,
+                    "old_plan_str": old_plan_str,
+                },
+            )
+        except Exception as e:
+            log_event(
+                event_name="agent_plan_generated",
+                event_data={
+                    "started_at_utc": execution_plan_start,
+                    "finished_at_utc": get_now_utc().isoformat(),
+                    "error_message": traceback.format_exc(),
+                    "plan_str": new_plan_str,
+                    "agent_id": agent_id,
+                    "model_id": self.smart_llm.model,
+                    "missing_str": missing_str,
+                    "plan_id": plan_id,
+                    "old_plan_str": old_plan_str,
+                },
+            )
+            logger.warning(
+                f"Failed to validate replan with original LLM output string: {new_plan_str}"
+                f"\nException: {e}"
             )
             return None
 
@@ -654,6 +768,29 @@ class Planner:
         )
 
         return await self.smart_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+
+    async def _query_GPT_for_new_plan_for_completeness(
+        self,
+        chat_str: str,
+        missing_str: str,
+        old_plan: str,
+    ) -> str:
+        sys_prompt_template = COMPLETENESS_REPLAN_SYS_PROMPT
+        main_prompt_template = COMPLETENESS_REPLAN_MAIN_PROMPT
+        sys_prompt = sys_prompt_template.format(
+            guidelines=PLAN_GUIDELINES,
+            example=PLAN_EXAMPLE,
+        )
+
+        main_prompt = main_prompt_template.format(
+            rules=PLAN_RULES,
+            tools=self.full_tool_string,
+            missing=missing_str,
+            chat_context=chat_str,
+            old_plan=old_plan,
+        )
+
+        return await self.fast_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
     async def _get_sample_plan_str(self, input: str) -> str:
         logger = get_prefect_logger(__name__)

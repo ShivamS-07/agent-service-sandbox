@@ -50,3 +50,5 @@ ALWAYS_AVAILABLE_TOOL_CATEGORIES = [
     ToolCategory.STOCK,
     ToolCategory.TEXT_RETRIEVAL,
 ]
+
+PASS_CHECK_OUTPUT = "The plan fully covers the client request"

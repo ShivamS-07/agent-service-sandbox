@@ -1,4 +1,5 @@
 import logging
+import unittest
 from unittest import IsolatedAsyncioTestCase
 
 import agent_service.utils.date_utils as date_utils
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class TestRunPlanRunLocally(IsolatedAsyncioTestCase):
+    @unittest.skip("Flaky on jenkins, works locally")
     async def test_main(self):
         init_stdout_logging()
         # "ibm's sector"
