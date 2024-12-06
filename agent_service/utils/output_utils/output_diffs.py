@@ -3,6 +3,7 @@ import datetime
 import json
 import logging
 from collections import defaultdict
+from itertools import islice
 from typing import Dict, List, Optional, Tuple
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
@@ -20,6 +21,7 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
+from agent_service.utils.constants import MAX_CITABLE_CHANGES_PER_WIDGET
 from agent_service.utils.date_utils import timezoneify
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.output_utils.output_construction import PreparedOutput
@@ -192,6 +194,8 @@ class OutputDiffer:
 
         if not citable_changes:
             return OutputDiff(diff_summary_message=NO_UPDATE_MESSAGE, should_notify=False), []
+        elif len(citable_changes) > MAX_CITABLE_CHANGES_PER_WIDGET:
+            citable_changes = dict(islice(citable_changes.items(), MAX_CITABLE_CHANGES_PER_WIDGET))
 
         final_prompt = TEXT_GENERATE_FINAL_DIFF_PROMPT.format(
             changes="\n".join(citable_changes.keys()),

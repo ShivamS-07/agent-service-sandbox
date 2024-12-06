@@ -1,4 +1,5 @@
 import logging
+import traceback
 from typing import List, Optional, cast
 
 import boto3
@@ -88,7 +89,12 @@ class AgentEmail:
                 ],
             )
 
-            self.queue.send_message(MessageBody=detailed_message.model_dump_json())
+            try:
+                self.queue.send_message(MessageBody=detailed_message.model_dump_json())
+            except Exception:
+                error = traceback.format_exc()
+                logger.error(f"Failed to send SQS message: {error}")
+                return
 
     async def send_welcome_email(self, user_id: str) -> None:
         """Sends welcome email to new users"""

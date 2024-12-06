@@ -250,7 +250,7 @@ async def _run_execution_plan_impl(
         async_db=async_db,
     )
     message_task = None
-    if send_plan_run_finish_email:
+    if send_plan_run_finish_email and not scheduled_by_automation:
         message_task = asyncio.create_task(
             send_slow_execution_message(
                 agent_id=context.agent_id,
