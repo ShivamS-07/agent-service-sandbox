@@ -11,6 +11,7 @@ from agent_service.io_types.table import (
 from agent_service.io_types.text import Text
 from agent_service.io_types.text_objects import StockTextObject
 from agent_service.utils.output_utils.output_construction import PreparedOutput
+from agent_service.utils.stock_metadata import get_stock_metadata
 
 
 @io_type
@@ -28,28 +29,37 @@ class StockGroups(ComplexIOBase):
 
     async def split_into_components(self, main_title: Optional[str] = None) -> List[IOType]:
         # This will display summaries added using per_stock_group_summarize_text
+        from agent_service.utils.async_db import get_async_db
+
+        db = get_async_db()
+        stocks = [stock for stock_group in self.stock_groups for stock in stock_group.stocks]
+        stocks.extend(
+            [stock_group.ref_stock for stock_group in self.stock_groups if stock_group.ref_stock]
+        )
+        stock_meta = await get_stock_metadata(gbi_ids=[stock.gbi_id for stock in stocks], pg=db.pg)
         columns = []
+
+        data: List[str | Text] = []
+        for group in self.stock_groups:
+            if not group.ref_stock:
+                data.append(group.name)
+                continue
+            meta = stock_meta.get(group.ref_stock.gbi_id)
+            if meta:
+                stock_text_obj = StockTextObject(**meta.model_dump(), index=0)
+            else:
+                stock_text_obj = StockTextObject(
+                    gbi_id=group.ref_stock.gbi_id,
+                    symbol=group.ref_stock.symbol,
+                    company_name=group.ref_stock.company_name,
+                    isin=group.ref_stock.isin,
+                    index=0,
+                )
+            data.append(Text(text_objects=[stock_text_obj]))
 
         name_column = TableColumn(
             metadata=TableColumnMetadata(label=self.header, col_type=TableColumnType.STRING),
-            data=[
-                (
-                    group.name
-                    if not group.ref_stock
-                    else Text(
-                        text_objects=[
-                            StockTextObject(
-                                gbi_id=group.ref_stock.gbi_id,
-                                symbol=group.ref_stock.symbol,
-                                company_name=group.ref_stock.company_name,
-                                isin=group.ref_stock.isin,
-                                index=0,
-                            )
-                        ]
-                    )
-                )
-                for group in self.stock_groups
-            ],
+            data=data,  # type: ignore
         )
 
         columns.append(name_column)
@@ -58,15 +68,18 @@ class StockGroups(ComplexIOBase):
         for stock_group in self.stock_groups:
             stock_objs = []
             for stock in stock_group.stocks:
-                stock_objs.append(
-                    StockTextObject(
+                meta = stock_meta.get(stock.gbi_id)
+                if meta:
+                    stock_text_obj = StockTextObject(**meta.model_dump(), index=0)
+                else:
+                    stock_text_obj = StockTextObject(
                         gbi_id=stock.gbi_id,
                         symbol=stock.symbol,
                         company_name=stock.company_name,
                         isin=stock.isin,
                         index=0,
                     )
-                )
+                stock_objs.append(stock_text_obj)
             stock_column_texts.append(Text(text_objects=stock_objs))  # type:ignore
 
         stocks_column = TableColumn(

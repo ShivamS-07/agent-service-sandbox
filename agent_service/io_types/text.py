@@ -2489,7 +2489,7 @@ class TextOutput(Output):
 
         self.resolved_text_objects = True
 
-        self.val = CitationTextObject.render_text_objects(text=self.val, objects=text_objects)
+        self.val = TextObject.render_text_objects(text=self.val, objects=text_objects)
 
     def __str__(self) -> str:
         return self.val

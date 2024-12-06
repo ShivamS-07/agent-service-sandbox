@@ -538,6 +538,13 @@ async def make_bar_graph(args: MakeBarGraphArgs, context: PlanRunContext) -> Bar
     data: List[BarData] = []
     label_type = TableColumnType.STRING
     index_type = x_axis_col_meta.col_type
+    if dataset_col:
+        # The only purpose of a dataset col is to disambiguate shared x axis
+        # values (e.g. the prices of multiple stocks on the same date). If there
+        # are no duplicate values, dataset cols will be useless.
+        x_axis_unique_values = set(df[x_axis_df_col])
+        if len(x_axis_unique_values) == len(df[x_axis_df_col]):
+            dataset_col = None
     if dataset_col is None:
         # In this case, we only have a single dataset so we don't need to do any
         # fancy grouping. The dataset name is simply the name of the graphed
