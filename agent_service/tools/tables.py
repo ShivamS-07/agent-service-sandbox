@@ -65,7 +65,7 @@ from agent_service.utils.tool_diff import get_prev_run_info
 
 
 def _dump_cols(cols: List[TableColumnMetadata]) -> str:
-    return json.dumps([col.model_dump(mode="json") for col in cols])
+    return json.dumps([col.to_json_dict_for_gpt() for col in cols])
 
 
 def _strip_code_markers(gpt_output: str, lang: str) -> str:

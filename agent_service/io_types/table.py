@@ -42,6 +42,13 @@ class RowDescription:
     explanation: Optional[str]
 
 
+# This class excludes internal only fields that GPT doesn't care about
+class TableColumnMetadataForGPT(BaseModel):
+    label: PrimitiveType
+    col_type: TableColumnType
+    unit: Optional[str] = None
+
+
 @io_type
 class TableColumnMetadata(ComplexIOBase):
     label: PrimitiveType
@@ -60,6 +67,10 @@ class TableColumnMetadata(ComplexIOBase):
             "data_src": "List[str]",
         }
         return schema
+
+    def to_json_dict_for_gpt(self) -> Dict[str, Any]:
+        new = TableColumnMetadataForGPT(label=self.label, col_type=self.col_type, unit=self.unit)
+        return new.model_dump(mode="json")
 
 
 @io_type
