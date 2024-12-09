@@ -53,7 +53,7 @@ from agent_service.planner.prompts import (
     USER_INPUT_REPLAN_SYS_PROMPT,
 )
 from agent_service.planner.utils import get_similar_sample_plans
-from agent_service.tool import Tool, ToolCategory, ToolRegistry
+from agent_service.tool import Tool, ToolCategory, ToolRegistry, default_tool_registry
 
 # Make sure all tools are imported for the planner
 from agent_service.tools import *  # noqa
@@ -100,7 +100,7 @@ class Planner:
         agent_id: Optional[str] = None,
         user_id: Optional[str] = None,
         context: Optional[Dict[str, str]] = None,
-        tool_registry: Type[ToolRegistry] = ToolRegistry,
+        tool_registry: Optional[ToolRegistry] = None,
         send_chat: bool = True,
         skip_db_commit: bool = False,
         user_settings: Optional[AgentUserSettings] = None,
@@ -110,6 +110,7 @@ class Planner:
         self.context = context
         self.smart_llm = GPT(self.context, DEFAULT_SMART_MODEL)
         self.fast_llm = GPT(self.context, GPT4_O)
+        tool_registry = tool_registry or default_tool_registry()
         self.tool_registry = tool_registry
         self.user_settings = user_settings
         self.tool_string_function_only = tool_registry.get_tool_str(

@@ -1,7 +1,7 @@
 from typing import List
 
 from agent_service.io_type_utils import ComplexIOBase, IOType
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 
@@ -37,7 +37,7 @@ def _list_to_set(list1: list) -> set:
         " Note that like all other tools, this tool must be called as as a separate step of the plan!"
     ),
     category=ToolCategory.LIST,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
 )
 async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
@@ -71,7 +71,7 @@ async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IO
         " This is equivalent to boolean AND logic, use add_lists if you want OR logic."
     ),
     category=ToolCategory.LIST,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
 )
 async def intersect_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
@@ -98,7 +98,7 @@ async def intersect_lists(args: CombineListsInput, context: PlanRunContext) -> L
         " except for a subset of them (e.g. R1k stocks excluding S&P 500 stocks)"
     ),
     category=ToolCategory.LIST,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
 )
 async def diff_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
@@ -118,7 +118,7 @@ class GetIndexInput(ToolArgs):
 @tool(
     description="Get the nth element of a list. You must use this instead of the Python indexing ([])",
     category=ToolCategory.LIST,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
     enabled=False,
 )
@@ -134,7 +134,7 @@ class GetListNInput(ToolArgs):
 @tool(
     description="Get the first N elements of a list. You must use this instead of the Python indexing ([])",
     category=ToolCategory.LIST,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
     enabled=False,
 )
@@ -145,7 +145,7 @@ async def get_first_n_from_list(args: GetListNInput, context: PlanRunContext) ->
 @tool(
     description="Get the last N elements of a list. You must use this instead of the Python indexing ([])",
     category=ToolCategory.LIST,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
     enabled=False,
 )

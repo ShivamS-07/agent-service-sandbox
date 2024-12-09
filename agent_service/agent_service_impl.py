@@ -257,7 +257,7 @@ from agent_service.planner.constants import CHAT_DIFF_TEMPLATE, FirstAction
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, Variable
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
-from agent_service.tool import ToolCategory, ToolRegistry
+from agent_service.tool import ToolCategory, default_tool_registry
 from agent_service.tools.graphs import MakeLineGraphArgs, make_line_graph
 from agent_service.types import (
     AgentUserSettings,
@@ -1464,7 +1464,7 @@ class AgentServiceImpl:
             task_id = node.tool_task_id
 
             tool_name = node.tool_name
-            tool = ToolRegistry.get_tool(tool_name)
+            tool = default_tool_registry().get_tool(tool_name)
 
             var_name_to_task[node.output_variable_name] = {
                 "task_id": task_id,
@@ -1580,7 +1580,7 @@ class AgentServiceImpl:
                 continue
 
             tool_name = node.tool_name
-            tool = ToolRegistry.get_tool(tool_name)
+            tool = default_tool_registry().get_tool(tool_name)
 
             for arg_name, info in tool.input_type.model_fields.items():
                 if arg_name not in arg_mapping[node.tool_task_id]:
@@ -1840,7 +1840,7 @@ class AgentServiceImpl:
             await async_db.get_user_agent_settings(user_id=user.user_id) if user else None
         )
 
-        for tool_name, tool in ToolRegistry._REGISTRY_ALL_TOOLS_MAP.items():
+        for tool_name, tool in default_tool_registry()._REGISTRY_ALL_TOOLS_MAP.items():
             if not tool.enabled:
                 continue
             elif tool.enabled_checker_func and not (
@@ -1848,7 +1848,7 @@ class AgentServiceImpl:
             ):
                 continue
 
-            category = ToolRegistry._TOOL_NAME_TO_CATEGORY[tool_name]
+            category = default_tool_registry()._TOOL_NAME_TO_CATEGORY[tool_name]
 
             tools.append(
                 ToolMetadata(

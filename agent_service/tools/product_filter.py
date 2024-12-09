@@ -15,7 +15,7 @@ from agent_service.tool import (
     ToolArgMetadata,
     ToolArgs,
     ToolCategory,
-    ToolRegistry,
+    default_tool_registry,
     tool,
 )
 from agent_service.tools.peers import get_peer_stock_id
@@ -234,7 +234,7 @@ class FilterStocksByProductOrServiceInput(ToolArgs):
         "a company outside the range they are asking for, you will be fired!"
     ),
     category=ToolCategory.STOCK_FILTERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def filter_stocks_by_product_or_service(
@@ -770,7 +770,7 @@ class GetCoreCompanyProduct(ToolArgs):
         "The return value is a string that can be passed as product_str to the product filter tool."
     ),
     category=ToolCategory.STOCK_FILTERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_core_company_product(args: GetCoreCompanyProduct, context: PlanRunContext) -> str:

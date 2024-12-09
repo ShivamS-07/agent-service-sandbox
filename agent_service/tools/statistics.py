@@ -27,7 +27,7 @@ from agent_service.tool import (
     TOOL_DEBUG_INFO,
     ToolArgs,
     ToolCategory,
-    ToolRegistry,
+    default_tool_registry,
     tool,
 )
 from agent_service.tools.feature_data import (
@@ -277,7 +277,7 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
         " of this tool and produce text, you must output the table and use the analyze_outputs tool."
     ),
     category=ToolCategory.STATISTICS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     retries=1,
 )
 async def get_statistic_data_for_companies(
@@ -638,7 +638,7 @@ class MacroFeatureDataInput(ToolArgs):
         " want the most recent datapoint and call without specifying either start_date or end_date."
     ),
     category=ToolCategory.STATISTICS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_macro_statistic_data(args: MacroFeatureDataInput, context: PlanRunContext) -> Table:
     if args.date_range:
@@ -713,7 +713,7 @@ class BeatOrMissEarningsFilterInput(ToolArgs):
         " will be fired!"
     ),
     category=ToolCategory.STATISTICS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def beat_or_miss_earnings_filter(
     args: BeatOrMissEarningsFilterInput, context: PlanRunContext
@@ -906,7 +906,7 @@ class GetExpectedRevenueGrowth(ToolArgs):
         " and 'earnings' are supported as possible models."
     ),
     category=ToolCategory.STATISTICS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_expected_revenue_growth(
     args: GetExpectedRevenueGrowth, context: PlanRunContext

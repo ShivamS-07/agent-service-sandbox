@@ -385,7 +385,7 @@ def reset_plan_run_status_if_needed(
 
 def get_plan_preview(plan: ExecutionPlan) -> List[OutputPreview]:
     """returns the preview which is a list of OutputPreview objects"""
-    from agent_service.tool import ToolRegistry
+    from agent_service.tool import default_tool_registry
 
     preview = []
     output_nodes = [node for node in plan.nodes if node.is_output_node]
@@ -407,7 +407,7 @@ def get_plan_preview(plan: ExecutionPlan) -> List[OutputPreview]:
 
             if matching_node:
                 tool_name = matching_node.tool_name
-                tool_out_type = ToolRegistry.get_tool(tool_name).return_type
+                tool_out_type = default_tool_registry().get_tool(tool_name).return_type
                 # default to TEXT
                 output_type = OutputType.TEXT
                 # Find the corresponding output type or default to TEXT

@@ -36,7 +36,7 @@ from agent_service.tool import (
     TOOL_DEBUG_INFO,
     ToolArgs,
     ToolCategory,
-    ToolRegistry,
+    default_tool_registry,
     tool,
 )
 from agent_service.tools.category import (
@@ -600,7 +600,7 @@ class DoCompetitiveAnalysisInput(ToolArgs):
         "indicating the relative ranking of these stocks in each evaluative category."
     ),
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def do_competitive_analysis(
     args: DoCompetitiveAnalysisInput, context: PlanRunContext
@@ -751,7 +751,7 @@ class GenerateSummaryForHypothesisWithCategoriesInput(ToolArgs):
 @tool(
     description="",
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def generate_summary_for_hypothesis_with_categories(
@@ -780,7 +780,7 @@ class GenerateSummaryForCompetitiveAnalysisInput(ToolArgs):
         "If there was a target stock in the analysis, this tool will also output an overall score for that stock."
     ),
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def generate_summary_for_competitive_analysis(
     args: GenerateSummaryForCompetitiveAnalysisInput, context: PlanRunContext

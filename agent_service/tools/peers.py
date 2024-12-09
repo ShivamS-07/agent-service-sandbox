@@ -18,7 +18,7 @@ from agent_service.io_types.stock_groups import StockGroup, StockGroups
 from agent_service.io_types.table import Table, TableColumnMetadata
 from agent_service.io_types.text import EarningsPeersText, Text, TextCitation
 from agent_service.planner.errors import EmptyInputError, NotFoundError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.LLM_analysis.tools import SummarizeTextInput, summarize_texts
 from agent_service.tools.stocks import (
     StockIdentifierLookupInput,
@@ -120,7 +120,7 @@ class PeersForStockInput(ToolArgs):
     Important!!! This tool should only be used when the user specifically mentions earnings.
     """,
     category=ToolCategory.PEERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_affected_peers(
@@ -195,7 +195,7 @@ async def get_affected_peers(
     Important!!! This tool should only be used when the user specifically mentions earnings.
     """,
     category=ToolCategory.PEERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_affecting_peers(
@@ -271,7 +271,7 @@ class PeersConnections(ToolArgs):
     and the connection between the two.
     """,
     category=ToolCategory.PEERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_earnings_peers_table(args: PeersConnections, context: PlanRunContext) -> Table:
@@ -373,7 +373,7 @@ class GeneralPeersForStockInput(ToolArgs):
      that as max_num_peers, otherwise all peers will be returned
     """,
     category=ToolCategory.PEERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_general_peers(
     args: GeneralPeersForStockInput, context: PlanRunContext
@@ -617,7 +617,7 @@ class PerStockGeneralPeersInput(ToolArgs):
     that as max_num_peers, otherwise all peers will be returned for each stock
     """,
     category=ToolCategory.PEERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def per_stock_get_general_peers(
     args: PerStockGeneralPeersInput, context: PlanRunContext

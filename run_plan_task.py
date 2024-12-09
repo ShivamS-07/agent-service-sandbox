@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 
 from gbi_common_py_utils.utils.clickhouse_base import ClickhouseBase
 
-from agent_service.tool import ToolArgs, ToolRegistry
+from agent_service.tool import ToolArgs, default_tool_registry
 from agent_service.tools import *  # noqa
 from agent_service.types import PlanRunContext
 from agent_service.utils.logs import init_stdout_logging
@@ -28,7 +28,7 @@ def fetch_args_from_clickhouse(
     if not result:
         raise RuntimeError("No args found!")
     row = result[0]
-    tool = ToolRegistry.get_tool(row["tool_name"])
+    tool = default_tool_registry().get_tool(row["tool_name"])
 
     return (
         tool.input_type.model_validate_json(row["args"]),
@@ -63,7 +63,7 @@ def fetch_args_from_clickhouse_replay_id(
     if not result:
         return None
     row = result[0]
-    tool = ToolRegistry.get_tool(row["tool_name"])
+    tool = default_tool_registry().get_tool(row["tool_name"])
 
     return (
         tool.input_type.model_validate_json(row["args"]),
@@ -99,7 +99,7 @@ def fetch_args_from_postgres_replay_id(
     if not result:
         return None
     row = result[0]
-    tool = ToolRegistry.get_tool(row["tool_name"])
+    tool = default_tool_registry().get_tool(row["tool_name"])
 
     if not row["context"]:
         yn = input("CANNOT FIND CONTEXT, use fake user ID? (y/n)>")
@@ -165,7 +165,7 @@ async def main() -> None:
     # Don't commit to the DB
     context.skip_db_commit = True
     print("Fetched args, running tool...\n--------------------")
-    tool = ToolRegistry.get_tool(tool_name)
+    tool = default_tool_registry().get_tool(tool_name)
     result = await tool.func(args=tool_args, context=context)
     print("--------------------\nGot Result:\n")
     print(result)

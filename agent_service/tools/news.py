@@ -24,7 +24,7 @@ from agent_service.tool import (
     ToolArgMetadata,
     ToolArgs,
     ToolCategory,
-    ToolRegistry,
+    default_tool_registry,
     tool,
 )
 from agent_service.tools.general_websearch import (
@@ -289,7 +289,7 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         " I repeat you will be FIRED if you try to find news from the future!!! YOU MUST NEVER DO THAT!!!"
     ),
     category=ToolCategory.NEWS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_all_news_developments_about_companies(
     args: GetNewsDevelopmentsAboutCompaniesInput, context: PlanRunContext
@@ -368,7 +368,7 @@ class GetNewsArticlesForStockDevelopmentsInput(ToolArgs):
         "clients wants that level of detail."
     ),
     category=ToolCategory.NEWS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_news_articles_for_stock_developments(
     args: GetNewsArticlesForStockDevelopmentsInput, context: PlanRunContext
@@ -486,7 +486,7 @@ class GetLatestNewsForCompaniesInput(ToolArgs):
         "AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL or you will be fired, always summarize first!!!"
     ),
     category=ToolCategory.NEWS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled_checker_func=web_search_enabled,
 )
 async def get_latest_news_for_companies(
@@ -571,7 +571,7 @@ async def get_latest_news_for_companies(
         "ever use this tool, you must get the news for that company."
     ),
     category=ToolCategory.NEWS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_news_articles_for_topics(
     args: GetNewsArticlesForTopicsInput, context: PlanRunContext
@@ -702,7 +702,7 @@ class GetNewsAndWebPagesForTopicsInput(ToolArgs):
         "the returned text from this tool! AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
     ),
     category=ToolCategory.NEWS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled_checker_func=web_search_enabled,
 )
 async def get_news_and_web_pages_for_topics(

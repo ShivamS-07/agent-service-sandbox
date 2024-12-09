@@ -30,7 +30,7 @@ from agent_service.io_types.text import (
     StockEarningsTranscriptText,
 )
 from agent_service.planner.errors import EmptyOutputError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.dates import GetDateRangeInput, get_date_range
 from agent_service.tools.LLM_analysis.tools import SummarizeTextInput, summarize_texts
 from agent_service.tools.stocks import GetStockUniverseInput, get_stock_universe
@@ -56,7 +56,7 @@ class GetImpactingStocksInput(ToolArgs):
         " stocks which are likely to directly financially impact the provided stocks. "
     ),
     category=ToolCategory.EARNINGS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_impacting_stocks(
@@ -482,7 +482,7 @@ documents can only be found for dates in the past up to the present, including t
 I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
 """,
     category=ToolCategory.EARNINGS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_earnings_call_full_transcripts(
     args: GetEarningsCallDataInput, context: PlanRunContext
@@ -567,7 +567,7 @@ documents can only be found for dates in the past up to the present, including t
 I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!
 """,
     category=ToolCategory.EARNINGS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_earnings_call_summaries(
     args: GetEarningsCallDataInput, context: PlanRunContext
@@ -642,7 +642,7 @@ of these stocks based on their statistics, you MUST extract the stock list and g
 get_statistics tool or other relevant tools.
 """,
     category=ToolCategory.EARNINGS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_earnings_call_dates(
     args: GetEarningsCallDatesInput, context: PlanRunContext

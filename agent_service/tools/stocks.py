@@ -26,7 +26,7 @@ from agent_service.tool import (
     TOOL_DEBUG_INFO,
     ToolArgs,
     ToolCategory,
-    ToolRegistry,
+    default_tool_registry,
     tool,
 )
 from agent_service.tools.lists import CombineListsInput, add_lists
@@ -238,7 +238,7 @@ def get_stock_identifier_lookup_cache_key(
     cache_key_fn=get_stock_identifier_lookup_cache_key,
     cache_ttl=60 * 60 * 24,
     cache_backend=PostgresCacheBackend(),
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
 )
 @async_perf_logger
@@ -967,7 +967,7 @@ class MultiStockIdentifierLookupInput(ToolArgs):
         " instead pass them directly as the stock_names and allow this function to interpret each of them."
     ),
     category=ToolCategory.STOCK,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
 )
 async def multi_stock_identifier_lookup(
@@ -1024,7 +1024,7 @@ class GetETFUniverseInput(ToolArgs):
         " of stocks, you should call this tool first."
     ),
     category=ToolCategory.STOCK,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_etf_list(args: GetETFUniverseInput, context: PlanRunContext) -> List[StockID]:
@@ -1078,7 +1078,7 @@ class GetCountryInput(ToolArgs):
         " you should use the filter_stocks_by_region instead"
     ),
     category=ToolCategory.STOCK_GROUPS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_country_for_stocks(args: GetCountryInput, context: PlanRunContext) -> StockTable:
@@ -1119,7 +1119,7 @@ async def get_country_for_stocks(args: GetCountryInput, context: PlanRunContext)
         " you should use the filter_stocks_by_country_of_domicile instead"
     ),
     category=ToolCategory.STOCK_GROUPS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_country_of_domicile_for_stocks(
@@ -1164,7 +1164,7 @@ class GetCurrencyInput(ToolArgs):
         " or for further processing"
     ),
     category=ToolCategory.STOCK_GROUPS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_currency_for_stocks(args: GetCurrencyInput, context: PlanRunContext) -> StockTable:
@@ -1204,7 +1204,7 @@ class GetISINInput(ToolArgs):
         " or for further processing"
     ),
     category=ToolCategory.STOCK,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_ISIN_for_stocks(args: GetISINInput, context: PlanRunContext) -> StockTable:
@@ -1246,7 +1246,7 @@ class GetSectorInput(ToolArgs):
         " you should use the sector_filter instead"
     ),
     category=ToolCategory.STOCK_GROUPS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_sector_for_stocks(args: GetSectorInput, context: PlanRunContext) -> StockTable:
@@ -1289,7 +1289,7 @@ class GetIndustryGroupInput(ToolArgs):
         " you should use the sector_filter instead"
     ),
     category=ToolCategory.STOCK_GROUPS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_industry_group_for_stocks(
@@ -1333,7 +1333,7 @@ class GetIndustryInput(ToolArgs):
         " you should use the sector_filter instead"
     ),
     category=ToolCategory.STOCK_GROUPS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_industry_for_stocks(args: GetIndustryInput, context: PlanRunContext) -> StockTable:
@@ -1375,7 +1375,7 @@ class GetSubIndustryInput(ToolArgs):
         " you should use the sector_filter instead"
     ),
     category=ToolCategory.STOCK_GROUPS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_sub_industry_for_stocks(
@@ -1464,7 +1464,7 @@ class GetInternationalCapStartingUniverseInput(ToolArgs):
         " additional steps in the plan!"
     ),
     category=ToolCategory.STOCK,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_international_cap_starting_universe(
@@ -1530,7 +1530,7 @@ class GetStockUniverseInput(ToolArgs):
         " Please be careful to run this tool as a separate step in your plan!"
     ),
     category=ToolCategory.STOCK,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
 )
 async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContext) -> List[StockID]:
@@ -1874,7 +1874,7 @@ class GetRiskExposureForStocksInput(ToolArgs):
         " it can only tell you the current exposure."
     ),
     category=ToolCategory.STATISTICS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_risk_exposure_for_stocks(
@@ -2007,7 +2007,7 @@ class GrowthFilterInput(ToolArgs):
         " 'good growth' should be interpreted the same as high growth."
     ),
     category=ToolCategory.STOCK_FILTERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def growth_filter(args: GrowthFilterInput, context: PlanRunContext) -> List[StockID]:
@@ -2116,7 +2116,7 @@ class ValueFilterInput(ToolArgs):
         " 'good value' should be interpreted the same as high value."
     ),
     category=ToolCategory.STOCK_FILTERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def value_filter(args: ValueFilterInput, context: PlanRunContext) -> List[StockID]:

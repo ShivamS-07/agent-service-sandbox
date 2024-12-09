@@ -48,7 +48,7 @@ from agent_service.tool import (
     ToolArgMetadata,
     ToolArgs,
     ToolCategory,
-    ToolRegistry,
+    default_tool_registry,
     tool,
 )
 from agent_service.tools.feature_data import get_latest_price
@@ -140,7 +140,7 @@ async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
         "and adjust the weights accordingly. "
     ),
     category=ToolCategory.PORTFOLIO,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
 )
 async def get_portfolio_holdings(
@@ -284,7 +284,7 @@ class GetPortfolioInput(ToolArgs):
         "E.g. 'My portfolio' (Portfolio ID: <some UUID>)."
     ),
     category=ToolCategory.PORTFOLIO,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def convert_portfolio_mention_to_portfolio_id(
@@ -509,7 +509,7 @@ class GetPortfolioPerformanceInput(ToolArgs):
         "date: string, return: float, return-vs-benchmark: float"
     ),
     category=ToolCategory.PORTFOLIO,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_portfolio_performance(
@@ -581,7 +581,7 @@ class GetPortfolioBenchmarkHoldingsInput(ToolArgs):
         "Only set this flag to True if user explicitly wants to see the expanded ETFs or on stock level. "
     ),
     category=ToolCategory.PORTFOLIO,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_portfolio_benchmark_holdings(
@@ -668,7 +668,7 @@ class GetPortfolioBenchmarkPerformanceInput(ToolArgs):
         "Security: StockID, return: float, benchmark-weight: float, weighted-return: float"
     ),
     category=ToolCategory.PORTFOLIO,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_portfolio_benchmark_performance(
@@ -738,7 +738,7 @@ class GetPortfolioTradesInput(ToolArgs):
         "Output will contain the following columns: Security, Date, Action, Allocation Change. "
     ),
     category=ToolCategory.PORTFOLIO,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
 )
 async def get_portfolio_trades(
@@ -1100,7 +1100,7 @@ class StrategyMetadata(ComplexIOBase):
         "This function returns the metadata of a Strategy given a strategy name or mention (e.g. my strategy) as well as a strategy's UUID if available. It MUST be used when the client mentions any 'strategy' in the request. Here, the 'strategy' also has alias like 'quant strategy', 'B1 strategy', or 'Boosted strategy' that refers to the trading strategies people created for back-testing purpose. This function will try to match the given name with the strategy names for that client and return the closest match. `strategy_uuid` should be included in addition to the name ONLY if a strategy's UUID is explicitly mentioned in user input! In that case, you still MUST call this function to resolve the ID to an object. E.g. 'My strategy' (Strategy ID: <some UUID>)."  # noqa
     ),
     category=ToolCategory.STRATEGY,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def convert_strategy_mention_to_strategy(
     args: GetStrategyInput, context: PlanRunContext
@@ -1223,7 +1223,7 @@ class GetStrategyStocksInput(ToolArgs):
 @tool(
     description="Given the metadata of a strategy, this tool returns a Table of the quantitative rankings for the stocks inside the strategy. It should only be used after the tool `convert_strategy_mention_to_strategy` when the user asks for the stock rankings in a SPECIFIC strategy.",  # noqa
     category=ToolCategory.STRATEGY,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_strategy_rankings(
     args: GetStrategyStocksInput, context: PlanRunContext
@@ -1274,7 +1274,7 @@ async def get_strategy_rankings(
 @tool(
     description="Given the metadata of a strategy, this tool returns a Table of the stocks along with their weight percentages inside the strategy. It should only be used after the tool `convert_strategy_mention_to_strategy` when the user asks for the stock holdings in a SPECIFIC strategy.",  # noqa
     category=ToolCategory.STRATEGY,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_strategy_holdings(
     args: GetStrategyStocksInput, context: PlanRunContext

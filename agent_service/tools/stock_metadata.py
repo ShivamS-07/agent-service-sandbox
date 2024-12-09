@@ -2,7 +2,7 @@ from typing import List
 
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockDescriptionText
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 
@@ -22,7 +22,7 @@ class GetStockDescriptionInput(ToolArgs):
         "summarization and formating."
     ),
     category=ToolCategory.TEXT_RETRIEVAL,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_company_descriptions(
     args: GetStockDescriptionInput, context: PlanRunContext

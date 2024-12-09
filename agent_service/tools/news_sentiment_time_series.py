@@ -7,7 +7,7 @@ from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTable, TableColumnMetadata
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.types import PlanRunContext
 from agent_service.utils.postgres import get_psql
 
@@ -73,7 +73,7 @@ async def _get_news_sentiment_helper(
         " The output StockTable must be converted to a Line Graph for visualization."
     ),
     category=ToolCategory.STOCK_SENTIMENT,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_news_sentiment_time_series(
     args: GetNewsSentimentTimeSeriesInput, context: PlanRunContext

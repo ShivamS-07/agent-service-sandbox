@@ -12,7 +12,7 @@ from agent_service.GPT.constants import GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.stock import StockID
 from agent_service.planner.errors import NotFoundError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
@@ -48,7 +48,7 @@ WATCHLIST_REMOVE_STOCK_DIFF = "{company} was removed from the watchlist: {watchl
         "E.g. 'My watchlist' (Watchlist ID: <some UUID>)."
     ),
     category=ToolCategory.PORTFOLIO,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_user_watchlist_stocks(
@@ -196,7 +196,7 @@ async def get_user_watchlist_stocks(
         "When a watchlist name is mentioned, you MUST use the tool 'get_user_watchlist_stocks'."
     ),
     category=ToolCategory.PORTFOLIO,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_stocks_for_user_all_watchlists(

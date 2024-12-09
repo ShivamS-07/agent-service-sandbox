@@ -5,7 +5,7 @@ from agent_service.external.feature_svc_client import get_intraday_prices
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTable
 from agent_service.io_types.text import Text
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 
@@ -32,7 +32,7 @@ class GetStockIntradayPriceInput(ToolArgs):
         " This tool does NOT provide market cap, use get_statistic_data_for_companies for that."
     ),
     category=ToolCategory.STATISTICS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_stock_intraday_prices(
     args: GetStockIntradayPriceInput, context: PlanRunContext

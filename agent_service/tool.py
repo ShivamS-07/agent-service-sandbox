@@ -342,35 +342,30 @@ class ToolRegistry:
     tool category.
     """
 
-    _REGISTRY_CATEGORY_MAP: Dict[ToolCategory, Dict[str, Tool]] = defaultdict(dict)
-    _REGISTRY_ALL_TOOLS_MAP: Dict[str, Tool] = {}
-    _TOOL_NAME_TO_CATEGORY: Dict[str, ToolCategory] = {}
+    def __init__(self) -> None:
+        self._REGISTRY_CATEGORY_MAP: Dict[ToolCategory, Dict[str, Tool]] = defaultdict(dict)
+        self._REGISTRY_ALL_TOOLS_MAP: Dict[str, Tool] = {}
+        self._TOOL_NAME_TO_CATEGORY: Dict[str, ToolCategory] = {}
 
-    @classmethod
-    def register_tool(cls, tool: Tool, category: ToolCategory) -> None:
-        cls._REGISTRY_CATEGORY_MAP[category][tool.name] = tool
-        cls._REGISTRY_ALL_TOOLS_MAP[tool.name] = tool
-        cls._TOOL_NAME_TO_CATEGORY[tool.name] = category
+    def register_tool(self, tool: Tool, category: ToolCategory) -> None:
+        self._REGISTRY_CATEGORY_MAP[category][tool.name] = tool
+        self._REGISTRY_ALL_TOOLS_MAP[tool.name] = tool
+        self._TOOL_NAME_TO_CATEGORY[tool.name] = category
 
-    @classmethod
-    def get_tool_in_category(cls, tool_name: str, category: ToolCategory) -> Tool:
-        return cls._REGISTRY_CATEGORY_MAP[category][tool_name]
+    def get_tool_in_category(self, tool_name: str, category: ToolCategory) -> Tool:
+        return self._REGISTRY_CATEGORY_MAP[category][tool_name]
 
-    @classmethod
-    def get_all_tools_in_category(cls, category: ToolCategory) -> List[Tool]:
-        return list(cls._REGISTRY_CATEGORY_MAP[category].values())
+    def get_all_tools_in_category(self, category: ToolCategory) -> List[Tool]:
+        return list(self._REGISTRY_CATEGORY_MAP[category].values())
 
-    @classmethod
-    def get_tool(cls, tool_name: str) -> Tool:
-        return cls._REGISTRY_ALL_TOOLS_MAP[tool_name]
+    def get_tool(self, tool_name: str) -> Tool:
+        return self._REGISTRY_ALL_TOOLS_MAP[tool_name]
 
-    @classmethod
-    def is_tool_registered(cls, tool_name: str) -> bool:
-        return tool_name in cls._REGISTRY_ALL_TOOLS_MAP
+    def is_tool_registered(self, tool_name: str) -> bool:
+        return tool_name in self._REGISTRY_ALL_TOOLS_MAP
 
-    @classmethod
     def get_tool_str(
-        cls,
+        self,
         user_id: Optional[str] = None,
         filter_input: bool = False,
         skip_list: Optional[List[ToolCategory]] = None,
@@ -382,7 +377,7 @@ class ToolRegistry:
         category names, so GPT can choose them. The skip list is a list of tool categories which will
         not be included, also used for tool filtering."""
         output = []
-        for tool_category, tool_dict in cls._REGISTRY_CATEGORY_MAP.items():
+        for tool_category, tool_dict in self._REGISTRY_CATEGORY_MAP.items():
             if skip_list and tool_category in skip_list:
                 continue
             tool_descriptions = []
@@ -406,6 +401,13 @@ class ToolRegistry:
                 output.extend(tool_descriptions)
 
         return "\n".join(output)
+
+
+_DEFAULT_TOOL_REGISTRY = ToolRegistry()
+
+
+def default_tool_registry() -> ToolRegistry:
+    return _DEFAULT_TOOL_REGISTRY
 
 
 def default_cache_key_func(tool_name: str, args: ToolArgs, _context: PlanRunContext) -> str:
@@ -433,7 +435,6 @@ def tool(
     cache_ttl: int = DEFAULT_CACHE_TTL,
     retries: int = 0,
     timeout_seconds: int = 6000,
-    create_prefect_task: bool = False,
     is_visible: bool = True,
     enabled: bool = True,
     enabled_checker_func: Optional[
@@ -441,7 +442,7 @@ def tool(
     ] = None,
     reads_chat: bool = False,
     update_instructions: Optional[str] = None,
-    tool_registry: Type[ToolRegistry] = ToolRegistry,
+    tool_registry: Optional[ToolRegistry] = None,
     is_output_tool: bool = False,
     store_output: bool = True,
 ) -> Callable[[ToolFunc], ToolFunc]:
@@ -468,14 +469,10 @@ def tool(
     cache_ttl: Integer number of seconds for the cached value's TTL. NOTE:
       if postgres is is used as the cache, this value is NOT USED.
 
-    retries: An integer number of retries in case the task fails. NOTE: Only
-      respected when `create_prefect_task` is also True.
+    retries: An integer number of retries in case the task fails.
 
     timeout_seconds: An integer number of seconds, after which the tool run
-      times out. NOTE: only respected when `create_prefect_task` is True.
-
-    create_prefect_task: If true, wraps the tool run in a prefect
-      task. Otherwise run locally without prefect.
+      times out.
 
     is_visible: If true, the task is visible to the end user.
 
@@ -494,6 +491,8 @@ def tool(
     update_instructions: Should be included for any tool which reads the chat or otherwise
       requires special consideration inside the action decider
     """
+
+    tool_registry = tool_registry or default_tool_registry()
 
     def tool_deco(func: ToolFunc) -> ToolFunc:
         # Inspect the function's arguments and return type to ensure they are
@@ -637,7 +636,7 @@ def tool(
             return value
 
         # Add the tool to the registry
-        tool_registry.register_tool(
+        (tool_registry or default_tool_registry()).register_tool(
             Tool(
                 name=func.__name__,
                 func=wrapper,

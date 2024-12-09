@@ -16,7 +16,7 @@ from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import CustomDocumentSummaryText
 from agent_service.planner.errors import EmptyOutputError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.stocks import get_stock_ids_from_company_ids
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
@@ -43,7 +43,7 @@ class GetCustomDocsInput(ToolArgs):
         " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
     ),
     category=ToolCategory.CUSTOM_DOCS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_user_custom_documents(
     args: GetCustomDocsInput, context: PlanRunContext
@@ -128,7 +128,7 @@ class GetCustomDocsByTopicInput(ToolArgs):
         " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
     ),
     category=ToolCategory.CUSTOM_DOCS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_user_custom_documents_by_topic(
     args: GetCustomDocsByTopicInput, context: PlanRunContext
@@ -205,7 +205,7 @@ class GetCustomDocsByFileInput(ToolArgs):
         "documents do not contain stock-related information."
     ),
     category=ToolCategory.CUSTOM_DOCS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def get_user_custom_documents_by_filename(
     args: GetCustomDocsByFileInput, context: PlanRunContext

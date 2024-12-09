@@ -23,7 +23,7 @@ from agent_service.io_types.text import (
     TextGroup,
 )
 from agent_service.planner.errors import EmptyInputError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
@@ -109,7 +109,7 @@ class TestNewsHypothesisInput(ToolArgs):
     " For example, if a user asks `Is NVDA the leader in AI chips space?`, you should convert"
     " it to a statement like `NVDA is the leader in AI chips space` and test it against the news.",
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def test_hypothesis_for_news_developments(
@@ -166,7 +166,7 @@ class SummarizeNewsHypothesisInput(ToolArgs):
     " also generate a summary to explain."
     " This tool MUST be used when tool `test_hypothesis_for_news_developments` is used.",
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def summarize_hypothesis_from_news_developments(
@@ -210,7 +210,7 @@ class TestAndSummarizeNewsHypothesisInput(ToolArgs):
         " `Give/find me stocks...` type queries, use the filter by profile tool)"
     ),
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def test_and_summarize_hypothesis_with_news_developments(
@@ -264,7 +264,7 @@ class TestEarningsHypothesisInput(ToolArgs):
     " For example, if a user asks `Is NVDA the leader in AI chips space?`, you should convert"
     " it to a statement like `NVDA is the leader in AI chips space` and test it against the earnings.",
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def test_hypothesis_for_earnings_summaries(
@@ -340,7 +340,7 @@ class SummarizeEarningsHypothesisInput(ToolArgs):
     " summary points and also generate a summary to explain."
     " This tool MUST be used when tool `test_hypothesis_for_earnings_summaries` is used.",
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def summarize_hypothesis_from_earnings_summaries(
@@ -448,7 +448,7 @@ class TestAndSummarizeEarningsHypothesisInput(ToolArgs):
         " `Give/find me stocks...` type queries, use the filter by profile tool)"
     ),
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def test_and_summarize_hypothesis_with_earnings_summaries(
@@ -491,7 +491,7 @@ class TestCustomDocsHypothesisInput(ToolArgs):
     " it to a statement like `NVDA is the leader in AI chips space` and test it against the"
     " documents that the user has uploaded.",
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def test_hypothesis_for_custom_documents(
@@ -581,7 +581,7 @@ class SummarizeCustomDocumentHypothesisInput(ToolArgs):
     " news topics and also generate a summary to explain."
     " This tool MUST be used when tool `test_hypothesis_for_custom_documents` is used.",
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def summarize_hypothesis_from_custom_documents(
@@ -622,7 +622,7 @@ class TestAndSummarizeCustomDocsHypothesisInput(ToolArgs):
         "the information in the custom documents."
     ),
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def test_and_summarize_hypothesis_with_custom_documents(
@@ -667,7 +667,7 @@ class SummarizeHypothesisFromVariousSourcesInput(ToolArgs):
     " `test_and_summarize_hypothesis_with_earnings_summaries` and"
     " `test_and_summarize_hypothesis_with_custom_documents`.",
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def summarize_hypothesis_from_various_sources(

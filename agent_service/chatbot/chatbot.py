@@ -1,6 +1,6 @@
 import json
 from datetime import date
-from typing import Optional, Type
+from typing import Optional
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
@@ -46,7 +46,7 @@ from agent_service.planner.planner_types import (
     ExecutionPlan,
     ToolExecutionNode,
 )
-from agent_service.tool import ToolRegistry
+from agent_service.tool import ToolRegistry, default_tool_registry
 from agent_service.types import ChatContext
 from agent_service.utils.gpt_logging import chatbot_context
 from agent_service.utils.logs import async_perf_logger
@@ -58,12 +58,12 @@ class Chatbot:
         agent_id: str,
         model: str = GPT4_O,
         gpt_service_stub: Optional[GPTServiceStub] = None,
-        tool_registry: Type[ToolRegistry] = ToolRegistry,
+        tool_registry: Optional[ToolRegistry] = None,
     ) -> None:
         self.agent_id = agent_id
         context = chatbot_context(agent_id=agent_id)
         self.llm = GPT(context, model, gpt_service_stub=gpt_service_stub)
-        self.tool_registry = tool_registry
+        self.tool_registry = tool_registry or default_tool_registry()
 
     @async_perf_logger
     async def generate_first_response_refer(self, chat_context: ChatContext) -> str:

@@ -35,7 +35,7 @@ from agent_service.tool import (
     TOOL_DEBUG_INFO,
     ToolArgs,
     ToolCategory,
-    ToolRegistry,
+    default_tool_registry,
     tool,
 )
 from agent_service.tools.LLM_analysis.prompts import CITATION_PROMPT, CITATION_REMINDER
@@ -642,7 +642,7 @@ class GetStockRecommendationsInput(ToolArgs):
         "other steps to convert the output to a table!!!"
     ),
     category=ToolCategory.STOCK_SENTIMENT,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     reads_chat=True,
     update_instructions=(
         "Since the most of the important functionalities of this function are controlled by arguments "

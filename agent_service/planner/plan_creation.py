@@ -22,7 +22,7 @@ from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan, PlanStatus
 from agent_service.planner.prompts import QUICK_THOUGHTS_PROMPT
 from agent_service.planner.utils import check_cancelled
-from agent_service.tool import ToolRegistry
+from agent_service.tool import default_tool_registry
 from agent_service.types import (
     ChatContext,
     Message,
@@ -500,7 +500,7 @@ async def update_execution_after_input(
                         [
                             node.tool_name
                             for node in latest_plan.nodes
-                            if ToolRegistry.get_tool(node.tool_name).reads_chat
+                            if default_tool_registry().get_tool(node.tool_name).reads_chat
                         ]
                     ),
                 )

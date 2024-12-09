@@ -12,7 +12,7 @@ from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import Text
 from agent_service.planner.errors import EmptyOutputError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
@@ -62,7 +62,7 @@ class GetStockSectorInput(ToolArgs):
         " instead."
     ),
     category=ToolCategory.STOCK_GROUPS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
 )
 async def get_stock_sector(args: GetStockSectorInput, context: PlanRunContext) -> SectorID:
@@ -220,7 +220,7 @@ This function supports the following GICS classifications:
 {get_all_gics_str()}
 """,
     category=ToolCategory.STOCK_GROUPS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def sector_identifier_lookup(
     args: SectorIdentifierLookupInput, context: PlanRunContext
@@ -303,7 +303,7 @@ class SectorFilterInput(ToolArgs):
 This function was renamed to gics_sector_industry_filter
 """,
     category=ToolCategory.STOCK_FILTERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def sector_filter(args: SectorFilterInput, context: PlanRunContext) -> List[StockID]:
@@ -337,7 +337,7 @@ you will do exactly the opposite of what the client wants, the plan will fail, a
 fired!!!!
 """,
     category=ToolCategory.STOCK_FILTERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def gics_sector_industry_filter(
     args: SectorFilterInput, context: PlanRunContext

@@ -5,7 +5,7 @@ from gbi_common_py_utils.utils.util import memoize_one
 
 from agent_service.io_types.stock import StockID
 from agent_service.planner.errors import EmptyOutputError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import get_async_db
@@ -506,7 +506,7 @@ COUNTRY_SYS_PROMPT = Prompt(
         " The function returns the filtered list of stock IDs."
     ),
     category=ToolCategory.STOCK_FILTERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def filter_stocks_by_region(
     args: FilterStockRegionInput, context: PlanRunContext
@@ -605,7 +605,7 @@ async def filter_stocks_by_region(
         " The function returns the filtered list of stock IDs."
     ),
     category=ToolCategory.STOCK_FILTERS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
 )
 async def filter_stocks_by_country_of_domicile(
     args: FilterStockContryOfDomicileInput, context: PlanRunContext

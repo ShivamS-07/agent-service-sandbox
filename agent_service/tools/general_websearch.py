@@ -9,7 +9,7 @@ from agent_service.tool import (
     ToolArgMetadata,
     ToolArgs,
     ToolCategory,
-    ToolRegistry,
+    default_tool_registry,
     tool,
 )
 from agent_service.tools.product_comparison.brightdata_websearch import (
@@ -64,7 +64,7 @@ class SingleStockWebSearchInput(ToolArgs):
         "the returned text from this tool! AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
     ),
     category=ToolCategory.WEB,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
     enabled_checker_func=enabler_function,
 )
@@ -133,7 +133,7 @@ class GeneralStockWebSearchInput(ToolArgs):
         "the returned text from this tool! AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
     ),
     category=ToolCategory.WEB,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled_checker_func=enabler_function,
 )
 async def general_stock_web_search(
@@ -197,7 +197,7 @@ class GeneralWebSearchInput(ToolArgs):
         "the returned text from this tool! AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
     ),
     category=ToolCategory.WEB,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled_checker_func=enabler_function,
 )
 async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContext) -> List[WebText]:
@@ -239,7 +239,7 @@ class SiteSpecificWebSearchInput(ToolArgs):
         "AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
     ),
     category=ToolCategory.WEB,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled_checker_func=enabler_function,
 )
 async def site_specific_websearch(

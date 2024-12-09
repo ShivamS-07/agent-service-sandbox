@@ -1,5 +1,5 @@
 import asyncio
-from typing import List, Tuple, Type
+from typing import List, Optional, Tuple
 from uuid import uuid4
 
 from agent_service.GPT.constants import GPT4_O, GPT4_TURBO, NO_PROMPT
@@ -20,7 +20,7 @@ from agent_service.planner.prompts import (
     NOTIFICATION_EXAMPLE,
     NOTIFICATION_UPDATE_MAIN_PROMPT,
 )
-from agent_service.tool import ToolRegistry
+from agent_service.tool import ToolRegistry, default_tool_registry
 from agent_service.types import ChatContext, Message
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
@@ -35,12 +35,12 @@ class FirstActionDecider:
         agent_id: str,
         skip_db_commit: bool = False,
         model: str = GPT4_O,
-        tool_registry: Type[ToolRegistry] = ToolRegistry,
+        tool_registry: Optional[ToolRegistry] = None,
     ) -> None:
         self.agent_id = agent_id
         context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
         self.llm = GPT(context, model)
-        self.tool_registry = tool_registry
+        self.tool_registry = tool_registry or default_tool_registry()
         self.db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
 
     @async_perf_logger
@@ -63,12 +63,12 @@ class FollowupActionDecider:
         agent_id: str,
         skip_db_commit: bool = False,
         model: str = GPT4_O,
-        tool_registry: Type[ToolRegistry] = ToolRegistry,
+        tool_registry: Optional[ToolRegistry] = None,
     ) -> None:
         self.agent_id = agent_id
         context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
         self.llm = GPT(context, model)
-        self.tool_registry = tool_registry
+        self.tool_registry = tool_registry or default_tool_registry()
         self.db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
 
     async def decide_action(
@@ -77,7 +77,7 @@ class FollowupActionDecider:
         reads_chat_list = []
         instruction_list = []
         for step in current_plan.nodes:
-            tool = ToolRegistry.get_tool(step.tool_name)
+            tool = self.tool_registry.get_tool(step.tool_name)
             if tool.reads_chat:
                 reads_chat_list.append(step.tool_name)
             if tool.update_instructions:
@@ -135,12 +135,12 @@ class ErrorActionDecider:
         self,
         agent_id: str,
         model: str = GPT4_TURBO,  # Turbo seems to do a fair bit better on this
-        tool_registry: Type[ToolRegistry] = ToolRegistry,
+        tool_registry: Optional[ToolRegistry] = None,
     ) -> None:
         self.agent_id = agent_id
         context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
         self.llm = GPT(context, model)
-        self.tool_registry = tool_registry
+        self.tool_registry = tool_registry or default_tool_registry()
 
     async def decide_action(
         self,

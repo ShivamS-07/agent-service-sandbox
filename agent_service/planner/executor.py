@@ -47,7 +47,7 @@ from agent_service.planner.planner_types import (
 )
 from agent_service.planner.utils import check_cancelled
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
-from agent_service.tool import ToolRegistry, log_tool_call_event
+from agent_service.tool import default_tool_registry, log_tool_call_event
 from agent_service.types import (
     ChatContext,
     Message,
@@ -179,23 +179,41 @@ async def run_execution_plan(
     # above, but they can be used together, with this map taking precedence over
     # the above map.
     override_task_work_log_id_lookup: Optional[Dict[str, str]] = None,
+    use_new_executor_impl=False,
 ) -> Tuple[List[IOType], Optional[DefaultDict[str, List[dict]]]]:
     logger = get_prefect_logger(__name__)
     async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
+    if await get_ld_flag_async(
+        flag_name="use-new-plan-executor", default=False, user_id=context.user_id, async_db=async_db
+    ):
+        use_new_executor_impl = True
     try:
-        result_to_return = await _run_execution_plan_impl(
-            plan=plan,
-            context=context,
-            do_chat=do_chat,
-            log_all_outputs=log_all_outputs,
-            replan_execution_error=replan_execution_error,
-            run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
-            override_task_output_lookup=override_task_output_lookup,
-            override_task_output_id_lookup=override_task_output_id_lookup,
-            execution_log=execution_log,
-            scheduled_by_automation=scheduled_by_automation,
-            override_task_work_log_id_lookup=override_task_work_log_id_lookup,
-        )
+        if not use_new_executor_impl:
+            result_to_return = await _run_execution_plan_impl(
+                plan=plan,
+                context=context,
+                do_chat=do_chat,
+                log_all_outputs=log_all_outputs,
+                replan_execution_error=replan_execution_error,
+                run_plan_in_prefect_immediately=run_plan_in_prefect_immediately,
+                override_task_output_lookup=override_task_output_lookup,
+                override_task_output_id_lookup=override_task_output_id_lookup,
+                execution_log=execution_log,
+                scheduled_by_automation=scheduled_by_automation,
+                override_task_work_log_id_lookup=override_task_work_log_id_lookup,
+            )
+        else:
+            logger.info(f"Using the NEW executor for {context.plan_run_id=}")
+            result_to_return = await _run_execution_plan_impl_new(
+                plan=plan,
+                context=context,
+                do_chat=do_chat,
+                log_all_outputs=log_all_outputs,
+                replan_execution_error=replan_execution_error,
+                override_task_output_lookup=override_task_output_lookup,
+                override_task_output_id_lookup=override_task_output_id_lookup,
+                scheduled_by_automation=scheduled_by_automation,
+            )
         return result_to_return, execution_log
     except Exception as e:
         status = Status.ERROR
@@ -422,7 +440,7 @@ async def _run_execution_plan_impl(
                         tasks[i].has_output = step.store_output
                         continue
 
-        tool = ToolRegistry.get_tool(step.tool_name)
+        tool = default_tool_registry().get_tool(step.tool_name)
         # First, resolve the variables
         resolved_args = step.resolve_arguments(variable_lookup=variable_lookup)
 
@@ -1047,6 +1065,7 @@ async def run_execution_plan_local(
     override_task_output_lookup: Optional[Dict[str, IOType]] = None,
     scheduled_by_automation: bool = False,
     execution_log: Optional[DefaultDict[str, List[dict]]] = None,
+    use_new_executor_impl: bool = False,
 ) -> Tuple[List[IOType], Optional[Dict[str, List[Dict]]]]:
     context.run_tasks_without_prefect = True
     result_to_return, new_execution_log = await run_execution_plan(
@@ -1059,6 +1078,7 @@ async def run_execution_plan_local(
         override_task_output_lookup=override_task_output_lookup,
         scheduled_by_automation=scheduled_by_automation,
         execution_log=execution_log,
+        use_new_executor_impl=use_new_executor_impl,
     )
     return result_to_return, new_execution_log
 
@@ -1241,7 +1261,7 @@ async def _run_plan_step(
                         has_output=tool_output is not None and step.store_output,
                     )
 
-    tool = ToolRegistry.get_tool(step.tool_name)
+    tool = default_tool_registry().get_tool(step.tool_name)
     # First, resolve the variables
     resolved_args = step.resolve_arguments(variable_lookup=variable_lookup)
 
@@ -1874,8 +1894,9 @@ async def _run_execution_plan_impl_new(
         ),
     )
 
+    full_diff_summary_output = run_diffs.long_summary
     if isinstance(run_diffs.long_summary, Text):
-        full_diff_summary_output = await run_diffs.long_summary.to_rich_output(pg=async_db.pg)
+        full_diff_summary_output = await run_diffs.long_summary.to_rich_output(pg=async_db.pg)  # type: ignore
 
     # publish finish plan run task execution
     await publish_agent_execution_status(

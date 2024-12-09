@@ -18,7 +18,7 @@ from agent_service.io_types.table import (
     TableColumnMetadata,
     TableColumnType,
 )
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.portfolio import get_sector_for_stock_ids
 from agent_service.tools.stocks import (
     GetStockUniverseInput,
@@ -77,7 +77,7 @@ class GetUniversePerformanceInput(ToolArgs):
         "For line plot, you MUST only use 'daily' performance level."
     ),
     category=ToolCategory.STATISTICS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_universe_performance(
@@ -292,7 +292,7 @@ class GetUniverseHoldingsInput(ToolArgs):
         "Security: StockID, weight: float"
     ),
     category=ToolCategory.STOCK,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=True,
 )
 async def get_universe_holdings(args: GetUniverseHoldingsInput, context: PlanRunContext) -> Table:

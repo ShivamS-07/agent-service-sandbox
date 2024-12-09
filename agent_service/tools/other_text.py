@@ -5,7 +5,7 @@ from typing import List, Optional
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import StockText
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.custom_documents import (
     GetCustomDocsInput,
     get_user_custom_documents,
@@ -81,7 +81,7 @@ class GetAllTextDataForStocksInput(ToolArgs):
         " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
     ),
     category=ToolCategory.TEXT_RETRIEVAL,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
     store_output=False,
 )
@@ -211,7 +211,7 @@ async def get_default_text_data_for_stocks(
 @tool(
     description="",
     category=ToolCategory.TEXT_RETRIEVAL,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
     store_output=False,
 )
@@ -228,7 +228,7 @@ class GetAllStocksFromTextInput(ToolArgs):
 @tool(
     description=("This function takes a lists of stock texts and returns a list of stock ids."),
     category=ToolCategory.STOCK,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=True,
     store_output=False,
 )

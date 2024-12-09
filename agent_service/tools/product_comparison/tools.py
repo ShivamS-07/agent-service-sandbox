@@ -11,7 +11,7 @@ from agent_service.io_type_utils import HistoryEntry, TableColumnType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table, TableColumnMetadata
 from agent_service.io_types.text import Text, TextGroup
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.LLM_analysis.utils import extract_citations_from_gpt_output
 from agent_service.tools.product_comparison.prompts import (
     GET_PRODUCT_COMPARE_SYS_PROMPT,
@@ -72,7 +72,7 @@ def enabler_function(user_id: Optional[str], user_settings: Optional[AgentUserSe
     "Important! This tool is for comparing product specifications. This is different from competitive analysis"
     "This should be called when user wants to compare product specifications between different companies",
     category=ToolCategory.KPI,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled_checker_func=enabler_function,
 )
 async def get_product_comparison_table(args: ProductCompareInput, context: PlanRunContext) -> Table:
@@ -154,7 +154,7 @@ class ProductSummaryInput(ToolArgs):
     "Given a table of different products from different companies, return a text "
     "string describing each product, how they compare, and the company's status in the product's field",
     category=ToolCategory.KPI,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_product_compare_summary(args: ProductSummaryInput, context: PlanRunContext) -> Text:

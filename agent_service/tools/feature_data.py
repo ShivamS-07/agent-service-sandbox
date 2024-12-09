@@ -35,7 +35,7 @@ from agent_service.io_types.table import (
 )
 from agent_service.io_types.text import Text
 from agent_service.planner.errors import NotFoundError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
@@ -147,7 +147,7 @@ class StatisticsIdentifierLookupInput(ToolArgs):
         " and compute the delta separately."
     ),
     category=ToolCategory.STATISTICS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
     enabled=False,
 )
@@ -266,7 +266,7 @@ class MacroFeatureDataInput(ToolArgs):
         " want the most recent datapoint and call without specifying either start_date or end_date."
     ),
     category=ToolCategory.STATISTICS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_macro_statistic_data(args: MacroFeatureDataInput, context: PlanRunContext) -> Table:
@@ -330,7 +330,7 @@ class FeatureDataInput(ToolArgs):
         " want the most recent datapoint and call without specifying either start_date or end_date."
     ),
     category=ToolCategory.STATISTICS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_statistic_data_for_companies(

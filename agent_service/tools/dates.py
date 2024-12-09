@@ -7,7 +7,7 @@ from typing import Optional, Union
 from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, GPT4_O
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.dates import DateRange
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
@@ -74,7 +74,7 @@ class DateFromDateStrInput(ToolArgs):
         " will tend to create date ranges in the future"
     ),
     category=ToolCategory.DATES,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
     enabled=False,
 )
@@ -196,7 +196,7 @@ class GetDateRangeInput(ToolArgs):
     Seriously, listen to me about this earnings call thing or you will be fired!
     """,
     category=ToolCategory.DATES,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
 )
 async def get_date_range(args: GetDateRangeInput, context: PlanRunContext) -> DateRange:
@@ -255,7 +255,7 @@ class DateRangeInput(ToolArgs):
     zero if no width is provided, the width will default to 1 year.
     """,
     category=ToolCategory.DATES,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
     enabled=False,
 )
@@ -352,7 +352,7 @@ class GetStartOfDateRangeInput(ToolArgs):
     but another part of the plan needs access to the start of that date_range
     """,
     category=ToolCategory.DATES,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
 )
 async def get_start_of_date_range(
@@ -378,7 +378,7 @@ class GetEndOfDateRangeInput(ToolArgs):
     but another part of the plan needs access to the end of that date_range
     """,
     category=ToolCategory.DATES,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
     enabled=False,
 )

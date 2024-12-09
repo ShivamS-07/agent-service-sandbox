@@ -2,7 +2,7 @@ import logging
 
 from agent_service.GPT.constants import GPT4_O_MINI, Prompt
 from agent_service.GPT.requests import GPT
-from agent_service.tool import ToolRegistry
+from agent_service.tool import default_tool_registry
 from agent_service.tools import *  # noqa
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.logs import async_perf_logger
@@ -67,7 +67,7 @@ async def examine_task(plan_run_id: str, task_id: str, tool_name: str, question:
     # TODO: check the input size and truncate or represent in a better way
 
     # get task description from db
-    tool = ToolRegistry.get_tool(tool_name)
+    tool = default_tool_registry().get_tool(tool_name)
 
     llm = GPT(model=GPT4_O_MINI)
     main_prompt = TASK_EXAMINE_MAIN_PROMPT.format(

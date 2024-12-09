@@ -17,7 +17,7 @@ from agent_service.io_types.text import (
     StockSecFilingText,
     Text,
 )
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
@@ -114,7 +114,7 @@ class GetSecFilingsInput(ToolArgs):
     " documents can only be found for dates in the past up to the present, including todays date."
     " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!",
     category=ToolCategory.SEC_FILINGS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     store_output=False,
     enabled=True,
 )
@@ -149,7 +149,7 @@ class GetOtherSecFilingsInput(ToolArgs):
 @tool(
     description="This function was renamed to get_sec_filings_with_type",
     category=ToolCategory.SEC_FILINGS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     store_output=False,
     enabled=False,
 )
@@ -229,7 +229,7 @@ class SecFilingsTypeLookupInput(ToolArgs):
     " As an example, if a user asked `Please find IPO details for Apple in S-1`,"
     " you must include `S-1` in the form_types parameter",
     category=ToolCategory.SEC_FILINGS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     store_output=False,
     enabled=True,
 )
@@ -314,7 +314,7 @@ class GetSecFilingsWithTypeInput(ToolArgs):
     " documents can only be found for dates in the past up to the present, including todays date."
     " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!",
     category=ToolCategory.SEC_FILINGS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     store_output=False,
     enabled=True,
 )

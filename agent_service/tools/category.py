@@ -11,7 +11,7 @@ from agent_service.io_type_utils import ComplexIOBase, io_type
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.planner.errors import EmptyOutputError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
@@ -223,7 +223,7 @@ def category_cache_key_fn(tool_name: str, args: ToolArgs, context: PlanRunContex
     Never use this tool in the context of due diligence, use the summary tool to write due diligence criteria.
     """,
     category=ToolCategory.COMPETITIVE_ANALYSIS,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     use_cache=True,
     cache_key_fn=category_cache_key_fn,
     cache_ttl=CATEGORY_CACHE_TTL,

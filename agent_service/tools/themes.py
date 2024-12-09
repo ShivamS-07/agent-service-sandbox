@@ -31,7 +31,7 @@ from agent_service.io_types.text import (
     ThemeText,
 )
 from agent_service.planner.errors import EmptyInputError, EmptyOutputError
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.portfolio import PortfolioID
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.date_utils import get_now_utc
@@ -277,7 +277,7 @@ class GetMacroeconomicThemesAffectingStocksInput(ToolArgs):
         "Never use this tool if the word 'theme' is not explicitly mentioned!"
     ),
     category=ToolCategory.THEME,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_macroeconomic_themes_affecting_stocks(
@@ -314,7 +314,7 @@ class GetMacroeconomicThemeOutlookInput(ToolArgs):
         "a specific existing theme and uses the word `theme`."
     ),
     category=ToolCategory.THEME,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_macroeconomic_theme_outlook(
@@ -370,7 +370,7 @@ class GetThemeDevelopmentNewsInput(ToolArgs):
         "Default is last 30 days. "
     ),
     category=ToolCategory.THEME,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_news_developments_about_theme(
@@ -414,7 +414,7 @@ class GetThemeDevelopmentNewsArticlesInput(ToolArgs):
         "number of articles per news development."
     ),
     category=ToolCategory.THEME,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_news_articles_for_theme_developments(
@@ -472,7 +472,7 @@ class GetTopNThemesInput(ToolArgs):
         "Never use this tool together with write_commentary tool or get_commentary_inputs. "
     ),
     category=ToolCategory.THEME,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     enabled=False,
 )
 async def get_top_N_macroeconomic_themes(

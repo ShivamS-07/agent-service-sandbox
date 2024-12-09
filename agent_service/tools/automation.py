@@ -1,4 +1,4 @@
-from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 
@@ -14,7 +14,7 @@ class SetupScheduleInput(ToolArgs):
         "at regular intervals"
     ),
     category=ToolCategory.AUTOMATION,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
     enabled=False,
 )
@@ -44,7 +44,7 @@ class DeleteScheduleInput(ToolArgs):
 @tool(
     description=("This function will delete a scheduled task"),
     category=ToolCategory.AUTOMATION,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
     enabled=False,
 )
@@ -69,7 +69,7 @@ class PauseScheduleInput(ToolArgs):
 @tool(
     description=("This function will temporarily pause a scheduled task"),
     category=ToolCategory.AUTOMATION,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
     enabled=False,
 )
@@ -99,7 +99,7 @@ class SetNotificationCriteria(ToolArgs):
         "or when some user specified event takes place."
     ),
     category=ToolCategory.AUTOMATION,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
     enabled=False,
 )
@@ -120,7 +120,7 @@ class DeleteNotificationCriteria(ToolArgs):
 @tool(
     description=("This function will remove a previously setup notification."),
     category=ToolCategory.AUTOMATION,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=True,
     enabled=False,
 )
@@ -141,7 +141,7 @@ class NotifyUserInput(ToolArgs):
 @tool(
     description=("This function will notify user of important events."),
     category=ToolCategory.AUTOMATION,
-    tool_registry=ToolRegistry,
+    tool_registry=default_tool_registry(),
     is_visible=False,
     enabled=False,
 )
