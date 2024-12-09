@@ -257,6 +257,17 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, params)
         return rows
 
+    async def get_plan_run_metadata(self, plan_run_id: str) -> RunMetadata:
+        sql = """
+        SELECT run_metadata
+        FROM agent.plan_runs
+        WHERE plan_run_id = %(plan_run_id)s
+        """
+        rows = await self.pg.generic_read(sql, {"plan_run_id": plan_run_id})
+        if not rows:
+            return RunMetadata()
+        return RunMetadata.model_validate(rows[0]["run_metadata"])
+
     async def get_agent_outputs_no_cache(
         self, agent_id: str, plan_run_id: Optional[str] = None
     ) -> List[AgentOutput]:

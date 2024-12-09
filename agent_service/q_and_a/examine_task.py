@@ -64,8 +64,6 @@ async def examine_task(plan_run_id: str, task_id: str, tool_name: str, question:
         logger.info(f"Task run info not found for plan_run_id={plan_run_id}, task_id={task_id}")
         raise Exception("Task run info not found")
 
-    # TODO: check the input size and truncate or represent in a better way
-
     # get task description from db
     tool = default_tool_registry().get_tool(tool_name)
 
@@ -75,9 +73,6 @@ async def examine_task(plan_run_id: str, task_id: str, tool_name: str, question:
         tool_desc=tool.description,
         question=question,
     )
-    # save main_prompt as txt file
-    with open("main_prompt.txt", "w") as f:
-        f.write(main_prompt.filled_prompt)
 
     res = await llm.do_chat_w_sys_prompt(
         main_prompt=main_prompt,
