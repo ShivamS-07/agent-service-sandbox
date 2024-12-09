@@ -46,7 +46,7 @@ proxies = {"http": proxy_url, "https": proxy_url}
 CERTIFICATE_LOCATION = "agent_service/tools/product_comparison/brd_certificate.crt"
 
 WEB_SEARCH_FETCH_URLS_TIMEOUT = 30
-WEB_SEARCH_PULL_SITES_TIMEOUT = 20
+WEB_SEARCH_PULL_SITES_TIMEOUT = 60
 
 
 async def async_fetch_json(
@@ -60,7 +60,7 @@ async def async_fetch_json(
 ) -> Dict[str, Any]:
     start_time = datetime.now(timezone.utc).isoformat()
     async with session.get(
-        url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context  # type: ignore
+        url, headers=headers, proxy=proxy, timeout=aiohttp.ClientTimeout(total=timeout), ssl=ssl_context  # type: ignore
     ) as response:
         result = await response.json()
         end_time = datetime.now(timezone.utc).isoformat()
@@ -298,7 +298,7 @@ async def req_and_scrape(
     # first try, no proxy, short timeout
     try:
         async with session.get(
-            url, headers=headers, timeout=5, ssl=ssl_context  # type: ignore
+            url, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout), ssl=ssl_context  # type: ignore
         ) as response:
             if response.status != 200:
                 raise Exception(f"Request Error {response.status}: {url}")
@@ -313,6 +313,10 @@ async def req_and_scrape(
             else:
                 logger.info(f"Unsupported content type: {content_type}")
                 return None
+
+    except asyncio.TimeoutError as e:
+        logger.error(f"TIMEOUT for {url}: {e}, retrying with proxy")
+        need_retry = True
 
     except Exception as e:
         logger.error(f"An error occurred for {url}: {e}, retrying with proxy")
@@ -334,7 +338,11 @@ async def req_and_scrape(
         }
         try:
             async with session.get(
-                url, headers=headers, proxy=proxy, timeout=timeout, ssl=ssl_context  # type: ignore
+                url,
+                headers=headers,
+                proxy=proxy,
+                timeout=aiohttp.ClientTimeout(total=timeout),
+                ssl=ssl_context,  # type: ignore
             ) as response:
                 end_time = datetime.now(timezone.utc).isoformat()
                 event_data["end_time_utc"] = end_time
@@ -388,6 +396,18 @@ async def req_and_scrape(
                         },
                     )
                     return None
+
+        except asyncio.TimeoutError as e:
+            logger.error(f"TIMEOUT for {url}: {e} on retry")
+            end_time = datetime.now(timezone.utc).isoformat()
+            log_event(
+                event_name="brd_request",
+                event_data={
+                    **event_data,
+                    **{"end_time_utc": end_time, "error": "TIMEOUT" + traceback.format_exc()},
+                },
+            )
+            return None
 
         except aiohttp.ClientResponseError as e:
             if should_print_errors:
@@ -515,7 +535,9 @@ async def get_web_texts_async(
     if uncached_urls:
         logger.info(f"Scrapping {len(uncached_urls)} uncached URLs out of {len(urls)}")
         async with aiohttp.ClientSession(
-            max_line_size=8190 * 5, max_field_size=8190 * 5
+            connector=aiohttp.TCPConnector(ttl_dns_cache=30),
+            max_line_size=8190 * 5,
+            max_field_size=8190 * 5,
         ) as session:
             s3_client = boto3.client("s3")
             tasks = [

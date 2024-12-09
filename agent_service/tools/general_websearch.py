@@ -53,21 +53,7 @@ class SingleStockWebSearchInput(ToolArgs):
     num_news_urls: int = NEWS_URLS_TO_SCRAPE
 
 
-@tool(
-    description=(
-        "This function takes in a StockID and a single query which contain search details ALONGSIDE the stock name and "
-        "returns text entries of the top search results when the query is made on the web. "
-        "Be SURE that the stock name is included in the query or we won't know what stock is being referred to! "
-        "Unless not specified within a sample plan, always call some text processing tool sometime after this tool. "
-        "Again, it is VERY important that a "
-        "text processing tool is called before the end of a plan containing this tool! DO not EVER directly output "
-        "the returned text from this tool! AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
-    ),
-    category=ToolCategory.WEB,
-    tool_registry=default_tool_registry(),
-    enabled=False,
-    enabled_checker_func=enabler_function,
-)
+# TODO: calling MANY of these separately may be inefficient, may be opportunity for speedups here
 async def single_stock_web_search(
     args: SingleStockWebSearchInput, context: PlanRunContext
 ) -> List[WebStockText]:
@@ -161,7 +147,8 @@ async def general_stock_web_search(
             )
         )
 
-    results = await gather_with_concurrency(tasks, n=100)
+    # 100 threads overloads the requests, 25 is a good amount
+    results = await gather_with_concurrency(tasks, n=25)
     texts: List[WebStockText] = []
     for result in results:
         texts.extend(result)
@@ -208,7 +195,7 @@ async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContex
         get_urls_async(args.queries, args.num_google_urls, context=context),
         get_news_urls_async(args.queries, args.num_news_urls, context=context),
     ]
-    results = await gather_with_concurrency(tasks)
+    results = await gather_with_concurrency(tasks, n=25)
 
     urls: List[str] = [prepend_url_with_https(url) for url in (args.urls or [])]
     for result in results:
