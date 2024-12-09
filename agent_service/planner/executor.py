@@ -1458,6 +1458,10 @@ async def _postprocess_non_live(
     llm: GPT,
     final_outputs: List[IOType],
     new_output_titles: Dict[str, str],
+    agent_email_handler: AgentEmail,
+    plan_run_start_time: float,
+    send_email: bool,
+    message_task: asyncio.Task | None,
 ) -> RunDiffs:
     logger.info("Generating chat message...")
     chat_context = await async_db.get_chats_history_for_agent(agent_id=context.agent_id)
@@ -1496,6 +1500,24 @@ async def _postprocess_non_live(
         ),
         db=async_db,
     )
+
+    # send reminder email if plan run took longer than 10 minutes (600 seconds)
+    if time.time() - plan_run_start_time > PLAN_RUN_EMAIL_THRESHOLD_SECONDS and send_email:
+        await agent_email_handler.send_plan_run_finish_email(
+            agent_id=context.agent_id,
+            short_summary=short_diff_summary,
+            output_titles=[output.title for output in final_outputs],  # type: ignore
+        )
+    else:
+        # Cancel the scheduled slow execution message if execution completes before 10 minutes
+        if message_task and not message_task.done():
+            message_task.cancel()
+            try:
+                # ensuring the task is properly cancelled
+                await message_task
+            except asyncio.CancelledError:
+                pass
+
     return RunDiffs(short_summary=short_diff_summary)
 
 
@@ -1866,24 +1888,11 @@ async def _run_execution_plan_impl_new(
             chatbot=chatbot,
             final_outputs=final_outputs,
             new_output_titles=new_output_titles,
+            agent_email_handler=agent_email_handler,
+            plan_run_start_time=plan_run_start_time,
+            send_email=send_email,
+            message_task=message_task,
         )
-
-    # send reminder email if plan run took longer than 10 minutes (600 seconds)
-    if time.time() - plan_run_start_time > PLAN_RUN_EMAIL_THRESHOLD_SECONDS and send_email:
-        await agent_email_handler.send_plan_run_finish_email(
-            agent_id=context.agent_id,
-            short_summary=run_diffs.short_summary,
-            output_titles=[output.title for output in final_outputs],  # type: ignore
-        )
-    else:
-        # Cancel the scheduled low execution message if execution completes before 10 minutes
-        if message_task and not message_task.done():
-            message_task.cancel()
-            try:
-                # ensuring the task is properly cancelled
-                await message_task
-            except asyncio.CancelledError:
-                pass
 
     await async_db.set_plan_run_metadata(
         context=context,
