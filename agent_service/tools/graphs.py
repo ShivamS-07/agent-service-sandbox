@@ -342,6 +342,8 @@ async def make_pie_graph(args: MakePieGraphArgs, context: PlanRunContext) -> Pie
             TableColumnType.STOCK,
             TableColumnType.STRING,
             TableColumnType.QUARTER,
+            TableColumnType.YEAR,
+            TableColumnType.MONTH,
         ):
             label_col = col
             label_df_col = df_col
