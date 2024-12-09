@@ -138,6 +138,7 @@ async def update_agent_help_requested(
     slack_sender: Optional[SlackSender] = None,
     requesting_user: Optional[AuthzUser] = None,
     send_if_already_help_requested: bool = False,
+    send_slack_for_internal_users: bool = False,
 ) -> None:
     if (
         help_requested
@@ -158,7 +159,11 @@ async def update_agent_help_requested(
             db=db,
         )
     if help_requested and send_slack_if_requested:
+        is_user_internal = await db.is_user_internal(user_id=user_id)
         env = get_environment_tag()
+        if not send_slack_for_internal_users and is_user_internal and env == PROD_TAG:
+            # We want to still send slacks for internal users on dev for testing and stuff
+            return
         slack_channel = "support-woz" if env == PROD_TAG else "alfa-client-queries-dev"
         slack_sender = slack_sender or SlackSender(channel=slack_channel)
         user_email, user_slack_info = await get_user_info_slack_string(pg=db, user_id=user_id)
