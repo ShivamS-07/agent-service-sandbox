@@ -213,6 +213,7 @@ async def run_execution_plan(
                 override_task_output_lookup=override_task_output_lookup,
                 override_task_output_id_lookup=override_task_output_id_lookup,
                 scheduled_by_automation=scheduled_by_automation,
+                execution_log=execution_log,
             )
         return result_to_return, execution_log
     except Exception as e:
@@ -1228,6 +1229,9 @@ async def _run_plan_step(
     variable_lookup: Dict[str, IOType],
     override_task_output_lookup: Optional[Dict[str, IOType]],
     scheduled_by_automation: bool,
+    # TODO this isn't really safe or correct as there could be multiple
+    # calls of the same tool. For now just reproduce the behavior.
+    execution_log: Optional[DefaultDict[str, List[dict]]] = None,
 ) -> TaskRunResult:
     await _exit_if_cancelled(db=async_db, context=context)
     logger.warning(
@@ -1264,6 +1268,8 @@ async def _run_plan_step(
     tool = default_tool_registry().get_tool(step.tool_name)
     # First, resolve the variables
     resolved_args = step.resolve_arguments(variable_lookup=variable_lookup)
+    if execution_log is not None:
+        execution_log[step.tool_name].append(resolved_args)
 
     # Create the context
     context.task_id = step.tool_task_id
@@ -1640,6 +1646,7 @@ async def _run_execution_plan_impl_new(
     override_task_output_id_lookup: Optional[Dict[str, str]] = None,
     scheduled_by_automation: bool = False,
     send_email: bool = True,
+    execution_log: Optional[DefaultDict[str, List[dict]]] = None,
 ) -> List[IOType]:
     ###########################################
     # PLAN RUN SETUP
@@ -1743,6 +1750,7 @@ async def _run_execution_plan_impl_new(
                 variable_lookup=variable_lookup,
                 override_task_output_lookup=override_task_output_lookup,
                 scheduled_by_automation=scheduled_by_automation,
+                execution_log=execution_log,
             )
         except NonRetriableError as nre:
             logger.exception(f"Step '{step.tool_name}' failed due to {nre}")
