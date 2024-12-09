@@ -255,6 +255,8 @@ async def site_specific_websearch(
     )
     if len(search_results) == 0:
         raise EmptyOutputError(message="All provided URLs had an error")
+    else:
+        await tool_log(f"Found {len(search_results)} result(s) using web search", context=context)
 
     return search_results
 

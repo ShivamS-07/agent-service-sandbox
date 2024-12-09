@@ -546,6 +546,8 @@ async def get_latest_news_for_companies(
 
     if len(texts) == 0:
         logger.error("Found no web articles for the provided stocks")
+    elif context.user_settings.include_web_results:
+        await tool_log(f"Found {len(texts)} results using news and web search", context=context)
 
     return texts
 
@@ -708,6 +710,15 @@ class GetNewsAndWebPagesForTopicsInput(ToolArgs):
 async def get_news_and_web_pages_for_topics(
     args: GetNewsAndWebPagesForTopicsInput, context: PlanRunContext
 ) -> List[Text]:
+    using_web_search = (
+        get_ld_flag(
+            flag_name="web-search-tool",
+            default=False,
+            user_context=get_user_context(user_id=context.user_id),
+        )
+        and context.user_settings.include_web_results
+    )
+
     tasks = [
         get_news_articles_for_topics(  # type: ignore
             GetNewsArticlesForTopicsInput(
@@ -720,14 +731,7 @@ async def get_news_and_web_pages_for_topics(
         )
     ]
 
-    if (
-        get_ld_flag(
-            flag_name="web-search-tool",
-            default=False,
-            user_context=get_user_context(user_id=context.user_id),
-        )
-        and context.user_settings.include_web_results
-    ):
+    if using_web_search:
         tasks.append(
             general_web_search(
                 GeneralWebSearchInput(
@@ -746,7 +750,11 @@ async def get_news_and_web_pages_for_topics(
         texts.extend(result)
 
     if len(texts) == 0:
-        raise EmptyOutputError("Found no news or web articles for provided topic(s)")
+        raise EmptyOutputError("Found no articles for provided topic(s)")
+    elif using_web_search:
+        await tool_log(f"Found {len(texts)} articles using news and web search", context=context)
+    else:
+        await tool_log(f"Found {len(texts)} news articles", context=context)
 
     return texts
 
