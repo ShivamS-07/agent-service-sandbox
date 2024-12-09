@@ -1,10 +1,16 @@
 import logging
 import os
+from functools import lru_cache
 
 import aioboto3
 import backoff
 import sentry_sdk
 from async_lru import alru_cache
+from gbi_common_py_utils.utils.redis import is_redis_available
+
+from agent_service.utils.async_utils import run_async_background
+from agent_service.utils.cache_utils import RedisCacheBackend
+from agent_service.utils.string_utils import is_valid_uuid
 
 COGNITO_SESSION: aioboto3.Session | None = None
 logger = logging.getLogger(__name__)
@@ -22,6 +28,17 @@ class CognitoRetriableException(Exception):
     pass
 
 
+@lru_cache(maxsize=1)
+def get_cognito_redis_cache() -> RedisCacheBackend | None:
+    if not is_redis_available():
+        return None
+    return RedisCacheBackend(
+        namespace="cognito_user_lookup",
+        serialize_func=lambda b: str(b).encode("utf-8"),
+        deserialize_func=lambda s: s.decode("utf-8"),
+    )
+
+
 @alru_cache(maxsize=256)
 @backoff.on_exception(
     backoff.expo,  # 1s, 2s, 4s
@@ -31,6 +48,13 @@ class CognitoRetriableException(Exception):
     jitter=backoff.random_jitter,
 )
 async def get_cognito_user_id_from_access_token(access_token: str) -> str:
+    redis_cache = get_cognito_redis_cache()
+    if redis_cache:
+        with sentry_sdk.start_span(op="redis.get", description="aws.cognito.get_user"):
+            cached_user_id: str | None = await redis_cache.get(access_token)  # type: ignore
+            if is_valid_uuid(cached_user_id):
+                return cached_user_id  # type: ignore
+
     global COGNITO_SESSION
     if COGNITO_SESSION is None:
         COGNITO_SESSION = aioboto3.Session(region_name=REGION_NAME)
@@ -43,6 +67,7 @@ async def get_cognito_user_id_from_access_token(access_token: str) -> str:
                 cognito_client.exceptions.TooManyRequestsException,
                 cognito_client.exceptions.InternalErrorException,
             ) as e:
+                logger.warning(f"Error getting user from cognito: {e}")
                 raise CognitoRetriableException from e
 
             user_attributes = cognito_user.get("UserAttributes", [])
@@ -59,5 +84,8 @@ async def get_cognito_user_id_from_access_token(access_token: str) -> str:
                 raise CognitoRetriableException(
                     f'Could not get field "custom:user_id" from {access_token}'
                 )
+
+            if redis_cache:
+                _ = run_async_background(redis_cache.set(access_token, user_id, ttl=3600))
 
             return user_id
