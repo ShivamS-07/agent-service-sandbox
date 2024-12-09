@@ -2445,6 +2445,7 @@ class AsyncDB:
             "prod_reviewed": agent_qc.prod_reviewed,
             "prod_priority": agent_qc.prod_priority,
             "prod_notes": agent_qc.prod_notes,
+            "qc_status": agent_qc.qc_status,
         }
 
         # Remove fields that are None or immutable
@@ -2494,7 +2495,7 @@ class AsyncDB:
         SELECT
             COUNT(*) over () as total_agent_qcs,
             aqc.agent_qc_id::TEXT, aqc.agent_id::TEXT, ag.agent_name, aqc.plan_id::TEXT, aqc.user_id::TEXT,
-            aqc.query, aqc.agent_status,
+            aqc.query, aqc.agent_status, aqc.qc_status,
             aqc.cs_reviewer::TEXT, aqc.eng_reviewer::TEXT, aqc.prod_reviewer::TEXT, aqc.follow_up, aqc.score_rating,
             aqc.priority, aqc.use_case, aqc.problem_area, aqc.cs_failed_reason, aqc.cs_attempt_reprompting,
             aqc.cs_expected_output, aqc.cs_notes, aqc.canned_prompt_id, aqc.eng_failed_reason, aqc.eng_solution,

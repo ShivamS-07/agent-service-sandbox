@@ -1763,6 +1763,7 @@ class AgentQC(BaseModel):
     prod_priority: Optional[str] = None
     prod_notes: Optional[str] = None
     is_spoofed: bool
+    qc_status: Optional[str] = None
 
 
 class HorizonCriteriaOperator(enum.StrEnum):
