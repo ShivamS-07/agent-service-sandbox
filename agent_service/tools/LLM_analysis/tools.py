@@ -1,10 +1,8 @@
 import asyncio
 import datetime
-import traceback
+import inspect
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple, cast
-
-from gbi_common_py_utils.utils.pagerduty import PD_WARNING, notify_agent_pg
 
 from agent_service.GPT.constants import (
     FILTER_CONCURRENCY,
@@ -97,10 +95,10 @@ from agent_service.tools.stocks import (
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
-from agent_service.utils import environment
 from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -554,6 +552,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
     citations = None
 
     try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
         prev_run_info = await get_prev_run_info(context, "summarize_texts")
         if prev_run_info is not None:
             prev_args = SummarizeTextInput.model_validate_json(prev_run_info.inputs_str)
@@ -594,8 +593,16 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
                     citations = []
 
     except Exception as e:
-        logger.warning(
+        logger.exception(
             f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
+        )
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info",
         )
 
     if text is None:
@@ -661,6 +668,7 @@ async def per_stock_summarize_texts(
     ] = defaultdict()
 
     try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
         prev_run_info = await get_prev_run_info(context, "per_stock_summarize_texts")
         if prev_run_info is not None:
             prev_args = PerStockSummarizeTextInput.model_validate_json(prev_run_info.inputs_str)
@@ -700,22 +708,16 @@ async def per_stock_summarize_texts(
                 )
 
     except Exception as e:
-        logger.warning(
+        logger.exception(
             f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
         )
-        notify_agent_pg(
-            summary="Failed to update per stock summary",
-            severity=PD_WARNING,
-            source=environment.get_environment_tag(),
-            component="AgentError",
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
             classt="AgentUpdateError",
-            group="AgentUpdateError-Summarize",
-            custom_details={
-                "agent": context.agent_id,
-                "plan_run": context.plan_run_id,
-                "task": context.task_id,
-                "error": "".join(traceback.TracebackException.from_exception(e).format()),
-            },
+            summary="Failed to get previous run info",
         )
 
     tasks = []
@@ -859,6 +861,7 @@ async def per_idea_summarize_texts(
     prev_run_dict: Dict[Idea, Tuple[List[TextCitation], List[TextCitation], str]] = defaultdict()
 
     try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
         prev_run_info = await get_prev_run_info(context, "per_idea_summarize_texts")
         if prev_run_info is not None:
             prev_args = PerIdeaSummarizeTextInput.model_validate_json(prev_run_info.inputs_str)
@@ -898,8 +901,16 @@ async def per_idea_summarize_texts(
             new_ideas = temp_new_ideas
 
     except Exception as e:
-        logger.warning(
+        logger.exception(
             f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
+        )
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info",
         )
 
     text_cache: Dict[TextIDType, str] = {}
@@ -1004,6 +1015,7 @@ async def per_stock_group_summarize_texts(
     _ = await Text.get_all_strs(args.texts, text_cache=text_cache)
 
     try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
         prev_run_info = await get_prev_run_info(context, "per_stock_group_summarize_texts")
         if prev_run_info is not None:
             prev_args = PerStockGroupSummarizeTextInput.model_validate_json(
@@ -1045,8 +1057,16 @@ async def per_stock_group_summarize_texts(
             new_groups = prelim_new_groups
 
     except Exception as e:
-        logger.warning(
+        logger.exception(
             f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
+        )
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info",
         )
 
     plan_str = (

@@ -1,5 +1,6 @@
 import copy
 import datetime
+import inspect
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -57,6 +58,7 @@ from agent_service.utils.date_utils import (
     convert_horizon_to_days,
 )
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.tool_diff import get_prev_run_info
@@ -680,7 +682,15 @@ async def get_stock_recommendations(
                     for stock, news_score, rating_score in load_io_type(prev_other["score_dict"])  # type: ignore
                 }
     except Exception as e:
-        logger.warning(f"Error getting info from previous run: {e}")
+        logger.exception(f"Error getting info from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info",
+        )
 
     if args.stock_ids:
         if args.filter and args.num_stocks_to_return:

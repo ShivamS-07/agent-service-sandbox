@@ -1,5 +1,6 @@
 import copy
 import datetime
+import inspect
 import json
 import os
 import subprocess
@@ -66,6 +67,7 @@ from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.tool_diff import get_prev_run_info
 
@@ -412,7 +414,15 @@ async def transform_table(
                 old_date = prev_other["date"] if "date" in prev_other else None
 
     except Exception as e:
-        logger.warning(f"Error getting info from previous run: {e}")
+        logger.exception(f"Error creating diff info from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info or getting default stock list",
+        )
 
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)
@@ -767,7 +777,15 @@ async def per_stock_group_transform_table(
                 old_schema = load_io_type(prev_other["table_schema"])  # type:ignore
 
     except Exception as e:
-        logger.warning(f"Error getting info from previous run: {e}")
+        logger.exception(f"Error creating diff info from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info or getting default stock list",
+        )
 
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)

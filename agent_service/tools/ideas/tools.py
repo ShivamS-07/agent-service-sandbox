@@ -1,3 +1,4 @@
+import inspect
 import json
 from typing import Coroutine, Dict, List, Optional, Set, Tuple
 
@@ -41,6 +42,7 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.smart_classifier import SmartClassifier
@@ -308,6 +310,7 @@ async def brainstorm_ideas_from_text(
     prev_output: Optional[List[Idea]] = None
 
     try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
         prev_run_info = await get_prev_run_info(context, "brainstorm_ideas_from_text")
         if prev_run_info is not None:
             prev_args = BrainstormIdeasFromTextsInput.model_validate_json(prev_run_info.inputs_str)
@@ -319,8 +322,16 @@ async def brainstorm_ideas_from_text(
                 # if exactly the same texts, just return the old output
                 return prev_output
     except Exception as e:
-        logger.warning(
+        logger.exception(
             f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
+        )
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info or to partition into smaller texts",
         )
 
     idea_noun = await get_idea_noun(args.idea_definition, context)

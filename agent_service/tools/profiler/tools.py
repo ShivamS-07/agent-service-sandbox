@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 from typing import List, Optional
 
@@ -37,6 +38,7 @@ from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.string_utils import clean_to_json_if_needed
 from agent_service.utils.tool_diff import get_prev_run_info
@@ -130,6 +132,7 @@ async def per_idea_generate_profiles(
     existing_profile_lookup = {}
 
     try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
         prev_run_info = await get_prev_run_info(context, "per_idea_generate_profiles")
         if prev_run_info is not None:
             prev_args = PerIdeaGetCompanyProfilesForTopic.model_validate_json(
@@ -144,8 +147,16 @@ async def per_idea_generate_profiles(
             }
 
     except Exception as e:
-        logger.warning(
+        logger.exception(
             f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
+        )
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info",
         )
 
     topic_profiles_for_ideas: List[TopicProfiles] = []

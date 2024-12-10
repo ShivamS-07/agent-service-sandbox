@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import inspect
 import json
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -53,6 +54,7 @@ from agent_service.utils.date_utils import (
 )
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import init_stdout_logging
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
@@ -397,7 +399,15 @@ async def get_statistic_data_for_companies(
                     logger.warning(f"Failed to load statistic: {bad_stat}, redoing from scratch")
 
     except Exception as e:
-        logger.warning(f"Error getting info from previous run: {e}")
+        logger.exception(f"Error creating diff info from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info or getting default stock list",
+        )
 
     debug_info: Dict[str, Any] = {}
     TOOL_DEBUG_INFO.set(debug_info)

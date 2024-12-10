@@ -1,3 +1,4 @@
+import inspect
 from typing import List
 
 import country_converter as coco
@@ -9,6 +10,7 @@ from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, to
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import get_async_db
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -555,6 +557,7 @@ async def filter_stocks_by_region(
 
     try:  # since everything associated with diffing is optional, put in try/except
         # we need to add the task id to all runs, including the first one, so we can track changes
+        # Update mode
         if context.task_id:
             stock_list = add_task_id_to_stocks_history(stock_list, context.task_id)
             if context.diff_info is not None:
@@ -592,7 +595,15 @@ async def filter_stocks_by_region(
                     }
 
     except Exception as e:
-        logger.warning(f"Error creating diff info from previous run: {e}")
+        logger.exception(f"Error creating diff info from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info or invalid json",
+        )
 
     return stock_list
 
@@ -647,6 +658,7 @@ async def filter_stocks_by_country_of_domicile(
 
     try:  # since everything associated with diffing is optional, put in try/except
         # we need to add the task id to all runs, including the first one, so we can track changes
+        # Update mode
         if context.task_id:
             stock_list = add_task_id_to_stocks_history(stock_list, context.task_id)
             if context.diff_info is not None:
@@ -686,6 +698,14 @@ async def filter_stocks_by_country_of_domicile(
                     }
 
     except Exception as e:
-        logger.warning(f"Error creating diff info from previous run: {e}")
+        logger.exception(f"Error creating diff info from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info or invalid json",
+        )
 
     return stock_list

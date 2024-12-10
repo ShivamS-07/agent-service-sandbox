@@ -1,3 +1,4 @@
+import inspect
 import re
 from typing import Dict, List, Optional, Tuple
 
@@ -16,6 +17,7 @@ from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, to
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -155,6 +157,7 @@ async def get_user_watchlist_stocks(
 
     try:  # since everything associated with diffing is optional, put in try/except
         # we need to add the task id to all runs, including the first one, so we can track changes
+        # Update mode
         if context.task_id:
             stock_list = add_task_id_to_stocks_history(stock_list, context.task_id)
             if context.diff_info is not None:
@@ -184,7 +187,15 @@ async def get_user_watchlist_stocks(
                     }
 
     except Exception as e:
-        logger.warning(f"Error creating diff info from previous run: {e}")
+        logger.exception(f"Error creating diff info from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info",
+        )
 
     return stock_list
 

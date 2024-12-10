@@ -1,4 +1,5 @@
 # Author(s): Mohammad Zarei, David Grohmann
+import inspect
 import json
 import re
 from collections import defaultdict
@@ -40,6 +41,7 @@ from agent_service.utils.cache_utils import PostgresCacheBackend
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.logs import async_perf_logger
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.stock_metadata import get_stock_metadata_rows
@@ -277,6 +279,7 @@ async def stock_identifier_lookup_helper(
     debug_info = TOOL_DEBUG_INFO.get()
 
     try:  # since everything associated with diffing/rerun cache is optional, put in try/except
+        # Update mode
         logger.info("Checking previous run info...")
         prev_run_info = await get_prev_run_info(context, "stock_identifier_lookup")
         if prev_run_info is not None:
@@ -292,7 +295,15 @@ async def stock_identifier_lookup_helper(
                 return prev_output
 
     except Exception as e:
-        logger.warning(f"Error using previous run cache: {e}")
+        logger.exception(f"Error using previous run cache: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info",
+        )
 
     logger.info(f"Attempting to map '{args.stock_name}' to a stock")
 
@@ -1058,7 +1069,8 @@ async def multi_stock_identifier_lookup(
     # Just runs stock identifier look up below for each stock in the list
     # Probably can be done more efficiently
 
-    try:  # since everything associated with diffing/rerun cache is optional, put in try/except
+    try:  # since everything associated with diffing/rerun cache is optional, put in try/except\
+        # Update mode
         prev_run_info = await get_prev_run_info(context, "multi_stock_identifier_lookup")
         if prev_run_info is not None:
             prev_args = MultiStockIdentifierLookupInput.model_validate_json(
@@ -1069,7 +1081,15 @@ async def multi_stock_identifier_lookup(
                 return prev_output
 
     except Exception as e:
-        logger.warning(f"Error using previous run cache: {e}")
+        logger.exception(f"Error using previous run cache: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info",
+        )
 
     tasks = [
         stock_identifier_lookup_helper(
@@ -1700,6 +1720,7 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
     )
 
     try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
         if context.task_id:
             # we need to add the task id to all runs, including the first one, so we can track changes
             stock_universe_list = add_task_id_to_stocks_history(
@@ -1729,7 +1750,15 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
                     }
 
     except Exception as e:
-        logger.warning(f"Error creating diff info from previous run: {e}")
+        logger.exception(f"Error using previous run cache: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get stock universe",
+        )
 
     return stock_universe_list
 
@@ -2153,6 +2182,7 @@ async def growth_filter(args: GrowthFilterInput, context: PlanRunContext) -> Lis
 
     try:  # since everything associated with diffing is optional, put in try/except
         # we need to add the task id to all runs, including the first one, so we can track changes
+        # Update Mode
         if context.task_id:
             stock_list = add_task_id_to_stocks_history(stock_list, context.task_id)
             if context.diff_info is not None:
@@ -2188,7 +2218,15 @@ async def growth_filter(args: GrowthFilterInput, context: PlanRunContext) -> Lis
                     }
 
     except Exception as e:
-        logger.warning(f"Error creating diff info from previous run: {e}")
+        logger.exception(f"Error creating diff info from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to update per stock summary",
+        )
 
     if args.stocks_to_keep:
         stock_list = stock_list[: args.stocks_to_keep]
@@ -2297,7 +2335,15 @@ async def value_filter(args: ValueFilterInput, context: PlanRunContext) -> List[
                     }
 
     except Exception as e:
-        logger.warning(f"Error creating diff info from previous run: {e}")
+        logger.exception(f"Error creating diff info from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info or getting default stock list",
+        )
 
     if args.stocks_to_keep:
         stock_list = stock_list[: args.stocks_to_keep]

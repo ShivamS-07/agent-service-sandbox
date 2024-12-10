@@ -1,3 +1,4 @@
+import inspect
 import json
 import re
 from collections import defaultdict
@@ -60,6 +61,7 @@ from agent_service.utils.async_utils import (
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.check_cancelled import check_cancelled_decorator
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -621,6 +623,7 @@ async def do_competitive_analysis(
     prev_run_info = None
     prev_internal_data = None
     try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
         if context.diff_info is not None:  # running updates
             prev_run_info = await get_prev_run_info(context, "do_competitive_analysis")
             if prev_run_info is not None:
@@ -630,7 +633,15 @@ async def do_competitive_analysis(
                 prev_internal_data: Dict[str, str] = prev_run_info.debug  # type:ignore
 
     except Exception as e:
-        logger.warning(f"Error getting info from previous run: {e}")
+        logger.exception(f"Error getting info from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info",
+        )
 
     # Step: Download content for text data
     logger.info("Downloading content for text data")

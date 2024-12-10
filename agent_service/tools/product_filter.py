@@ -1,3 +1,4 @@
+import inspect
 import json
 from collections import Counter
 from typing import Any, Dict, List, Optional, cast
@@ -37,6 +38,7 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -294,6 +296,7 @@ async def filter_stocks_by_product_or_service(
     prev_run_info = None
     prev_output: List[StockID] = []
     try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
         prev_run_info = await get_prev_run_info(context, "filter_stocks_by_product_or_service")
         if prev_run_info is not None:
             prev_args = FilterStocksByProductOrServiceInput.model_validate_json(
@@ -337,7 +340,15 @@ async def filter_stocks_by_product_or_service(
             if len(stocks_to_filter) == 0:
                 return prev_output
     except Exception as e:
-        logger.warning(f"Error including stock ids from previous run: {e}")
+        logger.exception(f"Error including stock ids from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to update per stock summary",
+        )
 
     # initiate GPT llm models
     gpt_context = create_gpt_context(

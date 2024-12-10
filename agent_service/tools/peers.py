@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 from collections import defaultdict
 from typing import Dict, List, Optional
@@ -28,6 +29,7 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.postgres import SyncBoostedPG, get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -630,6 +632,7 @@ async def per_stock_get_general_peers(
     wanted_stocks = args.stock_ids
 
     try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
         prev_run_info = await get_prev_run_info(context, "per_stock_get_general_peers")
         if prev_run_info is not None:
             old_competitor_lookup = {
@@ -650,7 +653,15 @@ async def per_stock_get_general_peers(
             stock_groups = old_stock_groups
 
     except Exception as e:
-        logger.warning(f"Error including stock ids from previous run: {e}")
+        logger.exception(f"Error including stock ids from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info",
+        )
 
     llm = GPT(context=None, model=GPT4_O)
     tasks = []

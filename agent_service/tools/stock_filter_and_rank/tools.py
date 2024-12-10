@@ -1,10 +1,7 @@
 import copy
 import inspect
 import json
-import traceback
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
-
-from gbi_common_py_utils.utils.pagerduty import PD_WARNING, notify_agent_pg
 
 from agent_service.GPT.constants import GPT4_O_MINI, SONNET
 from agent_service.GPT.requests import GPT
@@ -74,9 +71,9 @@ from agent_service.tools.stock_filter_and_rank.utils import (
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
-from agent_service.utils import environment
 from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.text_utils import partition_to_smaller_text_sizes
@@ -992,6 +989,7 @@ async def filter_and_rank_stocks_by_profile(
     _ = await Text.get_all_strs(args.stock_texts, text_cache=text_cache)
 
     try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
         prev_run_info = await get_prev_run_info(context, "filter_and_rank_stocks_by_profile")
         if prev_run_info is not None:
             prev_args = FilterAndRankStocksByProfileInput.model_validate_json(
@@ -1049,31 +1047,13 @@ async def filter_and_rank_stocks_by_profile(
 
     except Exception as e:
         logger.exception(f"Error doing text diff from previous run: {e}")
-        # some of the exception messages are long and contain unique info,
-        # truncate it to try to prevent that from making too many unique pagers
-        error_dedupe_str = str(type(e)) + " " + str(e)[:75]
-        func_name = __name__
-        frame = inspect.currentframe()
-        if frame:
-            # defined to be potentially null, in practice it never is
-            func_name = frame.f_code.co_name
-        classt = "AgentUpdateError"
-        group = f"{classt}-{func_name}-{error_dedupe_str}"
-        notify_agent_pg(
-            summary=f"{func_name}: Failed to update per stock summary: {error_dedupe_str}",
-            severity=PD_WARNING,
-            source=environment.get_environment_tag(),
-            component="AgentError",
-            classt=classt,
-            group=group,
-            custom_details={
-                "_reminder": "This pager is deduped, check #oncall-info for more examples",
-                "agent": context.agent_id,
-                "plan_run": context.plan_run_id,
-                "task": context.task_id,
-                "error": "".join(traceback.TracebackException.from_exception(e).format()),
-                "pagerduty_dedupe_key": group,
-            },
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to update per stock summary",
         )
 
     if result is None:
@@ -1204,6 +1184,7 @@ async def per_idea_filter_and_rank_stocks_by_profile_match(
     # Disabled for ranking as it does not have update logic designed yet
     profile_match_parameters = ProfileMatchParameters()
     try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
         prev_run_info = await get_prev_run_info(
             context, "per_idea_filter_and_rank_stocks_by_profile_match"
         )
@@ -1296,7 +1277,15 @@ async def per_idea_filter_and_rank_stocks_by_profile_match(
     except EmptyOutputError as e:
         raise e
     except Exception as e:
-        logger.warning(f"Error doing text diff from previous run: {e}")
+        logger.exception(f"Error doing text diff from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info",
+        )
 
     initial_split_text_count = len(split_texts)
     split_texts = cast(List[StockText], initial_filter_texts(split_texts))  # type: ignore
