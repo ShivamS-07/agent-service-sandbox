@@ -346,8 +346,18 @@ class ToolRegistry:
         self._REGISTRY_CATEGORY_MAP: Dict[ToolCategory, Dict[str, Tool]] = defaultdict(dict)
         self._REGISTRY_ALL_TOOLS_MAP: Dict[str, Tool] = {}
         self._TOOL_NAME_TO_CATEGORY: Dict[str, ToolCategory] = {}
+        self._TOOL_NAME_TO_SOURCE_FILE: Dict[str, str] = {}
 
     def register_tool(self, tool: Tool, category: ToolCategory) -> None:
+        this_tool_source = inspect.getfile(inspect.unwrap(tool.func))
+        orig_tool_source = self._TOOL_NAME_TO_SOURCE_FILE.get(tool.name)
+        if orig_tool_source:
+            if orig_tool_source == this_tool_source:
+                # We import in at least 2 ways so we trigger this more than once per tool
+                return
+            raise Exception(f"{tool.name=} is already in registry from: {orig_tool_source}")
+
+        self._TOOL_NAME_TO_SOURCE_FILE[tool.name] = this_tool_source
         self._REGISTRY_CATEGORY_MAP[category][tool.name] = tool
         self._REGISTRY_ALL_TOOLS_MAP[tool.name] = tool
         self._TOOL_NAME_TO_CATEGORY[tool.name] = category

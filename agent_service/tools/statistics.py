@@ -279,6 +279,7 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
     category=ToolCategory.STATISTICS,
     tool_registry=default_tool_registry(),
     retries=1,
+    enabled=True,
 )
 async def get_statistic_data_for_companies(
     args: GetStatisticDataForCompaniesInput, context: PlanRunContext
@@ -639,6 +640,7 @@ class MacroFeatureDataInput(ToolArgs):
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=default_tool_registry(),
+    enabled=True,
 )
 async def get_macro_statistic_data(args: MacroFeatureDataInput, context: PlanRunContext) -> Table:
     if args.date_range:

@@ -22,14 +22,12 @@ from agent_service.external.feature_svc_client import get_feature_data
 from agent_service.GPT.constants import FILTER_CONCURRENCY, HAIKU, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_type_utils import ComplexIOBase, io_type
-from agent_service.io_types.dates import DateRange
 from agent_service.io_types.graph import GraphType
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import (
     STOCK_ID_COL_NAME_DEFAULT,
     StockTable,
-    Table,
     TableColumnMetadata,
     TableColumnType,
 )
@@ -240,151 +238,6 @@ async def statistic_identifier_lookup(
 
     raise NotFoundError(
         f"Could not find a statistical data field related to: {args.statistic_name}"
-    )
-
-
-class MacroFeatureDataInput(ToolArgs):
-    statistic_id: StatisticId
-    start_date: Optional[datetime.date] = None
-    end_date: Optional[datetime.date] = None
-    date_range: Optional[DateRange] = None
-    # in the future we may want to take a currency as well
-
-
-@tool(
-    description=(
-        "This function returns the time series of data for a statistic_id"
-        " that is not tied to a specific stock. These are usually macroeconomic indicators like"
-        " bank interest rates, inflation and unemployment rates."
-        " Optionally a start_date and end_date may be provided to specify a date range"
-        " to get a specific date only then set both start_date and end_date to the same date."
-        " if the optional date_range argument is passed in it will override anything set in start_date and end_date "
-        " If none of start_date, end_date, date_range are provided then it will assume the request "
-        " is for the most recent date for which data exists. The statistic_id MUST be "
-        " fetched with the lookup function, it cannot be an arbitrary string. "
-        " If the user does not mention any date or time frame, you should assume they "
-        " want the most recent datapoint and call without specifying either start_date or end_date."
-    ),
-    category=ToolCategory.STATISTICS,
-    tool_registry=default_tool_registry(),
-    enabled=False,
-)
-async def get_macro_statistic_data(args: MacroFeatureDataInput, context: PlanRunContext) -> Table:
-
-    latest_date = get_latest_date()
-    start_date = latest_date
-    end_date = latest_date
-
-    if args.date_range:
-        args.start_date = args.date_range.start_date
-        args.end_date = args.date_range.end_date
-
-    # if no dates given, use latest date
-    if args.start_date is None and args.end_date is None:
-        latest_date = get_latest_date()
-        start_date = latest_date
-        end_date = latest_date
-    # if only end date given, use end to end
-    if args.start_date is None and args.end_date is not None:
-        start_date = args.end_date
-        end_date = args.end_date
-    # if only start date given, use start to latest()
-    elif args.start_date is not None and args.end_date is None:
-        start_date = args.start_date
-        end_date = get_latest_date()
-    # if both dates are given use as is
-    elif args.start_date is not None and args.end_date is not None:
-        start_date = args.start_date
-        end_date = args.end_date
-
-    return await get_statistic_data(
-        context=context,
-        statistic_id=args.statistic_id,
-        start_date=start_date,
-        end_date=end_date,
-    )
-
-
-class FeatureDataInput(ToolArgs):
-    stock_ids: List[StockID]
-    statistic_id: StatisticId
-    start_date: Optional[datetime.date] = None
-    end_date: Optional[datetime.date] = None
-    date_range: Optional[DateRange] = None
-
-
-@tool(
-    description=(
-        "This function returns the time series of data for a statistic_id"
-        " for each stock in the list of stock_ids."
-        " if you need the same stats for the same time period for more than one companies, you must call this"
-        " function with multiple stock_ids, DO NOT call this function multiple times"
-        " with a single stock per time in those circumstances!"
-        " Optionally a start_date and end_date may be provided to specify a date range"
-        " to get a specific date only  then set both start_date and end_date to the same date."
-        " if the optional date_range argument is passed in it will override anything set in start_date and end_date "
-        " If none of start_date, end_date, date_range are provided then it will assume the request "
-        " is for the most recent date for which data exists. The statistic_id MUST be "
-        " fetched with the lookup function, it cannot be an arbitrary string. "
-        " If the user does not mention any date or time frame, you should assume they "
-        " want the most recent datapoint and call without specifying either start_date or end_date."
-    ),
-    category=ToolCategory.STATISTICS,
-    tool_registry=default_tool_registry(),
-    enabled=False,
-)
-async def get_statistic_data_for_companies(
-    args: FeatureDataInput, context: PlanRunContext
-) -> StockTable:
-    """Returns the Time series of data for the requested field for each of the stocks_ids
-    Optionally a start_date and end_date may be provided to specify a date range
-    To get a specific date only set both inputs to the same date
-    if only one of them is filled in or not None then it will be assumed to be a single date to be returned
-    If neither date is provided then it will assume the request is for the most recent date for which data exists
-    Args:
-        args (FeatureDataInput): The input arguments for the feature data retrieval.
-        context (PlanRunContext): The context of the plan run.
-    Returns:
-        Table: The requested data.
-    """
-    latest_date = get_latest_date()
-    start_date = latest_date
-    end_date = latest_date
-
-    if args.date_range:
-        args.start_date = args.date_range.start_date
-        args.end_date = args.date_range.end_date
-
-    # if no dates given, use latest date
-    if args.start_date is None and args.end_date is None:
-        latest_date = get_latest_date()
-        start_date = latest_date
-        end_date = latest_date
-    # if only end date given, use end to end
-    if args.start_date is None and args.end_date is not None:
-        start_date = args.end_date
-        end_date = args.end_date
-    # if only start date given, use start to latest()
-    elif args.start_date is not None and args.end_date is None:
-        start_date = args.start_date
-        end_date = get_latest_date()
-    # if both dates are given use as is
-    elif args.start_date is not None and args.end_date is not None:
-        start_date = args.start_date
-        end_date = args.end_date
-
-    if start_date == end_date:
-        force_daily = True
-    else:
-        force_daily = False
-
-    return await get_statistic_data(
-        context=context,
-        statistic_id=args.statistic_id,
-        start_date=start_date,
-        end_date=end_date,
-        stock_ids=args.stock_ids,
-        force_daily=force_daily,
     )
 
 
