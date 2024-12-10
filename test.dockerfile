@@ -7,6 +7,7 @@ RUN apt-get install -y pandoc
 RUN apt-get install -y libpq-dev
 RUN apt-get update
 RUN apt-get install -y curl
+RUN apt-get install -y gcc
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 RUN ln -s /root/.local/bin/uv /usr/local/bin/pipenv

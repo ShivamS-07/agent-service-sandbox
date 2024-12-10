@@ -88,7 +88,6 @@ dependencies = [
     "gbi-common-proto-v1==1.13.0",
     "proto-cube-flat-proto-v1==1.2.0",
     "gbi_common_py_utils==1.0.123",
-    "boosted-data-access-layer==0.0.0+c8975f441c8e3804afc822c9bb8a19224af9c15b",
     "nlp_service_proto_v1 ==1.140.0",
     "stock-universe-service-proto-v1 ==0.53.0",
     "pa-portfolio-service-proto-v1 ==1.315.0",
@@ -100,7 +99,7 @@ dependencies = [
     "PyPDF2 ==3.0.1",
     "griffe==0.48.0",
     "rapidfuzz ==3.9.7",
-    "uvloop ==0.20.0",
+    "uvloop==0.20.0; sys_platform != 'win32'",
     "aioboto3==13.1.1",
     "atlassian-python-api==3.41.16",
     "google-generativeai==0.8.3",
@@ -109,4 +108,5 @@ dependencies = [
     "types-aioboto3[sqs,cognito-idp,s3]",
     "aiohttp~=3.11",
     "llm-client>=1.0.6",
+    "boosted-data-access-layer==0.0.301",
 ]
