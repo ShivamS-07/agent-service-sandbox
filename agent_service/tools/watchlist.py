@@ -237,11 +237,13 @@ def is_generic_watchlist_search(search_str: Optional[str]) -> bool:
 
 WATCHLIST_MATCH_PROMPT_STR = """
 Given a watchlist name, find the best match from a list of watchlist options.
-Consider possible typos, transposed letters, or minor spelling errors when finding the closest match.
-Even if the match is not exact, return the watchlist that seems most relevant or closest in meaning.
+Consider possible typos, transposed letters, minor spelling errors, or related
+meanings when finding the closest match.
+Even if the match is not exact, return the watchlist that seems most relevant or
+closest in meaning.
 Only respond with "no_match" if no watchlist name reasonably aligns with the given name.
-When returning "no_match", return it without any punctuation or anything.
-Here are the watchlist to consider: {watchlists}.
+When returning "no_match," return it without any punctuation or anything.
+Here are the watchlists to consider: {watchlists}.
 Here is the text to potentially match to one of them: {watchlist_name}.
 """
 
