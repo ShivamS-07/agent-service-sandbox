@@ -33,6 +33,7 @@ from agent_service.endpoints.models import (
     PlanRunInfo,
     PlanRunStatusInfo,
     PlanRunTaskLog,
+    QueryWithBreakdown,
     QuickThoughts,
     SetAgentFeedBackRequest,
     Status,
@@ -2819,6 +2820,36 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, {"plan_run_ids": plan_run_ids})
 
         return {row["plan_run_id"]: row["plan_id"] for row in rows}
+
+    async def get_all_usecase_rating_within_week(
+        self, date: datetime.datetime
+    ) -> List[QueryWithBreakdown]:
+        sql = """
+        with weekly_groups as (
+            select
+                date_trunc('week', created_at)::DATE as week_start,
+                (date_trunc('week', created_at) + interval '6 days')::DATE as week_end,
+                use_case, score_rating, cs_reviewed, is_spoofed
+            from agent.agent_qc
+        )
+        select
+            use_case,
+            score_rating
+        from weekly_groups
+        where week_start <= %(date)s and %(date)s <= week_end and cs_reviewed and not is_spoofed
+        order by week_start desc, use_case
+        """
+        rows = await self.pg.generic_read(sql, {"date": date})
+        cases: List[QueryWithBreakdown] = []
+        for row in rows:
+            # row['use_case'], row['score_rating']
+            cases.append(
+                QueryWithBreakdown(
+                    use_case=row["use_case"],
+                    score_rating=row["score_rating"],
+                )
+            )
+        return cases
 
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:

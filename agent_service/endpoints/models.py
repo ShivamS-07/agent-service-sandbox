@@ -1815,6 +1815,11 @@ class UpdateAgentQCResponse(BaseModel):
     success: bool
 
 
+class QueryWithBreakdown(BaseModel):
+    use_case: Optional[str]
+    score_rating: Optional[int]
+
+
 class GetAgentsQCRequest(BaseModel):
     start_dt: Optional[datetime.datetime] = None
     end_dt: Optional[datetime.datetime] = None

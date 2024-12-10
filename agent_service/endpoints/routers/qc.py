@@ -1,3 +1,4 @@
+import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,6 +9,7 @@ from agent_service.endpoints.models import (
     AgentQC,
     GetAgentsQCRequest,
     GetLiveAgentsQCResponse,
+    QueryWithBreakdown,
     SearchAgentQCRequest,
     SearchAgentQCResponse,
     UpdateAgentQCRequest,
@@ -138,3 +140,22 @@ async def update_agent_qc(
 
     # Return the list of AgentQC records in the response model format
     return UpdateAgentQCResponse(success=res)
+
+
+@router.get(
+    "/stats/query-breakdown-deep-dive/",
+    response_model=List[QueryWithBreakdown],
+    status_code=status.HTTP_200_OK,
+)
+async def get_query_breakdown_deep_dive(
+    date: datetime.datetime,
+    user: User = Depends(parse_header),
+) -> List[QueryWithBreakdown]:
+    # Validate user access to QC tool
+    agent_svc_impl = get_agent_svc_impl()
+    if not await user_has_qc_tool_access(user_id=user.user_id, async_db=agent_svc_impl.pg):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
+        )
+    res = await agent_svc_impl.pg.get_all_usecase_rating_within_week(date)
+    return res
