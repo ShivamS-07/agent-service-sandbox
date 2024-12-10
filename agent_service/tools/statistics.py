@@ -551,7 +551,11 @@ async def get_statistic_data_for_companies(
             force_daily = True
 
     # want daily data if looking for a single recent date
-    if start_date == end_date and today - 5 * ONE_DAY <= start_date <= today + ONE_DAY:
+    if (
+        start_date == end_date
+        and today - 5 * ONE_DAY <= start_date <= today + ONE_DAY
+        and not added_timespan
+    ):
         force_daily = True
 
     comp_tables = []

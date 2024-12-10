@@ -1,8 +1,10 @@
 uv:
 	uv sync
 
+pipenv: uv
+
 clean:
-	uv --rm
+	uv --rm || true
 	uv install --dev --verbose
 
 format:
