@@ -2,42 +2,80 @@ from typing import Dict
 
 from agent_service.agent_quality_worker.models import HorizonTabs, HorizonUser
 
+CS_TIERED_ASSIGNMENT_ALLOCATIONS = {
+    1: 0.8,
+    2: 0.2,
+}  # Allocations should add up to 1.0 (100%)
+
 HORIZON_USERS_PROD: Dict[str, HorizonUser] = {
     # PROD - CS
+    # T1
     "00a4c63d-99b2-478f-aa27-a0d263e3e0ba": HorizonUser(
         userId="00a4c63d-99b2-478f-aa27-a0d263e3e0ba",
         name="Emmalyn",
         userType=HorizonTabs.CS,
+        tier=1,
     ),
     "2bcaa299-a84f-46ef-8b19-452559845f73": HorizonUser(
         userId="2bcaa299-a84f-46ef-8b19-452559845f73",
         name="George",
         userType=HorizonTabs.CS,
+        tier=1,
     ),
     "7879ce5a-bee2-469b-9676-d3c5bb9ed804": HorizonUser(
         userId="7879ce5a-bee2-469b-9676-d3c5bb9ed804",
         name="Hayley",
         userType=HorizonTabs.CS,
+        tier=1,
     ),
     "72c8f2ba-fab8-439a-a94d-b725cc485b76": HorizonUser(
         userId="72c8f2ba-fab8-439a-a94d-b725cc485b76",
         name="Davison",
         userType=HorizonTabs.CS,
+        tier=1,
     ),
     "75916863-aba9-4d68-877d-34d224dbb4bf": HorizonUser(
         userId="75916863-aba9-4d68-877d-34d224dbb4bf",
         name="Jamie",
         userType=HorizonTabs.CS,
+        tier=1,
     ),
     "2e79d407-b5e0-45d9-8a18-06935a56c3c1": HorizonUser(
         userId="2e79d407-b5e0-45d9-8a18-06935a56c3c1",
         name="Songjia",
         userType=HorizonTabs.CS,
+        tier=1,
     ),
     "85f9a052-e7c3-45c1-a1b4-eee8d7cb6322": HorizonUser(
         userId="85f9a052-e7c3-45c1-a1b4-eee8d7cb6322",
         name="Maria",
         userType=HorizonTabs.CS,
+        tier=1,
+    ),
+    # T2
+    "7bc6346f-41f7-407e-9b11-7d9cc40d4790": HorizonUser(
+        userId="7bc6346f-41f7-407e-9b11-7d9cc40d4790",
+        name="Josh F",
+        userType=HorizonTabs.CS,
+        tier=2,
+    ),
+    "86de3356-ed6b-4228-afac-f57781268e1f": HorizonUser(
+        userId="86de3356-ed6b-4228-afac-f57781268e1f",
+        name="Hogan",
+        userType=HorizonTabs.CS,
+        tier=2,
+    ),
+    "89f6c72f-d9b8-40d0-926b-d958841cc906": HorizonUser(
+        userId="89f6c72f-d9b8-40d0-926b-d958841cc906",
+        name="Porter",
+        userType=HorizonTabs.CS,
+        tier=2,
+    ),
+    "28d8413a-5d73-4051-b208-32c82d41a5c4": HorizonUser(
+        userId="28d8413a-5d73-4051-b208-32c82d41a5c4",
+        name="Jan",
+        userType=HorizonTabs.CS,
+        tier=2,
     ),
     # PROD - ENG
     "a2a77e4d-15b6-4723-b36a-af5c90e1c09c": HorizonUser(

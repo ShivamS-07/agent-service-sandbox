@@ -13,3 +13,4 @@ class HorizonUser(BaseModel):
     userId: str
     name: str
     userType: HorizonTabs
+    tier: int = 1

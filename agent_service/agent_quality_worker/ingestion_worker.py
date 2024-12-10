@@ -3,7 +3,9 @@ import datetime
 import json
 import logging
 import random
-from typing import List
+from collections import defaultdict
+from math import ceil
+from typing import List, Optional
 
 import boto3
 from gbi_common_py_utils.utils.environment import (
@@ -15,11 +17,12 @@ from gbi_common_py_utils.utils.event_logging import json_serial
 
 from agent_service.agent_quality_worker.constants import (
     CS_REVIEWER_COLUMN,
+    CS_TIERED_ASSIGNMENT_ALLOCATIONS,
     HORIZON_USERS_DEV,
     HORIZON_USERS_PROD,
     MAX_REVIEWS,
 )
-from agent_service.agent_quality_worker.models import HorizonTabs
+from agent_service.agent_quality_worker.models import HorizonTabs, HorizonUser
 from agent_service.endpoints.models import (
     AgentQC,
     HorizonCriteria,
@@ -91,29 +94,44 @@ async def get_number_of_assigned(
     return count
 
 
-async def get_users_with_least_assigned_counts(
-    user_ids: List[str],
-    db: AsyncDB,
-    reviewer_column: str,
-    num_days_lookback: int = 7,
+def get_users_with_least_assigned_counts(
+    users: List[HorizonUser],
+    user_assigned_counts: dict[str, int],
+    tier_allocations: Optional[dict[int, float]] = None,
     max_allowed: int = MAX_REVIEWS,
-) -> List[str]:
+) -> List[HorizonUser]:
     # List to hold the count of assigned tickets for each user_id with count under 150
-    users: List[dict] = []
+    eligible_users: List[dict] = []
+
+    # Holds a map from a users tier to the count of all users in that tier group
+    tier_groups: dict[int, int] = defaultdict(int)
+    for user in users:
+        tier_groups[user.tier] += 1
+
+    # If we dont get provided an allocation mapping setting to empty dict will
+    # use the default allocations in the loop below
+    if tier_allocations is None:
+        tier_allocations = {}
 
     # Loop over each user_id and get the count using get_number_of_assigned
-    for user_id in user_ids:
-        count = await get_number_of_assigned(user_id, db, reviewer_column, num_days_lookback)
+    for user in users:
+        # The allocation is defaulted to 1/(# unique tiers)
+        user_allocation_ratio = tier_allocations.get(user.tier, 1.0 / len(tier_groups))
+        users_in_group = tier_groups[user.tier]
+        user_id = user.userId
+        # User assignments are defaulted to 0 if not provided
+        count = user_assigned_counts.get(user_id, 0)
 
-        # Only add to dictionary the count per user is under 150/ by length
-        if count < max(1, int(max_allowed / len(user_ids))):
-            bisect.insort(users, {"id": user_id, "count": count}, key=lambda x: x["count"])
+        # Only add to dictionary the count per user is under 150 / by length * allocation_ratio
+        # allocation_ratio is specified per user as a fraction of the total limit of 150 / users
+        if count < max(1, int(ceil(max_allowed / users_in_group * user_allocation_ratio))):
+            bisect.insort(eligible_users, {"user": user, "count": count}, key=lambda x: x["count"])
 
-    if len(users) == 0:
+    if len(eligible_users) == 0:
         return []
 
-    fewest_assigned = users[0]["count"]
-    return [user["id"] for user in users if user["count"] == fewest_assigned]
+    fewest_assigned = eligible_users[0]["count"]
+    return [user["user"] for user in eligible_users if user["count"] == fewest_assigned]
 
 
 async def assign_agent_quality_reviewers(
@@ -165,15 +183,23 @@ async def assign_agent_quality_reviewers(
 
     for horizon_user in horizon_users_dict.values():
         if horizon_user.userType == HorizonTabs.CS.value:
-            cs_team_members.append(horizon_user.userId)
+            cs_team_members.append(horizon_user)
         elif horizon_user.userType == HorizonTabs.ENG.value:
-            eng_team_members.append(horizon_user.userId)
+            eng_team_members.append(horizon_user)
         elif horizon_user.userType == HorizonTabs.PROD.value:
-            reviewer_team_members.append(horizon_user.userId)
+            reviewer_team_members.append(horizon_user)
 
-    # get the list of reviewers with the least assigned
-    cs_team_members = await get_users_with_least_assigned_counts(
-        user_ids=cs_team_members, db=db, reviewer_column=CS_REVIEWER_COLUMN
+    cs_user_counts = {
+        user.userId: await get_number_of_assigned(
+            user_id=user.userId, db=db, reviewer_column=CS_REVIEWER_COLUMN, num_days_lookback=7
+        )
+        for user in cs_team_members
+    }
+
+    cs_team_members = get_users_with_least_assigned_counts(
+        users=cs_team_members,
+        user_assigned_counts=cs_user_counts,
+        tier_allocations=CS_TIERED_ASSIGNMENT_ALLOCATIONS,
     )
 
     # if no CS free then return
@@ -192,9 +218,9 @@ async def assign_agent_quality_reviewers(
         user_id=user_id,
         agent_status=agent_qc.agent_status,
         plan_id=plan_id,
-        cs_reviewer=cs_reviewer,
-        eng_reviewer=eng_reviewer,
-        prod_reviewer=prod_reviewer,
+        cs_reviewer=cs_reviewer.userId,
+        eng_reviewer=eng_reviewer.userId,
+        prod_reviewer=prod_reviewer.userId,
         last_updated=datetime.datetime.now(),
         # this field can't be updated but should be False here regardless
         is_spoofed=False,
