@@ -20,6 +20,9 @@ from agent_service.utils.boosted_pg import BoostedPG, CursorType, InsertToTableA
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_ASYNCDB_MAX_POOL_SIZE = 8
+DEFAULT_ASYNCDB_GATHER_CONCURRENCY = DEFAULT_ASYNCDB_MAX_POOL_SIZE - 2
+
 
 def gen_delete_sql(tablename: str, **kwargs: Any) -> Tuple[str, List[Any]]:
     clauses = []

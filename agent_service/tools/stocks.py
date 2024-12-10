@@ -1,5 +1,6 @@
 # Author(s): Mohammad Zarei, David Grohmann
 import json
+import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, cast
 
@@ -11,7 +12,7 @@ from agent_service.external.pa_backtest_svc_client import (
     universe_stock_factor_exposures,
 )
 from agent_service.external.stock_search_dao import async_sort_stocks_by_volume
-from agent_service.GPT.constants import GPT35_TURBO, NO_PROMPT
+from agent_service.GPT.constants import GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
@@ -33,6 +34,7 @@ from agent_service.tools.lists import CombineListsInput, add_lists
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import get_async_db
+from agent_service.utils.async_postgres_base import DEFAULT_ASYNCDB_GATHER_CONCURRENCY
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.cache_utils import PostgresCacheBackend
 from agent_service.utils.date_utils import get_now_utc
@@ -109,20 +111,15 @@ Your task is to determine which {target_type} the search term refers to,
  If the search term DOES refer to a company, stock, ETF, then return
  a json with at least the full_name field.
  Optionally, it is not required but it would be helpful if you
- can also return optional fields: ticker_symbol, isin, common_name, match_type, and country_iso3,
+ can also return optional fields: ticker_symbol, isin, match_type, and country_iso3,
  match_type is 'stock', 'etf'
  country_iso3 is the 3 letter iso country code where it is most often traded or originated from
- common_name is a name people would typically use to refer to it,
- it would often be a substring of the full_name (dropping common suffixes for example),
- an acronym, an abreviation, or a nickname.
  Only return each of the optional fields if you are confident they are correct,
  it is ok if you do not know some or all of them.
  you can return some and not others, the only required field is full_name.
  If you think the user is looking for a stock index, you should return the most popular ETF
  that is tracking that index, instead of the index itself
  for example instead of the SP500 index SPX you should return the most related ETF: SPY.
- You should also return a confidence number between 1-10 :
- where 10 is extremely confident and 1 is a hallucinated random guess.
  You must also return a reason field to
  explain why the answer is a good match for the search term.
  You will also be given a list of potential search results in json format
@@ -146,10 +143,13 @@ Your task is to determine which {target_type} the search term refers to,
  The search term is: '{search}'
  Remember you are looking only for results of these types: {target_type}
  REMEMBER! If your reason is something like: "the search term closely resembles the ticker symbol"
+ and the match is not an exact match for the ticker
  then you should reconsider as ticker typos are not common, and your answer is
  extremely likely to be wrong.
  In that case you should find a different answer with a better reason.
  You will be fired if your reason is close to: "the search term closely resembles the ticker symbol"
+ When looking for ETFs, Your the search term must have some relevance to the ticker, name or match text
+ besides just the word "ETF" itself.
 """
 
 
@@ -167,7 +167,7 @@ async def stock_confirmation_by_gpt(
     # we can try different models
     # HAIKU, SONNET, GPT4_TURBO,
     # should we switch this to 40mini?
-    llm = GPT(context=gpt_context, model=GPT35_TURBO)
+    llm = GPT(context=gpt_context, model=GPT4_O_MINI)
 
     STOCK_CONFIRMATION_PROMPT = Prompt(
         name="STOCK_CONFIRMATION_PROMPT", template=STOCK_CONFIRMATION_PROMPT_STR
@@ -231,7 +231,10 @@ def get_stock_identifier_lookup_cache_key(
         " do not replace it with a company name either,"
         " instead pass it directly as the stock_name and allow this function to interpret it."
         " If the user intent is to find an ETF, you may set prefer_etfs = True"
-        " to enable some etf specific matching logic"
+        " to enable some etf specific matching logic."
+        " If the user specifies both a company name and a stock ticker"
+        " like 'Name (TICKER)' or 'TICKER Name'"
+        " then you should pass both in as having the name and ticker can help disambiguate."
     ),
     category=ToolCategory.STOCK,
     use_cache=True,
@@ -280,6 +283,12 @@ async def stock_identifier_lookup_helper(
             prev_args = StockIdentifierLookupInput.model_validate_json(prev_run_info.inputs_str)
             if args.stock_name == prev_args.stock_name:
                 prev_output: StockID = prev_run_info.output  # type:ignore
+                logger.info(f"using {prev_output=}")
+                await tool_log(
+                    log=f"Interpreting '{args.stock_name}' as {prev_output.symbol}: {prev_output.company_name}",
+                    context=context,
+                )
+
                 return prev_output
 
     except Exception as e:
@@ -395,6 +404,7 @@ async def stock_identifier_lookup_helper(
             # we found the same name stock in original result set as GPT
             confirm_rows = [gpt_stock]
         else:
+            # we need to remap the gpt answer back to a gbiid
             reason = gpt_answer.get("reason", "")
             if (
                 ticker_match
@@ -419,12 +429,12 @@ async def stock_identifier_lookup_helper(
                     confirm_args, context, min_match_strength=MIN_GPT_NAME_MATCH
                 )
                 logger.info(f"found {len(confirm_rows)} best matching stock to the gpt answer")
-                if len(confirm_rows) != 1:
+                if len(confirm_rows) > 1:
                     confirm_rows = await augment_stock_rows_with_volume(
                         context.user_id, confirm_rows
                     )
-                else:
-                    logger.info(f"confirmed by gpt: {confirm_rows}")
+
+                logger.info(f"confirmed rows found by gpt: {confirm_rows}")
 
     else:
         # TODO, should we assume GPT is correct that this is not a stock,
@@ -440,7 +450,22 @@ async def stock_identifier_lookup_helper(
         if confirm_stocks_sorted_by_volume[0].get("volume"):
             stock = confirm_stocks_sorted_by_volume[0]
     else:
-        raise NotFoundError(f"Could not find any stocks related to: '{args.stock_name}'")
+        fall_back_stock = None
+        if ask_gpt:
+            for gbi_id, stock in ask_gpt.items():
+                # these magic numbers were arbitrarily picked
+                if stock.get("final_match_score", 0) >= 0.7 and stock.get("volume", 0) >= 10000:
+                    fall_back_stock = stock
+                    break
+
+        if fall_back_stock:
+            stock = fall_back_stock
+            logger.info(
+                "GPT answer could not be mapped back to a gbiid,"
+                f"falling back to best original match: {stock} for '{args.stock_name}'"
+            )
+        else:
+            raise NotFoundError(f"Could not find any stocks related to: '{args.stock_name}'")
 
     logger.info(f"found stock: {stock} from '{args.stock_name}'")
     await tool_log(
@@ -637,6 +662,7 @@ async def stock_lookup_by_text_similarity(
         -- ETF ticker symbol (exact match only)
         SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
         ms.asset_type,
+        (ms.security_type like '%%ETF%%' OR ms.security_type like '%%Fund%%') = TRUE as is_etf,
         ms.name, 'ticker symbol' as match_col, ms.symbol as match_text,
         {PERFECT_TEXT_MATCH} AS text_sim_score
         FROM master_security ms
@@ -648,6 +674,45 @@ async def stock_lookup_by_text_similarity(
         AND ms.symbol = upper(%(etf_match_str)s)
         -- double pct sign for python x sql special chars
         AND (ms.security_type like '%%ETF%%'  OR ms.security_type like '%%Fund%%')
+        """
+
+    ticker_and_name_match_sql = ""
+
+    possible_ticker_str = args.stock_name.upper()
+
+    # some tickers have a '.' in them
+    possible_ticker_str = re.sub("[^A-Za-z0-9.]+", " ", possible_ticker_str)
+
+    possible_ticker_tokens = possible_ticker_str.split()
+    if len(possible_ticker_tokens) > 1:
+        # sometimes users give us both the name and ticker often like "Name (Ticker)"
+        # this will specifically search for that combination
+        ticker_and_name_match_sql = """
+        UNION
+
+        -- stock ticker (exact) + name match (partial)
+        SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
+        ms.asset_type,
+        (ms.security_type like '%%ETF%%'  OR ms.security_type like '%%Fund%%') = TRUE as is_etf,
+        ms.name, 'ticker symbol & name' as match_col,
+        ms.name || ' (' || ms.symbol || ')' as match_text,
+        (strict_word_similarity(ms.name || ' ' || ms.symbol, %(search_term)s) +
+        strict_word_similarity(%(search_term)s, ms.name || ' ' || ms.symbol)) / 2
+        + 0.1 AS text_sim_score
+        -- 0.1 is a magic number to boost this match since it covers both fields
+        FROM master_security ms
+        WHERE
+        ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
+        AND ms.is_public
+        AND ms.is_primary_trading_item = true
+        AND ms.to_z is null
+        AND ms.symbol = ANY(%(possible_ticker_tokens)s)
+
+        -- there needs to be a not-terrible match against the company name by itself also
+        -- 0.3 is a magic number to make sure that at least some of the search term matches
+        -- a decent fraction of the company name
+        AND  (strict_word_similarity(ms.name || ' ' || ms.symbol, %(search_term)s) +
+        strict_word_similarity(%(search_term)s, ms.name || ' ' || ms.symbol)) / 2  > 0.3
         """
 
     # Word similarity name match
@@ -675,6 +740,7 @@ async def stock_lookup_by_text_similarity(
     -- ticker symbol (exact match only)
     SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
     ms.asset_type,
+    (ms.security_type like '%%ETF%%'  OR ms.security_type like '%%Fund%%') = TRUE as is_etf,
     ms.name, 'ticker symbol' as match_col, ms.symbol as match_text,
     {PERFECT_TEXT_MATCH} AS text_sim_score
     FROM master_security ms
@@ -687,12 +753,15 @@ async def stock_lookup_by_text_similarity(
 
 {etf_union_sql}
 
+{ticker_and_name_match_sql}
+
     UNION
 
 (
     -- company name
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     ms.asset_type,
+    (ms.security_type like '%%ETF%%'  OR ms.security_type like '%%Fund%%') = TRUE as is_etf,
     name, 'name' as match_col, ms.name as match_text,
     (strict_word_similarity(ms.name, %(search_term)s) +
     strict_word_similarity(%(search_term)s, ms.name)) / 2
@@ -717,6 +786,7 @@ async def stock_lookup_by_text_similarity(
     -- custom boosted db entries -  company alt name * 1.0
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     ms.asset_type,
+    (ms.security_type like '%%ETF%%'  OR ms.security_type like '%%Fund%%') = TRUE as is_etf,
     name, 'comp alt name' as match_col, alt_name as match_text,
 
     -- lower the score for spiq matches
@@ -738,6 +808,7 @@ async def stock_lookup_by_text_similarity(
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
     AND alt_name %% %(search_term)s
+    AND alt_name not ilike 'ETF' --SPIQ spammed every ETF with this!
     ORDER BY text_sim_score DESC
     LIMIT 100
 )
@@ -748,6 +819,7 @@ async def stock_lookup_by_text_similarity(
     -- gbi alt name
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     ms.asset_type,
+    (ms.security_type like '%%ETF%%'  OR ms.security_type like '%%Fund%%') = TRUE as is_etf,
     name, 'gbi alt name' as match_col, alt_name as match_text,
     (strict_word_similarity(alt_name, %(search_term)s) +
     strict_word_similarity(%(search_term)s, alt_name)) / 2
@@ -777,7 +849,12 @@ async def stock_lookup_by_text_similarity(
     """
     rows = await db.generic_read(
         sql,
-        params={"search_term": args.stock_name, "prefix": prefix, "etf_match_str": etf_match_str},
+        params={
+            "search_term": args.stock_name,
+            "prefix": prefix,
+            "etf_match_str": etf_match_str,
+            "possible_ticker_tokens": possible_ticker_tokens,
+        },
     )
 
     # this shouldn't matter but at least once on dev the volume lookup silently failed
@@ -965,6 +1042,9 @@ class MultiStockIdentifierLookupInput(ToolArgs):
         " do not attempt to spell correct, modify, or alter it,"
         " do not replace it with a company name either,"
         " instead pass them directly as the stock_names and allow this function to interpret each of them."
+        " If the user specifies both a company name and a stock ticker next to each other"
+        " like 'Name (TICKER)' or 'TICKER Name'"
+        " then you should pass both in as having the name and ticker can help disambiguate."
     ),
     category=ToolCategory.STOCK,
     tool_registry=default_tool_registry(),
@@ -1003,9 +1083,12 @@ async def multi_stock_identifier_lookup(
         )
         for gbi_id in args.company_integer_ids
     ]
+
+    # each of these tasks uses at least 1 sql,
+    # but only max_pool sqls can run concurrently
     output: List[StockID] = await gather_with_concurrency(
         tasks,
-        n=len(args.stock_names) + len(args.company_integer_ids),
+        n=DEFAULT_ASYNCDB_GATHER_CONCURRENCY,
     )
     return list(set(output))
 
@@ -1492,6 +1575,28 @@ async def get_international_cap_starting_universe(
     return current
 
 
+async def is_etf(gbi_id: int) -> bool:
+    db = get_async_db(read_only=True)
+    sql = """
+    SELECT
+    gbi_security_id
+    FROM master_security ms
+    WHERE
+    gbi_security_id = %(gbi_id)s
+    AND (ms.security_type like '%%ETF%%' OR ms.security_type like '%%Fund%%')
+    """
+    params = {"gbi_id": gbi_id}
+    rows = await db.generic_read(
+        sql,
+        params=params,
+    )
+
+    if not rows:
+        return False
+
+    return True
+
+
 class GetStockUniverseInput(ToolArgs):
     # name of the universe to lookup
     universe_name: str
@@ -1568,6 +1673,12 @@ async def get_stock_universe(args: GetStockUniverseInput, context: PlanRunContex
         context=context,
     )
     stock_universe_list = stock_universe_table.to_df()[STOCK_ID_COL_NAME_DEFAULT].tolist()
+
+    if not stock_universe_list:
+        gbi_id = etf_stock["gbi_security_id"]
+        if not await is_etf(gbi_id):
+            logger.warning(f"not an ETF: {etf_stock}")
+            raise NotFoundError(f"{etf_stock['symbol']} - {etf_stock['name']} is not an ETF")
 
     date_clause = ""
     if args.date_range:

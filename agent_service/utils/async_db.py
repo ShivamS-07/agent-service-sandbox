@@ -66,7 +66,10 @@ from agent_service.types import (
     Notification,
     PlanRunContext,
 )
-from agent_service.utils.async_postgres_base import AsyncPostgresBase
+from agent_service.utils.async_postgres_base import (
+    DEFAULT_ASYNCDB_MAX_POOL_SIZE,
+    AsyncPostgresBase,
+)
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.cache_utils import RedisCacheBackend
@@ -2851,7 +2854,7 @@ def get_async_db(
     skip_commit: bool = False,
     read_only: bool = False,
     min_pool_size: int = 1,
-    max_pool_size: int = 8,
+    max_pool_size: int = DEFAULT_ASYNCDB_MAX_POOL_SIZE,
 ) -> AsyncDB:
     """Get the single AsyncDB instance based on the parameters.
 

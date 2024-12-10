@@ -15,6 +15,7 @@ from agent_service.tools.stocks import (
     get_stock_info_for_universe,
     get_stock_universe,
     growth_filter,
+    is_etf,
     stock_identifier_lookup,
     value_filter,
 )
@@ -30,6 +31,12 @@ TRQ = StockID(
 TSLA = StockID(gbi_id=25508, isin="", symbol="TSLA", company_name="Tesla Inc.")
 BWA = StockID(gbi_id=1070, isin="", symbol="BWA", company_name="BorgWarner Inc.")
 ALB = StockID(gbi_id=1070, isin="", symbol="ALB", company_name="Albemarle Corporation")
+
+
+class TestIsETF(IsolatedAsyncioTestCase):
+    async def test_is_etf(self):
+        self.assertTrue(await is_etf(10076))  # SPY
+        self.assertFalse(await is_etf(714))  # AAPL
 
 
 class TestStockIdentifierLookup(IsolatedAsyncioTestCase):

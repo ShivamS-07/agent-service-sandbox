@@ -305,6 +305,9 @@ async def run_plan_run_id_task_id(
             context=context,
             override_task_output_lookup=override_output_dict,
             scheduled_by_automation=run_as_if_scheduled_by_automation,
+            # defaults to false but just incase
+            # we only want to run the plan as is, never replan
+            replan_execution_error=False,
         )
     return result
 

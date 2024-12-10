@@ -42,6 +42,7 @@ async def tool_log(
         prefect_logger = get_prefect_logger(caller_module_name() or __name__)
     except Exception:
         prefect_logger = get_prefect_logger(__name__)
+        prefect_logger.warning("oops, could not use fancy logger: {e!r}")
 
     # get the file/lineno from the caller
     prefect_logger.warning(io_str, stacklevel=2)

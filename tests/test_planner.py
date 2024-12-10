@@ -1,3 +1,4 @@
+import logging
 import unittest
 import warnings
 from typing import Any, List, Union
@@ -14,6 +15,8 @@ from agent_service.planner.planner_types import (
 from agent_service.types import ChatContext, Message
 from agent_service.utils.logs import init_stdout_logging
 from tests.planner_utils import get_test_registry
+
+logger = logging.getLogger(__name__)
 
 
 class TestPlans(IsolatedAsyncioTestCase):
