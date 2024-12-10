@@ -36,7 +36,7 @@ async def ask_general_question(
     summary_llm = GPT(model=GPT4_O_MINI, context=context.gpt_context)
     query = f"""
     Please look for info on this question: {args.question}
-
+    (Never return info on stock prices.)
     The chat context of the question is:
     {context.chat_context.get_gpt_input()}
     """
@@ -57,6 +57,6 @@ ASK_GENERAL_QUESTION_FUNC = LLMFunction(
 Anything unrelated to the specific workflow that the user is looking at. Only
 use this if the user asks some information that you would need to search the
 internet to find out. If you can already answer the question, no need to call
-this.
+this. Never ask for info on stock prices.
     """,
 )
