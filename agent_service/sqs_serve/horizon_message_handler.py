@@ -4,6 +4,7 @@ from typing import Dict
 
 from agent_service.agent_quality_worker.ingestion_worker import (
     assign_agent_quality_reviewers,
+    update_agent_qc_status,
 )
 from agent_service.utils.date_utils import get_now_utc
 
@@ -12,15 +13,24 @@ class HorizonMessageHandler:
 
     async def handle_message(self, message: Dict) -> Dict:
         """
-        arguments = {
+        assign_args = {
             "agent_id": agent_id,
             "plan_id": plan_id,
-            "user_id": user_id
-            "status": what stage of the quality triage we are at,
+            "user_id": agent_owner
         }
-        message = {
-            "method": "agent_quality",
-            "arguments": arguments,
+        assign_message = {
+            "method": "assign_reviewers_agent_qc",
+            "arguments": assign_args,
+            "send_time_utc": get_now_utc().isoformat(),
+        }
+        status_args = {
+            "agent_id": agent_id,
+            "plan_id": plan_id,
+            "status": Status.value (ERROR, CANCELLED, NOT_STARTED, etc.)
+        }
+        status_message = {
+            "method": "update_status_agent_qc",
+            "arguments": status_args,
             "send_time_utc": get_now_utc().isoformat(),
         }
 
@@ -28,9 +38,12 @@ class HorizonMessageHandler:
 
         """
         method = message.get("method")
-        arguments = message["arguments"]
-        if method == "agent_quality":
-            await assign_agent_quality_reviewers(**arguments)
+        args = message["arguments"]
+        if method == "assign_reviewers_agent_qc":
+            await assign_agent_quality_reviewers(**args)
+            return message
+        elif method == "update_status_agent_qc":
+            await update_agent_qc_status(**args)
             return message
         else:
             raise NotImplementedError(f"Method {method} is not supported for Horizon")
@@ -41,15 +54,26 @@ if __name__ == "__main__":
     LOGGER = logging.getLogger(__name__)
 
     arguments = {
-        "agent_id": "3423ae35-5270-4688-afbb-5dd151a8f396",
-        "plan_id": "ef17469c-d69f-4044-9fc6-3cdeec6787a7",
-        "user_id": "a5d534c9-5426-4387-a298-723c5e09ecab",  # william
-        "status": "CS",
+        "agent_id": "b90dde4a-92a0-4a94-84bc-8885d3f9054a",
+        "plan_id": "3ee2a1b8-3fcf-4f0c-991e-433a41153d6a",
+        "user_id": "3a2eaf66-3d4f-4f9f-b9eb-dbe15972c894",
     }
     agent_qc_message = {
-        "method": "agent_quality",
+        "method": "assign_reviewers_agent_qc",
         "arguments": arguments,
         "send_time_utc": get_now_utc().isoformat(),
     }
     message_handler = HorizonMessageHandler()
+    asyncio.run(message_handler.handle_message(agent_qc_message))
+
+    arguments = {
+        "agent_id": "b90dde4a-92a0-4a94-84bc-8885d3f9054a",
+        "plan_id": "3ee2a1b8-3fcf-4f0c-991e-433a41153d6a",
+        "status": "BROKEN",
+    }
+    agent_qc_message = {
+        "method": "update_status_agent_qc",
+        "arguments": arguments,
+        "send_time_utc": get_now_utc().isoformat(),
+    }
     asyncio.run(message_handler.handle_message(agent_qc_message))

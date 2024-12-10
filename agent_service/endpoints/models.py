@@ -1777,6 +1777,13 @@ class HorizonCriteriaOperator(enum.StrEnum):
     equal_any = "=ANY"
 
 
+class ScoreRating(enum.IntEnum):
+    BROKEN = 0
+    BAD = 3
+    NEUTRAL = 5
+    GOOD = 9
+
+
 class HorizonCriteria(BaseModel):
     column: str
     operator: HorizonCriteriaOperator

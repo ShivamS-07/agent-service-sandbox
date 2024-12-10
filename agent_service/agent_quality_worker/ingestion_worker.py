@@ -24,6 +24,7 @@ from agent_service.endpoints.models import (
     AgentQC,
     HorizonCriteria,
     HorizonCriteriaOperator,
+    ScoreRating,
     Status,
 )
 from agent_service.utils.async_db import AsyncDB
@@ -36,19 +37,29 @@ async def send_agent_quality_message(
     agent_id: str, plan_id: str, status: Status, db: AsyncDB
 ) -> None:
     sqs = boto3.resource("sqs", region_name="us-west-2")
-    arguments = {
+    assign_args = {
         "agent_id": agent_id,
         "plan_id": plan_id,
         "user_id": await db.get_agent_owner(agent_id),
-        "status": "CS",
     }
-    message = {
-        "method": "agent_quality",
-        "arguments": arguments,
+    assign_message = {
+        "method": "assign_reviewers_agent_qc",
+        "arguments": assign_args,
+        "send_time_utc": get_now_utc().isoformat(),
+    }
+    status_args = {
+        "agent_id": agent_id,
+        "plan_id": plan_id,
+        "status": status.value,
+    }
+    status_message = {
+        "method": "update_status_agent_qc",
+        "arguments": status_args,
         "send_time_utc": get_now_utc().isoformat(),
     }
     queue = sqs.get_queue_by_name(QueueName=AGENT_QUALITY_WORKER_QUEUE)
-    queue.send_message(MessageBody=json.dumps(message, default=json_serial))
+    queue.send_message(MessageBody=json.dumps(assign_message, default=json_serial))
+    queue.send_message(MessageBody=json.dumps(status_message, default=json_serial))
 
 
 async def get_number_of_assigned(
@@ -106,24 +117,28 @@ async def get_users_with_least_assigned_counts(
 
 
 async def assign_agent_quality_reviewers(
-    agent_id: str, plan_id: str, user_id: str, status: str, skip_db_commit: bool = False
+    agent_id: str, plan_id: str, user_id: str, skip_db_commit: bool = False
 ) -> None:
     db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
 
     logging.info(f"Retrieving Agent QC for agent_id: {agent_id}, plan_id: {plan_id}")
-    # get the correct quality agent
-    # we can potentially get multiple for
-    # one agent id
-    agent_qc_id, is_spoofed = await db.get_agent_qc_id_by_agent_id(
-        agent_id=agent_id, plan_id=plan_id
-    )
 
-    if not agent_qc_id:
-        logging.info(f"Agent QC not found for {agent_qc_id=}")
-        return
+    agent_qcs = await db.get_agent_qc_by_agent_ids(agent_ids=[agent_id])
 
-    if is_spoofed:
+    if len(agent_qcs) != 1:
+        logging.info(f"Agent QC not found for {agent_id=}")
+        return None
+
+    agent_qc = agent_qcs.pop()
+
+    if agent_qc.is_spoofed:
         logging.info(f"Agent is spoofed, skipping assignment for agent_id: {agent_id}")
+        return None
+
+    if agent_qc.cs_reviewer or agent_qc.eng_reviewer or agent_qc.prod_reviewer:
+        logging.info(
+            f"Agent has already been assigned, skipping assignment for agent_id: {agent_id}"
+        )
         return None
 
     env = get_environment_tag()
@@ -172,10 +187,10 @@ async def assign_agent_quality_reviewers(
     prod_reviewer = random.choice(reviewer_team_members)
 
     agent_qc = AgentQC(
-        agent_qc_id=agent_qc_id,
+        agent_qc_id=agent_qc.agent_qc_id,
         agent_id=agent_id,
         user_id=user_id,
-        agent_status=status,
+        agent_status=agent_qc.agent_status,
         plan_id=plan_id,
         cs_reviewer=cs_reviewer,
         eng_reviewer=eng_reviewer,
@@ -187,3 +202,52 @@ async def assign_agent_quality_reviewers(
 
     await db.update_agent_qc(agent_qc)
     logging.info(f"Successfully assigned reviewers for agent_id: {agent_id}")
+
+
+async def update_agent_qc_status(
+    agent_id: str, plan_id: str, status: str, skip_db_commit: bool = False
+) -> None:
+    db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
+
+    logging.info(f"Retrieving Agent QC for agent_id: {agent_id}, plan_id: {plan_id}")
+
+    agent_qcs = await db.get_agent_qc_by_agent_ids(agent_ids=[agent_id])
+
+    if len(agent_qcs) != 1:
+        logging.info(f"Agent QC not found for {agent_id=}")
+        return None
+
+    agent_qc = agent_qcs.pop()
+
+    if agent_qc.score_rating == ScoreRating.BROKEN:
+        logging.info("Agent QC already scored as BROKEN, skipping status update")
+        return None
+
+    agent_qc = AgentQC(
+        agent_qc_id=agent_qc.agent_qc_id,
+        agent_id=agent_id,
+        user_id=agent_qc.user_id,
+        agent_status=status,
+        plan_id=plan_id,
+        last_updated=datetime.datetime.now(),
+        is_spoofed=agent_qc.is_spoofed,
+    )
+
+    if status == Status.ERROR:
+        logging.info("Agent status is ERROR, setting agent QC to BROKEN, skipping CS review")
+
+        agent_qc = AgentQC(
+            agent_qc_id=agent_qc.agent_qc_id,
+            agent_id=agent_id,
+            user_id=agent_qc.user_id,
+            agent_status=status,
+            plan_id=plan_id,
+            last_updated=datetime.datetime.now(),
+            is_spoofed=agent_qc.is_spoofed,
+            cs_reviewer="",
+            score_rating=ScoreRating.BROKEN,
+            cs_reviewed=True,
+        )
+
+    await db.update_agent_qc(agent_qc)
+    logging.info(f"Successfully updated agent status for agent id: {agent_id}")

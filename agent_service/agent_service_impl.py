@@ -692,7 +692,7 @@ class AgentServiceImpl:
                 user_id=user.user_id,
                 created_at=datetime.datetime.now(),
                 last_updated=datetime.datetime.now(),
-                agent_status="CS",
+                agent_status=Status.NOT_STARTED,
                 query_order=0,
                 plan_id=plan_id,
                 fullstory_link=user.fullstory_link.replace("https://", ""),

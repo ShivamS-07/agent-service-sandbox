@@ -2399,23 +2399,15 @@ class AsyncDB:
             },
         )
 
-    async def get_agent_qc_id_by_agent_id(
-        self, agent_id: str, plan_id: str
-    ) -> Tuple[Optional[str], bool]:
-        sql = """
-        SELECT agent_qc_id::TEXT, is_spoofed
-        FROM agent.agent_qc
-        WHERE agent_id::TEXT = %(agent_id)s
-        AND plan_id::TEXT = %(plan_id)s
-        """
-        result = await self.pg.generic_read(sql, {"agent_id": agent_id, "plan_id": plan_id})
-
-        # Check if the result is found and return agent_qc_id, else None
-        if result:
-            return result[0]["agent_qc_id"], result[0]["is_spoofed"]
-        return None, False
-
     async def update_agent_qc(self, agent_qc: AgentQC) -> None:
+        """
+        Args:
+            agent_qc: AgentQC with updated fields
+
+        Returns: None
+
+        Notes: None fields will be skipped, use empty string as NULL updates
+        """
 
         # Build a dictionary of only the fields that are not None and not in the immutable fields
         values_to_update = {
@@ -2445,12 +2437,16 @@ class AsyncDB:
             "prod_reviewed": agent_qc.prod_reviewed,
             "prod_priority": agent_qc.prod_priority,
             "prod_notes": agent_qc.prod_notes,
+            "agent_status": agent_qc.agent_status,
             "qc_status": agent_qc.qc_status,
         }
 
         # Remove fields that are None or immutable
         values_to_update = {
-            key: value for key, value in values_to_update.items() if value is not None
+            # We need to be able to set certain fields to null (unassign reviewers), map empty string to NONE
+            key: None if isinstance(value, str) and len(value) == 0 else value
+            for key, value in values_to_update.items()
+            if value is not None
         }
 
         # Perform the update only with mutable fields
@@ -2504,17 +2500,22 @@ class AsyncDB:
             aqc.prod_priority, aqc.prod_notes, aqc.is_spoofed,
             users.cognito_username, users.owner_name AS owner_name,
             users.owner_organization_name AS owner_organization_name,
+            users.user_is_internal AS user_is_internal,
             json_agg(af.*) AS agent_feedbacks
         FROM agent.agent_qc aqc
         LEFT JOIN agent.agents ag ON aqc.agent_id = ag.agent_id
         LEFT JOIN (
-            SELECT u.id, u.cognito_username, u.name AS owner_name, org.name AS owner_organization_name
+            SELECT
+                u.id, u.cognito_username, u.name AS owner_name, org.name AS owner_organization_name,
+                (NOT org.is_client) AS user_is_internal
             FROM user_service.users u
                 LEFT JOIN user_service.company_membership cm ON u.id::TEXT = cm.user_id::TEXT
                 LEFT JOIN user_service.organizations org ON cm.company_id = org.id::TEXT
                 WHERE NOT u.id::TEXT = ANY(%(boosted_user_ids)s)
             UNION
-            SELECT u.id, u.cognito_username, u.name as owner_name, 'Boosted.ai' as owner_organization_name
+            SELECT
+                u.id, u.cognito_username, u.name as owner_name, 'Boosted.ai' as owner_organization_name,
+                TRUE AS user_is_internal
             FROM user_service.users u
                 WHERE u.id::TEXT = ANY(%(boosted_user_ids)s)
         ) AS users ON users.id::TEXT = aqc.user_id::TEXT
@@ -2586,7 +2587,7 @@ class AsyncDB:
         # Always sort by latest agent ran
         sql += """
             GROUP BY aqc.agent_qc_id, users.cognito_username, users.owner_name,
-                users.owner_organization_name, ag.agent_name
+                users.owner_organization_name, users.user_is_internal, ag.agent_name
             ORDER BY aqc.created_at desc
         """
 
@@ -2614,6 +2615,22 @@ class AsyncDB:
                 column="aqc.agent_qc_id",
                 operator=HorizonCriteriaOperator.equal_any,
                 arg1=agent_qc_ids,
+                arg2=None,
+            )
+        ]
+
+        # Call the search DB function to retrieve agent QC by IDs
+        agent_qcs, _ = await self.search_agent_qc(ids_filter, [], None)
+
+        # Return the list of AgentQC objects
+        return agent_qcs
+
+    async def get_agent_qc_by_agent_ids(self, agent_ids: List[str]) -> list[AgentQC]:
+        ids_filter = [
+            HorizonCriteria(
+                column="aqc.agent_id",
+                operator=HorizonCriteriaOperator.equal_any,
+                arg1=agent_ids,
                 arg2=None,
             )
         ]
