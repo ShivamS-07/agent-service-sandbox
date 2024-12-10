@@ -434,10 +434,10 @@ def is_generic_portfolio_search(search_str: Optional[str]) -> bool:
     """
     return true if search str generically refers to a portfolio an not a specific name
     """
-
     if not search_str:
         return True
     search_str = search_str.lower()
+    search_str = re.sub(r"\b's\b", " ", search_str)
     search_str = re.sub(r"\bmy\b", " ", search_str)
     search_str = re.sub(r"\byour\b", " ", search_str)
     search_str = re.sub(r"\bour\b", " ", search_str)
@@ -451,6 +451,7 @@ def is_generic_portfolio_search(search_str: Optional[str]) -> bool:
     search_str = re.sub(r"\bportfolios\b", " ", search_str)
     search_str = re.sub(r"\bportfolio\b", " ", search_str)
     search_str = re.sub(r"\bport\b", " ", search_str)
+    search_str = re.sub(r"\bclient\b", " ", search_str)
 
     # remove any non alphanumeric chars
     search_str = re.sub(r"\W+", "", search_str, flags=re.MULTILINE)
