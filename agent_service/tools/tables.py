@@ -691,7 +691,9 @@ async def transform_tables_helper(
         for col in new_col_schema:
             if col.col_type == TableColumnType.QUARTER:
                 output_df[col.label] = (
-                    pd.to_datetime(output_df[col.label]).dt.to_period("Q").astype(str)
+                    pd.to_datetime(output_df[col.label].replace(" ", "", regex=True))
+                    .dt.to_period("Q")
+                    .astype(str)
                 )
             if col.col_type == TableColumnType.YEAR or col.col_type == TableColumnType.MONTH:
                 output_df[col.label] = output_df[col.label].astype(str)

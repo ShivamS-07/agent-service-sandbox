@@ -112,7 +112,7 @@ async def publish_agent_event(agent_id: str, serialized_event: str) -> None:
                 "error_msg": traceback.format_exc(),
             },
         )
-        raise e
+        logger.info(e)
 
 
 async def publish_notification_event(user_id: str, serialized_event: str) -> None:

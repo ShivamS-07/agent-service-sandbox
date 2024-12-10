@@ -288,7 +288,8 @@ class Score(SerializeableBase):
         return cls(val=sum([sub_score.val for sub_score in scores]) / len(scores) if scores else 0)
 
 
-class ScoreOutput(BaseModel):
+@io_type
+class ScoreOutput(SerializeableBase):
     val: float
     # Source of the score
     source: Optional[str] = None
