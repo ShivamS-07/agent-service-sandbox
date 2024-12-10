@@ -39,8 +39,7 @@ url = "http://gbi-ml-user:ml1234@nexus.boosted.ai:8081/repository/pypi-internal/
 
 [dependency-groups]
 dev = [
-    "ruff",
-    "black==24.10.0",
+    "ruff==0.8.2",
     "types-invoke~=1.7.3",
     "types-cachetools~=5.2",
     "types-protobuf~=4.21.0",
