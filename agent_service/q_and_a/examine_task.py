@@ -99,8 +99,9 @@ EXAMINE_TASK_FUNC = LLMFunction(
     func=examine_task,
     description="""
 Examine a specific function in a the workflow, for example to see what it does
-or give details about how it works and what it returned. Only call this when the
-user explicitly asks about one certain step, NOT the workflow as a
-whole. task_id should be the task ID of the task that you are looking at.
+or give details about how it works and what it returned. For example, if the
+user asks about a specific stock or other lookup task or how a specific
+filtering task was done, use this tool. task_id should be the task ID of the
+task that you are looking at.
     """,
 )

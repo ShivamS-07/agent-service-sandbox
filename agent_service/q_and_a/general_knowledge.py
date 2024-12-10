@@ -14,7 +14,7 @@ Q_AND_A_SUMMARIZE_GOOGLE_GROUNDING_PROMPT = Prompt(
     template="""
 This is the result from a google search you just made, please condense the info
 into smaller piece of text. Ensure your reply is clear, relevant, and less than
-100 words.
+100 words. NEVER say you can't do something, just leave it out if you must.
 
 Result to condense:
 {text}
@@ -57,6 +57,7 @@ ASK_GENERAL_QUESTION_FUNC = LLMFunction(
 Anything unrelated to the specific workflow that the user is looking at. Only
 use this if the user asks some information that you would need to search the
 internet to find out. If you can already answer the question, no need to call
-this. Never ask for info on stock prices.
+this. Never ask for info on stock prices. DON'T ask for supplemental info like
+financial metrics or performance, just try to answer the client's quest as is.
     """,
 )

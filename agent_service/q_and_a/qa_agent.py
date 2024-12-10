@@ -4,7 +4,7 @@ from typing import Optional, cast
 from llm_client.datamodels import DoChatArgs, LLMFunction, LLMResponse
 from llm_client.llm_client import LLMClient
 
-from agent_service.GPT.constants import GPT4_O_MINI
+from agent_service.GPT.constants import GPT4_O
 from agent_service.q_and_a.examine_plan import EXAMINE_PLAN_FUNC
 from agent_service.q_and_a.examine_task import EXAMINE_TASK_FUNC
 from agent_service.q_and_a.general_knowledge import ASK_GENERAL_QUESTION_FUNC
@@ -54,7 +54,7 @@ class QAAgent:
         ).filled_prompt
         result = await self.llm_client.do_chat(
             DoChatArgs(
-                model_id=GPT4_O_MINI,
+                model_id=GPT4_O,
                 main_prompt=main_prompt_str,
                 sys_prompt="",
                 context=self.gpt_context,

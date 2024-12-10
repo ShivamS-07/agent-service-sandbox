@@ -92,11 +92,15 @@ async def examine_plan(args: ExaminePlanArgs, context: QAContext) -> str:
 
 
 EXAMINE_PLAN_FUNC = LLMFunction(
-    name="examine_workflow",
+    name="examine_entire_workflow",
     args=ExaminePlanArgs,
     func=examine_plan,
     description="""
 Examine a workflow as a whole, e.g. to explain multiple pieces of the workflow,
-where an element might have appeared or been removed, etc. 
+where an element might have appeared or been removed, etc. For example, if the
+user asks about the overall stratgy to solve a problem or to explain why a stock
+is missing from the output, use this tool. In general, don't use this tool if
+the user asks a question by only looking at a specific task in the
+workflow. Priority should go to looking at the specific task that is relevant.
     """,
 )
