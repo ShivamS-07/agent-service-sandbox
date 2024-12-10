@@ -162,9 +162,7 @@ async def _get_news_developments_helper(
         minute=59,
         second=59,
         tzinfo=datetime.timezone.utc,
-    ) + datetime.timedelta(
-        hours=12
-    )  # add extra time to prevent timezone weirdness
+    ) + datetime.timedelta(hours=12)  # add extra time to prevent timezone weirdness
 
     sql = """
         WITH articles AS (

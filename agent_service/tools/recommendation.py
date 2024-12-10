@@ -303,7 +303,6 @@ async def add_scores_and_rationales_to_stocks(
     news_horizon: Optional[str] = None,
     task_id: Optional[str] = None,
 ) -> List[StockID]:
-
     logger = get_prefect_logger(__name__)
 
     if news_horizon:

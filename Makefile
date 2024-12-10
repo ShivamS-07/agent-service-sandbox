@@ -1,36 +1,36 @@
-pipenv:
-	pipenv install --dev --verbose
+uv:
+	uv sync
 
 clean:
-	pipenv --rm
-	pipenv install --dev --verbose
+	uv --rm
+	uv install --dev --verbose
 
 format:
-	pipenv run invoke format
+	uv run invoke format
 
 check:
-	pipenv run invoke check
+	uv run invoke check
 
 checkformat:
-	pipenv run invoke checkformat
+	uv run invoke checkformat
 
 
 verify:
-	pipenv run invoke verify
+	uv run invoke verify
 
 .PHONY: test
 test:
-	pipenv run invoke test
+	uv run invoke test
 
 
 .PHONY: testfast
 testfast:
-	pipenv run invoke testfast
+	uv run invoke testfast
 
 .PHONY: testslow
 testslow:
-	pipenv run invoke testslow
+	uv run invoke testslow
 
 .PHONY: regtest
 regtest:
-	pipenv run invoke testregression
+	uv run invoke testregression

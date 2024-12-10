@@ -5,7 +5,6 @@ from agent_service.endpoints.models import JiraTicketCriteria
 
 
 class TestJiraIntegration(unittest.TestCase):
-
     @classmethod
     def setUpClass(cls):
         # Set up JiraIntegration instance for all tests

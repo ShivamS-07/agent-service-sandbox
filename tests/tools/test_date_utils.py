@@ -12,7 +12,6 @@ from agent_service.utils.date_utils import (
 
 
 class TestDateUtils(IsolatedAsyncioTestCase):
-
     async def test_convert_horizon_to_date_1w(self):
         horizon = "1W"
         res = convert_horizon_to_date(horizon)

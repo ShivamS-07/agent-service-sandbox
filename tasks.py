@@ -3,9 +3,9 @@ from invoke import task
 
 @task
 def checkformat(c):
-    c.run("black --check .")
-    c.run("isort --profile black --check .")
-    c.run("flake8")
+    c.run("ruff check")  # flake8
+    c.run("ruff check --select I")  # isort
+    c.run("ruff format --check")  # black
 
 
 @task
@@ -23,7 +23,6 @@ def verify(c):
 
 @task
 def testslow(c):
-
     print("running tests slowly serially")
     c.run("RUN_IN_CI=true python -W ignore -m unittest discover -v -s tests")
 
@@ -33,7 +32,7 @@ def testfast(c):
     # runs each test class in its own process 8 at a time
     print("running tests in parallel")
     c.run(
-        "RUN_IN_CI=true pipenv run python -m pytest  --durations=0 --durations-min=5.0"
+        "RUN_IN_CI=true uv run python -m pytest  --durations=0 --durations-min=5.0"
         " --disable-warnings --capture=tee-sys  --log-cli-level=WARNING"
         " -n 16 --dist worksteal"
         " -v tests"
@@ -50,7 +49,7 @@ def test(c):
 @task
 def testregressionci(c):
     c.run(
-        "RUN_IN_CI=true pipenv run python -m pytest  --durations=0 --durations-min=5.0"
+        "RUN_IN_CI=true uv run python -m pytest  --durations=0 --durations-min=5.0"
         " --disable-warnings --capture=tee-sys  --log-cli-level=WARNING"
         " -n 8 --dist worksteal"
         " -v regression_test"
@@ -66,7 +65,7 @@ def testregressionslowci(c):
 @task
 def testregression(c):
     c.run(
-        "pipenv run python -m pytest -n 32 --dist worksteal -v regression_test --log-level=CRITICAL"
+        "uv run python -m pytest -n 32 --dist worksteal -v regression_test --log-level=CRITICAL"
         " --durations=0 --durations-min=5.0"
     )
 
@@ -78,9 +77,9 @@ def testregressionslow(c):
 
 @task
 def format(c):
-    c.run("isort .")
-    c.run("black .")
-    c.run("flake8 .")
+    c.run("ruff check --fix")  # flake8
+    c.run("ruff check --select I --fix")  # isort
+    c.run("ruff format")  # black
 
 
 @task
@@ -90,7 +89,7 @@ def coverage(c):
 
 
 def check_unpublished_protobuf_version():
-    with open("Pipfile") as f:
+    with open("pyproject.toml") as f:
         # pa-portfolio-service-proto-v1 = {version = "==0.0.0+8df543afc7b50c992dfeb25f89187529453c8520", index = "gbi"} # noqa
         for line in f:
             line = line.strip()

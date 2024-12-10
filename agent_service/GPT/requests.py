@@ -295,7 +295,6 @@ async def _get_embedding(
     no_cache: bool = False,
     gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> List[float]:
-
     if not client_timestamp:
         client_timestamp = get_now_utc().isoformat()
 

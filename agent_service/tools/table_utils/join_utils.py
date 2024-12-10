@@ -242,7 +242,9 @@ def preprocess_heterogeneous_tables_before_joining(
                 for group in first_group_col.data
             ]
             second_group_col.data = [
-                f"{group} - {old_second_data_label}" if old_second_data_label not in group else group  # type: ignore
+                f"{group} - {old_second_data_label}"
+                if old_second_data_label not in group  # type: ignore
+                else group
                 for group in second_group_col.data
             ]
 

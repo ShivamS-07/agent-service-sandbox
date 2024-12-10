@@ -165,7 +165,9 @@ class AgentEmail:
 
         exeuction_plan = ExecutionPlan.model_validate(outputs[0]["plan"])
         output_titles: List[str] = [
-            node.args["title"] for node in exeuction_plan.nodes if node.is_output_node  # type: ignore
+            node.args["title"]  # type: ignore
+            for node in exeuction_plan.nodes
+            if node.is_output_node
         ]
 
         # Limit the number of titles to 3 so the email doesn't get too long

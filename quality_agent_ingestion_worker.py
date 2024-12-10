@@ -66,7 +66,6 @@ async def poll_sqs_forever() -> None:
                 converted_message_str = download_json_from_s3(message_dict["s3_path"])
                 message_dict = json.loads(converted_message_str)
             try:
-
                 await message_handler.handle_message(message_dict)
                 log_event(
                     event_name="agent_quality_worker_message_processed",

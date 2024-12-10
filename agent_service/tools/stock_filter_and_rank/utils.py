@@ -110,7 +110,6 @@ async def classify_stock_text_relevancy_for_profile(
     company_name: str,
     llm: GPT,
 ) -> bool:
-
     chopped_text_str = GPTTokenizer(model=llm.model).do_truncation_if_needed(
         truncate_str=text,
         other_prompt_strs=[
@@ -460,7 +459,10 @@ async def check_text_diff(
 ) -> CheckOutput:
     company_name = stock.company_name
     filtered_new_texts = await classify_stock_text_relevancies_for_profile(
-        new_texts, profiles_str=profile_str, context=context, text_cache=text_cache  # type: ignore
+        new_texts,
+        profiles_str=profile_str,
+        context=context,  # type: ignore
+        text_cache=text_cache,  # type: ignore
     )
 
     filtered_text_set = set(filtered_new_texts)
@@ -677,7 +679,7 @@ def citations_contain_all_texts(
 
 
 def reset_relevance_cache_ids(
-    text_relevance_cache: List[Tuple[StockText, bool]]
+    text_relevance_cache: List[Tuple[StockText, bool]],
 ) -> List[Tuple[StockText, bool]]:
     output_cache = []
     for text, is_relevant in text_relevance_cache:
@@ -1003,18 +1005,23 @@ async def run_pairwise_comparison(
             inner_level_ranked_stocks.append(stock)
 
     inner_level_ranked_stocks = sorted(
-        inner_level_ranked_stocks, key=lambda stock: stock.history[-1].score.val, reverse=True  # type: ignore
+        inner_level_ranked_stocks,
+        key=lambda stock: stock.history[-1].score.val,  # type: ignore
+        reverse=True,
     )
 
     logger.info("Scores before tiebreaker:")
-    logger.info("\n".join([str(stock.history[-1].score.val) for stock in inner_level_ranked_stocks]))  # type: ignore
+    logger.info(
+        "\n".join([str(stock.history[-1].score.val) for stock in inner_level_ranked_stocks])  # type: ignore
+    )
     # Apply tiebreaker policy for stocks with the same final score
     await apply_tiebreaker_policy(
         profile, inner_level_ranked_stocks, 0.49 / len(comparison_set), fixed_gbi_ids, context
     )
 
     logger.info("Scores after tiebreaker:")
-    logger.info("\n".join([str(stock.history[-1].score.val) for stock in inner_level_ranked_stocks]))  # type: ignore
+    stock_log = [str(stock.history[-1].score.val) for stock in inner_level_ranked_stocks]  # type: ignore
+    logger.info("\n".join(stock_log))
     return inner_level_ranked_stocks
 
 
@@ -1105,7 +1112,9 @@ async def rank_individual_levels(
         fully_ranked_stocks.extend(ranked_stocks_for_level)
 
     fully_ranked_stocks = sorted(
-        fully_ranked_stocks, key=lambda stock: stock.history[-1].score.val, reverse=True  # type: ignore
+        fully_ranked_stocks,
+        key=lambda stock: stock.history[-1].score.val,  # type: ignore
+        reverse=True,
     )
 
     for stock in fully_ranked_stocks:
@@ -1340,13 +1349,15 @@ async def apply_ranking_parameters(
         return truncated_stock_list
     else:
         non_zero_ranked_stocks = [
-            stock for stock in ranked_stocks if stock.history[-1].score.val != 0  # type: ignore
+            stock
+            for stock in ranked_stocks
+            if stock.history[-1].score.val != 0  # type: ignore
         ]
         return non_zero_ranked_stocks
 
 
 def remove_extra_history(
-    relevance_cache: List[Tuple[StockText, bool]]
+    relevance_cache: List[Tuple[StockText, bool]],
 ) -> List[Tuple[StockText, bool]]:
     # Drop history for text relevance cache which doesn't need it since it is just a look up
     new_relevance_cache = []

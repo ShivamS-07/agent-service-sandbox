@@ -121,7 +121,7 @@ class PostgresCacheBackend(CacheBackend):
 
 class InMemoryCacheBackend(CacheBackend):
     def __init__(self, maxsize: int, ttl: int) -> None:
-        self.client = TTLCache(maxsize=maxsize, ttl=ttl)
+        self.client = TTLCache(maxsize=maxsize, ttl=ttl)  # type: ignore
         self.lock = asyncio.Lock()
 
     async def get(self, key: str, ttl: Optional[int] = None) -> Optional[IOType]:

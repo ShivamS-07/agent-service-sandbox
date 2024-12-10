@@ -124,7 +124,6 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         MockFirstActionDecider: MagicMock,
         MockChatBot: MagicMock,
     ):
-
         mock_generate_name_for_agent.side_effect = generate_name_for_agent
         mock_firstactiondecider = MockFirstActionDecider.return_value
         mock_firstactiondecider.decide_action = decide_action

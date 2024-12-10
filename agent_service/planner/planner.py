@@ -699,7 +699,6 @@ class Planner:
     async def _query_GPT_for_initial_plan(
         self, user_input: str, llm: GPT, sample_plans: str = "", filter_tools: bool = False
     ) -> str:
-
         if filter_tools and get_ld_flag(
             "planner-tool-filtering-enabled", default=False, user_context=self.user_id
         ):
@@ -886,7 +885,7 @@ class Planner:
         if list_var_name not in variable_lookup:
             return None
         list_type = variable_lookup[list_var_name]
-        if not get_origin(list_type) in (List, list):
+        if get_origin(list_type) not in (List, list):
             raise ExecutionPlanParsingError(
                 f"Variable '{list_var_name}' is not a list so cannot be indexed!"
             )

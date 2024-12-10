@@ -212,7 +212,9 @@ async def write_commentary(args: WriteCommentaryInput, context: PlanRunContext) 
 
     # seperate text_mapping from input_mapping
     text_mapping: Dict[str, List[Text]] = {
-        key: value for key, value in input_mapping.items() if key != "Tables"  # type: ignore
+        key: value  # type: ignore
+        for key, value in input_mapping.items()
+        if key != "Tables"
     }
     # check the max number of texts in each type
     if ThemeText.text_type in text_mapping:
@@ -398,7 +400,6 @@ class GetCommentaryInputsInput(ToolArgs):
 async def get_commentary_inputs(
     args: GetCommentaryInputsInput, context: PlanRunContext
 ) -> List[Union[Text, Table]]:
-
     logger = get_prefect_logger(__name__)
     inputs: List[Union[Text, Table]] = []
     tasks = []
@@ -416,15 +417,15 @@ async def get_commentary_inputs(
             themes_texts_set = set()
             if args.portfolio_id:
                 try:
-                    themes_texts_portfolio_related: List[ThemeText] = (
-                        await get_top_N_macroeconomic_themes(  # type: ignore
-                            GetTopNThemesInput(
-                                date_range=args.date_range,
-                                theme_num=theme_num,
-                                portfolio_id=args.portfolio_id,
-                            ),
-                            context,
-                        )
+                    themes_texts_portfolio_related: List[
+                        ThemeText
+                    ] = await get_top_N_macroeconomic_themes(  # type: ignore
+                        GetTopNThemesInput(
+                            date_range=args.date_range,
+                            theme_num=theme_num,
+                            portfolio_id=args.portfolio_id,
+                        ),
+                        context,
                     )
                     themes_texts_set.update(themes_texts_portfolio_related)
                 except Exception as e:
@@ -595,14 +596,14 @@ async def get_commentary_inputs(
                     context=context,
                 )
             args.stock_ids = args.stock_ids[:MAX_STOCKS_PER_COMMENTARY]
-            stock_devs: List[StockNewsDevelopmentText] = (
-                await get_all_news_developments_about_companies(  # type: ignore
-                    GetNewsDevelopmentsAboutCompaniesInput(
-                        stock_ids=args.stock_ids,
-                        date_range=args.date_range,
-                    ),
-                    context,
-                )
+            stock_devs: List[
+                StockNewsDevelopmentText
+            ] = await get_all_news_developments_about_companies(  # type: ignore
+                GetNewsDevelopmentsAboutCompaniesInput(
+                    stock_ids=args.stock_ids,
+                    date_range=args.date_range,
+                ),
+                context,
             )
             stock_news: List[Text] = await get_news_articles_for_stock_developments(  # type: ignore
                 GetNewsArticlesForStockDevelopmentsInput(

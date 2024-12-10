@@ -363,7 +363,8 @@ async def filter_stocks_by_product_or_service(
 
     # create aligned stock text groups and get all the text strings
     aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(
-        stocks_to_filter, description_texts  # type: ignore
+        stocks_to_filter,
+        description_texts,  # type: ignore
     )
     stock_description_map: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
         aligned_text_groups.val, include_header=True, text_group_numbering=True

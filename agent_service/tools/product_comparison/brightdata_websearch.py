@@ -60,7 +60,11 @@ async def async_fetch_json(
 ) -> Dict[str, Any]:
     start_time = datetime.now(timezone.utc).isoformat()
     async with session.get(
-        url, headers=headers, proxy=proxy, timeout=aiohttp.ClientTimeout(total=timeout), ssl=ssl_context  # type: ignore
+        url,
+        headers=headers,
+        proxy=proxy,
+        timeout=aiohttp.ClientTimeout(total=timeout),
+        ssl=ssl_context,  # type: ignore
     ) as response:
         result = await response.json()
         end_time = datetime.now(timezone.utc).isoformat()
@@ -298,7 +302,10 @@ async def req_and_scrape(
     # first try, no proxy, short timeout
     try:
         async with session.get(
-            url, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout), ssl=ssl_context  # type: ignore
+            url,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=timeout),
+            ssl=ssl_context,  # type: ignore
         ) as response:
             if response.status != 200:
                 raise Exception(f"Request Error {response.status}: {url}")

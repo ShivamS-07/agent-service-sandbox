@@ -65,7 +65,6 @@ class TestTextData(IsolatedAsyncioTestCase):
         self.assertEqual(1, topic_kpis_table.get_num_rows())
 
     async def test_kpi_daterange(self):
-
         stock_id = StockID(gbi_id=714, symbol="APPL", isin="", company_name="")
 
         num_quarters = 4
@@ -113,15 +112,16 @@ class TestTextData(IsolatedAsyncioTestCase):
         self.assertGreater(len(topic_kpis_table.columns), 2)
 
     async def test_kpi_multi_stock(self):
-
         microsoft = StockID(gbi_id=6963, symbol="MSFT", isin="")
         amazon = StockID(gbi_id=149, symbol="AMZN", isin="")
         alphabet = StockID(gbi_id=10096, symbol="GOOG", isin="")
 
         stocks = [microsoft, amazon, alphabet]
-        equivalent_kpis: EquivalentKPITexts = await get_relevant_kpis_for_multiple_stocks_given_topic(  # type: ignore
-            GetRelevantKPIsForStocksGivenTopic(stock_ids=stocks, shared_metric="Cloud"),
-            context=self.context,
+        equivalent_kpis: EquivalentKPITexts = (
+            await get_relevant_kpis_for_multiple_stocks_given_topic(  # type: ignore
+                GetRelevantKPIsForStocksGivenTopic(stock_ids=stocks, shared_metric="Cloud"),
+                context=self.context,
+            )
         )
 
         num_prev_quarters = 3

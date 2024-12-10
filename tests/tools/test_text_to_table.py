@@ -7,7 +7,6 @@ from agent_service.tools.text_to_table import extract_number_with_unit_from_text
 
 
 class TestTextToTable(unittest.TestCase):
-
     @parameterized.expand(
         [
             param(input_str="Nothing", to_int=False, expected_val=None, expected_unit=None),

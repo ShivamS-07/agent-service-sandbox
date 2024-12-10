@@ -246,7 +246,8 @@ class ExecutionPlan(BaseModel):
         non_locked_output_task_ids = {
             node.tool_task_id
             for node in self.nodes
-            if node.is_output_node and node.tool_task_id not in locked_task_set
+            if node.is_output_node
+            and node.tool_task_id not in locked_task_set
             # don't remove it if it's depended on, e.g. analyze_output
             and not node_dep_map.get(node)
         }

@@ -323,7 +323,6 @@ class OutputDiffer:
         prev_stock_list: List[StockID],
         prev_run_time: datetime.datetime,
     ) -> OutputDiff:
-
         all_citations: List[TextCitation] = []
 
         curr_stock_set = set(curr_stock_list)
@@ -459,7 +458,6 @@ class OutputDiffer:
                 temp_offset = curr_offset + len(temp_change_output[0])
 
                 for new_history_entry in stock.history:
-
                     if (
                         new_history_entry.task_id is not None
                         and self.context.diff_info
@@ -512,12 +510,13 @@ class OutputDiffer:
                                 old_text = old_text.inject_history_entry(
                                     HistoryEntry(citations=old_history_entry.citations)
                                 )
-                                output_diff, sentence_citation_pairs = (
-                                    await self._compute_diff_for_texts(
-                                        latest_output=new_text,
-                                        prev_output=old_text,
-                                        prev_run_time=prev_run_time,
-                                    )
+                                (
+                                    output_diff,
+                                    sentence_citation_pairs,
+                                ) = await self._compute_diff_for_texts(
+                                    latest_output=new_text,
+                                    prev_output=old_text,
+                                    prev_run_time=prev_run_time,
                                 )
                                 notify |= output_diff.should_notify
                                 for sentence, citations in sentence_citation_pairs:

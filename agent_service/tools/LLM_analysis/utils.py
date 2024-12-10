@@ -314,9 +314,7 @@ def initial_filter_texts(texts: List[Text], max_texts: int = MAX_TEXT_PER_SUMMAR
     # diversify across stocks
     for text in texts:
         stock_text_lookup[
-            (
-                text.stock_id.gbi_id if isinstance(text, StockText) and text.stock_id else -1
-            )  # type:ignore
+            (text.stock_id.gbi_id if isinstance(text, StockText) and text.stock_id else -1)  # type:ignore
         ].append(text)
     per_stock_quota = max(
         1, max_texts // len(stock_text_lookup)

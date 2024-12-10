@@ -296,7 +296,6 @@ class GetUniverseHoldingsInput(ToolArgs):
     enabled=True,
 )
 async def get_universe_holdings(args: GetUniverseHoldingsInput, context: PlanRunContext) -> Table:
-
     # get the universe stocks
     etf_stock = await get_stock_info_for_universe(
         GetStockUniverseInput(universe_name=args.universe_name), context

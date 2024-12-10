@@ -144,18 +144,25 @@ async def run_profile_match(
         text_relevance_dict = dict(text_relevance_cache)
         new_texts = [text for text in texts if text not in text_relevance_dict]
         filtered_down_texts_tmp = await classify_stock_text_relevancies_for_profile(
-            new_texts, profiles_str=profile_str, context=context, text_cache=text_cache  # type: ignore
+            new_texts,  # type: ignore
+            profiles_str=profile_str,
+            context=context,
+            text_cache=text_cache,
         )
         filtered_down_text_set = set(split_texts_set)
         text_relevance_cache += [
-            (text, text in filtered_down_text_set) for text in new_texts  # type: ignore
+            (text, text in filtered_down_text_set)  # type: ignore
+            for text in new_texts
         ]
         for text in texts:
             if text in text_relevance_dict and text_relevance_dict[text]:  # type: ignore
                 filtered_down_texts_tmp.append(text)  # type: ignore
     else:
         filtered_down_texts_tmp = await classify_stock_text_relevancies_for_profile(
-            texts, profiles_str=profile_str, context=context, text_cache=text_cache  # type: ignore
+            texts,  # type: ignore
+            profiles_str=profile_str,
+            context=context,
+            text_cache=text_cache,  # type: ignore
         )
 
         filtered_down_text_set = set(filtered_down_texts_tmp)
@@ -423,7 +430,6 @@ async def update_profile_match(
     debug_info: Optional[Dict[str, Any]] = None,
     text_cache: Optional[Dict[TextIDType, str]] = None,
 ) -> List[StockID]:
-
     stocks = dedup_stocks(stocks)
     prev_input_stocks = dedup_stocks(stocks)
 
@@ -590,7 +596,9 @@ async def update_profile_match(
                 to_check_texts.append(text)
 
     passed_texts = await classify_stock_text_relevancies_for_profile(
-        to_check_texts, profiles_str=profile_str, context=context  # type: ignore
+        to_check_texts,
+        profiles_str=profile_str,
+        context=context,  # type: ignore
     )
     passed_texts_set = set(passed_texts)
     for text in to_check_texts:
@@ -1183,7 +1191,8 @@ async def per_idea_filter_and_rank_stocks_by_profile_match(
     # TODO: doing this both here and inside run_profile_match is redundant, but basically has no
     # effect, and useful to have them available for checking against citations
     split_texts = cast(
-        List[StockText], await partition_to_smaller_text_sizes(args.stock_texts, context=context)  # type: ignore
+        List[StockText],
+        await partition_to_smaller_text_sizes(args.stock_texts, context=context),  # type: ignore
     )
 
     text_cache: Dict[TextIDType, str] = {}

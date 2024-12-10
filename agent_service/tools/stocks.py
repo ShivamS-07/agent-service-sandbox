@@ -973,7 +973,6 @@ class MultiStockIdentifierLookupInput(ToolArgs):
 async def multi_stock_identifier_lookup(
     args: MultiStockIdentifierLookupInput, context: PlanRunContext
 ) -> List[StockID]:
-
     logger = get_prefect_logger(__name__)
 
     # Just runs stock identifier look up below for each stock in the list
@@ -1880,7 +1879,6 @@ class GetRiskExposureForStocksInput(ToolArgs):
 async def get_risk_exposure_for_stocks(
     args: GetRiskExposureForStocksInput, context: PlanRunContext
 ) -> Table:
-
     if len(args.stock_list) == 0:
         raise EmptyInputError("Cannot get risk exposure for empty list of stocks")
 
@@ -2518,19 +2516,16 @@ async def stock_lookup_by_ric_yahoo_codes(
 bloomberg_exchange_to_country_iso3 = {
     # EQUITY EXCH CODE : iso3
     #           # BBG composite, iso2, name/desc
-    "AL": "ALB",  # AL AL ALBANIA
     "AL": "ALB",  # AL AL ALB
     "DU": "ARE",  # DU AE NASDAQ
     "DH": "ARE",  # UH AE ABU
-    "DB": "ARE",  # DU AE DFM
-    "DU": "ARE",  # DU AE ARE
+    "DB": "ARE",  # DU AE ARE
     "UH": "ARE",  # UH AE ARE
     "AM": "ARG",  # AR AR MENDOZA
     "AF": "ARG",  # AR AR BUENOS
     "AC": "ARG",  # AR AR BUENOS
     "AS": "ARG",  # AR AR BUENOS
     "AR": "ARG",  # AR AR ARG
-    "AY": "ARM",  # AY AM NASDAQ
     "AY": "ARM",  # AY AM ARM
     "PF": "AUS",  # AU AU ASIA
     "AQ": "AUS",  # AU AU ASX
@@ -2540,29 +2535,17 @@ bloomberg_exchange_to_country_iso3 = {
     "AO": "AUS",  # AU AU NSX
     "AU": "AUS",  # AU AU AUS
     "AV": "AUT",  # AV AT VIENNA
-    "XA": "AUT",  # EO AT CEESEG
-    "AV": "AUT",  # AV AT AUT
-    "AZ": "AZE",  # AZ AZ BAKU
+    "XA": "AUT",  # AV AT AUT
     "AZ": "AZE",  # AZ AZ AZE
-    "BB": "BEL",  # BB BE EN
     "BB": "BEL",  # BB BE BEL
-    "BD": "BGD",  # BD BD DHAKA
     "BD": "BGD",  # BD BD BGD
-    "BU": "BGR",  # BU BG BULGARIA
     "BU": "BGR",  # BU BG BGR
-    "BI": "BHR",  # BI BH BAHRAIN
     "BI": "BHR",  # BI BH BHR
-    "BM": "BHS",  # BM BS BAHAMAS
     "BM": "BHS",  # BM BS BHS
     "BK": "BIH",  # BK BA BANJA
-    "BT": "BIH",  # BT BA SARAJEVO
-    "BK": "BIH",  # BK BA BIH
     "BT": "BIH",  # BT BA BIH
-    "RB": "BLR",  # RB BY BELARUS
     "RB": "BLR",  # RB BY BLR
-    "BH": "BMU",  # BH BM BERMUDA
     "BH": "BMU",  # BH BM BMU
-    "VB": "BOL",  # VB BO BOLIVIA
     "VB": "BOL",  # VB BO BOL
     "BN": "BRA",  # BZ BR SAO
     "BS": "BRA",  # BZ BR BM&FBOVESPA
@@ -2570,9 +2553,7 @@ bloomberg_exchange_to_country_iso3 = {
     "BR": "BRA",  # BZ BR RIO
     "BO": "BRA",  # BZ BR SOMA
     "BZ": "BRA",  # BZ BR BRA
-    "BA": "BRB",  # BA BB BRIDGETOWN
     "BA": "BRB",  # BA BB BRB
-    "BG": "BWA",  # BG BW GABORONE
     "BG": "BWA",  # BG BW BWA
     "TX": "CAN",  # CN CA CHIX
     "DV": "CAN",  # CN CA CHIX
@@ -2602,8 +2583,7 @@ bloomberg_exchange_to_country_iso3 = {
     "SX": "CHE",  # SW CH SIX
     "SE": "CHE",  # SW CH SIX
     "VX": "CHE",  # VX CH SIX
-    "SW": "CHE",  # SW CH CHE
-    "VX": "CHE",  # VX CH CHE
+    "SW": "CHE",  # VX CH CHE
     "CE": "CHL",  # CI CL SAINT
     "CC": "CHL",  # CI CL SANT.
     "CI": "CHL",  # CI CL CHL
@@ -2611,27 +2591,18 @@ bloomberg_exchange_to_country_iso3 = {
     "CS": "CHN",  # CH CN SHENZHEN
     "CG": "CHN",  # CH CN SHANGHAI
     "C1": "CHN",  # C1 CN Nth
-    "CH": "CHN",  # CH CN CHN
-    "C1": "CHN",  # C1 CN CHN
+    "CH": "CHN",  # C1 CN CHN
     "IA": "CIV",  # IA CI ABIDJAN
     "BC": "CIV",  # BC CI BRVM
-    "ZS": "CIV",  # ZS CI SENEGAL
-    "IA": "CIV",  # IA CI CIV
-    "BC": "CIV",  # BC CI CIV
     "ZS": "CIV",  # ZS CI CIV
-    "DE": "CMR",  # DE CM DOULASTKEXCH
     "DE": "CMR",  # DE CM CMR
     "CX": "COL",  # CB CO BOLSA
     "CB": "COL",  # CB CO COL
-    "VR": "CPV",  # VR CV CAPE
     "VR": "CPV",  # VR CV CPV
-    "CR": "CRI",  # CR CR COSTA
     "CR": "CRI",  # CR CR CRI
-    "KY": "CYM",  # KY KY CAYMAN
     "KY": "CYM",  # KY KY CYM
     "CY": "CYP",  # CY CY NICOSIA
-    "YC": "CYP",  # CY CY CYPRUS
-    "CY": "CYP",  # CY CY CYP
+    "YC": "CYP",  # CY CY CYP
     "CK": "CZE",  # CP CZ PRAGUE
     "CD": "CZE",  # CP CZ PRAGUE-SPAD
     "KL": "CZE",  # CP CZ PRAGUE-BLOCK
@@ -2657,16 +2628,10 @@ bloomberg_exchange_to_country_iso3 = {
     "QT": "DEU",  # QT DE Quotrix
     "GS": "DEU",  # GR DE STUTTGART
     "XS": "DEU",  # EO DE STUTTGRT
-    "GR": "DEU",  # GR DE DEU
-    "PG": "DEU",  # PG DE DEU
-    "BQ": "DEU",  # BQ DE DEU
-    "TH": "DEU",  # TH DE DEU
-    "QT": "DEU",  # QT DE DEU
+    "GR": "DEU",  # QT DE DEU
     "DD": "DNK",  # DC DK DANSK
     "DC": "DNK",  # DC DK COPENHAGEN
-    "DF": "DNK",  # DC DK FN
-    "DC": "DNK",  # DC DK DNK
-    "AG": "DZA",  # AG DZ ALGERIASTEXC
+    "DF": "DNK",  # DC DK DNK
     "AG": "DZA",  # AG DZ DZA
     "EG": "ECU",  # ED EC GUAYAQUIL
     "EQ": "ECU",  # ED EC QUITO
@@ -2680,14 +2645,10 @@ bloomberg_exchange_to_country_iso3 = {
     "SQ": "ESP",  # SM ES CONTINUOUS
     "SA": "ESP",  # SM ES VALENCIA
     "SM": "ESP",  # SM ES ESP
-    "ET": "EST",  # ET EE TALLINN
     "ET": "EST",  # ET EE EST
     "FF": "FIN",  # FH FI FN
-    "FH": "FIN",  # FH FI HELSINKI
     "FH": "FIN",  # FH FI FIN
-    "FS": "FJI",  # FS FJ SPSE
     "FS": "FJI",  # FS FJ FJI
-    "FP": "FRA",  # FP FR PARIS
     "FP": "FRA",  # FP FR FRA
     "QX": "GBR",  # QX GB AQUIS
     "EB": "GBR",  # EB GB BATS
@@ -2714,57 +2675,26 @@ bloomberg_exchange_to_country_iso3 = {
     "PZ": "GBR",  # PZ GB ISDX
     "XP": "GBR",  # EO GB PLUS
     "XE": "GBR",  # EO GB EURONEXT
-    "S2": "GBR",  # S2 GB UBS
-    "QX": "GBR",  # QX GB GBR
-    "EB": "GBR",  # EB GB GBR
-    "K3": "GBR",  # K3 GB GBR
-    "B3": "GBR",  # B3 GB GBR
-    "IX": "GBR",  # IX GB GBR
-    "L3": "GBR",  # L3 GB GBR
-    "ES": "GBR",  # ES GB GBR
-    "NQ": "GBR",  # NQ GB GBR
-    "S1": "GBR",  # S1 GB GBR
-    "A0": "GBR",  # A0 GB GBR
-    "DX": "GBR",  # DX GB GBR
-    "TQ": "GBR",  # TQ GB GBR
-    "LD": "GBR",  # LD GB GBR
-    "LN": "GBR",  # LN GB GBR
-    "LI": "GBR",  # LI GB GBR
-    "EU": "GBR",  # EU GB GBR
-    "PZ": "GBR",  # PZ GB GBR
     "S2": "GBR",  # S2 GB GBR
-    "GG": "GEO",  # GG GE JSCGEORGIA
     "GG": "GEO",  # GG GE GEO
     "GU": "GGY",  # GU GG GUERNSEY
-    "JY": "GGY",  # JY GG JERSEY
-    "GU": "GGY",  # GU GG GGY
     "JY": "GGY",  # JY GG GGY
-    "GN": "GHA",  # GN GH ACCRA
     "GN": "GHA",  # GN GH GHA
-    "TL": "GIB",  # TL GI GIBRALTAR
     "TL": "GIB",  # TL GI GIB
     "AA": "GRC",  # GA GR ATHENS
     "XT": "GRC",  # EO GR ATHENS
     "AP": "GRC",  # GA GR ATHENS
-    "GA": "GRC",  # GA GR ATHENS
     "GA": "GRC",  # GA GR GRC
-    "GL": "GTM",  # GL GT GUATEMALA
     "GL": "GTM",  # GL GT GTM
     "H1": "HKG",  # H1 HK Sth
     "H2": "HKG",  # HK HK Sth
-    "HK": "HKG",  # HK HK HONG
-    "H1": "HKG",  # H1 HK HKG
     "HK": "HKG",  # HK HK HKG
-    "HO": "HND",  # HO HN HONDURAS
     "HO": "HND",  # HO HN HND
     "ZA": "HRV",  # CZ HR ZAGREB
     "CZ": "HRV",  # CZ HR HRV
     "QM": "HUN",  # QM HU QUOTE
     "HB": "HUN",  # HB HU BUDAPEST
-    "XH": "HUN",  # EO HU BUDAPEST
-    "QM": "HUN",  # QM HU HUN
-    "HB": "HUN",  # HB HU HUN
-    "IJ": "IDN",  # IJ ID INDONESIA
+    "XH": "HUN",  # HB HU HUN
     "IJ": "IDN",  # IJ ID IDN
     "IG": "IND",  # IN IN MCX
     "IB": "IND",  # IN IN BSE
@@ -2773,30 +2703,19 @@ bloomberg_exchange_to_country_iso3 = {
     "IN": "IND",  # IN IN IND
     "ID": "IRL",  # ID IE IRELAND
     "XF": "IRL",  # EO IE DUBLIN
-    "PO": "IRL",  # PO IE ITG
-    "ID": "IRL",  # ID IE IRL
     "PO": "IRL",  # PO IE IRL
-    "IE": "IRN",  # IE IR TEHRAN
     "IE": "IRN",  # IE IR IRN
-    "IQ": "IRQ",  # IQ IQ IRAQ
     "IQ": "IRQ",  # IQ IQ IRQ
     "RF": "ISL",  # IR IS FN
-    "IR": "ISL",  # IR IS REYKJAVIK
     "IR": "ISL",  # IR IS ISL
-    "IT": "ISR",  # IT IL TEL
     "IT": "ISR",  # IT IL ISR
     "TE": "ITA",  # TE IT EUROTLX
     "HM": "ITA",  # HM IT HI-MTF
     "IM": "ITA",  # IM IT BRSAITALIANA
     "IC": "ITA",  # IM IT MIL
     "XI": "ITA",  # EO IT BORSAITALOTC
-    "IF": "ITA",  # IM IT MIL
-    "TE": "ITA",  # TE IT ITA
-    "HM": "ITA",  # HM IT ITA
-    "IM": "ITA",  # IM IT ITA
-    "JA": "JAM",  # JA JM KINGSTON
+    "IF": "ITA",  # IM IT ITA
     "JA": "JAM",  # JA JM JAM
-    "JR": "JOR",  # JR JO AMMAN
     "JR": "JOR",  # JR JO JOR
     "JI": "JPN",  # JP JP CHI-X
     "JD": "JPN",  # JP JP KABU.COM
@@ -2811,113 +2730,64 @@ bloomberg_exchange_to_country_iso3 = {
     "JG": "JPN",  # JP JP TOKYO
     "JT": "JPN",  # JP JP TOKYO
     "JP": "JPN",  # JP JP JPN
-    "KZ": "KAZ",  # KZ KZ KAZAKHSTAN
     "KZ": "KAZ",  # KZ KZ KAZ
-    "KN": "KEN",  # KN KE NAIROBI
     "KN": "KEN",  # KN KE KEN
-    "KB": "KGZ",  # KB KG KYRGYZSTAN
     "KB": "KGZ",  # KB KG KGZ
-    "KH": "KHM",  # KH KH CAMBODIA
     "KH": "KHM",  # KH KH KHM
     "EK": "KNA",  # EK KN ESTN
     "AI": "KNA",  # AI KN ANGUILLA
-    "NX": "KNA",  # NX KN ST
-    "EK": "KNA",  # EK KN KNA
-    "AI": "KNA",  # AI KN KNA
     "NX": "KNA",  # NX KN KNA
     "KF": "KOR",  # KF KR KOREAFRBMKT
     "KE": "KOR",  # KS KR KONEX
     "KP": "KOR",  # KS KR KOREA
-    "KQ": "KOR",  # KS KR KOSDAQ
-    "KF": "KOR",  # KF KR KOR
+    "KQ": "KOR",  # KF KR KOR
     "KS": "KOR",  # KS KR KOR
-    "KK": "KWT",  # KK KW KUWAIT
     "KK": "KWT",  # KK KW KWT
-    "LS": "LAO",  # LS LA LAOS
     "LS": "LAO",  # LS LA LAO
-    "LB": "LBN",  # LB LB BEIRUT
     "LB": "LBN",  # LB LB LBN
-    "LY": "LBY",  # LY LY LIBYANSTEXC
     "LY": "LBY",  # LY LY LBY
-    "SL": "LKA",  # SL LK COLOMBO
     "SL": "LKA",  # SL LK LKA
-    "LH": "LTU",  # LH LT VILNIUS
     "LH": "LTU",  # LH LT LTU
-    "LX": "LUX",  # LX LU LUXEMBOURG
     "LX": "LUX",  # LX LU LUX
     "LG": "LVA",  # LR LV RIGA
     "LR": "LVA",  # LR LV LVA
-    "MC": "MAR",  # MC MA CASABLANCA
     "MC": "MAR",  # MC MA MAR
-    "MB": "MDA",  # MB MD MOLDOVA
     "MB": "MDA",  # MB MD MDA
-    "MX": "MDV",  # MX MV MALDIVES
     "MX": "MDV",  # MX MV MDV
-    "MM": "MEX",  # MM MX MEXICO
     "MM": "MEX",  # MM MX MEX
-    "MS": "MKD",  # MS MK MACEDONIA
     "MS": "MKD",  # MS MK MKD
-    "MV": "MLT",  # MV MT VALETTA
     "MV": "MLT",  # MV MT MLT
-    "ME": "MNE",  # ME ME MONTENEGRO
     "ME": "MNE",  # ME ME MNE
-    "MO": "MNG",  # MO MN MONGOLIA
     "MO": "MNG",  # MO MN MNG
-    "MZ": "MOZ",  # MZ MZ MAPUTO
     "MZ": "MOZ",  # MZ MZ MOZ
-    "MP": "MUS",  # MP MU SEM
     "MP": "MUS",  # MP MU MUS
-    "MW": "MWI",  # MW MW MALAWI
     "MW": "MWI",  # MW MW MWI
     "MQ": "MYS",  # MQ MY MESDAQ
-    "MK": "MYS",  # MK MY BURSA
-    "MQ": "MYS",  # MQ MY MYS
     "MK": "MYS",  # MK MY MYS
-    "NW": "NAM",  # NW NA WINDHOEK
     "NW": "NAM",  # NW NA NAM
-    "NL": "NGA",  # NL NG LAGOS
     "NL": "NGA",  # NL NG NGA
-    "NC": "NIC",  # NC NI NICARAGUA
     "NC": "NIC",  # NC NI NIC
     "MT": "NLD",  # MT NL TOM
     "NA": "NLD",  # NA NL EN
-    "NR": "NLD",  # NR NL NYSE
-    "MT": "NLD",  # MT NL NLD
-    "NA": "NLD",  # NA NL NLD
     "NR": "NLD",  # NR NL NLD
     "NS": "NOR",  # NO NO NORWAY
     "NO": "NOR",  # NO NO OSLO
-    "XN": "NOR",  # EO NO OSLO
-    "NO": "NOR",  # NO NO NOR
-    "NO": "NOR",  # NO NO NOR
-    "NK": "NPL",  # NK NP NEPAL
+    "XN": "NOR",  # NO NO NOR
     "NK": "NPL",  # NK NP NPL
-    "NZ": "NZL",  # NZ NZ NZX
     "NZ": "NZL",  # NZ NZ NZL
-    "OM": "OMN",  # OM OM MUSCAT
     "OM": "OMN",  # OM OM OMN
     "PK": "PAK",  # PA PK KARACHI
     "PA": "PAK",  # PA PK PAK
-    "PP": "PAN",  # PP PA PANAMA
     "PP": "PAN",  # PP PA PAN
-    "PE": "PER",  # PE PE LIMA
     "PE": "PER",  # PE PE PER
-    "PM": "PHL",  # PM PH PHILIPPINES
     "PM": "PHL",  # PM PH PHL
-    "PB": "PNG",  # PB PG PORT
     "PB": "PNG",  # PB PG PNG
     "PD": "POL",  # PW PL POLAND
-    "PW": "POL",  # PW PL WARSAW
     "PW": "POL",  # PW PL POL
     "PX": "PRT",  # PX PT PEX
-    "PL": "PRT",  # PL PT EN
-    "PX": "PRT",  # PX PT PRT
     "PL": "PRT",  # PL PT PRT
-    "PN": "PRY",  # PN PY ASUNCION
     "PN": "PRY",  # PN PY PRY
-    "PS": "PSE",  # PS PS PALESTINE
     "PS": "PSE",  # PS PS PSE
-    "QD": "QAT",  # QD QA QATAR
     "QD": "QAT",  # QD QA QAT
     "RZ": "ROU",  # RO RO SIBEX
     "RE": "ROU",  # RO RO BUCHAREST
@@ -2930,58 +2800,36 @@ bloomberg_exchange_to_country_iso3 = {
     "RT": "RUS",  # RU RU NP
     "RM": "RUS",  # RM RU RUS
     "RU": "RUS",  # RU RU RUS
-    "RW": "RWA",  # RW RW RWANDA
     "RW": "RWA",  # RW RW RWA
-    "AB": "SAU",  # AB SA SAUDI
     "AB": "SAU",  # AB SA SAU
-    "SP": "SGP",  # SP SG SINGAPORE
     "SP": "SGP",  # SP SG SGP
-    "EL": "SLV",  # EL SV EL
     "EL": "SLV",  # EL SV SLV
-    "SG": "SRB",  # SG RS BELGRADE
     "SG": "SRB",  # SG RS SRB
-    "SK": "SVK",  # SK SK BRATISLAVA
     "SK": "SVK",  # SK SK SVK
     "SV": "SVN",  # SV SI LJUBLJANA
-    "XJ": "SVN",  # EO SI LJUB
-    "SV": "SVN",  # SV SI SVN
+    "XJ": "SVN",  # SV SI SVN
     "BY": "SWE",  # BY SE BURGUNDY
     "SF": "SWE",  # SS SE FN
     "NG": "SWE",  # SS SE
     "XG": "SWE",  # EO SE NGM
     "XO": "SWE",  # EO SE OMX
     "KA": "SWE",  # SS SE AKTIE
-    "SS": "SWE",  # SS SE NORDIC
-    "BY": "SWE",  # BY SE SWE
     "SS": "SWE",  # SS SE SWE
-    "SD": "SWZ",  # SD SZ MBABANE
     "SD": "SWZ",  # SD SZ SWZ
-    "SZ": "SYC",  # SZ SC Seychelles
     "SZ": "SYC",  # SZ SC SYC
-    "SY": "SYR",  # SY SY DAMASCUS
     "SY": "SYR",  # SY SY SYR
-    "TB": "THA",  # TB TH BANGKOK
     "TB": "THA",  # TB TH THA
-    "TP": "TTO",  # TP TT PORT
     "TP": "TTO",  # TP TT TTO
-    "TU": "TUN",  # TU TN TUNIS
     "TU": "TUN",  # TU TN TUN
     "TI": "TUR",  # TI TR ISTANBUL
     "TF": "TUR",  # TI TR ISTN
-    "TS": "TUR",  # TI TR ISTN
-    "TI": "TUR",  # TI TR TUR
-    "TT": "TWN",  # TT TW GRETAI
-    "TT": "TWN",  # TT TW TAIWAN
+    "TS": "TUR",  # TI TR TUR
     "TT": "TWN",  # TT TW TWN
-    "TZ": "TZA",  # TZ TZ DAR
     "TZ": "TZA",  # TZ TZ TZA
-    "UG": "UGA",  # UG UG UGANDA
     "UG": "UGA",  # UG UG UGA
     "UZ": "UKR",  # UZ UA PFTS
     "QU": "UKR",  # UZ UA PFTS
-    "UK": "UKR",  # UZ UA RTS
-    "UZ": "UKR",  # UZ UA UKR
-    "UY": "URY",  # UY UY MONTEVIDEO
+    "UK": "UKR",  # UZ UA UKR
     "UY": "URY",  # UY UY URY
     "UP": "USA",  # US US NYSE
     "UF": "USA",  # US US BATS
@@ -3007,7 +2855,6 @@ bloomberg_exchange_to_country_iso3 = {
     "UU": "USA",  # US US OTC
     "UX": "USA",  # US US NSDQ
     "US": "USA",  # US US USA
-    "ZU": "UZB",  # ZU UZ UZBEKISTAN
     "ZU": "UZB",  # ZU UZ UZB
     "VS": "VEN",  # VC VE CARACAS
     "VC": "VEN",  # VC VE VEN
@@ -3015,11 +2862,8 @@ bloomberg_exchange_to_country_iso3 = {
     "VU": "VNM",  # VN VN HANOI
     "VM": "VNM",  # VN VN HO
     "VN": "VNM",  # VN VN VNM
-    "SJ": "ZAF",  # SJ ZA JOHANNESBURG
     "SJ": "ZAF",  # SJ ZA ZAF
-    "ZL": "ZMB",  # ZL ZM LUSAKA
     "ZL": "ZMB",  # ZL ZM ZMB
-    "ZH": "ZWE",  # ZH ZW HARARE
     "ZH": "ZWE",  # ZH ZW ZWE
 }
 
@@ -3083,25 +2927,20 @@ ric_yahoo_exchange_to_country_iso3 = {
     "OMG": "CAN",  # OMG	OMEGA ATS	Canada
     "TMX": "CAN",  # TMX	TMX Select	Canada
     "TO": "CAN",  # TOR	Toronto SE	Canada
-    "V": "CAN",  # CVE	TSX Venture	Canada
     "V": "CAN",  # NEX	TSX Venture-NEX	Canada
     "NE": "CAN",  # Yahoo	Cboe Canada	Canada
     "ALP": "CAN",  # ALP	Alpha Trading Systems	Canada (Toronto)
     "ALV": "CAN",  # ALV	Alpha Trading Systems	Canada (Ventures)
     "BN": "CHE",  # BRN	Berne SE	Switzerland
     # EX" : "CHE", # EUX	Eurex Switzerland	Switzerland
-    "S": "CHE",  # QMH	Scoach Switzerland	Switzerland
-    "S": "CHE",  # SWX	SIX Swiss Exchange	Switzerland
     "S": "CHE",  # VTX	Swiss Blue Chip Segment	Switzerland
     "SW": "CHE",  # Yahoo	Swiss Exchange (SIX)	Switzerland
     "CE": "CHL",  # BEC	Electronic Exchange	Chile
     "SN": "CHL",  # SGO	Santiago SE	Chile
     "SS": "CHN",  # SHH	Shanghai SE	China
-    "SS": "CHN",  # SHH	Shanghai SE	China
     "SZ": "CHN",  # SHZ	Shenzhen SE	China
     "CI": "CIV",  # ABJ	BRVM Ivory	Coast
     "CN": "COL",  # COL	Colombia SE	Colombia
-    "CJ": "CRI",  # CRI	COSTA RICA SE	Costa Rica
     "CJ": "CRI",  # CRI	Bolsa de Valores Nacional,SA	Costa Rica
     "CY": "CYP",  # CYS	Cyprus SE	Cyprus
     "PR": "CZE",  # PRA	Prague SE	Czech
@@ -3148,7 +2987,6 @@ ric_yahoo_exchange_to_country_iso3 = {
     "CSX": "GBR",  # CSX	Cayman Island Stock Exchange	United Kingdom
     # Ip" : "GBR", # ISE	Irish Mifid	United Kingdom
     "ISD": "GBR",  # ISD	ICAP Sec & Deriv Exc(ISDX)	United Kingdom
-    "L": "GBR",  # LSE	London SE	United Kingdom
     "L": "GBR",  # LIF	LIFFE United Kingdom	United Kingdom
     "PZ": "GBR",  # PLU	PLUS Markets Group Plc	United Kingdom
     "UP": "GBR",  # UKPX	UK Power Exchange	United Kingdom
@@ -3185,14 +3023,11 @@ ric_yahoo_exchange_to_country_iso3 = {
     "JA": "JPN",  # JNA	Tokyo AIM	Japan
     "KY": "JPN",  # KYO	Kyoto SE	Japan
     "NG": "JPN",  # NGO	Nagoya SE	Japan
-    "OS": "JPN",  # OSA	Hercules Nippon	Japan
-    "OS": "JPN",  # JSD	JASDAQ SE	Japan
     "OS": "JPN",  # OSA	Osaka SE	Japan
     "SP": "JPN",  # SAP	Sapporo Stock Exchange	Japan
     "T": "JPN",  # TYO	Tokyo SE	Japan
     "KZ": "KAZ",  # KAZ	Kazakhstan Stock Exchange	Kazakhstan
     "NR": "KEN",  # NAI	Nairobi SE	Kenya
-    "KE": "KOR",  # KFE	KOFEX	South Korea
     "KE": "KOR",  # KFE	KOFEX - KODAQ 50	South Korea
     "KN": "KOR",  # KNX	KRX - KONEX Market	South Korea
     "KQ": "KOR",  # KOE	KOSDAQ	South Korea
@@ -3275,11 +3110,8 @@ ric_yahoo_exchange_to_country_iso3 = {
     "UG": "UKR",  # UGS	Uganda Stock Exchange	Ukraine
     "MN": "URY",  # MTV	MONTEVIDEO STOCK EXCHANGE	Uruguay
     "UE": "URY",  # UEX	URUGUAYAN ELECTRONIC EXCH	Uruguay
-    "A": "USA",  # AOE	NYSE American(Options)	United States
     "A": "USA",  # ASE	NYSE American(Equities)	United States
-    "B": "USA",  # BOS	Boston SE	United States
     "B": "USA",  # BOX	Boston Options Exchange	United States
-    "C": "USA",  # CIN	NYSE National	United States
     "C": "USA",  # LCC	NYSE National For NASDAQ LC	United States
     "DF": "USA",  # ADF	NASDAQ ADF	United States
     "DG": "USA",  # GCD	Direct Edge Holdings EDGX	United States
@@ -3293,8 +3125,6 @@ ric_yahoo_exchange_to_country_iso3 = {
     "O": "USA",  # NSQ	Nasdaq Consolidated	United States
     "OB": "USA",  # OBB	OTC Bulletin Board	United States
     "OQ": "USA",  # NSM	NASDAQ Stock Market	United States
-    "P": "USA",  # PAO	Pacific Options	United States
-    "P": "USA",  # PSE	NYSE Arca	United States
     "P": "USA",  # LCP	Pacific Exchange/ARCA	United States
     "PH": "USA",  # XPH	NASDAQ OMX PSX	United States
     "PK": "USA",  # PNK	OTC (Finra)	United States
@@ -3308,9 +3138,7 @@ ric_yahoo_exchange_to_country_iso3 = {
     "NYB": "USA",  # Yahoo	ICE Futures US	United States of America
     "CMX": "USA",  # Yahoo	New York Commodities Exchange (COMEX)***	United States of America
     "NYM": "USA",  # Yahoo	New York Mercantile Exchange (NYMEX)***	United States of America
-    "II": "USA",  # ISS	Intl Sec Exch - Equities	USA
-    "K": "USA",  # NYQ	NYSE Consolidated	USA
-    "K": "USA",  # ASQ	NYSE Amex Consolidated	USA
+    "II": "USA",  # ASQ	NYSE Amex Consolidated	USA
     "ZY": "USA",  # LCY	BATS Y Trading For Nasdaq OMX Global Market	USA
     "CR": "VEN",  # CCS	Caracas SE	Venezuela
     "HM": "VNM",  # HSX	Hochiminh S	Vietnam

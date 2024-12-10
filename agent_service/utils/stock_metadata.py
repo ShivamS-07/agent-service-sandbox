@@ -21,7 +21,6 @@ class StockMetadata(BaseModel):
 async def get_stock_metadata(
     gbi_ids: List[int], pg: Optional[BoostedPG] = None
 ) -> Dict[int, StockMetadata]:
-
     rows = await get_stock_metadata_rows(gbi_ids=gbi_ids, pg=pg)
     return {row["gbi_id"]: StockMetadata(**row) for row in rows}
 

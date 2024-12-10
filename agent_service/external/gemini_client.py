@@ -43,7 +43,6 @@ class GeminiClient:
         temperature: Optional[float] = None,
         context: Optional[Dict[str, str]] = None,
     ):
-
         self.model = genai.GenerativeModel(model)
         self.temperature = temperature
         self.context = context or {}

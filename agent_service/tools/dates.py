@@ -392,7 +392,9 @@ async def get_end_of_date_range(args: GetEndOfDateRangeInput, context: PlanRunCo
 
 async def main() -> None:
     # input_text = "Need a summary of all the earnings calls since Dec 3rd that might impact stocks in the TSX composite"  # noqa: E501
-    input_text = "Graph Apple's stock price starting from the beginning of last year to 3 months ago"  # noqa: E501
+    input_text = (
+        "Graph Apple's stock price starting from the beginning of last year to 3 months ago"  # noqa: E501
+    )
     user_message = Message(message=input_text, is_user_message=True, message_time=get_now_utc())
     chat_context = ChatContext(messages=[user_message])
     plan_context = PlanRunContext(

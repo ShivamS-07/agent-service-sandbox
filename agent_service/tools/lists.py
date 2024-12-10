@@ -77,7 +77,9 @@ async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IO
 async def intersect_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
     try:
         # Do this if the lists have complex io types in them
-        result = list(ComplexIOBase.intersect_sets(_list_to_set(args.list1), _list_to_set(args.list2)))  # type: ignore
+        result = list(
+            ComplexIOBase.intersect_sets(_list_to_set(args.list1), _list_to_set(args.list2))
+        )  # type: ignore
     except Exception:
         # otherwise just do a normal intersection
         result = list(_list_to_set(args.list1) & _list_to_set(args.list2))  # type: ignore

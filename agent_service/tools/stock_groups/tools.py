@@ -115,8 +115,6 @@ async def collapse_stock_groups_to_stock_list(
     final_list = args.stock_groups.stock_groups[0].stocks
     for stock_group in args.stock_groups.stock_groups[1:]:
         final_list = list(
-            ComplexIOBase.union_sets(
-                _list_to_set(final_list), _list_to_set(stock_group.stocks)
-            )  # type:ignore
+            ComplexIOBase.union_sets(_list_to_set(final_list), _list_to_set(stock_group.stocks))  # type:ignore
         )
     return final_list

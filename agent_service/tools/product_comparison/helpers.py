@@ -35,7 +35,6 @@ def update_dataframe(col_label: str, col_values: List[str], df: Any) -> TableCol
         and len(value_suffixes_set) == 1
         and len(values_set | value_suffixes_set) > len(values_set)
     ):
-
         suffix = list(value_suffixes_set)[0]
         value_prefixes = [
             match.group().strip().replace(",", "") if match else "n/a"

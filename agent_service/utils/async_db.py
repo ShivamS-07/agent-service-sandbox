@@ -271,7 +271,6 @@ class AsyncDB:
     async def get_agent_outputs_no_cache(
         self, agent_id: str, plan_run_id: Optional[str] = None
     ) -> List[AgentOutput]:
-
         start = time.perf_counter()
         rows = await self.get_agent_outputs_data_from_db(
             agent_id=agent_id, include_output=True, plan_run_id=plan_run_id
@@ -984,7 +983,6 @@ class AsyncDB:
     async def update_execution_plan_status(
         self, plan_id: str, agent_id: str, status: PlanStatus = PlanStatus.READY
     ) -> None:
-
         now_utc = get_now_utc()
         sql = """
         INSERT INTO agent.execution_plans (plan_id, agent_id, plan, created_at, last_updated, status)
@@ -1362,7 +1360,6 @@ class AsyncDB:
         new_widget_title: str,
         cache: RedisCacheBackend,
     ) -> None:
-
         rows = await self.get_agent_outputs_data_from_db(
             agent_id=agent_id, include_output=False, output_id=output_id
         )
@@ -2168,7 +2165,6 @@ class AsyncDB:
         return res
 
     async def get_all_companies(self) -> List[UserOrganization]:
-
         sql = """
         SELECT id, name FROM user_service.organizations
         """
@@ -2827,7 +2823,9 @@ async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) 
         return await db.get_chats_history_for_agent(agent_id)
 
 
-async def get_latest_execution_plan_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> Tuple[
+async def get_latest_execution_plan_from_db(
+    agent_id: str, db: Union[AsyncDB, Postgres]
+) -> Tuple[
     Optional[str],
     Optional[ExecutionPlan],
     Optional[datetime.datetime],

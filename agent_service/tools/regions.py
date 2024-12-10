@@ -39,7 +39,6 @@ def country_converter() -> coco.CountryConverter:
 
 
 def get_country_iso3s(search: str) -> List[str]:
-
     region_or_country = search.upper()
 
     if region_or_country in REGION_COUNTRY_MAP:

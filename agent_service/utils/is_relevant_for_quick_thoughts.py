@@ -35,7 +35,6 @@ QUICK_THOUGHTS_RELEVANT_MAIN_PROMPT = Prompt(
 
 @async_perf_logger
 async def is_relevant_for_quick_thoughts(message: Message) -> bool:
-
     llm = GPT(model=GPT4_O_MINI)
     res = await llm.do_chat_w_sys_prompt(
         main_prompt=QUICK_THOUGHTS_RELEVANT_MAIN_PROMPT.format(message=message.get_gpt_input()),

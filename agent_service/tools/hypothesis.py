@@ -181,12 +181,16 @@ async def summarize_hypothesis_from_news_developments(
     )
     await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
 
-    match_score, summary, ref_news_developments, _, _ = (
-        await pipeline.calculate_match_score_and_generate_summary(
-            args.news_developments,
-            earnings_summary_points=[],
-            custom_documents=[],
-        )
+    (
+        match_score,
+        summary,
+        ref_news_developments,
+        _,
+        _,
+    ) = await pipeline.calculate_match_score_and_generate_summary(
+        args.news_developments,
+        earnings_summary_points=[],
+        custom_documents=[],
     )
 
     score = Score.scale_input(match_score, lb=-1, ub=1)
@@ -217,13 +221,13 @@ async def test_and_summarize_hypothesis_with_news_developments(
     args: TestAndSummarizeNewsHypothesisInput, context: PlanRunContext
 ) -> Text:
     logger.info("Testing hypothesis for news...")
-    hypothesis_news_developments: List[StockHypothesisNewsDevelopmentText] = (
-        await test_hypothesis_for_news_developments(  # type: ignore
-            TestNewsHypothesisInput(
-                hypothesis=args.hypothesis, news_development_list=args.news_developments
-            ),
-            context,
-        )
+    hypothesis_news_developments: List[
+        StockHypothesisNewsDevelopmentText
+    ] = await test_hypothesis_for_news_developments(  # type: ignore
+        TestNewsHypothesisInput(
+            hypothesis=args.hypothesis, news_development_list=args.news_developments
+        ),
+        context,
     )
 
     await tool_log(
@@ -355,12 +359,16 @@ async def summarize_hypothesis_from_earnings_summaries(
     )
     await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
 
-    match_score, summary, _, ref_earnings_points, _ = (
-        await pipeline.calculate_match_score_and_generate_summary(
-            news_developments=[],
-            earnings_summary_points=args.earnings_summary_points,
-            custom_documents=[],
-        )
+    (
+        match_score,
+        summary,
+        _,
+        ref_earnings_points,
+        _,
+    ) = await pipeline.calculate_match_score_and_generate_summary(
+        news_developments=[],
+        earnings_summary_points=args.earnings_summary_points,
+        custom_documents=[],
     )
 
     score = Score.scale_input(match_score, lb=-1, ub=1)
@@ -409,10 +417,11 @@ EARNINGS_SUMMARY_SYS_PROMPT = Prompt(EARNINGS_SUMMARY_SYS_PROMPT_STR, "EARNINGS_
 async def get_summary_and_score_for_earnings(
     hypothesis: str, earnings_summaries: List[StockEarningsText], agent_id: str
 ) -> Tuple[Score, str, List[TextCitation]]:
-
     earnings_text_group = TextGroup(val=earnings_summaries)  # type: ignore
     texts_str: str = await Text.get_all_strs(
-        earnings_text_group, include_header=True, text_group_numbering=True  # type: ignore
+        earnings_text_group,
+        include_header=True,
+        text_group_numbering=True,  # type: ignore
     )
 
     gpt_context = create_gpt_context(GptJobType.AGENT_PLANNER, agent_id, GptJobIdType.AGENT_ID)
@@ -432,7 +441,6 @@ async def get_summary_and_score_for_earnings(
 
 
 class TestAndSummarizeEarningsHypothesisInput(ToolArgs):
-
     hypothesis: str
     earnings_summaries: List[StockEarningsText]
 
@@ -529,12 +537,14 @@ async def test_hypothesis_for_custom_documents(
             new_hypothesis_obj.hypothesis_breakdown = pipeline.hypothesis.hypothesis_breakdown
             pipeline.hypothesis = new_hypothesis_obj
 
-        hypothesis_news_topics, news_topics, topic_id_to_news_id = (
-            await pipeline.get_stock_hypothesis_custom_document_topics(
-                custom_document_news_ids=[
-                    custom_document.id for custom_document in custom_document_list
-                ]
-            )
+        (
+            hypothesis_news_topics,
+            news_topics,
+            topic_id_to_news_id,
+        ) = await pipeline.get_stock_hypothesis_custom_document_topics(
+            custom_document_news_ids=[
+                custom_document.id for custom_document in custom_document_list
+            ]
         )
 
         await tool_log(
@@ -596,12 +606,16 @@ async def summarize_hypothesis_from_custom_documents(
     )
     await pipeline.llm.get_hypothesis_breakdown()  # a bit wasteful as we done before but it's cheap
 
-    match_score, summary, _, _, ref_custom_documents = (
-        await pipeline.calculate_match_score_and_generate_summary(
-            news_developments=[],
-            earnings_summary_points=[],
-            custom_documents=args.custom_documents,
-        )
+    (
+        match_score,
+        summary,
+        _,
+        _,
+        ref_custom_documents,
+    ) = await pipeline.calculate_match_score_and_generate_summary(
+        news_developments=[],
+        earnings_summary_points=[],
+        custom_documents=args.custom_documents,
     )
 
     score = Score.scale_input(match_score, lb=-1, ub=1)
@@ -629,7 +643,9 @@ async def test_and_summarize_hypothesis_with_custom_documents(
     args: TestAndSummarizeCustomDocsHypothesisInput, context: PlanRunContext
 ) -> Text:
     logger.info("Testing hypothesis for custom docs...")
-    hypothesis_custom_docs: List[StockHypothesisCustomDocumentText] = await test_hypothesis_for_custom_documents(  # type: ignore # noqa
+    hypothesis_custom_docs: List[
+        StockHypothesisCustomDocumentText
+    ] = await test_hypothesis_for_custom_documents(  # type: ignore # noqa
         TestCustomDocsHypothesisInput(
             hypothesis=args.hypothesis, custom_document_list=args.custom_documents
         ),
@@ -676,7 +692,9 @@ async def summarize_hypothesis_from_various_sources(
     if not args.hypothesis_summaries:
         raise ValueError("None valid hypothesis summaries provided!")
 
-    avg_score = sum([s.history[0].score.val for s in args.hypothesis_summaries]) / len(args.hypothesis_summaries)  # type: ignore  # noqa
+    avg_score = sum([s.history[0].score.val for s in args.hypothesis_summaries]) / len(  # type: ignore  # noqa
+        args.hypothesis_summaries
+    )  # type: ignore  # noqa
 
     citations = []
     for summary in args.hypothesis_summaries:
@@ -686,7 +704,9 @@ async def summarize_hypothesis_from_various_sources(
         agent_id=context.agent_id, summaries=[s.val for s in args.hypothesis_summaries]
     )
 
-    return Text(val=summary, history=[HistoryEntry(score=Score(val=avg_score), citations=citations)])  # type: ignore  # noqa
+    return Text(
+        val=summary, history=[HistoryEntry(score=Score(val=avg_score), citations=citations)]
+    )  # type: ignore  # noqa
 
 
 async def _combine_summaries(agent_id: str, summaries: List[str]) -> str:

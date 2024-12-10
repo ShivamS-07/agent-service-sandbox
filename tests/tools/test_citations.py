@@ -13,7 +13,6 @@ TEXT2 = "Need to make an exact match here. I scored $1.3B investing with Boosted
 
 class TestCitations(unittest.IsolatedAsyncioTestCase):
     async def test_load_citations(self):
-
         context = PlanRunContext(
             agent_id=str(uuid4()),
             plan_id=str(uuid4()),

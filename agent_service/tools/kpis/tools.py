@@ -883,7 +883,8 @@ async def get_overlapping_kpis_table_for_stocks(
                 gbi_id=stock_id.gbi_id, kpi_texts=[kpi]
             )
         ).get(
-            kpi.pid, None  # type: ignore
+            kpi.pid,  # type: ignore
+            None,
         )
 
         if kpi_metadata is not None:

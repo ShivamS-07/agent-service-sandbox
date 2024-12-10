@@ -157,10 +157,10 @@ def cleanup_generated_python(code: str) -> str:
         # additionally it sometimes writes an explanation after the last ```
         # backquote is not a valid python char so we can remove it
         # and convert anything after that to a comment
-        for i, l in enumerate(lines):
+        for i, line in enumerate(lines):
             if found_back_quote:
-                lines[i] = "# " + l
-            elif l.strip().startswith("```"):
+                lines[i] = "# " + line
+            elif line.strip().startswith("```"):
                 # this can also false positive inside of a """ block
                 found_back_quote = True
                 lines[i] = ""
@@ -174,11 +174,11 @@ def cleanup_generated_python(code: str) -> str:
         # it will now fail in a different spot when we try to exec() it because code
         # using the imported module will fail
         lines = code.splitlines()
-        for i, l in enumerate(lines):
+        for i, line in enumerate(lines):
             # technically this could find a false positive inside of a """ block
             # but our checks in pandas_exec would have the same problem
-            if "import" in l and (l.startswith("from ") or l.startswith("import ")):
-                lines[i] = "# " + l
+            if "import" in line and (line.startswith("from ") or line.startswith("import ")):
+                lines[i] = "# " + line
 
         code = "\n".join(lines)
 
@@ -190,9 +190,10 @@ def _run_transform_code(df: pd.DataFrame, code: str) -> Tuple[Optional[pd.DataFr
     delete = (
         sys.platform != "win32"
     )  # turning off delete is necessary for temp file to work in Windows
-    with tempfile.NamedTemporaryFile(
-        mode="w+", delete=delete
-    ) as code_file, tempfile.NamedTemporaryFile(mode="w+", delete=delete) as data_file:
+    with (
+        tempfile.NamedTemporaryFile(mode="w+", delete=delete) as code_file,
+        tempfile.NamedTemporaryFile(mode="w+", delete=delete) as data_file,
+    ):
         code_file.write(code)
         code_file.flush()
         serialized = df.to_json(date_format="iso")
@@ -917,7 +918,8 @@ def _join_two_tables(
     stock_col = output_table.get_stock_column()
     if stock_col:
         stock_col.data = [
-            stock_hash_to_merged_stock_obj_map.get(stock, stock) for stock in stock_col.data  # type: ignore
+            stock_hash_to_merged_stock_obj_map.get(stock, stock)  # type: ignore
+            for stock in stock_col.data
         ]
     output_table.history = copy.deepcopy(first.history) + copy.deepcopy(second.history)
     output_table.dedup_history()

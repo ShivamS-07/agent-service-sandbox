@@ -1,4 +1,5 @@
 dist/
+.venv/
 .idea/
 .git/
 node_modules/

@@ -5,12 +5,14 @@ RUN apt-get -s dist-upgrade | grep "^Inst" | grep -i securi | awk -F " " {'print
 # install pandoc for document conversion
 RUN apt-get install -y pandoc
 RUN apt-get install -y libpq-dev
-RUN pip install pipenv==2024.0.1
+RUN apt-get update
+RUN apt-get install -y curl
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+RUN ln -s /root/.local/bin/uv /usr/local/bin/pipenv
 WORKDIR /service
-COPY Pipfile ./
-ENV CARGO_BUILD_JOBS=1
-ENV PIPENV_MAX_SUBPROCESS=2
-RUN pipenv install --verbose
+COPY pyproject.toml .
+RUN uv sync
 COPY agent_service/ ./agent_service
 COPY application.py .
 COPY no_auth_endpoints.py .
@@ -22,4 +24,4 @@ COPY cron_scheduler_worker.py .
 COPY quality_agent_ingestion_worker.py .
 COPY scripts/ ./scripts
 COPY config/ ./config
-CMD ["pipenv", "run", "python", "application.py"]
+CMD ["uv", "run", "python", "application.py"]

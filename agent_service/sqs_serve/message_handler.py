@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class MessageHandler:
-
     async def handle_message(self, message: Dict) -> Dict:
         method = message.get("method")
         arguments = message["arguments"]

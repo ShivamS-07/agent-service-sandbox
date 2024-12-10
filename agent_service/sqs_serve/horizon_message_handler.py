@@ -10,7 +10,6 @@ from agent_service.utils.date_utils import get_now_utc
 
 
 class HorizonMessageHandler:
-
     async def handle_message(self, message: Dict) -> Dict:
         """
         assign_args = {
@@ -50,7 +49,6 @@ class HorizonMessageHandler:
 
 
 if __name__ == "__main__":
-
     LOGGER = logging.getLogger(__name__)
 
     arguments = {

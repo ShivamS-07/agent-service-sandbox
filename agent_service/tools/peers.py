@@ -545,7 +545,6 @@ async def get_peer_group_for_stock(
     validated_peers: List[StockID] = []
     validate_tasks = []
     for peer_stock_id in peer_stock_ids.values():
-
         validate_tasks.append(
             llm.do_chat_w_sys_prompt(
                 main_prompt=VALIDATE_PEER_STOCK_MAIN_PROMPT.format(

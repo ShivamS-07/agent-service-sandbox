@@ -15,7 +15,6 @@ from agent_service.types import PlanRunContext
 
 
 class TestDateUtils(IsolatedAsyncioTestCase):
-
     async def test_get_date_range(self):
         date_range_arg = "Obtain the date range for the past 3 months"
         dummy_context = PlanRunContext.get_dummy()

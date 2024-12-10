@@ -116,7 +116,7 @@ async def get_theme_related_texts(
 
 
 async def organize_commentary_inputs(
-    inputs: List[Union[Text, Table]]
+    inputs: List[Union[Text, Table]],
 ) -> Dict[str, List[Union[Text, Table]]]:
     """
     This function organizes the commentary inputs into a dictionary with the input desctription or title
@@ -575,7 +575,9 @@ async def prepare_main_prompt(
         )
         # show the length of tokens in input_mapping
         for text_type, text_list in text_mapping.items():
-            text_list_str: str = await Text.get_all_strs(TextGroup(val=text_list), include_header=True)  # type: ignore
+            text_list_str: str = await Text.get_all_strs(  # type: ignore
+                TextGroup(val=text_list), include_header=True
+            )  # type: ignore
             logger.info(
                 f"Length of tokens in {text_type}: {GPTTokenizer(COMMENTARY_LLM).get_token_length(text_list_str)}"
             )

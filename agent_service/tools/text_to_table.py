@@ -169,7 +169,8 @@ async def _handle_table_col(
             or col_type in (TableColumnType.INTEGER, TableColumnType.INTEGER_WITH_UNIT)
         ):
             num_val, unit = extract_number_with_unit_from_text(
-                val=val, return_int=not col_type.is_float_type()  # type: ignore
+                val=val,
+                return_int=not col_type.is_float_type(),  # type: ignore
             )
             if num_val:
                 val = num_val

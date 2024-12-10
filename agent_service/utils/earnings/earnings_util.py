@@ -52,7 +52,7 @@ async def get_transcript_partitions_from_db(
 
 
 async def insert_transcript_partitions_to_db(
-    partition_data: Dict[str, List[Tuple[int, int]]]
+    partition_data: Dict[str, List[Tuple[int, int]]],
 ) -> None:
     records_to_upload_to_db = []
     for transcript_id, partitions in partition_data.items():

@@ -38,7 +38,8 @@ def prepare_list_of_ideas(ideas: List[Idea]) -> Table:
     columns: List[TableColumn] = []
     columns.append(
         TableColumn(
-            metadata=TableColumnMetadata(label="Name", col_type=TableColumnType.STRING), data=titles  # type: ignore
+            metadata=TableColumnMetadata(label="Name", col_type=TableColumnType.STRING),
+            data=titles,  # type: ignore
         )
     )
     columns.append(

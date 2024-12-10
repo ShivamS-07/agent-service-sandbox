@@ -180,7 +180,9 @@ class Postgres(PostgresBase):
         rows = self.generic_read(sql, params=params)
         return ChatContext(messages=[Message(agent_id=agent_id, **row) for row in rows])
 
-    def get_latest_execution_plan(self, agent_id: str) -> Tuple[
+    def get_latest_execution_plan(
+        self, agent_id: str
+    ) -> Tuple[
         Optional[str],
         Optional[ExecutionPlan],
         Optional[datetime.datetime],

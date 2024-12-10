@@ -620,7 +620,8 @@ class StockNewsDevelopmentArticlesText(NewsText, StockText):
 
     @classmethod
     async def _get_strs_lookup(
-        cls, news_topics: List[StockNewsDevelopmentArticlesText]  # type: ignore
+        cls,
+        news_topics: List[StockNewsDevelopmentArticlesText],  # type: ignore
     ) -> Dict[TextIDType, str]:
         from agent_service.utils.async_db import get_async_db
 
@@ -721,7 +722,9 @@ class CustomDocumentSummaryText(StockText):
         return ""
 
     @classmethod
-    async def _get_strs_lookup(cls, articles_text: List[CustomDocumentSummaryText]) -> Dict[str, str]:  # type: ignore
+    async def _get_strs_lookup(  # type: ignore
+        cls, articles_text: List[CustomDocumentSummaryText]
+    ) -> Dict[str, str]:
         # group by user id - we are assuming that anyone who is authed for the agent
         # has priv to see any documents utilized by the agent.
         articles_text_by_user: Dict[str, List[CustomDocumentSummaryText]] = defaultdict(list)
@@ -991,7 +994,8 @@ class StockEarningsSummaryText(StockEarningsText):
 
     @classmethod
     async def _get_strs_lookup(
-        cls, earnings_texts: List[StockEarningsSummaryText]  # type: ignore
+        cls,
+        earnings_texts: List[StockEarningsSummaryText],  # type: ignore
     ) -> Dict[TextIDType, str]:
         sql = """
         SELECT summary_id::TEXT, summary
@@ -1142,7 +1146,8 @@ class StockEarningsTranscriptText(StockEarningsText):
 
     @classmethod
     async def _get_strs_lookup(
-        cls, earnings_texts: List[StockEarningsTranscriptText]  # type: ignore
+        cls,
+        earnings_texts: List[StockEarningsTranscriptText],  # type: ignore
     ) -> Dict[TextIDType, str]:
         earnings_transcript_sql = """
             SELECT id::TEXT AS id, transcript, fiscal_year, fiscal_quarter
@@ -1270,7 +1275,8 @@ class StockEarningsTranscriptSectionText(StockEarningsText):
 
     @classmethod
     async def _get_strs_lookup(
-        cls, sections: List[StockEarningsTranscriptSectionText]  # type: ignore
+        cls,
+        sections: List[StockEarningsTranscriptSectionText],  # type: ignore
     ) -> Dict[TextIDType, str]:
         transcript_ids = set([section.transcript_id for section in sections])
 
@@ -1550,7 +1556,8 @@ class StockHypothesisEarningsSummaryPointText(StockEarningsSummaryPointText):
 
     @classmethod
     async def _get_strs_lookup(
-        cls, earnings_summary_points: List[StockHypothesisEarningsSummaryPointText]  # type: ignore
+        cls,
+        earnings_summary_points: List[StockHypothesisEarningsSummaryPointText],  # type: ignore
     ) -> Dict[TextIDType, str]:
         return await StockEarningsSummaryPointText._get_strs_lookup(earnings_summary_points)  # type: ignore  #noqa
 
@@ -1567,7 +1574,8 @@ class StockDescriptionText(StockText):
 
     @classmethod
     async def _get_strs_lookup(
-        cls, company_descriptions: List[StockDescriptionText]  # type: ignore
+        cls,
+        company_descriptions: List[StockDescriptionText],  # type: ignore
     ) -> Dict[TextIDType, str]:
         from agent_service.utils.async_db import get_async_db
 
@@ -1742,7 +1750,8 @@ class StockSecFilingText(StockText):
 
     @classmethod
     async def _get_strs_lookup(
-        cls, sec_filing_list: List[StockSecFilingText]  # type: ignore
+        cls,
+        sec_filing_list: List[StockSecFilingText],  # type: ignore
     ) -> Dict[TextIDType, str]:
         """
         Complex logic to get the SEC filing text
@@ -1901,7 +1910,8 @@ class StockSecFilingSectionText(StockText):
 
     @classmethod
     async def _get_strs_lookup(
-        cls, sections: List[StockSecFilingSectionText]  # type: ignore
+        cls,
+        sections: List[StockSecFilingSectionText],  # type: ignore
     ) -> Dict[TextIDType, str]:
         outputs = {}
 
@@ -1999,7 +2009,8 @@ class StockOtherSecFilingText(StockSecFilingText):
 
     @classmethod
     async def _get_strs_lookup(
-        cls, sec_filing_list: List[StockOtherSecFilingText]  # type: ignore
+        cls,
+        sec_filing_list: List[StockOtherSecFilingText],  # type: ignore
     ) -> Dict[TextIDType, str]:
         """
         Complex logic to get the SEC filing text
@@ -2195,7 +2206,8 @@ class StockOtherSecFilingSectionText(StockText):
 
     @classmethod
     async def _get_strs_lookup(
-        cls, sections: List[StockOtherSecFilingSectionText]  # type: ignore
+        cls,
+        sections: List[StockOtherSecFilingSectionText],  # type: ignore
     ) -> Dict[TextIDType, str]:
         outputs = {}
 
@@ -2539,13 +2551,14 @@ class TextCitation(Citation):
             text_type_map[type(cit.source_text)].append(cit)
 
         tasks = [
-            typ.get_citations_for_output(text_list, db) for typ, text_list in text_type_map.items()  # type: ignore
+            typ.get_citations_for_output(text_list, db)  # type: ignore
+            for typ, text_list in text_type_map.items()
         ]
         outputs = defaultdict(list)
         # List of lists, where each nested list has outputs for each type
-        outputs_nested: List[Dict[TextCitation, List[CitationOutput]]] = (
-            await gather_with_concurrency(tasks)
-        )
+        outputs_nested: List[
+            Dict[TextCitation, List[CitationOutput]]
+        ] = await gather_with_concurrency(tasks)
         # Unnest into a single list
         for output_dict in outputs_nested:
             for citation, output_cits in output_dict.items():

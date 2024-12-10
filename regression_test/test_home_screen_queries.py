@@ -17,7 +17,6 @@ def get_canned_prompt_text(prompt_id: str) -> str:
 
 
 class TestHomeScreenQueries(TestExecutionPlanner):
-
     # we run this test 3 times to catch any randomness
     # use duplicated test so that they can be run in parallel
     @skip_in_ci

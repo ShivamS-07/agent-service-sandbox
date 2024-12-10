@@ -313,7 +313,6 @@ async def _get_earnings_summary_helper(
 async def _get_earning_transcript_lookup_from_ch(
     events: List[EventInfo], stock_ids: List[StockID]
 ) -> Dict[int, Dict[Tuple[int, int], Any]]:
-
     transcript_db_data_lookup: Dict[int, Dict[Tuple[int, int], Any]] = defaultdict(dict)
     if len(events) == 0:
         return transcript_db_data_lookup
@@ -717,13 +716,15 @@ async def main() -> None:
     print(len(impacting_stocks))  # type: ignore
 
     earnings_summaries = await get_earnings_call_summaries(
-        GetEarningsCallDataInput(stock_ids=impacting_stocks, date_range=date_range), plan_context  # type: ignore
+        GetEarningsCallDataInput(stock_ids=impacting_stocks, date_range=date_range),  # type: ignore
+        plan_context,
     )
 
     print(len(earnings_summaries))  # type: ignore
 
     summary = await summarize_texts(
-        SummarizeTextInput(texts=earnings_summaries), plan_context  # type: ignore
+        SummarizeTextInput(texts=earnings_summaries),  # type: ignore
+        plan_context,
     )  # Summarize the filtered news texts into a single summary
     print(summary)
 

@@ -146,7 +146,6 @@ async def get_workspace_name(user_id: str, portfolio_id: str) -> Optional[str]:
 async def get_portfolio_holdings(
     args: GetPortfolioHoldingsInput, context: PlanRunContext
 ) -> StockTable:
-
     # respect the old name
     if args.fetch_stats is not None:
         args.fetch_default_stats = args.fetch_stats
@@ -167,10 +166,10 @@ async def get_portfolio_holdings(
         weighted_securities: List[StockAndWeight] = [
             StockAndWeight(gbi_id=gbi_id, weight=weight) for gbi_id, weight in zip(gbi_ids, weights)
         ]
-        expanded_weighted_securities: List[StockAndWeight] = (
-            await get_transitive_holdings_from_stocks_and_weights(
-                user_id=context.user_id, weighted_securities=weighted_securities
-            )
+        expanded_weighted_securities: List[
+            StockAndWeight
+        ] = await get_transitive_holdings_from_stocks_and_weights(
+            user_id=context.user_id, weighted_securities=weighted_securities
         )
         gbi_ids = [holding.gbi_id for holding in expanded_weighted_securities]
         weights_map = {holding.gbi_id: holding.weight for holding in expanded_weighted_securities}
@@ -182,7 +181,6 @@ async def get_portfolio_holdings(
     }
 
     if args.fetch_default_stats:
-
         date_range: DateRange = DateRange(
             start_date=datetime.date.today() - datetime.timedelta(days=30),
             end_date=datetime.date.today(),
@@ -515,7 +513,6 @@ class GetPortfolioPerformanceInput(ToolArgs):
 async def get_portfolio_performance(
     args: GetPortfolioPerformanceInput, context: PlanRunContext
 ) -> Table:
-
     if args.performance_level == "daily":
         # get the linked_portfolio_id
         linked_portfolio_id: str = await get_linked_portfolio_id(context.user_id, args.portfolio_id)
@@ -603,10 +600,10 @@ async def get_portfolio_benchmark_holdings(
         weighted_securities: List[StockAndWeight] = [
             StockAndWeight(gbi_id=gbi_id, weight=weight) for gbi_id, weight in zip(gbi_ids, weights)
         ]
-        expanded_weighted_securities: List[StockAndWeight] = (
-            await get_transitive_holdings_from_stocks_and_weights(
-                user_id=context.user_id, weighted_securities=weighted_securities
-            )
+        expanded_weighted_securities: List[
+            StockAndWeight
+        ] = await get_transitive_holdings_from_stocks_and_weights(
+            user_id=context.user_id, weighted_securities=weighted_securities
         )
         gbi_ids = [holding.gbi_id for holding in expanded_weighted_securities]
         weights_map = {holding.gbi_id: holding.weight for holding in expanded_weighted_securities}
@@ -744,7 +741,6 @@ class GetPortfolioTradesInput(ToolArgs):
 async def get_portfolio_trades(
     args: GetPortfolioTradesInput, context: PlanRunContext
 ) -> StockTable:
-
     logger = get_prefect_logger(__name__)
 
     workspaces = await get_all_workspaces(
@@ -816,7 +812,6 @@ async def get_linked_portfolio_id(user_id: str, portfolio_id: str) -> str:
 
 
 def get_sector_for_stock_ids(stock_ids: List[int]) -> Dict[int, str]:
-
     db = get_psql()
     sql = """
     SELECT ms.gbi_security_id, gs."name"

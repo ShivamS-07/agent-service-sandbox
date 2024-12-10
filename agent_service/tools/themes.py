@@ -584,7 +584,8 @@ async def main() -> None:
     print(outlooks)
 
     more_themes = await get_macroeconomic_themes_affecting_stocks(
-        GetMacroeconomicThemesAffectingStocksInput(stock_ids=stocks), context=plan_context  # type: ignore
+        GetMacroeconomicThemesAffectingStocksInput(stock_ids=stocks),  # type: ignore
+        context=plan_context,
     )
     print(more_themes)
 

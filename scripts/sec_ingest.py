@@ -50,7 +50,6 @@ async def main(
         query_start_date = start_date
         query_end_date = end_date
         try:
-
             LOGGER.info(f"Working on gbi_id={gbi_id}")
             queries = SecFiling._build_queries_for_filings(
                 cik=cik,

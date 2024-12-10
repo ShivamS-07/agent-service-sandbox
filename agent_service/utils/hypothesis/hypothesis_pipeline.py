@@ -197,9 +197,9 @@ class HypothesisPipeline:
             for topic, is_related in zip(earnings_topics, relevant_topics_mask)
             if is_related
         ]
-        hypothesis_topics: List[Optional[HypothesisEarningsTopicInfo]] = (
-            await gather_with_concurrency(tasks, n=len(tasks))
-        )
+        hypothesis_topics: List[
+            Optional[HypothesisEarningsTopicInfo]
+        ] = await gather_with_concurrency(tasks, n=len(tasks))
         filtered_hypothesis_topics = [topic for topic in hypothesis_topics if topic is not None]
 
         topic_id_to_topic = {

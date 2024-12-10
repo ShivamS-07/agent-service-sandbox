@@ -299,7 +299,6 @@ SUMMARY_STR_NOTARGET = (
 ####################################################################################################
 @io_type
 class TopicGroup(TextGroup):
-
     def convert_to_gpt_input(self) -> str:
         # we don't care about the args here, just for mypy
 
@@ -333,7 +332,9 @@ class TopicGroup(TextGroup):
             for topics in stock_to_news_topics.values():
                 filtered_news_topics.extend(topics[: int(len(topics) * news_ratio)])
 
-            self.val = filtered_news_topics + custom_doc_summaries + earnings_points + filing_sections  # type: ignore
+            self.val = (
+                filtered_news_topics + custom_doc_summaries + earnings_points + filing_sections
+            )  # type: ignore
             self.sync_map_with_val()
 
             return
@@ -1084,7 +1085,6 @@ async def rank_and_summarize_for_each_category(
     gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> Dict[int, RankingList]:
     if target_stock is not None:
-
         summary_str = SUMMARY_STR_WTARGET.format(stock=target_stock.symbol)
     else:
         summary_str = SUMMARY_STR_NOTARGET
@@ -1140,7 +1140,6 @@ async def update_rank_and_summarize_for_each_category(
     gpt_service_stub: Optional[GPTServiceStub] = None,
 ) -> Dict[int, RankingList]:
     if target_stock is not None:
-
         summary_str = SUMMARY_STR_WTARGET.format(stock=target_stock.symbol)
     else:
         summary_str = SUMMARY_STR_NOTARGET
@@ -1421,7 +1420,9 @@ async def _rank_output_postprocess(
     final_text_list = [text]
     for stock in symbol_to_stock.values():
         default_obj = RankedCompany.create_default_obj(
-            stock.symbol, stock.company_name, category_name  # type: ignore
+            stock.symbol,  # type: ignore
+            stock.company_name,
+            category_name,
         )
         ranking_objs.append(default_obj)
         final_text_list.append(str(default_obj))  # formatted text
@@ -1429,7 +1430,9 @@ async def _rank_output_postprocess(
     final_text = "\n".join(final_text_list)
 
     ranking_list_w_summary = RankingList(
-        val=final_text, ranking=ranking_objs, history=[HistoryEntry(citations=citations)]  # type: ignore
+        val=final_text,
+        ranking=ranking_objs,
+        history=[HistoryEntry(citations=citations)],  # type: ignore
     )
     return ranking_list_w_summary
 
@@ -1563,20 +1566,26 @@ if __name__ == "__main__":
         )
 
         # Get stocks from universe
-        stocks: List[StockID] = await get_stock_universe(GetStockUniverseInput(universe_name="S&P 500"), context)  # type: ignore # noqa
+        stocks: List[StockID] = await get_stock_universe(
+            GetStockUniverseInput(universe_name="S&P 500"), context
+        )  # type: ignore # noqa
         if stock_id not in stocks:
             stocks.append(stock_id)  # type: ignore
 
         filtered_stocks: List[StockID] = await filter_stocks_by_product_or_service(  # type: ignore
             FilterStocksByProductOrServiceInput(
-                stock_ids=stocks, texts=[], product_str=product_str, must_include_stocks=[stock_id]  # type: ignore
+                stock_ids=stocks,
+                texts=[],
+                product_str=product_str,
+                must_include_stocks=[stock_id],  # type: ignore
             ),
             context,
         )
 
         all_texts: List[StockText] = await get_default_text_data_for_stocks(  # type: ignore
             GetAllTextDataForStocksInput(
-                stock_ids=filtered_stocks, start_date=datetime.date(2024, 6, 1)  # type: ignore # noqa
+                stock_ids=filtered_stocks,
+                start_date=datetime.date(2024, 6, 1),  # type: ignore # noqa
             ),
             context,
         )

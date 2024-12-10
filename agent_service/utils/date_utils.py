@@ -65,7 +65,6 @@ def enable_mock_time() -> None:
 
 
 def disable_mock_time() -> None:
-
     s = "WARNING DISABLING MOCK TIME"
     warn_every_nth(1, s)
 

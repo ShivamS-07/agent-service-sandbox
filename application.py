@@ -1348,7 +1348,6 @@ def get_canned_prompts(user: User = Depends(parse_header)) -> GetCannedPromptsRe
 async def create_section(
     req: CreateSectionRequest, user: User = Depends(parse_header)
 ) -> CreateSectionResponse:
-
     return CreateSectionResponse(
         section_id=await application.state.agent_service_impl.create_sidebar_section(
             name=req.name, user=user

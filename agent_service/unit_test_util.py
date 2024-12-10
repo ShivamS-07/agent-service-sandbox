@@ -11,7 +11,6 @@ def _super_print(*args: Any) -> None:
 
 
 def _check_if_test() -> bool:
-
     # check the stack to see if any unit-test like directories exist
     for frame in inspect.stack():
         for key in [

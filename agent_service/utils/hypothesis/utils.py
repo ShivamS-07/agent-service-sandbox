@@ -434,9 +434,7 @@ def get_hypothesis_earnings_topic_match_score(
 
     date = hypothesis_topic.summary_date.date()
     support_score: float = hypothesis_topic.get_latest_support(default=0)  # type:ignore
-    polarity: Polarity = hypothesis_topic.get_latest_polarity(
-        default=Polarity.neutral
-    )  # type:ignore
+    polarity: Polarity = hypothesis_topic.get_latest_polarity(default=Polarity.neutral)  # type:ignore
 
     count = int(perc_of_news_count * max_count_pair[0])
     topic_match_score = get_topic_match_score(
@@ -484,9 +482,7 @@ def get_hypothesis_news_topic_match_score(
 ) -> Tuple[float, Dict[datetime.date, int]]:
     # TODO: Calculate this using all supports, not just the last one
     support_score: float = hypothesis_topic.get_latest_support(default=0)  # type:ignore
-    polarity: Polarity = hypothesis_topic.get_latest_polarity(
-        default=Polarity.neutral
-    )  # type:ignore
+    polarity: Polarity = hypothesis_topic.get_latest_polarity(default=Polarity.neutral)  # type:ignore
     date_counts: Dict[datetime.date, int] = defaultdict(int)
     top_news_count = 0
     for news_info in news_group:

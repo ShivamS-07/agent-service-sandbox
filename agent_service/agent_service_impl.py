@@ -518,7 +518,6 @@ class AgentServiceImpl:
     async def set_agent_help_requested(
         self, agent_id: str, req: AgentHelpRequest, requesting_user: User
     ) -> UpdateAgentResponse:
-
         owner_user_id = await self.pg.get_agent_owner(agent_id=agent_id)
         if not owner_user_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
@@ -904,7 +903,8 @@ class AgentServiceImpl:
                     "plan_run_id": message.plan_run_id,
                 }
                 message.message = message.message.replace(  # type: ignore
-                    report_updated_text, "```" + json.dumps(report_updated_dict) + "```"  # type: ignore
+                    report_updated_text,  # type: ignore
+                    "```" + json.dumps(report_updated_dict) + "```",  # type: ignore
                 )
 
         return GetChatHistoryResponse(
@@ -987,7 +987,9 @@ class AgentServiceImpl:
         )
 
         return GetAgentTaskOutputResponse(
-            output=await get_output_from_io_type(task_output, pg=self.pg.pg) if task_output else None  # type: ignore
+            output=await get_output_from_io_type(task_output, pg=self.pg.pg)
+            if task_output
+            else None  # type: ignore
         )
 
     async def get_agent_log_output(
@@ -1014,7 +1016,6 @@ class AgentServiceImpl:
     async def delete_agent_output(
         self, agent_id: str, req: DeleteAgentOutputRequest
     ) -> DeleteAgentOutputResponse:
-
         plan_map = await self.pg.get_execution_plans(plan_ids=[req.plan_id])
         if not plan_map:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan ID not found")
@@ -2325,7 +2326,6 @@ class AgentServiceImpl:
         base_path: Optional[str] = "",
         allow_overwrite: Optional[bool] = True,
     ) -> AddCustomDocumentsResponse:
-
         # get total size of files
         total_size = sum([file.size or 0 for file in files])
 
@@ -2491,7 +2491,6 @@ class AgentServiceImpl:
         organization_ids: Optional[List[str]] = None,
         recommended_company_ids: Optional[List[str]] = None,
     ) -> CreatePromptTemplateResponse:
-
         # extract plan from agent_id and plan_id
         _, plan = await self.pg.get_execution_plan_for_run(plan_run_id)
 
@@ -2549,7 +2548,6 @@ class AgentServiceImpl:
         return GenPromptTemplateFromPlanResponse(prompt_str=prompt_str)
 
     async def gen_template_plan(self, template_prompt: str, user: User) -> GenTemplatePlanResponse:
-
         LOGGER.info("Generating template plan....")
         chat_context = ChatContext(
             messages=[Message(message=template_prompt, is_user_message=True)]
@@ -2570,7 +2568,6 @@ class AgentServiceImpl:
         cadence_description: Optional[str],
         user: User,
     ) -> RunTemplatePlanResponse:
-
         # create a new agent
         LOGGER.info("Creating agent for the template plan")
         agent = await self.create_agent(user=user, is_draft=is_draft, created_from_template=True)
@@ -2692,7 +2689,6 @@ class AgentServiceImpl:
     async def find_templates_related_to_prompt(
         self, query: str, user: User
     ) -> FindTemplatesRelatedToPromptResponse:
-
         # get query embeddings
         llm = GPT(model=DEFAULT_EMBEDDING_MODEL)
         query_embedding = await llm.embed_text(query)
@@ -2820,7 +2816,6 @@ class AgentServiceImpl:
         search_criteria: List[HorizonCriteria],
         pagination: Optional[Pagination] = None,
     ) -> Tuple[List[AgentQC], int]:
-
         # Call the database search function
         agent_qcs, total_agent_qcs = await self.pg.search_agent_qc(
             filter_criteria, search_criteria, pagination

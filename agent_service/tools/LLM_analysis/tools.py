@@ -644,7 +644,8 @@ async def per_stock_summarize_texts(
     original_texts = set(args.texts)
 
     args.texts = cast(
-        List[StockText], await partition_to_smaller_text_sizes(args.texts, context)  # type:ignore
+        List[StockText],
+        await partition_to_smaller_text_sizes(args.texts, context),  # type:ignore
     )
 
     text_dict: Dict[StockID, List[StockText]] = {stock: [] for stock in args.stocks}
@@ -764,7 +765,11 @@ async def per_stock_summarize_texts(
                 if text_dict[stock]:
                     tasks.append(
                         _initial_summarize_helper(
-                            SummarizeTextInput(texts=text_dict[stock], topic=args.topic, stock=stock),  # type: ignore
+                            SummarizeTextInput(
+                                texts=text_dict[stock],  # type: ignore
+                                topic=args.topic,
+                                stock=stock,
+                            ),
                             context,
                             llm,
                             single_summary=False,
@@ -1010,7 +1015,8 @@ async def per_stock_group_summarize_texts(
                 await partition_to_smaller_text_sizes(cast(List[Text], prev_input_texts), context),
             )
             prev_output_groups = cast(
-                List[StockGroup], prev_run_info.output.stock_groups  # type:ignore
+                List[StockGroup],
+                prev_run_info.output.stock_groups,  # type:ignore
             )
             old_output_groups_lookup = {group.name: group for group in prev_output_groups}
             curr_input_texts = set(args.texts)
@@ -1219,7 +1225,8 @@ async def compare_texts(args: CompareTextInput, context: PlanRunContext) -> Text
     if args.extra_data is not None and args.extra_data_label is not None:
         extra_group = TextGroup(val=args.extra_data)
         extra_data_str = EXTRA_DATA_PHRASE.format(
-            extra_data=await Text.get_all_strs(extra_group), label=args.extra_data_label  # type: ignore
+            extra_data=await Text.get_all_strs(extra_group),
+            label=args.extra_data_label,  # type: ignore
         )
     else:
         extra_data_str = ""
@@ -1418,7 +1425,6 @@ async def topic_filter_helper(
     all_tokens_count = 0
     score_tuples = []
     for result, text_str in zip(results, text_strs):
-
         try:
             rationale, score = result.strip().replace("\n\n", "\n").split("\n")
             score = int(score)
@@ -1528,7 +1534,8 @@ async def main() -> None:
     )  # Get news developments for the last month for Meta, Apple, and Microsoft
     print(len(news_developments))  # type: ignore
     summary = await summarize_texts(
-        SummarizeTextInput(texts=news_developments, topic="machine learning"), plan_context  # type: ignore
+        SummarizeTextInput(texts=news_developments, topic="machine learning"),  # type: ignore
+        plan_context,
     )  # Summarize the filtered news texts into a single summary
     print(summary)
 

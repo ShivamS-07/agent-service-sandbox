@@ -5,13 +5,14 @@ RUN apt-get -s dist-upgrade | grep "^Inst" | grep -i securi | awk -F " " {'print
 # install pandoc for document conversion
 RUN apt-get install -y pandoc
 RUN apt-get install -y libpq-dev
-RUN pip install pipenv==2024.0.1
+RUN apt-get update
+RUN apt-get install -y curl
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+RUN ln -s /root/.local/bin/uv /usr/local/bin/pipenv
 WORKDIR /service
-ENV CARGO_BUILD_JOBS=1
-ENV PIPENV_MAX_SUBPROCESS=2
-COPY Pipfile ./
-RUN pipenv install --verbose
-RUN pipenv install --dev
+COPY pyproject.toml .
+RUN uv sync
 COPY . .
 ENV ENVIRONMENT=DEV
-CMD ["pipenv", "run", "invoke", "verify"]
+CMD ["uv", "run", "invoke", "verify"]

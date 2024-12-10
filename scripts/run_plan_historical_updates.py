@@ -56,7 +56,6 @@ logger = logging.getLogger(__name__)
 def get_plan_runs(
     db: Postgres, agent: str, plan_id: str, start_date: datetime.date, end_date: datetime.date
 ) -> List[Dict[str, Any]]:
-
     # check the create and update times for the plan id
     # we do this because currently the create date is generated on db server
     # at row insert but we supply a last_updated datetime in code when updating status.

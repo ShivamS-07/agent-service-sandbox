@@ -811,7 +811,6 @@ async def rewrite_execution_plan(
 async def generate_quick_thoughts(
     agent_id: str, user_id: str, db: AsyncDB, chat_context: Optional[ChatContext] = None
 ) -> None:
-
     if not get_ld_flag(
         flag_name="enable-quick-thoughts-generation", default=False, user_context=user_id
     ):

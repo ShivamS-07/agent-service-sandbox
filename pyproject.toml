@@ -1,3 +1,7 @@
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
 [tool.black]
 line-length = 100
 target-version = ['py38']
@@ -28,3 +32,82 @@ module = [
     "tests.*",
 ]
 ignore_errors = true
+
+[[tool.uv.index]]
+name = "gbi"
+url = "http://gbi-ml-user:ml1234@nexus.boosted.ai:8081/repository/pypi-internal/simple"
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "black==24.10.0",
+    "types-invoke~=1.7.3",
+    "types-cachetools~=5.2",
+    "types-protobuf~=4.21.0",
+    "types-pytz~=2022.7.1",
+    "invoke==2.2.0",
+    "mypy==1.11.1",
+    "pyanalyze==0.13.1",
+    "pytest==8.3.3",
+    "pytest-xdist==3.6.1",
+    "parameterized==0.9.0",
+    "pandas-stubs==2.0.3.230814",
+    "types-python-dateutil==2.9.0.20240316",
+    "backoff-stubs==1.11.1.post1",
+]
+
+[project]
+name = "agent_service"
+requires-python = "==3.12.*"
+version = "0.1.0"
+dependencies = [
+    "fastapi==0.115.0",
+    "uvicorn==0.28.1",
+    "sse-starlette==2.1.3",
+    "pydantic==2.8.2",
+    "sentry-sdk",
+    "pandas==2.1.4",
+    "openai==0.27.10",
+    "tiktoken==0.7.0",
+    "cryptography ==43.0.3",
+    "PyJWT==2.5.0",
+    "dateparser==1.2.0",
+    "async-lru==2.0.4",
+    "pandoc==2.4",
+    "async-cache==1.1.1",
+    "mdutils==1.6.0",
+    "sec-api==1.0.22",
+    "json-repair==0.16.3",
+    "scipy==1.11.3",
+    "devtools==0.12.2",
+    "psycopg-pool~=3.2.0",
+    "country_converter",
+    "cron-descriptor==1.4.3",
+    "apscheduler==3.10.4",
+    "Levenshtein==0.25.1",
+    "gpt-service-proto-v1==1.4.0",
+    "python-multipart==0.0.17",
+    "gbi-common-proto-v1==1.13.0",
+    "proto-cube-flat-proto-v1==1.2.0",
+    "gbi_common_py_utils==1.0.123",
+    "boosted-data-access-layer==0.0.0+c8975f441c8e3804afc822c9bb8a19224af9c15b",
+    "nlp_service_proto_v1 ==1.140.0",
+    "stock-universe-service-proto-v1 ==0.53.0",
+    "pa-portfolio-service-proto-v1 ==1.315.0",
+    "discover_service_proto_v1 ==0.19.0",
+    "feature-service-proto-v1 ==1.56.0",
+    "user-service-proto-v1 ==1.57.0",
+    "notification-service-proto-v1 ==1.5.0",
+    "beautifulsoup4 ==4.12.3",
+    "PyPDF2 ==3.0.1",
+    "griffe==0.48.0",
+    "rapidfuzz ==3.9.7",
+    "uvloop ==0.20.0",
+    "aioboto3==13.1.1",
+    "atlassian-python-api==3.41.16",
+    "google-generativeai==0.8.3",
+    "botocore-stubs",
+    "boto3-stubs[sqs,cognito-idp,s3]",
+    "types-aioboto3[sqs,cognito-idp,s3]",
+    "aiohttp~=3.11",
+]

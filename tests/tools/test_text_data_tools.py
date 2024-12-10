@@ -24,7 +24,6 @@ class TestTextData(IsolatedAsyncioTestCase):
 
     @unittest.skip("occasionally fails")
     async def test_get_default_text_data(self):
-
         all_data = await get_default_text_data_for_stocks(
             args=GetAllTextDataForStocksInput(
                 stock_ids=[StockID(gbi_id=2781, symbol="", isin="", company_name="")]

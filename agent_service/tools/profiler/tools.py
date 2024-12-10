@@ -101,7 +101,9 @@ async def generate_profiles(
     args: GetCompanyProfilesForTopic, context: PlanRunContext
 ) -> TopicProfiles:
     text_group = TextGroup(val=args.relevant_text_data)
-    texts_str: str = await Text.get_all_strs(text_group, include_header=True, text_group_numbering=True)  # type: ignore
+    texts_str: str = await Text.get_all_strs(
+        text_group, include_header=True, text_group_numbering=True
+    )  # type: ignore
 
     return await get_profiles(args.topic, texts_str, context)
 

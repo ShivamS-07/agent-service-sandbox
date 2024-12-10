@@ -118,7 +118,6 @@ SINGLE_DATE_TODAY_TEMPLATE = (
 
 
 async def get_statistic_lookup(context: PlanRunContext) -> Dict[str, Any]:
-
     resp = await get_all_variables_metadata(context.user_id)
     all_statistic_lookup = {
         feature_metadata.name: feature_metadata
@@ -284,7 +283,6 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
 async def get_statistic_data_for_companies(
     args: GetStatisticDataForCompaniesInput, context: PlanRunContext
 ) -> StockTable:
-
     if context.chat is None:  # for mypy
         raise Exception("No chat context provided")
 
@@ -572,7 +570,8 @@ async def get_statistic_data_for_companies(
 
     if len(comp_tables) > 1:
         comp_table: StockTable = await join_tables(  # type: ignore
-            JoinTableArgs(input_tables=comp_tables), context  # type: ignore
+            JoinTableArgs(input_tables=comp_tables),  # type: ignore
+            context,
         )
     else:
         comp_table = comp_tables[0]
@@ -1074,7 +1073,6 @@ async def get_expected_revenue_growth(
 
 
 def get_per_stock_data(table: StockTable) -> Dict[StockID, Dict[str, float]]:
-
     for column in table.columns:
         if column.metadata.col_type == TableColumnType.STOCK:
             stock_column = column
@@ -1085,7 +1083,9 @@ def get_per_stock_data(table: StockTable) -> Dict[StockID, Dict[str, float]]:
 
     output_dict: Dict[StockID, Dict[str, float]] = defaultdict(dict)
     for stock, quarter, currency in zip(
-        stock_column.data, quarter_column.data, currency_column.data  # static analysis: ignore
+        stock_column.data,  # static analysis: ignore
+        quarter_column.data,  # static analysis: ignore
+        currency_column.data,  # static analysis: ignore
     ):
         if currency is not None:
             output_dict[stock][quarter] = currency  # type:ignore
