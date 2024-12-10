@@ -1,12 +1,15 @@
 import logging
 
+from llm_client.datamodels import LLMFunction
+from llm_client.functions.llm_func import LLMFuncArgs
+
 from agent_service.GPT.constants import GPT4_O_MINI, Prompt
 from agent_service.GPT.requests import GPT
+from agent_service.q_and_a.utils import QAContext
 from agent_service.tool import default_tool_registry
 from agent_service.tools import *  # noqa
-from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_db import get_async_db
 from agent_service.utils.logs import async_perf_logger
-from agent_service.utils.postgres import SyncBoostedPG
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +51,19 @@ TASK_EXAMINE_MAIN_PROMPT = Prompt(
 )
 
 
+class ExamineTaskArgs(LLMFuncArgs):
+    task_id: str
+    tool_name: str
+    question: str
+
+
 @async_perf_logger
-async def examine_task(plan_run_id: str, task_id: str, tool_name: str, question: str) -> str:
+async def examine_task(args: ExamineTaskArgs, context: QAContext) -> str:
+    task_id = args.task_id
+    tool_name = args.tool_name
+    plan_run_id = context.plan_run_id
     # extract task details from db
-    async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=True))
+    async_db = get_async_db()
     task_run_info = await async_db.get_task_run_info(
         plan_run_id=plan_run_id,
         task_id=task_id,
@@ -67,11 +79,11 @@ async def examine_task(plan_run_id: str, task_id: str, tool_name: str, question:
     # get task description from db
     tool = default_tool_registry().get_tool(tool_name)
 
-    llm = GPT(model=GPT4_O_MINI)
+    llm = GPT(model=GPT4_O_MINI, context=context.gpt_context)
     main_prompt = TASK_EXAMINE_MAIN_PROMPT.format(
         task_debug_info=task_debug_info,
         tool_desc=tool.description,
-        question=question,
+        question=args.question,
     )
 
     res = await llm.do_chat_w_sys_prompt(
@@ -81,15 +93,14 @@ async def examine_task(plan_run_id: str, task_id: str, tool_name: str, question:
     return res
 
 
-if __name__ == "__main__":
-    import asyncio
-
-    res = asyncio.run(
-        examine_task(
-            plan_run_id="1ea31ffb-20f7-498d-a55f-a51113f595eb",
-            task_id="b14da138-200a-45ee-a6c9-dac6826be50b",
-            tool_name="add_lists",
-            question="How did the list been added?",
-        )
-    )
-    print(res)
+EXAMINE_TASK_FUNC = LLMFunction(
+    name="examine_workflow_task",
+    args=ExamineTaskArgs,
+    func=examine_task,
+    description="""
+Examine a specific function in a the workflow, for example to see what it does
+or give details about how it works and what it returned. Only call this when the
+user explicitly asks about one certain step, NOT the workflow as a
+whole. task_id should be the task ID of the task that you are looking at.
+    """,
+)

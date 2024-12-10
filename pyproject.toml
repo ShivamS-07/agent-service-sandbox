@@ -67,7 +67,6 @@ dependencies = [
     "pydantic==2.8.2",
     "sentry-sdk",
     "pandas==2.1.4",
-    "openai==0.27.10",
     "tiktoken==0.7.0",
     "cryptography ==43.0.3",
     "PyJWT==2.5.0",
@@ -110,4 +109,5 @@ dependencies = [
     "boto3-stubs[sqs,cognito-idp,s3]",
     "types-aioboto3[sqs,cognito-idp,s3]",
     "aiohttp~=3.11",
+    "llm-client>=1.0.6",
 ]

@@ -94,8 +94,11 @@ class ToolExecutionNode(BaseModel):
 
         return args
 
-    def get_plan_step_str(self) -> str:
-        return f"{self.output_variable_name} = {self.tool_name}({self.convert_args()})  # {self.description}"
+    def get_plan_step_str(self, include_task_id: bool = False) -> str:
+        if not include_task_id:
+            return f"{self.output_variable_name} = {self.tool_name}({self.convert_args()})  # {self.description}"  # noqa
+        else:
+            return f"{self.output_variable_name} = {self.tool_name}({self.convert_args()})  # {self.description} (Task ID: {self.tool_task_id})"  # noqa
 
     @staticmethod
     def _resolve_single_arg(
@@ -173,13 +176,13 @@ class ExecutionPlan(BaseModel):
             output.append(f"{i}. {node.description}")
         return "\n".join(output)
 
-    def get_formatted_plan(self, numbered: bool = False) -> str:
+    def get_formatted_plan(self, numbered: bool = False, include_task_ids: bool = False) -> str:
         str_list = []
         for i, node in enumerate(self.nodes, start=1):
             prefix = ""
             if numbered:
                 prefix = f"{i}. "
-            str_list.append(f"{prefix}{node.get_plan_step_str()}")
+            str_list.append(f"{prefix}{node.get_plan_step_str(include_task_id=include_task_ids)}")
         return "\n\n".join(str_list)
 
     def get_output_nodes(self) -> List[ToolExecutionNode]:

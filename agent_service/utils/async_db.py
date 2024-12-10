@@ -372,7 +372,7 @@ class AsyncDB:
                 row["end_time_utc"] = row["end_time_utc"].replace(tzinfo=tz).isoformat()
             env_upper = EnvironmentUtils.aws_ssm_prefix.upper()
             row["replay_command"] = (
-                f"ENVIRONMENT={env_upper} pipenv run python run_plan_task.py "
+                f"ENVIRONMENT={env_upper} uv run python run_plan_task.py "
                 f"--env {env_upper} --replay-id {row['replay_id']}"
             )
             row[f"args_{row['replay_id']}"] = {}

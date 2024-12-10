@@ -1,13 +1,16 @@
 import logging
 
+from llm_client.datamodels import LLMFunction
+from llm_client.functions.llm_func import LLMFuncArgs
+
 from agent_service.GPT.constants import GPT4_O_MINI, Prompt
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.text import Text
+from agent_service.q_and_a.utils import QAContext
 from agent_service.tool import Tool, default_tool_registry
 from agent_service.tools import *  # noqa
-from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_db import get_async_db
 from agent_service.utils.logs import async_perf_logger
-from agent_service.utils.postgres import SyncBoostedPG
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +48,15 @@ PLAN_EXAMINE_MAIN_PROMPT = Prompt(
 )
 
 
+class ExaminePlanArgs(LLMFuncArgs):
+    question: str
+
+
 @async_perf_logger
-async def examine_plan(plan_run_id: str, question: str) -> str:
-    async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=True))
-    _, plan = await async_db.get_execution_plan_for_run(plan_run_id)
-    plan_run_metadata = await async_db.get_plan_run_metadata(plan_run_id)
+async def examine_plan(args: ExaminePlanArgs, context: QAContext) -> str:
+    async_db = get_async_db()
+    _, plan = await async_db.get_execution_plan_for_run(context.plan_run_id)
+    plan_run_metadata = await async_db.get_plan_run_metadata(context.plan_run_id)
 
     plan_str = plan.get_formatted_plan(numbered=True)
     run_summary_long = (
@@ -69,12 +76,12 @@ async def examine_plan(plan_run_id: str, question: str) -> str:
         tool: Tool = default_tool_registry().get_tool(tool_name)
         tool_descs.append(f"Description for {tool_name}: {tool.description}")
 
-    llm = GPT(model=GPT4_O_MINI)
+    llm = GPT(model=GPT4_O_MINI, context=context.gpt_context)
     main_prompt = PLAN_EXAMINE_MAIN_PROMPT.format(
         plan=plan_str,
         tool_descs="\n\n".join(tool_descs),
         plan_whats_new=plan_whats_new,
-        question=question,
+        question=args.question,
     )
 
     res = await llm.do_chat_w_sys_prompt(
@@ -84,13 +91,12 @@ async def examine_plan(plan_run_id: str, question: str) -> str:
     return res
 
 
-if __name__ == "__main__":
-    import asyncio
-
-    res = asyncio.run(
-        examine_plan(
-            plan_run_id="1ea31ffb-20f7-498d-a55f-a51113f595eb",
-            question="what happends after the first step?",
-        )
-    )
-    print(res)
+EXAMINE_PLAN_FUNC = LLMFunction(
+    name="examine_workflow",
+    args=ExaminePlanArgs,
+    func=examine_plan,
+    description="""
+Examine a workflow as a whole, e.g. to explain multiple pieces of the workflow,
+where an element might have appeared or been removed, etc. 
+    """,
+)
