@@ -1191,7 +1191,7 @@ class AsyncDB:
         (args, result, debug info, timestamp)
         """
         sql = """
-        SELECT tri.task_args, tri.debug_info, tri.created_at, tri.output
+        SELECT tri.task_args, tri.debug_info, tri.created_at, tri.output, tri.error_msg
         FROM agent.task_run_info tri
         WHERE tri.task_id = %(task_id)s AND tri.plan_run_id = %(plan_run_id)s
           AND tri.tool_name = %(tool_name)s
@@ -1202,6 +1202,8 @@ class AsyncDB:
         if not rows:
             return None
         row = rows[0]
+        if row["error_msg"]:  # don't return anything if there was an error
+            return None
         return (row["task_args"], row["output"], row["debug_info"], row["created_at"])
 
     async def insert_task_run_info(

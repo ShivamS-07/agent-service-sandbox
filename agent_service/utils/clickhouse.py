@@ -937,7 +937,7 @@ and user_id = %(user_id)s
         self, plan_run_id: str, task_id: str, tool_name: str
     ) -> Optional[Tuple[str, str, str, datetime.datetime]]:
         sql = """
-        SELECT args, result, debug_info, timestamp
+        SELECT args, result, debug_info, timestamp, error_msg
         FROM agent.tool_calls
         WHERE plan_run_id = %(plan_run_id)s AND task_id = %(task_id)s AND tool_name = %(tool_name)s
         """
@@ -947,6 +947,8 @@ and user_id = %(user_id)s
         if not rows:
             return None
         row = rows[0]
+        if row["error_msg"]:
+            return None
         return row["args"], row["result"], row["debug_info"], row["timestamp"]
 
     ################################################################################################

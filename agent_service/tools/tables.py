@@ -34,7 +34,13 @@ from agent_service.io_types.table import (
     object_histories_to_columns,
 )
 from agent_service.planner.errors import EmptyOutputError
-from agent_service.tool import TOOL_DEBUG_INFO, ToolArgs, ToolCategory, tool
+from agent_service.tool import (
+    TOOL_DEBUG_INFO,
+    ToolArgMetadata,
+    ToolArgs,
+    ToolCategory,
+    tool,
+)
 from agent_service.tools.stock_groups.utils import (
     add_stock_group_column,
     get_stock_group_input_tables,
@@ -121,6 +127,10 @@ async def gen_new_column_schema(
 class TransformTableArgs(ToolArgs):
     input_table: Table
     transformation_description: str
+    no_cache: bool = False
+    arg_metadata = {
+        "no_cache": ToolArgMetadata(hidden_from_planner=True),
+    }
 
 
 def _get_command(data_file: str, code_file: str) -> str:
@@ -321,6 +331,30 @@ join it with per stock statistics, the tables will not join and you will fail at
 I repeat, if you are calling this tool with a request to calculate a per sector statistc, you are wrong
 and you will be fired!!!!!!!!!
 
+If you are doing a calculation that requires you to distinguish individual or groups of rows of your
+table, for instance correlating the stock performance of some group of stocks with another stock or
+group of stocks, note that this tool cannot distinguish rows of the table unless you create the data
+you need to distinguish separately and then join it together with the join_table tool in row_join mode
+with explict table_names that create an extra column, 'Group' that can be filtered over. It is not
+possible to filter any securities directly in the context of the transform table tool. After you do the
+table join, you should call this tool, stating that explicitly in your transformation description that
+you must filter the using the 'Group' column. For example, if you were asked to create a table which
+correlates the performance of TSX 60 stocks with S&P 500 stocks, you would first calculate TSX 60 and
+S&P 500 performance in separate tables, then call table join with table_names = ["TSX 60", "S&P 500"],
+then use the transformation description "calculate the correlation between TSX 60 and S&P 500
+stocks using the provided table with statistics for both stock index. You should get the TSX 60 data
+by filtering the 'Group' column for 'TSX 60', and get the S&P 500 performance by filtering the Group
+Column 'S&P 500'". Whenever you have included 'table_names' in a table_join, and then need to do a
+calculation using those distinctions, it is critical that you provide the exact table_name strings in
+the transformation_description using single quotes (in this case, 'TSX 60' and 'S&P 500'), otherwise
+the transform_table tool will be unable to filter the stocks, your calculation will fail, and you will
+be fired.
+
+Note that if you are filtering on the results of a correlation and need to extract specific stocks
+using a later call to get_stock_identifier_list_from_table, you must also include in your transformation
+an explicit instruction (e.g. 'Output the TSX stocks as the first column') to put the column you need
+to extract stocks from first in your table, otherwise you will extract the wrong stocks!
+
 If you are doing a transform calculation where you are using columns of the table to do the calculation,
 but the client clearly wants to keep the input columns or any other columns currently in the table in
 the final output, you must always explicitly mention in the transformation description that you do not
@@ -362,7 +396,7 @@ async def transform_table(
     old_date = None
     try:  # since everything here is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "transform_table")
-        if prev_run_info is not None:
+        if prev_run_info is not None and not args.no_cache:
             prev_args = TransformTableArgs.model_validate_json(prev_run_info.inputs_str)
             old_description = prev_args.transformation_description
 
@@ -782,7 +816,7 @@ def _join_two_tables_vertically(
     idx: int = 0,
     add_group_col: bool = True,
 ) -> Table:
-    if add_group_col and check_for_index_overlap(first, second):
+    if add_group_col and (table_names or check_for_index_overlap(first, second)):
         if idx == 0:
             first_name = table_names[0] if table_names else f"Group {idx + 1}"
             first = add_extra_group_cols(first, first_name)

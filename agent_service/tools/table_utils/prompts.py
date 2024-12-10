@@ -36,6 +36,10 @@ about what columns they would most want to see.
 In nearly all cases you will have a stock column. Typically you will only have
 one stock column, but in rare cases (e.g. correlations) you may end up creating two,
 do them as two separate columns rather than a single pair.
+When doing correlation, please pay very careful attention to any mention in the transformation
+description of which security column should go first, often the new, derived Security column
+will come first. If you put the two security columns in the wrong order, downstream operations
+will often fail.
 
 Dropping the date column from your output columns when it is in the input columns is
 very common. If the transformation explicitly mentions outputing only a single datapoint
@@ -310,6 +314,34 @@ You must not set an index in a table where there are two security columns, BTW
 If you are doing a more complex calculation such as correlation, don't forget to
 rank and/or filter as required by the transformation description!
 
+Note that you must never, ever attempt to directly select particular securities.
+In the rare case where you need to divide your table up into two or more groups of
+stocks (including singleton groups), you will provided with a Group column and
+told exactly the string you may filter on to break the table down into the required groups.
+The Security columns are not strings and you cannot filter on them to get specific stocks.
+
+Note that if you need to use the apply function to do a calculation over groupings of stocks,
+you must remember two particular limitations associated with them:
+1. Never, ever use lambdas. You must pass the function directly as an argument of the apply
+2. Make sure all the variables you access are defined inside the function
+
+For example, if you had a dataframe df_tech which had the returns for tech stocks and
+a dataframe df_spy which had the returns for the SPY, and wanted to calculate the betas
+of the tech stocks relative to the S&P 500
+
+df_tech = df_tech.merge(df_spy, on='Date', how='left')
+
+# Group by 'Security' and compute beta
+def compute_beta(group):
+    covariance = group['Daily Return'].cov(group['SPY Return'])
+    variance_spy = group['SPY Return'].var()
+    beta = covariance / variance_spy
+    return pd.Series({{'Beta': beta}})
+
+beta_df = df_tech.groupby('Security').apply(compute_beta).reset_index()
+
+Note the we use the compute_beta function directly and we first join the spy returns to the df
+returns so they are accessible inside the compute_beta function
 
 2. You will sometime be asked to do some mathematical operations across the
 columns of a table of stocks, for example you will be given a table with

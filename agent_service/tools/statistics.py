@@ -339,6 +339,8 @@ async def get_statistic_data_for_companies(
 
     all_statistic_lookup = await get_statistic_lookup(context)
 
+    no_cache = True
+
     try:  # since everything here is optional, put in try/except
         # TODO: maybe update so we don't have to pull in the input or output when we don't need it?
         prev_run_info = await get_prev_run_info(context, "get_statistic_data_for_companies")
@@ -390,6 +392,7 @@ async def get_statistic_data_for_companies(
                         log=("Loaded statistic calculation description from previous run"),
                         context=context,
                     )
+                    no_cache = False
                 else:
                     logger.warning(f"Failed to load statistic: {bad_stat}, redoing from scratch")
 
@@ -604,7 +607,9 @@ async def get_statistic_data_for_companies(
         )
 
     transformed_table: StockTable = await transform_table(  # type: ignore
-        args=TransformTableArgs(input_table=comp_table, transformation_description=calculation),
+        args=TransformTableArgs(
+            input_table=comp_table, transformation_description=calculation, no_cache=no_cache
+        ),
         context=context,
     )
     if (

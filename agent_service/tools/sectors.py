@@ -207,7 +207,10 @@ You should make the input string specific to what the customer is looking for.
 For example, if the client asks for `car companies`, the input string should be `Automobiles`
 You must ONLY use this look up and the corresponding sector filter tool if the client specifically
 asks for one of these classifications directly. Sometimes the client may use the word `sector` to
-refer to things which do not correspond to GICS sectors, in such a case you will NOT use this tool.
+refer to things which do not actually correspond to GICS sectors, in such a case you will NOT use this tool.
+You should only use this tool if what the client says closely corresponds to a sector on your list, if
+it does not, you must NOT pick a related sector, instead you should use the
+`filter_stocks_by_product_or_service` tool.
 Sometimes the client may use words such as `institutions`, `firms`, `companies`, or `stocks` to refer
 to a particular category or selection of stocks which may actually refer to a sector.
 For example, if someone mentions 'high bond yield sector', 'high bond yield' does not correspond to
