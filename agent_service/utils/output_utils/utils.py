@@ -1,3 +1,5 @@
+from typing import Optional
+
 from devtools import pformat
 from pydantic import BaseModel
 
@@ -6,16 +8,23 @@ from agent_service.utils.async_utils import MAX_CONCURRENCY, gather_with_concurr
 
 
 async def io_type_to_gpt_input(
-    io_type: IOType, use_abbreviated_output: bool = True, concurrency_n: int = MAX_CONCURRENCY
+    io_type: IOType,
+    use_abbreviated_output: bool = True,
+    concurrency_n: int = MAX_CONCURRENCY,
+    truncate_to: Optional[int] = None,
 ) -> str:
     if isinstance(io_type, ComplexIOBase):
-        return await io_type.to_gpt_input(use_abbreviated_output=use_abbreviated_output)
+        val = await io_type.to_gpt_input(use_abbreviated_output=use_abbreviated_output)
     elif isinstance(io_type, list):
         gpt_inputs = await gather_with_concurrency(
             [io_type_to_gpt_input(val, use_abbreviated_output) for val in io_type], n=concurrency_n
         )
-        return str(list(gpt_inputs))
-    return str(io_type)
+        val = str(list(gpt_inputs))
+    else:
+        val = str(io_type)
+    if truncate_to:
+        return val[:truncate_to]
+    return val
 
 
 def output_for_log(output: Any) -> str:
