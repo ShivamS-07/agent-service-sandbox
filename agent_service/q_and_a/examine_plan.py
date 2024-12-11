@@ -58,7 +58,7 @@ async def examine_plan(args: ExaminePlanArgs, context: QAContext) -> str:
     _, plan = await async_db.get_execution_plan_for_run(context.plan_run_id)
     plan_run_metadata = await async_db.get_plan_run_metadata(context.plan_run_id)
 
-    plan_str = plan.get_formatted_plan(numbered=True)
+    plan_str = plan.get_formatted_plan(numbered=True, include_task_ids=True)
     run_summary_long = (
         plan_run_metadata.run_summary_long.val
         if isinstance(plan_run_metadata.run_summary_long, Text)

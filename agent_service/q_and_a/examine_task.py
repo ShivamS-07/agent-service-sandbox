@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from llm_client.datamodels import LLMFunction
@@ -24,12 +25,14 @@ TASK_EXAMINE_SYSTEM_PROMPT = Prompt(
         "- Output of the tool function\n"
         "- Debug information (if available)\n"
         "- Tool description\n\n"
+        "- Logs (if available)"
         "Guidelines for providing a good answer:\n"
         "\n1. Use the debug information, if available, to explain the inner workings of the tool function.\n"
         "\n2. Refer to the tool description for context about the tool function and its purpose.\n"
         "\n3. Analyze the task input arguments to explain the inputs provided to the tool.\n"
         "\n4. Use the tool function's output to describe the results produced by the task.\n\n"
         "\n5. Ensure your response is concise, relevant, and addresses the user's question effectively. "
+        "\n6. Never mention the word 'tool', 'function', etc. the user is not technical."
         "The answer should be in one paragraph and should not exceed 200 words unless user asks for more details."
     ),
 )
@@ -44,6 +47,8 @@ TASK_EXAMINE_MAIN_PROMPT = Prompt(
         "{task_debug_info}\n\n"
         "### Tool Description ###\n"
         "{tool_desc}\n\n"
+        "### Logs ###\n"
+        "{logs}\n\n"
         "Now, answer the following question based on the provided information:\n"
         "{question}\n\n"
         "Write a clear, well-structured response that directly addresses the question."
@@ -64,10 +69,13 @@ async def examine_task(args: ExamineTaskArgs, context: QAContext) -> str:
     plan_run_id = context.plan_run_id
     # extract task details from db
     async_db = get_async_db()
-    task_run_info = await async_db.get_task_run_info(
-        plan_run_id=plan_run_id,
-        task_id=task_id,
-        tool_name=tool_name,
+    task_run_info, work_logs = await asyncio.gather(
+        async_db.get_task_run_info(
+            plan_run_id=plan_run_id,
+            task_id=task_id,
+            tool_name=tool_name,
+        ),
+        async_db.get_agent_worklogs(agent_id=context.agent_id, plan_run_ids=[context.plan_run_id]),
     )
     if task_run_info:
         _, _, task_debug_info, _ = task_run_info
@@ -79,11 +87,17 @@ async def examine_task(args: ExamineTaskArgs, context: QAContext) -> str:
     # get task description from db
     tool = default_tool_registry().get_tool(tool_name)
 
+    logs = [
+        f'- {log["log_message"]}'
+        for log in reversed(work_logs)
+        if log["task_id"] == args.task_id and not log.get("is_task_output")
+    ]
     llm = GPT(model=GPT4_O_MINI, context=context.gpt_context)
     main_prompt = TASK_EXAMINE_MAIN_PROMPT.format(
         task_debug_info=task_debug_info,
         tool_desc=tool.description,
         question=args.question,
+        logs="\n".join(logs),
     )
 
     res = await llm.do_chat_w_sys_prompt(

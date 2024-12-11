@@ -10,6 +10,7 @@ from agent_service.q_and_a.examine_task import EXAMINE_TASK_FUNC
 from agent_service.q_and_a.general_knowledge import ASK_GENERAL_QUESTION_FUNC
 from agent_service.q_and_a.utils import QAContext
 from agent_service.types import ChatContext
+from agent_service.utils.async_db import get_async_db
 from agent_service.utils.gpt_logging import q_and_a_context
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -23,6 +24,9 @@ query:
 {query}
 The full context of the chat between you and your client is:
 {chat_context}
+
+The workflow your are running is:
+{plan}
 
 Based on the query and the full context, either gather more data with one of the
 provided tools or simply give a quick response if a tool isn't needed.
@@ -49,8 +53,12 @@ class QAAgent:
 
     @async_perf_logger
     async def query(self, query: str, about_plan_run_id: str) -> str:
+        async_db = get_async_db()
+        _, plan = await async_db.get_execution_plan_for_run(about_plan_run_id)
         main_prompt_str = Q_AND_A_PROMPT.format(
-            query=query, chat_context=self.chat_context.get_gpt_input()
+            query=query,
+            chat_context=self.chat_context.get_gpt_input(),
+            plan=plan.get_formatted_plan(numbered=True, include_task_ids=True),
         ).filled_prompt
         result = await self.llm_client.do_chat(
             DoChatArgs(
