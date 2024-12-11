@@ -40,6 +40,7 @@ from agent_service.endpoints.models import (
     TaskRunStatusInfo,
     TaskStatus,
 )
+from agent_service.GPT.constants import get_client_name
 from agent_service.io_type_utils import (
     IOType,
     dump_io_type,
@@ -357,7 +358,7 @@ class AsyncDB:
     async def get_agent_debug_tool_calls(self, agent_id: str) -> Dict[str, Any]:
         sql = """
         SELECT  plan_id, plan_run_id, task_id, tool_name, start_time_utc,
-        end_time_utc , error_msg, replay_id, debug_info
+        end_time_utc , error_msg, replay_id, debug_info, pod_name
         FROM agent.task_run_info
         WHERE agent_id = %(agent_id)s
         ORDER BY end_time_utc ASC
@@ -1225,10 +1226,10 @@ class AsyncDB:
         sql = """
         INSERT INTO agent.task_run_info (task_id, agent_id, plan_run_id,
           tool_name, task_args, debug_info, output, error_msg, start_time_utc, end_time_utc, replay_id, plan_id,
-          context)
+          context, pod_name)
         VALUES (%(task_id)s, %(agent_id)s, %(plan_run_id)s,
           %(tool_name)s, %(task_args)s, %(debug_info)s, %(output)s, %(error_msg)s,
-          %(start_time_utc)s, %(end_time_utc)s, %(replay_id)s, %(plan_id)s, %(context)s)
+          %(start_time_utc)s, %(end_time_utc)s, %(replay_id)s, %(plan_id)s, %(context)s, %(pod)s)
         """
         if not error_msg:
             error_msg = ""
@@ -1248,6 +1249,7 @@ class AsyncDB:
                 "replay_id": replay_id,
                 "plan_id": context.plan_id,
                 "context": context.model_dump_json(),
+                "pod": get_client_name(),
             },
         )
 

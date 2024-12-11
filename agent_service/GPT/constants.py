@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from agent_service.utils.prompt_utils import Prompt
 
 GPT35_TURBO = "gpt-3.5-turbo-0125"
@@ -52,6 +54,7 @@ FILTER_CONCURRENCY = 100
 CHEAP_FILTER_CONCURRENCY = 300
 
 
+@lru_cache(maxsize=1)
 def get_client_name() -> str:
     try:
         with open("/etc/hostname", "r") as f:
@@ -60,6 +63,7 @@ def get_client_name() -> str:
         return "LOCAL"
 
 
+@lru_cache(maxsize=1)
 def get_client_namespace() -> str:
     try:
         with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "r") as f:
