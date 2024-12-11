@@ -15,22 +15,32 @@ from agent_service.utils.gpt_logging import q_and_a_context
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.prompt_utils import Prompt
 
-Q_AND_A_PROMPT = Prompt(
+Q_AND_A_SYS_PROMPT = Prompt(
+    name="Q_AND_A_SYS_PROMPT",
+    template=(
+        "You are a financial analyst who writes python-based workflows for your client, "
+        "and communicate with them via chat. Your goal here is to provide a clear and accurate answer to a question. "
+        "Here is some guidance to help you craft your response:\n"
+        "\n- Your answer must be concise, relevant, and directly address the user's question. "
+        "It should be less than 150 words unless the user asks for more details.\n"
+        "\n- You will be provided with a list of tools that can use to gather more information. "
+    ),
+)
+Q_AND_A_MAIN_PROMPT = Prompt(
     name="Q_AND_A_PROMPT",
-    template="""
-You are a financial analyst who writes python-based workflows for your client,
-and communicate with them via chat. Your client just gave you the following
-query:
-{query}
-The full context of the chat between you and your client is:
-{chat_context}
-
-The workflow your are running is:
-{plan}
-
-Based on the query and the full context, either gather more data with one of the
-provided tools or simply give a quick response if a tool isn't needed.
-""",
+    template=(
+        "You are a financial analyst who writes python-based workflows for your client, "
+        "and communicate with them via chat. Your client just gave you the following query: "
+        "{query}"
+        "The full context of the chat between you and your client is: "
+        "\n{chat_context}\n"
+        "The workflow plan that your are running is: "
+        "\n{plan}\n"
+        "The workflow logs for the executed plan is:\n"
+        "\n{logs}\n"
+        "Based on the query and the full context, either gather more data with one of the "
+        "provided tools or simply give a quick response if a tool isn't needed. "
+    ),
 )
 
 logger = logging.getLogger(__name__)
@@ -55,10 +65,15 @@ class QAAgent:
     async def query(self, query: str, about_plan_run_id: str) -> str:
         async_db = get_async_db()
         _, plan = await async_db.get_execution_plan_for_run(about_plan_run_id)
-        main_prompt_str = Q_AND_A_PROMPT.format(
+        work_logs = await async_db.get_agent_worklogs(
+            agent_id=self.agent_id, plan_run_ids=[about_plan_run_id]
+        )
+        logs = [f'- {log["log_message"]}' for log in reversed(work_logs)]
+        main_prompt_str = Q_AND_A_MAIN_PROMPT.format(
             query=query,
             chat_context=self.chat_context.get_gpt_input(),
             plan=plan.get_formatted_plan(numbered=True, include_task_ids=True),
+            logs="\n".join(logs),
         ).filled_prompt
         result = await self.llm_client.do_chat(
             DoChatArgs(
