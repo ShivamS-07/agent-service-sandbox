@@ -143,7 +143,7 @@ async def update_agent_qc(
 
 
 @router.get(
-    "/stats/query-breakdown-deep-dive/",
+    "/stats/query-breakdown-deep-dive/{date}",
     response_model=List[QueryWithBreakdown],
     status_code=status.HTTP_200_OK,
 )
