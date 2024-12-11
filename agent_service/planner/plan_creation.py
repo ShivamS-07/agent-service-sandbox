@@ -210,6 +210,7 @@ async def create_execution_plan(
                     logger.info("Plan completeness replan succeeded")
                     plan = new_plan
                 else:
+                    incomplete_plan = True
                     if new_plan and second_check_result:
                         logger.info(
                             "Plan completeness replan failed to address all incompleteness:\n"

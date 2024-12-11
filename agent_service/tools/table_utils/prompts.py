@@ -212,12 +212,17 @@ if there is mention of a time calculation (it has likely already been done!)
 Note that the values in STOCK columns are not just strings, so you CANNOT
 manually add rows with stocks in them.
 
-Your first step must always be to drop any NaN/None/NA rows, you must not do any
-sorting/filering operations with Nones in the table. Do not forget this!
-In most cases, after removing the Nones you will just sort the values of
-interest directly, and, if required, take the top/bottom n. In most case you
-should not need to add a column, and you must NEVER include a column which
-indicates the rank in your output table unless the user is asking for it explicitly.
+In most cases, you will just sort the values of interest directly, and, if required, take
+the top/bottom n or apply a threshold. Your input may contain NaNs/None/NAs. If you are doing a full
+ranking, without filtering, you should not remove any data, just make sure that if NaNs appear in the
+column you are sorting, they are ranked at the bottom. If you are filtering, e.g. you have been asked
+for the top/bottom stocks with respect to a statistic, or stocks which are higher/lower than some value
+for a statistic, you must always filter out any row which have NaN/None/NA for the statistic which you
+are sorting on using `dropna`, but you should not remove rows that have NaNs in other columns (use the
+subset argument). 
+
+In most cases you should not need to add a column, and you must NEVER include a column which indicates
+the rank in your output table unless the user is asking for it explicitly.
 
 In cases where the user indicates they want some kind of filtering (not just ranking!!!!)
 but do not provide an explicit formula, instead asking for stocks that are the

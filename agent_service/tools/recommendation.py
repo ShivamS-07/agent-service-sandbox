@@ -613,6 +613,8 @@ class GetStockRecommendationsInput(ToolArgs):
         "By default, the ML algorithm uses a mixture of quantitative information and news sentiment. "
         "If the client asks for a quant rating or quant score for a set of stocks, you should use this function"
         "with filter=False and news_only=False"
+        "If the client asks for news sentiment scores in a table, use this tool with news_only=True. Do not use the "
+        "get_news_sentiment_time_series tool unless the client asks specifically for sentiment graph."
         "You should use also use this function (and not filter_stocks_by_profile!) with the news_only flag "
         "when the client wants to filter stocks based on news semtiment, ."
         "When you get such a request, e.g. `filter to stocks with only positive "

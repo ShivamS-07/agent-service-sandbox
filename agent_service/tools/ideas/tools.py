@@ -73,6 +73,12 @@ async def initial_brainstorm(
     else:
         llm = GPT(context=gpt_context, model=GPT4_O)
 
+    # This usually isn't necessary but occasionally we have documents larger than the entire context window!
+    text_str = GPTTokenizer(model=llm.model).do_truncation_if_needed(
+        text_str,  # type: ignore
+        [INITIAL_BRAINSTORM_PROMPT.template, idea_definition],
+    )
+
     main_prompt = INITIAL_BRAINSTORM_PROMPT.format(
         idea_definition=idea_definition,
         idea=idea_noun["singular"],
