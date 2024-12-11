@@ -28,6 +28,7 @@ from agent_service.utils.sec.constants import (
     FILE_10K,
     FILE_10Q,
     FILE_20F,
+    FILE_40F,
     FILED_TIMESTAMP,
     FORM_TYPE,
 )
@@ -121,12 +122,13 @@ class GetSecFilingsInput(ToolArgs):
 async def get_10k_10q_sec_filings(
     args: GetSecFilingsInput, context: PlanRunContext
 ) -> List[StockSecFilingText]:
-    form_types: List[SecFilingType | str] = [FILE_10Q, FILE_10K, FILE_20F]
+    form_types: List[SecFilingType | str] = [FILE_10Q, FILE_10K, FILE_20F, FILE_40F]
     if not args.must_include_10q:
         form_types.remove(FILE_10Q)
     if not args.must_include_10k:
         form_types.remove(FILE_10K)
         form_types.remove(FILE_20F)
+        form_types.remove(FILE_40F)
 
     return await get_sec_filings_with_type(
         GetSecFilingsWithTypeInput(
@@ -342,7 +344,7 @@ async def get_sec_filings_with_type(
         daterange_str = f"from {start_date.isoformat()} to {end_date.isoformat()}"
         use_latest_str = ""
 
-    form_types = [FILE_10Q, FILE_10K, FILE_20F]
+    form_types = [FILE_10Q, FILE_10K, FILE_20F, FILE_40F]
     if args.form_types and len(args.form_types) > 0:
         form_types = []
         for form_type in args.form_types:
