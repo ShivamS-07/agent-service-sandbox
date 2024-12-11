@@ -673,7 +673,7 @@ async def stock_lookup_by_text_similarity(
         -- ETF ticker symbol (exact match only)
         SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
         ms.asset_type,
-        (ms.security_type like '%%ETF%%' OR ms.security_type like '%%Fund%%') = TRUE as is_etf,
+        ms.security_type,
         ms.name, 'ticker symbol' as match_col, ms.symbol as match_text,
         {PERFECT_TEXT_MATCH} AS text_sim_score
         FROM master_security ms
@@ -704,7 +704,7 @@ async def stock_lookup_by_text_similarity(
         -- stock ticker (exact) + name match (partial)
         SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
         ms.asset_type,
-        (ms.security_type like '%%ETF%%'  OR ms.security_type like '%%Fund%%') = TRUE as is_etf,
+        ms.security_type,
         ms.name, 'ticker symbol & name' as match_col,
         ms.name || ' (' || ms.symbol || ')' as match_text,
         (strict_word_similarity(ms.name || ' ' || ms.symbol, %(search_term)s) +
@@ -751,7 +751,7 @@ async def stock_lookup_by_text_similarity(
     -- ticker symbol (exact match only)
     SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
     ms.asset_type,
-    (ms.security_type like '%%ETF%%'  OR ms.security_type like '%%Fund%%') = TRUE as is_etf,
+    ms.security_type,
     ms.name, 'ticker symbol' as match_col, ms.symbol as match_text,
     {PERFECT_TEXT_MATCH} AS text_sim_score
     FROM master_security ms
@@ -772,7 +772,7 @@ async def stock_lookup_by_text_similarity(
     -- company name
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     ms.asset_type,
-    (ms.security_type like '%%ETF%%'  OR ms.security_type like '%%Fund%%') = TRUE as is_etf,
+    ms.security_type,
     name, 'name' as match_col, ms.name as match_text,
     (strict_word_similarity(ms.name, %(search_term)s) +
     strict_word_similarity(%(search_term)s, ms.name)) / 2
@@ -797,7 +797,7 @@ async def stock_lookup_by_text_similarity(
     -- custom boosted db entries -  company alt name * 1.0
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     ms.asset_type,
-    (ms.security_type like '%%ETF%%'  OR ms.security_type like '%%Fund%%') = TRUE as is_etf,
+    ms.security_type,
     name, 'comp alt name' as match_col, alt_name as match_text,
 
     -- lower the score for spiq matches
@@ -830,7 +830,7 @@ async def stock_lookup_by_text_similarity(
     -- gbi alt name
     SELECT gbi_security_id, symbol, ms.isin, ms.security_region, ms.currency,
     ms.asset_type,
-    (ms.security_type like '%%ETF%%'  OR ms.security_type like '%%Fund%%') = TRUE as is_etf,
+    ms.security_type,
     name, 'gbi alt name' as match_col, alt_name as match_text,
     (strict_word_similarity(alt_name, %(search_term)s) +
     strict_word_similarity(%(search_term)s, alt_name)) / 2
@@ -873,6 +873,15 @@ async def stock_lookup_by_text_similarity(
     for r in rows:
         if "Common Stock" != r["asset_type"]:
             r["final_match_score"] *= 0.9
+
+    for r in rows:
+        sec_type = str(r.get("security_type")).lower()
+        if "etf" in sec_type or "fund" in sec_type:
+            r["is_etf"] = True
+            r["is_company"] = False
+        else:
+            r["is_etf"] = False
+            r["is_company"] = True
 
     rows.sort(key=lambda x: x["final_match_score"], reverse=True)
 
