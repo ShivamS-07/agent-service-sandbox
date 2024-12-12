@@ -631,9 +631,10 @@ class AsyncDB:
             tasks.append(self.pg.generic_write(sql, params={"plan_run_id": plan_run_id}))
 
         if plan_id:
+            # If the plan is already done, don't set to cancelled
             sql = """
             UPDATE agent.execution_plans SET status = 'CANCELLED'
-            WHERE plan_id = %(plan_id)s
+            WHERE plan_id = %(plan_id)s AND status != 'READY'
             """
             tasks.append(self.pg.generic_write(sql, params={"plan_id": plan_id}))
 
