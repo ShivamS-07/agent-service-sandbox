@@ -96,6 +96,14 @@ class AsyncDB:
     async def generic_write(self, sql: str, params: Optional[Any] = None) -> None:
         return await self.pg.generic_write(sql, params)
 
+    async def multi_row_insert(
+        self, table_name: str, rows: List[Dict[str, Any]], ignore_conflicts: bool = False
+    ) -> None:
+        return await self.pg.multi_row_insert(table_name, rows, ignore_conflicts)
+
+    async def delete_from_table_where(self, table_name: str, **kwargs: Any) -> None:
+        return await self.pg.delete_from_table_where(table_name, **kwargs)
+
     async def get_prev_outputs_for_agent_plan(
         self,
         agent_id: str,

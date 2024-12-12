@@ -1,6 +1,7 @@
+import logging
 from collections import defaultdict
 from copy import deepcopy
-from typing import Dict, List, Optional, Union, cast
+from typing import Counter, Dict, List, Optional, Union, cast
 
 from agent_service.io_type_utils import (
     ComplexIOBase,
@@ -10,6 +11,7 @@ from agent_service.io_type_utils import (
     io_type,
     split_io_type_into_components,
 )
+from agent_service.io_types.graph import BarGraph, Graph, LineGraph, PieGraph
 from agent_service.io_types.idea import Idea
 from agent_service.io_types.output import Output
 from agent_service.io_types.stock import StockID
@@ -25,6 +27,8 @@ from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.utils import io_type_to_gpt_input
+
+logger = logging.getLogger(__name__)
 
 
 def prepare_list_of_stocks(stocks: List[StockID]) -> Table:
@@ -200,6 +204,78 @@ class PreparedOutput(ComplexIOBase):
             return [PreparedOutput(val=split_vals[0], title=self.title)]
 
         return [PreparedOutput(val=new_val, title=new_val.title) for new_val in split_vals]  # type: ignore
+
+    async def count_stocks(self) -> Counter[int]:
+        """
+        Count the number of stocks in the output
+        """
+        prepared_outputs: List[PreparedOutput] = await self.split_into_components()  # type: ignore
+        counter: Counter[int] = Counter()
+        for prepared_output in prepared_outputs:
+            val = prepared_output.val
+            if isinstance(val, StockID):
+                counter[val.gbi_id] += 1
+                self._count_stocks_from_citations(counter, val)
+            elif isinstance(val, Text):
+                if isinstance(val, StockText) and val.stock_id:
+                    counter[val.stock_id.gbi_id] += 1
+                self._count_stocks_from_citations(counter, val)
+            elif isinstance(val, Table):
+                for column in val.columns:
+                    if column.metadata.col_type == TableColumnType.STOCK:
+                        stocks = cast(List[StockID], column.data)
+                        for stock in set(stocks):  # only count each stock once in a table
+                            counter[stock.gbi_id] += 1
+                        break
+                self._count_stocks_from_citations(counter, val)
+            elif isinstance(val, Graph):
+                if not isinstance(val, (LineGraph, PieGraph, BarGraph)):
+                    # Warn people to implement this if they want to count stocks
+                    logger.warning(f"Not implemented Graph type {type(val)} for counting stocks!")
+                    continue
+
+                if isinstance(val, LineGraph):
+                    for dataset in val.data:
+                        if hasattr(dataset.dataset_id, "gbi_id"):
+                            counter[dataset.dataset_id.gbi_id] += 1
+                elif isinstance(val, PieGraph):
+                    for section in val.data:
+                        if hasattr(section.label, "gbi_id"):
+                            counter[section.label.gbi_id] += 1
+                elif isinstance(val, BarGraph):
+                    for bar in val.data:
+                        if hasattr(bar.index, "gbi_id"):
+                            counter[bar.index.gbi_id] += 1
+            elif isinstance(val, list) and val:
+                if isinstance(val[0], StockID):
+                    for stock in val:
+                        counter[stock.gbi_id] += 1
+                        self._count_stocks_from_citations(counter, stock)
+                elif isinstance(val[0], Text):
+                    for text in val:
+                        if isinstance(text, StockText) and text.stock_id:
+                            counter[text.stock_id.gbi_id] += 1
+
+                        self._count_stocks_from_citations(counter, text)
+            else:
+                # Warn people to implement this if they want to count stocks
+                logger.warning(f"Not implemented type {type(val)} for counting stocks!")
+
+        return counter
+
+    @staticmethod
+    def _count_stocks_from_citations(counter: Dict[int, int], val: IOType) -> None:
+        if not hasattr(val, "history") or not isinstance(val.history, list):
+            return
+
+        for history in val.history:
+            for citation in history.citations:
+                if (
+                    hasattr(citation, "source_text")
+                    and isinstance(citation.source_text, StockText)
+                    and citation.source_text.stock_id
+                ):
+                    counter[citation.source_text.stock_id.gbi_id] += 1
 
 
 # TODO remove me, for backwards compat

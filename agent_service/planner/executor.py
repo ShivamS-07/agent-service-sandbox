@@ -5,7 +5,7 @@ import pprint
 import time
 import traceback
 from copy import deepcopy
-from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Counter, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 from uuid import uuid4
 
 from gbi_common_py_utils.utils.environment import PROD_TAG, get_environment_tag
@@ -78,6 +78,7 @@ from agent_service.utils.feature_flags import (
     get_ld_flag_async,
 )
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.output_utils.output_construction import PreparedOutput
 from agent_service.utils.output_utils.output_diffs import (
     OutputDiffer,
     generate_full_diff_summary,
@@ -925,6 +926,9 @@ async def _run_execution_plan_impl(
         run_summary_short=short_diff_summary,
         db=async_db,
     )
+
+    await count_agent_stocks(context, async_db, final_outputs)
+
     logger.info("Finished run!")
     return final_outputs
 
@@ -1927,5 +1931,42 @@ async def _run_execution_plan_impl_new(
         updated_output_ids=run_diffs.updated_output_ids,
         db=async_db,
     )
+
+    await count_agent_stocks(context, async_db, final_outputs)
+
     logger.info(f"Finished run {context.plan_run_id=}")
     return final_outputs
+
+
+async def count_agent_stocks(
+    context: PlanRunContext, db: AsyncDB, final_outputs: List[IOType]
+) -> None:
+    try:
+        logger = get_prefect_logger(__name__)
+
+        logger.info("Counting agent stocks...")
+        counter: Counter[int] = Counter()
+        for output in final_outputs:
+            if isinstance(output, PreparedOutput):
+                counter += await output.count_stocks()
+
+        total = sum(counter.values())
+        db_rows = []
+        for gbi_id, count in counter.items():
+            db_rows.append(
+                {
+                    "gbi_id": gbi_id,
+                    "plan_run_id": context.plan_run_id,
+                    "agent_id": context.agent_id,
+                    "score": count / total / len(counter),
+                }
+            )
+
+        logger.info(f"Found {len(db_rows)} stocks. Storing in the database...")
+        # clean the table in case this is a rerun
+        await db.delete_from_table_where(
+            table_name="agent.stock_related_agents", plan_run_id=context.plan_run_id
+        )
+        await db.multi_row_insert("agent.stock_related_agents", db_rows)
+    except Exception as e:
+        logger.exception(f"Error counting agent stocks: {e}")
