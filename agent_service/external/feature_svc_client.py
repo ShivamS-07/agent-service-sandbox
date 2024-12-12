@@ -299,9 +299,8 @@ async def get_return_for_stocks(
             req, metadata=get_default_grpc_metadata(user_id=user_id)
         )
         if resp.status.code != 0:
-            raise ValueError(
-                f"Failed to get stock return: {resp.status.code} - {resp.status.message}"
-            )
+            logger.error(f"Failed to get stock return: {resp.status.code} - {resp.status.message}")
+            return {}
     return proto_cube_to_dataframe(resp.data)
 
 
