@@ -561,6 +561,52 @@ class AsyncDB:
             sql, {"agent_id": agent_id, "plan_id": plan_id, "task_ids": task_ids}
         )
 
+    async def insert_plan_run(
+        self,
+        agent_id: str,
+        plan_id: str,
+        plan_run_id: str,
+        initial_status: Status = Status.NOT_STARTED,
+    ) -> None:
+        sql = """
+        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id, created_at, status)
+        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(created_at)s, %(status)s)
+        ON CONFLICT (plan_run_id) DO NOTHING
+        """
+
+        await self.pg.generic_write(
+            sql,
+            params={
+                "agent_id": agent_id,
+                "plan_id": plan_id,
+                "plan_run_id": plan_run_id,
+                "created_at": get_now_utc(),
+                "status": initial_status.value,
+            },
+        )
+
+    async def get_running_plan_run(self, agent_id: str) -> Optional[Dict[str, str]]:
+        """
+        Look at `agent.plan_runs` table and find the latest plan run that is either NOT_STARTED or
+        RUNNING. If there is no such plan run, return None.
+        """
+
+        sql = """
+            SELECT plan_run_id::VARCHAR, plan_id::VARCHAR
+            FROM agent.plan_runs
+            WHERE agent_id = %(agent_id)s AND status = ANY(%(status)s)
+            ORDER BY created_at DESC
+            LIMIT 1
+        """
+        rows = await self.pg.generic_read(
+            sql,
+            params={
+                "agent_id": agent_id,
+                "status": [Status.NOT_STARTED.value, Status.RUNNING.value],
+            },
+        )
+        return rows[0] if rows else None
+
     async def cancel_agent_plan(
         self, plan_id: Optional[str] = None, plan_run_id: Optional[str] = None
     ) -> None:

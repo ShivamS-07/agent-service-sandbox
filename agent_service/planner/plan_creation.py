@@ -34,18 +34,18 @@ from agent_service.utils.agent_event_utils import (
     publish_agent_execution_plan,
     publish_agent_plan_status,
     publish_agent_quick_thoughts,
+    publish_cancel_agent_plan_or_run,
     send_chat_message,
     update_agent_help_requested,
 )
-from agent_service.utils.async_db import AsyncDB, get_chat_history_from_db
+from agent_service.utils.async_db import AsyncDB, get_async_db, get_chat_history_from_db
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.feature_flags import get_ld_flag, get_ld_flag_async
 from agent_service.utils.gpt_logging import plan_create_context
 from agent_service.utils.logs import async_perf_logger
-from agent_service.utils.postgres import SyncBoostedPG, get_psql
+from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import (
-    cancel_agent_flow,
     get_prefect_logger,
     kick_off_create_execution_plan,
     kick_off_run_execution_plan,
@@ -79,7 +79,7 @@ async def create_execution_plan(
     use_sample_plans: bool = True,
     plan_run_id: Optional[str] = None,
 ) -> Optional[ExecutionPlan]:
-    db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
+    db = get_async_db(skip_commit=skip_db_commit)
     if action != FollowupAction.CREATE:
         return await rewrite_execution_plan(
             agent_id=agent_id,
@@ -321,20 +321,13 @@ async def update_execution_after_input(
 ) -> Optional[Tuple[str, ExecutionPlan, FollowupAction]]:
     logger = get_prefect_logger(__name__)
 
-    db = get_psql(skip_commit=skip_db_commit)
-
-    # Using `asyncio.to_thread` to run a blocking synchronous function in a separate thread so
-    # it won't block the main event loop (FastAPI server)
-    logger.info(
-        f"Pausing current agent flow for {agent_id=}, getting running plan run from DB "
-        "and getting latest execution plan from DB..."
-    )
-    results = await asyncio.gather(
-        asyncio.to_thread(db.get_running_plan_run, agent_id=agent_id),
-        asyncio.to_thread(db.get_latest_execution_plan, agent_id=agent_id),
-    )
     if not async_db:
-        async_db = AsyncDB(SyncBoostedPG(skip_commit=skip_db_commit))
+        async_db = get_async_db(skip_commit=skip_db_commit)
+
+    results = await asyncio.gather(
+        async_db.get_running_plan_run(agent_id=agent_id),
+        async_db.get_latest_execution_plan(agent_id=agent_id),
+    )
 
     plan_run_db = results[0]
     latest_plan_id, latest_plan, _, plan_status, _ = results[1]
@@ -347,7 +340,7 @@ async def update_execution_after_input(
 
     if not chat_context:
         logger.info(f"Getting chat context for {agent_id=}")
-        chat_context = await asyncio.to_thread(db.get_chats_history_for_agent, agent_id=agent_id)
+        chat_context = await async_db.get_chats_history_for_agent(agent_id=agent_id)
 
     # decider will be either FirstActionDecider or FollowupActionDecider depending on whether plan exists
     logger.info(f"Deciding on action for {agent_id=}, {latest_plan_id=}")
@@ -383,7 +376,7 @@ async def update_execution_after_input(
                         is_user_message=False,
                         plan_run_id=running_plan_run_id,
                     ),
-                    db=db,
+                    db=async_db,
                     send_notification=False,
                 )
             return None
@@ -398,7 +391,7 @@ async def update_execution_after_input(
                         visible_to_llm=False,
                         plan_run_id=running_plan_run_id,
                     ),
-                    db=db,
+                    db=async_db,
                     send_notification=False,
                 )
             return None
@@ -412,14 +405,24 @@ async def update_execution_after_input(
                         is_user_message=False,
                         plan_run_id=running_plan_run_id,
                     ),
-                    db=db,
+                    db=async_db,
                     send_notification=False,
                 )
             return None
 
     elif isinstance(action, FollowupAction):
         if action == FollowupAction.CREATE:
-            await cancel_agent_flow(db, agent_id, running_plan_id, running_plan_run_id)
+            if running_plan_run_id and running_plan_id:
+                # Create a new plan, so cancel any existing plan creation or
+                # plan run
+                await publish_cancel_agent_plan_or_run(
+                    agent_id=agent_id,
+                    plan_id=running_plan_id,
+                    plan_run_id=running_plan_run_id,
+                    db=async_db,
+                    cancel_plan_creation=True,
+                    cancel_plan_run=True,
+                )
 
             new_plan_id = str(uuid4())
             if run_tasks_without_prefect:
@@ -464,7 +467,7 @@ async def update_execution_after_input(
                         is_user_message=False,
                         plan_run_id=running_plan_run_id,
                     ),
-                    db=db,
+                    db=async_db,
                     send_notification=False,
                 )
 
@@ -481,15 +484,25 @@ async def update_execution_after_input(
                         visible_to_llm=False,
                         plan_run_id=running_plan_run_id,
                     ),
-                    db=db,
+                    db=async_db,
                     send_notification=False,
                 )
 
             return None
 
         elif action == FollowupAction.RERUN:
-            # cancel the running agent flow first (DO NOT cancel this plan)
-            await cancel_agent_flow(db, agent_id, plan_id=None, plan_run_id=running_plan_run_id)
+            # Cancel the running agent flow first. No need to cancel the plan,
+            # the case of RERUN + CREATING is covered above. Plus a RERUN means
+            # the existing plan is valid.
+            if running_plan_run_id and running_plan_id:
+                await publish_cancel_agent_plan_or_run(
+                    agent_id=agent_id,
+                    plan_id=running_plan_id,
+                    plan_run_id=running_plan_run_id,
+                    cancel_plan_creation=False,
+                    cancel_plan_run=True,
+                    db=async_db,
+                )
 
             # In this case, we know that the flow_run_type is PLAN_EXECUTION (or there no flow_run),
             # otherwise we'd have run the above block instead.
@@ -512,7 +525,7 @@ async def update_execution_after_input(
                         is_user_message=False,
                         plan_run_id=running_plan_run_id,
                     ),
-                    db=db,
+                    db=async_db,
                 )
 
             if run_tasks_without_prefect:
@@ -533,20 +546,24 @@ async def update_execution_after_input(
             logger.info(
                 f"Rerunning execution plan for {agent_id=}, {latest_plan_id=}, {plan_run_id=}"
             )
-            db = get_psql(skip_commit=ctx.skip_db_commit)
-            db.insert_plan_run(
+            await async_db.insert_plan_run(
                 agent_id=ctx.agent_id, plan_id=ctx.plan_id, plan_run_id=ctx.plan_run_id
             )
             await kick_off_run_execution_plan(plan=latest_plan, context=ctx, do_chat=do_chat)
 
         else:
             # This handles the cases for REPLAN, APPEND, and CREATE
-            await cancel_agent_flow(
-                db,
-                agent_id,
-                running_plan_id,
-                running_plan_run_id,
-            )
+            if running_plan_id and running_plan_run_id:
+                # In any of the above cases, the existing plan and plan run are
+                # no longer desired, so cancel both.
+                await publish_cancel_agent_plan_or_run(
+                    agent_id=agent_id,
+                    plan_id=running_plan_id,
+                    plan_run_id=running_plan_run_id,
+                    cancel_plan_creation=True,
+                    cancel_plan_run=True,
+                    db=async_db,
+                )
 
             if do_chat:
                 message = await chatbot.generate_input_update_replan_preplan_response(chat_context)
@@ -557,7 +574,7 @@ async def update_execution_after_input(
                         is_user_message=False,
                         plan_run_id=running_plan_run_id,
                     ),
-                    db=db,
+                    db=async_db,
                 )
 
             new_plan_id = str(uuid4())
@@ -611,7 +628,7 @@ async def rewrite_execution_plan(
 ) -> Optional[ExecutionPlan]:
     logger = get_prefect_logger(__name__)
     context = plan_create_context(agent_id, user_id, plan_id)
-    db = db or AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
+    db = db or get_async_db(skip_commit=skip_db_commit)
     user_settings = await db.get_user_agent_settings(user_id=user_id)
     planner = Planner(
         agent_id=agent_id, context=context, user_id=user_id, user_settings=user_settings

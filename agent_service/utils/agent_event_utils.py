@@ -37,7 +37,7 @@ from agent_service.io_types.text import Text, TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, OutputWithID, PlanStatus
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.types import Message, Notification, PlanRunContext
-from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_db import AsyncDB, get_async_db
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.cache_utils import CacheBackend
@@ -327,6 +327,41 @@ async def publish_agent_plan_status(
             agent_id=agent_id, event=PlanStatusEvent(status=status)
         ).model_dump_json(),
     )
+
+
+async def publish_cancel_agent_plan_or_run(
+    agent_id: str,
+    plan_run_id: str,
+    plan_id: str,
+    cancel_plan_creation: bool = False,
+    cancel_plan_run: bool = False,
+    db: Optional[AsyncDB] = None,
+) -> None:
+    db = db or get_async_db()
+
+    if not cancel_plan_creation and not cancel_plan_run:
+        return
+
+    tasks = [
+        db.cancel_agent_plan(
+            plan_id=plan_id if cancel_plan_creation else None,
+            plan_run_id=plan_run_id if cancel_plan_run else None,
+        )
+    ]
+
+    if cancel_plan_creation:
+        tasks.append(
+            publish_agent_plan_status(
+                agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
+            )
+        )
+
+    elif cancel_plan_run:
+        tasks.append(
+            publish_agent_execution_status(agent_id, plan_run_id, plan_id, Status.CANCELLED)
+        )
+
+    await asyncio.gather(*tasks)
 
 
 async def publish_agent_execution_status(
