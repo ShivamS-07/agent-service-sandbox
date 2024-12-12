@@ -190,12 +190,36 @@ async def _get_earnings_summary_helper(
                 )
             ).earnings_event_info
         )
+
     # Create a lookup for gbi_ids and the year-quarter earnings they should have along with the associated event
     all_earning_fiscal_quarters = defaultdict(set)
     earning_events_lookup: Dict[int, Any] = defaultdict(dict)
     for event in earning_call_events:
         all_earning_fiscal_quarters[event.gbi_id].add((event.year, event.quarter))
         earning_events_lookup[event.gbi_id][(event.year, event.quarter)] = event
+
+    stocks_with_missing_support: List[StockID] = []
+    for stock in stock_ids:
+        if earning_events_lookup.get(stock.gbi_id, {}) == {}:
+            stocks_with_missing_support.append(stock)
+    if stocks_with_missing_support:
+        # If theres tens of missing stocks we don't want to spam
+        if len(stocks_with_missing_support) < 10:
+            for stock in stocks_with_missing_support:
+                await tool_log(
+                    f"No earnings data available for {stock.symbol} ({stock.company_name})",
+                    context=context,
+                )
+        else:
+            await tool_log(
+                f"No earnings data available for {len(stocks_with_missing_support)} companies",
+                context=context,
+            )
+
+        await tool_log(
+            "Note that this gap in data may be due to these companies not holding an earnings call",
+            context=context,
+        )
 
     by_stock_lookup = defaultdict(list)
     for row in rows:
@@ -391,9 +415,9 @@ async def get_earnings_full_transcripts(
         stock_earnings_text_dict = deepcopy(initial_stock_earnings_text_dict)
 
     transcript_db_data_lookup = await _get_earning_transcript_lookup_from_ch(events, stock_ids)
+
     # Track missing events not found within the db
     missing_events_in_db: List[EventInfo] = []
-
     for event in events:
         stock_id = event_id_to_stock_id_lookup[event.event_id]
         transcript_data_for_gbi_id = transcript_db_data_lookup.get(stock_id.gbi_id, {})
