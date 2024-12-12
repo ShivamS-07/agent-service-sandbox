@@ -175,10 +175,12 @@ async def main() -> None:
     AI_response = "Okay, I'm doing that summary for you."
     AI_message = Message(message=AI_response, is_user_message=True, message_time=get_now_utc())
     chat_context = ChatContext(messages=[user_message, AI_message])
-    planner = Planner("123")
+    planner = Planner()
     plan = await planner.create_initial_plan(chat_context, plan_id=str(uuid4()))
 
     new_user_inputs = [
+        "create another widget for LULU",
+        "No wait! just do it for TSLA",
         "Thanks!",
         "Make sure the summary is no more than a paragraph",
         "I need you to include Amazon in the summary as well",
@@ -186,13 +188,17 @@ async def main() -> None:
         "Move the text down below the graph please",
     ]
 
-    action_decider = FollowupActionDecider("123")
+    followup_action_decider = FollowupActionDecider("71e3c9dd-2dc5-42c2-bc99-de2f045628d2")
+    # first_action_decider = FirstActionDecider("aa0f8b5e-ef77-4c67-acdb-e14d3689e7e2")
     for new_input in new_user_inputs:
         new_message = Message(message=new_input, is_user_message=True, message_time=get_now_utc())
         print(new_message)
         chat_context.messages.append(new_message)
-        result = await action_decider.decide_action(chat_context, plan)  # type: ignore
-        print(result)
+        result = await followup_action_decider.decide_action(chat_context, plan)  # type: ignore
+        print("Followup action:", result)
+        # result = await first_action_decider.decide_action(chat_context)  # type: ignore
+        # print("First action:", result)
+        print("=" * 100)
         chat_context.messages.pop()
 
 
