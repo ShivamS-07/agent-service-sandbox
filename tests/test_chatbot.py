@@ -111,8 +111,7 @@ class TestPlans(IsolatedAsyncioTestCase):
         chat_context.messages.append(Message(message=postplan_response, is_user_message=False))
         complete_response = chatbot.generate_execution_complete_response(
             existing_output_titles={},
-            new_output_titles={"Summary of AAPL news": "123"},
-            plan_run_id="123",
+            output_titles_diffs={"Summary of AAPL news": "123"},
         )
         print("complete_response: ", complete_response)
         chat_context.messages.append(Message(message=complete_response, is_user_message=False))

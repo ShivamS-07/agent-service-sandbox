@@ -392,7 +392,7 @@ async def _run_execution_plan_impl(
     chatbot = Chatbot(agent_id=context.agent_id)
 
     existing_output_titles = db.get_agent_output_titles(agent_id=context.agent_id)
-    new_output_titles = {}
+    new_output_titles: Dict[str, str] = {}
     ###########################################
     # PLAN RUN BEGINS
     ###########################################
@@ -684,7 +684,7 @@ async def _run_execution_plan_impl(
             final_outputs_with_ids.extend(outputs_with_ids)
 
             new_output_titles.update(
-                {output.output.title: output.output_id for output in outputs_with_ids}  # type: ignore
+                {output.output.title: output.task_id for output in outputs_with_ids}  # type: ignore
             )
 
         if log_all_outputs:
@@ -773,10 +773,14 @@ async def _run_execution_plan_impl(
         )
 
         # add widget chip to the chat message to link to the new widgets
+        output_titles_diffs = {
+            title: task_id
+            for title, task_id in new_output_titles.items()
+            if title not in existing_output_titles
+        }
         message = chatbot.generate_execution_complete_response(
             existing_output_titles=existing_output_titles,
-            new_output_titles=new_output_titles,
-            plan_run_id=context.plan_run_id,
+            output_titles_diffs=output_titles_diffs,
         )
         await send_chat_message(
             message=Message(
@@ -784,6 +788,9 @@ async def _run_execution_plan_impl(
                 message=message,
                 is_user_message=False,
                 plan_run_id=context.plan_run_id,
+                message_metadata=MessageMetadata(
+                    output_title_task_id_pairs=output_titles_diffs,
+                ),
             ),
             db=db,
         )
@@ -1472,6 +1479,7 @@ async def _postprocess_non_live(
     plan_run_start_time: float,
     send_email: bool,
     message_task: asyncio.Task | None,
+    existing_output_titles: Dict[str, str],
 ) -> RunDiffs:
     logger.info("Generating chat message...")
     chat_context = await async_db.get_chats_history_for_agent(agent_id=context.agent_id)
@@ -1495,11 +1503,14 @@ async def _postprocess_non_live(
     )
 
     # add widget chip to the chat message to link to the new widgets
-    existing_output_titles = await async_db.get_agent_output_titles(agent_id=context.agent_id)
+    output_titles_diffs = {
+        title: task_id
+        for title, task_id in new_output_titles.items()
+        if title not in existing_output_titles
+    }
     message = chatbot.generate_execution_complete_response(
         existing_output_titles=existing_output_titles,
-        new_output_titles=new_output_titles,
-        plan_run_id=context.plan_run_id,
+        output_titles_diffs=output_titles_diffs,
     )
     await send_chat_message(
         message=Message(
@@ -1507,6 +1518,9 @@ async def _postprocess_non_live(
             message=message,
             is_user_message=False,
             plan_run_id=context.plan_run_id,
+            message_metadata=MessageMetadata(
+                output_title_task_id_pairs=output_titles_diffs,
+            ),
         ),
         db=async_db,
     )
@@ -1731,6 +1745,7 @@ async def _run_execution_plan_impl_new(
     node_parent_map: Dict[ToolExecutionNode, Set[ToolExecutionNode]] = plan.get_node_parent_map()
     chatbot = Chatbot(agent_id=context.agent_id)
 
+    existing_output_titles = await async_db.get_agent_output_titles(agent_id=context.agent_id)
     new_output_titles: Dict[str, str] = {}
 
     ###########################################
@@ -1838,7 +1853,7 @@ async def _run_execution_plan_impl_new(
             final_outputs_with_ids.extend(outputs_with_ids)
 
             new_output_titles.update(
-                {output.output.title: output.output_id for output in outputs_with_ids}  # type: ignore
+                {output.output.title: output.task_id for output in outputs_with_ids}  # type: ignore
             )
 
         if log_all_outputs:
@@ -1904,6 +1919,7 @@ async def _run_execution_plan_impl_new(
             plan_run_start_time=plan_run_start_time,
             send_email=send_email,
             message_task=message_task,
+            existing_output_titles=existing_output_titles,
         )
 
     await async_db.set_plan_run_metadata(

@@ -1,6 +1,5 @@
-import json
 from datetime import date
-from typing import Optional
+from typing import Dict, Optional
 
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 
@@ -41,6 +40,7 @@ from agent_service.chatbot.prompts import (
 )
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT
+from agent_service.planner.constants import FOLLOW_UP_QUESTION
 from agent_service.planner.planner_types import (
     ErrorInfo,
     ExecutionPlan,
@@ -270,21 +270,13 @@ class Chatbot:
         return agent_description
 
     def generate_execution_complete_response(
-        self, existing_output_titles: dict, new_output_titles: dict, plan_run_id: str
+        self, existing_output_titles: Dict[str, str], output_titles_diffs: Dict[str, str]
     ) -> str:
-        chat_anchor_links = [
-            {
-                "type": "output_widget",
-                "name": title,
-                "output_id": output_id,
-                "plan_run_id": plan_run_id,
-            }
-            for title, output_id in new_output_titles.items()
-            if title not in existing_output_titles
-        ]
-        chat_anchor_link_str = ", ".join(
-            "```" + json.dumps(chat_anchor_link) + "```" for chat_anchor_link in chat_anchor_links
-        )
-        FOLLOW_UP_QUESTION = "Need anything else?"
-        message = f"The report for {chat_anchor_link_str} is ready. {FOLLOW_UP_QUESTION}"
+        # Don't show the widget chip for the first plan run
+        if not existing_output_titles or not output_titles_diffs:
+            return f"The report is ready. {FOLLOW_UP_QUESTION}"
+
+        output_titles = ", ".join([f'"{title}"' for title in output_titles_diffs])
+
+        message = f"The report for {output_titles} is ready. {FOLLOW_UP_QUESTION}"
         return message

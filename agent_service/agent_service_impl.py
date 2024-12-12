@@ -253,7 +253,11 @@ from agent_service.io_types.text_objects import (
     extract_text_objects_from_text,
 )
 from agent_service.planner.action_decide import FirstActionDecider
-from agent_service.planner.constants import CHAT_DIFF_TEMPLATE, FirstAction
+from agent_service.planner.constants import (
+    CHAT_DIFF_TEMPLATE,
+    FOLLOW_UP_QUESTION,
+    FirstAction,
+)
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, Variable
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
@@ -285,6 +289,10 @@ from agent_service.utils.async_utils import (
     run_async_background,
 )
 from agent_service.utils.cache_utils import CacheBackend, RedisCacheBackend
+from agent_service.utils.chat_utils import (
+    append_widget_chip_to_execution_complete_message,
+    append_widget_chip_to_report_updated_message,
+)
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
 from agent_service.utils.custom_documents_utils import (
@@ -892,19 +900,14 @@ class AgentServiceImpl:
 
         report_updated_message = CHAT_DIFF_TEMPLATE.split("\n")[0]
         for message in chat_context.messages:
-            if not message.is_user_message and message.message.startswith(  # type: ignore
-                report_updated_message
-            ):
-                # get the first two words
-                report_updated_text = " ".join(CHAT_DIFF_TEMPLATE.split()[:2])
-                report_updated_dict = {
-                    "type": "output_report",
-                    "text": report_updated_text,
-                    "plan_run_id": message.plan_run_id,
-                }
-                message.message = message.message.replace(  # type: ignore
-                    report_updated_text,  # type: ignore
-                    "```" + json.dumps(report_updated_dict) + "```",  # type: ignore
+            chat_message = cast(str, message.message)
+            if not message.is_user_message and chat_message.startswith(report_updated_message):
+                message.message = append_widget_chip_to_report_updated_message(
+                    chat_message=chat_message, plan_run_id=message.plan_run_id
+                )
+            if not message.is_user_message and chat_message.endswith(FOLLOW_UP_QUESTION):
+                message.message = await append_widget_chip_to_execution_complete_message(
+                    message=message, agent_id=agent_id, db=self.pg
                 )
 
         return GetChatHistoryResponse(

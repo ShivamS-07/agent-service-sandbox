@@ -1016,6 +1016,24 @@ class AsyncDB:
             total_message_count=total_message_count,
         )
 
+    async def get_latest_id_metadata_by_task_ids(
+        self, agent_id: str, task_ids: List[str]
+    ) -> Dict[str, Dict[str, str]]:
+        sql = """
+            SELECT DISTINCT ON (task_id)
+                task_id::VARCHAR, output_id::VARCHAR, plan_run_id::VARCHAR
+            FROM agent.agent_outputs
+            WHERE agent_id = %(agent_id)s AND task_id = ANY(%(task_ids)s)
+            ORDER BY task_id, created_at DESC
+        """
+        rows = await self.pg.generic_read(sql, params={"agent_id": agent_id, "task_ids": task_ids})
+
+        # Create a mapping of task_id to (output_id, plan_run_id)
+        return {
+            row["task_id"]: {"output_id": row["output_id"], "plan_run_id": row["plan_run_id"]}
+            for row in rows
+        }
+
     async def create_agent(self, agent_metadata: AgentInfo) -> None:
         await self.pg.multi_row_insert(
             table_name="agent.agents", rows=[agent_metadata.to_agent_row()]

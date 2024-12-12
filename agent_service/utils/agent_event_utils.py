@@ -34,6 +34,7 @@ from agent_service.endpoints.models import (
 from agent_service.endpoints.utils import get_base_url, get_plan_preview
 from agent_service.io_type_utils import load_io_type
 from agent_service.io_types.text import Text, TextOutput
+from agent_service.planner.constants import FOLLOW_UP_QUESTION
 from agent_service.planner.planner_types import ExecutionPlan, OutputWithID, PlanStatus
 from agent_service.slack.slack_sender import SlackSender, get_user_info_slack_string
 from agent_service.types import Message, Notification, PlanRunContext
@@ -41,6 +42,7 @@ from agent_service.utils.async_db import AsyncDB, get_async_db
 from agent_service.utils.async_postgres_base import AsyncPostgresBase
 from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.cache_utils import CacheBackend
+from agent_service.utils.chat_utils import append_widget_chip_to_execution_complete_message
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
@@ -122,6 +124,14 @@ async def send_chat_message(
                         user_id=user_id, serialized_event=notification_event.model_dump_json()
                     )
 
+        if (
+            isinstance(message.message, str)
+            and message.message.endswith(FOLLOW_UP_QUESTION)
+            and isinstance(db, AsyncDB)
+        ):
+            message.message = await append_widget_chip_to_execution_complete_message(
+                message=message, agent_id=message.agent_id, db=db
+            )
         event = AgentEvent(agent_id=message.agent_id, event=MessageEvent(message=message))
         await publish_agent_event(
             agent_id=message.agent_id, serialized_event=event.model_dump_json()

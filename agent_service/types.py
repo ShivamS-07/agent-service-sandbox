@@ -20,6 +20,7 @@ class MessageSpecialFormatting(enum.StrEnum):
 
 class MessageMetadata(BaseModel):
     formatting: Optional[MessageSpecialFormatting] = None
+    output_title_task_id_pairs: Optional[Dict[str, str]] = None
 
 
 class Message(BaseModel):
