@@ -70,6 +70,11 @@ class ChatContext(BaseModel):
     messages: List[Message] = []
     total_message_count: Optional[int] = 0
 
+    def sort_messages(self, most_recent_first: bool = True) -> None:
+        self.messages = sorted(
+            self.messages, key=lambda msg: msg.message_time, reverse=not most_recent_first
+        )
+
     def get_gpt_input(self, client_only: bool = False) -> str:
         return "\n".join(
             [

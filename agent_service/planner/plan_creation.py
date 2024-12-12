@@ -340,7 +340,7 @@ async def update_execution_after_input(
 
     if not chat_context:
         logger.info(f"Getting chat context for {agent_id=}")
-        chat_context = await async_db.get_chats_history_for_agent(agent_id=agent_id)
+        chat_context = await async_db.get_chats_history_for_agent(agent_id=agent_id, order_asc=True)
 
     # decider will be either FirstActionDecider or FollowupActionDecider depending on whether plan exists
     logger.info(f"Deciding on action for {agent_id=}, {latest_plan_id=}")

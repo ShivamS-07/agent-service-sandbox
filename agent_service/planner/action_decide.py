@@ -83,6 +83,7 @@ class FollowupActionDecider:
             if tool.update_instructions:
                 instruction_list.append(f"{step.tool_name}: {tool.update_instructions}")
 
+        chat_context.sort_messages()
         latest_message = chat_context.messages.pop()
         main_prompt = FOLLOWUP_ACTION_DECIDER_MAIN_PROMPT.format(
             plan=current_plan.get_formatted_plan(),

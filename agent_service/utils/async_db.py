@@ -960,6 +960,7 @@ class AsyncDB:
         end: Optional[datetime.datetime] = None,
         start_index: Optional[int] = 0,
         limit_num: Optional[int] = None,
+        order_asc: bool = False,
     ) -> ChatContext:
         """
         Get chat history for an agent
@@ -967,6 +968,9 @@ class AsyncDB:
         params: Dict[str, Any] = {"agent_id": agent_id}
 
         dt_filter = ""
+        ordering = "DESC"
+        if order_asc:
+            ordering = "ASC"
         if start:
             dt_filter += " AND cm.message_time >= %(start)s"
             params["start"] = start
@@ -992,7 +996,7 @@ class AsyncDB:
             LEFT JOIN agent.notifications nf
             ON cm.message_id = nf.message_id
             WHERE cm.agent_id = %(agent_id)s{dt_filter}
-            ORDER BY cm.message_time DESC
+            ORDER BY cm.message_time {ordering}
             {limit_sql} {offset_sql}
         """
         total_count_sql = f"""
