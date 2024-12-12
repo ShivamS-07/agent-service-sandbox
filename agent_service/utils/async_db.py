@@ -2796,7 +2796,9 @@ class AsyncDB:
             qc_infos.append(info)
         return qc_infos
 
-    async def get_company_descriptions(self, gbi_ids: List[int]) -> Dict[int, str]:
+    async def get_company_descriptions(
+        self, gbi_ids: List[int], use_placeholder_text: bool = True
+    ) -> Dict[int, str]:
         sql = """
         SELECT DISTINCT ON (ssm.gbi_id) ssm.gbi_id, cds.company_description_short, cds.last_updated
         FROM spiq_security_mapping ssm
@@ -2814,7 +2816,15 @@ class AsyncDB:
         )
 
         descriptions_rows = {row["gbi_id"]: row["company_description_short"] for row in rows}
-        descriptions = {gbi: descriptions_rows.get(gbi, "No description found") for gbi in gbi_ids}
+        if use_placeholder_text:
+            descriptions = {
+                gbi: descriptions_rows.get(gbi, "No description found") for gbi in gbi_ids
+            }
+        else:
+            # Without placeholder, will just filter stocks that aren't present
+            descriptions = {
+                gbi: descriptions_rows[gbi] for gbi in gbi_ids if gbi in descriptions_rows
+            }
 
         # replace with long if it exists
         for row in rows_long:

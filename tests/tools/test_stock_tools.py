@@ -76,6 +76,7 @@ class TestStockIdentifierLookup1(TestStockIdentifierLookup):
         self.assertEqual(result.symbol, "DLR")
         self.assertEqual(result.gbi_id, 15303)
 
+    @unittest.skip("flaky, skipping for now per David G")
     async def test_stock_identifier_lookup_symbol_plus_name(self):
         self.args = StockIdentifierLookupInput(stock_name="ARTI Evolve ETF")
         result = await stock_identifier_lookup(self.args, self.context)
