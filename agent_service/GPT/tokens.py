@@ -2,13 +2,17 @@ from typing import List
 
 import tiktoken
 
-from agent_service.GPT.constants import DEFAULT_OUTPUT_LEN, MAX_TOKENS
+from agent_service.GPT.constants import DEFAULT_OUTPUT_LEN, GPT4_O, MAX_TOKENS
 
 
 class GPTTokenizer:
     def __init__(self, model: str) -> None:
         self.model = model
-        self.encoder = tiktoken.encoding_for_model(model)
+        if model.startswith("claude"):
+            # We will use gpt-4o encoder since anthropic doesn't yet provide us a tokenizer
+            self.encoder = tiktoken.encoding_for_model(GPT4_O)
+        else:
+            self.encoder = tiktoken.encoding_for_model(model)
 
     def do_truncation_if_needed(
         self, truncate_str: str, other_prompt_strs: List[str], output_len: int = DEFAULT_OUTPUT_LEN

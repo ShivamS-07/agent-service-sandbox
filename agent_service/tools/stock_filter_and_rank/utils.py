@@ -482,9 +482,28 @@ async def check_text_diff(
         prev_explanation = prev_output.history[-1].explanation  # type: ignore
 
     prev_score_int = ceil(prev_score)
+
+    # It's possible that we pass the max context window with this prompt. The culprit is the text_str.
+    # Therefore, trim ONLY the texts if needed.
+    rubric = "\n".join([f"Level {k}: {v}" for k, v in rubric_dict.items()])
+    main_prompt_without_texts = FILTER_UPDATE_CHECK_MAIN.format(
+        company_name=company_name,
+        rubric=rubric,
+        score=prev_score_int,
+        explanation=prev_explanation,
+        texts="",  # Empty so we can get the token length without these texts, which we may need to trim
+    )
+    text_str = GPTTokenizer(model=llm.model).do_truncation_if_needed(
+        text_str,  # type: ignore
+        [
+            main_prompt_without_texts.filled_prompt,
+            FILTER_UPDATE_CHECK_SYS.template,
+        ],
+    )
+
     main_prompt = FILTER_UPDATE_CHECK_MAIN.format(
         company_name=company_name,
-        rubric="\n".join([f"Level {k}: {v}" for k, v in rubric_dict.items()]),
+        rubric=rubric,
         score=prev_score_int,
         explanation=prev_explanation,
         texts=text_str,

@@ -25,6 +25,11 @@ MAX_TOKENS = {
     GPT4_TURBO: 128000,
     GPT35_TURBO: 16384,
     ADA_2: 8192,
+    # Actually 200,000, but let's decrease it since we have to
+    # rely on OpenAI's tokenizer, which is different. Plus we don't want to
+    # sit so close to the max context window anyway.
+    HAIKU: 180000,
+    SONNET: 180000,
 }
 DEFAULT_OUTPUT_LEN = 4096
 
