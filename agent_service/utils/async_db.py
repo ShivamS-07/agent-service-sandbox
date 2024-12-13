@@ -2342,6 +2342,16 @@ class AsyncDB:
 
         to_insert.append(InsertToTableArgs(table_name="agent.plan_runs", rows=plan_runs))
 
+        task_run_sql = """
+        SELECT * FROM agent.task_runs WHERE agent_id = %(agent_id)s
+        """
+        task_runs = await self.pg.generic_read(task_run_sql, params={"agent_id": src_agent_id})
+        for task_run in task_runs:
+            task_run["plan_run_id"] = plan_run_id_map[task_run["plan_run_id"]]
+            task_run["agent_id"] = dst_agent_id
+
+        to_insert.append(InsertToTableArgs(table_name="agent.task_runs", rows=task_runs))
+
         get_chat_messages_sql = """
             select * from agent.chat_messages where agent_id = %(agent_id)s
         """
