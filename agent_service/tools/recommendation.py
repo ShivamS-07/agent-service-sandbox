@@ -679,9 +679,12 @@ async def get_stock_recommendations(
             prev_other: Dict[str, str] = prev_run_info.debug  # type:ignore
             prev_time: datetime = prev_run_info.timestamp  # type:ignore
             if prev_other:
+                prev_score_dict = (
+                    load_io_type(prev_other["score_dict"]) if prev_other.get("score_dict") else {}
+                )
                 prev_scores = {  # type: ignore
                     stock: RecommendationScores(news_score=news_score, rating_score=rating_score)
-                    for stock, news_score, rating_score in load_io_type(prev_other["score_dict"])  # type: ignore
+                    for stock, news_score, rating_score in prev_score_dict  # type: ignore
                 }
     except Exception as e:
         logger.exception(f"Error getting info from previous run: {e}")
@@ -781,8 +784,10 @@ async def get_stock_recommendations(
         score_dict[stock_id] = rec_scores
 
     debug_info["score_dict"] = dump_io_type(
-        [stock_id, recommendation.news_score, recommendation.rating_score]
-        for stock_id, recommendation in score_dict.items()
+        [
+            [stock_id, recommendation.news_score, recommendation.rating_score]
+            for stock_id, recommendation in score_dict.items()
+        ]
     )
 
     ranked_stocks = sorted(

@@ -667,7 +667,7 @@ async def filter_stocks_by_country_of_domicile(
                     context, "filter_stocks_by_country_of_domicile"
                 )
                 if prev_run_info is not None:
-                    prev_input = FilterStockRegionInput.model_validate_json(
+                    prev_input = FilterStockContryOfDomicileInput.model_validate_json(
                         prev_run_info.inputs_str
                     )
                     prev_output: List[StockID] = prev_run_info.output  # type:ignore

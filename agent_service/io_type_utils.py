@@ -524,10 +524,21 @@ IOTypeDict = Union[  # type: ignore
 # necessarily basemodels.
 IOTypeAdapter: TypeAdapter = TypeAdapter(IOTypeBase)
 
+TUPLE_IO_TYPE_NAME_KEY = "tuple"
+TUPLE_IO_TYPE_VAL_KEY = "val"
+
 
 def _dump_io_type_helper(val: IOTypeBase) -> Any:
     if isinstance(val, SerializeableBase):
         return val.model_dump(mode="json")
+    if isinstance(val, tuple):
+        # TECHNICALLY tuples are not allowed, but for some reason mypy is dumb
+        # and doesn't catch tuples in io types... so now we need to support
+        # them. Json doesn't support tuples so we need to wrap them in an abject
+        # to preserve type info.
+        return _dump_io_type_helper(
+            {IO_TYPE_NAME_KEY: TUPLE_IO_TYPE_NAME_KEY, TUPLE_IO_TYPE_VAL_KEY: list(val)}
+        )
     if isinstance(val, list):
         return [_dump_io_type_helper(elem) for elem in val]
     if isinstance(val, dict):
@@ -537,7 +548,10 @@ def _dump_io_type_helper(val: IOTypeBase) -> Any:
 
 def load_io_type_dict(val: Any) -> IOTypeBase:
     if isinstance(val, dict) and IO_TYPE_NAME_KEY in val:
-        return SerializeableBase.load(val)
+        if val[IO_TYPE_NAME_KEY] == TUPLE_IO_TYPE_NAME_KEY:
+            return tuple(load_io_type_dict(val["val"]))  # type: ignore
+        else:
+            return SerializeableBase.load(val)
     if isinstance(val, list):
         return [load_io_type_dict(elem) for elem in val]
     if isinstance(val, dict):

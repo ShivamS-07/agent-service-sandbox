@@ -15,6 +15,7 @@ from agent_service.io_type_utils import (
     load_io_type,
 )
 from agent_service.io_types.table import Table, TableColumnMetadata
+from agent_service.io_types.text import Text, TextCitation
 from agent_service.types import ChatContext, Message
 
 
@@ -52,6 +53,22 @@ class TestIOType(unittest.TestCase):
             [[1, 2, 3], [4, 5, 6], ["a", 1, True], table],
             {"1": 2, "a": "b"},
             {"1": [1, 2, 3, "a", True], "2": [2.4]},
+            # Tuples (which aren't technically supported but sort of need to be
+            # now for backwards compatibility)
+            [(1, True), ("x", False)],
+            ("hello", "goodbye"),
+            (
+                "test",
+                TestComplexType(
+                    title="",
+                    val=3,
+                    history=[
+                        HistoryEntry(
+                            explanation="test", citations=[TextCitation(source_text=Text())]
+                        )
+                    ],
+                ),
+            ),
         ]
 
         for arg in cases:
