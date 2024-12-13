@@ -53,7 +53,7 @@ class FirstActionDecider:
         result = await self.llm.do_chat_w_sys_prompt(
             main_prompt, FIRST_ACTION_DECIDER_SYS_PROMPT.format()
         )
-        action = FirstAction[result.split()[-1].strip().upper()]
+        action = FirstAction[result.split()[-1].strip("`").strip().upper()]
         return action
 
 
@@ -96,7 +96,7 @@ class FollowupActionDecider:
             main_prompt, FOLLOWUP_ACTION_DECIDER_SYS_PROMPT.format()
         )
         chat_context.messages.append(latest_message)
-        action = FollowupAction[result.split()[-1].strip().upper()]
+        action = FollowupAction[result.split()[-1].strip("`").strip().upper()]
         if len(reads_chat_list) == 0 and action == FollowupAction.RERUN:  # GPT shouldn't do this
             action = FollowupAction.REPLAN
         automation_enabled = await self.db.get_agent_automation_enabled(agent_id=self.agent_id)
@@ -187,18 +187,19 @@ async def main() -> None:
         "I need you to include Amazon in the summary as well",
         "That's good, but I also need their current stock prices",
         "Move the text down below the graph please",
+        "Let me know when new data is avaialble every week",
     ]
 
     followup_action_decider = FollowupActionDecider("71e3c9dd-2dc5-42c2-bc99-de2f045628d2")
-    # first_action_decider = FirstActionDecider("aa0f8b5e-ef77-4c67-acdb-e14d3689e7e2")
+    first_action_decider = FirstActionDecider("aa0f8b5e-ef77-4c67-acdb-e14d3689e7e2")
     for new_input in new_user_inputs:
         new_message = Message(message=new_input, is_user_message=True, message_time=get_now_utc())
         print(new_message)
         chat_context.messages.append(new_message)
         result = await followup_action_decider.decide_action(chat_context, plan)  # type: ignore
         print("Followup action:", result)
-        # result = await first_action_decider.decide_action(chat_context)  # type: ignore
-        # print("First action:", result)
+        result = await first_action_decider.decide_action(chat_context)  # type: ignore
+        print("First action:", result)
         print("=" * 100)
         chat_context.messages.pop()
 
