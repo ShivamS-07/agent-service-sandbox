@@ -324,6 +324,7 @@ class ScoreOutput(SerializeableBase):
             return f"(Overall Score: {self.val}, {sub_scores})"
 
 
+@io_type
 class SubScoreOutput(ScoreOutput):
     pass
 
