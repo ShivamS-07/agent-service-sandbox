@@ -656,7 +656,8 @@ async def get_news_articles_for_topics(
 
     if not args.suppress_no_article_error and len(news_articles) == 0:
         await tool_log(
-            f"Found no news articles for provided topic(s) between {start_date=}, {end_date=}",
+            "Found no news articles for provided topic(s) between"
+            f" {start_date.isoformat()} and {end_date.isoformat()}",
             context=context,
         )
 
