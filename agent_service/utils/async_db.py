@@ -830,6 +830,27 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, params={"agent_id": agent_id})
         return rows[0]["user_id"] if rows else None
 
+    async def get_agents_owners(
+        self, agent_ids: List[str], include_deleted: bool = True
+    ) -> List[str]:
+        """
+        This function retrieves the owner of an agent, mainly used in authorization.
+        Caches the result for 128 calls since the owner cannot change.
+
+        Args:
+            agent_id: The agent id to retrieve the owner for.
+
+        Returns: The user id of the agent owner.
+        """
+        deleted_clause = "AND NOT deleted" if not include_deleted else ""
+        sql = f"""
+            SELECT user_id::VARCHAR
+            FROM agent.agents
+            WHERE agent_id = ANY(%(agent_ids)s) {deleted_clause};
+        """
+        rows = await self.pg.generic_read(sql, params={"agent_ids": agent_ids})
+        return [row["user_id"] for row in rows]
+
     @async_perf_logger
     async def get_agent_plan_runs(
         self,
@@ -1400,6 +1421,13 @@ class AsyncDB:
             where={"agent_id": agent_id},
             values_to_update={"deleted": True},
         )
+
+    async def delete_agents_by_ids(self, agent_ids: List[str]) -> None:
+        sql = "UPDATE agent.agents SET deleted = true WHERE agent_id = ANY(%(agent_ids)s)"
+
+        params = {"agent_ids": agent_ids}
+
+        await self.pg.generic_write(sql, params=params)
 
     async def is_agent_deleted(self, agent_id: Optional[str]) -> bool:
         if agent_id is None:

@@ -34,6 +34,7 @@ from agent_service.endpoints.authz_helper import (
     get_keyid_to_key_map,
     parse_header,
     validate_user_agent_access,
+    validate_user_agents_access,
     validate_user_plan_run_access,
 )
 from agent_service.endpoints.models import (
@@ -56,6 +57,8 @@ from agent_service.endpoints.models import (
     DeleteAgentOutputRequest,
     DeleteAgentOutputResponse,
     DeleteAgentResponse,
+    DeleteAgentsRequest,
+    DeleteAgentsResponse,
     DeleteSectionRequest,
     DeleteSectionResponse,
     DisableAgentAutomationRequest,
@@ -431,6 +434,21 @@ async def delete_agent(agent_id: str, user: User = Depends(parse_header)) -> Del
             invalidate_cache=True,
         )
     return await application.state.agent_service_impl.delete_agent(agent_id=agent_id)
+
+
+@router.delete(
+    "/agent/delete-agents", response_model=DeleteAgentsResponse, status_code=status.HTTP_200_OK
+)
+async def delete_agents(
+    req: DeleteAgentsRequest, user: User = Depends(parse_header)
+) -> DeleteAgentsResponse:
+    if not await user_has_qc_tool_access(
+        user_id=user.user_id, async_db=application.state.agent_service_impl.pg
+    ):
+        await validate_user_agents_access(
+            user.user_id, req.agent_ids, async_db=application.state.agent_service_impl.pg
+        )
+    return await application.state.agent_service_impl.delete_agents(agent_ids=req.agent_ids)
 
 
 @router.post(

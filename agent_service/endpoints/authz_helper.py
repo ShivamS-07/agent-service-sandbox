@@ -202,6 +202,10 @@ async def get_agent_owner(
     return owner_id
 
 
+async def get_agents_owners(agent_ids: List[str], async_db: AsyncDB) -> List[str]:
+    return await async_db.get_agents_owners(agent_ids, include_deleted=False)
+
+
 async def invalidate_agent_owner_cache(agent_id: str) -> None:
     await AGENT_OWNER_CACHE.invalidate(agent_id)
 
@@ -239,6 +243,32 @@ async def validate_user_agent_access(
 
     if invalidate_cache:
         await invalidate_agent_owner_cache(agent_id)
+
+
+async def validate_user_agents_access(
+    request_user_id: Optional[str], agent_ids: List[str], async_db: AsyncDB
+) -> None:
+    """
+    Validates whether the request user is the owner of the agents.
+    - The agents must not be deleted, otherwise `owner_id` will be None, thus raising Exception
+    This flag is currently only used by `/delete-agents` endpoint.
+    """
+
+    if not request_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
+        )
+
+    owner_ids = await get_agents_owners(agent_ids, async_db)
+    if owner_ids is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Agents not found: {agent_ids}"
+        )
+    elif not all(owner_id == request_user_id for owner_id in owner_ids):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User {request_user_id} is not authorized to access ALL agents: {agent_ids}",
+        )
 
 
 async def validate_user_plan_run_access(

@@ -70,6 +70,7 @@ from agent_service.endpoints.models import (
     DeleteAgentOutputRequest,
     DeleteAgentOutputResponse,
     DeleteAgentResponse,
+    DeleteAgentsResponse,
     DeleteCustomDocumentsResponse,
     DeleteMemoryResponse,
     DeletePromptTemplateResponse,
@@ -496,6 +497,10 @@ class AgentServiceImpl:
             db=self.pg,
         )
         return DeleteAgentResponse(success=True)
+
+    async def delete_agents(self, agent_ids: List[str]) -> DeleteAgentsResponse:
+        await self.pg.delete_agents_by_ids(agent_ids=agent_ids)
+        return DeleteAgentsResponse(success=True)
 
     async def restore_agent(self, agent_id: str) -> RestoreAgentResponse:
         await self.pg.restore_agent_by_id(agent_id)

@@ -63,6 +63,14 @@ class RestoreAgentResponse(BaseModel):
     success: bool
 
 
+class DeleteAgentsRequest(BaseModel):
+    agent_ids: List[str]
+
+
+class DeleteAgentsResponse(BaseModel):
+    success: bool
+
+
 ####################################################################################################
 # UpdateAgent
 ####################################################################################################
