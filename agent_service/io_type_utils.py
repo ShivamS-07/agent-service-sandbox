@@ -556,6 +556,8 @@ def load_io_type_dict(val: Any) -> IOTypeBase:
         return [load_io_type_dict(elem) for elem in val]
     if isinstance(val, dict):
         return {k: load_io_type_dict(v) for k, v in val.items()}
+    if val is None:
+        return None  # type: ignore
     return IOTypeAdapter.validate_python(val)
 
 
