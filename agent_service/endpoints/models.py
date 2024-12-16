@@ -1582,7 +1582,7 @@ class RenameSectionResponse(BaseModel):
 
 class SetAgentSectionRequest(BaseModel):
     new_section_id: Optional[str]
-    agent_id: str
+    agent_ids: List[str]
 
 
 class SetAgentSectionResponse(BaseModel):

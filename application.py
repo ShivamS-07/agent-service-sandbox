@@ -1392,7 +1392,7 @@ async def set_agent_section(
     req: SetAgentSectionRequest, user: User = Depends(parse_header)
 ) -> SetAgentSectionResponse:
     await application.state.agent_service_impl.set_agent_sidebar_section(
-        new_section_id=req.new_section_id, agent_id=req.agent_id, user=user
+        new_section_id=req.new_section_id, agent_ids=req.agent_ids, user=user
     )
     return SetAgentSectionResponse(success=True)
 

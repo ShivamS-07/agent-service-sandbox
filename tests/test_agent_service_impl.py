@@ -378,26 +378,26 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         # Add agents to sections
         self.loop.run_until_complete(
             self.agent_service_impl.set_agent_sidebar_section(
-                new_section_id=section_id_1, agent_id=agent_id_1, user=test_user
+                new_section_id=section_id_1, agent_ids=[agent_id_1], user=test_user
             )
         )
 
         self.loop.run_until_complete(
             self.agent_service_impl.set_agent_sidebar_section(
-                new_section_id=section_id_1, agent_id=agent_id_2, user=test_user
+                new_section_id=section_id_1, agent_ids=[agent_id_2], user=test_user
             )
         )
 
         self.loop.run_until_complete(
             self.agent_service_impl.set_agent_sidebar_section(
-                new_section_id=section_id_2, agent_id=agent_id_3, user=test_user
+                new_section_id=section_id_2, agent_ids=[agent_id_3], user=test_user
             )
         )
 
         # Reassign agent to another section
         self.loop.run_until_complete(
             self.agent_service_impl.set_agent_sidebar_section(
-                new_section_id=section_id_2, agent_id=agent_id_1, user=test_user
+                new_section_id=section_id_2, agent_ids=[agent_id_1], user=test_user
             )
         )
 

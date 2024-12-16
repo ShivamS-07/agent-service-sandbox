@@ -1944,15 +1944,15 @@ class AsyncDB:
         return [AgentNotificationEmail(**row) for row in rows]
 
     async def set_agent_section(
-        self, new_section_id: Optional[str], agent_id: str, user_id: str
+        self, new_section_id: Optional[str], agent_ids: List[str], user_id: str
     ) -> None:
         sql = """
         UPDATE agent.agents SET section_id = %(new_section_id)s
-        WHERE agent_id = %(agent_id)s and user_id = %(user_id)s
+        WHERE agent_id = ANY(%(agent_ids)s) and user_id = %(user_id)s
         """
         await self.pg.generic_write(
             sql=sql,
-            params={"new_section_id": new_section_id, "agent_id": agent_id, "user_id": user_id},
+            params={"new_section_id": new_section_id, "agent_ids": agent_ids, "user_id": user_id},
         )
 
     async def update_agent_sections(
