@@ -544,18 +544,12 @@ but simply strings of the form YYYYQQ, e.g. `2022Q1`. Note that quarters in
 this form can also be sorted by just using the sort_values method if needed.
 You do not need to, and should not, create separate Year and Quarter columns
 when doing your calculation.
-Unlike dates, you don't need to worry about these quarters not being valid
-periods in the dataset. As such, it is easily to construct directly the quarters
-you need for any calculation. If, for example, you are calculating the
-change for some statistic over the last year, and the current date in isoformat
-is 2024-05-31, then the two quarters your need for your calculation are 2024Q2
-and 2023Q2. You must not do anything like the complex calculation used for dates,
-just generate the strings needed directly in your code, e.g.
+Similarly to dates, you must never assume a particular quarter is in your data, instead you
+should use the same logic for identifying the closest relevant quarters, e.g.
 
-start_period = '2023Q2'
-end_period = '2024Q2'
-
-Otherwise, the calculations should be identical to what you would do with dates.
+initial_end_quarter = "2024Q4"
+quarter_series = pd.Series(df['Period'].unique()).sort_values(ignore_index=True)
+end_anchor_quarter = date_series[date_series['Period'] <= initial_end_quarter].iloc[-1]
 
 Sometimes you will be converting data broken down by individual dates or quarters
 into other units of time, such as months or years. Examples are YoY Revenue growth, or
