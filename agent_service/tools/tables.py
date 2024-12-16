@@ -129,9 +129,15 @@ async def gen_new_column_schema(
 class TransformTableArgs(ToolArgs):
     input_table: Table
     transformation_description: str
+
+    # Hidden args
     no_cache: bool = False
+    transform_code: Optional[str] = None
+    target_schema: Optional[List[TableColumnMetadata]] = None
     arg_metadata = {
         "no_cache": ToolArgMetadata(hidden_from_planner=True),
+        "transform_code": ToolArgMetadata(hidden_from_planner=True),
+        "target_schema": ToolArgMetadata(hidden_from_planner=True),
     }
 
 
@@ -436,6 +442,8 @@ async def transform_table(
         old_description=old_description,
         old_date=old_date,
         debug_info=debug_info,
+        manual_code=args.transform_code,
+        manual_new_col_schema=args.target_schema,
     )
     output_table = list_of_one_table[0]
 
@@ -547,6 +555,9 @@ async def transform_tables_helper(
     old_description: Optional[str] = None,
     old_date: Optional[str] = None,
     debug_info: Dict[str, Any] = {},
+    # Manually passed in code, overrides everything
+    manual_code: Optional[str] = None,
+    manual_new_col_schema: Optional[List[TableColumnMetadata]] = None,
 ) -> List[Table]:
     logger = get_prefect_logger(__name__)
 
@@ -562,7 +573,10 @@ async def transform_tables_helper(
 
     data_dfs = [input_table.to_df(stocks_as_hashables=True) for input_table in tables]
 
-    if not old_code or not old_schema:
+    if manual_code and manual_new_col_schema:
+        code = manual_code
+        new_col_schema = manual_new_col_schema
+    elif not old_code or not old_schema:
         old_gpt = GPT(context=gpt_context)  # keep using turbo for the schema generation
         await tool_log(log="Computing new table schema", context=context)
         new_col_schema = await gen_new_column_schema(
@@ -658,6 +672,7 @@ async def transform_tables_helper(
         output_dfs.append(output_df)
 
     if had_error:
+        gpt = medium_gpt
         debug_info["code_first_attempt_error"] = error
         output_dfs = []
         logger.warning("Failed when transforming dataframe... trying again")
