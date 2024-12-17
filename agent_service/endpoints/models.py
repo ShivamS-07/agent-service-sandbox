@@ -1335,6 +1335,16 @@ class GetNewsSummaryResponse(BaseModel):
     sourceCounts: List[SourceCount]
 
 
+class GetStockRelatedAgentsResponse(BaseModel):
+    class RelatedAgent(BaseModel):
+        agent_id: str
+        agent_name: str
+        run_description: Optional[str]
+        last_updated: datetime.datetime
+
+    agents: List[RelatedAgent]
+
+
 ####################################################################################################
 # ETF
 ####################################################################################################

@@ -21,6 +21,7 @@ from agent_service.endpoints.models import (
     GetRealTimePriceResponse,
     GetSecurityProsConsResponse,
     GetSecurityResponse,
+    GetStockRelatedAgentsResponse,
     GetUpcomingEarningsResponse,
 )
 from agent_service.endpoints.routers.utils import get_agent_svc_impl
@@ -158,13 +159,17 @@ async def get_security(gbi_id: int, user: User = Depends(parse_header)) -> GetSe
     return await agent_svc_impl.get_security(user=user, gbi_id=gbi_id)
 
 
-@router.post(
-    "/news-topics",
-    response_model=GetNewsTopicsResponse,
-    status_code=status.HTTP_200_OK,
-)
+@router.post("/news-topics", response_model=GetNewsTopicsResponse, status_code=status.HTTP_200_OK)
 async def get_news_topics(
     req: GetNewsTopicsRequest, user: User = Depends(parse_header)
 ) -> GetNewsTopicsResponse:
     agent_svc_impl = get_agent_svc_impl()
     return await agent_svc_impl.get_news_topics(req=req, user=user)
+
+
+@router.get("/{gbi_id}/related-agents")
+async def get_related_agents(
+    gbi_id: int, user: User = Depends(parse_header)
+) -> GetStockRelatedAgentsResponse:
+    agent_svc_impl = get_agent_svc_impl()
+    return await agent_svc_impl.get_stock_related_agents(user=user, gbi_id=gbi_id)

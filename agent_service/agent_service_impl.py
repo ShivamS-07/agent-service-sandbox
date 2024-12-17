@@ -125,6 +125,7 @@ from agent_service.endpoints.models import (
     GetSecureUserResponse,
     GetSecurityProsConsResponse,
     GetSecurityResponse,
+    GetStockRelatedAgentsResponse,
     GetTestCaseInfoResponse,
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
@@ -2817,6 +2818,30 @@ class AgentServiceImpl:
         if price_data is None:
             return GetPriceDataResponse(price_data=None)
         return GetPriceDataResponse(price_data=GetPriceDataResponse.PriceData(**price_data))
+
+    async def get_stock_related_agents(
+        self, user: User, gbi_id: int
+    ) -> GetStockRelatedAgentsResponse:
+        sql = """
+            WITH t AS (
+                SELECT DISTINCT ON (sra.agent_id)
+                    sra.agent_id, a.agent_name, sra.created_at, sra.score,
+                    pr.run_metadata->>'run_summary_short' AS run_description
+                FROM agent.stock_related_agents sra
+                JOIN agent.agents a ON sra.agent_id = a.agent_id
+                JOIN agent.plan_runs pr ON sra.plan_run_id = pr.plan_run_id
+                WHERE sra.gbi_id = %(gbi_id)s AND a.user_id = %(user_id)s
+                    AND NOT a.deleted AND a.automation_enabled
+                ORDER BY sra.agent_id, sra.created_at DESC
+            )
+            SELECT agent_id::VARCHAR, agent_name, run_description, created_at AS last_updated
+            FROM t
+            ORDER BY score DESC, last_updated DESC
+        """
+        rows = await self.pg.generic_read(sql, {"gbi_id": gbi_id, "user_id": user.user_id})
+        return GetStockRelatedAgentsResponse(
+            agents=[GetStockRelatedAgentsResponse.RelatedAgent(**row) for row in rows]
+        )
 
     async def search_agent_qcs(
         self,
