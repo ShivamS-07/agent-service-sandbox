@@ -180,6 +180,7 @@ async def main() -> None:
     plan = await planner.create_initial_plan(chat_context, plan_id=str(uuid4()))
 
     new_user_inputs = [
+        "hey can you alert me when sell-side 2025 earnings estimates for AIG change?"
         "create another widget for LULU",
         "No wait! just do it for TSLA",
         "Thanks!",

@@ -89,7 +89,9 @@ PLAN_GUIDELINES = """The top priority of a plan is that the information needs of
 - Consider carefully before calling prepare output twice on the same underlying data. You must avoid outputting the same information twice unless the user explicitly asks for it. Outputting both a list of texts and the summary of those same texts usually redundant (only output the summary). Outputing a text and an additional text which is the analysis of only that text is redundant (only output the original text).
 - Complex requests may involve multiple outputs, make sure you are outputting everything the user wants to see!
 - Some requests that appear simple also expect multiple outputs, for example requests that involve testing hypotheses have many different outputs. If a sample request that is very similar to the current request has multiple outputs, please remember to mention those multiple outputs in your Output(s) comment (the second line of your output), and include multiple calls to prepare_outputs in the plan!
-- Sometimes clients will mention an 'object' (e.g. specific stock, portfolio, watchlist, statistic, custom document, etc.) by including an integer or UUID identifier after the object name. In these cases, make sure you pass the ID unchanged to the relevant tools if possible. You always need to pass these string or integer ID's into the appropriate ID lookup tool. Never use the int or UUID string directly in any other tool."""
+- Sometimes clients will mention an 'object' (e.g. specific stock, portfolio, watchlist, statistic, custom document, etc.) by including an integer or UUID identifier after the object name. In these cases, make sure you pass the ID unchanged to the relevant tools if possible. You always need to pass these string or integer ID's into the appropriate ID lookup tool. Never use the int or UUID string directly in any other tool.
+- Sometimes client requests to be notified for a specific event, for example, when a stock reaches a certain price. In this case, you should ignore the notification part and focus on the main request. For example, if the client asks to be notified when a stock reaches a certain price, your plan should focus on getting the stock price and showing it to the client, not on sending a notification.
+"""
 
 PLAN_EXAMPLE = "if you had the following two functions if your function set:\ndef add(num1: float, num2: float) -> float:\n# This function adds two numbers\ndef multiply(num1:float, num2:float) -> float:\n# this function multiplies two numbers\nAnd if the client message was:\nAdd 2.4 and 7.93 and multiply the result by 3\nThen you would output:\n # Must haves: add 2.4 and 7.93, multiply by 3.0\n\n# Output(s): a float indicating the result of the calculation\n# Rough plan: I'll add the first two numbers first, then multiply\nDefaults: None\nProducts: None\nText Types: None\n# add 2.4 7.93\nsum = add(num1=2.4, num2=7.93)   # Add 2.4 and 7.93\n# float-Yes\n# product sum 3.0\nproduct = multiply(num1=sum, num2=3.0)  # Multiply that sum by 3\n# float-Yes"
 
@@ -157,6 +159,9 @@ FIRST_ACTION_DECIDER_SYS_PROMPT_STR = (
     "   - Choose `Plan` for requests that adjust or complement an initial request.\n"
     "     - Examples: 'Can you add an analysis of Apple stocks to the plan?'\n"
     "   - If the client requests both a task and a notification, choose `Plan`.\n\n"
+    "     - Examples: "
+    "       'Analyze the stock price of Apple and notify me if it changes.', "
+    "       'hey can you alert me when sell-side 2025 earnings estimates for AIG change?'\n\n"
     "2. **Refer:**\n"
     "   - Choose `Refer` for questions related to FAQs, HOW-TOs, or the functionality of tools/software.\n"
     "     - Examples: 'What databases do you use?', 'How do I add a new stock?', 'What is the purpose of X tool?'\n"
@@ -174,7 +179,8 @@ FIRST_ACTION_DECIDER_SYS_PROMPT_STR = (
     "   - Do NOT confuse notifications with tasks; if the client requests both a task and a notification, choose `Plan`.\n\n"
     "### Additional Notes:\n"
     "- In most cases, the action will be `Plan`, as clients frequently ask for specific tasks or analysis.\n"
-    "- Be careful to differentiate between `Plan`, `Refer`, and `None` for ambiguous messages.\n\n"
+    "- Be careful to differentiate between `Plan`, `Refer`, and `None` for ambiguous messages.\n"
+    "- When client says notify me when something happends as the first message, you MUST choose `Plan`.\n\n"
     "### Response Format:\n"
     "- Provide your chosen action as the final output.\n"
     "Example: `Plan`"
