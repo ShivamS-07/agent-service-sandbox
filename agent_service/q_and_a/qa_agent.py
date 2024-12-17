@@ -9,10 +9,15 @@ from agent_service.external.gemini_client import GeminiClient
 from agent_service.GPT.constants import GPT4_O
 from agent_service.io_type_utils import IOType, load_io_type
 from agent_service.q_and_a.examine_plan import EXAMINE_PLAN_FUNC
-from agent_service.q_and_a.examine_task import EXAMINE_TASK_FUNC
+from agent_service.q_and_a.examine_task import (
+    EXAMINE_TASK_FUNC,
+    ExamineTaskArgs,
+    get_all_task_related_info,
+)
 from agent_service.q_and_a.general_knowledge import (
     ASK_GENERAL_QUESTION_FUNC,
 )
+from agent_service.q_and_a.utils import QAContext
 from agent_service.types import ChatContext
 from agent_service.utils.async_db import AsyncDB, get_async_db
 from agent_service.utils.async_utils import gather_with_concurrency
@@ -32,6 +37,7 @@ Q_AND_A_SYS_PROMPT = Prompt(
         "It should be less than 150 words unless the user asks for more details.\n"
         "\n- Your answer must only directly answer the user's question, "
         "try not to give too much supplemental info they weren't asking for. Concise is good."
+        "\n- Note that some inputs and outputs for the tasks might be truncated to fit in the prompt. "
     ),
 )
 Q_AND_A_MAIN_PROMPT = Prompt(
@@ -44,6 +50,8 @@ Q_AND_A_MAIN_PROMPT = Prompt(
         "\n{chat_context}\n------\n"
         "The workflow plan that your are running is: "
         "\n{plan}\n------\n"
+        "The info related to each task in the plan are:\n"
+        "\n{tasks_info}\n------\n"
         "The workflow logs for the executed plan is:\n"
         "\n{logs}\n------\n"
         "The final report of the executed workflow is here. Note that there may be a lot of "
@@ -141,21 +149,43 @@ class QAAgent:
         (_, plan), work_logs, outputs_raw, grounding_result = await asyncio.gather(*tasks)  # type: ignore
 
         logs = [f'- {log["log_message"]}' for log in reversed(work_logs) if log]  # type: ignore
-
+        # get the outputs and prepare the report
         io_outputs = [
             load_io_type(row["output"]) if row["output"] else row["output"]
             for row in outputs_raw  # type: ignore
         ]
         report = await self._prep_report_string(io_outputs, db=async_db)  # type: ignore
+        # get all the tasks related info for all the tasks in the plan
+        tasks = [
+            get_all_task_related_info(
+                ExamineTaskArgs(
+                    task_id=task.tool_task_id,  # type: ignore
+                    tool_name=task.tool_name,  # type: ignore
+                    query=query,
+                ),
+                context=QAContext(
+                    agent_id=self.agent_id,
+                    plan_run_id=about_plan_run_id,
+                    user_id=self.user_id,
+                    chat_context=self.chat_context,
+                ),
+            )
+            for task in plan.nodes  # type: ignore
+        ]
+        tasks_info = await asyncio.gather(*tasks)
 
         main_prompt_str = Q_AND_A_MAIN_PROMPT.format(
             query=query,
             chat_context=self.chat_context.get_gpt_input(),
             plan=plan.get_formatted_plan(numbered=True, include_task_ids=True),  # type: ignore
+            tasks_info="\n".join(tasks_info),
             logs="\n".join(logs),
             report=report,
             grounding_result=grounding_result,
         ).filled_prompt
+        # save main prompt as txt
+        # with open("main_prompt.txt", "w") as f:
+        #     f.write(main_prompt_str)
 
         result = await self.llm_client.do_chat(
             DoChatArgs(
@@ -186,13 +216,13 @@ if __name__ == "__main__":
 
     async def main() -> None:
         qa_agent = QAAgent(
-            agent_id="3d766275-b00c-4e56-80d8-3c3746547c23",
+            agent_id="61037b16-10da-4520-97b4-4039914db895",
             chat_context=ChatContext(),
-            user_id="f495ac3c-1bc2-4780-8e6d-d9f2c58164cd",
+            user_id="3b997275-dcfe-4c19-8bb2-3e1366c4d5f3",
         )
 
-        query = "what is Hang Seng Index?"
-        about_plan_run_id = "3719cf35-5cad-4a6c-9527-04e7be7991ff"
+        query = "why XOM is selected in the filtering step?"
+        about_plan_run_id = "52b2c0fe-dec0-45b2-ad95-0ba84367fd19"
         print(await qa_agent.query(query, about_plan_run_id))
 
     asyncio.run(main())

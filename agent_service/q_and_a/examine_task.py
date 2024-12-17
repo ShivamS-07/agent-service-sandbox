@@ -6,7 +6,9 @@ from llm_client.functions.llm_func import LLMFuncArgs
 
 from agent_service.GPT.constants import GPT4_O, Prompt
 from agent_service.GPT.requests import GPT
-from agent_service.io_type_utils import load_io_type
+from agent_service.io_type_utils import IOType, load_io_type
+from agent_service.io_types.table import Table
+from agent_service.io_types.text import Text
 from agent_service.q_and_a.utils import QAContext
 from agent_service.tool import ToolArgs, default_tool_registry
 from agent_service.tools import *  # noqa
@@ -47,15 +49,26 @@ TASK_EXAMINE_MAIN_PROMPT = Prompt(
         "You have been asked a query about the details of a task performed using a tool function. "
         "This task was executed as part of a plan to address a user's request.\n\n"
         "Below is the relevant information to help you prepare your response:\n"
-        "### Task Input Arguments ###\n"
-        "{task_debug_info}\n\n"
-        "### Tool Description ###\n"
-        "{tool_desc}\n\n"
-        "{input_prompt}"
-        "{output_prompt}"
+        "{task_related_info}\n\n"
         "Now, answer the following query based on the provided information:\n"
         "{query}\n\n"
         "Write a clear, well-structured response that directly addresses the query."
+    ),
+)
+
+TASKS_RELATED_INFO = Prompt(
+    name="TASKS_RELATED_INFO",
+    template=(
+        "### Task Name ###\n"
+        "{tool_name}\n"
+        "## Task Debug Info  ###\n"
+        "{task_debug_info}\n"
+        "## Tool Description ###\n"
+        "{tool_desc}\n"
+        "## Task Inputs ###\n"
+        "{inputs}\n"
+        "## Task Outputs ###\n"
+        "{outputs}\n"
     ),
 )
 
@@ -64,12 +77,10 @@ class ExamineTaskArgs(LLMFuncArgs):
     task_id: str
     tool_name: str
     query: str
-    is_query_about_inputs: bool = False
-    is_query_about_outputs: bool = False
 
 
 @async_perf_logger
-async def examine_task(args: ExamineTaskArgs, context: QAContext) -> str:
+async def get_all_task_related_info(args: ExamineTaskArgs, context: QAContext) -> str:
     task_id = args.task_id
     tool_name = args.tool_name
     plan_run_id = context.plan_run_id
@@ -89,22 +100,35 @@ async def examine_task(args: ExamineTaskArgs, context: QAContext) -> str:
 
     # get task description from db
     tool = default_tool_registry().get_tool(tool_name)
+    description = tool.description
 
-    # get tool args object
-    inputs, outputs = None, None
-    if args.is_query_about_inputs:
-        tool_args = tool.input_type.model_validate_json(task_args_raw)
-        inputs = await prepare_input_for_gpt(tool_args)
-    if args.is_query_about_outputs:
-        outputs = await prepare_output_for_gpt(task_outputs_raw)
+    # prepare outputs
+    outputs_io = load_io_type(task_outputs_raw)
+    outputs = await prepare_for_gpt(outputs_io)
 
+    # prepare inputs
+    tool_args = tool.input_type.model_validate_json(task_args_raw)
+    inputs = await prepare_for_gpt(tool_args)
+
+    # prepare task related info
+    task_related_info = TASKS_RELATED_INFO.format(
+        tool_name=tool_name,
+        task_debug_info=task_debug_info,
+        tool_desc=description,
+        inputs=inputs,
+        outputs=outputs,
+    ).filled_prompt
+
+    return task_related_info
+
+
+@async_perf_logger
+async def examine_task(args: ExamineTaskArgs, context: QAContext) -> str:
+    task_related_info = await get_all_task_related_info(args, context)
     llm = GPT(model=GPT4_O, context=context.gpt_context)
     main_prompt = TASK_EXAMINE_MAIN_PROMPT.format(
-        task_debug_info=task_debug_info,
-        tool_desc=tool.description,
         query=args.query,
-        input_prompt=f"\n\n### Task Inputs ###\n{inputs}\n\n" if inputs else "",
-        output_prompt=f"\n\n### Task Outputs ###\n{outputs}\n\n" if outputs else "",
+        task_related_info=task_related_info,
     )
     # save main prompt as txt file
     # with open("main_prompt.txt", "w") as f:
@@ -126,40 +150,39 @@ EXAMINE_TASK_FUNC = LLMFunction(
         "or give details about how it works and what it returned or its inputs. "
         "Only call this when the query is related to a specific function in the workflow. "
         "`task_id` should be the task ID of the task that you are looking at. "
-        "`is_query_about_inputs` should be set to True if the query is about the inputs of the task. "
-        "`is_query_about_outputs` should be set to True if the query is about the outputs of the task. "
     ),
 )
 
 
-async def prepare_input_for_gpt(tool_args: ToolArgs) -> str:
-    """
-    helper function to convert inputs to gpt format and truncate if needed
-    """
-    res = {}
-    for arg_name, arg_value in tool_args.__dict__.items():
-        if isinstance(arg_value, list):
-            # only take the first 100 items
-            arg_value = arg_value[:100]
-        res[arg_name] = await io_type_to_gpt_input(
-            arg_value, use_abbreviated_output=True, concurrency_n=50
+async def prepare_for_gpt(io_types: IOType) -> str:
+    # for input cases
+    if isinstance(io_types, ToolArgs):
+        res = {}
+        for arg_name, arg_value in io_types.__dict__.items():
+            if isinstance(arg_value, list):
+                if isinstance(arg_value[0], Text) or isinstance(arg_value[0], Table):
+                    # only take the first 100 itmes if it is a list of text or table
+                    arg_value = arg_value[:100]
+
+            res[arg_name] = await io_type_to_gpt_input(
+                arg_value, use_abbreviated_output=True, concurrency_n=50, truncate_to=10000
+            )
+
+        # format the res as string
+        res = "\n\n".join([f"# `{k}`:\n{v}" for k, v in res.items()])
+    # for list of outputs case
+    elif isinstance(io_types, list):
+        if isinstance(io_types[0], Text) or isinstance(io_types[0], Table):
+            # only take the first 100 items if it is a list of text or table
+            io_types = io_types[:100]
+        res = await io_type_to_gpt_input(
+            io_types, use_abbreviated_output=True, concurrency_n=50, truncate_to=10000
         )
-        # truncate if the total length exceeds 10k
-        res[arg_name] = " ".join(res[arg_name].split()[:10000])
-
-    # format the res as string
-    res = "\n\n".join([f"# `{k}`:\n{v}" for k, v in res.items()])
-    return res
-
-
-async def prepare_output_for_gpt(task_outputs_raw: str) -> str:
-    outputs = load_io_type(task_outputs_raw)
-    if isinstance(outputs, list):
-        # only take the first 100 items
-        outputs = outputs[:100]
-    res = await io_type_to_gpt_input(outputs, use_abbreviated_output=True, concurrency_n=50)
-    # truncate if the total length exceeds 10k
-    res = " ".join(res.split()[:10000])
+    # for single output case
+    else:
+        res = await io_type_to_gpt_input(
+            io_types, use_abbreviated_output=True, concurrency_n=50, truncate_to=10000
+        )
     return str(res)
 
 
@@ -177,8 +200,6 @@ if __name__ == "__main__":
             task_id="a50d0113-fa38-4bfa-a5a9-b9f7bdd746e4",
             tool_name="write_commentary",
             query="what does the client_type arguement is set?",
-            is_query_about_inputs=True,
-            is_query_about_outputs=True,
         )
         res = await examine_task(args, context)
         print(res)
