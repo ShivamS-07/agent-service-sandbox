@@ -20,7 +20,12 @@ then you must keep all the other columns as is and only delete the column that i
 
 For most ranking, filtering, and replace transformations, the number of columns in the inputs
 and output must be the same (unless some other transformation is also needed). Do not delete columns
-not mentioned in the transformation. If you drop data you're not supposed to, you will be fired.
+unless the transformation instructions specifically ask for columns to be deleted. If you drop data
+you're not supposed to, you will be fired.
+
+If the transformation does mention that you should only include a single statistic, e.g. it asks
+you to filter the table to only a single risk factor, you must follow that instructions and remove
+all columns that correspond to relevant statistics, but you should never remove the security column!
 
 In other cases, you will need to generate a new column. In such a case, use descriptive column names
 so that someone looking at the list of columns would know immediately what the table has inside it.
@@ -47,7 +52,7 @@ for a single date (for each stock), or no dates at all, you must not include a D
 column in your output. Please be very careful about this, if you have the wrong columns
 everything else will fail.
 
-You should of course drop a column if the transformation explicitly asks you to drop it.
+You should of course drop columns if the transformation explicitly asks you to drop them.
 The only other reason to drop a non-date column is when you are creating a new column which will be
 directly derived from the data in the existing column. In that case, you should drop the old
 column unless told otherwise. For example, if the user is asking for you to calculate return, you

@@ -44,7 +44,8 @@ UPDATE_SUMMARIZE_SYS_PROMPT_STR = (
 UPDATE_SUMMARIZE_MAIN_PROMPT_STR = (
     "Update the following summary with new information while removing a corresponding amount of outdated or less relevant information, including all topics that are no longer discussed in any source documents. Here is the original summary, delimited by -----:\n-----\n{old_summary}\n-----\nHere are the new source documents, delimited by -----:\n-----\n{new_texts}\n-----\nHere are the old source documents, delimited by -----:\n-----\n{old_texts}\n-----\nHere is the transcript of the original interaction with the client, delimited by ----:\n----\n{chat_context}\n----\n{topic_phrase}{stock_phrase} For reference, today's date is {today}. "
     + CITATION_REMINDER
-    + " Pay specific attention to the way that the client wants you to output the new summary, YOU MUST comply with this format"
+    + " Pay specific attention to the way that the client wants you to output the new summary, YOU MUST comply with this format. "
+    + "Do not forget to write !!! to delimit your plan and your summary text!"
     + " Now make your plan and then write your summary with citations:\n"
 )
 

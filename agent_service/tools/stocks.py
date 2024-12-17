@@ -2020,6 +2020,12 @@ class GetRiskExposureForStocksInput(ToolArgs):
         "Do not use this tool to determine if any risk factor exposure"
         " has increased or decreased across time"
         " it can only tell you the current exposure."
+        "The output table will always include all the factors. If the user is not interested in all "
+        "the factors, but only a specific one (like momentum, or leverage) you must immediately call "
+        "transform_table and explicitly ask to remove all factors but the one(s) the user wants. It "
+        "is extremely important that you do not display factors the user is not interested in!!!!! "
+        "To help you remember this step, make sure you always call the output of this tool 'factor_table' "
+        "and then call transform tool to turn it into a table with the factor you need."
     ),
     category=ToolCategory.STATISTICS,
     tool_registry=default_tool_registry(),
