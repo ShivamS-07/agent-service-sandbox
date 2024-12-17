@@ -88,11 +88,6 @@ HORIZON_USERS_PROD: Dict[str, HorizonUser] = {
         name="David",
         userType=HorizonTabs.ENG,
     ),
-    "514e30db-054c-4ead-b105-98456eef18e1": HorizonUser(
-        userId="514e30db-054c-4ead-b105-98456eef18e1",
-        name="Mazin",
-        userType=HorizonTabs.ENG,
-    ),
     "87f5b738-4ef8-4f3b-b038-1ba169ded59d": HorizonUser(
         userId="87f5b738-4ef8-4f3b-b038-1ba169ded59d",
         name="Julian",
@@ -101,6 +96,11 @@ HORIZON_USERS_PROD: Dict[str, HorizonUser] = {
     "67fd46ff-cb0b-4ffe-9ba5-c52f8b706063": HorizonUser(
         userId="67fd46ff-cb0b-4ffe-9ba5-c52f8b706063",
         name="Richard",
+        userType=HorizonTabs.ENG,
+    ),
+    "c1874748-2d38-4bed-9b34-20081e09adc3": HorizonUser(
+        userId="c1874748-2d38-4bed-9b34-20081e09adc3",
+        name="Jackson",
         userType=HorizonTabs.ENG,
     ),
     # PROD - PRODUCT
@@ -139,11 +139,6 @@ HORIZON_USERS_DEV: Dict[str, HorizonUser] = {
         name="William",
         userType=HorizonTabs.ENG,
     ),
-    "74abfc82-4b79-4fb9-b27a-9d2cdff541ce": HorizonUser(
-        userId="74abfc82-4b79-4fb9-b27a-9d2cdff541ce",
-        name="Mazin",
-        userType=HorizonTabs.ENG,
-    ),
     "87f5b738-4ef8-4f3b-b038-1ba169ded59d": HorizonUser(
         userId="87f5b738-4ef8-4f3b-b038-1ba169ded59d",
         name="Julian",
@@ -152,6 +147,11 @@ HORIZON_USERS_DEV: Dict[str, HorizonUser] = {
     "3de70fb5-9c1d-442b-b12d-d218d70ab1b5": HorizonUser(
         userId="3de70fb5-9c1d-442b-b12d-d218d70ab1b5",
         name="Richard",
+        userType=HorizonTabs.ENG,
+    ),
+    "911139b0-0e1a-4799-b799-29cb8d568bc2": HorizonUser(
+        userId="911139b0-0e1a-4799-b799-29cb8d568bc2",
+        name="Jackson",
         userType=HorizonTabs.ENG,
     ),
     # DEV - PRODUCT
