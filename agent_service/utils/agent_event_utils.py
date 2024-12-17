@@ -324,13 +324,14 @@ async def publish_agent_execution_plan(
 
 
 async def publish_agent_plan_status(
-    agent_id: str, plan_id: str, status: PlanStatus, db: AsyncDB
+    agent_id: str, plan_id: str, status: PlanStatus, db: AsyncDB, publish_db_update: bool = True
 ) -> None:
-    await db.update_execution_plan_status(
-        plan_id=plan_id,
-        agent_id=agent_id,
-        status=status,
-    )
+    if publish_db_update:
+        await db.update_execution_plan_status(
+            plan_id=plan_id,
+            agent_id=agent_id,
+            status=status,
+        )
     await publish_agent_event(
         agent_id=agent_id,
         serialized_event=AgentEvent(
@@ -361,8 +362,14 @@ async def publish_cancel_agent_plan_or_run(
 
     if cancel_plan_creation:
         tasks.append(
+            # We already cancelled the plan in the DB above, don't update the
+            # status again.
             publish_agent_plan_status(
-                agent_id=agent_id, plan_id=plan_id, status=PlanStatus.CANCELLED, db=db
+                agent_id=agent_id,
+                plan_id=plan_id,
+                status=PlanStatus.CANCELLED,
+                db=db,
+                publish_db_update=False,
             )
         )
 
