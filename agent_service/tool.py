@@ -100,6 +100,9 @@ async def log_tool_call_event(context: PlanRunContext, event_data: Dict[str, Any
         logger.exception("Failed to store tool call in agent.task_run_info table!")
 
 
+UNDEFINED = "UNDEFINED_DEFAULT_VALUE"
+
+
 class ToolArgMetadata(BaseModel):
     """
     Class to track additional metadata for arguments to tools.
@@ -108,6 +111,14 @@ class ToolArgMetadata(BaseModel):
     # Hide the argument from the planner. Arguments that use this MUST have a
     # default value.
     hidden_from_planner: bool = False
+    # These are used for showing the planner one thing while accepting something
+    # else. Most generally applicable when e.g. a new argument is added that you
+    # want to be required, but can't be for backwards compatibility reasons.
+    planner_type_override: Optional[str] = None
+    # We need two values here, since otherwise it's impossible to tell if the
+    # default override is None or if it should be ignored.
+    use_default_override_for_planner: bool = False
+    planner_default_override: Optional[Any] = None
 
 
 class ToolArgs(BaseModel, ABC):
@@ -200,11 +211,20 @@ class Tool:
             arg_metadata = self.input_type.arg_metadata.get(var, ToolArgMetadata())
             if arg_metadata.hidden_from_planner:
                 continue
-            clean_type_name = get_clean_type_name(info.annotation)
-            if info.default is PydanticUndefined:
+            if arg_metadata.planner_type_override is not None:
+                clean_type_name = arg_metadata.planner_type_override
+            else:
+                clean_type_name = get_clean_type_name(info.annotation)
+
+            if arg_metadata.use_default_override_for_planner:
+                default = arg_metadata.planner_default_override
+            else:
+                default = info.default
+
+            if default is PydanticUndefined or default == UNDEFINED:
                 args.append(f"{var}: {clean_type_name}")
             else:
-                args.append(f"{var}: {clean_type_name} = {info.default}")
+                args.append(f"{var}: {clean_type_name} = {default}")
 
         args_str = ", ".join(args)
         return f"def {self.name}({args_str}) -> {get_clean_type_name(self.return_type)}"

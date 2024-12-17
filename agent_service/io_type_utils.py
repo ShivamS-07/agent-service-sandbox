@@ -94,7 +94,8 @@ class TableColumnType(enum.StrEnum):
             "- 'bool': A generic bool.\n"
             "- 'currency': A column containing a price or other float with a currency attached."
             "In this case the 'unit' is the currency ISO, please keep that consistent.\n"
-            "- 'date/datetime': A column containing a python date or datetime object."
+            "- 'date': A column containing a python date object."
+            "- 'datetime': A column containing a python datetime object."
             "- 'quarter': A column containing a year + financial quarter represented as a string (yyyyQq)."
             " For example, 2024Q2."
             "- 'year': A column containing a year represented as a string (yyyy). Note it is not an integer!"
@@ -106,7 +107,8 @@ class TableColumnType(enum.StrEnum):
             "- 'pct_delta': A float value representing a change over time as a percent. "
             "100% is equal to 1.0 NOT 100. E.g. percent change of price day over day. "
             "NEVER multiply by 100 to get this.\n"
-            "- 'stock': A special column containing stock identifier information."
+            "- 'stock': A special column containing stock identifier information. "
+            "In general, any stock representation (e.g. ticker, symbol, etc.) should use this type"
             "- 'score': This is a special column type, do not use this."
         )
 

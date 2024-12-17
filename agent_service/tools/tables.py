@@ -868,6 +868,13 @@ def _join_two_tables_vertically(
             new_col = copy.deepcopy(col1)
             new_col.data.extend(col2.data)
             new_col.union_history_with(col2)
+            # Cell citations must also be handled, map them to the new row
+            col_len = len(new_col.data)
+            for row_num, citations in col2.metadata.cell_citations.items():
+                new_col.metadata.cell_citations[row_num + col_len] = citations
+            if new_col.metadata.row_descs and col2.metadata.row_descs:
+                for row_num, descs in col2.metadata.row_descs.items():
+                    new_col.metadata.row_descs[row_num + col_len] = descs
             output_cols.append(new_col)
 
     output_table = Table(columns=output_cols, prefer_graph_type=first.prefer_graph_type)

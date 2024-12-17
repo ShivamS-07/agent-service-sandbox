@@ -851,6 +851,8 @@ it's just telling the user there's no data. You will be fired if you do not foll
 The description of the table you should create is:
     {table_description}
 
+{table_schema}
+
 Here are the document(s), delimited by -----:
 -----
 {texts}
@@ -864,18 +866,28 @@ For reference, today's date is {today}.
 """,
 )
 
-TEXT_TO_TABLE_SYS_PROMPT = Prompt(
-    name="TEXT_TO_TABLE_SYS_PROMPT",
-    template=f"""
-You are a financial analyst tasked with synthesizing a number of texts into a csv table. The csv
-output should have a header line with column titles.
-
+TEXT_TO_TABLES_NO_INPUT_SCHEMA_PROMPT = f"""
 After each column title, put the column type in parentheses. The list of all possible columm types
 are below. Try to make the csv data match as closely as possible to the expected type (for example,
 a price delta or something similar should be normalized to between zero and one before using the
 'delta' column type). Never ever choose two column types, just do your best and choose the one the
 fits the best. Column types:
 {TableColumnType.get_type_explanations()}
+"""
+
+TEXT_TO_TABLES_INPUT_SCHEMA_PROMPT = """
+The header line should be exactly as follows:
+    {header_schema}
+Try to make the csv data match as closely as possible to the expected type (for
+example, a price delta or something similar should be normalized to between zero
+and one before using the 'delta' column type).
+"""
+
+TEXT_TO_TABLE_SYS_PROMPT = Prompt(
+    name="TEXT_TO_TABLE_SYS_PROMPT",
+    template=f"""
+You are a financial analyst tasked with synthesizing a number of texts into a csv table. The csv
+output should have a header line with column titles and types, as specified.
 
 {TEXT_TO_TABLE_CITATION_PROMPT_STR}
 """,

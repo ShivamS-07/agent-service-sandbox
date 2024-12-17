@@ -2,6 +2,8 @@ import asyncio
 import datetime
 import logging
 import re
+from collections import defaultdict
+from copy import deepcopy
 from io import StringIO
 from typing import Any, List, Optional, Tuple
 
@@ -12,8 +14,7 @@ from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import PrimitiveType, TableColumnType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTable, Table, TableColumnMetadata
-from agent_service.io_types.text import Text, TextCitation, TextGroup
-from agent_service.planner.errors import EmptyInputError
+from agent_service.io_types.text import StockText, Text, TextCitation, TextGroup, TextIDType
 from agent_service.tool import ToolArgs, ToolCategory, tool
 from agent_service.tools.LLM_analysis.constants import DEFAULT_LLM
 from agent_service.tools.LLM_analysis.utils import (
@@ -23,17 +24,21 @@ from agent_service.tools.LLM_analysis.utils import (
 )
 from agent_service.tools.stocks import (
     StockIdentifierLookupInput,
-    stock_identifier_lookup_helper,
+    stock_identifier_lookup,
 )
 from agent_service.tools.table_utils.prompts import (
     TEXT_TO_TABLE_MAIN_PROMPT,
     TEXT_TO_TABLE_SYS_PROMPT,
+    TEXT_TO_TABLES_INPUT_SCHEMA_PROMPT,
+    TEXT_TO_TABLES_NO_INPUT_SCHEMA_PROMPT,
 )
+from agent_service.tools.tables import JoinTableArgs, join_tables
 from agent_service.types import AgentUserSettings, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.constants import CURRENCY_SYMBOL_TO_ISO, ISO_CURRENCY_CODES
 from agent_service.utils.feature_flags import get_ld_flag
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
+from agent_service.utils.iterables import chunk
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.string_utils import strip_code_backticks
 from agent_service.utils.text_utils import partition_to_smaller_text_sizes
@@ -47,6 +52,7 @@ NUMBER_EXTRACT_REGEX = re.compile(r"(\D*)(\d+)\s*(\w*)")
 class TextToTableArgs(ToolArgs):
     texts: List[Text]
     table_description: str
+    table_schema: Optional[List[str]] = None
 
 
 def _extract_and_clean_header(input_str: str) -> Tuple[str, TableColumnType]:
@@ -112,7 +118,7 @@ async def _lookup_helper_wrapper(
     try:
         return (
             stock,
-            await stock_identifier_lookup_helper(
+            await stock_identifier_lookup(  # type: ignore
                 args=StockIdentifierLookupInput(stock_name=stock), context=context
             ),
         )
@@ -122,6 +128,8 @@ async def _lookup_helper_wrapper(
 
 
 async def _lookup_stocks(stocks: List[str], context: PlanRunContext) -> dict[str, StockID]:
+    context = deepcopy(context)
+    context.skip_task_logging = True
     tasks = [_lookup_helper_wrapper(stock, context) for stock in stocks]
     results = await gather_with_concurrency(tasks, n=50)
     return {stock: stock_id for stock, stock_id in results if stock_id}
@@ -145,7 +153,7 @@ async def _handle_table_col(
     stock_metadata: dict[str, StockID] = {}
     unit_set = set()
     if col_type == TableColumnType.STOCK:
-        stock_metadata = await _lookup_stocks(stocks=values.tolist(), context=context)
+        stock_metadata = await _lookup_stocks(stocks=list(set(values.tolist())), context=context)
         if len(stock_metadata) < len(values):
             # We failed to map one or more stocks, for now just use strings instead
             logger.warning("Failed to match a stock, falling back to a string column")
@@ -162,6 +170,8 @@ async def _handle_table_col(
 
         if stock_metadata and val in stock_metadata:
             val = stock_metadata[val]
+            if col_type == TableColumnType.STRING:
+                val = val.symbol
 
         if (
             isinstance(val, str)
@@ -195,37 +205,27 @@ def enabler_function(user_id: Optional[str], user_settings: Optional[AgentUserSe
     return get_ld_flag("enable-text-to-table-tool", default=False, user_context=user_id)
 
 
-@tool(
-    description="""
-This function takes a list of texts and a table description and produces a Table
-object based on the data in the input texts. Make sure the description is
-detailed and contains exactly what kind of table the user wants. The texts will
-be fed into an LLM to produce a Table output. You should use this tool if the
-user explicitly asks for something to be displayed as a table, or if they ask
-for some graphing or transformation that requires a table but you only have text
-data. You can also use this tool if you need a list of StockID from the texts,
-just pair it with the tool to extract stocks from a table. You also should never
-use this tool on a summarized text. ONLY use it on texts taken directly from
-their sources, with no intervening processing.
-""",
-    category=ToolCategory.TABLE,
-    enabled_checker_func=enabler_function,
-)
-async def text_to_table(args: TextToTableArgs, context: PlanRunContext) -> Table:
+async def _text_to_table_helper(
+    input_texts: List[Text | StockText],
+    table_description: str,
+    context: PlanRunContext,
+    table_schema: Optional[List[str]] = None,
+    text_cache: Optional[dict[TextIDType, str]] = None,
+) -> Table:
     logger = get_prefect_logger(__name__)
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=DEFAULT_LLM)
 
-    if len(args.texts) == 0:
-        raise EmptyInputError("Cannot create a table from an empty list of text")
+    if len(input_texts) == 0:
+        return Table(columns=[])
 
-    args.texts = await partition_to_smaller_text_sizes(args.texts, context)
+    texts = await partition_to_smaller_text_sizes(input_texts, context)
 
-    texts = initial_filter_texts(args.texts)
-    if len(args.texts) != len(texts):
-        logger.warning(f"Too many texts, filtered {len(args.texts)} split texts to {len(texts)}")
+    texts = initial_filter_texts(texts)
+    if len(input_texts) != len(texts):
+        logger.warning(f"Too many texts, filtered {len(input_texts)} split texts to {len(texts)}")
 
     text_group = TextGroup(val=texts)
     texts_str: str = await Text.get_all_strs(  # type: ignore
@@ -233,6 +233,7 @@ async def text_to_table(args: TextToTableArgs, context: PlanRunContext) -> Table
         include_header=True,
         text_group_numbering=True,
         include_symbols=True,
+        text_cache=text_cache,
     )
     if context.chat:
         chat_str = context.chat.get_gpt_input()
@@ -248,14 +249,20 @@ async def text_to_table(args: TextToTableArgs, context: PlanRunContext) -> Table
             table_gen_main_prompt.template,
             table_gen_sys_prompt.template,
             chat_str,
-            args.table_description,
+            table_description,
         ],
     )
 
+    table_schema_str = (
+        TEXT_TO_TABLES_NO_INPUT_SCHEMA_PROMPT
+        if not table_schema
+        else TEXT_TO_TABLES_INPUT_SCHEMA_PROMPT.format(header_schema=table_schema)
+    )
     main_prompt = table_gen_main_prompt.format(
-        table_description=args.table_description,
+        table_description=table_description,
         texts=texts_str,
         chat_context=chat_str,
+        table_schema=table_schema_str,
         today=(
             context.as_of_date.date().isoformat()
             if context.as_of_date
@@ -303,6 +310,100 @@ async def text_to_table(args: TextToTableArgs, context: PlanRunContext) -> Table
             history=table.history, columns=table.columns, prefer_graph_type=table.prefer_graph_type
         )
     return table
+
+
+@tool(
+    description=f"""
+This function takes a list of texts, a table description, and an optional table
+schema (as a list of column names + types), and produces a Table object based on
+the data
+in the input texts. The schema should be in the format:
+    ["col1 title (string)", "col2 title (integer)"] etc.
+
+Possible column types are below, you should only use these when defining the schema:
+    {TableColumnType.get_type_explanations()}
+Never ever choose two column types, just do your best and choose the one the
+fits the best. This format MUST be followed, with the column title followed by
+the type in parentheses. You will be fired if you do not conform to these exact
+specifications.
+
+You should provide a schema if the user asks for a specific table schema. If the
+user just asks to reproduce a table directly from a source (document, website,
+etc.), you shouldn't provide a schema since you don't know what will be in the
+table. In general, default to providing this schema unless the user specifically
+asks to "reproduce" a SINGLE specific table from a source.
+
+Make sure the description is detailed and contains exactly what kind of table
+the user wants. The texts will be fed into an LLM to produce a Table output. You
+should use this tool if the user explicitly asks for something to be displayed
+as a table, or if they ask for some graphing or transformation that requires a
+table but you only have text data. You can also use this tool if you need a list
+of StockID from the texts, just pair it with the tool to extract stocks from a
+table. You also should never use this tool on a summarized text. ONLY use it on
+texts taken directly from their sources, with no intervening processing.
+""",
+    category=ToolCategory.TABLE,
+    enabled_checker_func=enabler_function,
+)
+async def text_to_table(args: TextToTableArgs, context: PlanRunContext) -> Table:
+    logger = get_prefect_logger(__name__)
+    text_cache: dict[TextIDType, str] = {}
+    text_group = TextGroup(val=args.texts)
+    _ = await Text.get_all_strs(
+        text_group,
+        include_header=True,
+        text_group_numbering=True,
+        include_symbols=True,
+        text_cache=text_cache,
+    )
+    has_security_column = args.table_schema and any(("(stock)" in col for col in args.table_schema))
+    stock_to_texts = defaultdict(list)
+    for text in args.texts:
+        if isinstance(text, StockText):
+            stock_to_texts[text.stock_id].append(text)
+
+    if has_security_column and len(stock_to_texts) > 1:
+        logger.info("Generating table per stock group...")
+        tasks = []
+        # TODO compute N smartly
+        for stocks in chunk(stock_to_texts.keys(), n=3):
+            stock_texts = []
+            for stock in stocks:
+                stock_texts.extend(stock_to_texts[stock])
+            tasks.append(
+                _text_to_table_helper(
+                    input_texts=stock_texts,  # type: ignore
+                    table_description=args.table_description,
+                    context=context,
+                    table_schema=args.table_schema,
+                    text_cache=text_cache,
+                )
+            )
+        tables: List[Table] = await gather_with_concurrency(tasks, n=10)
+        all_stocks_mapped = all((table.get_stock_column() is not None for table in tables))
+        if not all_stocks_mapped:
+            # If there are some stocks that weren't mapped, convert ALL stocks to strings for now.
+            # TODO determine if we need a better way to handle this.
+            for table in tables:
+                stock_col = table.get_stock_column()
+                if not stock_col:
+                    continue
+                stock_col.metadata.col_type = TableColumnType.STRING
+                stock_col.data = [
+                    stock.symbol if isinstance(stock, StockID) else stock
+                    for stock in stock_col.data
+                ]
+        return await join_tables(  # type: ignore
+            args=JoinTableArgs(input_tables=tables, row_join=True), context=context
+        )
+
+    return await _text_to_table_helper(
+        input_texts=args.texts,
+        table_description=args.table_description,
+        table_schema=args.table_schema,
+        text_cache=text_cache,
+        context=context,
+    )
 
 
 if __name__ == "__main__":
