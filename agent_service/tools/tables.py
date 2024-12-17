@@ -842,6 +842,7 @@ class JoinTableArgs(ToolArgs):
     # instead of more columns.
     row_join: bool = False
     table_names: Optional[List[str]] = None
+    add_columns: bool = False
 
 
 def _join_two_tables_vertically(
@@ -850,6 +851,7 @@ def _join_two_tables_vertically(
     table_names: Optional[List[str]] = None,
     idx: int = 0,
     add_group_col: bool = True,
+    first_table_is_primary: bool = False,
 ) -> Table:
     if add_group_col and (table_names or check_for_index_overlap(first, second)):
         if idx == 0:
@@ -884,7 +886,12 @@ def _join_two_tables_vertically(
 
 
 def _join_two_tables(
-    first: Table, second: Table, table_names: Optional[List[str]] = None, idx: int = 0
+    first: Table,
+    second: Table,
+    table_names: Optional[List[str]] = None,
+    idx: int = 0,
+    add_group_col: bool = True,
+    first_table_is_primary: bool = False,
 ) -> Table:
     first = copy.deepcopy(first)
     second = copy.deepcopy(second)
@@ -979,12 +986,14 @@ def _join_two_tables(
         left=first_data,
         right=second_data,
         on=[col.label for col in shared_cols],
-        how="outer",
+        how="left" if first_table_is_primary else "outer",
         suffixes=(None, "_ignored"),
     )
 
     # Collapse rows with the same keys
-    output_df = output_df.groupby(by=[col.label for col in key_cols]).first().reset_index()  # type: ignore
+    output_df = (
+        output_df.groupby(by=[col.label for col in key_cols], sort=False).first().reset_index()  # type: ignore
+    )
     output_col_metas = key_cols + other_cols  # type: ignore
     output_table = Table.from_df_and_cols(
         columns=output_col_metas, data=output_df, ignore_extra_cols=True
@@ -1024,6 +1033,21 @@ def _join_two_tables(
     names of the input tables as an aligned list of strings in the optional argument
     table_names (e.g. ["S&P 500", "TSX"]). You do NOT need to do this when you are just
     directly combining the output of the company statistics tool.
+    Always output the add_column argument even though it has a default value.
+    The add_columns argument must be set to True whenever the client mentions adding/including
+    column to an existing main table, especially where the main table is the result of any filtering
+    or ranking steps.
+    For example, if the client said 'Create a table with the top 10 stocks by market cap, include a column
+    with their performance', you would pass the table with the top 10 stocks as the first table in the list, 
+    tables with the stock performance as the second table and set add_columns=True.
+    This will result in a table join that preserves the rows of the primary table, the information
+    in any other tables will simply be added to those rows when possible. Again, you absolutely must
+    set add_columns=True when one of the input tables is the direct or indirect result of any filtering
+    and/or ranking, or when adding or including columns is mentioned by the client, do not forget!!!
+    You must set add_columns=False when the user is simply combining equally important
+    columns of data, for instance 'create a table with market cap, performance, and P/E for TSX',
+    Generally you will only use add_columns=True when the client specifically mentions some kind of
+    addition or inclusion of extra information after an initial analysis.
 
 """,
     category=ToolCategory.TABLE,
@@ -1058,7 +1082,9 @@ async def join_tables(args: JoinTableArgs, context: PlanRunContext) -> Union[Tab
 
     joined_table = args.input_tables[0]
     for idx, table in enumerate(args.input_tables[1:]):
-        joined_table = _join_table_func(joined_table, table, args.table_names, idx)
+        joined_table = _join_table_func(
+            joined_table, table, args.table_names, idx, first_table_is_primary=args.add_columns
+        )
 
     if joined_table.get_stock_column():
         return StockTable(columns=joined_table.columns)

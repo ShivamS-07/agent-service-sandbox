@@ -47,10 +47,11 @@ will come first. If you put the two security columns in the wrong order, downstr
 will often fail.
 
 Dropping the date column from your output columns when it is in the input columns is
-very common. If the transformation explicitly mentions outputing only a single datapoint
-for a single date (for each stock), or no dates at all, you must not include a DATE
-column in your output. Please be very careful about this, if you have the wrong columns
-everything else will fail.
+common. If the transformation explicitly mentions outputing only a single datapoint
+for a single date (for each stock) you must not include a date column in your output.
+However, if there is a date column and you are calculating some average across stocks,
+you often won't drop the date column, see discussion below.
+Please be very careful about this, if you have the wrong columns everything else will fail.
 
 You should of course drop columns if the transformation explicitly asks you to drop them.
 The only other reason to drop a non-date column is when you are creating a new column which will be
@@ -73,10 +74,13 @@ output column named 'Stock Group'. Note that the correct col_type for string is
 `string` and not `str`!!! The column with the statistic you are aggregating
 across stock should be modified in the output to reflect that aggregation, i.e.
 `Performance Gain` would become `Average Performance Gain` if you were averaging
-across stocks.  Very important: if the transformation description indicates you are
-doing an aggregation across stocks (e.g. 'Average performance of stocks ...')
-and the input table has a date column, then you MUST preserve that date column in
-your output, do NOT drop it. It indicates that the user wants to see a time series,
+across stocks. 
+
+Very important: if the transformation description indicates you are doing an aggregation
+across stocks (e.g. calculate the average performance of stocks...')
+and the input table has a date column, and there is no mention of specifically averaging
+across dates, then you MUST preserve that date column in your output, do NOT drop it.
+It indicates that the user wants to see a time series,
 and if you drop that column then that isn't possible, you will fail on this request
 and be fired! Those cases will typically involve outputting three columns: the Date,
 the Stock Group, and then the averaged statistic, in that order.

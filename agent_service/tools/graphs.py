@@ -612,15 +612,19 @@ async def make_generic_graph(args: MakeGenericGraphArgs, context: PlanRunContext
     # 3. Pie graphs are great for showing parts of a whole (string axes + numerical values)
     first_col_type = cols[0].metadata.col_type
     num_rows = args.input_table.get_num_rows()
-    has_line_graph_compatible_cols = first_col_type in [
-        TableColumnType.INTEGER,
-        TableColumnType.FLOAT,
-        TableColumnType.DATE,
-        TableColumnType.DATETIME,
-        TableColumnType.MONTH,
-        TableColumnType.YEAR,
-        TableColumnType.QUARTER,
-    ]
+    has_line_graph_compatible_cols = (
+        first_col_type
+        in [
+            TableColumnType.INTEGER,
+            TableColumnType.FLOAT,
+            TableColumnType.DATE,
+            TableColumnType.DATETIME,
+            TableColumnType.MONTH,
+            TableColumnType.YEAR,
+            TableColumnType.QUARTER,
+        ]
+        or args.input_table.get_date_column() is not None
+    )
 
     # if we have a graph preference that the table itself had set, use that
     logger = get_prefect_logger(__name__)
