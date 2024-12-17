@@ -569,6 +569,13 @@ async def get_earnings_call_full_transcripts(
 @tool(
     description="""This tool returns a list of all earnings call **summaries** for one or more stocks \
 that were published within the provided date range. \
+If the client wants a general summary of the earnings call/transcript/report, then use this tool!
+However, if the client wants to summarize the earnings call/transcript/report for a specific topic \
+(i.e. summarize the earnings call with a focus on Generative AI), \
+then you must use the transcript tool instead of this tool!!!
+Furthermore, if the client wants to summarize the earnings call for mentions of a topic or keyword, \
+(i.e. summarize earnings reports for mentions of Generative AI), \
+then you must use the transcript tool, not this tool!!!
 If the client simply mentions `earnings calls` or mentions `summarizing` earnings call information, \
 you will get data using this tool unless \
 the client asks for the full transcript, at which point you would use the transcript tool. \'
