@@ -2978,6 +2978,39 @@ class AsyncDB:
             )
         return cases
 
+    async def get_cached_urls(
+        self, queries: List[str], time_period: str, query_type: str, cache_time: int
+    ) -> List[Dict[str, Any]]:
+        sql = f"""
+                   SELECT DISTINCT ON (query) query, urls
+                   FROM agent.webserp_results
+                   WHERE query = ANY(%(queries)s) AND inserted_at > %(now_utc)s - INTERVAL '{cache_time} HOURS' AND 
+                   time_period = %(time_period)s AND query_type = %(query_type)s
+                   ORDER BY query, inserted_at DESC
+               """
+        rows = await self.pg.generic_read(
+            sql,
+            {
+                "queries": queries,
+                "now_utc": get_now_utc(),
+                "time_period": time_period,
+                "query_type": query_type,
+            },
+        )
+        return rows
+
+    async def batch_write_cached_urls(self, results: List[Dict[str, Any]]) -> None:
+        conflict = """
+            ON CONFLICT (query, time_period, query_type) 
+            DO UPDATE SET urls = EXCLUDED.urls, inserted_at = NOW();
+        """
+        await self.pg.multi_row_insert(
+            table_name="agent.webserp_results",
+            rows=results,
+            ignore_conflicts=False,
+            conflict_suffix=conflict,
+        )
+
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:
     if isinstance(db, Postgres):

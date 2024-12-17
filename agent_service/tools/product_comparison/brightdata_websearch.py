@@ -19,12 +19,17 @@ from agent_service.tools.product_comparison.constants import (
     BRIGHTDATA_REQ_USERNAME,
     BRIGHTDATA_SERP_PASSWORD,
     BRIGHTDATA_SERP_USERNAME,
+    DEFAULT_SERP_PERIOD,
     HEADER,
     S3_BUCKET_BOOSTED_WEBSEARCH,
+    SERP_CACHE_TTL_HOURS,
+    SERP_NEWS_TYPE,
+    SERP_WEB_TYPE,
     URL_CACHE_TTL_HOURS,
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_db import get_async_db
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.event_logging import log_event
@@ -45,8 +50,8 @@ proxies = {"http": proxy_url, "https": proxy_url}
 
 CERTIFICATE_LOCATION = "agent_service/tools/product_comparison/brd_certificate.crt"
 
-WEB_SEARCH_FETCH_URLS_TIMEOUT = 30
-WEB_SEARCH_PULL_SITES_TIMEOUT = 60
+WEB_SEARCH_FETCH_URLS_TIMEOUT = 25
+WEB_SEARCH_PULL_SITES_TIMEOUT = 40
 
 
 async def async_fetch_json(
@@ -79,6 +84,19 @@ async def async_fetch_json(
         return result
 
 
+# we need to slice to remove responses from other google widgets like "top stories"
+def parse_web_result(search_result: Any, num_results: int) -> List[str]:
+    # Google Web search results have the link under "organic"
+    items = [item for item in search_result.get("organic", [])[:num_results]]  # type: ignore
+    return [item["link"] for item in items]
+
+
+def parse_news_result(search_result: Any, num_results: int) -> List[str]:
+    # Google News results have the link under "news"
+    items = [item for item in search_result.get("news", [])[:num_results]]
+    return [item["link"] for item in items]
+
+
 async def get_urls_async(
     queries: List[str],
     num_results: int,
@@ -86,21 +104,47 @@ async def get_urls_async(
     headers: Dict[str, str] = HEADER,
     timeout: int = WEB_SEARCH_FETCH_URLS_TIMEOUT,
     log_event_dict: Optional[dict] = None,
+    get_news: bool = False,
 ) -> List[str]:
+    if get_news:
+        query_type = SERP_NEWS_TYPE
+        url_template = "https://www.google.com/search?q={query}&brd_json=1&num={num_results}&tbm=nws&as_qdr=m&hl=en-US"
+        parse_urls = parse_news_result
+        padded_num_results = num_results
+    else:
+        query_type = SERP_WEB_TYPE
+        url_template = (
+            "https://www.google.com/search?q={query}&brd_json=1&num={num_results}&hl=en-US"
+        )
+        parse_urls = parse_web_result
+        padded_num_results = num_results + 3
+
     ssl_context = ssl.create_default_context()
     ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
-
     queries = [query.replace(" ", "+") for query in queries]
+    result_urls = set()
+    async_db = get_async_db()
+    rows = await async_db.get_cached_urls(
+        queries, DEFAULT_SERP_PERIOD, query_type, SERP_CACHE_TTL_HOURS
+    )
+    logger.info(
+        f"Cache hit! Found {len(rows)} cached {query_type} search queries out of {len(queries)}!"
+    )
 
-    # this query uses google's main search
-    urls = [
-        f"https://www.google.com/search?q={query}&brd_json=1&num={num_results}&hl=en-US"
-        for query in queries
+    # add cached results to the total returned results
+    cached_query_results = {row["query"]: row["urls"] for row in rows}
+    for urls in list(cached_query_results.values()):
+        result_urls.update(urls)
+    uncached_queries = [query for query in queries if query not in cached_query_results]
+
+    google_urls = [
+        url_template.format(query=query, num_results=padded_num_results)
+        for query in uncached_queries
     ]
 
     async with aiohttp.ClientSession(max_line_size=8190 * 5, max_field_size=8190 * 5) as session:
         tasks = []
-        for url in urls:
+        for url in google_urls:
             if context:
                 event_data = {
                     "agent_id": context.agent_id,
@@ -122,76 +166,30 @@ async def get_urls_async(
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    result_urls = set()
-    for result, url in zip(results, urls):
+    # cache results which were found
+    results_to_cache = []
+    for result, url, query in zip(results, google_urls, uncached_queries):
         if result is None or isinstance(result, BaseException):
             logger.info(f"skipping bad result for {url=}")
             continue
         try:
-            # google regular search results have the link under "organic", Google News results have it under "news"
-            items = [item for item in result.get("organic", [])]  # type: ignore
-            result_urls.update([item["link"] for item in items])
-        except requests.JSONDecodeError:
-            logger.info(f"JSON decoding error for {url}")
-
-    return list(result_urls)
-
-
-async def get_news_urls_async(
-    queries: List[str],
-    num_results: int,
-    context: Optional[PlanRunContext] = None,
-    headers: Dict[str, str] = HEADER,
-    timeout: int = WEB_SEARCH_FETCH_URLS_TIMEOUT,
-    log_event_dict: Optional[dict] = None,
-) -> List[str]:
-    ssl_context = ssl.create_default_context()
-    ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
-
-    queries = [query.replace(" ", "+") for query in queries]
-
-    # this query searches using google's news tab to get news stories
-    # as_qdr=m means we only look for the recent month,
-    # hl=en-US means we only look at english sites,
-    urls = [
-        f"https://www.google.com/search?q={query}&brd_json=1&num={num_results}&tbm=nws&as_qdr=m&hl=en-US"
-        for query in queries
-    ]
-
-    async with aiohttp.ClientSession(max_line_size=8190 * 5, max_field_size=8190 * 5) as session:
-        tasks = []
-        for url in urls:
-            if context:
-                event_data = {
-                    "agent_id": context.agent_id,
-                    "user_id": context.user_id,
-                    "plan_id": context.plan_id,
-                    "plan_run_id": context.plan_run_id,
-                    "request_type": "serp_api",
-                    "tool_calling": context.tool_name,
-                    "url": url,
-                    **(log_event_dict or {}),
-                }
-            else:
-                event_data = {}
-            tasks.append(
-                async_fetch_json(
-                    session, url, headers, proxies["http"], timeout, ssl_context, event_data
+            list_of_urls = parse_urls(result, num_results)
+            result_urls.update(list_of_urls)
+            if list_of_urls and query:
+                results_to_cache.append(
+                    {
+                        "query": query,
+                        "urls": list_of_urls,
+                        "time_period": DEFAULT_SERP_PERIOD,
+                        "query_type": query_type,
+                    }
                 )
-            )
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    result_urls = set()
-    for result, url in zip(results, urls):
-        if result is None or isinstance(result, BaseException):
-            logger.info(f"skipping bad result for {url=}")
-            continue
-        try:
-            items = [item for item in result.get("news", [])]
-            result_urls.update([item["link"] for item in items])
         except requests.JSONDecodeError:
             logger.info(f"JSON decoding error for {url}")
+
+    # Insert results into the cache
+    if results_to_cache:
+        await async_db.batch_write_cached_urls(results_to_cache)
 
     return list(result_urls)
 
@@ -518,14 +516,14 @@ async def get_web_texts_async(
     ssl_context = ssl.create_default_context()
     ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
 
-    sql1 = """
+    sql1 = f"""
         SELECT DISTINCT ON (url) id::VARCHAR, url, title, inserted_at
         FROM agent.websearch_metadata
-        WHERE url = ANY(%(urls)s) AND inserted_at > %(now_utc)s - INTERVAL '%(num_hours)s hours'
+        WHERE url = ANY(%(urls)s) AND inserted_at > %(now_utc)s - INTERVAL '{URL_CACHE_TTL_HOURS} hours'
         ORDER BY url, inserted_at DESC
     """
     pg = get_psql()
-    params = {"urls": urls, "num_hours": URL_CACHE_TTL_HOURS, "now_utc": get_now_utc()}
+    params = {"urls": urls, "now_utc": get_now_utc()}
 
     rows = pg.generic_read(sql1, params=params)
 
@@ -598,12 +596,12 @@ async def main() -> None:
 
     responses = await get_web_texts_async(urls, context)
 
-    """
+    """    
     query_1 = "nintendo switch 2"
     # query_2 = "Australia betting"
 
     # responses = await get_urls_async([query_1], 10)
-    responses = await get_news_urls_async([query_1], 10)
+    responses = await get_urls_async([query_1], 10, get_news=True)
     """
 
     print(responses)

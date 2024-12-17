@@ -910,7 +910,11 @@ class SyncBoostedPG(BoostedPG):
         )
 
     async def multi_row_insert(
-        self, table_name: str, rows: List[Dict[str, Any]], ignore_conflicts: bool = False
+        self,
+        table_name: str,
+        rows: List[Dict[str, Any]],
+        ignore_conflicts: bool = False,
+        conflict_suffix: str = "",
     ) -> None:
         self.db.multi_row_insert(
             table_name=table_name, rows=rows, ignore_conflicts=ignore_conflicts

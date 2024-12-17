@@ -25,7 +25,11 @@ class SkipCommitBoostedPG(BoostedPG):
         self.pg.generic_update(table_name, where, values_to_update)
 
     async def multi_row_insert(
-        self, table_name, rows: List[Dict[str, Any]], ignore_conflicts: bool = False
+        self,
+        table_name,
+        rows: List[Dict[str, Any]],
+        ignore_conflicts: bool = False,
+        conflict_suffix: str = "",
     ) -> None:
         self.pg.multi_row_insert(table_name, rows, ignore_conflicts)
 

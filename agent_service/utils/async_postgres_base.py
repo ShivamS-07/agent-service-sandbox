@@ -222,7 +222,10 @@ class AsyncPostgresBase(BoostedPG):
 
     @staticmethod
     def _gen_multi_row_insert(
-        table_name: str, values_to_insert: List[Dict[str, Any]], ignore_conficts: bool
+        table_name: str,
+        values_to_insert: List[Dict[str, Any]],
+        ignore_conficts: bool,
+        conflict_suffix: str,
     ) -> Tuple[str, list]:
         """
         Helper function for multi_row_insert() which generates the
@@ -230,6 +233,7 @@ class AsyncPostgresBase(BoostedPG):
         :param table_name: The name of the table as a string.
         :param values_to_insert: A list of dictionaries with the values to insert into the table.
         :param ignore_conficts: If True, then do nothing on conflicts with existing rows.
+        :param conflict_suffix: if filled, will perform the conflict resolution as stated
         :return: A tuple containing the SQL statement and the argument parameters
         """
         non_null_keys = []
@@ -248,7 +252,7 @@ class AsyncPostgresBase(BoostedPG):
             values_strs.append(f'({",".join(non_null_values)})')
         keys_to_insert_str = ",".join(non_null_keys)
         prefix = f"INSERT INTO {table_name} ({keys_to_insert_str}) VALUES {','.join(values_strs)} "
-        suffix = "ON CONFLICT DO NOTHING" if ignore_conficts else ""
+        suffix = "ON CONFLICT DO NOTHING" if ignore_conficts else conflict_suffix
         sql = prefix + suffix
         return (
             sql,
@@ -256,7 +260,11 @@ class AsyncPostgresBase(BoostedPG):
         )
 
     async def multi_row_insert(
-        self, table_name: str, rows: List[Dict[str, Any]], ignore_conflicts: bool = False
+        self,
+        table_name: str,
+        rows: List[Dict[str, Any]],
+        ignore_conflicts: bool = False,
+        conflict_suffix: str = "",
     ) -> None:
         """
         Insert many rows into a table
@@ -265,6 +273,7 @@ class AsyncPostgresBase(BoostedPG):
             rows: List of dicts, where each dict contains keys that are column names
             and values to insert
             ignore_conflicts: If True, will do nothing on conflicts with existing rows.
+            conflict_suffix: if filled, will perform the conflict resolution as stated
 
         Note: this function assumes that all dict keys provided are valid column names. It also
         assumes that each dict will have the same set of keys.
@@ -278,14 +287,19 @@ class AsyncPostgresBase(BoostedPG):
 
         if len(rows) == 0:
             return
-        await self.generic_write(*self._gen_multi_row_insert(table_name, rows, ignore_conflicts))
+        await self.generic_write(
+            *self._gen_multi_row_insert(table_name, rows, ignore_conflicts, conflict_suffix)
+        )
 
     async def insert_atomic(self, to_insert: List[InsertToTableArgs]) -> None:
         async with (await self.pool()).connection() as conn:
             async with conn.cursor() as cursor:
                 for arg in to_insert:
                     sql, params = self._gen_multi_row_insert(
-                        table_name=arg.table_name, values_to_insert=arg.rows, ignore_conficts=False
+                        table_name=arg.table_name,
+                        values_to_insert=arg.rows,
+                        ignore_conficts=False,
+                        conflict_suffix="",
                     )
                     await cursor.execute(sql, params)
 

@@ -13,7 +13,6 @@ from agent_service.tool import (
     tool,
 )
 from agent_service.tools.product_comparison.brightdata_websearch import (
-    get_news_urls_async,
     get_urls_async,
     get_web_texts_async,
 )
@@ -83,8 +82,12 @@ async def single_stock_web_search(
             context=context,
             log_event_dict={"gbi_id": stock_id.gbi_id},
         ),
-        get_news_urls_async(
-            [query], args.num_news_urls, context=context, log_event_dict={"gbi_id": stock_id.gbi_id}
+        get_urls_async(
+            [query],
+            args.num_news_urls,
+            context=context,
+            log_event_dict={"gbi_id": stock_id.gbi_id},
+            get_news=True,
         ),
     ]
     results = await gather_with_concurrency(tasks)
@@ -205,11 +208,12 @@ async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContex
     if not context.user_settings.include_web_results:
         await tool_log("Skipping web search due to user setting", context=context)
         return []
+
     tasks = [
         get_urls_async(args.queries, args.num_google_urls, context=context),
-        get_news_urls_async(args.queries, args.num_news_urls, context=context),
+        get_urls_async(args.queries, args.num_news_urls, context=context, get_news=True),
     ]
-    results = await gather_with_concurrency(tasks, n=25)
+    results = await gather_with_concurrency(tasks)
 
     urls: List[str] = [prepend_url_with_https(url) for url in (args.urls or [])]
     for result in results:
@@ -264,15 +268,15 @@ async def site_specific_websearch(
 
 async def main() -> None:
     plan_context = PlanRunContext.get_dummy()
-    """
+
     query_1 = "nintendo switch 2 news"
     query_2 = "Australia betting news"
     query_3 = "top legal tech stocks"
     query_4 = "countries which have prominent effects on the stock market"
 
-    queries = GeneralWebSearchInput(queries=[query_2])
+    queries = GeneralWebSearchInput(queries=[query_1, query_2, query_3, query_4])
     result = await general_web_search(queries, plan_context)
-    """
+
     """
     query = SingleStockWebSearchInput(
         stock_id=StockID(gbi_id=714, symbol="AAPL", isin="US0378331005", company_name=""),
@@ -281,9 +285,11 @@ async def main() -> None:
 
     result = await single_stock_web_search(query, plan_context)
     """
+    """
     url_1 = "http://jobs.apple.com/en-ca/search?location=new-york-city-NYC"
     urls = SiteSpecificWebSearchInput(urls=[url_1])
     result = await site_specific_websearch(urls, plan_context)
+    """
 
     print(result)
 
