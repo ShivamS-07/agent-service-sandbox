@@ -945,6 +945,9 @@ async def filter_and_rank_stocks_by_profile(
     if len(args.stock_texts) == 0:
         raise EmptyInputError("Cannot run on stocks with an empty list of texts")
 
+    if (args.top_n is not None or args.bottom_m is not None) and not args.complete_ranking:
+        args.complete_ranking = True  # always do a full ranking if asking for top/bottom n
+
     profile_match_params = ProfileMatchParameters(
         filter_score_threshold=args.score_threshold,
         rank_stocks=args.complete_ranking,
