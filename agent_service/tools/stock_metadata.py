@@ -1,6 +1,10 @@
 from typing import List
 
+import pandas as pd
+
+from agent_service.io_type_utils import TableColumnType
 from agent_service.io_types.stock import StockID
+from agent_service.io_types.table import StockTable, TableColumnMetadata
 from agent_service.io_types.text import StockDescriptionText, StockText
 from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.general_websearch import (
@@ -72,3 +76,28 @@ async def get_company_descriptions(
 
     await tool_log(log=f"Found {len(results)} company descriptions", context=context)
     return results  # type: ignore
+
+
+class GetCompanyNamesInput(ToolArgs):
+    stock_ids: List[StockID]
+
+
+@tool(
+    description=(
+        "This tool returns a table of company names given a list of StockIDs. "
+        "Each company name is stored in string format. This tool is useful if a user wants "
+        "to include 'company name' as a field when constructing a table, given a list of StockIDs."
+    ),
+    category=ToolCategory.STOCK,
+    tool_registry=default_tool_registry(),
+)
+async def get_company_names(args: GetCompanyNamesInput, context: PlanRunContext) -> StockTable:
+    await tool_log(log=f"Found {len(args.stock_ids)} company names", context=context)
+    df = pd.DataFrame({"ids": args.stock_ids, "names": [x.company_name for x in args.stock_ids]})
+    return StockTable.from_df_and_cols(
+        data=df,
+        columns=[
+            TableColumnMetadata(label="ids", col_type=TableColumnType.STOCK),
+            TableColumnMetadata(label="names", col_type=TableColumnType.STRING),
+        ],
+    )
