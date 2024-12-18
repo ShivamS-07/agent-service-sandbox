@@ -12,7 +12,7 @@ pipeline {
         NEXUS_DEPLOYMENT_CREDS = credentials('03e90d96-4118-4a28-8b7d-7c0f09c85ae4')
         DEPLOYMENTS_REPO_VERSION_NAME = "AgentService"
         DEPLOYMENTS_REPO_BRANCH = "master"
-        MASTER_BRANCH = "main"
+        MASTER_BRANCH = "holiday-2024"
     }
 
     stages {
@@ -28,14 +28,6 @@ pipeline {
                                                 sh "echo ${VERSION}"
                                                 sh "./build_and_push_image.sh ${VERSION}"
                                                 sh "./build_and_push_test_image.sh ${VERSION}"
-                                                sh """
-                                                    if [ \$(( \$(echo ${VERSION} | awk -F '.' '{print \$NF}') % 5 )) -eq 0 ]; then
-                                                        echo "Triggering regression test as the version is divisible by 5"
-                                                        ./run_regression.sh ${VERSION}
-                                                    else
-                                                        echo "Not triggering regression test as the version is not divisible by 5"
-                                                    fi
-                                                """
                                                 checkout([$class: 'GitSCM', branches: [[name: "*/${DEPLOYMENTS_REPO_BRANCH}"]], extensions: [], userRemoteConfigs: [[credentialsId: 'GitHub', url: "https://github.com/GBI-Core/deployments"]]])
                                                 sh "git config user.name ${GIT_USERNAME}"
                                                 sh "git config user.email jenkins@boosted.ai"
