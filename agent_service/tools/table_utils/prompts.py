@@ -877,6 +877,9 @@ a price delta or something similar should be normalized to between zero and one 
 'delta' column type). Never ever choose two column types, just do your best and choose the one the
 fits the best. Column types:
 {TableColumnType.get_type_explanations()}
+
+If the type is numerical, make sure you convert to an actual number, e.g.  '10.6
+million' should become '10,600,000'.
 """
 
 TEXT_TO_TABLES_INPUT_SCHEMA_PROMPT = """
@@ -885,6 +888,8 @@ The header line should be exactly as follows:
 Try to make the csv data match as closely as possible to the expected type (for
 example, a price delta or something similar should be normalized to between zero
 and one before using the 'delta' column type).
+If the type is numerical, make sure you convert to an actual number, e.g.  '10.6
+million' should become '10,600,000'.
 """
 
 TEXT_TO_TABLE_SYS_PROMPT = Prompt(

@@ -82,6 +82,15 @@ async def _extract_citation_from_value(
     return val, (citations or [])
 
 
+scalar_units = {
+    "hundred": 100,
+    "thousand": 1000,
+    "million": 1000000,
+    "billion": 1000000000,
+    "trillion": 1000000000000,
+}
+
+
 def extract_number_with_unit_from_text(
     val: str,
     return_int: bool = False,
@@ -93,6 +102,10 @@ def extract_number_with_unit_from_text(
     currency_symbol = m.group(1)
     num_val = m.group(2)
     unit = m.group(3)
+    scalar = 1
+    if unit in scalar_units:
+        scalar = scalar_units[unit]
+        unit = None
     if unit not in ISO_CURRENCY_CODES:
         unit = None
     if not unit and currency_symbol in CURRENCY_SYMBOL_TO_ISO:
@@ -101,9 +114,9 @@ def extract_number_with_unit_from_text(
     num: float | int | None = None
     try:
         if return_int:
-            num = int(num_val)
+            num = int(num_val) * scalar
         else:
-            num = float(num_val)
+            num = float(num_val) * scalar
     except Exception:
         pass
 
