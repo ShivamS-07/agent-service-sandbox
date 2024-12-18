@@ -27,7 +27,8 @@ from agent_service.tool import (
     default_tool_registry,
     tool,
 )
-from agent_service.tools.general_websearch import (
+from agent_service.tools.tool_log import tool_log
+from agent_service.tools.web_search.general_websearch import (
     NEWS_URLS_TO_SCRAPE,
     REDUCED_NEWS_URLS_TO_SCRAPE,
     REDUCED_URLS_TO_SCRAPE,
@@ -37,7 +38,6 @@ from agent_service.tools.general_websearch import (
     general_stock_web_search,
     general_web_search,
 )
-from agent_service.tools.tool_log import tool_log
 from agent_service.types import AgentUserSettings, PlanRunContext
 from agent_service.utils.async_db import AsyncDB, get_async_db
 from agent_service.utils.async_utils import gather_with_concurrency

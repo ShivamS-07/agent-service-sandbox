@@ -7,11 +7,11 @@ from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTable, TableColumnMetadata
 from agent_service.io_types.text import StockDescriptionText, StockText
 from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
-from agent_service.tools.general_websearch import (
+from agent_service.tools.tool_log import tool_log
+from agent_service.tools.web_search.general_websearch import (
     GeneralStockWebSearchInput,
     general_stock_web_search,
 )
-from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import get_async_db
 from agent_service.utils.prefect import get_prefect_logger

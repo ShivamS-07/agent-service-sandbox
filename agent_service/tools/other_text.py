@@ -14,12 +14,6 @@ from agent_service.tools.earnings import (
     GetEarningsCallDataInput,
     get_earnings_call_summaries,
 )
-from agent_service.tools.general_websearch import (
-    NEWS_URLS_TO_SCRAPE,
-    REDUCED_NEWS_URLS_TO_SCRAPE,
-    REDUCED_URLS_TO_SCRAPE,
-    URLS_TO_SCRAPE,
-)
 from agent_service.tools.news import (
     GetLatestNewsForCompaniesInput,
     GetNewsDevelopmentsAboutCompaniesInput,
@@ -32,6 +26,12 @@ from agent_service.tools.stock_metadata import (  # get_company_descriptions_sto
     get_company_descriptions,
 )
 from agent_service.tools.tool_log import tool_log
+from agent_service.tools.web_search.general_websearch import (
+    NEWS_URLS_TO_SCRAPE,
+    REDUCED_NEWS_URLS_TO_SCRAPE,
+    REDUCED_URLS_TO_SCRAPE,
+    URLS_TO_SCRAPE,
+)
 from agent_service.types import PlanRunContext
 from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.logs import async_perf_logger

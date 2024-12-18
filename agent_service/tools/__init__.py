@@ -4,10 +4,10 @@ from agent_service.tools.commentary import *  # noqa
 from agent_service.tools.ideas import *  # noqa
 from agent_service.tools.kpis import *  # noqa
 from agent_service.tools.LLM_analysis import *  # noqa
-from agent_service.tools.product_comparison import *  # noqa
 from agent_service.tools.profiler import *  # noqa
 from agent_service.tools.stock_filter_and_rank import *  # noqa
 from agent_service.tools.stock_groups import *  # noqa
+from agent_service.tools.web_search import *  # noqa
 
 # This is hacky, but we want to make sure that "from tools import *" gets ALL tools
 

@@ -12,11 +12,11 @@ from agent_service.tool import (
     default_tool_registry,
     tool,
 )
-from agent_service.tools.product_comparison.brightdata_websearch import (
+from agent_service.tools.tool_log import tool_log
+from agent_service.tools.web_search.brightdata_websearch import (
     get_urls_async,
     get_web_texts_async,
 )
-from agent_service.tools.tool_log import tool_log
 from agent_service.types import AgentUserSettings, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.feature_flags import get_ld_flag

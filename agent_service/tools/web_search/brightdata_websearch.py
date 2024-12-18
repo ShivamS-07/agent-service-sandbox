@@ -14,7 +14,8 @@ from gbi_common_py_utils.utils.ssm import get_param
 from mypy_boto3_s3.client import S3Client
 
 from agent_service.io_types.text import WebText
-from agent_service.tools.product_comparison.constants import (
+from agent_service.tools.tool_log import tool_log
+from agent_service.tools.web_search.constants import (
     BRIGHTDATA_REQ_PASSWORD,
     BRIGHTDATA_REQ_USERNAME,
     BRIGHTDATA_SERP_PASSWORD,
@@ -27,7 +28,6 @@ from agent_service.tools.product_comparison.constants import (
     SERP_WEB_TYPE,
     URL_CACHE_TTL_HOURS,
 )
-from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import get_async_db
 from agent_service.utils.async_utils import gather_with_concurrency
@@ -48,7 +48,7 @@ password = get_param(BRIGHTDATA_SERP_PASSWORD)
 proxy_url = f"http://{username}:{password}@{host}:{port}"
 proxies = {"http": proxy_url, "https": proxy_url}
 
-CERTIFICATE_LOCATION = "agent_service/tools/product_comparison/brd_certificate.crt"
+CERTIFICATE_LOCATION = "agent_service/tools/web_search/brd_certificate.crt"
 
 WEB_SEARCH_FETCH_URLS_TIMEOUT = 25
 WEB_SEARCH_PULL_SITES_TIMEOUT = 40
@@ -127,9 +127,15 @@ async def get_urls_async(
     rows = await async_db.get_cached_urls(
         queries, DEFAULT_SERP_PERIOD, query_type, SERP_CACHE_TTL_HOURS
     )
-    logger.info(
-        f"Cache hit! Found {len(rows)} cached {query_type} search queries out of {len(queries)}!"
-    )
+
+    if len(rows) > 0:
+        logger.info(
+            f"Cache hit! Found {len(rows)} cached {query_type} search queries out of {len(queries)}!"
+        )
+    else:
+        logger.info(
+            f"Cache Miss! Found no cached {query_type} search queries out of {len(queries)}!"
+        )
 
     # add cached results to the total returned results
     cached_query_results = {row["query"]: row["urls"] for row in rows}
@@ -198,24 +204,6 @@ req_user = get_param(BRIGHTDATA_REQ_USERNAME)
 req_pass = get_param(BRIGHTDATA_REQ_PASSWORD)
 req_proxy_url = f"http://{req_user}:{req_pass}@{host}:{port}"
 req_proxies = {"http": req_proxy_url, "https": req_proxy_url}
-
-
-def brd_request(
-    url: str, headers: Dict[str, str] = HEADER, timeout: int = WEB_SEARCH_PULL_SITES_TIMEOUT
-) -> Any:
-    response = requests.get(
-        url,
-        proxies=req_proxies,
-        timeout=timeout,
-        headers=headers,
-        verify=CERTIFICATE_LOCATION,
-    )
-
-    if response.status_code == 400:
-        logger.info(f"Failed to retrieve {url} using brightdata. Trying regular request")
-        response = requests.get(url, timeout=timeout, headers=headers)
-
-    return response
 
 
 def remove_excess_formatting(text: str) -> str:
@@ -527,7 +515,10 @@ async def get_web_texts_async(
 
     rows = pg.generic_read(sql1, params=params)
 
-    logger.info(f"Cache hit! Found {len(rows)} cached URLs out of {len(urls)}!")
+    if len(rows) > 0:
+        logger.info(f"Cache hit! Found {len(rows)} cached URLs out of {len(urls)} URLs!")
+    else:
+        logger.info(f"Cache miss! Found no cached URLs out of {len(urls)} URLs!")
 
     url_to_obj = {
         row["url"]: WebText(
