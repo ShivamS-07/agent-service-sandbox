@@ -110,6 +110,8 @@ AGENT_AUTOMATION_WORKER_QUEUE = os.getenv(
 )
 NOTIFICATION_SERVICE_QUEUE = os.getenv("NOTIFICATION_SERVICE_QUEUE", "notification-service-dev")
 AGENT_QUALITY_WORKER_QUEUE = os.getenv("AGENT_QUALITY_WORKER_QUEUE", "agent-quality-worker-dev")
+# If not set, we will instead use the old boosted-dag queue for sending run_execution_plan
+AGENT_RUN_EXECUTION_PLAN_QUEUE = os.getenv("AGENT_RUN_EXECUTION_PLAN_QUEUE", "")
 
 
 def get_B3_prefix() -> str:

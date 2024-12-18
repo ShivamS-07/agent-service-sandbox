@@ -1,6 +1,7 @@
 import enum
 import json
 import logging
+import uuid
 from logging import Logger, LoggerAdapter
 from typing import Dict, Optional, Union
 
@@ -10,9 +11,13 @@ from gbi_common_py_utils.utils.event_logging import json_serial
 from agent_service.planner.constants import FollowupAction
 from agent_service.planner.planner_types import ErrorInfo, ExecutionPlan
 from agent_service.types import PlanRunContext
-from agent_service.utils.constants import AGENT_WORKER_QUEUE, BOOSTED_DAG_QUEUE
+from agent_service.utils.constants import (
+    AGENT_RUN_EXECUTION_PLAN_QUEUE,
+    AGENT_WORKER_QUEUE,
+    BOOSTED_DAG_QUEUE,
+)
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.feature_flags import use_boosted_dag_for_run_execution_plan
+from agent_service.utils.event_logging import log_event
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.s3_upload import upload_string_to_s3
 
@@ -82,8 +87,23 @@ async def kick_off_run_execution_plan(
         "user_id": context.user_id,
     }
     queue_name = (
-        BOOSTED_DAG_QUEUE if use_boosted_dag_for_run_execution_plan() else AGENT_WORKER_QUEUE
+        AGENT_RUN_EXECUTION_PLAN_QUEUE if AGENT_RUN_EXECUTION_PLAN_QUEUE else BOOSTED_DAG_QUEUE
     )
+    if queue_name == AGENT_RUN_EXECUTION_PLAN_QUEUE:
+        message_id = str(uuid.uuid4())
+        # Add an additional message_id field for debugging/tracking
+        message["message_id"] = message_id
+        now_time = get_now_utc().isoformat()
+        log_event(
+            event_name="agent_launch_sqs_handler_replacement",
+            event_data={
+                "start_time_utc": now_time,
+                "end_time_utc": now_time,
+                "message": message,
+                "type": "run_execution_plan_message_sent",
+                "message_id": message_id,
+            },
+        )
     queue = sqs.get_queue_by_name(QueueName=queue_name)
     queue.send_message(MessageBody=json.dumps(message, default=json_serial))
 
