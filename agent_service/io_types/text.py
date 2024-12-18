@@ -73,6 +73,8 @@ TextIDType = Union[str, int]
 
 DEFAULT_TEXT_TYPE = "Misc"
 
+TRANSCRIPT_ID_CHUNK_SIZE = 1000
+
 
 @io_type
 class Text(ComplexIOBase):
@@ -276,20 +278,21 @@ class Text(ComplexIOBase):
                         symbol_lookup[text.id] = text.stock_id.symbol
         else:
             symbol_lookup = None
-        strs_lookup: Dict[TextIDType, str] = {}
         # For every subclass of Text, fetch data
-        lookups: List[Dict[TextIDType, str]] = await gather_with_concurrency(
-            [
-                textclass.get_strs_lookup(
-                    texts,
-                    include_header=include_header,
-                    timestamp_lookup=timestamp_lookup,
-                    symbol_lookup=symbol_lookup,
-                    text_cache=text_cache,
+        tasks = []
+        for textclass, texts in categories.items():
+            for idx in range(0, len(texts), TRANSCRIPT_ID_CHUNK_SIZE):
+                tasks.append(
+                    textclass.get_strs_lookup(
+                        texts[idx : idx + TRANSCRIPT_ID_CHUNK_SIZE],
+                        include_header=include_header,
+                        timestamp_lookup=timestamp_lookup,
+                        symbol_lookup=symbol_lookup,
+                        text_cache=text_cache,
+                    )
                 )
-                for textclass, texts in categories.items()
-            ]
-        )
+        lookups: List[Dict[TextIDType, str]] = await gather_with_concurrency(tasks)
+        strs_lookup: Dict[TextIDType, str] = {}
         for lookup in lookups:
             strs_lookup.update(lookup)
 
@@ -1224,11 +1227,38 @@ class StockEarningsTranscriptSectionText(StockEarningsText):
         context: PlanRunContext,
         cache_new_data: bool = True,
     ) -> List[StockEarningsTranscriptSectionText]:
-        transcripts_lookup = await StockEarningsTranscriptText._get_strs_lookup(transcripts)
+        transcripts_tasks = []
+        for idx in range(0, len(transcripts), TRANSCRIPT_ID_CHUNK_SIZE):
+            transcripts_tasks.append(
+                StockEarningsTranscriptText._get_strs_lookup(
+                    transcripts[idx : idx + TRANSCRIPT_ID_CHUNK_SIZE]
+                )
+            )
 
-        partition_lookup = await get_transcript_partitions_from_db(
-            [str(transcript.id) for transcript in transcripts]
+        transcripts_lookups: List[Dict[TextIDType, str]] = await gather_with_concurrency(
+            transcripts_tasks
         )
+        transcripts_lookup: Dict[TextIDType, str] = {}
+        for lookup in transcripts_lookups:
+            transcripts_lookup.update(lookup)
+
+        partition_tasks = []
+        for idx in range(0, len(transcripts), TRANSCRIPT_ID_CHUNK_SIZE):
+            partition_tasks.append(
+                get_transcript_partitions_from_db(
+                    [
+                        str(transcript.id)
+                        for transcript in transcripts[idx : idx + TRANSCRIPT_ID_CHUNK_SIZE]
+                    ]
+                )
+            )
+
+        partition_lookups: List[Dict[str, List[List[int]]]] = await gather_with_concurrency(
+            partition_tasks
+        )
+        partition_lookup: Dict[str, List[List[int]]] = {}
+        for lookup in partition_lookups:
+            partition_lookup.update(lookup)
 
         data_to_cache: Dict[str, List[Tuple[int, int]]] = {}
 

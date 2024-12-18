@@ -34,6 +34,7 @@ from agent_service.tools.table_utils.prompts import (
 )
 from agent_service.tools.tables import JoinTableArgs, join_tables
 from agent_service.types import AgentUserSettings, PlanRunContext
+from agent_service.utils.async_postgres_base import DEFAULT_ASYNCDB_GATHER_CONCURRENCY
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.constants import CURRENCY_SYMBOL_TO_ISO, ISO_CURRENCY_CODES
 from agent_service.utils.feature_flags import get_ld_flag
@@ -131,7 +132,7 @@ async def _lookup_stocks(stocks: List[str], context: PlanRunContext) -> dict[str
     context = deepcopy(context)
     context.skip_task_logging = True
     tasks = [_lookup_helper_wrapper(stock, context) for stock in stocks]
-    results = await gather_with_concurrency(tasks, n=50)
+    results = await gather_with_concurrency(tasks, n=DEFAULT_ASYNCDB_GATHER_CONCURRENCY)
     return {stock: stock_id for stock, stock_id in results if stock_id}
 
 
@@ -229,6 +230,7 @@ async def _text_to_table_helper(
 
     texts = await partition_to_smaller_text_sizes(input_texts, context)
 
+    logger.warning("Filtering texts...")
     texts = initial_filter_texts(texts)
     if len(input_texts) != len(texts):
         logger.warning(f"Too many texts, filtered {len(input_texts)} split texts to {len(texts)}")
@@ -277,11 +279,13 @@ async def _text_to_table_helper(
     )
     sys_prompt = table_gen_sys_prompt.format()
 
+    logger.info(f"using GPT to convert {len(texts_str)=} into table")
     result = await llm.do_chat_w_sys_prompt(
         main_prompt,
         sys_prompt,
     )
 
+    logger.info("get citations")
     # Split the text into the actual csv and the citations
     text, citation_dict = get_initial_breakdown(result)
 
@@ -305,10 +309,10 @@ async def _text_to_table_helper(
 
     row_indexes_to_skip: set[int] = set()
     column_dicts = []
-    for result_task in asyncio.as_completed(tasks):
+    for result_task in await asyncio.gather(*tasks):
         metadata: TableColumnMetadata
         new_vals_dict: dict[int, Any]
-        metadata, new_vals_dict = await result_task
+        metadata, new_vals_dict = result_task
         # Since the key values are simply 0 -> length of table, we want to
         # filter any rows where ANY column in the row is empty. This is mostly
         # used for filtering out rows for stocks that are not matched.

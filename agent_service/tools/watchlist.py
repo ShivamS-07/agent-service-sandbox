@@ -155,6 +155,8 @@ async def get_user_watchlist_stocks(
         await get_watchlist_stocks(user_id=context.user_id, watchlist_id=watchlist_id)
     )
 
+    await tool_log(log=f"watchlist contains: {len(stock_list)} stocks", context=context)
+
     try:  # since everything associated with diffing is optional, put in try/except
         # we need to add the task id to all runs, including the first one, so we can track changes
         # Update mode
@@ -213,9 +215,13 @@ async def get_user_watchlist_stocks(
 async def get_stocks_for_user_all_watchlists(
     args: GetStocksForUserAllWatchlistsInput, context: PlanRunContext
 ) -> List[StockID]:
-    return await StockID.from_gbi_id_list(
+    stock_list = await StockID.from_gbi_id_list(
         await get_all_stocks_in_all_watchlists(user_id=context.user_id)
     )
+
+    await tool_log(log=f"found: {len(stock_list)} stocks across all watchlists", context=context)
+
+    return stock_list
 
 
 def is_generic_watchlist_search(search_str: Optional[str]) -> bool:

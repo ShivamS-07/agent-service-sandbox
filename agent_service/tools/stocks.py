@@ -54,6 +54,12 @@ from agent_service.utils.tool_diff import (
     get_prev_run_info,
 )
 
+MAX_SYMBOL_LEN = 8
+
+ACCEPTABLE_ASSET_CLASSES = """'Common Stock',
+ 'Depositary Receipt (Common Stock)',
+ 'Debt/Equity Composite Units'"""
+
 STOCK_ID_COL_NAME_DEFAULT = "Security"
 GROWTH_LABEL = "Growth"
 VALUE_LABEL = "Value"
@@ -212,6 +218,15 @@ def get_stock_identifier_lookup_cache_key(
     return key
 
 
+def could_be_ticker(s: str) -> bool:
+    # check if 's' looks like it MIGHT be a ticker
+    if len(s) > MAX_SYMBOL_LEN:
+        return False
+    if len(s.split()) > 1:
+        return False
+    return True
+
+
 @tool(
     description=(
         "This function takes a string (microsoft, apple, AAPL, TESLA, META, SP 500, e.g.) "
@@ -275,8 +290,15 @@ async def stock_identifier_lookup_helper(
     if not args.stock_name and not args.company_integer_id:
         raise ValueError("Must pass either a stock name or company integer id!!")
 
+    # Tool level debug info
+    real_debug_info: Dict[str, Any] = {}
+    real_debug_info = TOOL_DEBUG_INFO.get()
+
     debug_info: Dict[str, Any] = {}
-    debug_info = TOOL_DEBUG_INFO.get()
+    # create one debug entry per unique call to this tool
+    # useful for multistock lookup and other tools that invoke this tool
+    if args.stock_name is not None:
+        real_debug_info[args.stock_name] = debug_info
 
     try:  # since everything associated with diffing/rerun cache is optional, put in try/except
         # Update mode
@@ -507,7 +529,7 @@ async def stock_lookup_by_exact_gbi_alt_name(
 
     # Exact gbi alt name match
     # these are hand crafted strings to be used only when needed
-    sql = """
+    sql = f"""
     SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
     ms.name, gan.alt_name as gan_alt_name
     FROM master_security ms
@@ -516,7 +538,7 @@ async def stock_lookup_by_exact_gbi_alt_name(
     upper(gan.alt_name) = upper(%(search_term)s)
     AND gan.enabled
     AND ms.is_public
-    AND ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    AND ms.asset_type in ( {ACCEPTABLE_ASSET_CLASSES} )
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
     AND source_id = 0 -- boosted custom alt_name entries
@@ -556,13 +578,13 @@ async def stock_lookup_by_isin(
     # ISINs are 12 chars long, 2 chars, 10 digits
     if is_isin(args.stock_name):
         # Exact ISIN match
-        sql = """
+        sql = f"""
         SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency, name,
         'ms.isin' as match_col, ms.isin as match_text
         FROM master_security ms
         WHERE ms.isin = upper(%(search_term)s)
         AND ms.is_public
-        AND ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+        AND ms.asset_type  in ( {ACCEPTABLE_ASSET_CLASSES} )
         AND ms.is_primary_trading_item = true
         AND ms.to_z is null
 
@@ -575,7 +597,7 @@ async def stock_lookup_by_isin(
         JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
         WHERE ssm.isin = upper(%(search_term)s)
         AND ms.is_public
-        AND ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+        AND ms.asset_type  in ( {ACCEPTABLE_ASSET_CLASSES} )
         AND ms.is_primary_trading_item = true
         AND ms.to_z is null
         """
@@ -678,7 +700,7 @@ async def stock_lookup_by_text_similarity(
         {PERFECT_TEXT_MATCH} AS text_sim_score
         FROM master_security ms
         WHERE
-        ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
+        ms.asset_type in ( {ACCEPTABLE_ASSET_CLASSES} )
         AND ms.is_public
         AND ms.is_primary_trading_item = true
         AND ms.to_z is null
@@ -698,7 +720,7 @@ async def stock_lookup_by_text_similarity(
     if len(possible_ticker_tokens) > 1:
         # sometimes users give us both the name and ticker often like "Name (Ticker)"
         # this will specifically search for that combination
-        ticker_and_name_match_sql = """
+        ticker_and_name_match_sql = f"""
         UNION
 
         -- stock ticker (exact) + name match (partial)
@@ -713,7 +735,7 @@ async def stock_lookup_by_text_similarity(
         -- 0.1 is a magic number to boost this match since it covers both fields
         FROM master_security ms
         WHERE
-        ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
+        ms.asset_type in ( {ACCEPTABLE_ASSET_CLASSES} )
         AND ms.is_public
         AND ms.is_primary_trading_item = true
         AND ms.to_z is null
@@ -725,6 +747,30 @@ async def stock_lookup_by_text_similarity(
         AND  (strict_word_similarity(ms.name || ' ' || ms.symbol, %(search_term)s) +
         strict_word_similarity(%(search_term)s, ms.name || ' ' || ms.symbol)) / 2  > 0.3
         """
+
+    ipo_dot_u_union_sql = ""
+    dot_u_tickers = []
+    if could_be_ticker(possible_ticker_str) and "." not in possible_ticker_str:
+        dot_u_tickers.append(possible_ticker_str + ".U")
+        if possible_ticker_str.endswith("U"):
+            dot_u_tickers.append(possible_ticker_str[:-1] + ".U")
+        ipo_dot_u_union_sql = f"""
+        UNION
+
+    -- ticker symbol (exact match only)
+    SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
+    ms.asset_type,
+    ms.security_type,
+    ms.name, 'ticker symbol dot u' as match_col, ms.symbol as match_text,
+    -- this is an odd corner case for misquoted IPO table
+    0.9 AS text_sim_score
+    FROM master_security ms
+    WHERE
+    ms.asset_type in ( {ACCEPTABLE_ASSET_CLASSES} )
+    AND ms.is_public
+    AND ms.is_primary_trading_item = true
+    AND ms.to_z is null
+    AND ms.symbol = ANY(%(dot_u_tickers)s)"""
 
     # Word similarity name match
 
@@ -756,7 +802,7 @@ async def stock_lookup_by_text_similarity(
     {PERFECT_TEXT_MATCH} AS text_sim_score
     FROM master_security ms
     WHERE
-    ms.asset_type in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    ms.asset_type in ( {ACCEPTABLE_ASSET_CLASSES} )
     AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
@@ -765,6 +811,8 @@ async def stock_lookup_by_text_similarity(
 {etf_union_sql}
 
 {ticker_and_name_match_sql}
+
+{ipo_dot_u_union_sql}
 
     UNION
 
@@ -779,7 +827,7 @@ async def stock_lookup_by_text_similarity(
     AS text_sim_score
     FROM master_security ms
     WHERE
-    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    ms.asset_type  in ( {ACCEPTABLE_ASSET_CLASSES} )
     AND ms.is_public
     AND ms.is_primary_trading_item = true
     AND ms.to_z is null
@@ -813,7 +861,7 @@ async def stock_lookup_by_text_similarity(
     JOIN spiq_security_mapping ssm ON ssm.gbi_id = ms.gbi_security_id
     JOIN "data".company_alt_names can ON ssm.spiq_company_id = can.spiq_company_id
     WHERE
-    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    ms.asset_type  in ( {ACCEPTABLE_ASSET_CLASSES} )
     AND can.enabled
     AND ms.is_public
     AND ms.is_primary_trading_item = true
@@ -838,7 +886,7 @@ async def stock_lookup_by_text_similarity(
     FROM master_security ms
     JOIN "data".gbi_id_alt_names gan ON gan.gbi_id = ms.gbi_security_id
     WHERE
-    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    ms.asset_type  in ( {ACCEPTABLE_ASSET_CLASSES} )
     AND gan.enabled
     AND ms.is_public
     AND ms.is_primary_trading_item = true
@@ -865,6 +913,7 @@ async def stock_lookup_by_text_similarity(
             "prefix": prefix,
             "etf_match_str": etf_match_str,
             "possible_ticker_tokens": possible_ticker_tokens,
+            "dot_u_tickers": dot_u_tickers,
         },
     )
 
@@ -2532,14 +2581,14 @@ async def stock_lookup_by_bloomberg_parsekey(
         )
         return []
 
-    sql = """
+    sql = f"""
     -- ticker symbol + country (exact match only)
     SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
     ms.name, 'ticker symbol' as match_col, ms.symbol || ' ' || ms.security_region as match_text,
     1.0 AS ws
     FROM master_security ms
     WHERE
-    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    ms.asset_type  in ( {ACCEPTABLE_ASSET_CLASSES} )
     AND ms.is_public
     AND ms.to_z is null
     AND ms.symbol = upper(%(symbol)s)
@@ -2621,14 +2670,14 @@ async def stock_lookup_by_ric_yahoo_codes(
 
     logger.info(f"searching for {symbol=}  {iso3=}")
 
-    sql = """
+    sql = f"""
     -- ticker symbol + country (exact match only)
     SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
     ms.name, 'ticker symbol' as match_col, ms.symbol || ' ' || ms.security_region as match_text,
     1.0 AS ws
     FROM master_security ms
     WHERE
-    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    ms.asset_type  in ( {ACCEPTABLE_ASSET_CLASSES} )
     AND ms.is_public
     AND ms.to_z is null
     AND ms.symbol = upper(%(symbol)s)
@@ -2640,14 +2689,14 @@ async def stock_lookup_by_ric_yahoo_codes(
         logger.info("found RIC/Yahoo code match")
 
     # SPIQ stores some tickers in format XXXX.YY, so lets find those also just in case
-    sql2 = """
+    sql2 = f"""
     -- ticker symbol + country (exact match only)
     SELECT gbi_security_id, ms.symbol, ms.isin, ms.security_region, ms.currency,
     ms.name, 'ticker symbol' as match_col, ms.symbol as match_text,
     1.0 AS ws
     FROM master_security ms
     WHERE
-    ms.asset_type  in ('Common Stock', 'Depositary Receipt (Common Stock)')
+    ms.asset_type  in ( {ACCEPTABLE_ASSET_CLASSES} )
     AND ms.is_public
     AND ms.to_z is null
     AND ms.symbol = upper(%(symbol)s)
