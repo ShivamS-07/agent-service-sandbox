@@ -141,25 +141,21 @@ async def _handle_table_col(
     citation_dict: Optional[dict[str, List[dict[str, Any]]]],
     context: PlanRunContext,
     text_group: TextGroup,
-) -> Tuple[TableColumnMetadata, List[Any]]:
+) -> Tuple[TableColumnMetadata, dict[int, Any]]:
     """
     For a single table column, do stock name resolution and citation
     resolution. Returns the newly created table col metadata object as well as
-    the modified values.
+    the modified values. Values are returned as a mapping from row index to
+    value, since some values might be filtered out (e.g. stocks).
     """
     col_name, col_type = _extract_and_clean_header(header)
-    new_vals = []
+    new_vals = {}
     cell_citations: dict[int, List[TextCitation]] = {}
     stock_metadata: dict[str, StockID] = {}
     unit_set = set()
+    unmapped_stocks = set()
     if col_type == TableColumnType.STOCK:
         stock_metadata = await _lookup_stocks(stocks=list(set(values.tolist())), context=context)
-        if len(stock_metadata) < len(values):
-            # We failed to map one or more stocks, for now just use strings instead
-            logger.warning("Failed to match a stock, falling back to a string column")
-            col_type = TableColumnType.STRING
-            stock_metadata = {}
-
     for i, val in enumerate(values):
         if citation_dict:
             val = str(val)
@@ -168,10 +164,13 @@ async def _handle_table_col(
             )
             cell_citations[i] = citations
 
-        if stock_metadata and val in stock_metadata:
-            val = stock_metadata[val]
-            if col_type == TableColumnType.STRING:
-                val = val.symbol
+        if col_type == TableColumnType.STOCK:
+            if val not in stock_metadata:
+                unmapped_stocks.add(val)
+                # Skip stocks we couldn't map
+                continue
+            else:
+                val = stock_metadata[val]
 
         if (
             isinstance(val, str)
@@ -190,7 +189,7 @@ async def _handle_table_col(
                 logger.warning("Failed to extract a number, falling back to a string column")
                 col_type = TableColumnType.STRING
 
-        new_vals.append(val)
+        new_vals[i] = val
 
     unit = None
     if len(unit_set) == 1:
@@ -198,6 +197,13 @@ async def _handle_table_col(
         unit = unit_set.pop()
     col_meta = TableColumnMetadata(label=col_name, col_type=col_type, unit=unit)
     col_meta.cell_citations = cell_citations  # type: ignore
+    if unmapped_stocks:
+        logger.error(
+            (
+                f"For {context.plan_run_id=}, {context.task_id=},"
+                f" got unmapped stocks in text to table: {unmapped_stocks}"
+            )
+        )
     return col_meta, new_vals
 
 
@@ -297,11 +303,22 @@ async def _text_to_table_helper(
             )
         )
 
-    for result in await asyncio.gather(*tasks):
-        metadata, new_vals = result
+    row_indexes_to_skip: set[int] = set()
+    column_dicts = []
+    for result_task in asyncio.as_completed(tasks):
+        metadata: TableColumnMetadata
+        new_vals_dict: dict[int, Any]
+        metadata, new_vals_dict = await result_task
+        # Since the key values are simply 0 -> length of table, we want to
+        # filter any rows where ANY column in the row is empty. This is mostly
+        # used for filtering out rows for stocks that are not matched.
+        row_indexes_to_skip.update((i for i in range(len(new_vals_dict)) if i not in new_vals_dict))
         metadatas.append(metadata)
-        new_df_data[metadata.label] = new_vals
+        column_dicts.append(new_vals_dict)
 
+    for metadata, col_dict in zip(metadatas, column_dicts):
+        new_vals = [col_dict[i] for i in col_dict.keys() if i not in row_indexes_to_skip]
+        new_df_data[metadata.label] = new_vals
     new_df = pd.DataFrame(data=new_df_data)
 
     table = Table.from_df_and_cols(columns=metadatas, data=new_df)
