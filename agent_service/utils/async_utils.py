@@ -16,6 +16,7 @@ from typing import (
     TypeVar,
 )
 
+from tqdm.asyncio import tqdm_asyncio
 from typing_extensions import ParamSpec
 
 T = TypeVar("T")
@@ -88,7 +89,11 @@ async def to_awaitable(val: T) -> T:
 
 # credit: https://stackoverflow.com/questions/48483348/how-to-limit-concurrency-with-python-asyncio
 async def gather_with_concurrency(
-    tasks: Collection[Awaitable], n: int = MAX_CONCURRENCY, return_exceptions: bool = False
+    tasks: Collection[Awaitable],
+    n: int = MAX_CONCURRENCY,
+    return_exceptions: bool = False,
+    use_progress_bar: bool = False,
+    desc: str = "Processing tasks",
 ) -> Any:
     n = min(n, len(tasks))  # no greater than number of tasks
     semaphore = asyncio.Semaphore(n)
@@ -97,9 +102,12 @@ async def gather_with_concurrency(
         async with semaphore:
             return await task
 
-    return await asyncio.gather(
-        *(sem_task(task) for task in tasks), return_exceptions=return_exceptions
-    )
+    semaphored_tasks = (sem_task(task) for task in tasks)
+
+    if use_progress_bar:
+        return await tqdm_asyncio.gather(*semaphored_tasks, desc=desc)
+    else:
+        return await asyncio.gather(*semaphored_tasks, return_exceptions=return_exceptions)
 
 
 async def gather_dict_as_completed(

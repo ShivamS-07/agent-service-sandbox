@@ -174,7 +174,9 @@ async def classify_stock_text_relevancies_for_profile(
                 )
             )
 
-    results = await gather_with_concurrency(tasks, n=200)
+    results = await gather_with_concurrency(
+        tasks, n=200, desc=f"text relevance for profile: {profiles_str}", use_progress_bar=True
+    )
     for i, relevancy_decision in enumerate(results):
         if relevancy_decision:
             filtered_texts.append(texts[i])
@@ -268,7 +270,9 @@ async def profile_filter_stock_match(
                 )
             )
 
-    results = await gather_with_concurrency(tasks, n=FILTER_CONCURRENCY)
+    results = await gather_with_concurrency(
+        tasks, n=FILTER_CONCURRENCY, use_progress_bar=True, desc=f"Filtering on profile: {profile}"
+    )
 
     output_tuples: List[Tuple[bool, str, List[Citation]]] = []
     for result, text_group in zip(results, aligned_text_groups.val.values()):
