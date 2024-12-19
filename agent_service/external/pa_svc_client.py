@@ -13,11 +13,16 @@ from gbi_common_py_utils.utils.environment import (
 )
 from grpclib.client import Channel
 from pa_portfolio_service_proto_v1.marketplace_messages_pb2 import (
+    GetAllAuthorizedLiveStrategyIdsRequest,
+    GetAllAuthorizedLiveStrategyIdsResponse,
     GetFullStrategiesInfoRequest,
     GetFullStrategiesInfoResponse,
     ListAllAuthorizedStrategiesRequest,
     ListAllAuthorizedStrategiesResponse,
+    StrategyIdentifier,
+    SubscribeToMarketplaceStrategyRequest,
 )
+from pa_portfolio_service_proto_v1.pa_service_common_messages_pb2 import PORTFOLIO_AUTH_ENUM_READ
 from pa_portfolio_service_proto_v1.pa_service_grpc import PAServiceStub
 from pa_portfolio_service_proto_v1.portfolio_crud_actions_pb2 import (
     RecalcStrategiesRequest,
@@ -362,3 +367,43 @@ async def get_list_all_authorized_strategies(
             metadata=get_default_grpc_metadata(user_id=user_id),
         )
         return list(response.strategies)
+
+
+@grpc_retry
+@async_perf_logger
+async def get_all_authorized_live_strategy_ids(user_id: str) -> List[str]:
+    with _get_service_stub() as stub:
+        response: GetAllAuthorizedLiveStrategyIdsResponse = (
+            await stub.GetAllAuthorizedLiveStrategyIds(
+                GetAllAuthorizedLiveStrategyIdsRequest(min_auth_level=PORTFOLIO_AUTH_ENUM_READ),
+                metadata=get_default_grpc_metadata(user_id=user_id),
+            )
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to fetch authorized live strategy IDs for user {user_id}: {response.status.code}"  # noqa
+                f" {response.status.message}"
+            )
+        return [x.id for x in response.strategy_ids]
+
+
+@grpc_retry
+@async_perf_logger
+async def subscribe_to_marketplace_strategy(user_id: str, is_prod: bool) -> None:
+    if not is_prod:
+        # S&P500 Growth: https://insights-dev.boosted.ai/models/9590826b-6db9-4167-a60f-e66ca59e7acd/aef39126-d8d0-46f6-898d-61f1d87e1418  # noqa
+        model_id = "9590826b-6db9-4167-a60f-e66ca59e7acd"
+        portfolio_id = "aef39126-d8d0-46f6-898d-61f1d87e1418"
+    else:
+        # S&P 500 Tactical - Direct Trading: https://insights.boosted.ai/models/26098a7f-6ffe-4773-9a66-57aad699b1e2/a21a2ccb-bbe5-411f-8bf2-78af41e45c55/  # noqa
+        model_id = "26098a7f-6ffe-4773-9a66-57aad699b1e2"
+        portfolio_id = "a21a2ccb-bbe5-411f-8bf2-78af41e45c55"
+    with _get_service_stub() as stub:
+        await stub.SubscribeToMarketplaceStrategy(
+            SubscribeToMarketplaceStrategyRequest(
+                strategy=StrategyIdentifier(
+                    model_id=UUID(id=model_id), portfolio_id=UUID(id=portfolio_id)
+                )
+            ),
+            metadata=get_default_grpc_metadata(user_id=user_id),
+        )
