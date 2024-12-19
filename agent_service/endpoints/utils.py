@@ -1,8 +1,10 @@
+import asyncio
 import datetime
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
+import sentry_sdk
 from gbi_common_py_utils.utils.environment import get_environment_tag
 
 from agent_service.endpoints.models import (
@@ -17,14 +19,8 @@ from agent_service.io_type_utils import load_io_type
 from agent_service.io_types.graph import BarGraph, LineGraph, PieGraph
 from agent_service.io_types.table import Table
 from agent_service.io_types.text import Text
-from agent_service.planner.planner_types import (
-    ExecutionPlan,
-    PlanStatus,
-    RunMetadata,
-    ToolExecutionNode,
-)
+from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, ToolExecutionNode
 from agent_service.utils.async_db import AsyncDB
-from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.prompt_template import OutputPreview, OutputType
@@ -67,46 +63,35 @@ async def get_agent_hierarchical_worklogs(
         - PlanRun -> List[PlanRunTask]
         - PlanRunTask -> List[PlanRunTaskLog]
     """
-    logger.info(f"Getting plan runs for agent {agent_id}...")
-    end_date_exclusive = end_date + datetime.timedelta(days=1) if end_date else None
-    tuples, total_plan_count = await db.get_agent_plan_runs(
-        agent_id, start_date, end_date_exclusive, start_index, limit_num
-    )
+    with sentry_sdk.start_span(op="db.get_agent_plan_runs", description="get_agent_plan_runs"):
+        logger.info(f"Getting plan runs for agent {agent_id}...")
+        end_date_exclusive = end_date + datetime.timedelta(days=1) if end_date else None
+        tuples, total_plan_count = await db.get_agent_plan_runs(
+            agent_id, start_date, end_date_exclusive, start_index, limit_num
+        )
+
     plan_run_ids = [tup[0] for tup in tuples]
     plan_ids = list({tup[1] for tup in tuples})
 
-    logger.info("Getting worklogs, statuses, execution plan task names, and cancelled ids")
-    rows: List[Dict[str, Any]]
-    plan_run_id_to_status: Dict[str, PlanRunStatusInfo]
-    run_task_pair_to_status: Dict[Tuple[str, str], TaskRunStatusInfo]  # (plan_run_id, task_id)
-    plan_id_to_plan: Dict[
-        str, Tuple[ExecutionPlan, PlanStatus, datetime.datetime, datetime.datetime]
-    ]
-    cancelled_ids: Set[str]
+    with sentry_sdk.start_span(op="db", description="get_agent_worklogs_fast"):
+        logger.info("Getting worklogs, statuses, execution plan task names, and cancelled ids")
+        (
+            rows,
+            plan_run_id_to_metadata,
+            run_task_pair_to_status,
+            plan_id_to_plan,
+            cancelled_ids,
+        ) = await asyncio.gather(
+            db.get_agent_worklogs_fast(agent_id, start_date, end_date_exclusive, plan_run_ids),
+            db.get_plan_runs_metadata(plan_run_ids),
+            db.get_task_run_statuses(plan_run_ids),
+            db.get_execution_plans(plan_ids),
+            db.get_cancelled_ids(ids_to_check=plan_run_ids + plan_ids),
+        )
 
-    # NOTE: due to the fact that Prefect isn't stable, we started to store statuses in the db since
-    # 2024.9.3. There's no easy way to backfill the statuses, so we will rely on DB first, if no
-    # entries, default to NOT_STARTED
-    tasks = [
-        db.get_agent_worklogs(agent_id, start_date, end_date_exclusive, plan_run_ids),
-        db.get_plan_run_statuses(plan_run_ids),
-        db.get_task_run_statuses(plan_run_ids),
-        db.get_execution_plans(plan_ids),
-        db.get_cancelled_ids(ids_to_check=plan_run_ids + plan_ids),
-    ]
-    results = await gather_with_concurrency(tasks, n=len(tasks))
-    (
-        rows,
-        plan_run_id_to_status,
-        run_task_pair_to_status,
-        plan_id_to_plan,
-        cancelled_ids,
-    ) = results
     cancelled_ids = set(cancelled_ids)
 
     logger.info(f"Creating lookup dictionaries for agent {agent_id}...")
-    plan_run_id_to_share_status: Dict[str, bool] = {}
-    plan_run_id_to_run_metadata: Dict[str, Optional[RunMetadata]] = {}
     plan_run_id_task_id_to_logs: Dict[Tuple[str, str], List[PlanRunTaskLog]] = defaultdict(list)
     plan_run_id_task_id_to_task_output: Dict[Tuple[str, str], Dict[str, Any]] = defaultdict(dict)
 
@@ -114,11 +99,6 @@ async def get_agent_hierarchical_worklogs(
         if row["plan_id"] not in plan_id_to_plan:
             logger.warning(f"Plan ID {row['plan_id']} not found in execution_plans table")
             continue
-
-        plan_run_id_to_share_status[row["plan_run_id"]] = row["shared"] or False
-        plan_run_id_to_run_metadata[row["plan_run_id"]] = (
-            RunMetadata.model_validate(row["run_metadata"]) if row["run_metadata"] else None
-        )
 
         if row["is_task_output"]:
             plan_run_id_task_id_to_task_output[(row["plan_run_id"], row["task_id"])] = row
@@ -144,9 +124,9 @@ async def get_agent_hierarchical_worklogs(
             continue
         plan, plan_status, plan_created_at, plan_last_updated = plan_tup
 
-        plan_run_share_status = plan_run_id_to_share_status.get(plan_run_id, False)
-
-        run_metadata = plan_run_id_to_run_metadata.get(plan_run_id, None)
+        shared, plan_run_status_info, run_metadata = plan_run_id_to_metadata.get(
+            plan_run_id, (False, None, None)
+        )
         run_description = run_metadata.run_summary_short if run_metadata else None
 
         # Plan with status cancelled -> run hasn't started yet
@@ -159,15 +139,13 @@ async def get_agent_hierarchical_worklogs(
                     start_time=plan_created_at,
                     end_time=plan_last_updated,
                     tasks=create_default_tasks_from_plan(plan),
-                    shared=plan_run_share_status,
+                    shared=shared,
                     run_description=run_description,
                 )
             )
             continue
 
-        plan_run_status, plan_run_start, plan_run_end = get_plan_run_info(
-            plan_run_id, plan_run_id_to_status
-        )
+        plan_run_status, plan_run_start, plan_run_end = get_plan_run_info(plan_run_status_info)
 
         if plan_run_id in cancelled_ids or plan_id in cancelled_ids:
             # if the id is in the cancelled_ids, override the status
@@ -193,7 +171,7 @@ async def get_agent_hierarchical_worklogs(
                 start_time=plan_run_start or full_tasks[0].start_time or now,
                 end_time=plan_run_end or full_tasks[-1].end_time or now,
                 tasks=full_tasks,
-                shared=plan_run_share_status,
+                shared=shared,
                 run_description=run_description,
                 preview=get_plan_preview(plan),
             )
@@ -209,8 +187,7 @@ async def get_agent_hierarchical_worklogs(
 
 
 def get_plan_run_info(
-    plan_run_id: str,
-    plan_run_id_to_status: Dict[str, PlanRunStatusInfo],
+    plan_run_status_info: Optional[PlanRunStatusInfo],
 ) -> Tuple[Status, Optional[datetime.datetime], Optional[datetime.datetime]]:
     """
     Get plan run's status, start time and end time
@@ -221,15 +198,13 @@ def get_plan_run_info(
     plan_run_start: Optional[datetime.datetime]
     plan_run_end: Optional[datetime.datetime]
 
-    if plan_run_id in plan_run_id_to_status:
-        plan_run_info = plan_run_id_to_status[plan_run_id]
-        plan_run_status = plan_run_info.status
+    if plan_run_status_info:
+        plan_run_status = plan_run_status_info.status
         if plan_run_status is None:
             plan_run_status = Status.NOT_STARTED
-        plan_run_start = plan_run_info.start_time
-        plan_run_end = plan_run_info.end_time
+        plan_run_start = plan_run_status_info.start_time
+        plan_run_end = plan_run_status_info.end_time
     else:
-        logger.warning(f"Plan run for {plan_run_id=} not found")
         plan_run_status = Status.NOT_STARTED
         plan_run_start = None
         plan_run_end = None

@@ -142,7 +142,6 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
         expected_result = None
         self.assertEqual(result, expected_result)
 
-    @unittest.skip("Flaky")
     @patch("agent_service.tools.portfolio.get_list_all_authorized_strategies")
     async def test_convert_strategy_mention_to_strategy(self, get_list_all_authorized_strategies):
         get_list_all_authorized_strategies.side_effect = lambda user_id: [
@@ -184,7 +183,7 @@ class TestPortfolioTools(IsolatedAsyncioTestCase):
             ListAllAuthorizedStrategiesResponse.AuthorizedStrategy(
                 strategy_id=UUID(id="6"),
                 model_name="S&P 500",
-                strategy_name="ACYZ",
+                strategy_name="AyZ",
                 is_strategy_live=True,
                 created_date=Timestamp(seconds=6),
             ),

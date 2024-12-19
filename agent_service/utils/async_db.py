@@ -281,6 +281,27 @@ class AsyncDB:
             return RunMetadata()
         return RunMetadata.model_validate(rows[0]["run_metadata"])
 
+    @async_perf_logger
+    async def get_plan_runs_metadata(
+        self, plan_run_ids: List[str]
+    ) -> Dict[str, Tuple[bool, PlanRunStatusInfo, RunMetadata]]:
+        sql = """
+        SELECT plan_run_id::VARCHAR, shared, run_metadata,
+            created_at AS start_time, last_updated AS end_time, status
+        FROM agent.plan_runs
+        WHERE plan_run_id = ANY(%(plan_run_ids)s)
+        """
+        rows = await self.pg.generic_read(sql, {"plan_run_ids": plan_run_ids})
+        output = {}
+        for row in rows:
+            output[row["plan_run_id"]] = (
+                row["shared"],
+                PlanRunStatusInfo(**row),
+                RunMetadata.model_validate(row["run_metadata"]),
+            )
+
+        return output
+
     async def get_agent_outputs_no_cache(
         self, agent_id: str, plan_run_id: Optional[str] = None
     ) -> List[AgentOutput]:
@@ -650,6 +671,7 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, {"ids_to_check": ids_to_check})
         return len(rows) > 0
 
+    @async_perf_logger
     async def get_cancelled_ids(self, ids_to_check: List[str]) -> List[str]:
         """
         Returns cancelled IDs from the given list.
@@ -947,6 +969,37 @@ class AsyncDB:
             LEFT JOIN agent.plan_runs pr
             ON wl.plan_run_id = pr.plan_run_id
             AND wl.agent_id = pr.agent_id
+            WHERE wl.agent_id = %(agent_id)s {filters}
+            ORDER BY created_at DESC;
+        """
+        return await self.pg.generic_read(sql1, params=params)
+
+    @async_perf_logger
+    async def get_agent_worklogs_fast(
+        self,
+        agent_id: str,
+        start_date: Optional[datetime.date] = None,  # inclusive
+        end_date: Optional[datetime.date] = None,  # exclusive
+        plan_run_ids: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        # TODO: a faster version than `get_agent_worklogs` that doesn't fetch `run_metadata` and
+        # `shared` columns to save a table join
+        params: Dict[str, Any] = {"agent_id": agent_id}
+        filters = ""
+        if start_date:
+            filters += " AND wl.created_at >= %(start_date)s"
+            params["start_date"] = start_date
+        if end_date:
+            filters += " AND wl.created_at < %(end_date)s"
+            params["end_date"] = end_date
+        if plan_run_ids:
+            filters += " AND wl.plan_run_id = ANY(%(plan_run_ids)s)"
+            params["plan_run_ids"] = plan_run_ids
+
+        sql1 = f"""
+            SELECT plan_id::VARCHAR, plan_run_id::VARCHAR, task_id::VARCHAR, is_task_output,
+                log_id::VARCHAR, log_message, created_at, (log_data NOTNULL) AS has_output
+            FROM agent.work_logs wl
             WHERE wl.agent_id = %(agent_id)s {filters}
             ORDER BY created_at DESC;
         """
@@ -1251,6 +1304,7 @@ class AsyncDB:
             },
         )
 
+    @async_perf_logger
     async def get_plan_run_statuses(self, plan_run_ids: List[str]) -> Dict[str, PlanRunStatusInfo]:
         sql = """
         SELECT plan_run_id::TEXT, created_at AS start_time, last_updated AS end_time, status
@@ -1367,6 +1421,7 @@ class AsyncDB:
             res[row["task_id"]] = load_io_type(row["output"])
         return res
 
+    @async_perf_logger
     async def get_task_run_statuses(
         self, plan_run_ids: List[str]
     ) -> Dict[Tuple[str, str], TaskRunStatusInfo]:
