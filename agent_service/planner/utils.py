@@ -1,4 +1,5 @@
 import json
+import logging
 import random
 from typing import Dict, List, Optional, Set, Union
 
@@ -12,10 +13,13 @@ from agent_service.planner.prompts import (
 )
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.enablement_function_registry import is_plan_enabled
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import Postgres, get_psql
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.string_utils import clean_to_json_if_needed
+
+logger = logging.getLogger(__name__)
 
 
 async def check_cancelled(
@@ -66,7 +70,7 @@ async def _get_similar_plans(gpt: GPT, sample_plans: List[SamplePlan], input: st
 
 @async_perf_logger
 async def get_similar_sample_plans(
-    input: str, context: Optional[Dict[str, str]] = None
+    input: str, enabled_only: bool = True, context: Optional[Dict[str, str]] = None
 ) -> List[SamplePlan]:
     db = get_psql()
     gpt = GPT(model=GPT4_O, context=context)
@@ -75,8 +79,20 @@ async def get_similar_sample_plans(
     for sample_plan in sample_plans:
         if not (len(sample_plan.input) > len(input) * MAX_SAMPLE_INPUT_MULTIPLER):
             len_filtered_sample_plans.append(sample_plan)
-    sample_plans = len_filtered_sample_plans
 
+    if enabled_only:
+        enablement_filtered_sample_plans = [
+            plan for plan in len_filtered_sample_plans if is_plan_enabled(plan, context)
+        ]
+
+        sample_plans = enablement_filtered_sample_plans
+
+        count = len(len_filtered_sample_plans) - len(enablement_filtered_sample_plans)
+
+        if count > 0:
+            logger.info(f"Skipped {count} disabled sample plans")
+    else:
+        sample_plans = len_filtered_sample_plans
     tasks = []
     tasks.append(_get_similar_plans(gpt=gpt, sample_plans=sample_plans[:], input=input))
     reversed_list = sample_plans[::-1]

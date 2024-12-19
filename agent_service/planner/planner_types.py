@@ -361,9 +361,32 @@ class SamplePlan(BaseModel):
     id: str
     input: str
     plan: str
+    relevance: Optional[float] = None
+    enabled: str = ""
+    category: Optional[str] = None
+    author: Optional[str] = None
+    note: Optional[str] = None
+    changelog: Optional[str] = None
+    last_updated_author: Optional[str] = None
 
     def get_formatted_plan(self) -> str:
         return f"Input: {self.input}\nPlan:\n{self.plan}"
+
+    def get_formatted_plan_internal(self, show_changelog: bool = False) -> str:
+        res = f"""
+Input: {self.input}
+Plan:
+{self.plan}
+Relevance: {self.relevance if self.relevance else "N/A"}
+Enabled: {self.enabled if self.enabled else "N/A"}
+Category: {self.category if self.category else "N/A"}
+Author: {self.author if self.author else "N/A"}
+Last Updated Author: {self.last_updated_author if self.last_updated_author else "N/A"}
+Note:
+{self.note if self.note else ""}"""
+        if show_changelog:
+            res += f"\nChangelog:\n{self.changelog if self.changelog else ""}"
+        return res
 
 
 @io_type

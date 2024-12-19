@@ -1,5 +1,6 @@
 import datetime
 import json
+import uuid
 from collections import defaultdict
 from contextlib import contextmanager
 from functools import lru_cache
@@ -705,22 +706,106 @@ class Postgres(PostgresBase):
             sample_plan_id=sample_plan.id,
             input=sample_plan.input,
             plan=sample_plan.plan,
+            enabled=sample_plan.enabled,
+            category=sample_plan.category,
+            relevance=sample_plan.relevance,
+            author=sample_plan.author,
+            note=sample_plan.note,
+        )
+
+    def get_sample_plan_by_id(self, plan_id: str) -> Optional[SamplePlan]:
+        plan_id = uuid.UUID(plan_id)
+        table_columns = [
+            "sample_plan_id::TEXT",
+            "input",
+            "plan",
+            "category",
+            "relevance",
+            "author::TEXT",
+            "note",
+            "enabled::TEXT",
+            "last_updated_author",
+            "changelog",
+        ]
+        sql = f"""
+            SELECT {", ".join(table_columns)}
+            FROM agent.sample_plans WHERE sample_plan_id = '{plan_id}'
+        """
+        rows = self.generic_read(sql)
+        if not rows:
+            return None
+        return SamplePlan(
+            id=rows[0]["sample_plan_id"],
+            input=rows[0]["input"],
+            plan=rows[0]["plan"],
+            relevance=rows[0]["relevance"],
+            enabled=rows[0]["enabled"],
+            author=rows[0]["author"],
+            note=rows[0]["note"],
+            category=rows[0]["category"],
+            last_updated_author=rows[0]["last_updated_author"],
+            changelog=rows[0]["changelog"],
         )
 
     def get_all_sample_plans(self) -> List[SamplePlan]:
         sql = """
-            SELECT sample_plan_id::TEXT, input, plan
+            SELECT sample_plan_id::TEXT, input, plan, enabled::TEXT
             FROM agent.sample_plans
         """
         rows = self.generic_read(sql)
         return [
-            SamplePlan(id=row["sample_plan_id"], input=row["input"], plan=row["plan"])
+            SamplePlan(
+                id=row["sample_plan_id"],
+                input=row["input"],
+                plan=row["plan"],
+                enabled=row["enabled"],
+            )
             for row in rows
         ]
+
+    def modify_sample_plan(self, plan_id: str, **kwargs: Any) -> None:
+        table_name = "agent.sample_plans"
+        where = {"sample_plan_id": uuid.UUID(plan_id)}
+        fields_updated = list(kwargs.keys())
+        fields_updated.remove("last_updated_author")
+        existing_plan = self.get_sample_plan_by_id(plan_id)
+        changelog = existing_plan.changelog if existing_plan and existing_plan.changelog else ""
+        datetime_now_str = datetime.datetime.now().isoformat()
+        fields_updated_str = ", ".join(fields_updated)
+        changelog += f"Update: {kwargs["last_updated_author"]} at {datetime_now_str} updated {fields_updated_str}\n\n"  # noqa
+        kwargs["changelog"] = changelog
+        self.generic_update(table_name=table_name, where=where, values_to_update=kwargs)
 
     def delete_sample_plan(self, id: str) -> None:
         sql = "DELETE FROM agent.sample_plans WHERE sample_plan_id=%(id)s"
         self.generic_write(sql, {"id": id})
+
+    def enable_sample_plan(self, id: str) -> None:
+        sql = "UPDATE agent.sample_plans SET enabled = 'True' WHERE sample_plan_id=%(id)s"
+        self.generic_write(sql, {"id": id})
+
+    def disable_sample_plan(self, id: str) -> None:
+        sql = "UPDATE agent.sample_plans SET enabled = 'False' WHERE sample_plan_id=%(id)s"
+        self.generic_write(sql, {"id": id})
+
+    def keyword_search_sample_plans_helper(self, keywords: str) -> List[SamplePlan]:
+        keywords = keywords.lower()
+        sql = """
+                    SELECT sample_plan_id::TEXT, input, plan, enabled::TEXT
+                    FROM agent.sample_plans WHERE LOWER(input) LIKE %(keywords)s::TEXT
+                """
+        rows = self.generic_read(sql, {"keywords": "%" + keywords + "%"})
+        plans = [
+            SamplePlan(
+                id=row["sample_plan_id"],
+                input=row["input"],
+                plan=row["plan"],
+                enabled=row["enabled"],
+            )
+            for row in rows
+        ]
+
+        return plans
 
     def get_execution_plan_for_run(self, plan_run_id: str) -> ExecutionPlan:
         sql = """

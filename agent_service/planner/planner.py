@@ -811,7 +811,7 @@ class Planner:
                 )
 
         # Normal operation, no overrides.
-        sample_plans = await get_similar_sample_plans(input, self.context)
+        sample_plans = await get_similar_sample_plans(input, context=self.context)
 
         if sample_plans:
             sample_plans_str = "\n\n".join(
