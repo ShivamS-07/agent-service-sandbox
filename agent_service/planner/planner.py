@@ -967,6 +967,39 @@ class Planner:
 
         return output
 
+    def _parse_ast_elem(self, item: Any) -> Any:
+        if isinstance(item, ast.Constant):
+            val = item.value
+            if isinstance(val, str):
+                return f'"{val}"'
+            else:
+                return str(val)
+        elif isinstance(item, ast.Name):
+            return item.id
+        elif isinstance(item, ast.Subscript):
+            # We're going to parse this later
+            return f"{item.value.id}[{item.slice.value}]"  # type: ignore
+        elif isinstance(item, ast.Attribute):
+            # We're going to parse this later (TODO)
+            return f"{item.value.id}.{item.attr}"  # type: ignore
+        else:
+            raise ExecutionPlanParsingError(f"Value '{item}' has list with non supported syntax")
+
+    def _split_dict_literal_with_ast(self, val: str) -> Dict[str, str]:
+        expr = ast.parse(val).body[0]
+        assert isinstance(expr, ast.Expr)
+        dict_expr = expr.value
+        assert isinstance(dict_expr, ast.Dict)
+        output = {}
+        keys = dict_expr.keys
+        values = dict_expr.values
+        assert len(keys) == len(values)
+        for key_elem, item_elem in zip(keys, values):
+            key = self._parse_ast_elem(key_elem)
+            item = self._parse_ast_elem(item_elem)
+            output[key] = item
+        return output
+
     def _split_list_literal_with_ast(self, val: str) -> List[str]:
         """
         A smarter version of string.split(",") that handles commas inside of
@@ -980,30 +1013,45 @@ class Planner:
             items = list_expr.elts
             output = []
             for item in items:
-                if isinstance(item, ast.Constant):
-                    val = item.value
-                    if isinstance(val, str):
-                        output.append(f'"{val}"')
-                    else:
-                        output.append(str(val))
-                elif isinstance(item, ast.Name):
-                    output.append(item.id)
-                elif isinstance(item, ast.Subscript):
-                    # We're going to parse this later
-                    output.append(f"{item.value.id}[{item.slice.value}]")  # type: ignore
-                elif isinstance(item, ast.Attribute):
-                    # We're going to parse this later (TODO)
-                    output.append(f"{item.value.id}.{item.attr}")  # type: ignore
-                else:
-                    raise ExecutionPlanParsingError(
-                        f"Value '{val}' has list with non supported syntax"
-                    )
+                val = self._parse_ast_elem(item)
+                output.append(val)
             return output
         except Exception:
             logger = get_prefect_logger(__name__)
             logger.exception(f"Failed to parse list with ast: {val}")
             contents_str = val[1:-1]
             return contents_str.split(",")
+
+    def _try_parse_dict_literal(
+        self, val: str, expected_type: Optional[Type], variable_lookup: Dict[str, Type[IOType]]
+    ) -> Optional[Dict[IOType, Union[IOType, Variable]]]:
+        if (not val.startswith("{")) or (not val.endswith("}")):
+            return None
+
+        type_args = get_args(expected_type)
+        if len(type_args) != 2:
+            return None
+        key_type = type_args[0]
+        val_type = type_args[1]
+        # TODO add better type checking, right now not really necessary
+        elements = self._split_dict_literal_with_ast(val)
+        output = {}
+        for key, elem in elements.items():
+            key = key.strip()
+            elem = elem.strip()
+            parsed_key = self._try_parse_variable_or_literal(
+                key, expected_type=key_type, variable_lookup=variable_lookup
+            )
+            parsed_elem = self._try_parse_variable_or_literal(
+                elem, expected_type=val_type, variable_lookup=variable_lookup
+            )
+            if parsed_key is None or parsed_elem is None:
+                raise ExecutionPlanParsingError(
+                    f"Element ({key}, {elem}) of dict {val} is invalid type, expecting {expected_type}"
+                )
+            output[parsed_key] = parsed_elem
+
+        return output
 
     def _try_parse_list_literal(
         self,
@@ -1083,6 +1131,11 @@ class Planner:
             parsed_val = self._try_parse_primitive_literal(val, expected_type=arg_info.annotation)
             if parsed_val is None:
                 parsed_val = self._try_parse_list_literal(
+                    val, arg_info.annotation, variable_lookup=variable_lookup
+                )
+
+            if parsed_val is None:
+                parsed_val = self._try_parse_dict_literal(
                     val, arg_info.annotation, variable_lookup=variable_lookup
                 )
 

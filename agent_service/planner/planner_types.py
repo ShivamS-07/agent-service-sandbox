@@ -30,7 +30,10 @@ class Variable(BaseModel):
 
 # Represents a tool's arguments that have had the literals resolved. Variable
 # arguments cannot be resolved until the execution plan is run.
-PartialToolArgs = Dict[str, Union[Variable, IOType, List[Union[Variable, IOType]]]]  # type: ignore
+PartialToolArgs = Dict[  # type: ignore
+    str,
+    Union[Variable, IOType, List[Union[Variable, IOType]], Dict[IOType, Union[Variable, IOType]]],  # type: ignore
+]
 
 
 @dataclass(frozen=True)
@@ -123,6 +126,11 @@ class ToolExecutionNode(BaseModel):
                 for item in val:
                     actual_list.append(self._resolve_single_arg(item, variable_lookup))
                 resolved_args[arg] = actual_list
+            elif isinstance(val, dict):
+                actual_dict = {}
+                for key, elem in val.items():
+                    actual_dict[key] = self._resolve_single_arg(elem, variable_lookup)
+                resolved_args[arg] = actual_dict
             else:
                 resolved_args[arg] = val
 
@@ -135,6 +143,10 @@ class ToolExecutionNode(BaseModel):
                 variables.append(val)
             elif isinstance(val, list):
                 variables.extend((list_val for list_val in val if isinstance(list_val, Variable)))
+            elif isinstance(val, dict):
+                variables.extend(
+                    (dict_val for dict_val in val.values() if isinstance(dict_val, Variable))
+                )
 
         return variables
 

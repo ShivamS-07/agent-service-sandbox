@@ -1,7 +1,7 @@
 import logging
 import unittest
 import warnings
-from typing import Any, List, Union
+from typing import Any, Dict, List, Union
 from unittest import IsolatedAsyncioTestCase, TestCase
 
 from agent_service.GPT.requests import set_use_global_stub
@@ -112,6 +112,23 @@ class TestPlanConstructionValidation(IsolatedAsyncioTestCase):
             self.assertEqual(
                 expected,
                 planner._try_parse_list_literal(
+                    in_str, expected_type=typ, variable_lookup=variable_lookup
+                ),
+            )
+
+    def test_dict_parsing(self):
+        planner = Planner(agent_id="TEST")
+        variable_lookup = {"test1": int, "test2": str}
+        cases = [
+            ('{"test": 1}', {"test": 1}, Dict[str, int]),
+            ('{"test": True}', {"test": True}, Dict[str, bool]),
+            ('{"test": "hello"}', {"test": "hello"}, Dict[str, str]),
+            ('{"test": test1}', {"test": Variable(var_name="test1")}, Dict[str, int]),
+        ]
+        for in_str, expected, typ in cases:
+            self.assertEqual(
+                expected,
+                planner._try_parse_dict_literal(
                     in_str, expected_type=typ, variable_lookup=variable_lookup
                 ),
             )
