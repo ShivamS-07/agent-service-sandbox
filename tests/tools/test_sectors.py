@@ -103,25 +103,25 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
                 result = await sector_identifier_lookup(args, self.context)
                 self.assertTrue(result.sec_id in a)
 
-    @unittest.skip("still flaky, needs non-gpt exact match")
     async def test_sector_level_3_exact_match(self):
-        # match multiple because some names are very similar
         q_a = [
             ("Oil, Gas & Consumable Fuels", [101020]),
             ("Metals & Mining", [151040]),
-            ("Aerospace & Defense", [201010, 20101010]),
+            ("Aerospace & Defense", [201010]),
             ("Transportation Infrastructure", [203050]),
             ("Household Durables", [252010]),
             ("Hotels, Restaurants & Leisure", [253010]),
             ("Specialty Retail", [255040]),
             ("Beverages", [302010]),
             ("Health Care Providers & Services", [351020]),
-            ("Biotechnology", [352010, 35201010]),
-            ("Capital Markets", [402030, 40203030]),  # 40203030 is wrong though!
-            ("Electronic Equipment, Instruments & Components", [452030, 45203010, 45203015]),
-            ("Interactive Media & Services", [502030, 50203010]),
-            ("Gas Utilities", [551020, 55102010]),
-            ("Specialized REITs", [601080, 60108010]),
+            ("Biotechnology", [352010]),
+            ("Capital Markets", [402030]),
+            ("Electronic Equipment, Instruments & Components", [452030]),
+            ("Interactive Media & Services", [502030]),
+            ("Gas Utilities", [551020]),
+            ("Specialized REITs", [601080]),
+            ("Real Estate", [60]),
+            ("Equity Real Estate Investment Trusts (REITs)", [6010]),
         ]
 
         for q, a in q_a:
@@ -129,6 +129,35 @@ class SectorIdentifierLookup(unittest.IsolatedAsyncioTestCase):
             with self.subTest(q=q, a=a):
                 result = await sector_identifier_lookup(args, self.context)
                 print(result.sec_id, a)
+                self.assertTrue(result.sec_id in a)
+
+    async def test_sector_level_3_fuzzy_match(self):
+        q_a = [
+            ("Oil, Fas & Vonsumable Fuels", [101020]),
+            ("Metals & Kining", [151040]),
+            ("Aerospace & Sefense", [201010]),
+            ("Trabsportation Infrastructure", [203050]),
+            ("Houswhold Durables", [252010]),
+            ("Hotels, Restauqants & Leisure", [253010]),
+            ("Specialty Reyuail", [255040]),
+            ("Beveragess", [302010]),
+            ("Healhh Care Providers & Services", [351020]),
+            ("Biotecanology", [352010]),
+            ("Capital Morkets", [402030]),
+            ("Dlectronic Equipment, Instruments & Components", [452030]),
+            ("Intefactive Media & Services", [502030]),
+            ("Gas Utiaities", [551020]),
+            ("Speciadized REITs", [601080]),
+            ("Real Ebtate", [60]),
+            ("Equity 4eal Ebtate Investment Trust (REITs)", [6010]),
+        ]
+
+        for q, a in q_a:
+            args = SectorIdentifierLookupInput(sector_name=q)
+            with self.subTest(q=q, a=a):
+                result = await sector_identifier_lookup(args, self.context)
+                print(result.sec_id, a)
+                print(result, a)
                 self.assertTrue(result.sec_id in a)
 
     async def test_get_default_stock_list(self):

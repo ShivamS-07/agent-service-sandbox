@@ -1,7 +1,8 @@
 import inspect
 import json
+from difflib import SequenceMatcher
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from cachetools import TTLCache, cached
 
@@ -201,6 +202,30 @@ Return in this format: {{"correct_sector_id":"", "reason":""}}
 )
 
 
+def fuzzy_match_sectors(input_sector: str, all_sectors: Dict[str, Dict]) -> Optional[SectorID]:
+    # Text based match
+    # Run before setting up any GPT context as it only relies on text data
+    # If any sector has a word match >= 0.9, we rank those based on sector id and pick smallest
+    best_match: Optional[Tuple[float, Dict]] = None
+    for sector_id in all_sectors:
+        cur_sector: str = all_sectors[sector_id]["sector_name"].lower()
+        ratio: float = SequenceMatcher(None, input_sector, cur_sector).ratio()
+        if ratio >= 0.9:
+            # The lower id sector gets a 0.05 (5%) match boost
+            low_id_boost: float = 0.05
+            modified_ratio = (
+                ratio + low_id_boost
+                if not best_match or int(sector_id) < int(best_match[1]["sector_id"])
+                else ratio - low_id_boost
+            )
+            if not best_match or best_match[0] < modified_ratio:
+                best_match = (ratio, all_sectors[sector_id])
+    if best_match is not None:
+        return SectorID(sec_id=best_match[1]["sector_id"], sec_name=best_match[1]["sector_name"])
+    else:
+        return None
+
+
 @tool(
     description=f"""
 This function takes a string like 'Healthcare' which
@@ -234,12 +259,18 @@ async def sector_identifier_lookup(
     Returns integer identifier best matching the input text, or None if not a match
     """
     logger = get_prefect_logger(__name__)
+
+    all_sectors = get_all_gics_classifications()
+
+    fuzzy_match = fuzzy_match_sectors(args.sector_name.lower(), all_sectors)
+    if fuzzy_match:
+        return fuzzy_match
+
     gpt_context = create_gpt_context(
         GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
     )
     llm = GPT(context=gpt_context, model=GPT4_O_MINI)
 
-    all_sectors = get_all_gics_classifications()
     lookup_prompt = SECTOR_LOOKUP_PROMPT.format(
         lookup_list=json.dumps(all_sectors, sort_keys=True, indent=4), text_input=args.sector_name
     )
