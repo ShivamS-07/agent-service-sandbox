@@ -840,7 +840,9 @@ out the anchor mapping, if you have no anchors (and hence no citations), output 
 citation mapping. Again your anchor mapping (which contains any citation mappings) must be a valid
 json object on a single line. You must never, ever add any kind of header before the anchor mapping
 even if there are other headers in the document (it is not part of your text and will be removed
-from it when we parse) and you must not add any other wrappers (no ```json!!!)."""
+from it when we parse) and you must not add any other wrappers (no ```json!!!).
+
+"""
 
 TEXT_TO_TABLE_MAIN_PROMPT = Prompt(
     name="TEXT_TO_TABLE_MAIN_PROMPT",
@@ -867,6 +869,11 @@ Here is the transcript of your interaction with the client, delimited by ----:
 ----
 
 For reference, today's date is {today}.
+
+For any cells where you can't find relevant data, please write "No Data".
+
+Do not forget to output citation anchor mapping! Do not forget that your numbers must be converted to
+standard decimal format! 
 """,
 )
 
@@ -877,9 +884,6 @@ a price delta or something similar should be normalized to between zero and one 
 'delta' column type). Never ever choose two column types, just do your best and choose the one the
 fits the best. Column types:
 {TableColumnType.get_type_explanations()}
-
-If the type is numerical, make sure you convert to an actual number, e.g.  '10.6
-million' should become '10,600,000'.
 """
 
 TEXT_TO_TABLES_INPUT_SCHEMA_PROMPT = """
@@ -888,8 +892,6 @@ The header line should be exactly as follows:
 Try to make the csv data match as closely as possible to the expected type (for
 example, a price delta or something similar should be normalized to between zero
 and one before using the 'delta' column type).
-If the type is numerical, make sure you convert to an actual number, e.g.  '10.6
-million' should become '10,600,000'.
 """
 
 TEXT_TO_TABLE_SYS_PROMPT = Prompt(
@@ -898,6 +900,30 @@ TEXT_TO_TABLE_SYS_PROMPT = Prompt(
 You are a financial analyst tasked with synthesizing a number of texts into a csv table. The csv
 output should have a header line with column titles and types, as specified.
 
+You must be very, very careful with numbers. Very large and very small numbers are often expressed in
+abbreviated formats that you will have to convert to standard numbers in your output.
+
+Numbers that are often very large are often expressed using M and B, you must always convert these to an
+exact number in your output, e.g. 1.5 million must become 15000000 in your output (do not include commas).
+Please be very careful when you are pulling data from a table, you should always look at the header for
+that column and see if it expressed that the column is expressed in thousands, millions, or billions.
+Use common sense, it does not make sense that a major company would have, for instance, revenue of $15,
+$15 billion is far more likely. Do not output numbers that could not possibly be accurate.
+
+Similarly, for percents, you should express them using decimals. If the document says 45%, you must output
+0.45 in your csv.
+
+It is extremely important that you convert all numerical output to standard, unabbreviated decimal format.
+If you do not, the relevant calculations will fail and you will be fired.
+
+For any cells where you can't find relevant data, please write "No Data".
+
 {TEXT_TO_TABLE_CITATION_PROMPT_STR}
 """,
+)
+
+TEXT_SNIPPET_TABLE_RELEVANCY_PROMPT_STR = "You are a financial analyst who has been tasked with collecting information into a tabular format. Your current task is to review document snippets and decide whether or not they might contain information that will help you build your table. A relevant text snippet might contain a table with all the information required, but it is also relevant if it contains information relevant to even just a single cell of the table you will be producing. If there is nothing in the text that directly relates to the kind of information required according to the table description, you should say No, and you will say No for most inputs. However, if you believe there might be some relevant info in the snippet, it is important to say Yes, do not let anything that could be relevant (particularly specific numbers that might be directly added to the table!) be thrown out at this stage, you will read carefully and make final decisions later. Output only Yes, or No, do not output anything else. You are not building the table now! Here is the description of the table you are building: `{table_description}`. Here is the text snippet you are checking for relevance, delimited by `---`:\n---\n{text}\n---\n. Now output Yes if you think the text might contain information that might be included in the table described, or No if you're sure it doesn't contain any relevant information:\n"
+
+TEXT_SNIPPET_TABLE_RELEVANCY_PROMPT = Prompt(
+    name="TEXT_SNIPPET_TABLE_RELEVANCY_PROMPT", template=TEXT_SNIPPET_TABLE_RELEVANCY_PROMPT_STR
 )

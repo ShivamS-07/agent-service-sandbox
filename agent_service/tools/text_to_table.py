@@ -5,10 +5,11 @@ import re
 from collections import defaultdict
 from copy import deepcopy
 from io import StringIO
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from agent_service.GPT.constants import GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.GPT.tokens import GPTTokenizer
 from agent_service.io_type_utils import PrimitiveType, TableColumnType
@@ -27,6 +28,7 @@ from agent_service.tools.stocks import (
     stock_identifier_lookup,
 )
 from agent_service.tools.table_utils.prompts import (
+    TEXT_SNIPPET_TABLE_RELEVANCY_PROMPT,
     TEXT_TO_TABLE_MAIN_PROMPT,
     TEXT_TO_TABLE_SYS_PROMPT,
     TEXT_TO_TABLES_INPUT_SCHEMA_PROMPT,
@@ -49,11 +51,72 @@ logger = logging.getLogger(__name__)
 COL_HEADER_REGEX = re.compile(r"\(([^)]+)\)")
 NUMBER_EXTRACT_REGEX = re.compile(r"^(.*?)(-?\d+(?:\.\d+)?)(.*)?$")
 
+NO_DATA_STR = "no data"
+
 
 class TextToTableArgs(ToolArgs):
     texts: List[Text]
     table_description: str
     table_schema: Optional[List[str]] = None
+
+
+async def classify_stock_text_relevancy_for_table(
+    text: str,
+    table_description: str,
+    llm: GPT,
+) -> bool:
+    chopped_text_str = GPTTokenizer(model=llm.model).do_truncation_if_needed(
+        truncate_str=text,
+        other_prompt_strs=[
+            TEXT_SNIPPET_TABLE_RELEVANCY_PROMPT.template,
+            table_description,
+        ],
+    )
+
+    output = await llm.do_chat_w_sys_prompt(
+        main_prompt=TEXT_SNIPPET_TABLE_RELEVANCY_PROMPT.format(
+            table_description=table_description,
+            text=chopped_text_str,
+        ),
+        sys_prompt=NO_PROMPT,
+        max_tokens=2,
+    )
+    return "yes" in output.strip().lower()
+
+
+async def classify_stock_text_relevancies_for_table(
+    texts: List[Text],
+    table_description: str,
+    gpt_context: Dict[str, str],
+    text_cache: Optional[Dict[TextIDType, str]] = None,
+) -> List[Text]:
+    filtered_texts: List[Text] = []
+    text_strs = await Text.get_all_strs(
+        texts, include_header=True, include_timestamps=False, text_cache=text_cache
+    )
+
+    llm = GPT(
+        model=GPT4_O_MINI,
+        context=gpt_context,
+    )
+
+    tasks = []
+    for i, text in enumerate(texts):
+        if isinstance(text, StockText):
+            text_str = text_strs[i]
+            if not text.stock_id:
+                continue
+            tasks.append(
+                classify_stock_text_relevancy_for_table(
+                    text=text_str, table_description=table_description, llm=llm
+                )
+            )
+
+    results = await gather_with_concurrency(tasks, n=200)
+    for i, relevancy_decision in enumerate(results):
+        if relevancy_decision:
+            filtered_texts.append(texts[i])
+    return filtered_texts
 
 
 def _extract_and_clean_header(input_str: str) -> Tuple[str, TableColumnType]:
@@ -149,6 +212,7 @@ async def _lookup_helper_wrapper(
 
 
 async def _lookup_stocks(stocks: List[str], context: PlanRunContext) -> dict[str, StockID]:
+    stocks = [stock for stock in stocks if stock.lower() != NO_DATA_STR]
     context = deepcopy(context)
     context.skip_task_logging = True
     tasks = [_lookup_helper_wrapper(stock, context) for stock in stocks]
@@ -170,14 +234,17 @@ async def _handle_table_col(
     value, since some values might be filtered out (e.g. stocks).
     """
     col_name, col_type = _extract_and_clean_header(header)
-    new_vals = {}
+    new_vals: dict[int, Any | None] = {}
     cell_citations: dict[int, List[TextCitation]] = {}
     stock_metadata: dict[str, StockID] = {}
     unit_set = set()
     unmapped_stocks = set()
     if col_type == TableColumnType.STOCK:
-        stock_metadata = await _lookup_stocks(stocks=list(set(values.tolist())), context=context)
+        stock_metadata = await _lookup_stocks(stocks=list(set(values)), context=context)
     for i, val in enumerate(values):
+        if val is None or pd.isna(val) or val.lower() == NO_DATA_STR:
+            new_vals[i] = None
+            continue
         if citation_dict:
             val = str(val)
             val, citations = await _extract_citation_from_value(
@@ -198,6 +265,8 @@ async def _handle_table_col(
             and col_type.is_float_type()
             or col_type in (TableColumnType.INTEGER, TableColumnType.INTEGER_WITH_UNIT)
         ):
+            if not val:
+                continue
             num_val, unit = extract_number_with_unit_from_text(
                 val=val,
                 return_int=not col_type.is_float_type(),  # type: ignore
@@ -248,12 +317,19 @@ async def _text_to_table_helper(
     if len(input_texts) == 0:
         return Table(columns=[])
 
-    texts = await partition_to_smaller_text_sizes(input_texts, context)
+    initial_text_snippets = await partition_to_smaller_text_sizes(input_texts, context)
 
-    logger.warning("Filtering texts...")
-    texts = initial_filter_texts(texts)
-    if len(input_texts) != len(texts):
-        logger.warning(f"Too many texts, filtered {len(input_texts)} split texts to {len(texts)}")
+    logger.warning("Doing text filtering...")
+
+    texts = await classify_stock_text_relevancies_for_table(
+        initial_text_snippets, table_description, gpt_context=gpt_context, text_cache=text_cache
+    )
+
+    texts = initial_filter_texts(
+        texts
+    )  # just in case there's still a crazy number, shouldn't matter
+    if len(initial_text_snippets) != len(texts):
+        logger.warning(f"Filtered {len(initial_text_snippets)} snippets to {len(texts)}")
 
     text_group = TextGroup(val=texts)
     texts_str: str = await Text.get_all_strs(  # type: ignore
@@ -299,7 +375,7 @@ async def _text_to_table_helper(
     )
     sys_prompt = table_gen_sys_prompt.format()
 
-    logger.info(f"using GPT to convert {len(texts_str)=} into table")
+    logger.info(f"using GPT to convert {len(texts)} text(s) into table")
     result = await llm.do_chat_w_sys_prompt(
         main_prompt,
         sys_prompt,
@@ -311,6 +387,10 @@ async def _text_to_table_helper(
 
     text = strip_code_backticks(text)
     df = pd.read_csv(StringIO(text))
+    if len(df) <= 2 and df.isnull().values.any():
+        logger.error(f"Failed to create table: {text=}")
+        return Table(columns=[])
+
     metadatas = []
     new_df_data: dict[PrimitiveType, list[Any]] = {}
     tasks = []
@@ -344,6 +424,7 @@ async def _text_to_table_helper(
         new_vals = [col_dict[i] for i in col_dict.keys() if i not in row_indexes_to_skip]
         new_df_data[metadata.label] = new_vals
     new_df = pd.DataFrame(data=new_df_data)
+    new_df = new_df.dropna(how="all")  # Drop rows that are all "No Data"
 
     table = Table.from_df_and_cols(columns=metadatas, data=new_df)
     if table.get_stock_column():
@@ -355,7 +436,7 @@ async def _text_to_table_helper(
 
 @tool(
     description=f"""
-This function takes a list of texts, a table description, and an optional table
+This function takes a list of texts, a table description, and a table
 schema (as a list of column names + types), and produces a Table object based on
 the data
 in the input texts. The schema should be in the format:
@@ -368,11 +449,14 @@ fits the best. This format MUST be followed, with the column title followed by
 the type in parentheses. You will be fired if you do not conform to these exact
 specifications.
 
-You should provide a schema if the user asks for a specific table schema. If the
+You must almost always provide a schema, especially if the client asks for specific
+columns, though even if they do not, you should be able to decide on sensible
+columns based on their request. The only situation you will NOT provide a schema is if
 user just asks to reproduce a table directly from a source (document, website,
-etc.), you shouldn't provide a schema since you don't know what will be in the
-table. In general, default to providing this schema unless the user specifically
-asks to "reproduce" a SINGLE specific table from a source.
+etc.), in that situation, you cannot provide a schema since you don't know what will
+be in the table. So you will always provide a schema unless the client asks to "reproduce"
+a SINGLE specific table from a source, in that case the source table must be specifically
+mentioned in the client's request.
 
 Make sure the description is detailed and contains exactly what kind of table
 the user wants. The texts will be fed into an LLM to produce a Table output. You
@@ -434,6 +518,7 @@ async def text_to_table(args: TextToTableArgs, context: PlanRunContext) -> Table
                     stock.symbol if isinstance(stock, StockID) else stock
                     for stock in stock_col.data
                 ]
+        tables = [table for table in tables if len(table.columns) > 0 and table.get_num_rows() > 0]
         return await join_tables(  # type: ignore
             args=JoinTableArgs(input_tables=tables, row_join=True), context=context
         )
@@ -448,40 +533,46 @@ async def text_to_table(args: TextToTableArgs, context: PlanRunContext) -> Table
 
 
 if __name__ == "__main__":
-    from agent_service.io_type_utils import load_io_type
+    # from agent_service.io_type_utils import load_io_type
     from agent_service.utils.logs import init_stdout_logging
-    from agent_service.utils.postgres import get_psql
+    # from agent_service.utils.postgres import get_psql
 
-    db = get_psql()
+    # db = get_psql()
 
-    sql = """
-    SELECT
-        output
-    FROM agent.task_run_info
-    WHERE
-        task_id = %(task_id)s
-        AND plan_run_id = %(plan_run_id)s
-    """
+    # sql = """
+    # SELECT
+    #     output
+    # FROM agent.task_run_info
+    # WHERE
+    #     task_id = %(task_id)s
+    #     AND plan_run_id = %(plan_run_id)s
+    # """
 
-    row = db.generic_read(
-        sql,
-        {
-            "task_id": "73a36d63-bfc1-4436-bbe3-249e1a85c699",
-            "plan_run_id": "43a62e12-916f-4c64-9ef4-b5771b5c17bb",
-        },
-    )[0]
-    texts = load_io_type(row["output"])
+    # row = db.generic_read(
+    #     sql,
+    #     {
+    #         "task_id": "73a36d63-bfc1-4436-bbe3-249e1a85c699",
+    #         "plan_run_id": "43a62e12-916f-4c64-9ef4-b5771b5c17bb",
+    #     },
+    # )[0]
+    # texts = load_io_type(row["output"])
+    # args = (
+    #     TextToTableArgs(
+    #         texts=texts,  # type: ignore
+    #         table_description=(
+    #             "grab all the stocks from Pershing Squares latest "
+    #             "13f and display it in a table please"
+    #         ),
+    #     ),
+    # )
+
+    with open("/Users/zach/Documents/agent-service/test.json") as f:
+        args = TextToTableArgs.model_validate_json(f.read())
 
     init_stdout_logging()
     out = asyncio.run(
         text_to_table(
-            args=TextToTableArgs(
-                texts=texts,  # type: ignore
-                table_description=(
-                    "grab all the stocks from Pershing Squares latest "
-                    "13f and display it in a table please"
-                ),
-            ),
+            args=args,
             context=PlanRunContext.get_dummy(),
         )
     )
