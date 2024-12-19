@@ -284,7 +284,7 @@ class AsyncDB:
     @async_perf_logger
     async def get_plan_runs_metadata(
         self, plan_run_ids: List[str]
-    ) -> Dict[str, Tuple[bool, PlanRunStatusInfo, RunMetadata]]:
+    ) -> Dict[str, Tuple[bool, PlanRunStatusInfo, Optional[RunMetadata]]]:
         sql = """
         SELECT plan_run_id::VARCHAR, shared, run_metadata,
             created_at AS start_time, last_updated AS end_time, status
@@ -297,7 +297,7 @@ class AsyncDB:
             output[row["plan_run_id"]] = (
                 row["shared"],
                 PlanRunStatusInfo(**row),
-                RunMetadata.model_validate(row["run_metadata"]),
+                RunMetadata.model_validate(row["run_metadata"]) if row["run_metadata"] else None,
             )
 
         return output
