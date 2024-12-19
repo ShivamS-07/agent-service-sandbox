@@ -2966,7 +2966,7 @@ class AsyncDB:
         where week_start <= %(date)s and %(date)s <= week_end and cs_reviewed and not is_spoofed
         order by week_start desc, use_case
         """
-        rows = await self.pg.generic_read(sql, {"date": date})
+        rows = await self.pg.generic_read(sql, {"date": date.isoformat()})
         cases: List[QueryWithBreakdown] = []
         for row in rows:
             # row['use_case'], row['score_rating']
