@@ -12,10 +12,13 @@ class TestTextToTable(unittest.TestCase):
             param(input_str="Nothing", to_int=False, expected_val=None, expected_unit=None),
             param(input_str="123", to_int=True, expected_val=123, expected_unit=None),
             param(input_str="123.0", to_int=False, expected_val=123.0, expected_unit=None),
+            param(input_str="-123.0", to_int=False, expected_val=-123.0, expected_unit=None),
             param(input_str="123,325.0", to_int=False, expected_val=123325.0, expected_unit=None),
             param(input_str="123 USD", to_int=True, expected_val=123, expected_unit="USD"),
+            param(input_str="123 million", to_int=True, expected_val=123000000, expected_unit=None),
             param(input_str="123 OBDF", to_int=True, expected_val=123, expected_unit=None),
             param(input_str="$123.0", to_int=False, expected_val=123.0, expected_unit="USD"),
+            param(input_str="$-123.0", to_int=False, expected_val=-123.0, expected_unit="USD"),
             param(
                 input_str="$123,325.0 USD", to_int=False, expected_val=123325.0, expected_unit="USD"
             ),

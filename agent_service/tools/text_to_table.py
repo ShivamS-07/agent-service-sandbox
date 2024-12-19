@@ -47,7 +47,7 @@ from agent_service.utils.text_utils import partition_to_smaller_text_sizes
 logger = logging.getLogger(__name__)
 
 COL_HEADER_REGEX = re.compile(r"\(([^)]+)\)")
-NUMBER_EXTRACT_REGEX = re.compile(r"(\D*)(\d+)\s*(\w*)")
+NUMBER_EXTRACT_REGEX = re.compile(r"^(.*?)(-?\d+(?:\.\d+)?)(.*)?$")
 
 
 class TextToTableArgs(ToolArgs):
@@ -95,21 +95,28 @@ def extract_number_with_unit_from_text(
     val: str,
     return_int: bool = False,
 ) -> Tuple[float | int | None, Optional[str]]:
+    val = val.strip()
     val = val.replace(",", "")
     m = re.search(NUMBER_EXTRACT_REGEX, val)
     if not m:
         return (None, None)
-    currency_symbol = m.group(1)
+    prefix = m.group(1)  # e.g. "$"
     num_val = m.group(2)
-    unit = m.group(3)
+    suffix = m.group(3)
     scalar = 1
-    if unit in scalar_units:
-        scalar = scalar_units[unit]
-        unit = None
-    if unit not in ISO_CURRENCY_CODES:
-        unit = None
-    if not unit and currency_symbol in CURRENCY_SYMBOL_TO_ISO:
-        unit = CURRENCY_SYMBOL_TO_ISO[currency_symbol]
+
+    if prefix:
+        prefix = prefix.strip()
+    if suffix:
+        suffix = suffix.strip()
+
+    if suffix in scalar_units:
+        scalar = scalar_units[suffix]
+        suffix = None
+    if suffix not in ISO_CURRENCY_CODES:
+        suffix = None
+    if not suffix and prefix in CURRENCY_SYMBOL_TO_ISO:
+        suffix = CURRENCY_SYMBOL_TO_ISO[prefix]
 
     num: float | int | None = None
     try:
@@ -120,7 +127,7 @@ def extract_number_with_unit_from_text(
     except Exception:
         pass
 
-    return (num, unit)
+    return (num, suffix)
 
 
 async def _lookup_helper_wrapper(
