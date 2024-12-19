@@ -2341,6 +2341,8 @@ class WebText(Text):
     text_type: ClassVar[str] = "Web Results"
     url: Optional[str] = None
     title: Optional[str] = ""
+    published_timestamp: Optional[datetime.datetime] = None
+    last_modified_timestamp: Optional[datetime.datetime] = None
 
     @classmethod
     async def _get_strs_lookup(cls, texts: List[WebText]) -> Dict[TextIDType, str]:
@@ -2390,12 +2392,19 @@ class WebText(Text):
                     summary=full_context,
                     snippet_highlight_start=hl_start,
                     snippet_highlight_end=hl_end,
+                    last_updated_at=text.last_modified_timestamp or text.published_timestamp,
                 )
             )
         return output  # type: ignore
 
     def to_db_dict(self) -> dict:
-        return {"id": self.id, "url": self.url, "title": self.title}
+        return {
+            "id": self.id,
+            "url": self.url,
+            "title": self.title,
+            "published_timestamp": self.published_timestamp,
+            "last_updated_timestamp": self.last_modified_timestamp,
+        }
 
 
 @io_type

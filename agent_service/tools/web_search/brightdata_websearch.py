@@ -1,15 +1,19 @@
 import asyncio
 import io
+import json
 import logging
 import re
 import ssl
 import traceback
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 import boto3
+import dateparser
 import requests
+from bs4 import BeautifulSoup
 from gbi_common_py_utils.utils.ssm import get_param
 from mypy_boto3_s3.client import S3Client
 
@@ -22,6 +26,10 @@ from agent_service.tools.web_search.constants import (
     BRIGHTDATA_SERP_USERNAME,
     DEFAULT_SERP_PERIOD,
     HEADER,
+    JSON_MODIFIED_KEY,
+    JSON_PUBLISHED_KEY,
+    META_LAST_MODIFIED_KEY,
+    META_PUBLISHED_KEY,
     S3_BUCKET_BOOSTED_WEBSEARCH,
     SERP_CACHE_TTL_HOURS,
     SERP_NEWS_TYPE,
@@ -214,7 +222,15 @@ def remove_excess_formatting(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
-async def scrape_from_pdf(pdf_binary_data: bytes) -> Tuple[str, str]:
+@dataclass
+class ScrapeResult:
+    text: str
+    title: Optional[str] = ""
+    published_timestamp: Optional[datetime] = None
+    modified_timestamp: Optional[datetime] = None
+
+
+async def scrape_from_pdf(pdf_binary_data: bytes) -> ScrapeResult:
     from PyPDF2 import PdfReader
 
     pdf_file = io.BytesIO(pdf_binary_data)
@@ -228,13 +244,73 @@ async def scrape_from_pdf(pdf_binary_data: bytes) -> Tuple[str, str]:
     if pdf_reader.metadata:
         title = pdf_reader.metadata.title or ""
 
-    return title, text
+    return ScrapeResult(title=title, text=text)
 
 
-async def scrape_from_http(html_content: str) -> Tuple[str, str]:
+def _try_extract_published_timestamp(
+    soup: BeautifulSoup,
+) -> Tuple[Optional[datetime], Optional[datetime]]:
+    # Helper to parse date strings into timezone-aware datetime
+    def parse_date(date_string: str) -> Optional[datetime]:
+        if not date_string:
+            return None
+        return dateparser.parse(
+            date_string,
+            settings={
+                "RETURN_AS_TIMEZONE_AWARE": True,  # Ensure timezone awareness
+            },
+        )
+
+    # Messy GPT-generated code below, TODO clean it up a bit
+
+    published = None
+    modified = None
+
+    # 1. Check <meta> tags
+    meta_tag = soup.find("meta", attrs={"property": META_PUBLISHED_KEY})
+    if meta_tag and meta_tag.get("content"):
+        published = parse_date(str(meta_tag["content"]))
+
+    meta_tag = soup.find("meta", attrs={"name": META_LAST_MODIFIED_KEY})
+    if meta_tag and meta_tag.get("content"):
+        modified = parse_date(str(meta_tag["content"]))
+
+    if published and modified:
+        return (published, modified)
+    # 2. Check JSON-LD (<script type="application/ld+json">)
+    json_ld_tag = soup.find("script", type="application/ld+json")
+    if not json_ld_tag:
+        return (published, modified)
+
+    try:
+        json_data = json.loads(json_ld_tag.string)
+    except (json.JSONDecodeError, AttributeError):
+        return (published, modified)
+    # Handle both single-object and array JSON-LD structures
+    if not isinstance(json_data, list):
+        json_data = [json_data]
+
+    for item in json_data:
+        pub_date = item.get(JSON_PUBLISHED_KEY)
+        mod_date = item.get(JSON_MODIFIED_KEY)
+        if pub_date and not published:
+            published = parse_date(pub_date)
+        if mod_date and not modified:
+            modified = parse_date(mod_date)
+
+    return (published, modified)
+
+
+async def scrape_from_http(html_content: str) -> ScrapeResult:
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(html_content, "html.parser")
+    published = None
+    modified = None
+    try:
+        published, modified = _try_extract_published_timestamp(soup)
+    except Exception:
+        logger.exception("Failed to extract published date with an error!")
     title = ""
     if soup.title:
         title = soup.title.string
@@ -264,7 +340,9 @@ async def scrape_from_http(html_content: str) -> Tuple[str, str]:
         tag.decompose()
 
     text = soup.get_text(" ")
-    return title, text
+    return ScrapeResult(
+        title=title, text=text, published_timestamp=published, modified_timestamp=modified
+    )
 
 
 # retry system!
@@ -282,8 +360,7 @@ async def req_and_scrape(
     log_event_dict: Optional[dict] = None,
 ) -> Optional[WebText]:
     need_retry = False
-    title = ""
-    text = ""
+    scrape_result = ScrapeResult(text="")
 
     # first try, no proxy, short timeout
     try:
@@ -299,10 +376,10 @@ async def req_and_scrape(
             content_type = response.headers.get("Content-Type", "")
             if "application/pdf" in content_type:
                 pdf_binary_data = await response.read()
-                title, text = await scrape_from_pdf(pdf_binary_data)
+                scrape_result = await scrape_from_pdf(pdf_binary_data)
             elif "text/html" in content_type:
                 html_content = await response.text()
-                title, text = await scrape_from_http(html_content)
+                scrape_result = await scrape_from_http(html_content)
             else:
                 logger.info(f"Unsupported content type: {content_type}")
                 return None
@@ -359,7 +436,7 @@ async def req_and_scrape(
                 content_type = response.headers.get("Content-Type", "")
                 if "application/pdf" in content_type:
                     pdf_binary_data = await response.read()
-                    title, text = await scrape_from_pdf(pdf_binary_data)
+                    scrape_result = await scrape_from_pdf(pdf_binary_data)
 
                     log_event(
                         event_name="brd_request",
@@ -370,7 +447,7 @@ async def req_and_scrape(
                     )
                 elif "text/html" in content_type:
                     html_content = await response.text()
-                    title, text = await scrape_from_http(html_content)
+                    scrape_result = await scrape_from_http(html_content)
 
                     log_event(
                         event_name="brd_request",
@@ -472,11 +549,15 @@ async def req_and_scrape(
 
     obj = WebText(
         url=url,
-        title=title,
+        title=scrape_result.title,
+        # Scraped timestamp
         timestamp=get_now_utc(),
+        # Published timestamp
+        published_timestamp=scrape_result.published_timestamp,
+        last_modified_timestamp=scrape_result.modified_timestamp,
     )  # we don't save `text` in the obj and pass around
 
-    clean_text = remove_excess_formatting(text)
+    clean_text = remove_excess_formatting(scrape_result.text)
 
     await asyncio.to_thread(
         s3_client.upload_fileobj,
@@ -498,14 +579,15 @@ async def get_web_texts_async(
     timeout: int = WEB_SEARCH_PULL_SITES_TIMEOUT,
     should_print_errors: bool = False,
     log_event_dict: Optional[dict] = None,
-) -> Any:
+) -> list[WebText]:
     logger = get_prefect_logger(__name__)
 
     ssl_context = ssl.create_default_context()
     ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
 
     sql1 = f"""
-        SELECT DISTINCT ON (url) id::VARCHAR, url, title, inserted_at
+        SELECT DISTINCT ON (url) id::VARCHAR, url, title, inserted_at,
+          published_timestamp, last_updated_timestamp
         FROM agent.websearch_metadata
         WHERE url = ANY(%(urls)s) AND inserted_at > %(now_utc)s - INTERVAL '{URL_CACHE_TTL_HOURS} hours'
         ORDER BY url, inserted_at DESC
@@ -522,7 +604,12 @@ async def get_web_texts_async(
 
     url_to_obj = {
         row["url"]: WebText(
-            id=row["id"], url=row["url"], title=row["title"], timestamp=row["inserted_at"]
+            id=row["id"],
+            url=row["url"],
+            title=row["title"],
+            timestamp=row["inserted_at"],
+            published_timestamp=row["published_timestamp"],
+            last_modified_timestamp=row["last_updated_timestamp"],
         )
         for row in rows
     }
@@ -568,9 +655,11 @@ async def get_web_texts_async(
 
                 # Once the contents are on S3, insert the metadata into the database
                 sql2 = """
-                    INSERT INTO agent.websearch_metadata (id, url, title)
+                    INSERT INTO agent.websearch_metadata
+                      (id, url, title, published_timestamp, last_updated_timestamp)
                     VALUES (
-                        %(id)s, %(url)s, %(title)s
+                        %(id)s, %(url)s, %(title)s,
+                        %(published_timestamp)s, %(last_updated_timestamp)s
                     )
                 """
                 with pg.transaction_cursor() as cursor:

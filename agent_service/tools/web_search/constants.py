@@ -16,3 +16,10 @@ SERP_WEB_TYPE = "web"
 SERP_NEWS_TYPE = "news"
 SERP_CACHE_TTL_HOURS = 1  # 1 hour to update serp results from the same queries
 DEFAULT_SERP_PERIOD = "1M"
+
+
+META_PUBLISHED_KEY = "article:published_time"
+META_LAST_MODIFIED_KEY = "last-modified"
+
+JSON_PUBLISHED_KEY = "datePublished"
+JSON_MODIFIED_KEY = "dateModified"
