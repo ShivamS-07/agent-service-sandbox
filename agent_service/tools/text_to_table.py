@@ -386,7 +386,7 @@ async def _text_to_table_helper(
     text, citation_dict = get_initial_breakdown(result)
 
     text = strip_code_backticks(text)
-    df = pd.read_csv(StringIO(text))
+    df = pd.read_csv(StringIO(text), dtype=str)
     if len(df) <= 2 and df.isnull().values.any():
         logger.error(f"Failed to create table: {text=}")
         return Table(columns=[])

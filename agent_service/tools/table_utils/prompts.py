@@ -726,11 +726,9 @@ Information in your output text that is derived from sources must be cited, you 
 judgement to determine if a specific claim must be cited, but err on the side of more
 citations. Individual texts in your collection of sources are delimited by ***, and each one starts
 with a Text Number and mentions the type. Follow the instructions below to do proper citation, which
-consists of two major steps. The first step is OPTIONAL, and should ONLY be done in cases where
-you're pulling together a lot of disparate data into a single table. If you are directly citing a
-table that is in a text, and just "copying" it, you may skip step one.
+consists of two major steps.
 
-Step 1 (do not do this if you are citing an existing table directly):
+Step 1:
 When you are writing your text, at the end of each CSV value (in every row and every column) which
 contains information taken from one of the provided source texts, you may output one and only one
 citation anchor. Note that a CSV cell is a SINGLE value within a row. A citation anchor consists of
@@ -769,27 +767,25 @@ citation anchor for those that do not provide some specific information taken fr
 numbered source texts. At this stage, you are not providing any information about which specific
 source you have used. Remember that you can cite ANY csv cells (not just rows)!! Use your best
 judgement for which cells require citations, but err on the side of more citations.
-If possible, you should try to skip step 1 and cite an existing table directly.
 
-Step 2 (always required):
+Step 2:
  After you have completed writing your csv output, on the final line of your output, you will output
 a json mapping (called the anchor mapping) which maps from the two letter anchor ids used in your
 citation anchors to a list of json mappings, where each of these mappings (called citation mappings)
-corresponds to an individual citation. If you skipped step 1, simply make up anchor ID's as they
-don't matter. Since every anchor corresponds to a situation where at least one source text was used,
-you should have at least one citation per citation anchor, and you will often have more. Your list
-of citations for each anchor (again, there is only one anchor per cell!) must directly relate to the
-value being shown, however if two citations cover the same simple facts, you must only include
-one. You should generally have the same number of citations in your list as you indicated in the
-corresponding anchor in your csv output. Generally, however, more citations under a single anchor is
-NOT better unless they are providing important new information, and you must never, ever have more
-than 5 for each citation anchor. Every citation mapping will have a `num` key, the value of which is
-an integer which is the Text Number of the source text for the citation. When the source text is
-news, e.g. News Development Summaries or News Articles, which are typically only a couple of
-sentences long, you will include only the `num` key. For instance, if you have just one anchor whose
-preceding sentence contains information from two news topics (i.e [aa,2]) which are tagged as Text
-Numbers 3 and 6, your anchor mapping would look like this: {{"aa":[{{"num":3}}, {{"num":6}}]}}. You
-will also do this when citing a single table, if you have skipped step 1.
+corresponds to an individual citation. Since every anchor corresponds to a situation where at least
+one source text was used, you should have at least one citation per citation anchor, and you will
+often have more. Your list of citations for each anchor (again, there is only one anchor per cell!)
+must directly relate to the value being shown, however if two citations cover the same simple facts,
+you must only include one. You should generally have the same number of citations in your list as
+you indicated in the corresponding anchor in your csv output. Generally, however, more citations
+under a single anchor is NOT better unless they are providing important new information, and you
+must never, ever have more than 5 for each citation anchor. Every citation mapping will have a `num`
+key, the value of which is an integer which is the Text Number of the source text for the
+citation. When the source text is news, e.g. News Development Summaries or News Articles, which are
+typically only a couple of sentences long, you will include only the `num` key. For instance, if you
+have just one anchor whose preceding sentence contains information from two news topics (i.e [aa,2])
+which are tagged as Text Numbers 3 and 6, your anchor mapping would look like this:
+{{"aa":[{{"num":3}}, {{"num":6}}]}}.
 
 Note that values of the anchor mapping must be lists even if you have only one citation for your
 anchor. If you are citing this way, you may only cite a source text once at the anchor point, do not
