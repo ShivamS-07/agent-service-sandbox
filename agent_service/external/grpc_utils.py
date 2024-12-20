@@ -15,6 +15,7 @@ from gbi_common_py_utils.utils.environment import (
 from gbi_common_py_utils.utils.ssm import get_param
 from google.protobuf.timestamp_pb2 import Timestamp
 from grpclib import GRPCError
+from grpclib.const import Status
 from jwt import PyJWT
 from jwt.algorithms import RSAAlgorithm
 from typing_extensions import ParamSpec
@@ -101,6 +102,20 @@ T = TypeVar("T")
 P = ParamSpec("P")
 
 
+def dont_retry(e: Exception) -> bool:
+    """
+    Logic here for when not to retry.
+    Currently, this includes when our prompt is too long.
+    """
+    anthropic_too_long_str = "prompt is too long"
+    gpt_too_long_str = "string too long"
+    if isinstance(e, GRPCError) and e.status == Status.INTERNAL:
+        str_e = str(e)
+        if anthropic_too_long_str in str_e or gpt_too_long_str in str_e:
+            return True  # do not retry on this specific error
+    return False
+
+
 def grpc_retry(func: Callable[P, T]) -> Callable[P, T]:
     """
     A generic retry decorator for gRPC calls - 3 retries with a `1 + uniform(0,1)` seconds interval
@@ -124,6 +139,7 @@ def grpc_retry(func: Callable[P, T]) -> Callable[P, T]:
             interval=5,
             max_tries=6,
             jitter=backoff.random_jitter,
+            giveup=dont_retry,
         )(func)(*args, **kwargs)
 
     return run  # type: ignore

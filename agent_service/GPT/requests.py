@@ -23,7 +23,7 @@ from gpt_service_proto_v1.service_pb2 import (
 )
 from grpclib.client import Channel
 
-from agent_service.external.grpc_utils import grpc_retry
+from agent_service.external.grpc_utils import dont_retry, grpc_retry
 from agent_service.GPT.constants import (
     CLIENT_NAME,
     CLIENT_NAMESPACE,
@@ -151,7 +151,9 @@ async def query_gpt_worker(
                 "model_id": model,
             },
         )
-        if retry_num == max_retries:
+
+        if retry_num == max_retries or dont_retry(e):
+            # Immediately raise, no further retries
             raise e
         else:
             await asyncio.sleep(1)
