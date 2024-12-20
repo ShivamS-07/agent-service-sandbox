@@ -153,6 +153,7 @@ from agent_service.endpoints.models import (
     PlanRunStatusInfo,
     PlanRunToolDebugInfo,
     PlanTemplateTask,
+    PromptTemplate,
     RenameMemoryResponse,
     RestoreAgentResponse,
     RetryPlanRunRequest,
@@ -319,7 +320,6 @@ from agent_service.utils.output_utils.output_construction import get_output_from
 from agent_service.utils.plan_to_template import generate_template_from_plan
 from agent_service.utils.postgres import DEFAULT_AGENT_NAME
 from agent_service.utils.prefect import kick_off_run_execution_plan
-from agent_service.utils.prompt_template import PromptTemplate
 from agent_service.utils.redis_queue import (
     get_agent_event_channel,
     get_notification_event_channel,
@@ -2429,7 +2429,7 @@ class AgentServiceImpl:
         user_info = await self.get_account_info(user)
         user_org_id = user_info.organization_id
 
-        prompt_templates = []
+        prompt_templates: List[PromptTemplate] = []
         for template in prompt_templates_all:
             if template.plan is not None:
                 # show templates that have no organization_id or match organization_id
@@ -2456,6 +2456,13 @@ class AgentServiceImpl:
         # only return the first 3 templates if embedding is provided
         if query_embedding:
             prompt_templates = prompt_templates[:3]
+        else:
+            # check db for existing recommendations
+            existing_recommendations = await self.pg.get_template_recommendations(user.user_id)
+            if existing_recommendations:
+                for template in prompt_templates:
+                    if template.template_id in existing_recommendations:
+                        template.llm_recommended = True
         return prompt_templates
 
     async def update_prompt_template(

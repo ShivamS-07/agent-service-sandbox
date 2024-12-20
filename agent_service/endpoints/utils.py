@@ -8,6 +8,8 @@ import sentry_sdk
 from gbi_common_py_utils.utils.environment import get_environment_tag
 
 from agent_service.endpoints.models import (
+    OutputPreview,
+    OutputType,
     PlanRun,
     PlanRunStatusInfo,
     PlanRunTask,
@@ -23,7 +25,6 @@ from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, ToolE
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.logs import async_perf_logger
-from agent_service.utils.prompt_template import OutputPreview, OutputType
 
 logger = logging.getLogger(__name__)
 

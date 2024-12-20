@@ -1,11 +1,11 @@
 import logging
 from typing import List, Union
 
+from agent_service.endpoints.models import PromptTemplate
 from agent_service.GPT.constants import GPT4_O_MINI
 from agent_service.GPT.requests import GPT
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.logs import async_perf_logger
-from agent_service.utils.prompt_template import PromptTemplate
 from agent_service.utils.prompt_utils import Prompt
 
 LOGGER = logging.getLogger(__name__)

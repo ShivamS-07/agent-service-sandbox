@@ -6,7 +6,7 @@ import re
 import time
 import uuid
 from collections import OrderedDict, defaultdict
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from dateutil.parser import parse
 from gbi_common_py_utils.utils.environment import (
@@ -33,12 +33,14 @@ from agent_service.endpoints.models import (
     PlanRunInfo,
     PlanRunStatusInfo,
     PlanRunTaskLog,
+    PromptTemplate,
     QueryWithBreakdown,
     QuickThoughts,
     SetAgentFeedBackRequest,
     Status,
     TaskRunStatusInfo,
     TaskStatus,
+    UserOrganization,
 )
 from agent_service.GPT.constants import get_client_name
 from agent_service.io_type_utils import (
@@ -80,7 +82,6 @@ from agent_service.utils.environment import EnvironmentUtils
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres, SyncBoostedPG
-from agent_service.utils.prompt_template import PromptTemplate, UserOrganization
 from agent_service.utils.sidebar_sections import SidebarSection
 
 logger = logging.getLogger(__name__)
@@ -2351,6 +2352,64 @@ class AsyncDB:
         WHERE template_id = %(template_id)s
         """
         await self.pg.generic_write(sql, params={"template_id": template_id})
+
+    async def get_users_with_hubspot_ids(self) -> List[Dict[str, str]]:
+        sql = """
+        SELECT 
+            u.id::TEXT as user_id, 
+            u.hubspot_contact_id,
+            MAX(tr.last_updated) as latest_recommendation_update
+        FROM user_service.users u
+        LEFT JOIN agent.template_recommendations tr ON tr.user_id = u.id
+        WHERE hubspot_contact_id IS NOT NULL AND hubspot_contact_id != ''
+        GROUP BY u.id, u.hubspot_contact_id
+        """
+        rows = await self.pg.generic_read(sql)
+        return [
+            {
+                "user_id": row["user_id"],
+                "hubspot_contact_id": row["hubspot_contact_id"],
+                "latest_recommendation_update": row["latest_recommendation_update"],
+            }
+            for row in rows
+        ]
+
+    async def get_template_recommendations(self, user_id: str) -> List[str]:
+        sql = """
+        SELECT template_id::TEXT
+        FROM agent.template_recommendations
+        WHERE user_id = %(user_id)s
+        """
+        rows = await self.pg.generic_read(sql, params={"user_id": user_id})
+        return [row["template_id"] for row in rows]
+
+    async def insert_template_recommendations(self, template_ids: List[str], user_id: str) -> None:
+        # first remove the outdated template recommendations
+        delete_sql = """
+        DELETE FROM agent.template_recommendations 
+        WHERE user_id = %(user_id)s 
+        AND template_id != ALL(%(template_ids)s)
+        """
+
+        # then insert the new template recommendations
+        insert_sql = """
+        INSERT INTO agent.template_recommendations (template_id, user_id, last_updated)
+        VALUES (%(template_id)s, %(user_id)s, %(last_updated)s)
+        ON CONFLICT (template_id, user_id) DO UPDATE 
+        SET last_updated = EXCLUDED.last_updated
+        """
+
+        rows = [
+            {
+                "template_id": template_id,
+                "user_id": user_id,
+                "last_updated": get_now_utc(),
+            }
+            for template_id in template_ids
+        ]
+        async with cast(AsyncPostgresBase, self.pg).cursor() as cursor:
+            await cursor.execute(delete_sql, {"user_id": user_id, "template_ids": template_ids})
+            await cursor.executemany(insert_sql, rows)
 
     async def get_org_name(self, org_id: str) -> str:
         sql = """

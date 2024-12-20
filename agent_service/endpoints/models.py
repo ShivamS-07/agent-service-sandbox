@@ -5,17 +5,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from agent_service.io_types.graph import GraphOutput
+from agent_service.io_types.graph import GraphOutput, GraphType
 from agent_service.io_types.table import TableOutput
 from agent_service.io_types.text import TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
 from agent_service.types import MemoryType, Message
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.prompt_template import (
-    OutputPreview,
-    PromptTemplate,
-    UserOrganization,
-)
 from agent_service.utils.scheduling import AgentSchedule
 from agent_service.utils.sidebar_sections import SidebarSection
 
@@ -381,6 +376,22 @@ class GetChatHistoryResponse(BaseModel):
     messages: List[Message]  # sorted by message_time ASC
     total_message_count: Optional[int] = None
     start_index: Optional[int] = None
+
+
+####################################################################################################
+# OutputPreview
+####################################################################################################
+class OutputType(enum.StrEnum):
+    TEXT = "text"
+    TABLE = "table"
+    LINE_GRAPH = GraphType.LINE
+    PIE_GRAPH = GraphType.PIE
+    BAR_GRAPH = GraphType.BAR
+
+
+class OutputPreview(BaseModel):
+    title: str
+    output_type: OutputType
 
 
 ####################################################################################################
@@ -1628,6 +1639,29 @@ class RetryPlanRunResponse(BaseModel):
 ####################################################################################################
 # Prompt Templates
 ####################################################################################################
+class PromptTemplate(BaseModel):
+    template_id: str = Field(default_factory=lambda: str(uuid4()))
+    name: str
+    description: str
+    prompt: str
+    category: str
+    created_at: datetime.datetime
+    plan: ExecutionPlan
+    cadence_tag: str
+    llm_recommended: bool = False
+    notification_criteria: Optional[List[str]] = None
+    user_id: Optional[str] = None
+    organization_ids: Optional[List[str]] = None
+    recommended_company_ids: Optional[List[str]] = None
+    preview: Optional[List[OutputPreview]] = None
+    description_embedding: Optional[List[float]] = None
+
+
+class UserOrganization(BaseModel):
+    organization_id: str
+    organization_name: str
+
+
 class CreatePromptTemplateRequest(BaseModel):
     name: str
     description: str

@@ -12,6 +12,7 @@ class GptJobType:
 
 class GptJobIdType:
     AGENT_ID = "agent_id"
+    USER_ID = "user_id"
 
 
 GPT_TASK_TYPE = "task_type"
