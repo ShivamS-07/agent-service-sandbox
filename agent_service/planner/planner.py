@@ -47,6 +47,8 @@ from agent_service.planner.prompts import (
     PLANNER_SYS_PROMPT,
     SELECT_TOOLS_MAIN_PROMPT,
     SELECT_TOOLS_SYS_PROMPT,
+    SUBPLANNER_MAIN_PROMPT,
+    SUBPLANNER_SYS_PROMPT,
     USER_INPUT_APPEND_MAIN_PROMPT,
     USER_INPUT_APPEND_SYS_PROMPT,
     USER_INPUT_REPLAN_MAIN_PROMPT,
@@ -104,6 +106,7 @@ class Planner:
         send_chat: bool = True,
         skip_db_commit: bool = False,
         user_settings: Optional[AgentUserSettings] = None,
+        is_subplanner: bool = False,
     ) -> None:
         self.agent_id = agent_id
         self.user_id = user_id
@@ -118,13 +121,15 @@ class Planner:
             filter_input=True,
             skip_list=ALWAYS_AVAILABLE_TOOL_CATEGORIES,
             user_settings=self.user_settings,
+            using_subplanner=is_subplanner,
         )
         self.full_tool_string = tool_registry.get_tool_str(
-            self.user_id, user_settings=self.user_settings
+            self.user_id, user_settings=self.user_settings, using_subplanner=is_subplanner
         )
         self.send_chat = send_chat
         self.skip_db_commit = skip_db_commit
         self.db = get_psql(skip_commit=skip_db_commit)
+        self.is_subplanner = is_subplanner
 
     @async_perf_logger
     async def create_initial_plan(
@@ -696,6 +701,55 @@ class Planner:
 
         return new_plan
 
+    @async_perf_logger
+    async def create_subplan(
+        self,
+        directions: str,
+        variables: Dict[str, Type[IOType]],
+        use_sample_plans: bool = True,
+    ) -> Optional[ExecutionPlan]:
+        logger = get_prefect_logger(__name__)
+        if use_sample_plans:
+            logger.info("Getting matching sample plans")
+            sample_plans_str = await self._get_sample_plan_str(input=directions)
+        else:
+            sample_plans_str = ""
+
+        logger.info("Writing subplan")
+        plan = await self._create_subplan(
+            directions,
+            variables,
+            llm=self.fast_llm,
+            sample_plans_str=sample_plans_str,
+            filter_tools=True,
+        )
+
+        return plan
+
+    @async_perf_logger
+    async def _create_subplan(
+        self,
+        directions: str,
+        variables: Dict[str, Type[IOType]],
+        llm: Optional[GPT] = None,
+        sample_plans_str: str = "",
+        filter_tools: bool = False,
+    ) -> Optional[ExecutionPlan]:
+        if llm is None:
+            llm = self.fast_llm
+
+        plan_str = await self._query_GPT_for_new_subplan(
+            directions,
+            variables,
+            sample_plans_str=sample_plans_str,
+            filter_tools=filter_tools,
+        )
+
+        # for now, just let the tool fail if the parse fails
+        steps = self._parse_plan_str(plan_str)
+        plan = self._validate_and_construct_plan(steps, variable_lookup=variables)
+        return plan
+
     async def _query_GPT_for_initial_plan(
         self, user_input: str, llm: GPT, sample_plans: str = "", filter_tools: bool = False
     ) -> str:
@@ -792,6 +846,37 @@ class Planner:
 
         return await self.fast_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
 
+    async def _query_GPT_for_new_subplan(
+        self,
+        directions: str,
+        variables: Dict[str, Type[IOType]],
+        sample_plans_str: str = "",
+        filter_tools: bool = False,
+    ) -> str:
+        sys_prompt_template = SUBPLANNER_SYS_PROMPT
+        main_prompt_template = SUBPLANNER_MAIN_PROMPT
+        sys_prompt = sys_prompt_template.format(
+            guidelines=PLAN_GUIDELINES,
+            example=PLAN_EXAMPLE,
+        )
+
+        if filter_tools and get_ld_flag(
+            "planner-tool-filtering-enabled", default=False, user_context=self.user_id
+        ):
+            tool_str = await self.get_filtered_tool_str(directions, sample_plans_str)
+        else:
+            tool_str = self.full_tool_string
+
+        main_prompt = main_prompt_template.format(
+            rules=PLAN_RULES,
+            tools=tool_str,
+            directions=directions,
+            sample_plans=sample_plans_str,
+            variables="\n".join([f"{name}: {type}" for name, type in variables.items()]),
+        )
+
+        return await self.fast_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+
     async def _get_sample_plan_str(self, input: str) -> str:
         logger = get_prefect_logger(__name__)
 
@@ -841,7 +926,10 @@ class Planner:
                 continue
             not_wanted_categories.append(not_wanted_cat)
         tool_str = self.tool_registry.get_tool_str(
-            self.user_id, skip_list=not_wanted_categories, user_settings=self.user_settings
+            self.user_id,
+            skip_list=not_wanted_categories,
+            user_settings=self.user_settings,
+            using_subplanner=self.is_subplanner,
         )
         return tool_str
 
@@ -1176,8 +1264,11 @@ class Planner:
 
         return parsed_args
 
-    def _validate_and_construct_plan(self, steps: List[ParsedStep]) -> ExecutionPlan:
-        variable_lookup: Dict[str, Type[IOType]] = {}
+    def _validate_and_construct_plan(
+        self, steps: List[ParsedStep], variable_lookup: Optional[Dict[str, Type[IOType]]] = None
+    ) -> ExecutionPlan:
+        if variable_lookup is None:
+            variable_lookup = {}
         plan_nodes: List[ToolExecutionNode] = []
         has_output_tool = False
         for step in steps:

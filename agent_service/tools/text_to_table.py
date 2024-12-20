@@ -465,7 +465,8 @@ as a table, or if they ask for some graphing or transformation that requires a
 table but you only have text data. You can also use this tool if you need a list
 of StockID from the texts, just pair it with the tool to extract stocks from a
 table. You also should never use this tool on a summarized text. ONLY use it on
-texts taken directly from their sources, with no intervening processing.
+texts taken directly from their sources, with no intervening processing. If you
+use this tool after the summarize_texts tool you will be fired!!
 """,
     category=ToolCategory.TABLE,
     enabled_checker_func=enabler_function,

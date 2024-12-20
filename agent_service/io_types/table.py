@@ -2,7 +2,7 @@ import datetime
 import logging
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Annotated, Any, Dict, List, Literal, Optional, Union, cast
+from typing import Annotated, Any, Dict, List, Literal, Optional, Type, Union, cast
 
 import numpy as np
 import pandas as pd
@@ -73,10 +73,13 @@ class TableColumnMetadata(ComplexIOBase):
         return new.model_dump(mode="json")
 
 
+type TableValueType = Optional[IOType] | ScoreOutput  # type: ignore
+
+
 @io_type
 class TableColumn(ComplexIOBase):
     metadata: TableColumnMetadata
-    data: List[Optional[IOType] | ScoreOutput]
+    data: List[TableValueType]
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         if use_abbreviated_output:
@@ -524,6 +527,18 @@ class Table(ComplexIOBase):
             col.data = vals  # type: ignore
             new_cols.append(col)
         self.columns = new_cols
+
+    def get_variables_from_table(self) -> dict[str, Type[IOType]]:
+        """
+        Return a mapping from row name to the expected type in the row.
+        """
+        return {
+            str(col.metadata.label): col.metadata.col_type.to_data_type() for col in self.columns
+        }
+
+    def iterate_over_rows(self) -> list[dict[str, IOType]]:
+        df = self.to_df()
+        return df.to_dict(orient="records")  # type: ignore
 
     @classmethod
     def from_df_and_cols(

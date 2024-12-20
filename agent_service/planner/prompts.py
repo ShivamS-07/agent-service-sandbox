@@ -143,6 +143,12 @@ COMPLETENESS_REPLAN_SYS_PROMPT_STR = "You are a financial data analyst. Your mai
 COMPLETENESS_REPLAN_MAIN_PROMPT_STR = "Rewrite the provided Python script (plan) to include elements that you missed on your first pass. You should only add or modify, do not delete. Here is the chat with the client so far, delimited by `---`:\n---\n{chat_context}\n---\nHere is the existing plan/script, also delimited by `---`:\n---\n{old_plan}\n---\nHere is the discussion of what you identified as missing from the plan:\n---\n{missing}\n---\nHere are the rules you must follow when writing your script:\n---\n{rules}\n---\nHere are the tools you can use when writing the script:\n---\n{tools}\n---\nNow rewrite your plan/script:\n"
 
 
+# subplanner
+
+SUBPLANNER_SYS_PROMPT_STR = "You are a financial data analyst. Your main goal will be to write a plan that carries out a specific set of operations to satisfy a client request, in the form of a short Python script. You will be provided with categorized groups of functions you are allowed to call in your program, with a description of each group, and then a Python header and a description for each function in the group. You will also be provided with a mapping of variable names and their types; you can assume these variables have already been initialized for your use in your plan, the types are provided so that you can be sure they are the appropriate arguments to tools. Every plan should use at least one variable, but there may be variables that are not relevant to this client request, if so you can ignore them. Keep in mind that you will often need to use the string_builder tool to convert variables to larger strings for input to other tools. For example, if one or more of your variables is a date, you may need to convert that variable to a full date range string using the string_builder tool (you cannot simply mention the 'provided date', the tool will not be able to interpret that!). Here are some guidelines that will help you in making good choices while writing your script/plan:\n{guidelines}\n\n Here is an example:\n{example}."
+
+SUBPLANNER_MAIN_PROMPT_STR = "Write a simple Python script that uses only functions in the provided list to satisfy the information needs expressed in the client message. Please be very careful of the rules, the most important being that each line of your script must call exactly one function from the provided list, if you do not follow that rule, the script will fail and your work is worthless. Here are the rules you must follow, delimited by ---:\n---\n{rules}\n---\nHere are the relevant functions/tools available, delimited by ---:\n---\n{tools}\n---\n\nHere is the client directions, also delimited by ---:\n---\n{directions}\n---\n{sample_plans}Finally, here are the variable names you can assume are initialized when writing your script: {variables}. Now write your python script:\n"
+
 # Action decider
 FIRST_ACTION_DECIDER_SYS_PROMPT_STR = (
     "You are a financial data analyst assisting a client with their information needs. "
@@ -337,6 +343,9 @@ NOTIFICATION_DEFAULT_MAIN_PROMPT_STR = "You are a financial analyst who is in ch
 
 PLANNER_SYS_PROMPT = Prompt(PLANNER_SYS_PROMPT_STR, "PLANNER_SYS_PROMPT")
 PLANNER_MAIN_PROMPT = Prompt(PLANNER_MAIN_PROMPT_STR, "PLANNER_MAIN_PROMPT")
+
+SUBPLANNER_SYS_PROMPT = Prompt(SUBPLANNER_SYS_PROMPT_STR, "SUBPLANNER_SYS_PROMPT")
+SUBPLANNER_MAIN_PROMPT = Prompt(SUBPLANNER_MAIN_PROMPT_STR, "SUBPLANNER_MAIN_PROMPT")
 
 USER_INPUT_REPLAN_SYS_PROMPT = Prompt(
     USER_INPUT_REPLAN_SYS_PROMPT_STR, "USER_INPUT_REPLAN_SYS_PROMPT"

@@ -198,6 +198,7 @@ class Tool:
     enabled_checker_func: Optional[Callable[[Optional[str], Optional[AgentUserSettings]], bool]] = (
         None
     )
+    enabled_for_subplanner: bool = True
 
     def to_function_header(self) -> str:
         """
@@ -400,6 +401,7 @@ class ToolRegistry:
         filter_input: bool = False,
         skip_list: Optional[List[ToolCategory]] = None,
         user_settings: Optional[AgentUserSettings] = None,
+        using_subplanner: bool = False,
     ) -> str:
         """Returns a string representation of the tool library. The user_id is used to control which
         tools are visible to individual users. If filter_input is true, the string is going to be input
@@ -412,13 +414,15 @@ class ToolRegistry:
                 continue
             tool_descriptions = []
             for tool in tool_dict.values():
-                if not tool.enabled:
+                if not tool.enabled and not using_subplanner:
                     continue
                 elif tool.enabled_checker_func and not (
                     tool.enabled_checker_func(user_id, user_settings)
                 ):
                     continue
                     # If there is a checker, only continue if there is a user ID which results in a true checker
+                elif using_subplanner and not tool.enabled_for_subplanner:
+                    continue
                 tool_descriptions.append(tool.to_function_header())
                 if not filter_input:
                     tool_descriptions.append(f"# {tool.description}")
@@ -475,6 +479,7 @@ def tool(
     tool_registry: Optional[ToolRegistry] = None,
     is_output_tool: bool = False,
     store_output: bool = True,
+    enabled_for_subplanner: Optional[bool] = None,
 ) -> Callable[[ToolFunc], ToolFunc]:
     """
     Decorator to register a function as a Tool usable by GPT. This can only decorate a function of the format:
@@ -665,7 +670,6 @@ def tool(
             _handle_tool_result(value, context)
             return value
 
-        # Add the tool to the registry
         (tool_registry or default_tool_registry()).register_tool(
             Tool(
                 name=func.__name__,
@@ -679,6 +683,9 @@ def tool(
                 store_output=store_output,
                 enabled=enabled,
                 enabled_checker_func=enabled_checker_func,
+                enabled_for_subplanner=enabled
+                if enabled_for_subplanner is None
+                else enabled_for_subplanner,
             ),
             category=category,
         )

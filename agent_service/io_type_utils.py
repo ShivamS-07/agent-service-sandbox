@@ -131,6 +131,40 @@ class TableColumnType(enum.StrEnum):
             TableColumnType.PCT_DELTA,
         )
 
+    def to_data_type(self) -> Type["IOType"]:
+        if self in (TableColumnType.INTEGER, TableColumnType.INTEGER_WITH_UNIT):
+            return int
+        elif self in (
+            TableColumnType.STRING,
+            TableColumnType.QUARTER,
+            TableColumnType.YEAR,
+            TableColumnType.MONTH,
+        ):
+            return str
+        elif self in (
+            TableColumnType.FLOAT,
+            TableColumnType.FLOAT_WITH_UNIT,
+            TableColumnType.CURRENCY,
+            TableColumnType.PERCENT,
+            TableColumnType.DELTA,
+            TableColumnType.PCT_DELTA,
+        ):
+            return float
+        elif self in (TableColumnType.BOOLEAN):
+            return bool
+        elif self in (TableColumnType.DATE):
+            return datetime.date
+        elif self in (TableColumnType.DATETIME):
+            return datetime.datetime
+        elif self in (TableColumnType.STOCK):
+            from agent_service.io_types.stock import StockID
+
+            return StockID
+        elif self in (TableColumnType.SCORE):
+            # TODO
+            return str
+        raise NotImplementedError(f"{self} has no mapping to a data type!!")
+
 
 class SerializeableBase(BaseModel, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)

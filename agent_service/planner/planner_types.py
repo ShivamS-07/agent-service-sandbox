@@ -44,9 +44,18 @@ class ParsedStep:
     description: str
 
 
-def convert_arg(arg: Union[IOType, Variable, List[Union[IOType, Variable]]]) -> str:
+def convert_arg(
+    arg: Union[
+        IOType, Variable, List[Union[IOType, Variable]], Dict[IOType, Union[Variable, IOType]]
+    ],
+) -> str:
     if isinstance(arg, list):
         return f"[{', '.join(convert_arg(item) for item in arg)}]"
+    elif isinstance(arg, dict):
+        dict_str = ", ".join(
+            (f"{convert_arg(key)}: {convert_arg(val)}" for key, val in arg.items())
+        )
+        return f"{{{dict_str}}}"
     elif isinstance(arg, Variable):
         if arg.index is None:
             return arg.var_name
