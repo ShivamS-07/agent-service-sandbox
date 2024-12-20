@@ -31,7 +31,9 @@ def backup_plans(
 def get_plans_from_environment(environment: str, skip_commit: bool) -> List[Dict]:
     print(f"Fetching plans from {environment} environment")
     sql = f"""
-    SELECT sample_plan_id, input, plan, created_at
+    SELECT sample_plan_id, input, plan, created_at,
+    note, relevance, last_updated_time,
+    last_updated_author, author, changelog, category, enabled
     FROM {TABLE_NAME}
     """
     db = PostgresBase(environment=environment, skip_commit=skip_commit)
@@ -51,6 +53,14 @@ def sync_plans_into_env(plans: List[Dict], environment: str, skip_commit: bool) 
             "input": r["input"],
             "plan": r["plan"],
             "created_at": r["created_at"],
+            "note": r["note"],
+            "relevance": r["relevance"],
+            "last_updated_time": r["last_updated_time"],
+            "last_updated_author": r["last_updated_author"],
+            "author": r["author"],
+            "changelog": r["changelog"],
+            "category": r["category"],
+            "enabled": r["enabled"],
         }
         for r in plans
     ]
@@ -62,10 +72,16 @@ def sync_plans_into_env(plans: List[Dict], environment: str, skip_commit: bool) 
             cursor.execute(delete_sql)
 
             # Insert new records
-            insert_sql_and_params = db._gen_multi_row_insert(
-                table_name=TABLE_NAME, values_to_insert=rows, ignore_conficts=False
+
+            # we dont actually need upsert here,
+            # but _gen_multi_row_insert() doesn't handle null values.
+            upsert_sql_and_params = db._gen_multi_row_generic_insert_or_update(
+                table_name=TABLE_NAME,
+                rows_to_insert=rows,
+                conflict="sample_plan_id",
+                columns_to_update=list(rows[0].keys()),
             )
-            cursor.execute(*insert_sql_and_params)
+            cursor.execute(*upsert_sql_and_params)
     except Exception as e:
         print(f"Failed to sync rows: {repr(e)}")
 
