@@ -447,10 +447,6 @@ async def transform_table(
     )
     output_table = list_of_one_table[0]
 
-    await tool_log(
-        log=f"Transformed table has {len(output_table.columns[0].data)} rows", context=context
-    )
-
     if output_table.get_num_rows() == 0:
         raise EmptyOutputError(message="Table transformation resulted in an empty table")
 
@@ -542,6 +538,10 @@ async def transform_table(
                         new_column.data.append(None)
                 new_columns.append(new_column)
             output_table = StockTable(columns=new_columns)
+
+    await tool_log(
+        log=f"Transformed table has {len(output_table.columns[0].data)} rows", context=context
+    )
 
     return output_table
 
