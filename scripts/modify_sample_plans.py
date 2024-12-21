@@ -526,9 +526,11 @@ async def do_search() -> None:
 
 async def main() -> None:
     try:
-        author_str_bytes = subprocess.check_output(
-            "aws sts get-caller-identity; exit 0", stderr=subprocess.STDOUT, shell=True
-        )
+        cmd = "aws sts get-caller-identity; exit 0"
+        if sys.platform == "win32":
+            cmd = "aws sts get-caller-identity && exit 0"
+
+        author_str_bytes = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
         """
         converting author_str_bytes to a dict should look like:
         {
