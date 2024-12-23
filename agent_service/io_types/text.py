@@ -2352,6 +2352,16 @@ class WebText(Text):
     published_timestamp: Optional[datetime.datetime] = None
     last_modified_timestamp: Optional[datetime.datetime] = None
 
+    def __hash__(self) -> int:
+        if self.url:
+            return self.url.__hash__()
+        return super().__hash__()
+
+    def __eq__(self, other: Any) -> bool:
+        if type(other) is type(self) and self.url and other.url:
+            return self.url == other.url
+        return super().__eq__(other)
+
     @classmethod
     async def _get_strs_lookup(cls, texts: List[WebText]) -> Dict[TextIDType, str]:
         outputs = {}

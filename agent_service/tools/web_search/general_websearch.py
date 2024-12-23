@@ -1,6 +1,8 @@
 import asyncio
+import datetime
+import inspect
 import logging
-from typing import List, Optional
+from typing import List, Optional, cast
 
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
@@ -15,12 +17,16 @@ from agent_service.tool import (
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.tools.web_search.brightdata_websearch import (
+    filter_web_texts_by_date,
     get_urls_async,
     get_web_texts_async,
 )
 from agent_service.types import AgentUserSettings, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
+from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.feature_flags import get_ld_flag
+from agent_service.utils.pagerduty import pager_wrapper
+from agent_service.utils.tool_diff import get_prev_run_info
 
 URLS_TO_SCRAPE = 4
 NEWS_URLS_TO_SCRAPE = 8
@@ -52,6 +58,52 @@ class SingleStockWebSearchInput(ToolArgs):
     num_google_urls: int = URLS_TO_SCRAPE
     num_news_urls: int = NEWS_URLS_TO_SCRAPE
     date_range: Optional[DateRange] = None
+
+
+async def _combine_prior_results_with_latest_results(
+    latest_results: List[WebText], date_range: DateRange, context: PlanRunContext, tool_name: str
+) -> List[WebText]:
+    # If there's a date range, get the prior run's results, filter them, and
+    # update them with new results.
+    prev_output = []
+    date_range_since_last_run = None
+    try:
+        prev_run_info = await get_prev_run_info(context=context, tool_name=tool_name)
+        if prev_run_info and prev_run_info.output:
+            date_range_since_last_run = DateRange(
+                start_date=prev_run_info.timestamp - datetime.timedelta(hours=6),
+                end_date=get_now_utc() + datetime.timedelta(days=1),
+            )
+            prev_output = cast(List[WebText], prev_run_info.output)
+            prev_output = filter_web_texts_by_date(date_range=date_range, texts=prev_output)
+
+        if prev_output and date_range_since_last_run:
+            # If we have prior results that are still valid with the date range, we
+            # want to filter the new results to ONLY those that have been published
+            # or updated since last run, and then combine with the prior
+            # results. This will ensure that if there is no new information, we'll
+            # continue using the same set of articles.
+            filtered_latest_results = filter_web_texts_by_date(
+                date_range=date_range_since_last_run, texts=latest_results
+            )
+            # Filter out duplicates
+            combined_results = list(set(filtered_latest_results).union(set(prev_output)))
+            logger.info(
+                f"Combining {len(prev_output)} old web results with {len(filtered_latest_results)} new results"
+            )
+            return combined_results
+    except Exception as e:
+        logger.exception("Could not get prior web results!")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to get previous run info",
+        )
+
+    return latest_results
 
 
 # TODO: calling MANY of these separately may be inefficient, may be opportunity for speedups here
@@ -106,6 +158,13 @@ async def single_stock_web_search(
         log_event_dict={"gbi_id": stock_id.gbi_id},
         date_range=args.date_range,
     )
+    if args.date_range:
+        search_results = await _combine_prior_results_with_latest_results(
+            latest_results=search_results,
+            date_range=args.date_range,
+            context=context,
+            tool_name="single_stock_web_search",
+        )
     web_stock_text_results = [
         WebStockText(
             stock_id=stock_id,
@@ -246,6 +305,15 @@ async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContex
     search_results = await get_web_texts_async(
         urls=urls, plan_context=context, date_range=args.date_range
     )
+
+    if args.date_range:
+        search_results = await _combine_prior_results_with_latest_results(
+            latest_results=search_results,
+            date_range=args.date_range,
+            context=context,
+            tool_name="general_web_search",
+        )
+
     await tool_log(f"Found {len(search_results)} results using web search", context=context)
     return search_results
 

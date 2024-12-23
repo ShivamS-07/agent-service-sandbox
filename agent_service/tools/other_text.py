@@ -106,6 +106,9 @@ async def get_default_text_data_for_stocks(
             context=context,
         )
         try:
+            date_range = None
+            if args.start_date and args.end_date:
+                date_range = DateRange(start_date=args.start_date, end_date=args.end_date)
             news_data = await get_latest_news_for_companies(
                 GetLatestNewsForCompaniesInput(
                     stock_ids=stock_ids,
@@ -119,6 +122,7 @@ async def get_default_text_data_for_stocks(
                         if len(args.stock_ids) <= 10
                         else REDUCED_NEWS_URLS_TO_SCRAPE
                     ),
+                    date_range=date_range,
                 ),
                 context=context,
             )

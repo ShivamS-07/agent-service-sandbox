@@ -597,6 +597,24 @@ async def req_and_scrape(
     return obj
 
 
+def filter_web_texts_by_date(date_range: DateRange, texts: List[WebText]) -> List[WebText]:
+    texts_with_valid_dates = [
+        text
+        for text in texts
+        if (
+            text.published_timestamp
+            and text.published_timestamp.date() >= date_range.start_date
+            and text.published_timestamp.date() <= date_range.end_date
+        )
+        or (
+            text.last_modified_timestamp is not None
+            and text.last_modified_timestamp.date() >= date_range.start_date
+            and text.last_modified_timestamp.date() <= date_range.end_date
+        )
+    ]
+    return texts_with_valid_dates
+
+
 # takes in URLs, returns a list of WebTexts
 @async_perf_logger
 async def get_web_texts_async(
@@ -698,20 +716,7 @@ async def get_web_texts_async(
     # into the range.
     if date_range:
         num_results = len(results)
-        texts_with_valid_dates = [
-            result
-            for result in results
-            if (
-                result.published_timestamp
-                and result.published_timestamp.date() >= date_range.start_date
-                and result.published_timestamp.date() <= date_range.end_date
-            )
-            or (
-                result.last_modified_timestamp is not None
-                and result.last_modified_timestamp.date() >= date_range.start_date
-                and result.last_modified_timestamp.date() <= date_range.end_date
-            )
-        ]
+        texts_with_valid_dates = filter_web_texts_by_date(date_range=date_range, texts=results)
 
         # Essentially the logic is as follows:
         # - If we have results with dates that fall within the desired date range, use ONLY those.
