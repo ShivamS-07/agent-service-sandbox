@@ -518,6 +518,7 @@ async def get_latest_news_for_companies(
                             if len(args.stock_ids) <= 10
                             else REDUCED_NEWS_URLS_TO_SCRAPE
                         ),
+                        date_range=args.date_range,
                     ),
                     context=web_search_context,
                 )
@@ -737,6 +738,7 @@ async def get_news_and_web_pages_for_topics(
                     queries=[topic for topic in args.topics],
                     num_google_urls=args.num_google_urls,
                     num_news_urls=args.num_news_urls,
+                    date_range=args.date_range,
                 ),
                 context=context,
             )

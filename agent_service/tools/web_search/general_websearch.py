@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import List, Optional
 
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import WebStockText, WebText
 from agent_service.planner.errors import EmptyOutputError
@@ -50,6 +51,7 @@ class SingleStockWebSearchInput(ToolArgs):
     query: str
     num_google_urls: int = URLS_TO_SCRAPE
     num_news_urls: int = NEWS_URLS_TO_SCRAPE
+    date_range: Optional[DateRange] = None
 
 
 # TODO: calling MANY of these separately may be inefficient, may be opportunity for speedups here
@@ -81,6 +83,7 @@ async def single_stock_web_search(
             args.num_google_urls,
             context=context,
             log_event_dict={"gbi_id": stock_id.gbi_id},
+            date_range=args.date_range,
         ),
         get_urls_async(
             [query],
@@ -88,6 +91,7 @@ async def single_stock_web_search(
             context=context,
             log_event_dict={"gbi_id": stock_id.gbi_id},
             get_news=True,
+            date_range=args.date_range,
         ),
     ]
     results = await gather_with_concurrency(tasks)
@@ -97,7 +101,10 @@ async def single_stock_web_search(
         urls.extend(result)
 
     search_results = await get_web_texts_async(
-        urls=urls, plan_context=context, log_event_dict={"gbi_id": stock_id.gbi_id}
+        urls=urls,
+        plan_context=context,
+        log_event_dict={"gbi_id": stock_id.gbi_id},
+        date_range=args.date_range,
     )
     web_stock_text_results = [
         WebStockText(
@@ -117,6 +124,8 @@ class GeneralStockWebSearchInput(ToolArgs):
     topic: str
     num_google_urls: int = URLS_TO_SCRAPE
     num_news_urls: int = NEWS_URLS_TO_SCRAPE
+    date_range: Optional[DateRange] = None
+
     arg_metadata = {
         "num_google_urls": ToolArgMetadata(hidden_from_planner=True),
         "num_news_urls": ToolArgMetadata(hidden_from_planner=True),
@@ -130,6 +139,8 @@ class GeneralStockWebSearchInput(ToolArgs):
         "results. The topic should be text which helps to guide the search towards the client's original prompt, be "
         "sure the topic phrase makes sense to appear after a company name. Examples of this company + topic combo "
         "include Samsung latest news, Apple mobile phone release or Huawei marketplace in the USA. "
+        "If specified, the date range will be used to filter out web pages published outside of the date range. "
+        "Make sure to use this date range if the user asks for anything date specific. Default to including if not sure. "
         "Unless not specified within a sample plan, always call the summarize_texts tool sometime after this tool. "
         "Again, it is VERY important that the "
         "summarize_texts tool is called before the end of a plan containing this tool! DO not EVER directly output "
@@ -159,6 +170,7 @@ async def general_stock_web_search(
                     query=f"{stock_id.company_name} {args.topic}",
                     num_google_urls=args.num_google_urls,
                     num_news_urls=args.num_news_urls,
+                    date_range=args.date_range,
                 ),
                 context=context,
             )
@@ -182,6 +194,7 @@ class GeneralWebSearchInput(ToolArgs):
     urls: Optional[List[str]] = []
     num_google_urls: int = URLS_TO_SCRAPE
     num_news_urls: int = NEWS_URLS_TO_SCRAPE
+    date_range: Optional[DateRange] = None
 
     arg_metadata = {
         "num_google_urls": ToolArgMetadata(hidden_from_planner=True),
@@ -195,6 +208,8 @@ class GeneralWebSearchInput(ToolArgs):
         "of the top search results when such queries are made on the web. If a URL is provided, you may use this tool "
         "and treat those URLS as supporting sources. "
         "Place the URLs in a list as an input to this tool and be sure to use the provided URLs as sources. "
+        "If specified, the date range will be used to filter out web pages published outside of the date range. "
+        "Make sure to use this date range if the user asks for anything date specific. Default to including if not sure. "
         "Unless not specified within a sample plan, always call a text processing tool sometime after this tool. "
         "Again, it is VERY important that a "
         "text processing tool is called before the end of a plan containing this tool! DO not EVER directly output "
@@ -210,8 +225,16 @@ async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContex
         return []
 
     tasks = [
-        get_urls_async(args.queries, args.num_google_urls, context=context),
-        get_urls_async(args.queries, args.num_news_urls, context=context, get_news=True),
+        get_urls_async(
+            args.queries, args.num_google_urls, context=context, date_range=args.date_range
+        ),
+        get_urls_async(
+            args.queries,
+            args.num_news_urls,
+            context=context,
+            get_news=True,
+            date_range=args.date_range,
+        ),
     ]
     results = await gather_with_concurrency(tasks)
 
@@ -220,7 +243,9 @@ async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContex
         urls.extend(result)
 
     # currently, this returns a list of WebTexts
-    search_results = await get_web_texts_async(urls=urls, plan_context=context)
+    search_results = await get_web_texts_async(
+        urls=urls, plan_context=context, date_range=args.date_range
+    )
     await tool_log(f"Found {len(search_results)} results using web search", context=context)
     return search_results
 

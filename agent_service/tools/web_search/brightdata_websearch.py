@@ -5,8 +5,9 @@ import logging
 import re
 import ssl
 import traceback
+import urllib.parse
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
@@ -17,6 +18,7 @@ from bs4 import BeautifulSoup
 from gbi_common_py_utils.utils.ssm import get_param
 from mypy_boto3_s3.client import S3Client
 
+from agent_service.io_types.dates import DateRange
 from agent_service.io_types.text import WebText
 from agent_service.tools.tool_log import tool_log
 from agent_service.tools.web_search.constants import (
@@ -105,6 +107,19 @@ def parse_news_result(search_result: Any, num_results: int) -> List[str]:
     return [item["link"] for item in items]
 
 
+def _construct_google_news_time_range(start_date: date, end_date: date) -> str:
+    # Format dates as 'MM/DD/YYYY'
+    start_date_str = start_date.strftime("%m/%d/%Y")
+    end_date_str = end_date.strftime("%m/%d/%Y")
+
+    # Construct the raw tbs string
+    raw_tbs = f"cdr:1,cd_min:{start_date_str},cd_max:{end_date_str}"
+
+    # URL-encode the tbs string
+    encoded_tbs = urllib.parse.quote(raw_tbs)
+    return encoded_tbs
+
+
 async def get_urls_async(
     queries: List[str],
     num_results: int,
@@ -113,10 +128,22 @@ async def get_urls_async(
     timeout: int = WEB_SEARCH_FETCH_URLS_TIMEOUT,
     log_event_dict: Optional[dict] = None,
     get_news: bool = False,
+    date_range: Optional[DateRange] = None,
 ) -> List[str]:
     if get_news:
         query_type = SERP_NEWS_TYPE
-        url_template = "https://www.google.com/search?q={query}&brd_json=1&num={num_results}&tbm=nws&as_qdr=m&hl=en-US"
+        if date_range:
+            # Construct a special URL that includes the specific start and end dates we want.
+            tbs = _construct_google_news_time_range(
+                start_date=date_range.start_date, end_date=date_range.end_date
+            )
+            url_template = (
+                "https://www.google.com/search?q={query}&brd_json=1&num={num_results}&tbm=nws&"
+                + f"tbs={tbs}&hl=en-US"
+            )
+            logger.info(f"Using url template for news: {url_template}")
+        else:
+            url_template = "https://www.google.com/search?q={query}&brd_json=1&num={num_results}&tbm=nws&as_qdr=m&hl=en-US"
         parse_urls = parse_news_result
         padded_num_results = num_results
     else:
@@ -579,11 +606,14 @@ async def get_web_texts_async(
     timeout: int = WEB_SEARCH_PULL_SITES_TIMEOUT,
     should_print_errors: bool = False,
     log_event_dict: Optional[dict] = None,
+    date_range: Optional[DateRange] = None,
 ) -> list[WebText]:
     logger = get_prefect_logger(__name__)
 
     ssl_context = ssl.create_default_context()
     ssl_context.load_verify_locations(cafile=CERTIFICATE_LOCATION)
+
+    params = {"urls": urls, "now_utc": get_now_utc()}
 
     sql1 = f"""
         SELECT DISTINCT ON (url) id::VARCHAR, url, title, inserted_at,
@@ -593,7 +623,6 @@ async def get_web_texts_async(
         ORDER BY url, inserted_at DESC
     """
     pg = get_psql()
-    params = {"urls": urls, "now_utc": get_now_utc()}
 
     rows = pg.generic_read(sql1, params=params)
 
@@ -664,6 +693,45 @@ async def get_web_texts_async(
                 """
                 with pg.transaction_cursor() as cursor:
                     cursor.executemany(sql2, [res.to_db_dict() for res in uncached_res])
+
+    # If we have a date range, filter the results if there are enough that fit
+    # into the range.
+    if date_range:
+        num_results = len(results)
+        texts_with_valid_dates = [
+            result
+            for result in results
+            if (
+                result.published_timestamp
+                and result.published_timestamp.date() >= date_range.start_date
+                and result.published_timestamp.date() <= date_range.end_date
+            )
+            or (
+                result.last_modified_timestamp is not None
+                and result.last_modified_timestamp.date() >= date_range.start_date
+                and result.last_modified_timestamp.date() <= date_range.end_date
+            )
+        ]
+
+        # Essentially the logic is as follows:
+        # - If we have results with dates that fall within the desired date range, use ONLY those.
+        # - If not, use the results without ANY dates attached.
+        #   (This will at least filter out web texts with invalid dates.)
+        if texts_with_valid_dates:
+            results = texts_with_valid_dates
+            logger.info(
+                (
+                    f"Found {len(texts_with_valid_dates)} web texts"
+                    f" with valid dates out of {num_results} total"
+                )
+            )
+        else:
+            results = [
+                result
+                for result in results
+                if result.published_timestamp is None and result.last_modified_timestamp is None
+            ]
+            logger.info("Found no web texts with valid dates, falling back to texts with no dates.")
 
     return results
 
