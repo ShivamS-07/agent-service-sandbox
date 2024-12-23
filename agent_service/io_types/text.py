@@ -93,7 +93,7 @@ class Text(ComplexIOBase):
         return self.id.__hash__()
 
     def __eq__(self, other: Any) -> bool:
-        if isinstance(other, Text):
+        if type(other) is type(self):
             return self.id == other.id
         return False
 
@@ -1921,6 +1921,7 @@ class StockSecFilingSectionText(StockText):
             if filing.id not in filing_texts:
                 continue
 
+            # rewrite to split without sections
             split_sections = SecFiling.split_10k_10q_into_smaller_sections(filing_texts[filing.id])
             for header, content in split_sections.items():
                 sections.append(
@@ -2028,7 +2029,7 @@ class StockOtherSecFilingText(StockSecFilingText):
     """
 
     id: str  # SEC filing info
-    text_type: ClassVar[str] = "SEC Filing"
+    text_type: ClassVar[str] = "Full SEC Filing"
     db_id: Optional[str] = None
     form_type: Optional[str] = None
 
@@ -2059,6 +2060,9 @@ class StockOtherSecFilingText(StockSecFilingText):
             return {}
 
         filing_json_to_text_obj = {filing.id: filing for filing in sec_filing_list}
+        filing_json_to_form_type = {
+            filing.id: filing.form_type for filing in sec_filing_list if filing.form_type
+        }
 
         # Get the available content from DB first
         output: Dict[TextIDType, str] = {}
@@ -2075,14 +2079,18 @@ class StockOtherSecFilingText(StockSecFilingText):
             db_id_to_filing_json = {
                 f.db_id: f.id for f in sec_filing_list if f.db_id and f.id not in output
             }
-            output.update(await SecFiling.get_filings_content_from_db(db_id_to_filing_json))  # type: ignore
+            output.update(
+                await SecFiling.get_filings_content_from_db(
+                    db_id_to_filing_json, filing_json_to_form_type
+                )  # type: ignore
+            )  # type: ignore
             logger.info(f"Found {len(output)} SEC filings in DB")
 
             logger.info("Getting SEC filing text from DB using filing json")
             # some db_id may be lost after clickhouse merges duplicates
             filing_jsons = [f.id for f in sec_filing_list if f.id not in output]
             filing_json_to_row = await SecFiling.get_filings_content_from_db_by_filing_jsons(
-                filing_jsons
+                filing_jsons, filing_json_to_form_type
             )
             for filing_json, (db_id, val) in filing_json_to_row.items():
                 output[filing_json] = val

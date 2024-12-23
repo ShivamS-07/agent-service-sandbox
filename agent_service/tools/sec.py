@@ -22,6 +22,7 @@ from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
 from agent_service.utils.boosted_pg import BoostedPG
 from agent_service.utils.date_utils import parse_date_str_in_utc
+from agent_service.utils.feature_flags import get_ld_flag
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.sec.constants import (
@@ -39,11 +40,21 @@ from agent_service.utils.string_utils import repair_json_if_needed
 MATCH_RATIO = 70  # minimum ratio for fuzzy matching to map filing type (higher is more strict)
 
 
+def use_full_text_10k(context: PlanRunContext) -> bool:
+    return get_ld_flag(
+        flag_name="use-full-text-10k",
+        default=False,
+        user_context=context.user_id,
+    )
+
+
 async def get_sec_filings_helper(
     stock_ids: List[StockID],
+    context: PlanRunContext,
     form_types: Optional[List[str]],
     start_date: Optional[datetime.date],
     end_date: Optional[datetime.date],
+    use_full_text: Optional[bool] = False,
 ) -> Dict[StockID, List[Union[StockSecFilingText | StockOtherSecFilingText]]]:
     if not form_types:
         form_types = [FILE_10Q, FILE_10K]
@@ -64,7 +75,11 @@ async def get_sec_filings_helper(
         filing_json = json.loads(filing_str)
         timestamp = parse_date_str_in_utc(filing_json[FILED_TIMESTAMP])
         form_type = filing_json.get(FORM_TYPE)
-        if form_type in [FILE_10Q, FILE_10K]:
+        if (
+            form_type in [FILE_10Q, FILE_10K]
+            and not use_full_text
+            and not use_full_text_10k(context)
+        ):
             stock_filing_map[stock_id].append(
                 StockSecFilingText(
                     id=filing_str,
@@ -93,6 +108,7 @@ class GetSecFilingsInput(ToolArgs):
     date_range: Optional[DateRange] = None
     must_include_10q: Optional[bool] = True
     must_include_10k: Optional[bool] = True
+    use_full_text: Optional[bool] = False
 
 
 @tool(
@@ -113,7 +129,9 @@ class GetSecFilingsInput(ToolArgs):
     "must call this tool twice with two 3 month time ranges, do NOT do this in a single call! "
     " You should not pass a date_range containing dates after todays date into this function."
     " documents can only be found for dates in the past up to the present, including todays date."
-    " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!",
+    " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
+    "If the client asks to use the FULL 10-K or FULL 10-Q, you must set the `use_full_text` parameter to True."
+    "Only set it to true if the client explicitly asks for the full filing text.",
     category=ToolCategory.SEC_FILINGS,
     tool_registry=default_tool_registry(),
     store_output=False,
@@ -135,6 +153,7 @@ async def get_10k_10q_sec_filings(
             stock_ids=args.stock_ids,
             form_types=form_types,
             date_range=args.date_range,
+            use_full_text=args.use_full_text,
         ),
         context=context,
     )  # type: ignore
@@ -297,6 +316,7 @@ class GetSecFilingsWithTypeInput(ToolArgs):
     stock_ids: List[StockID]
     form_types: List[Union[SecFilingType, str]]
     date_range: Optional[DateRange] = None
+    use_full_text: Optional[bool] = False
 
 
 @tool(
@@ -314,7 +334,9 @@ class GetSecFilingsWithTypeInput(ToolArgs):
     " included, the start date is a quarter ago, which includes only the latest SEC filing."
     " You should not pass a date_range containing dates after todays date into this function."
     " documents can only be found for dates in the past up to the present, including todays date."
-    " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!",
+    " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
+    "If the client asks to use the FULL 10-K or FULL 10-Q, you must set the `use_full_text` parameter to True."
+    "Only set it to true if the client explicitly asks for the full filing text.",
     category=ToolCategory.SEC_FILINGS,
     tool_registry=default_tool_registry(),
     store_output=False,
@@ -356,7 +378,12 @@ async def get_sec_filings_with_type(
     )
 
     stock_filing_map = await get_sec_filings_helper(
-        args.stock_ids, form_types, start_date, end_date
+        args.stock_ids,
+        context,
+        form_types,
+        start_date,
+        end_date,
+        args.use_full_text,
     )
     sec_filings: List[Union[StockSecFilingText | StockOtherSecFilingText]] = []
     for filings in stock_filing_map.values():

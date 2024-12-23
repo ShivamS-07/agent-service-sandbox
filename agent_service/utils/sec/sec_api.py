@@ -547,9 +547,9 @@ class SecFiling:
             return {}
 
         sql = """
-            SELECT id::TEXT AS id, content, riskFactors, managementSection
-            FROM sec.sec_filings_parsed
-            WHERE formType in ('10-K', '10-Q') AND id IN %(db_ids)s
+        SELECT id::TEXT AS id, content, riskFactors, managementSection
+        FROM sec.sec_filings_parsed
+        WHERE formType in ('10-K', '10-Q') AND id IN %(db_ids)s
         """
         ch = Clickhouse()
 
@@ -844,12 +844,14 @@ class SecFiling:
     # Get full content of filings
     ################################################################################################
     @classmethod
-    async def get_filings_content_from_db(cls, db_id_to_text_id: Dict[str, str]) -> Dict[str, str]:
+    async def get_filings_content_from_db(
+        cls, db_id_to_text_id: Dict[str, str], filing_json_to_form_type: Dict[str, str]
+    ) -> Dict[str, str]:
         if not db_id_to_text_id:
             return {}
 
         sql = """
-            SELECT id::TEXT AS id, content
+            SELECT id::TEXT AS id, content, raw_content
             FROM sec.sec_filings_parsed
             WHERE id IN %(db_ids)s
         """
@@ -863,19 +865,25 @@ class SecFiling:
 
             for row in result:
                 filing_id = db_id_to_text_id[row["id"]]
-                output[filing_id] = row["content"]
+                output[filing_id] = (
+                    html_to_text(row["raw_content"])
+                    if filing_json_to_form_type[filing_id] in [FILE_10Q, FILE_10K]
+                    else row["content"]
+                )
 
         return output
 
     @classmethod
     async def get_filings_content_from_db_by_filing_jsons(
-        cls, filing_jsons: List[str]
+        cls,
+        filing_jsons: List[str],
+        filing_json_to_form_type: Dict[str, str],
     ) -> Dict[str, Tuple[str, str]]:
         if not filing_jsons:
             return {}
 
         sql = """
-            SELECT id::TEXT AS id, filing, content
+            SELECT id::TEXT AS id, filing, content, raw_content
             FROM sec.sec_filings_parsed
             WHERE filing IN %(filing_jsons)s
         """
@@ -889,7 +897,9 @@ class SecFiling:
             for row in result:
                 output[row["filing"]] = (
                     row["id"],
-                    row["content"],
+                    html_to_text(row["raw_content"])
+                    if filing_json_to_form_type[row["filing"]] in [FILE_10Q, FILE_10K]
+                    else row["content"],
                 )
 
         return output

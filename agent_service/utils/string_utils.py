@@ -5,6 +5,7 @@ import uuid
 from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional
 
+from gbi_common_py_utils.utils.util import perf_logger
 from json_repair import repair_json  # type: ignore
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,20 @@ START_HEADER = "__START__"
 
 # Precompiled regex patterns
 STYLE_TAG_CLEANUP_PATTERN = re.compile(r"<style.*?>.*?</style>", re.DOTALL | re.IGNORECASE)
+
+IX_HEADER_TAG_CLEANUP_PATTERN = re.compile(
+    r"<ix:header.*?>.*?</ix:header>", re.DOTALL | re.IGNORECASE
+)
+
 NEWLINE_CLEANUP_PATTERN = re.compile(r"\n\s*\n\s*\n+")
+
+NEWLINE_TAG_CLEANUP_PATTERN = re.compile(
+    r"(</?p/?>|</?br/?>|</tr>|</table>|</div>|<div[^>]*><div[^>]*>)", re.DOTALL | re.IGNORECASE
+)
+
+HR_ELEMENT_CLEANUP_PATTERN = re.compile(r"<hr[^>]*/?>", re.DOTALL | re.IGNORECASE)
+
+SPACE_ELEMENT_CLEANUP_PATTERN = re.compile(r"&nbsp;|&#160;", re.DOTALL | re.IGNORECASE)
 
 
 def clean_to_json_if_needed(json: str, repair: bool = True) -> str:
@@ -172,6 +186,7 @@ class HTMLFilter(HTMLParser):
         self.text += data
 
 
+@perf_logger
 def html_to_text(html_str: str) -> str:
     """
     Transforms HTML to plain text
@@ -183,6 +198,20 @@ def html_to_text(html_str: str) -> str:
     # Preprocessing - clean up the <style> tag which the parser misses consistently
     html_str = re.sub(STYLE_TAG_CLEANUP_PATTERN, "", html_str)
 
+    # This tag contains a bunch of junk that isn't rendered on the SEC EDGAR website
+    html_str = re.sub(IX_HEADER_TAG_CLEANUP_PATTERN, "", html_str)
+
+    # Certain tags imply a newline should be printed
+    html_str = re.sub(NEWLINE_TAG_CLEANUP_PATTERN, "\\1\n", html_str)
+
+    # horizontal rule / line
+    html_str = re.sub(HR_ELEMENT_CLEANUP_PATTERN, "\n" + "-" * 80 + "\n", html_str)
+
+    # convert special html spaces into normal space
+    html_str = re.sub(SPACE_ELEMENT_CLEANUP_PATTERN, " ", html_str)
+
+    # put at least a space between every tag
+    html_str = html_str.replace("><", "> <")
     # Parsing
     parser = HTMLFilter()
     parser.feed(html_str)
