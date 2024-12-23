@@ -9,10 +9,9 @@ from fastapi import HTTPException
 from starlette import status
 
 from agent_service.endpoints.models import (
-    AgentOutput,
     GetAgentOutputResponse,
-    QuickThoughts,
 )
+from agent_service.io_types.table import TableOutput, TableTransformation
 from agent_service.io_types.text import Text, TextOutput
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.cache_utils import RedisCacheBackend
@@ -31,14 +30,12 @@ async def get_agent_output(
     """
     t = time.perf_counter()
 
-    tasks = [
+    outputs, quick_thoughts, output_transformations = await asyncio.gather(
         pg.get_agent_outputs(agent_id=agent_id, plan_run_id=plan_run_id, cache=cache),
         pg.get_latest_quick_thought_for_agent(agent_id=agent_id),
-    ]
+        pg.get_output_transformations(agent_id=agent_id, plan_run_id=plan_run_id),
+    )
 
-    outputs: list[AgentOutput]
-    quick_thoughts: Optional[QuickThoughts]
-    outputs, quick_thoughts = await asyncio.gather(*tasks)  # type: ignore
     if plan_run_id:
         # Don't include quick thoughts if they're asking for output from a
         # specific run. ONLY for the latest output.
@@ -51,7 +48,7 @@ async def get_agent_output(
 
     run_summary_long: Any = None
     run_summary_short = None
-    newly_updated_outputs = []
+    newly_updated_outputs: list[str] = []
     if outputs:
         run_metadata = outputs[0].run_metadata
 
@@ -79,6 +76,17 @@ async def get_agent_output(
                     )
 
             run_summary_long.val = run_summary_long.val.replace("\n  ", "\n")
+
+        for output in outputs:
+            transformation = output_transformations.get(output.task_id)
+            if transformation:
+                LOGGER.info(f"Applying transformation to {output.output_id}")
+                output.transformation_id = transformation["transformation_id"]
+                output.is_transformation_local = transformation["is_transformation_local"]
+                if isinstance(output.output, TableOutput):
+                    output.output.transform(
+                        TableTransformation.model_validate(transformation["transformation"])
+                    )
 
     LOGGER.info(f"total time to get output for {agent_id} is {(time.perf_counter() - t):.2f}s")
 

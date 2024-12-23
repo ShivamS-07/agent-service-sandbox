@@ -124,6 +124,7 @@ from agent_service.endpoints.routers import (
     qc,
     stock,
     template,
+    transformation,
     user,
 )
 from agent_service.endpoints.routers.utils import get_agent_svc_impl
@@ -1495,6 +1496,7 @@ application.include_router(user.router)
 application.include_router(qc.router)
 application.include_router(data.router)
 application.include_router(etf.router)
+application.include_router(transformation.router)
 
 
 def parse_args() -> argparse.Namespace:

@@ -165,11 +165,14 @@ from agent_service.endpoints.models import (
     SetAgentScheduleResponse,
     SharePlanRunResponse,
     Status,
+    SuccessResponse,
     TerminateAgentResponse,
     ToolArgInfo,
     ToolMetadata,
     ToolPromptInfo,
     Tooltips,
+    TransformTableOutputRequest,
+    TransformTableOutputResponse,
     UnlockAgentOutputRequest,
     UnlockAgentOutputResponse,
     UnsharePlanRunResponse,
@@ -179,6 +182,7 @@ from agent_service.endpoints.models import (
     UpdateAgentWidgetNameRequest,
     UpdateAgentWidgetNameResponse,
     UpdatePromptTemplateResponse,
+    UpdateTransformationSettingsRequest,
     UpdateUserResponse,
     UploadFileResponse,
     ValidateArgError,
@@ -996,9 +1000,9 @@ class AgentServiceImpl:
         )
 
         return GetAgentTaskOutputResponse(
-            output=await get_output_from_io_type(task_output, pg=self.pg.pg)
-            if task_output
-            else None  # type: ignore
+            output=(
+                await get_output_from_io_type(task_output, pg=self.pg.pg) if task_output else None  # type: ignore
+            )
         )
 
     async def get_agent_log_output(
@@ -2987,3 +2991,71 @@ class AgentServiceImpl:
             )
 
         return CreateJiraTicketResponse(ticket_id="", ticket_url="", success=False)
+
+    ################################################################################################
+    # Transformation
+    ################################################################################################
+    async def transform_table_output(
+        self, req: TransformTableOutputRequest
+    ) -> TransformTableOutputResponse:
+        transformation_id = str(uuid.uuid4())
+
+        # Quick parameters validation
+        if not req.is_transformation_local and not req.effective_from:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="`effective_from` is required for global transformations.",
+            )
+        elif req.is_transformation_local:
+            req.effective_from = None
+
+        rows = [
+            {
+                "transformation_id": transformation_id,
+                "plan_id": req.plan_id,
+                "plan_run_id": req.plan_run_id,
+                "task_id": req.task_id,
+                "is_transformation_local": req.is_transformation_local,
+                "transformation": req.transformation.model_dump_json(),
+                "effective_from": req.effective_from,
+                "created_at": get_now_utc(),
+            }
+        ]
+        await self.pg.multi_row_insert("agent.output_transformations", rows)
+        return TransformTableOutputResponse(transformation_id=transformation_id)
+
+    async def delete_transformation(self, transformation_id: str) -> SuccessResponse:
+        await self.pg.delete_from_table_where(
+            table_name="agent.output_transformations", transformation_id=transformation_id
+        )
+        return SuccessResponse(success=True)
+
+    async def update_transformation_settings(
+        self, req: UpdateTransformationSettingsRequest
+    ) -> SuccessResponse:
+        # Quick parameters validation
+        if not req.is_transformation_local and not req.effective_from:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="`effective_from` is required for global transformations.",
+            )
+        elif req.is_transformation_local:
+            req.effective_from = None
+
+        sql = """
+            UPDATE agent.output_transformations
+            SET is_transformation_local = %(is_transformation_local)s,
+                effective_from = %(effective_from)s,
+                created_at = %(created_at)s
+            WHERE transformation_id = %(transformation_id)s
+        """
+        await self.pg.generic_write(
+            sql,
+            params={
+                "transformation_id": req.transformation_id,
+                "is_transformation_local": req.is_transformation_local,
+                "effective_from": req.effective_from,
+                "created_at": get_now_utc(),
+            },
+        )
+        return SuccessResponse(success=True)

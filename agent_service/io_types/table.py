@@ -1,5 +1,6 @@
 import datetime
 import logging
+import time
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Annotated, Any, Dict, List, Literal, Optional, Type, Union, cast
@@ -790,6 +791,11 @@ class TableOutputColumn(BaseModel):
     # Refers back to citations in the base TableOutput object.
     citation_refs: List[CitationIDWithRow] = []
 
+    # transformation fields
+    display_name: Optional[str] = None
+    is_visible: bool = True
+    original_order: Optional[int] = None
+
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, TableOutputColumn):
             return False
@@ -822,8 +828,46 @@ CellPrimitiveType = Annotated[
 OutputCellType = Union[StockMetadata, ScoreOutput, CellPrimitiveType]
 
 
+class TableTransformation(BaseModel):
+    class Column(BaseModel):
+        original_name: str
+        display_name: Optional[str] = None  # if None, use original_name
+        is_visible: bool = True  # if False, hide the column
+
+    columns: List[Column]
+
+
 class TableOutput(Output):
     output_type: Literal[OutputType.TABLE] = OutputType.TABLE
     title: str = ""
     columns: List[TableOutputColumn] = []
     rows: List[List[Optional[OutputCellType]]]
+
+    def transform(self, transformation: TableTransformation) -> None:
+        transformed_columns = transformation.columns
+
+        if len(transformed_columns) != len(self.columns):
+            logger.warning("Transformed columns do not match the original columns")
+            return
+
+        # update `self.columns` - reorder/rename/hide
+        name_to_origin_column = {col.name: (idx, col) for idx, col in enumerate(self.columns)}
+        new_columns: list[TableOutputColumn] = []
+        for new_column in transformed_columns:
+            idx, origin_column = name_to_origin_column[new_column.original_name]
+            origin_column.display_name = new_column.display_name
+            origin_column.is_visible = new_column.is_visible
+            origin_column.original_order = idx
+            new_columns.append(origin_column)
+        self.columns = new_columns
+
+        # update `self.rows` - reorder according to `self.columns`
+        same_order = all(col.original_order == idx for idx, col in enumerate(new_columns))
+        if not same_order:
+            t = time.perf_counter()
+            new_idx_to_old_idx = {col.original_order: idx for idx, col in enumerate(new_columns)}
+            for row_idx, row in enumerate(self.rows):
+                new_row = [row[new_idx_to_old_idx[new_idx]] for new_idx in range(len(row))]
+                self.rows[row_idx] = new_row
+
+            logger.info(f"Reordered {len(self.rows)} rows in {time.perf_counter() - t:.2f}s")

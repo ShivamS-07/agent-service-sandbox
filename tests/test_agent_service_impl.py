@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import List
 from unittest.mock import MagicMock, patch
 
+from fastapi import HTTPException
+
 from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
     AgentFeedback,
@@ -18,10 +20,13 @@ from agent_service.endpoints.models import (
     MediaType,
     Pagination,
     SetAgentFeedBackRequest,
+    TransformTableOutputRequest,
     UnlockAgentOutputRequest,
     UpdateAgentRequest,
     UpdateAgentWidgetNameRequest,
+    UpdateTransformationSettingsRequest,
 )
+from agent_service.io_types.table import TableTransformation
 from agent_service.planner.constants import FirstAction
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import Notification
@@ -912,4 +917,202 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         )
         self.assertFalse(
             self.loop.run_until_complete(self.pg.is_agent_help_requested(agent_id=TEST_AGENT_ID))
+        )
+
+    def test_transform_table_output(self):
+        # initialize entries
+        user_id = str(uuid.uuid4())
+        agent_id = self.loop.run_until_complete(self._create_fake_agent(user_id))
+        plan_id = self.loop.run_until_complete(self._create_fake_plan_for_agent(agent_id))
+        plan_run_ids = self.loop.run_until_complete(
+            self._create_fake_plan_runs(agent_id, plan_id, num=2)
+        )
+
+        task_id = str(uuid.uuid4())
+
+        # Bad request for when `is_transformation_local` is False but `effective_from` is null
+        with self.assertRaises(HTTPException):
+            self.loop.run_until_complete(
+                self.agent_service_impl.transform_table_output(
+                    req=TransformTableOutputRequest(
+                        agent_id=agent_id,
+                        plan_id=plan_id,
+                        plan_run_id=plan_run_ids[0],
+                        task_id=task_id,
+                        is_transformation_local=False,
+                        transformation=TableTransformation(
+                            columns=[
+                                TableTransformation.Column(
+                                    original_name="column1",
+                                    display_name="display_column1",
+                                    is_visible=True,
+                                )
+                            ]
+                        ),
+                    )
+                )
+            )
+
+        # Create 3 global transformations for 2 runs
+        global_transformation_id1 = self.loop.run_until_complete(
+            self.agent_service_impl.transform_table_output(
+                req=TransformTableOutputRequest(
+                    agent_id=agent_id,
+                    plan_id=plan_id,
+                    plan_run_id=plan_run_ids[0],
+                    task_id=task_id,
+                    is_transformation_local=False,
+                    transformation=TableTransformation(
+                        columns=[
+                            TableTransformation.Column(
+                                original_name="column",
+                                display_name="global_transformation_id1",
+                                is_visible=True,
+                            )
+                        ]
+                    ),
+                    effective_from=datetime(1900, 1, 1),
+                )
+            )
+        )
+        global_transformation_id2 = self.loop.run_until_complete(
+            self.agent_service_impl.transform_table_output(
+                req=TransformTableOutputRequest(
+                    agent_id=agent_id,
+                    plan_id=plan_id,
+                    plan_run_id=plan_run_ids[1],
+                    task_id=task_id,
+                    is_transformation_local=False,
+                    transformation=TableTransformation(
+                        columns=[
+                            TableTransformation.Column(
+                                original_name="column",
+                                display_name="global_transformation_id2",
+                                is_visible=True,
+                            )
+                        ]
+                    ),
+                    effective_from=datetime(1900, 1, 1),
+                )
+            )
+        )
+        _ = self.loop.run_until_complete(
+            self.agent_service_impl.transform_table_output(
+                req=TransformTableOutputRequest(
+                    agent_id=agent_id,
+                    plan_id=plan_id,
+                    plan_run_id=plan_run_ids[1],
+                    task_id=task_id,
+                    is_transformation_local=False,
+                    transformation=TableTransformation(
+                        columns=[
+                            TableTransformation.Column(
+                                original_name="column",
+                                display_name="global_transformation_id2",
+                                is_visible=True,
+                            )
+                        ]
+                    ),
+                    effective_from=datetime(4000, 1, 1),
+                )
+            )
+        )
+        # should return the 2nd one since it's the latest one which also matches `effective_from`
+        output_transformations = self.loop.run_until_complete(
+            self.pg.get_output_transformations(agent_id=agent_id, plan_run_id=plan_run_ids[0])
+        )
+        transformation = output_transformations[task_id]
+        self.assertEqual(
+            transformation["transformation_id"], global_transformation_id2.transformation_id
+        )
+
+        # Create 2 more local transformations for 2 runs
+        local_transformation_id1 = self.loop.run_until_complete(
+            self.agent_service_impl.transform_table_output(
+                req=TransformTableOutputRequest(
+                    agent_id=agent_id,
+                    plan_id=plan_id,
+                    plan_run_id=plan_run_ids[0],
+                    task_id=task_id,
+                    is_transformation_local=True,
+                    transformation=TableTransformation(
+                        columns=[
+                            TableTransformation.Column(
+                                original_name="column",
+                                display_name="local_transformation_id1",
+                                is_visible=True,
+                            )
+                        ]
+                    ),
+                )
+            )
+        )
+        local_transformation_id2 = self.loop.run_until_complete(
+            self.agent_service_impl.transform_table_output(
+                req=TransformTableOutputRequest(
+                    agent_id=agent_id,
+                    plan_id=plan_id,
+                    plan_run_id=plan_run_ids[1],
+                    task_id=task_id,
+                    is_transformation_local=True,
+                    transformation=TableTransformation(
+                        columns=[
+                            TableTransformation.Column(
+                                original_name="column",
+                                display_name="local_transformation_id2",
+                                is_visible=True,
+                            )
+                        ]
+                    ),
+                )
+            )
+        )
+
+        output_transformations = self.loop.run_until_complete(
+            self.pg.get_output_transformations(agent_id=agent_id, plan_run_id=plan_run_ids[0])
+        )
+        transformation = output_transformations[task_id]
+        self.assertEqual(
+            transformation["transformation_id"], local_transformation_id1.transformation_id
+        )
+
+        output_transformations = self.loop.run_until_complete(
+            self.pg.get_output_transformations(agent_id=agent_id, plan_run_id=plan_run_ids[1])
+        )
+        transformation = output_transformations[task_id]
+        self.assertEqual(
+            transformation["transformation_id"], local_transformation_id2.transformation_id
+        )
+
+        # delete the local transformation - should get global then
+        self.loop.run_until_complete(
+            self.agent_service_impl.delete_transformation(
+                transformation_id=local_transformation_id1.transformation_id
+            )
+        )
+        output_transformations = self.loop.run_until_complete(
+            self.pg.get_output_transformations(agent_id=agent_id, plan_run_id=plan_run_ids[0])
+        )
+        transformation = output_transformations[task_id]
+        self.assertEqual(
+            transformation["transformation_id"], global_transformation_id2.transformation_id
+        )
+
+        # update global transformation1 - should get global1 then (latest)
+        self.loop.run_until_complete(
+            self.agent_service_impl.update_transformation_settings(
+                req=UpdateTransformationSettingsRequest(
+                    agent_id=agent_id,
+                    transformation_id=global_transformation_id1.transformation_id,
+                    is_transformation_local=False,
+                    effective_from=datetime(1901, 1, 1),
+                )
+            )
+        )
+        output_transformations = self.loop.run_until_complete(
+            self.pg.get_output_transformations(agent_id=agent_id, plan_run_id=plan_run_ids[0])
+        )
+        transformation = output_transformations[task_id]
+        self.assertEqual(
+            transformation["transformation_id"], global_transformation_id1.transformation_id
         )

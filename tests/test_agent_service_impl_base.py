@@ -225,3 +225,28 @@ class TestAgentServiceImplBase(unittest.IsolatedAsyncioTestCase):
                 agent_id=agent_id, req=req, requesting_user=requesting_user
             )
         )
+
+    async def _create_fake_agent(self, user_id: str) -> str:
+        agent_id = str(uuid4())
+        await self.pg.multi_row_insert(
+            table_name="agent.agents", rows=[{"agent_id": agent_id, "user_id": user_id}]
+        )
+        return agent_id
+
+    async def _create_fake_plan_for_agent(self, agent_id: str) -> str:
+        # you must call `_create_fake_agent` first due to foreign key constraint
+        plan_id = str(uuid4())
+        await self.pg.multi_row_insert(
+            table_name="agent.execution_plans",
+            rows=[{"plan_id": plan_id, "agent_id": agent_id, "plan": "{}"}],
+        )
+        return plan_id
+
+    async def _create_fake_plan_runs(self, agent_id: str, plan_id: str, num: int = 1) -> List[str]:
+        # you must call `_create_fake_agent` & `_create_fake_plan_for_agent` first due to foreign key constraint
+        rows = [
+            {"plan_run_id": str(uuid4()), "agent_id": agent_id, "plan_id": plan_id}
+            for _ in range(num)
+        ]
+        await self.pg.multi_row_insert(table_name="agent.plan_runs", rows=rows)
+        return [row["plan_run_id"] for row in rows]

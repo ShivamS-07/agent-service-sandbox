@@ -271,6 +271,51 @@ class AsyncDB:
         rows = await self.pg.generic_read(sql, params)
         return rows
 
+    async def get_output_transformations(
+        self, agent_id: str, plan_run_id: Optional[str]
+    ) -> Dict[str, Dict]:
+        """
+        Find the unique transformation for each task in the plan run.
+        1. If there is a local transformation for a task in the plan run, use that.
+        2. Otherwise, use the global transformation for the task in the plan.
+
+        When `plan_run_id` is None, get the latest run's output transformations.
+        """
+        if plan_run_id:
+            sql = """
+                WITH run_plan AS (
+                    SELECT plan_id, last_updated FROM agent.plan_runs pr
+                    WHERE plan_run_id = %(plan_run_id)s
+                )
+                SELECT DISTINCT ON (task_id)
+                    transformation_id::VARCHAR, task_id::VARCHAR, is_transformation_local, transformation
+                FROM agent.output_transformations ot
+                JOIN run_plan rp ON ot.plan_id = rp.plan_id
+                WHERE (plan_run_id = %(plan_run_id)s AND is_transformation_local)
+                OR (NOT is_transformation_local AND effective_from <= rp.last_updated)
+                ORDER BY task_id, is_transformation_local DESC, created_at DESC;
+            """
+            rows = await self.generic_read(sql, {"plan_run_id": plan_run_id})
+        else:
+            sql = """
+                WITH run_plan AS (
+                    SELECT plan_id, plan_run_id, last_updated FROM agent.plan_runs pr
+                    WHERE agent_id = %(agent_id)s
+                    ORDER BY last_updated DESC
+                    LIMIT 1
+                )
+                SELECT DISTINCT ON (task_id)
+                    transformation_id::VARCHAR, task_id::VARCHAR, is_transformation_local, transformation
+                FROM agent.output_transformations ot
+                JOIN run_plan rp ON ot.plan_id = rp.plan_id
+                WHERE (ot.plan_run_id = rp.plan_run_id AND is_transformation_local)
+                OR (NOT is_transformation_local AND effective_from <= rp.last_updated)
+                ORDER BY task_id, is_transformation_local DESC, created_at DESC;
+            """
+            rows = await self.generic_read(sql, {"agent_id": agent_id})
+
+        return {row["task_id"]: row for row in rows}
+
     async def get_plan_run_metadata(self, plan_run_id: str) -> RunMetadata:
         sql = """
         SELECT run_metadata

@@ -6,7 +6,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from agent_service.io_types.graph import GraphOutput, GraphType
-from agent_service.io_types.table import TableOutput
+from agent_service.io_types.table import TableOutput, TableTransformation
 from agent_service.io_types.text import TextOutput
 from agent_service.planner.planner_types import ExecutionPlan, PlanStatus, RunMetadata
 from agent_service.types import MemoryType, Message
@@ -521,6 +521,9 @@ class AgentOutput(BaseModel):
     dependent_task_ids: List[str] = Field(default_factory=list)
     parent_task_ids: List[str] = Field(default_factory=list)
     is_locked: bool = False
+
+    transformation_id: Optional[str] = None
+    is_transformation_local: Optional[bool] = None
 
 
 class GetAgentOutputResponse(BaseModel):
@@ -1940,3 +1943,33 @@ class JiraTicketCriteria(BaseModel):
     timetracking: Optional[Dict[str, str]] = None  # Time tracking info
     sprint_id: Optional[int] = None  # ID of the sprint to link the issue to
     custom_fields: Optional[Dict[str, Any]] = None  # Additional custom fields as key-value pairs
+
+
+####################################################################################################
+# Transformation
+####################################################################################################
+class TransformTableOutputRequest(BaseModel):
+    agent_id: str  # for authorization purpose
+    plan_id: str
+    plan_run_id: str  # record which run this transformation applies to originally
+    task_id: str
+    # whether the transformation applies to this run only, or all following runs
+    is_transformation_local: bool
+    transformation: TableTransformation
+    # when `is_transformation_local` is False, `effective_from` is required
+    effective_from: Optional[datetime.datetime] = None
+
+
+class TransformTableOutputResponse(BaseModel):
+    transformation_id: str
+
+
+class SuccessResponse(BaseModel):
+    success: bool
+
+
+class UpdateTransformationSettingsRequest(BaseModel):
+    agent_id: str
+    transformation_id: str
+    is_transformation_local: bool
+    effective_from: Optional[datetime.datetime] = None
