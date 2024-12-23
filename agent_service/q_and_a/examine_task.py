@@ -159,7 +159,7 @@ async def prepare_for_gpt(io_types: IOType) -> str:
     if isinstance(io_types, ToolArgs):
         res = {}
         for arg_name, arg_value in io_types.__dict__.items():
-            if isinstance(arg_value, list):
+            if isinstance(arg_value, list) and len(arg_value) > 0:
                 if isinstance(arg_value[0], Text) or isinstance(arg_value[0], Table):
                     # only take the first 100 itmes if it is a list of text or table
                     arg_value = arg_value[:100]
