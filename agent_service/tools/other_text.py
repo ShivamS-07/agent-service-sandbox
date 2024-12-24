@@ -48,15 +48,17 @@ class GetAllTextDataForStocksInput(ToolArgs):
 
 @tool(
     description=(
-        "This function takes a lists of stocks and returns a list of text objects with consists of"
-        "the most important text information that is available for these stocks. "
-        "This is a substitute for calling specific text retrieval tools, you must, ever never call both this "
-        "AND get_news/earnings/sec filings tools."
-        "Instead, this function should be your default tool for getting data when the user just asks to look "
+        "This function takes a lists of stocks and returns a list of text objects which consists of"
+        "the most important text information that is available for these stocks including company descriptions, "
+        "news developments, earnings summaries, SEC filings, and user uploaded documents. "
+        "This is a substitute for calling the specific text retrieval tools, that are available for each "
+        "of these text types. So if you called this function, you MUST not call the other text retrieval tools and "
+        "vice versa. If you do, your plan will be very slow and you will be punished. "
+        "This function should be used for getting data when the user just asks to look "
         "at text data generally for a company or companies but does not make any mention any specific type "
         "(i.e. there is no mention of news, earnings, or SEC filings) and the best type is not otherwise obvious. "
         "If a client asks for something related to qualitative information that could be contained in any of "
-        "of various sources, you must this function to get the data. For example, if a client asked "
+        "of various sources, you must use this function to get the data. For example, if a client asked "
         "`Summarize the challenges McDonald's is facing in Asian markets`, relevant information"
         "might be spread across multiple sources and you can use this tool. However, if they say "
         "`Summarize the challenges McDonald's is facing in Asian markets based on their SEC filings`"
@@ -73,12 +75,12 @@ class GetAllTextDataForStocksInput(ToolArgs):
         "When the user asks for specific filings, use the get_sec_filings_with_type tool. "
         "The fact that a client mentions multiple text sources must NOT be used an excuse to call this "
         "tool, any mention of any of the specific sources must mean you do NOT use this tool."
-        "Seriously, you will be fired if you use this tool when the user asks for specific kinds of documents, "
+        "Seriously, you will be punished if you use this tool when the user asks for specific kinds of documents, "
         "If end_date is omitted, data up to the current day will be included, if the start date is "
         "omitted, all data for the last quarter will be included."
         " You should not pass a date_range containing dates after todays date into this function."
         " documents can only be found for dates in the past up to the present, including todays date."
-        " I repeat you will be FIRED if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
+        " I repeat you will be punished if you try to find documents from the future!!! YOU MUST NEVER DO THAT!!!"
     ),
     category=ToolCategory.TEXT_RETRIEVAL,
     tool_registry=default_tool_registry(),

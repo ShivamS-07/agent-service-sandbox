@@ -388,7 +388,10 @@ include an exact numerical cutoff appropriate to the particular statistic mentio
 For example, a high market cap might be considered 10 billion, so if a user asked for high
 market cap companies, the transformation_description should explicitly ask for a filtering of
 stock to those with market cap greater than 10 billion.
-If you are filtering stocks, the transformation description must begin with the word `Filter`
+If you are filtering stocks, the transformation description must begin with the word `Filter`.
+If you only need the stock ids from a table, then after using this tool, you should use the
+`get_stock_identifier_list_from_table` tool to extract the stock ids from the table. DO NOT pass
+the table directly to another tool that expects a list of stocks.
 """,
     category=ToolCategory.TABLE,
 )
@@ -1168,14 +1171,15 @@ class GetStockListFromTableArgs(ToolArgs):
 
 
 @tool(
-    description="""Given a table with at least one column of stocks, extract
+    description="""Given a table with at least one column of stocks, this function extracts
 that column into a list of stock ID's.  This is very useful for e.g. filtering
 on some numerical data in a table before extracting the stock list and fetching
 other data with it.
 The tool can be used to convert a table with a stock column from another tool
 like get_portfolio_holdings into a list of stock ID's. This function can only be
 used with actual tables, it cannot be used with either lists of texts or lists
-of stocks.
+of stocks. This tool is also useful when you used transform_table to filter and now want to get
+stock ids from the filtered table to be used in another tool.
 Important: When stocks that are taken from a table are displayed to the client via the
 output tool, they will see any important statistics that have been calculated the stock,
 in table format. It is entirely redundant to display both the list of stocks and a table

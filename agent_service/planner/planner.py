@@ -32,6 +32,8 @@ from agent_service.planner.planner_types import (
 from agent_service.planner.prompts import (
     BREAKDOWN_NEED_MAIN_PROMPT,
     BREAKDOWN_NEED_SYS_PROMPT,
+    COMMENTER_MAIN_PROMPT,
+    COMMENTER_SYS_PROMPT,
     COMPLETENESS_CHECK_PROMPT,
     COMPLETENESS_REPLAN_MAIN_PROMPT,
     COMPLETENESS_REPLAN_SYS_PROMPT,
@@ -40,11 +42,14 @@ from agent_service.planner.prompts import (
     PICK_BEST_PLAN_MAIN_PROMPT,
     PICK_BEST_PLAN_SYS_PROMPT,
     PLAN_EXAMPLE,
+    PLAN_EXAMPLE_NO_COMMENT,
     PLAN_GUIDELINES,
     PLAN_RULES,
     PLAN_SAMPLE_TEMPLATE,
     PLANNER_MAIN_PROMPT,
     PLANNER_SYS_PROMPT,
+    RULE_COMPLEMENT,
+    RULE_COMPLEMENT_NO_COMMENT,
     SELECT_TOOLS_MAIN_PROMPT,
     SELECT_TOOLS_SYS_PROMPT,
     SUBPLANNER_MAIN_PROMPT,
@@ -54,7 +59,7 @@ from agent_service.planner.prompts import (
     USER_INPUT_REPLAN_MAIN_PROMPT,
     USER_INPUT_REPLAN_SYS_PROMPT,
 )
-from agent_service.planner.utils import get_similar_sample_plans
+from agent_service.planner.utils import add_comments_to_plan, get_similar_sample_plans
 from agent_service.tool import Tool, ToolCategory, ToolRegistry, default_tool_registry
 
 # Make sure all tools are imported for the planner
@@ -203,12 +208,15 @@ class Planner:
         return breakdown_plan
 
     async def _get_plan_from_breakdown(
-        self, chat_context: ChatContext, plan_id: Optional[str] = None
+        self,
+        chat_context: ChatContext,
+        plan_id: Optional[str] = None,
     ) -> Optional[ExecutionPlan]:
         request_breakdown = await self._get_request_breakdown(chat_context)
         breakdown_tasks = [
             self._create_initial_plan(
-                ChatContext(messages=[Message(message=subneed, is_user_message=True)]), plan_id
+                ChatContext(messages=[Message(message=subneed, is_user_message=True)]),
+                plan_id,
             )
             for subneed in request_breakdown
         ]
@@ -753,6 +761,8 @@ class Planner:
     async def _query_GPT_for_initial_plan(
         self, user_input: str, llm: GPT, sample_plans: str = "", filter_tools: bool = False
     ) -> str:
+        logger = get_prefect_logger(__name__)
+
         if filter_tools and get_ld_flag(
             "planner-tool-filtering-enabled", default=False, user_context=self.user_id
         ):
@@ -760,18 +770,51 @@ class Planner:
         else:
             tool_str = self.full_tool_string
 
+        # fast planner
+        if get_ld_flag("fast-planner-enabled", default=False, user_context=self.user_id):
+            logger.info("Using fast planner")
+            try:
+                # get the python script
+                sys_prompt = PLANNER_SYS_PROMPT.format(
+                    guidelines=PLAN_GUIDELINES,
+                    example=PLAN_EXAMPLE_NO_COMMENT,
+                )
+                main_prompt = PLANNER_MAIN_PROMPT.format(
+                    message=user_input,
+                    sample_plans=sample_plans,
+                    rules=PLAN_RULES.format(
+                        rule_complement=RULE_COMPLEMENT_NO_COMMENT,
+                    ),
+                    tools=tool_str,
+                )
+                script = await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+                plan_str = await add_comments_to_plan(
+                    script=script,
+                    commenter_main_prompt=COMMENTER_MAIN_PROMPT,
+                    commenter_sys_prompt=COMMENTER_SYS_PROMPT,
+                    sample_plans=sample_plans,
+                    llm=self.fast_llm,
+                )
+                return plan_str
+            except Exception as e:
+                logger.warning(f"Failed to get initial plan with fast planner: {e}")
+
+        # normal approach
         sys_prompt = PLANNER_SYS_PROMPT.format(
             guidelines=PLAN_GUIDELINES,
             example=PLAN_EXAMPLE,
         )
-
         main_prompt = PLANNER_MAIN_PROMPT.format(
             message=user_input,
             sample_plans=sample_plans,
-            rules=PLAN_RULES,
+            rules=PLAN_RULES.format(
+                rule_complement=RULE_COMPLEMENT,
+            ),
             tools=tool_str,
         )
-        return await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+        # save main prompt as txt
+        plan_str = await llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+        return plan_str
 
     async def _query_GPT_for_new_plan_after_input(
         self,
@@ -787,8 +830,11 @@ class Planner:
         else:
             sys_prompt_template = USER_INPUT_REPLAN_SYS_PROMPT
             main_prompt_template = USER_INPUT_REPLAN_MAIN_PROMPT
+
         sys_prompt = sys_prompt_template.format(
-            rules=PLAN_RULES,
+            rules=PLAN_RULES.format(
+                rule_complement=RULE_COMPLEMENT,
+            ),
             guidelines=PLAN_GUIDELINES,
             example=PLAN_EXAMPLE,
             tools=self.full_tool_string,
@@ -800,14 +846,16 @@ class Planner:
             old_plan=old_plan,
             sample_plans=sample_plans_str,
         )
-
-        return await self.fast_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+        plan_str = await self.smart_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+        return plan_str
 
     async def _query_GPT_for_new_plan_after_error(
         self, error: str, failed_step: str, chat_context: str, old_plan: str, sample_plans_str: str
     ) -> str:
         sys_prompt = ERROR_REPLAN_SYS_PROMPT.format(
-            rules=PLAN_RULES,
+            rules=PLAN_RULES.format(
+                rule_complement=RULE_COMPLEMENT,
+            ),
             guidelines=PLAN_GUIDELINES,
             example=PLAN_EXAMPLE,
             tools=self.full_tool_string,
@@ -837,7 +885,9 @@ class Planner:
         )
 
         main_prompt = main_prompt_template.format(
-            rules=PLAN_RULES,
+            rules=PLAN_RULES.format(
+                rule_complement=RULE_COMPLEMENT,
+            ),
             tools=self.full_tool_string,
             missing=missing_str,
             chat_context=chat_str,
@@ -868,7 +918,9 @@ class Planner:
             tool_str = self.full_tool_string
 
         main_prompt = main_prompt_template.format(
-            rules=PLAN_RULES,
+            rules=PLAN_RULES.format(
+                rule_complement=RULE_COMPLEMENT,
+            ),
             tools=tool_str,
             directions=directions,
             sample_plans=sample_plans_str,

@@ -262,7 +262,7 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
     description=(
         "This function calls an internal API which provides all the news developments "
         "with articles between the start date and the end date that are relevant to the"
-        " provided list of stocks, the output is a list of news developments. "
+        " given list of stocks, the output is a list of news developments. "
         "The default date_range is the last week. "
         "You should use the function which also performs web searches in addition to getting developments "
         "unless the client specifically asks for developments or doesn't want web searches! "
@@ -270,7 +270,7 @@ class GetNewsDevelopmentsAboutCompaniesInput(ToolArgs):
         "function when you have a specific list of stocks you want news for. If you have a general "
         "topic you want news about, use the tool which gets news for topics. "
         "If the user asks about news sentiment, do NOT use this function, use the recommendation "
-        "tool."
+        "tool. "
         "Never use this function to collect news for writing a commentary, instead use the "
         "get_commentary_inputs. "
         "Never use this tool together with write_commentary tool or get_commentary_inputs. "
@@ -566,10 +566,10 @@ async def get_latest_news_for_companies(
         "Never use this function to collect news for writing a commentary, instead use the "
         "get_commentary_inputs. "
         "Never use this tool together with write_commentary tool or get_commentary_inputs. "
-        "Never use this tool with a stock/company/ticker in the topic, you MUST always use"
-        "get_all_news_developments_about_companies to get news if the topic is a stock."
-        "Again, if the client is interested in news about a particular stock, you must never, "
-        "ever use this tool, you must get the news for that company."
+        "Never use this tool with stocks/company names/tickers in the topic, you MUST always use"
+        "get_all_news_developments_about_companies to get news if the topic is related to stocks or companies. "
+        "If the client is interested in news about a particular stock or list of companies/stocks, you must never, "
+        "ever use this tool, you must get the news for those companies using get_all_news_developments_about_companies."
     ),
     category=ToolCategory.NEWS,
     tool_registry=default_tool_registry(),

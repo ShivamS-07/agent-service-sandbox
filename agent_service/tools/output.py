@@ -52,6 +52,8 @@ Will show the objects top to bottom in that order. Please display only what the
 user asks for, and no other extraneous information. Please only display every
 variable once, otherwise the user will see duplicates. Remember you need to
 assign this function call to a variable!!
+Never use a list of objects as the object_to_output, always use a single object.
+If you have a list of objects, you should call this function multiple times, once for each object.
 """,
     category=ToolCategory.OUTPUT,
     is_visible=False,

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import random
@@ -17,6 +18,7 @@ from agent_service.utils.enablement_function_registry import is_plan_enabled
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import Postgres, get_psql
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.prompt_utils import Prompt
 from agent_service.utils.string_utils import clean_to_json_if_needed
 
 logger = logging.getLogger(__name__)
@@ -103,3 +105,40 @@ async def get_similar_sample_plans(
     results = await gather_with_concurrency(tasks)
     results_union = set.union(*results)
     return [sample_plan for sample_plan in sample_plans if sample_plan.id in results_union]
+
+
+@async_perf_logger
+async def add_comments_to_plan(
+    script: str,
+    commenter_main_prompt: Prompt,
+    commenter_sys_prompt: Prompt,
+    sample_plans: str,
+    llm: GPT,
+) -> str:
+    # get comments for each step of the script
+    steps = [
+        step.split("#")[0].strip()
+        for step in script.split("\n")
+        if step.strip() and not step.startswith("#") and not step.startswith("```")
+    ]
+    tasks = [
+        llm.do_chat_w_sys_prompt(
+            commenter_main_prompt.format(sample_plans=sample_plans, script=script, step=step),
+            sys_prompt=commenter_sys_prompt.format(),
+        )
+        for step in steps
+    ]
+    comments = await asyncio.gather(*tasks)
+    # add comments to the script
+    plan_str = ""
+    for step, comment in zip(steps, comments):
+        if step.startswith("#"):  # allow initial comment line
+            continue
+        if step.startswith("```"):  # GPT likes to add this to Python code
+            continue
+
+        if comment.startswith("#"):
+            plan_str += f"{step}  {comment}\n"
+        else:
+            plan_str += f"{step} # {comment}\n"
+    return plan_str
