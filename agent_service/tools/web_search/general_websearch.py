@@ -71,8 +71,8 @@ async def _combine_prior_results_with_latest_results(
         prev_run_info = await get_prev_run_info(context=context, tool_name=tool_name)
         if prev_run_info and prev_run_info.output:
             date_range_since_last_run = DateRange(
-                start_date=prev_run_info.timestamp - datetime.timedelta(hours=6),
-                end_date=get_now_utc() + datetime.timedelta(days=1),
+                start_date=prev_run_info.timestamp.date() - datetime.timedelta(hours=6),
+                end_date=get_now_utc().date() + datetime.timedelta(days=1),
             )
             prev_output = cast(List[WebText], prev_run_info.output)
             prev_output = filter_web_texts_by_date(date_range=date_range, texts=prev_output)

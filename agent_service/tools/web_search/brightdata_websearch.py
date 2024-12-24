@@ -211,7 +211,8 @@ async def get_urls_async(
     results_to_cache = []
     for result, url, query in zip(results, google_urls, uncached_queries):
         if result is None or isinstance(result, BaseException):
-            logger.info(f"skipping bad result for {url=}")
+            tb = "".join(traceback.format_exception(type(result), result, result.__traceback__))
+            logger.error(f"Skipping bad result for {url=}, {tb}")
             continue
         try:
             list_of_urls = parse_urls(result, num_results)
