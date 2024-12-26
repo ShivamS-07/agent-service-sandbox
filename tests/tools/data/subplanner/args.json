@@ -1,0 +1,1987 @@
+{
+  "per_row_operations": "Create a date range for the week prior to the provided date. Retrieve the total volume for the stock over that date range. Sum the total volume.",
+  "table": {
+    "_type": "StockTable",
+    "columns": [
+      {
+        "_type": "TableColumn",
+        "data": [
+          "2024-12-24",
+          "2024-10-22",
+          "2024-11-29",
+          "2024-12-06",
+          "2024-09-20",
+          "2024-09-12",
+          "2024-11-21",
+          "2024-09-09",
+          "2024-11-07",
+          "2024-12-05",
+          "2024-07-12",
+          "2024-12-05",
+          "2024-09-26",
+          "2024-10-24",
+          "2024-10-18",
+          "2024-10-22",
+          "2024-09-30",
+          "2024-12-05",
+          "2024-09-30",
+          "2024-09-09",
+          "2024-12-02",
+          "2024-12-02",
+          "2024-10-29",
+          "2024-09-16",
+          "2024-10-11",
+          "2024-07-16",
+          "2024-12-11",
+          "2024-09-13",
+          "2024-11-29",
+          "2024-07-15",
+          "2024-10-17",
+          "2024-07-12",
+          "2024-11-08",
+          "2024-08-26",
+          "2024-10-07",
+          "2024-10-17",
+          "2024-12-06",
+          "2024-07-17",
+          "2024-12-17",
+          "2024-11-25",
+          "2024-09-16",
+          "2024-12-05",
+          "2024-06-24",
+          "2024-09-27",
+          "2024-09-26",
+          "2024-11-05",
+          "2024-10-02",
+          "2024-11-07",
+          "2024-10-07",
+          "2024-07-31",
+          "2024-12-11",
+          "2024-11-14",
+          "2024-11-25",
+          "2024-12-05",
+          "2024-12-05",
+          "2024-10-18",
+          "2024-12-03",
+          "2024-12-05",
+          "2024-10-29",
+          "2024-09-05"
+        ],
+        "history": [],
+        "metadata": {
+          "_type": "TableColumnMetadata",
+          "cell_citations": {},
+          "col_type": "date",
+          "data_src": [],
+          "history": [],
+          "label": "Date",
+          "row_descs": null,
+          "title": null,
+          "unit": null
+        },
+        "title": null
+      },
+      {
+        "_type": "StockTableColumn",
+        "data": [
+          {
+            "_type": "StockID",
+            "company_name": "CAE Inc.",
+            "gbi_id": 1001,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA1247651088",
+            "symbol": "CAE",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Barrick Gold Corporation",
+            "gbi_id": 1011,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA0679011084",
+            "symbol": "ABX",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "The Bank of Nova Scotia",
+            "gbi_id": 1013,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA0641491075",
+            "symbol": "BNS",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Bank of Montreal",
+            "gbi_id": 1016,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA0636711016",
+            "symbol": "BMO",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "The Toronto-Dominion Bank",
+            "gbi_id": 10749,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA8911605092",
+            "symbol": "TD",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Thomson Reuters Corporation",
+            "gbi_id": 10753,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA8849038085",
+            "symbol": "TRI",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "TC Energy Corporation",
+            "gbi_id": 11485,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA87807B1076",
+            "symbol": "TRP",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "TELUS Corporation",
+            "gbi_id": 11487,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA87971M1032",
+            "symbol": "T",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "George Weston Limited",
+            "gbi_id": 12147,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA9611485090",
+            "symbol": "WN",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Royal Bank of Canada",
+            "gbi_id": 12838,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA7800871021",
+            "symbol": "RY",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Saputo Inc.",
+            "gbi_id": 13527,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA8029121057",
+            "symbol": "SAP",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Sun Life Financial Inc.",
+            "gbi_id": 14302,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA8667961053",
+            "symbol": "SLF",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Teck Resources Limited",
+            "gbi_id": 14954,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA8787422044",
+            "symbol": "TECK.B",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Kinross Gold Corporation",
+            "gbi_id": 15253,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA4969024047",
+            "symbol": "K",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Intact Financial Corporation",
+            "gbi_id": 15256,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA45823T1066",
+            "symbol": "IFC",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Wheaton Precious Metals Corp.",
+            "gbi_id": 15444,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA9628791027",
+            "symbol": "WPM",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Canadian Tire Corporation, Limited",
+            "gbi_id": 1581,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA1366812024",
+            "symbol": "CTC.A",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Cameco Corporation",
+            "gbi_id": 1583,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA13321L1085",
+            "symbol": "CCO",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "CCL Industries Inc.",
+            "gbi_id": 1588,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA1249003098",
+            "symbol": "CCL.B",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "BCE Inc.",
+            "gbi_id": 16575,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA05534B7604",
+            "symbol": "BCE",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Constellation Software Inc.",
+            "gbi_id": 16582,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA21037X1006",
+            "symbol": "CSU",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Brookfield Corporation",
+            "gbi_id": 17587,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA11271J1075",
+            "symbol": "BN",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Franco-Nevada Corporation",
+            "gbi_id": 20482,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA3518581051",
+            "symbol": "FNV",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Canadian Pacific Kansas City Limited",
+            "gbi_id": 2145,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA13646K1084",
+            "symbol": "CP",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Canadian Natural Resources Limited",
+            "gbi_id": 2146,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA1363851017",
+            "symbol": "CNQ",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Canadian National Railway Company",
+            "gbi_id": 2147,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA1363751027",
+            "symbol": "CNR",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Canadian Imperial Bank of Commerce",
+            "gbi_id": 2150,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA1360691010",
+            "symbol": "CM",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Canadian Apartment Properties Real Estate Investment Trust",
+            "gbi_id": 2152,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA1349211054",
+            "symbol": "CAR.UN",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Waste Connections, Inc.",
+            "gbi_id": 22927,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA94106B1013",
+            "symbol": "WCN",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Cenovus Energy Inc.",
+            "gbi_id": 23399,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA15135U1093",
+            "symbol": "CVE",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Brookfield Infrastructure Partners L.P.",
+            "gbi_id": 23400,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "BMG162521014",
+            "symbol": "BIP.UN",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Algonquin Power & Utilities Corp.",
+            "gbi_id": 23411,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA0158571053",
+            "symbol": "AQN",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Dollarama Inc.",
+            "gbi_id": 23425,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA25675T1075",
+            "symbol": "DOL",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Suncor Energy Inc.",
+            "gbi_id": 23426,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA8672241079",
+            "symbol": "SU",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Tourmaline Oil Corp.",
+            "gbi_id": 25058,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA89156V1067",
+            "symbol": "TOU",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Pembina Pipeline Corporation",
+            "gbi_id": 25804,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA7063271034",
+            "symbol": "PPL",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "WSP Global Inc.",
+            "gbi_id": 26522,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA92938W2022",
+            "symbol": "WSP",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Restaurant Brands International Inc.",
+            "gbi_id": 30698,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA76131D1033",
+            "symbol": "QSR",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Shopify Inc.",
+            "gbi_id": 31587,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA82509L1076",
+            "symbol": "SHOP",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "FirstService Corporation",
+            "gbi_id": 31599,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA33767E2024",
+            "symbol": "FSV",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Hydro One Limited",
+            "gbi_id": 32539,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA4488112083",
+            "symbol": "H",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Enbridge Inc.",
+            "gbi_id": 3322,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA29250N1050",
+            "symbol": "ENB",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Nutrien Ltd.",
+            "gbi_id": 34326,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA67077M1086",
+            "symbol": "NTR",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Emera Incorporated",
+            "gbi_id": 3953,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA2908761018",
+            "symbol": "EMA",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "CGI Inc.",
+            "gbi_id": 4511,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA12532H1047",
+            "symbol": "GIB.A",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Gildan Activewear Inc.",
+            "gbi_id": 4515,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA3759161035",
+            "symbol": "GIL",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Fortis Inc.",
+            "gbi_id": 4520,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA3495531079",
+            "symbol": "FTS",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "First Quantum Minerals Ltd.",
+            "gbi_id": 4522,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA3359341052",
+            "symbol": "FM",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Imperial Oil Limited",
+            "gbi_id": 5646,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA4530384086",
+            "symbol": "IMO",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Alimentation Couche-Tard Inc.",
+            "gbi_id": 590983,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA01626P1484",
+            "symbol": "ATD",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Brookfield Asset Management Ltd.",
+            "gbi_id": 610572,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA1130041058",
+            "symbol": "BAM",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Manulife Financial Corporation",
+            "gbi_id": 6255,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA56501R1064",
+            "symbol": "MFC",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Magna International Inc.",
+            "gbi_id": 6260,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA5592224011",
+            "symbol": "MG",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Metro Inc.",
+            "gbi_id": 6851,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA59162N1096",
+            "symbol": "MRU",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Loblaw Companies Limited",
+            "gbi_id": 6859,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA5394811015",
+            "symbol": "L",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Open Text Corporation",
+            "gbi_id": 7443,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA6837151068",
+            "symbol": "OTEX",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "National Bank of Canada",
+            "gbi_id": 8035,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA6330671034",
+            "symbol": "NA",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Power Corporation of Canada",
+            "gbi_id": 8600,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA7392391016",
+            "symbol": "POW",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Agnico Eagle Mines Limited",
+            "gbi_id": 9,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA0084741085",
+            "symbol": "AEM",
+            "title": null
+          },
+          {
+            "_type": "StockID",
+            "company_name": "Rogers Communications Inc.",
+            "gbi_id": 9172,
+            "history": [
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "214fb921-fc58-4374-80df-d3c67b80d1ff",
+                "title": "",
+                "unit": null
+              },
+              {
+                "_type": "HistoryEntry",
+                "citations": [],
+                "entry_type": "string",
+                "explanation": null,
+                "score": null,
+                "task_id": "38440fac-1d09-483d-a4e5-5f380f935108",
+                "title": "",
+                "unit": null
+              }
+            ],
+            "isin": "CA7751092007",
+            "symbol": "RCI.B",
+            "title": null
+          }
+        ],
+        "history": [],
+        "metadata": {
+          "_type": "TableColumnMetadata",
+          "cell_citations": {},
+          "col_type": "stock",
+          "data_src": [],
+          "history": [],
+          "label": "Security",
+          "row_descs": null,
+          "title": null,
+          "unit": null
+        },
+        "title": null
+      },
+      {
+        "_type": "TableColumn",
+        "data": [
+          24.8325042725,
+          21.1781044006,
+          56.9941902161,
+          103.49193573,
+          64.4347000122,
+          173.5861816406,
+          50.2543525696,
+          17.0138454437,
+          168.5707550049,
+          127.9927597046,
+          23.4652137756,
+          62.7098236084,
+          53.4036064148,
+          10.7604532242,
+          196.1973114014,
+          68.5033569336,
+          119.9822311401,
+          61.1132087708,
+          61.0311279297,
+          36.0687637329,
+          3404.5712890625,
+          61.4277000427,
+          137.2795562744,
+          87.202331543,
+          37.5496520996,
+          123.3993453979,
+          67.4530792236,
+          41.666973114,
+          193.7302856445,
+          20.6680526733,
+          36.4813079834,
+          6.3014564514,
+          108.5620193481,
+          41.7120780945,
+          49.1011695862,
+          43.4031791687,
+          182.6810913086,
+          74.919090271,
+          119.3254394531,
+          196.6337127686,
+          35.2455940247,
+          43.928237915,
+          52.6566352844,
+          39.7509994507,
+          116.4204559326,
+          50.1638450623,
+          45.8097343445,
+          14.768951416,
+          79.358543396,
+          61.6145324707,
+          59.200012207,
+          32.9893798828,
+          46.4722518921,
+          66.6728439331,
+          137.4013671875,
+          34.0141983032,
+          100.059715271,
+          33.970790863,
+          88.9230651855,
+          41.1561584473
+        ],
+        "history": [],
+        "metadata": {
+          "_type": "TableColumnMetadata",
+          "cell_citations": {},
+          "col_type": "currency",
+          "data_src": [],
+          "history": [],
+          "label": "Close Price",
+          "row_descs": null,
+          "title": null,
+          "unit": "USD"
+        },
+        "title": null
+      }
+    ],
+    "history": [],
+    "prefer_graph_type": null,
+    "should_subsample_large_table": false,
+    "table_was_reduced": false,
+    "title": null
+  }
+}

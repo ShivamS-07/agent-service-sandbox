@@ -11,6 +11,7 @@ from collections import defaultdict
 from itertools import chain
 from json.decoder import JSONDecodeError
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
+from uuid import uuid4
 
 import pandas as pd
 from pydantic import ValidationError
@@ -134,10 +135,12 @@ class TransformTableArgs(ToolArgs):
     no_cache: bool = False
     transform_code: Optional[str] = None
     target_schema: Optional[List[TableColumnMetadata]] = None
+    template_task_id: Optional[str] = None
     arg_metadata = {
         "no_cache": ToolArgMetadata(hidden_from_planner=True),
         "transform_code": ToolArgMetadata(hidden_from_planner=True),
         "target_schema": ToolArgMetadata(hidden_from_planner=True),
+        "template_task_id": ToolArgMetadata(hidden_from_planner=True),
     }
 
 
@@ -407,6 +410,13 @@ async def transform_table(
     old_date = None
     try:  # since everything here is optional, put in try/except
         prev_run_info = await get_prev_run_info(context, "transform_table")
+        if prev_run_info is None and args.template_task_id:
+            template_context = copy.deepcopy(context)
+            template_context.task_id = args.template_task_id
+            template_context.plan_run_id = str(
+                uuid4()
+            )  # just create a random one to stop current run blocking
+            prev_run_info = await get_prev_run_info(template_context, "transform_table")
         if prev_run_info is not None and not args.no_cache:
             prev_args = TransformTableArgs.model_validate_json(prev_run_info.inputs_str)
             old_description = prev_args.transformation_description

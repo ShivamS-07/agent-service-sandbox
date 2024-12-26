@@ -1,0 +1,89 @@
+{
+  "deleted_task_ids": [],
+  "locked_task_ids": [],
+  "nodes": [
+    {
+      "args": {
+        "mapping": {
+          "date": {
+            "index": null,
+            "var_name": "Date"
+          }
+        },
+        "template": "week before {date}"
+      },
+      "description": "Create a string for the date range of the week prior to the provided date",
+      "is_output_node": false,
+      "output_variable_name": "date_range_str",
+      "store_output": true,
+      "tool_name": "string_builder",
+      "tool_task_id": "f6cecac0-2333-495c-abd9-060897427ab6"
+    },
+    {
+      "args": {
+        "date_range_str": {
+          "index": null,
+          "var_name": "date_range_str"
+        }
+      },
+      "description": "Generate a date range object for the week prior to the provided date",
+      "is_output_node": false,
+      "output_variable_name": "date_range",
+      "store_output": true,
+      "tool_name": "get_date_range",
+      "tool_task_id": "66e8af2f-b070-4b1d-82a6-31ae7451d6f9"
+    },
+    {
+      "args": {
+        "date_range": {
+          "index": null,
+          "var_name": "date_range"
+        },
+        "is_time_series": false,
+        "statistic_reference": "total volume",
+        "stock_ids": [
+          {
+            "index": null,
+            "var_name": "Security"
+          }
+        ]
+      },
+      "description": "Retrieve the total volume for the stock over the specified date range",
+      "is_output_node": false,
+      "output_variable_name": "volume_table",
+      "store_output": true,
+      "tool_name": "get_statistic_data_for_companies",
+      "tool_task_id": "7392b6a6-0741-4e95-89b9-97af43eccf64"
+    },
+    {
+      "args": {
+        "input_table": {
+          "index": null,
+          "var_name": "volume_table"
+        },
+        "transformation_description": "Sum the total volume for the stock over the specified date range"
+      },
+      "description": "Sum the total volume for the stock over the specified date range",
+      "is_output_node": false,
+      "output_variable_name": "summed_volume_table",
+      "store_output": true,
+      "tool_name": "transform_table",
+      "tool_task_id": "4b94d67a-1eda-404e-b0bc-ccbf857aaa2e"
+    },
+    {
+      "args": {
+        "object_to_output": {
+          "index": null,
+          "var_name": "summed_volume_table"
+        },
+        "title": "Summed Total Volume for the Stock Over the Specified Date Range"
+      },
+      "description": "Output the table with summed total volume for the stock over the specified date range",
+      "is_output_node": true,
+      "output_variable_name": "output",
+      "store_output": false,
+      "tool_name": "prepare_output",
+      "tool_task_id": "74024f77-685b-4d3d-8e07-132da6af4158"
+    }
+  ]
+}

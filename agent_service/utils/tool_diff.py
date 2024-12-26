@@ -26,7 +26,10 @@ class PrevRunInfo:
 
 async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional[PrevRunInfo]:
     logger = get_prefect_logger(__name__)
-    pg_db = get_async_db(skip_commit=context.skip_db_commit)
+    if context.skip_db_commit:
+        pg_db = get_async_db(sync_db=True, skip_commit=True)
+    else:
+        pg_db = get_async_db()
 
     if context.task_id is None:  # shouldn't happen
         return None

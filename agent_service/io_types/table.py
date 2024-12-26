@@ -59,6 +59,17 @@ class TableColumnMetadata(ComplexIOBase):
     data_src: List[str] = []
     cell_citations: Dict[int, List[Citation]] = {}
 
+    def __hash__(self) -> int:
+        vals: list[Any] = [self.label, self.col_type, self.unit]
+        if self.row_descs:
+            vals.append(tuple(sorted([(key, val) for key, val in self.row_descs.items()])))
+        if self.data_src:
+            vals.append(tuple(self.data_src))
+        if self.cell_citations:
+            vals.append(tuple(sorted([(key, val) for key, val in self.cell_citations.items()])))
+
+        return hash(tuple(vals))
+
     @classmethod
     def to_gpt_schema(cls) -> Dict[str, str]:
         schema = {
@@ -81,6 +92,11 @@ type TableValueType = Optional[IOType] | ScoreOutput  # type: ignore
 class TableColumn(ComplexIOBase):
     metadata: TableColumnMetadata
     data: List[TableValueType]
+
+    def __hash__(self) -> int:
+        vals: list[Any] = [self.metadata]
+        vals.extend(self.data)
+        return hash(tuple(vals))
 
     async def to_gpt_input(self, use_abbreviated_output: bool = True) -> str:
         if use_abbreviated_output:
@@ -208,6 +224,10 @@ class Table(ComplexIOBase):
     # If set to true, will reduce large tables when serializing
     should_subsample_large_table: bool = False
     table_was_reduced: bool = False
+
+    def __hash__(self) -> int:
+        tup = tuple([hash(col) for col in self.columns])
+        return hash(tup)
 
     @field_serializer("columns", when_used="json")
     def _subsample_large_table(self, columns: List[TableColumn]) -> List[TableColumn]:

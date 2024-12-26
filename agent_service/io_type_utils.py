@@ -1,5 +1,6 @@
 import datetime
 import enum
+import hashlib
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -489,7 +490,10 @@ class ComplexIOBase(SerializeableBase, ABC):
         return citations
 
     def __hash__(self) -> int:
-        return hash((type(self),) + tuple(sorted(self.model_dump().items())))
+        serialized_obj = dump_io_type(self, sort_keys=True)
+
+        # Hash the JSON string using SHA-256
+        return int(hashlib.sha256(serialized_obj.encode("utf-8")).hexdigest(), 16)
 
     def __lt__(self, other: Any) -> bool:
         # This can be overridden by children, for now just do it randomly
@@ -564,7 +568,7 @@ TUPLE_IO_TYPE_NAME_KEY = "tuple"
 TUPLE_IO_TYPE_VAL_KEY = "val"
 
 
-def _dump_io_type_helper(val: IOTypeBase) -> Any:
+def _dump_io_type_helper(val: IOTypeBase, sort_keys: bool = False) -> Any:
     if isinstance(val, SerializeableBase):
         return val.model_dump(mode="json")
     if isinstance(val, tuple):
@@ -609,8 +613,8 @@ async def split_io_type_into_components(
     return [val]
 
 
-def dump_io_type(val: IOType) -> str:
-    return json.dumps(_dump_io_type_helper(val))
+def dump_io_type(val: IOType, sort_keys: bool = False) -> str:
+    return json.dumps(_dump_io_type_helper(val), sort_keys=sort_keys)
 
 
 def safe_dump_io_type(val: IOType, errmsg: Optional[str] = None) -> Optional[str]:

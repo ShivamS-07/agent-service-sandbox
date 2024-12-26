@@ -3,7 +3,9 @@ import datetime
 import inspect
 import json
 from collections import defaultdict
+from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple, Union
+from uuid import uuid4
 
 import pytz
 
@@ -26,6 +28,7 @@ from agent_service.io_types.table import (
 from agent_service.planner.errors import EmptyInputError, EmptyOutputError
 from agent_service.tool import (
     TOOL_DEBUG_INFO,
+    ToolArgMetadata,
     ToolArgs,
     ToolCategory,
     default_tool_registry,
@@ -139,6 +142,10 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
     date_range: Optional[DateRange] = None
     is_time_series: bool = False
     target_currency: Optional[str] = None
+    template_task_id: Optional[str] = None
+    arg_metadata = {
+        "template_task_id": ToolArgMetadata(hidden_from_planner=True),
+    }
 
 
 @tool(
@@ -350,6 +357,16 @@ async def get_statistic_data_for_companies(
     try:  # since everything here is optional, put in try/except
         # TODO: maybe update so we don't have to pull in the input or output when we don't need it?
         prev_run_info = await get_prev_run_info(context, "get_statistic_data_for_companies")
+        if prev_run_info is None and args.template_task_id:
+            template_context = deepcopy(context)
+            template_context.task_id = args.template_task_id
+            template_context.plan_run_id = str(
+                uuid4()
+            )  # just create a random one to stop current run blocking
+            prev_run_info = await get_prev_run_info(
+                template_context, "get_statistic_data_for_companies"
+            )
+
         if prev_run_info is not None:
             prev_other: Dict[str, str] = prev_run_info.debug  # type:ignore
 
@@ -626,7 +643,10 @@ async def get_statistic_data_for_companies(
 
     transformed_table: StockTable = await transform_table(  # type: ignore
         args=TransformTableArgs(
-            input_table=comp_table, transformation_description=calculation, no_cache=no_cache
+            input_table=comp_table,
+            transformation_description=calculation,
+            no_cache=no_cache,
+            template_task_id=args.template_task_id,
         ),
         context=context,
     )

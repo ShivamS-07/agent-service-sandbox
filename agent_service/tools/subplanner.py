@@ -1,24 +1,29 @@
 import hashlib
 import uuid
 from copy import deepcopy
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional, Tuple, cast
 
 from agent_service.io_type_utils import IOType, TableColumnType
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.table import Table, TableColumn, TableColumnMetadata
+from agent_service.io_types.table import StockTable, Table, TableColumn, TableColumnMetadata
 from agent_service.io_types.text import StockText, Text
 from agent_service.io_types.text_objects import StockTextObject
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.planner.sub_plan_executor import run_plan_simple
 from agent_service.tool import ToolArgs, ToolCategory, tool
+from agent_service.tools.tables import JoinTableArgs, join_tables
+from agent_service.tools.tool_log import tool_log
 from agent_service.types import AgentUserSettings, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.feature_flags import get_ld_flag
 from agent_service.utils.output_utils.output_construction import (
+    PreparedOutput,
     prepare_list_of_stock_texts,
     prepare_list_of_texts,
 )
 from agent_service.utils.prefect import get_prefect_logger
+
+FIRST_PASS_TOOLS = set(["transform_table", "get_statistic_data_for_companies"])
 
 
 def reproducible_uuid4(data: str) -> str:
@@ -42,9 +47,13 @@ def _hash_value(val: Any) -> Any:
         return hash(val)
 
 
-def instantiate_subplan_with_task_ids(plan: ExecutionPlan, row: dict[str, IOType]) -> ExecutionPlan:
+def instantiate_subplan_with_task_ids(
+    plan: ExecutionPlan, row: dict[str, IOType]
+) -> Tuple[ExecutionPlan, Dict[str, Dict[str, IOType]]]:
     row_plan = deepcopy(plan)
+    task_id_mapping = {}
     for step in row_plan.nodes:
+        org_task_id = step.tool_task_id
         text_buffer = [step.tool_task_id]
         for key in sorted(row.keys()):
             val = row[key]
@@ -52,11 +61,38 @@ def instantiate_subplan_with_task_ids(plan: ExecutionPlan, row: dict[str, IOType
         text_buffer_str = "-".join(text_buffer)
         new_task_id = reproducible_uuid4(text_buffer_str)
         step.tool_task_id = new_task_id
-    return row_plan
+        if step.tool_name in FIRST_PASS_TOOLS:
+            task_id_mapping[new_task_id] = {"template_task_id": org_task_id}
+    return row_plan, task_id_mapping  # type: ignore
+
+
+async def _handle_list_output(output: list) -> IOType:
+    fixed_output: IOType = "Unknown List Output!"
+    if isinstance(output[0], StockID):
+        output = cast(list[StockID], output)
+        # TODO make this a bit cleaner
+        stock_text_objs = [
+            StockTextObject(
+                gbi_id=stock.gbi_id,
+                symbol=stock.symbol,
+                company_name=stock.company_name,
+                index=0,
+            )
+            for stock in output
+        ]
+        fixed_output = Text(text_objects=stock_text_objs)  # type: ignore
+    elif isinstance(output[0], StockText):
+        fixed_output = await prepare_list_of_stock_texts(output)
+    elif isinstance(output[0], Text):
+        fixed_output = await prepare_list_of_texts(output)
+
+    return fixed_output
 
 
 async def convert_per_row_results_to_table(
-    input_table: Table, results: list[list[IOType]]
+    input_table: Table,
+    results: list[list[IOType]],
+    context: PlanRunContext,
 ) -> Table:
     if not results:
         return input_table
@@ -73,34 +109,42 @@ async def convert_per_row_results_to_table(
             )
         )
 
+    sub_tables = []
     for results_row in results:
         for i, output in enumerate(results_row):
             fixed_output = output
-            if isinstance(output, list) and output:
-                if isinstance(output[0], StockID):
-                    output = cast(list[StockID], output)
-                    # TODO make this a bit cleaner
-                    stock_text_objs = [
-                        StockTextObject(
-                            gbi_id=stock.gbi_id,
-                            symbol=stock.symbol,
-                            company_name=stock.company_name,
-                            index=0,
-                        )
-                        for stock in output
-                    ]
-                    fixed_output = Text(text_objects=stock_text_objs)  # type: ignore
-                elif isinstance(output[0], StockText):
-                    fixed_output = await prepare_list_of_stock_texts(output)
-                elif isinstance(output[0], Text):
-                    fixed_output = await prepare_list_of_texts(output)
+            if isinstance(output, PreparedOutput):
+                # Unwrap prepared outputs
+                output = output.val
 
-                elif not isinstance(output, Text):
-                    output = f"Unhandled type: {type(output)}"
+            if isinstance(output, list) and output:
+                fixed_output = await _handle_list_output(output=output)
+            elif isinstance(output, Table) and len(results_row) == 1:
+                # For now, do this table joining ONLY if the sub-plan returned
+                # exactly one table. Other cases will be handled in the future.
+                sub_tables.append(output)
+                continue
+            elif not isinstance(output, Text):
+                fixed_output = f"Unhandled type: {type(output)}"
             new_cols[i].data.append(fixed_output)
 
-    new_table = deepcopy(input_table)
-    new_table.columns.extend(new_cols)
+    if sub_tables:
+        new_table = await join_tables(
+            args=JoinTableArgs(input_tables=sub_tables, row_join=True),
+            context=context,
+        )
+        new_table = cast(Table, new_table)
+    else:
+        new_table = deepcopy(input_table)
+        new_table.columns.extend(new_cols)
+
+    if new_table.get_stock_column():
+        return StockTable(
+            history=new_table.history,
+            title=new_table.title,
+            columns=new_table.columns,
+            prefer_graph_type=new_table.prefer_graph_type,
+        )
     return new_table
 
 
@@ -132,10 +176,15 @@ refer to tools by their exact name (in the above example, we did not directly me
 `get_date_range` tool in the first sentence even though that is what we would use). Your description
 must always discuss the operations needed for a single row, you must NEVER discuss the
 iteration over the table in your description (avoid words such as 'each' or 'every' unless
-there is some kind of iteration within the process for a single row). Be concise, but be sure to
-mention every column and every operation needed to reach the result the client wants. Although you 
-do not need to name the tools, you must make sure there is some plausible tool in your full list
-of tools that could be applied to accomplish every operation you mention.
+there is some kind of iteration within the process for a single row). It is also extremely important
+that you do not include in your description any mention of operations you have already done, for
+instance if you have derived tables which provide instances (stock/date pairs) of major drawdowns
+and now need to do some further analysis with those dates, simply refer to `the provided date`,
+do not mention that it is a date with a major drawdown unless you intend for this tool to calculate
+drawdowns! Be concise, but be sure to mention every column and every operation that this tool needs
+to get to the output the client wants. Although you do not need to name the tools, you must make sure
+there is some plausible tool in your full list of tools that could be applied to accomplish every
+operation you mention.
 The output of this tool is a table consisting of the original table including one or more new columns
 created by applying the per row operations described to every row of the table. In general, calling
 prepare_output on both the input to this tool and the output to this tool is redundant, you should
@@ -153,6 +202,7 @@ async def per_row_processing(args: PerRowProcessingArgs, context: PlanRunContext
 
     from agent_service.planner.planner import Planner
 
+    await tool_log("Creating sub-plan...", context=context)
     variables = table.get_variables_from_table()  # probably need IOtypes for type checking?
     subplanner = Planner(
         agent_id=context.agent_id, user_id=context.user_id, send_chat=False, is_subplanner=True
@@ -164,24 +214,40 @@ async def per_row_processing(args: PerRowProcessingArgs, context: PlanRunContext
     else:
         raise (Exception("failed to create plan"))
 
-    # TODO: Save the subplan template in debug dict
+    # do an initial run when needed
+    rows = table.iterate_over_rows()
 
-    # TODO: Handling of any table_transforms to use consistent code
+    if any([step.tool_name in FIRST_PASS_TOOLS for step in subplan_template.nodes]):
+        logger.info("Doing initial run to get individual tool templates")
+        # just grab first row and run it
+        await run_plan_simple(subplan_template, context, variable_lookup=rows[0])
+
+        logger.info("Finished initial run")
+
+    # TODO: Save the subplan template in debug dict
 
     tasks = []
 
-    for row in table.iterate_over_rows():
-        per_row_subplan = instantiate_subplan_with_task_ids(subplan_template, row)
-        # Do we need to otherwise modify the context at all?
+    logger.info(f"Applying plan to table of {len(rows)} rows")
+
+    for row in rows:
+        per_row_subplan, task_id_args = instantiate_subplan_with_task_ids(subplan_template, row)
 
         # TODO check cache, skip if no need to update
-        # TODO also: populate supplemental_args and map their task ID's to the
-        # correct ones for this row!
-        tasks.append(run_plan_simple(per_row_subplan, context, variable_lookup=row))
+        tasks.append(
+            run_plan_simple(
+                per_row_subplan, context, variable_lookup=row, supplemental_args=task_id_args
+            )
+        )
 
-    results: list[list[IOType]] = await gather_with_concurrency(tasks)
+    await tool_log("Executing sub-plan...", context=context)
+    results: list[list[IOType]] = await gather_with_concurrency(tasks, n=25)
 
-    return await convert_per_row_results_to_table(input_table=table, results=results)
+    logger.info("Agglomerating individual results to single output table")
+
+    return await convert_per_row_results_to_table(
+        input_table=table, results=results, context=context
+    )
 
 
 class StringBuilderArgs(ToolArgs):

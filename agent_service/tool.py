@@ -75,8 +75,6 @@ async def log_tool_call_event(context: PlanRunContext, event_data: Dict[str, Any
     async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
     event_data["replay_id"] = str(uuid.uuid4())
     log_event(event_data=event_data, event_name="agent-service-tool-call")
-    if context.skip_db_commit:
-        return
     try:
         debug_info = event_data.get("debug_info")
         args = event_data.get("args")
