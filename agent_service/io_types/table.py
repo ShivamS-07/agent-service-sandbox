@@ -885,7 +885,9 @@ class TableOutput(Output):
         same_order = all(col.original_order == idx for idx, col in enumerate(new_columns))
         if not same_order:
             t = time.perf_counter()
-            new_idx_to_old_idx = {col.original_order: idx for idx, col in enumerate(new_columns)}
+            new_idx_to_old_idx = {
+                idx: cast(int, col.original_order) for idx, col in enumerate(new_columns)
+            }
             for row_idx, row in enumerate(self.rows):
                 new_row = [row[new_idx_to_old_idx[new_idx]] for new_idx in range(len(row))]
                 self.rows[row_idx] = new_row

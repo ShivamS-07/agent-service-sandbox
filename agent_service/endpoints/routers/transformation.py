@@ -34,9 +34,24 @@ async def transform_table_output(
 async def delete_transformation(
     agent_id: str, transformation_id: str, user: User = Depends(parse_header)
 ) -> SuccessResponse:
+    # Delete a single transformation (perhaps not very useful)
     agent_svc_impl = get_agent_svc_impl()
     await validate_user_agent_access(user.user_id, agent_id, async_db=agent_svc_impl.pg)
     return await agent_svc_impl.delete_transformation(transformation_id)
+
+
+@router.delete(
+    "/delete/{agent_id}/{plan_id}/{task_id}",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def delete_all_transformations(
+    agent_id: str, plan_id: str, task_id: str, user: User = Depends(parse_header)
+) -> SuccessResponse:
+    # Delete all transformations for a given plan and task
+    agent_svc_impl = get_agent_svc_impl()
+    await validate_user_agent_access(user.user_id, agent_id, async_db=agent_svc_impl.pg)
+    return await agent_svc_impl.delete_all_transformations(plan_id, task_id)
 
 
 @router.post(

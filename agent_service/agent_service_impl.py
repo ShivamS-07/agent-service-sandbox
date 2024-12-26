@@ -3030,6 +3030,12 @@ class AgentServiceImpl:
         )
         return SuccessResponse(success=True)
 
+    async def delete_all_transformations(self, plan_id: str, task_id: str) -> SuccessResponse:
+        await self.pg.delete_from_table_where(
+            table_name="agent.output_transformations", plan_id=plan_id, task_id=task_id
+        )
+        return SuccessResponse(success=True)
+
     async def update_transformation_settings(
         self, req: UpdateTransformationSettingsRequest
     ) -> SuccessResponse:
