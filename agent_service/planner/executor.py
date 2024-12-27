@@ -1649,7 +1649,7 @@ async def _postprocess_live(
 
     return RunDiffs(
         short_summary=short_diff_summary,
-        long_summary=whats_new_summary,
+        long_summary=full_diff_summary,
         updated_output_ids=updated_output_ids,
     )
 
