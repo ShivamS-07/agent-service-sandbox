@@ -4,7 +4,6 @@ import os
 import pprint
 import time
 import traceback
-from copy import deepcopy
 from typing import Any, Counter, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 from uuid import uuid4
 
@@ -1759,7 +1758,7 @@ async def _run_execution_plan_impl_new(
         try:
             task_result = await _run_plan_step(
                 step=step,
-                context=deepcopy(context),
+                context=context,
                 async_db=async_db,
                 tasks=tasks,
                 task_step_index=i,

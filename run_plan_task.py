@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import os
 import sys
 import uuid
 from typing import Optional, Tuple
@@ -136,7 +137,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("-i", "--task-id", type=str)
     parser.add_argument("-r", "--replay-id", type=str)
-    parser.add_argument("-e", "--env", type=str, default="DEV")
+    parser.add_argument("-e", "--env", type=str, default=os.getenv("ENVIRONMENT", "DEV"))
     return parser.parse_args()
 
 

@@ -506,6 +506,8 @@ async def _update_summarize_helper(
     ):
         # if the retries failed and we still ended up with a bad result, just try a new regular summarization
         logger.warning("Failed to do summary update, falling back to from-scratch summary")
+        if context.diff_info is not None and context.task_id is not None:
+            context.diff_info[context.task_id] = {"update_failed": True}
         return await _initial_summarize_helper(args, context, llm, plan_str=plan_str)
 
     if citations is None:
@@ -596,6 +598,8 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
         logger.exception(
             f"Failed attempt to update from previous iteration due to {e}, from scratch fallback"
         )
+        if context.diff_info is not None and context.task_id is not None:
+            context.diff_info[context.task_id] = {"update_failed": True}
         pager_wrapper(
             current_frame=inspect.currentframe(),
             module_name=__name__,

@@ -104,6 +104,10 @@ class OutputDiffer:
     ):
         self.context = context
         self.plan = plan
+        self.parent_task_id_map = {
+            node.tool_task_id: [parent_node.tool_task_id for parent_node in parent_nodes][0]
+            for node, parent_nodes in plan.get_node_parent_map().items()
+        }
         self.custom_notifications = custom_notifications
         gpt_context = create_gpt_context(
             GptJobType.AGENT_CHATBOT, self.context.agent_id, GptJobIdType.AGENT_ID
@@ -111,8 +115,22 @@ class OutputDiffer:
         self.llm = GPT(gpt_context, model, gpt_service_stub=gpt_service_stub)
 
     async def _compute_diff_for_texts(
-        self, latest_output: Text, prev_output: Text, prev_run_time: datetime.datetime
+        self,
+        latest_output: Text,
+        prev_output: Text,
+        prev_run_time: datetime.datetime,
+        task_id: Optional[str] = None,
     ) -> Tuple[OutputDiff, List[Tuple[str, List[TextCitation]]]]:
+        if (
+            self.context.diff_info is not None
+            and task_id in self.context.diff_info
+            and "update_failed" in self.context.diff_info[task_id]
+        ):
+            # don't do a diff if the update failed and so the widget was run from scratch
+            # might contains spurious changes
+            logger.warning(f"Not doing diff for task {task_id} due to failed update")
+            return OutputDiff(diff_summary_message=NO_UPDATE_MESSAGE, should_notify=False), []
+
         old_citation_texts = [
             citation.source_text
             for citation in prev_output.get_all_citations()
@@ -245,7 +263,11 @@ class OutputDiffer:
         )
 
     async def _compute_diff_for_io_types(
-        self, latest_output: IOType, prev_output: IOType, prev_run_time: datetime.datetime
+        self,
+        latest_output: IOType,
+        prev_output: IOType,
+        prev_run_time: datetime.datetime,
+        task_id: Optional[str] = None,
     ) -> OutputDiff:
         if isinstance(latest_output, Text) and isinstance(prev_output, Text):
             return (
@@ -253,6 +275,7 @@ class OutputDiffer:
                     latest_output=latest_output,
                     prev_output=prev_output,
                     prev_run_time=prev_run_time,
+                    task_id=task_id,
                 )
             )[0]
         elif (
@@ -556,6 +579,12 @@ class OutputDiffer:
         """
 
         latest_outputs = [val.output for val in latest_outputs_with_ids]
+        output_lookup = {
+            val.output.title: val
+            for val in latest_outputs_with_ids
+            if isinstance(val.output, PreparedOutput)
+        }
+
         async_db = AsyncDB(pg=db)
         if not prev_outputs or not prev_run_time:
             prev_outputs_and_time = await async_db.get_prev_outputs_for_agent_plan(
@@ -613,9 +642,12 @@ class OutputDiffer:
         diffs: List[OutputDiff] = await gather_with_concurrency(
             [
                 self._compute_diff_for_io_types(
-                    latest_output=latest, prev_output=prev, prev_run_time=prev_run_time
+                    latest_output=latest,
+                    prev_output=prev,
+                    prev_run_time=prev_run_time,
+                    task_id=self.parent_task_id_map.get(output_lookup[title].task_id, None),  # type: ignore
                 )
-                for latest, prev in output_pairs.values()
+                for title, (latest, prev) in output_pairs.items()
             ]
         )
 
@@ -624,10 +656,10 @@ class OutputDiffer:
                 diff_summary_message=diff.diff_summary_message,
                 should_notify=diff.should_notify,
                 citations=diff.citations,
-                title=output.output.title if isinstance(output.output, PreparedOutput) else None,
-                output_id=output.output_id,
+                title=output_lookup[title].output.title,  # type: ignore
+                output_id=output_lookup[title].output_id,
             )
-            for output, diff in zip(latest_outputs_with_ids, diffs)
+            for title, diff in zip(output_pairs.keys(), diffs)
         ]
 
     async def generate_short_diff_summary(

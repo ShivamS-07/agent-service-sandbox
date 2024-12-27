@@ -106,11 +106,18 @@ class ToolExecutionNode(BaseModel):
 
         return args
 
-    def get_plan_step_str(self, include_task_id: bool = False) -> str:
-        if not include_task_id:
-            return f"{self.output_variable_name} = {self.tool_name}({self.convert_args()})  # {self.description}"  # noqa
+    def get_plan_step_str(
+        self, include_task_id: bool = False, include_description: bool = True
+    ) -> str:
+        if include_description:
+            description_str = f"  # {self.description}"
         else:
-            return f"{self.output_variable_name} = {self.tool_name}({self.convert_args()})  # {self.description} (Task ID: {self.tool_task_id})"  # noqa
+            description_str = ""
+        if include_task_id:
+            task_id_str = f" (Task ID: {self.tool_task_id})"
+        else:
+            task_id_str = ""
+        return f"{self.output_variable_name} = {self.tool_name}({self.convert_args()}){description_str}{task_id_str}"  # noqa
 
     @staticmethod
     def _resolve_single_arg(
@@ -197,13 +204,20 @@ class ExecutionPlan(BaseModel):
             output.append(f"{i}. {node.description}")
         return "\n".join(output)
 
-    def get_formatted_plan(self, numbered: bool = False, include_task_ids: bool = False) -> str:
+    def get_formatted_plan(
+        self,
+        numbered: bool = False,
+        include_task_ids: bool = False,
+        include_descriptions: bool = True,
+    ) -> str:
         str_list = []
         for i, node in enumerate(self.nodes, start=1):
             prefix = ""
             if numbered:
                 prefix = f"{i}. "
-            str_list.append(f"{prefix}{node.get_plan_step_str(include_task_id=include_task_ids)}")
+            str_list.append(
+                f"{prefix}{node.get_plan_step_str(include_task_id=include_task_ids, include_description=include_descriptions)}"
+            )
         return "\n\n".join(str_list)
 
     def get_output_nodes(self) -> List[ToolExecutionNode]:

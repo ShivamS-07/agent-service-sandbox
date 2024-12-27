@@ -607,7 +607,7 @@ class Planner:
         return await self.fast_llm.do_chat_w_sys_prompt(
             COMPLETENESS_CHECK_PROMPT.format(
                 input=chat_context.get_gpt_input(),
-                plan=last_plan.get_formatted_plan(),
+                plan=last_plan.get_formatted_plan(numbered=True, include_descriptions=False),
                 pass_phrase=PASS_CHECK_OUTPUT,
             ),
             NO_PROMPT,
