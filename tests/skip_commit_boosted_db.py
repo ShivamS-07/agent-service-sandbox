@@ -30,15 +30,28 @@ class SkipCommitBoostedPG(BoostedPG):
         rows: List[Dict[str, Any]],
         ignore_conflicts: bool = False,
         conflict_suffix: str = "",
+        insert_nulls: bool = False,
     ) -> None:
-        self.pg.multi_row_insert(table_name, rows, ignore_conflicts)
+        self.pg.multi_row_insert(
+            table_name,
+            rows,
+            ignore_conflicts,
+            conflict_suffix=conflict_suffix,
+            insert_nulls=insert_nulls,
+        )
 
-    async def insert_atomic(self, to_insert: List[InsertToTableArgs]) -> None:
+    async def insert_atomic(
+        self,
+        to_insert: List[InsertToTableArgs],
+        insert_nulls: bool = False,
+    ) -> None:
         # This is not actually atomic, since these inserts might happen in different transactions.
         # However, this class is only for testing purposes, so this is completely fine.
         for arg in to_insert:
             try:
-                self.pg.multi_row_insert(table_name=arg.table_name, rows=arg.rows)
+                self.pg.multi_row_insert(
+                    table_name=arg.table_name, rows=arg.rows, insert_nulls=insert_nulls
+                )
             except Exception as e:
                 print(f"failed inserting into {arg.table_name}")
                 raise e

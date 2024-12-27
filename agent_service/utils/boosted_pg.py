@@ -36,11 +36,16 @@ class BoostedPG(ABC):
         rows: List[Dict[str, Any]],
         ignore_conflicts: bool = False,
         conflict_suffix: str = "",
+        insert_nulls: bool = False,
     ) -> None:
         pass
 
     @abstractmethod
-    async def insert_atomic(self, to_insert: List[InsertToTableArgs]) -> None:
+    async def insert_atomic(
+        self,
+        to_insert: List[InsertToTableArgs],
+        insert_nulls: bool = False,
+    ) -> None:
         pass
 
     @abstractmethod

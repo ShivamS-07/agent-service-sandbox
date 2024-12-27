@@ -226,6 +226,7 @@ class AsyncPostgresBase(BoostedPG):
         values_to_insert: List[Dict[str, Any]],
         ignore_conficts: bool,
         conflict_suffix: str,
+        insert_nulls: bool = False,
     ) -> Tuple[str, list]:
         """
         Helper function for multi_row_insert() which generates the
@@ -236,21 +237,22 @@ class AsyncPostgresBase(BoostedPG):
         :param conflict_suffix: if filled, will perform the conflict resolution as stated
         :return: A tuple containing the SQL statement and the argument parameters
         """
-        non_null_keys = []
         params = []
         keys_done = False
         values_strs = []
+        keys = []
         for row in values_to_insert:
-            non_null_values = []
+            values = []
             for key, value in row.items():
-                if value is not None:
-                    if not keys_done:
-                        non_null_keys.append(key)
-                    non_null_values.append("%s")
-                    params.append(value)
+                if not insert_nulls and value is None:
+                    continue
+                if not keys_done:
+                    keys.append(key)
+                values.append("%s")
+                params.append(value)
             keys_done = True
-            values_strs.append(f'({",".join(non_null_values)})')
-        keys_to_insert_str = ",".join(non_null_keys)
+            values_strs.append(f'({",".join(values)})')
+        keys_to_insert_str = ",".join(keys)
         prefix = f"INSERT INTO {table_name} ({keys_to_insert_str}) VALUES {','.join(values_strs)} "
         suffix = "ON CONFLICT DO NOTHING" if ignore_conficts else conflict_suffix
         sql = prefix + suffix
@@ -265,6 +267,7 @@ class AsyncPostgresBase(BoostedPG):
         rows: List[Dict[str, Any]],
         ignore_conflicts: bool = False,
         conflict_suffix: str = "",
+        insert_nulls: bool = False,
     ) -> None:
         """
         Insert many rows into a table
@@ -284,14 +287,17 @@ class AsyncPostgresBase(BoostedPG):
         Returns: Nothing.
 
         """
-
         if len(rows) == 0:
             return
         await self.generic_write(
-            *self._gen_multi_row_insert(table_name, rows, ignore_conflicts, conflict_suffix)
+            *self._gen_multi_row_insert(
+                table_name, rows, ignore_conflicts, conflict_suffix, insert_nulls=insert_nulls
+            )
         )
 
-    async def insert_atomic(self, to_insert: List[InsertToTableArgs]) -> None:
+    async def insert_atomic(
+        self, to_insert: List[InsertToTableArgs], insert_nulls: bool = False
+    ) -> None:
         async with (await self.pool()).connection() as conn:
             async with conn.cursor() as cursor:
                 for arg in to_insert:
@@ -300,6 +306,7 @@ class AsyncPostgresBase(BoostedPG):
                         values_to_insert=arg.rows,
                         ignore_conficts=False,
                         conflict_suffix="",
+                        insert_nulls=insert_nulls,
                     )
                     await cursor.execute(sql, params)
 

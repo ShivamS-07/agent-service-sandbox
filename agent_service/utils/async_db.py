@@ -2545,8 +2545,6 @@ class AsyncDB:
         chat_messages = await self.pg.generic_read(
             get_chat_messages_sql, {"agent_id": src_agent_id}
         )
-        null_plan_run_id_messages = []
-        regular_chat_messages = []
         for chat_message_data in chat_messages:
             chat_message_data["agent_id"] = dst_agent_id
             chat_message_data["message_id"] = str(uuid.uuid4())
@@ -2556,74 +2554,49 @@ class AsyncDB:
                 )
             else:
                 chat_message_data["message_metadata"] = "{}"
-            if chat_message_data["plan_run_id"]:
-                regular_chat_messages.append(chat_message_data)
-            else:
-                null_plan_run_id_messages.append(chat_message_data)
-
-        if regular_chat_messages:
-            to_insert.append(
-                InsertToTableArgs(table_name="agent.chat_messages", rows=regular_chat_messages)
-            )
-        if null_plan_run_id_messages:
-            to_insert.append(
-                InsertToTableArgs(table_name="agent.chat_messages", rows=null_plan_run_id_messages)
-            )
+        to_insert.append(InsertToTableArgs(table_name="agent.chat_messages", rows=chat_messages))
 
         worklog_sql = """
         select * from agent.work_logs where agent_id = %(agent_id)s
         """
 
         work_log_entries = await self.pg.generic_read(worklog_sql, {"agent_id": src_agent_id})
-        null_log_data_entries = []
-        null_log_message_entries = []
-        regular_entries = []
         for work_log_entry in work_log_entries:
             work_log_entry["agent_id"] = dst_agent_id
             work_log_entry["log_id"] = str(uuid.uuid4())
             work_log_entry["plan_id"] = execution_plan_id_map[work_log_entry["plan_id"]]
             work_log_entry["plan_run_id"] = plan_run_id_map[work_log_entry["plan_run_id"]]
-            if not work_log_entry["log_data"]:
-                null_log_data_entries.append(work_log_entry)
-            elif not work_log_entry["log_message"]:
-                null_log_message_entries.append(work_log_entry)
-            else:
-                regular_entries.append(work_log_entry)
-        if regular_entries:
-            to_insert.append(InsertToTableArgs(table_name="agent.work_logs", rows=regular_entries))
-        if null_log_data_entries:
-            to_insert.append(
-                InsertToTableArgs(table_name="agent.work_logs", rows=null_log_data_entries)
+        to_insert.append(InsertToTableArgs(table_name="agent.work_logs", rows=work_log_entries))
+
+        task_run_info_sql = """
+        SELECT * FROM agent.task_run_info WHERE agent_id = %(agent_id)s
+        """
+        task_run_info_entries = await self.pg.generic_read(
+            task_run_info_sql, {"agent_id": src_agent_id}
+        )
+        for run_info in task_run_info_entries:
+            run_info["agent_id"] = dst_agent_id
+            run_info["plan_id"] = (
+                execution_plan_id_map[uuid.UUID(run_info["plan_id"])]
+                if run_info["plan_id"]
+                else None
             )
-        if null_log_message_entries:
-            to_insert.append(
-                InsertToTableArgs(table_name="agent.work_logs", rows=null_log_message_entries)
-            )
+            run_info["plan_run_id"] = plan_run_id_map[run_info["plan_run_id"]]
+            run_info["context"] = json.dumps(run_info["context"])
+        to_insert.append(
+            InsertToTableArgs(table_name="agent.task_run_info", rows=task_run_info_entries)
+        )
 
         outputs_sql = """select * from agent.agent_outputs where agent_id = %(agent_id)s"""
         agent_outputs = await self.pg.generic_read(outputs_sql, {"agent_id": src_agent_id})
-        regular_output_entries = []
-        null_task_id_output_entries = []
         for agent_output in agent_outputs:
             agent_output["output_id"] = str(uuid.uuid4())
             agent_output["agent_id"] = dst_agent_id
             agent_output["plan_id"] = execution_plan_id_map[agent_output["plan_id"]]
             agent_output["plan_run_id"] = plan_run_id_map[agent_output["plan_run_id"]]
-            if not agent_output["task_id"]:
-                null_task_id_output_entries.append(agent_output)
-            else:
-                regular_output_entries.append(agent_output)
-        if null_task_id_output_entries:
-            to_insert.append(
-                InsertToTableArgs(
-                    table_name="agent.agent_outputs", rows=null_task_id_output_entries
-                )
-            )
-        if regular_output_entries:
-            to_insert.append(
-                InsertToTableArgs(table_name="agent.agent_outputs", rows=regular_output_entries)
-            )
-        await self.pg.insert_atomic(to_insert=to_insert)
+
+        to_insert.append(InsertToTableArgs(table_name="agent.agent_outputs", rows=agent_outputs))
+        await self.pg.insert_atomic(to_insert=to_insert, insert_nulls=True)
 
     async def insert_agent_qc(self, agent_qc: AgentQC) -> None:
         sql = """

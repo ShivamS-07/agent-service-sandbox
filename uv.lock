@@ -98,7 +98,7 @@ requires-dist = [
     { name = "fastapi", specifier = "==0.115.0" },
     { name = "feature-service-proto-v1", specifier = "==1.56.0" },
     { name = "gbi-common-proto-v1", specifier = "==1.13.0" },
-    { name = "gbi-common-py-utils", specifier = "==1.0.123" },
+    { name = "gbi-common-py-utils", specifier = "==1.0.126" },
     { name = "google-generativeai", specifier = "==0.8.3" },
     { name = "gpt-service-proto-v1", specifier = "==1.4.0" },
     { name = "griffe", specifier = "==0.48.0" },
@@ -919,7 +919,7 @@ sdist = { url = "https://nexus.boosted.ai/repository/pypi-internal/packages/gbi-
 
 [[package]]
 name = "gbi-common-py-utils"
-version = "1.0.123"
+version = "1.0.126"
 source = { registry = "http://nexus.boosted.ai:8081/repository/pypi-internal/simple" }
 dependencies = [
     { name = "backoff" },
@@ -943,7 +943,7 @@ dependencies = [
     { name = "toml" },
     { name = "xlsxwriter" },
 ]
-sdist = { url = "https://nexus.boosted.ai/repository/pypi-internal/packages/gbi-common-py-utils/1.0.123/gbi_common_py_utils-1.0.123.tar.gz", hash = "sha256:88057ab103fefeb7be877c63549db28760f4f793071864f22003f2146d92219e" }
+sdist = { url = "https://nexus.boosted.ai/repository/pypi-internal/packages/gbi-common-py-utils/1.0.126/gbi_common_py_utils-1.0.126.tar.gz", hash = "sha256:d0d5e53532b64cf905de6103474b482cde614b299a7c7d23313d7f4da4eba456" }
 
 [[package]]
 name = "google-ai-generativelanguage"

@@ -1438,11 +1438,6 @@ async def rearrange_section(
 async def copy_agent(
     req: CopyAgentToUsersRequest, user: User = Depends(parse_header)
 ) -> CopyAgentToUsersResponse:
-    response_dict = await application.state.agent_service_impl.copy_agent(
-        src_agent_id=req.src_agent_id,
-        dst_user_ids=req.dst_user_ids,
-        dst_agent_name=req.dst_agent_name,
-    )
     # Check to see if user is authorized to duplicate
     # they are only allowed to request with one user_id and it must be their own
     # if they are spoofing (user_id != real_user_id), allow request
@@ -1455,6 +1450,12 @@ async def copy_agent(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized"
             )
+
+    response_dict = await application.state.agent_service_impl.copy_agent(
+        src_agent_id=req.src_agent_id,
+        dst_user_ids=req.dst_user_ids,
+        dst_agent_name=req.dst_agent_name,
+    )
 
     return CopyAgentToUsersResponse(user_id_to_new_agent_id_map=response_dict)
 

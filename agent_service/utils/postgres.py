@@ -1000,9 +1000,14 @@ class SyncBoostedPG(BoostedPG):
         rows: List[Dict[str, Any]],
         ignore_conflicts: bool = False,
         conflict_suffix: str = "",
+        insert_nulls: bool = False,
     ) -> None:
         self.db.multi_row_insert(
-            table_name=table_name, rows=rows, ignore_conflicts=ignore_conflicts
+            table_name=table_name,
+            rows=rows,
+            ignore_conflicts=ignore_conflicts,
+            conflict_suffix=conflict_suffix,
+            insert_nulls=insert_nulls,
         )
 
     @contextmanager
@@ -1010,11 +1015,19 @@ class SyncBoostedPG(BoostedPG):
         with self.db.transaction_cursor() as cursor:
             yield cursor
 
-    async def insert_atomic(self, to_insert: List[InsertToTableArgs]) -> None:
+    async def insert_atomic(
+        self,
+        to_insert: List[InsertToTableArgs],
+        insert_nulls: bool = False,
+    ) -> None:
         with self.db.transaction_cursor() as cursor:
             for arg in to_insert:
                 sql, params = self.db._gen_multi_row_insert(
-                    table_name=arg.table_name, values_to_insert=arg.rows, ignore_conficts=False
+                    table_name=arg.table_name,
+                    values_to_insert=arg.rows,
+                    ignore_conficts=False,
+                    conflict_suffix="",
+                    insert_nulls=insert_nulls,
                 )
                 cursor.execute(sql, params)  # type: ignore
 

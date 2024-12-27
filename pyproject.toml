@@ -87,7 +87,7 @@ dependencies = [
     "python-multipart==0.0.17",
     "gbi-common-proto-v1==1.13.0",
     "proto-cube-flat-proto-v1==1.2.0",
-    "gbi_common_py_utils==1.0.123",
+    "gbi_common_py_utils==1.0.126",
     "nlp_service_proto_v1 ==1.140.0",
     "stock-universe-service-proto-v1 ==0.53.0",
     "pa-portfolio-service-proto-v1 ==1.315.0",
