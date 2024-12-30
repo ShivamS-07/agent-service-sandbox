@@ -221,6 +221,7 @@ async def assign_agent_quality_reviewers(
         cs_reviewer=cs_reviewer.userId,
         eng_reviewer=eng_reviewer.userId,
         prod_reviewer=prod_reviewer.userId,
+        created_at=agent_qc.created_at,
         last_updated=datetime.datetime.now(),
         # this field can't be updated but should be False here regardless
         is_spoofed=False,
@@ -255,6 +256,7 @@ async def update_agent_qc_status(
         user_id=agent_qc.user_id,
         agent_status=status,
         plan_id=plan_id,
+        created_at=agent_qc.created_at,
         last_updated=datetime.datetime.now(),
         is_spoofed=agent_qc.is_spoofed,
     )
@@ -268,6 +270,7 @@ async def update_agent_qc_status(
             user_id=agent_qc.user_id,
             agent_status=status,
             plan_id=plan_id,
+            created_at=agent_qc.created_at,
             last_updated=datetime.datetime.now(),
             is_spoofed=agent_qc.is_spoofed,
             cs_reviewer="",

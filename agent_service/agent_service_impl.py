@@ -700,6 +700,13 @@ class AgentServiceImpl:
         plan_id: str,
         is_spoofed: Optional[bool] = False,
     ) -> None:
+        agent_qcs = await self.pg.get_agent_qc_by_agent_ids(agent_ids=[agent_id])
+        if agent_qcs:
+            LOGGER.info(
+                f"Skipping insert to agent quality DB because one already exists for {agent_id=}"
+            )
+            return
+
         agent_quality_id = str(uuid4())
         try:
             agent_qc = AgentQC(
@@ -717,7 +724,7 @@ class AgentServiceImpl:
             )
             await self.pg.insert_agent_qc(agent_qc=agent_qc)
         except Exception:
-            LOGGER.exception(f"Unable to insert in agent quality db for  {agent_id=}")
+            LOGGER.exception(f"Unable to insert in agent quality db for {agent_id=}")
 
     @async_perf_logger
     async def chat_with_agent(self, req: ChatWithAgentRequest, user: User) -> ChatWithAgentResponse:
@@ -2943,6 +2950,9 @@ class AgentServiceImpl:
         return GetEtfSimilarEtfsResponse(
             similar_etfs=[GetEtfSimilarEtfsResponse.EtfSimilarEtf(**etf) for etf in similar_etfs]
         )
+
+    async def add_qc_agent(self, agent_id: str, user_id: str) -> Tuple[bool, Optional[AgentQC]]:
+        return await self.pg.add_agent_qc(agent_id, user_id)
 
     async def update_qc_agent(self, agent_qc: AgentQC) -> bool:
         try:

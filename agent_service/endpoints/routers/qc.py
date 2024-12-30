@@ -6,6 +6,8 @@ from starlette import status
 
 from agent_service.endpoints.authz_helper import User, parse_header
 from agent_service.endpoints.models import (
+    AddAgentQCRequest,
+    AddAgentQCResponse,
     AgentQC,
     GetAgentsQCRequest,
     GetLiveAgentsQCResponse,
@@ -121,6 +123,25 @@ async def get_live_agents_qc(
         )
 
     return await agent_svc_impl.get_live_agents_qc(req=req)
+
+
+@router.post("/add", response_model=AddAgentQCResponse, status_code=status.HTTP_200_OK)
+async def add_agent_qc(
+    req: AddAgentQCRequest, user: User = Depends(parse_header)
+) -> AddAgentQCResponse:
+    # Validate user access to QC tool
+    agent_svc_impl = get_agent_svc_impl()
+    if not await user_has_qc_tool_access(user_id=user.user_id, async_db=agent_svc_impl.pg):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
+        )
+
+    agent_id = req.agent_id
+    user_id = req.user_id
+    # Call the service function to add agent_qc, returns success status and the inserted agent_qc
+    success, agent_qc = await agent_svc_impl.add_qc_agent(agent_id, user_id)
+
+    return AddAgentQCResponse(success=success, agent_qc=agent_qc)
 
 
 @router.post("/update", response_model=UpdateAgentQCResponse, status_code=status.HTTP_200_OK)

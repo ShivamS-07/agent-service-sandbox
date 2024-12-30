@@ -2618,14 +2618,16 @@ class AsyncDB:
            prod_reviewer, follow_up, score_rating, priority, use_case, problem_area,
            cs_failed_reason, cs_attempt_reprompting, cs_expected_output, cs_notes,
            canned_prompt_id, eng_failed_reason, eng_solution, eng_solution_difficulty,
-           jira_link, slack_link, fullstory_link, duplicate_agent, created_at, last_updated, query_order, is_spoofed)
+           jira_link, slack_link, fullstory_link, duplicate_agent, created_at, last_updated,
+           query_order, is_spoofed, cs_reviewed, eng_reviewed, prod_reviewed)
         VALUES (%(agent_qc_id)s, %(agent_id)s, %(plan_id)s, %(user_id)s, %(query)s, %(agent_status)s,
                 %(cs_reviewer)s, %(eng_reviewer)s, %(prod_reviewer)s, %(follow_up)s,
                 %(score_rating)s, %(priority)s, %(use_case)s, %(problem_area)s,
                 %(cs_failed_reason)s, %(cs_attempt_reprompting)s, %(cs_expected_output)s, %(cs_notes)s,
                 %(canned_prompt_id)s, %(eng_failed_reason)s, %(eng_solution)s, %(eng_solution_difficulty)s,
                 %(jira_link)s, %(slack_link)s, %(fullstory_link)s, %(duplicate_agent)s,
-                %(created_at)s, %(last_updated)s, %(query_order)s, %(is_spoofed)s)
+                %(created_at)s, %(last_updated)s, %(query_order)s, %(is_spoofed)s,
+                %(cs_reviewed)s, %(eng_reviewed)s, %(prod_reviewed)s)
         """
         await self.pg.generic_write(
             sql,
@@ -2660,8 +2662,84 @@ class AsyncDB:
                 "last_updated": agent_qc.last_updated,
                 "query_order": agent_qc.query_order,
                 "is_spoofed": agent_qc.is_spoofed,
+                "cs_reviewed": agent_qc.cs_reviewed if agent_qc.cs_reviewed else False,
+                "eng_reviewed": agent_qc.eng_reviewed if agent_qc.eng_reviewed else False,
+                "prod_reviewed": agent_qc.prod_reviewed if agent_qc.eng_reviewed else False,
             },
         )
+
+    async def add_agent_qc(self, agent_id: str, user_id: str) -> Tuple[bool, Optional[AgentQC]]:
+        """
+        Adds agent_qc to DB for an agent that doesn't have a corresponding entry (historical agents)
+
+        Args:
+            agent_id: Agent ID
+            user_id: User ID (Owner of Agent)
+
+        Returns:
+            bool: If agent_qc was successfully added
+        """
+        agent_qcs = await self.get_agent_qc_by_agent_ids(agent_ids=[agent_id])
+        if agent_qcs:
+            logger.info(f"Skipping adding agent_qc to DB since one already exists for {agent_id=}")
+            return False, None
+
+        agent_quality_id = str(uuid.uuid4())
+        try:
+            # Get initial prompt by getting the oldest user chat message
+            get_chat_messages_sql = """
+                SELECT agent_id, message, message_author FROM agent.chat_messages cm
+                WHERE agent_id = %(agent_id)s AND is_user_message = true
+                ORDER BY message_time ASC
+                LIMIT 1
+            """
+            chat_messages = await self.pg.generic_read(
+                get_chat_messages_sql, {"agent_id": agent_id}
+            )
+
+            query = None
+            is_spoofed = False
+            if chat_messages:
+                query = chat_messages[0]["message"]
+                # Would be spoofed if user_id (owner of agent) is different from message_author
+                is_spoofed = user_id != chat_messages[0]["message_author"]
+
+            # Get plan ID by getting latest run plan
+            get_plan_runs_sql = """
+                SELECT agent_id, plan_id, plan_run_id, status FROM agent.plan_runs pr
+                WHERE agent_id = %(agent_id)s
+                ORDER BY last_updated DESC
+                LIMIT 1
+            """
+            plan_runs = await self.pg.generic_read(get_plan_runs_sql, {"agent_id": agent_id})
+
+            agent_status = None
+            plan_id = None
+            if plan_runs:
+                plan_id = plan_runs[0]["plan_id"]
+                agent_status = plan_runs[0]["status"]
+
+            agent_qc = AgentQC(
+                agent_qc_id=agent_quality_id,
+                agent_id=agent_id,
+                query=query,
+                user_id=user_id,
+                created_at=datetime.datetime.now(),
+                last_updated=datetime.datetime.now(),
+                agent_status=agent_status if agent_status else Status.NOT_STARTED,
+                plan_id=str(plan_id) if plan_id else None,
+                is_spoofed=is_spoofed,
+            )
+
+            await self.insert_agent_qc(agent_qc)
+
+            inserted_agent_qc = await self.get_agent_qc_by_ids([agent_quality_id])
+            if inserted_agent_qc:
+                agent_qc = inserted_agent_qc[0]
+            return True, agent_qc
+        except Exception as e:
+            logging.warning(f"Failed to add agent_qc to quality agent table for {agent_id=}: {e}")
+            return False, None
 
     async def update_agent_qc(self, agent_qc: AgentQC) -> None:
         """
@@ -2754,20 +2832,20 @@ class AsyncDB:
         sql = """
         SELECT
             COUNT(*) over () as total_agent_qcs,
-            aqc.agent_qc_id::TEXT, aqc.agent_id::TEXT, ag.agent_name, aqc.plan_id::TEXT, aqc.user_id::TEXT,
+            aqc.agent_qc_id::TEXT, ag.agent_id::TEXT, ag.agent_name, aqc.plan_id::TEXT, ag.user_id::TEXT,
             aqc.query, aqc.agent_status, aqc.qc_status,
             aqc.cs_reviewer::TEXT, aqc.eng_reviewer::TEXT, aqc.prod_reviewer::TEXT, aqc.follow_up, aqc.score_rating,
             aqc.priority, aqc.use_case, aqc.problem_area, aqc.cs_failed_reason, aqc.cs_attempt_reprompting,
             aqc.cs_expected_output, aqc.cs_notes, aqc.canned_prompt_id, aqc.eng_failed_reason, aqc.eng_solution,
             aqc.eng_solution_difficulty, aqc.jira_link, aqc.slack_link, aqc.fullstory_link, aqc.duplicate_agent::TEXT,
-            aqc.created_at, aqc.last_updated, aqc.cs_reviewed, aqc.eng_reviewed, aqc.prod_reviewed,
+            ag.created_at, ag.last_updated, aqc.cs_reviewed, aqc.eng_reviewed, aqc.prod_reviewed,
             aqc.prod_priority, aqc.prod_notes, aqc.is_spoofed,
             users.cognito_username, users.owner_name AS owner_name,
             users.owner_organization_name AS owner_organization_name,
             users.user_is_internal AS user_is_internal,
             json_agg(af.*) AS agent_feedbacks
         FROM agent.agent_qc aqc
-        LEFT JOIN agent.agents ag ON aqc.agent_id = ag.agent_id
+        RIGHT JOIN agent.agents ag ON aqc.agent_id = ag.agent_id
         LEFT JOIN (
             SELECT
                 u.id, u.cognito_username, u.name AS owner_name, org.name AS owner_organization_name,
@@ -2782,7 +2860,7 @@ class AsyncDB:
                 TRUE AS user_is_internal
             FROM user_service.users u
                 WHERE u.id::TEXT = ANY(%(boosted_user_ids)s)
-        ) AS users ON users.id::TEXT = aqc.user_id::TEXT
+        ) AS users ON users.id::TEXT = ag.user_id::TEXT
         LEFT JOIN agent.feedback af ON aqc.agent_id = af.agent_id AND aqc.plan_id = af.plan_id
         """
 
@@ -2850,9 +2928,10 @@ class AsyncDB:
 
         # Always sort by latest agent ran
         sql += """
-            GROUP BY aqc.agent_qc_id, users.cognito_username, users.owner_name,
-                users.owner_organization_name, users.user_is_internal, ag.agent_name
-            ORDER BY aqc.created_at desc
+            GROUP BY aqc.agent_qc_id, ag.agent_id, ag.agent_name,
+                users.cognito_username, users.owner_name,
+                users.owner_organization_name, users.user_is_internal
+            ORDER BY ag.created_at desc
         """
 
         if pagination:

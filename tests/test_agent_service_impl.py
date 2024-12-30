@@ -10,6 +10,7 @@ from agent_service.endpoints.authz_helper import User
 from agent_service.endpoints.models import (
     AgentFeedback,
     AgentHelpRequest,
+    AgentInfo,
     AgentNotificationEmail,
     AgentQC,
     ChatWithAgentRequest,
@@ -20,6 +21,7 @@ from agent_service.endpoints.models import (
     MediaType,
     Pagination,
     SetAgentFeedBackRequest,
+    Status,
     TransformTableOutputRequest,
     UnlockAgentOutputRequest,
     UpdateAgentRequest,
@@ -30,6 +32,7 @@ from agent_service.io_types.table import TableTransformation
 from agent_service.planner.constants import FirstAction
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import Notification
+from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
 from tests.test_agent_service_impl_base import TestAgentServiceImplBase
 
@@ -729,22 +732,40 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         reviewer1 = str(uuid.uuid4())
         reviewer2 = str(uuid.uuid4())
         reviewer3 = str(uuid.uuid4())
+        agent_id = str(uuid.uuid4())
+        user_id = str(uuid.uuid4())
+        agent = AgentInfo(
+            agent_id=agent_id,
+            user_id=user_id,
+            agent_name="agent name",
+            created_at=datetime.now(),
+            last_updated=datetime.now(),
+            deleted=False,
+        )
         agent_qc = AgentQC(
             agent_qc_id=str(uuid.uuid4()),
-            agent_id=str(uuid.uuid4()),
+            agent_id=agent_id,
             plan_id=str(uuid.uuid4()),
-            user_id=str(uuid.uuid4()),
+            user_id=user_id,
             query="initial query",
-            agent_status="active",
+            agent_status=Status.COMPLETE,
             cs_reviewer=reviewer1,
             eng_reviewer=reviewer2,
             prod_reviewer=reviewer3,
-            use_case="initial use case",
+            use_case="COMMENTARY",
             problem_area="test problem",
             created_at=datetime.now(),
             last_updated=datetime.now(),
             is_spoofed=False,
         )
+
+        async def insert_agent(pg: AsyncDB, agent_metadata: AgentInfo) -> None:
+            await pg.multi_row_insert(
+                table_name="agent.agents", rows=[agent_metadata.to_agent_row()]
+            )
+
+        # Insert Agent record
+        self.loop.run_until_complete(insert_agent(self.pg, agent))
 
         # Insert the AgentQC record
         self.loop.run_until_complete(self.pg.insert_agent_qc(agent_qc))
@@ -777,9 +798,19 @@ class TestAgentServiceImpl(TestAgentServiceImplBase):
         # Step 3: Insert additional records for the same user
         user_id = agent_qc.user_id
         for _ in range(2):
+            agent_id = str(uuid.uuid4())
+            agent = AgentInfo(
+                agent_id=agent_id,
+                user_id=user_id,
+                agent_name="agent name",
+                created_at=datetime.now(),
+                last_updated=datetime.now(),
+                deleted=False,
+            )
+            self.loop.run_until_complete(insert_agent(self.pg, agent))
             new_agent_qc = AgentQC(
                 agent_qc_id=str(uuid.uuid4()),
-                agent_id=str(uuid.uuid4()),
+                agent_id=agent_id,
                 plan_id=str(uuid.uuid4()),
                 user_id=user_id,
                 query="user-specific query",

@@ -1778,10 +1778,10 @@ class FindTemplatesRelatedToPromptRequest(BaseModel):
 # Quality Tool Classes
 ################################################
 class AgentQC(BaseModel):
-    agent_qc_id: str
+    agent_qc_id: Optional[str] = None
     agent_id: str
     user_id: str
-    agent_status: str
+    agent_status: Optional[str] = None
     query_order: Optional[int] = 0
     agent_name: Optional[str] = None
     plan_id: Optional[str] = None
@@ -1806,7 +1806,7 @@ class AgentQC(BaseModel):
     slack_link: Optional[str] = None
     fullstory_link: Optional[str] = None
     duplicate_agent: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
+    created_at: datetime.datetime
     last_updated: datetime.datetime
     cognito_username: Optional[str] = None
     agent_feedbacks: List[AgentFeedback] = []
@@ -1817,7 +1817,7 @@ class AgentQC(BaseModel):
     owner_organization_name: Optional[str] = None
     prod_priority: Optional[str] = None
     prod_notes: Optional[str] = None
-    is_spoofed: bool
+    is_spoofed: Optional[bool] = False
     qc_status: Optional[str] = None
 
 
@@ -1860,6 +1860,16 @@ class SearchAgentQCRequest(BaseModel):
 class SearchAgentQCResponse(BaseModel):
     agent_qcs: List[AgentQC]
     total_agent_qcs: int
+
+
+class AddAgentQCRequest(BaseModel):
+    agent_id: str
+    user_id: str
+
+
+class AddAgentQCResponse(BaseModel):
+    success: bool
+    agent_qc: Optional[AgentQC]
 
 
 class UpdateAgentQCRequest(BaseModel):
