@@ -422,39 +422,36 @@ async def _update_summarize_helper(
         no_summary=NO_SUMMARY,
     )
 
-    result = await llm.do_chat_w_sys_prompt(
+    full_result = await llm.do_chat_w_sys_prompt(
         main_prompt,
         sys_prompt,
     )
 
-    result = result.split(BRAINSTORM_DELIMITER)[-1]  # strip planning section
+    result = full_result.split(BRAINSTORM_DELIMITER)[-1]  # strip planning section
 
     if result.strip() == NO_SUMMARY:  # GPT isn't supposed to do this but does
-        return NO_SUMMARY, []
+        result = result.strip() + "\n{}"
 
     combined_text_group = TextGroup.join(new_text_group, old_texts_group)
 
     text, citations = await extract_citations_from_gpt_output(result, combined_text_group, context)
 
     tries = 0
-    while (
-        text.strip() != NO_SUMMARY
+    while (  # we have too few citations, but we should have some from before
+        remaining_original_citation_count > 0
         and (
             citations is None
-            or (
-                remaining_original_citation_count > 0
-                and not (
-                    max(
-                        remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
-                        remaining_original_citation_count - tries,
-                    )
-                    <= len(citations)
-                    <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
+            or not (
+                max(
+                    remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
+                    remaining_original_citation_count - tries,
                 )
+                <= len(citations)
+                <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
             )
-        )
-        and tries < MAX_CITATION_TRIES
-    ):
+        )  # we are missing citations entirely but the text isn't correct
+        or (citations is None and text.strip() != NO_SUMMARY)
+    ) and tries < MAX_CITATION_TRIES:
         logger.warning(f"Retrying after bad citation count for {result}")
         if citations:
             min_value = max(
@@ -473,28 +470,27 @@ async def _update_summarize_helper(
                 )
         else:
             logger.warning("Failed to extract citations")
-        result = await llm.do_chat_w_sys_prompt(
+        full_result = await llm.do_chat_w_sys_prompt(
             main_prompt,
             sys_prompt,
             no_cache=True,
             temperature=0.1 * (tries + 1),
         )
-        result = result.split(BRAINSTORM_DELIMITER)[-1]  # strip planning section
+        result = full_result.split(BRAINSTORM_DELIMITER)[-1]  # strip planning section
 
         if result.strip() == NO_SUMMARY:  # GPT isn't supposed to do this but does
-            return NO_SUMMARY, []
+            result = result.strip() + "\n{}"
         text, citations = await extract_citations_from_gpt_output(
             result, combined_text_group, context
         )
 
         tries += 1
 
-    if text.strip() != NO_SUMMARY and (
-        not text
-        or citations is None
-        or (
-            remaining_original_citation_count > 0
-            and not (
+    if not text or (
+        remaining_original_citation_count > 0
+        and (
+            citations is None
+            or not (
                 max(
                     remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
                     remaining_original_citation_count - tries,
@@ -503,12 +499,23 @@ async def _update_summarize_helper(
                 <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
             )
         )
+        or (citations is None and text.strip() != NO_SUMMARY)
     ):
-        # if the retries failed and we still ended up with a bad result, just try a new regular summarization
-        logger.warning("Failed to do summary update, falling back to from-scratch summary")
-        if context.diff_info is not None and context.task_id is not None:
-            context.diff_info[context.task_id] = {"update_failed": True}
-        return await _initial_summarize_helper(args, context, llm, plan_str=plan_str)
+        # if the retries failed and we still ended up with a bad result with a main summary, we throw
+        # an exception which will result in a regular (non-update) run
+        if single_summary:
+            raise (
+                Exception(
+                    "Update failed due to lack of citations, "
+                    f"original citation count: {remaining_original_citation_count}, "
+                    f"final update citation count: {len(citations) if citations is not None else 0}, "
+                    f"final GPT output: {full_result}"
+                )
+            )
+        else:
+            # TODO: Do a better job with fails for individual summary runs within iterative tools
+            logger.warning("Failed to do summary update, falling back to from-scratch summary")
+            return await _initial_summarize_helper(args, context, llm, plan_str=plan_str)
 
     if citations is None:
         citations = []
@@ -539,7 +546,9 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
 
     if len(args.texts) == 0:
         await tool_log(log="No text data provided for summarization, skipping", context=context)
-        return Text(val=NO_SUMMARY)
+        return Text(val=NO_SUMMARY).inject_history_entry(
+            HistoryEntry(title="Summary", citations=[])
+        )
 
     if args.topic:
         topic_filter = await is_topical(args.topic, context)
