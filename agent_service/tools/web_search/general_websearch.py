@@ -43,7 +43,9 @@ def prepend_url_with_https(url: str) -> str:
     return url
 
 
-def enabler_function(user_id: Optional[str], user_settings: Optional[AgentUserSettings]) -> bool:
+def websearch_enabler_function(
+    user_id: Optional[str], user_settings: Optional[AgentUserSettings]
+) -> bool:
     result = (
         get_ld_flag("web-search-tool", default=False, user_context=user_id)
         and user_settings
@@ -207,7 +209,7 @@ class GeneralStockWebSearchInput(ToolArgs):
     ),
     category=ToolCategory.WEB,
     tool_registry=default_tool_registry(),
-    enabled_checker_func=enabler_function,
+    enabled_checker_func=websearch_enabler_function,
 )
 async def general_stock_web_search(
     args: GeneralStockWebSearchInput, context: PlanRunContext
@@ -276,7 +278,7 @@ class GeneralWebSearchInput(ToolArgs):
     ),
     category=ToolCategory.WEB,
     tool_registry=default_tool_registry(),
-    enabled_checker_func=enabler_function,
+    enabled_checker_func=websearch_enabler_function,
 )
 async def general_web_search(args: GeneralWebSearchInput, context: PlanRunContext) -> List[WebText]:
     if not context.user_settings.include_web_results:
@@ -338,7 +340,7 @@ class SiteSpecificWebSearchInput(ToolArgs):
     ),
     category=ToolCategory.WEB,
     tool_registry=default_tool_registry(),
-    enabled_checker_func=enabler_function,
+    enabled_checker_func=websearch_enabler_function,
 )
 async def site_specific_websearch(
     args: SiteSpecificWebSearchInput, context: PlanRunContext

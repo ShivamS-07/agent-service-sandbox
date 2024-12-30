@@ -72,7 +72,10 @@ async def _get_similar_plans(gpt: GPT, sample_plans: List[SamplePlan], input: st
 
 @async_perf_logger
 async def get_similar_sample_plans(
-    input: str, enabled_only: bool = True, context: Optional[Dict[str, str]] = None
+    input: str,
+    enabled_only: bool = True,
+    context: Optional[Dict[str, str]] = None,
+    user_id: Optional[str] = None,
 ) -> List[SamplePlan]:
     db = get_psql()
     gpt = GPT(model=GPT4_O, context=context)
@@ -84,7 +87,9 @@ async def get_similar_sample_plans(
 
     if enabled_only:
         enablement_filtered_sample_plans = [
-            plan for plan in len_filtered_sample_plans if is_plan_enabled(plan, context)
+            plan
+            for plan in len_filtered_sample_plans
+            if is_plan_enabled(plan, context, user_id=user_id)
         ]
 
         sample_plans = enablement_filtered_sample_plans

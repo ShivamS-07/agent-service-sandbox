@@ -17,7 +17,14 @@ from agent_service.planner.planner_types import (
     PlanStatus,
     SamplePlan,
 )
-from agent_service.types import ChatContext, Message, Notification, PlanRunContext
+from agent_service.types import (
+    AgentUserSettings,
+    AgentUserSettingsSource,
+    ChatContext,
+    Message,
+    Notification,
+    PlanRunContext,
+)
 from agent_service.utils.boosted_pg import BoostedPG, CursorType, InsertToTableArgs
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
@@ -951,6 +958,33 @@ class Postgres(PostgresBase):
         """
         rows = self.generic_read(sql, params={"agent_id": agent_id})
         return {row["title"]: row["output_id"] for row in rows}
+
+    def get_user_agent_settings(self, user_id: str) -> AgentUserSettings:
+        sql = """
+        SELECT entity_type, include_web_results FROM agent.user_settings
+        WHERE entity_id = %(user_id)s
+        OR entity_id::TEXT IN
+          (SELECT company_id FROM user_service.company_membership WHERE user_id = %(user_id)s::TEXT)
+        LIMIT 2
+        """
+        rows = self.generic_read(sql, {"user_id": user_id})
+        if not rows:
+            return AgentUserSettings()
+        if len(rows) == 1:
+            row = rows[0]
+            row.pop("entity_type")
+            return AgentUserSettings(**row)
+        entity_type_row_map = {}
+        # Prioritize user over company settings
+        for row in rows:
+            entity_type = row.pop("entity_type")
+            entity_type_row_map[entity_type] = row
+        if AgentUserSettingsSource.USER in entity_type_row_map:
+            return AgentUserSettings(**entity_type_row_map[AgentUserSettingsSource.USER])
+        if AgentUserSettingsSource.COMPANY in entity_type_row_map:
+            return AgentUserSettings(**entity_type_row_map[AgentUserSettingsSource.COMPANY])
+
+        return AgentUserSettings()
 
 
 def get_psql(skip_commit: bool = False, read_only: bool = False) -> Postgres:
