@@ -60,7 +60,7 @@ async def generate_first_response_notification(chat_context):
 
 
 async def generate_initial_preplan_response(chat_context):
-    return "Hi this is Warren AI, how can I help you today?"
+    return "Hi this is Warren AI, how can I help you today ?"
 
 
 async def generate_name_for_agent(

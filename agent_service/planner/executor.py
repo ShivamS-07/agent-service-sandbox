@@ -230,6 +230,7 @@ async def run_execution_plan(
                 status=status,
                 logger=logger,
                 db=async_db,
+                scheduled_by_automation=scheduled_by_automation,
             )
         raise
 
@@ -305,7 +306,10 @@ async def _run_execution_plan_impl(
         )
     else:
         db.insert_plan_run(
-            agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
+            agent_id=context.agent_id,
+            plan_id=context.plan_id,
+            plan_run_id=context.plan_run_id,
+            scheduled_by_automation=scheduled_by_automation,
         )
     # publish start plan run execution to FE
     await publish_agent_execution_status(
@@ -315,6 +319,7 @@ async def _run_execution_plan_impl(
         status=Status.RUNNING,
         logger=logger,
         db=async_db,
+        scheduled_by_automation=scheduled_by_automation,
     )
 
     # Load the user agent settings
@@ -410,6 +415,7 @@ async def _run_execution_plan_impl(
                 status=Status.CANCELLED,
                 logger=logger,
                 db=async_db,
+                scheduled_by_automation=scheduled_by_automation,
             )
             raise AgentCancelledError("Execution plan has been cancelled")
 
@@ -527,6 +533,7 @@ async def _run_execution_plan_impl(
                     status=nre.result_status,
                     logger=logger,
                     db=async_db,
+                    scheduled_by_automation=scheduled_by_automation,
                 )
 
                 response = await chatbot.generate_non_retriable_error_response(
@@ -552,6 +559,7 @@ async def _run_execution_plan_impl(
                     status=Status.CANCELLED,
                     logger=logger,
                     db=async_db,
+                    scheduled_by_automation=scheduled_by_automation,
                 )
                 # NEVER replan if the plan is already cancelled.
                 raise ace
@@ -581,6 +589,7 @@ async def _run_execution_plan_impl(
                         status=Status.CANCELLED,
                         logger=logger,
                         db=async_db,
+                        scheduled_by_automation=scheduled_by_automation,
                     )
 
                     logger.info("Execution plan has been cancelled")
@@ -594,11 +603,14 @@ async def _run_execution_plan_impl(
                     status=Status.ERROR,
                     logger=logger,
                     db=async_db,
+                    scheduled_by_automation=scheduled_by_automation,
                 )
 
                 retrying = False
                 if replan_execution_error:
-                    retrying = await handle_error_in_execution(context, e, step, do_chat)
+                    retrying = await handle_error_in_execution(
+                        context, e, step, do_chat, scheduled_by_automation
+                    )
 
                 if retrying:
                     logger.warning("Plan run attempt failed, retrying")
@@ -734,6 +746,7 @@ async def _run_execution_plan_impl(
             status=Status.CANCELLED,
             logger=logger,
             db=async_db,
+            scheduled_by_automation=scheduled_by_automation,
         )
         raise AgentCancelledError("Execution plan has been cancelled")
 
@@ -931,6 +944,7 @@ async def _run_execution_plan_impl(
         run_summary_long=full_diff_summary_output,
         run_summary_short=short_diff_summary,
         db=async_db,
+        scheduled_by_automation=scheduled_by_automation,
     )
 
     await count_agent_stocks(context, async_db, final_outputs)
@@ -940,7 +954,11 @@ async def _run_execution_plan_impl(
 
 
 async def handle_error_in_execution(
-    context: PlanRunContext, error: Exception, step: ToolExecutionNode, do_chat: bool = True
+    context: PlanRunContext,
+    error: Exception,
+    step: ToolExecutionNode,
+    do_chat: bool = True,
+    scheduled_by_automation: bool = False,
 ) -> bool:
     """
     Handles an error, and returns a boolean. Returns True if the plan is being
@@ -1034,7 +1052,10 @@ async def handle_error_in_execution(
                 chat=chat_context,
             )
             db.insert_plan_run(
-                agent_id=context.agent_id, plan_id=context.plan_id, plan_run_id=context.plan_run_id
+                agent_id=context.agent_id,
+                plan_id=context.plan_id,
+                plan_run_id=context.plan_run_id,
+                scheduled_by_automation=scheduled_by_automation,
             )
             output = await run_execution_plan_local(
                 plan=plan,
@@ -1111,7 +1132,9 @@ class RunDiffs(BaseModel):
     updated_output_ids: Optional[List[str]] = None
 
 
-async def _exit_if_cancelled(db: AsyncDB, context: PlanRunContext) -> None:
+async def _exit_if_cancelled(
+    db: AsyncDB, context: PlanRunContext, scheduled_by_automation: bool
+) -> None:
     if not context.agent_id and not context.plan_id and not context.plan_run_id:
         return
 
@@ -1129,6 +1152,7 @@ async def _exit_if_cancelled(db: AsyncDB, context: PlanRunContext) -> None:
             status=Status.CANCELLED,
             logger=logger,
             db=db,
+            scheduled_by_automation=scheduled_by_automation,
         )
         logger.info(f"{context.plan_run_id=} has been cancelled")
         raise AgentCancelledError("Execution plan has been cancelled")
@@ -1243,7 +1267,9 @@ async def _run_plan_step(
     # calls of the same tool. For now just reproduce the behavior.
     execution_log: Optional[DefaultDict[str, List[dict]]] = None,
 ) -> TaskRunResult:
-    await _exit_if_cancelled(db=async_db, context=context)
+    await _exit_if_cancelled(
+        db=async_db, context=context, scheduled_by_automation=scheduled_by_automation
+    )
     logger.warning(
         f"Running step '{step.tool_name}' (Task ID: {step.tool_task_id})," f" {context.plan_id=}"
     )
@@ -1356,6 +1382,7 @@ async def _handle_task_non_retriable_error(
     chatbot: Chatbot,
     tasks: List[TaskStatus],
     task_index: int,
+    scheduled_by_automation: bool,
 ) -> None:
     # Publish task error status to FE
     tasks[task_index].status = nre.result_status
@@ -1374,6 +1401,7 @@ async def _handle_task_non_retriable_error(
         status=nre.result_status,
         logger=logger,
         db=async_db,
+        scheduled_by_automation=scheduled_by_automation,
     )
 
     response = await chatbot.generate_non_retriable_error_response(
@@ -1412,7 +1440,9 @@ async def _handle_task_other_error(
         db=async_db,
     )
 
-    await _exit_if_cancelled(db=async_db, context=context)
+    await _exit_if_cancelled(
+        db=async_db, context=context, scheduled_by_automation=scheduled_by_automation
+    )
 
     await publish_agent_execution_status(
         agent_id=context.agent_id,
@@ -1421,11 +1451,14 @@ async def _handle_task_other_error(
         status=Status.ERROR,
         logger=logger,
         db=async_db,
+        scheduled_by_automation=scheduled_by_automation,
     )
 
     retrying = False
     if replan_execution_error:
-        retrying = await handle_error_in_execution(context, e, failed_step, do_chat)
+        retrying = await handle_error_in_execution(
+            context, e, failed_step, do_chat, scheduled_by_automation=scheduled_by_automation
+        )
 
     if retrying:
         logger.warning("Plan run attempt failed, retrying")
@@ -1700,6 +1733,7 @@ async def _run_execution_plan_impl_new(
         status=Status.RUNNING,
         logger=logger,
         db=async_db,
+        scheduled_by_automation=scheduled_by_automation,
     )
 
     # Load the user agent settings
@@ -1781,6 +1815,7 @@ async def _run_execution_plan_impl_new(
                 chatbot=chatbot,
                 tasks=tasks,
                 task_index=i,
+                scheduled_by_automation=scheduled_by_automation,
             )
             raise nre
         except AgentCancelledError as ace:
@@ -1792,6 +1827,7 @@ async def _run_execution_plan_impl_new(
                 status=Status.CANCELLED,
                 logger=logger,
                 db=async_db,
+                scheduled_by_automation=scheduled_by_automation,
             )
             raise ace
         except Exception as e:
@@ -1883,7 +1919,9 @@ async def _run_execution_plan_impl_new(
     ###########################################
     # PLAN RUN ENDS, RUN POSTPROCESSING BEGINS
     ###########################################
-    await _exit_if_cancelled(db=async_db, context=context)
+    await _exit_if_cancelled(
+        db=async_db, context=context, scheduled_by_automation=scheduled_by_automation
+    )
 
     logger.info(
         (
@@ -1945,6 +1983,7 @@ async def _run_execution_plan_impl_new(
         run_summary_short=run_diffs.short_summary,
         updated_output_ids=run_diffs.updated_output_ids,
         db=async_db,
+        scheduled_by_automation=scheduled_by_automation,
     )
 
     await count_agent_stocks(context, async_db, final_outputs)

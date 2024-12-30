@@ -647,10 +647,11 @@ class AsyncDB:
         plan_id: str,
         plan_run_id: str,
         initial_status: Status = Status.NOT_STARTED,
+        scheduled_by_automation: bool = False,
     ) -> None:
         sql = """
-        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id, created_at, status)
-        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(created_at)s, %(status)s)
+        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id, created_at, status, scheduled_by_automation)
+        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(created_at)s, %(status)s, %(scheduled_by_automation)s)
         ON CONFLICT (plan_run_id) DO NOTHING
         """
 
@@ -662,6 +663,7 @@ class AsyncDB:
                 "plan_run_id": plan_run_id,
                 "created_at": get_now_utc(),
                 "status": initial_status.value,
+                "scheduled_by_automation": scheduled_by_automation,
             },
         )
 
@@ -1332,12 +1334,17 @@ class AsyncDB:
         )
 
     async def update_plan_run(
-        self, agent_id: str, plan_id: str, plan_run_id: str, status: Status = Status.NOT_STARTED
+        self,
+        agent_id: str,
+        plan_id: str,
+        plan_run_id: str,
+        status: Status = Status.NOT_STARTED,
+        scheduled_by_automation: bool = False,
     ) -> None:
         now_utc = get_now_utc()
         sql = """
-        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id, created_at, status)
-        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(now_utc)s, %(status)s)
+        INSERT INTO agent.plan_runs (agent_id, plan_id, plan_run_id, created_at, status, scheduled_by_automation)
+        VALUES (%(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(now_utc)s, %(status)s, %(scheduled_by_automation)s)
         ON CONFLICT (plan_run_id) DO UPDATE SET
           agent_id = EXCLUDED.agent_id,
           plan_id = EXCLUDED.plan_id,
@@ -1352,6 +1359,7 @@ class AsyncDB:
                 "plan_run_id": plan_run_id,
                 "status": status.value,
                 "now_utc": now_utc,
+                "scheduled_by_automation": scheduled_by_automation,
             },
         )
 

@@ -392,6 +392,7 @@ async def publish_agent_execution_status(
     run_summary_long: Optional[str | TextOutput] = None,
     run_summary_short: Optional[str] = None,
     db: Optional[AsyncDB] = None,
+    scheduled_by_automation: bool = False,
 ) -> None:
     db = db or AsyncDB(pg=SyncBoostedPG())
     try:
@@ -410,7 +411,11 @@ async def publish_agent_execution_status(
             ).model_dump_json(),
         )
         await db.update_plan_run(
-            agent_id=agent_id, plan_id=plan_id, plan_run_id=plan_run_id, status=status
+            agent_id=agent_id,
+            plan_id=plan_id,
+            plan_run_id=plan_run_id,
+            status=status,
+            scheduled_by_automation=scheduled_by_automation,
         )
         user_id = await db.get_agent_owner(agent_id=agent_id)
         if get_ld_flag(

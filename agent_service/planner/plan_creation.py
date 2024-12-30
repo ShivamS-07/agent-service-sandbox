@@ -547,7 +547,10 @@ async def update_execution_after_input(
                 f"Rerunning execution plan for {agent_id=}, {latest_plan_id=}, {plan_run_id=}"
             )
             await async_db.insert_plan_run(
-                agent_id=ctx.agent_id, plan_id=ctx.plan_id, plan_run_id=ctx.plan_run_id
+                agent_id=ctx.agent_id,
+                plan_id=ctx.plan_id,
+                plan_run_id=ctx.plan_run_id,
+                scheduled_by_automation=False,
             )
             await kick_off_run_execution_plan(plan=latest_plan, context=ctx, do_chat=do_chat)
 
