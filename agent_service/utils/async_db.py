@@ -174,7 +174,12 @@ class AsyncDB:
         SELECT plan_run_id, created_at FROM agent.plan_runs
         WHERE plan_run_id != %(latest_plan_run_id)s
             AND agent_id = %(agent_id)s
-            AND plan_id = %(plan_id)s{date_filter}
+            AND plan_id = %(plan_id)s
+            AND created_at < (
+              SELECT created_at FROM agent.plan_runs
+              WHERE plan_run_id = %(latest_plan_run_id)s
+            )
+            {date_filter}
         ORDER BY created_at DESC
         LIMIT 1
         """
