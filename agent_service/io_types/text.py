@@ -377,7 +377,11 @@ class Text(ComplexIOBase):
         if not self.val:
             # resolve the text if necessary
             lookup = await self.get_strs_lookup([self])
-            return Text(val=lookup[self.id])
+            try:
+                return Text(val=lookup[self.id])
+            except KeyError as e:
+                # TODO should we just return `Text(val="Not found")`?
+                raise RuntimeError(f"Cannot find id={self.id} for text type {type(self)}") from e
         else:
             return Text(val=self.val)
 
