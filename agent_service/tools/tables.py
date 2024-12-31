@@ -65,11 +65,13 @@ from agent_service.tools.table_utils.prompts import (
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_db import get_async_db
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.prompt_utils import FilledPrompt, Prompt
 from agent_service.utils.tool_diff import get_prev_run_info
 
 
@@ -1025,6 +1027,93 @@ def _join_two_tables(
     return output_table
 
 
+async def _modify_join_args_smartly_with_gpt(
+    context: PlanRunContext, args: JoinTableArgs
+) -> JoinTableArgs:
+    """
+    Use GPT to 'smartly' modify the join args. Specifically used for row_join for now.
+    """
+    if not args.input_tables:
+        return args
+
+    if args.table_names and args.row_join:
+        # For now don't handle this case, assume it works
+        return args
+
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_TOOLS, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    gpt = GPT(context=gpt_context)
+    prev_run_info = await get_prev_run_info(context=context, tool_name="join_tables")
+    if prev_run_info and json.loads(prev_run_info.debug.get("should_use_row_join", "false")):
+        args.row_join = True
+        return args
+
+    _, plan = await get_async_db().get_execution_plan_for_run(context.plan_run_id)
+    rest_of_plan = plan.get_plan_after_task(task_id=context.task_id) if context.task_id else plan
+
+    table_schemas = []
+    for i, table in enumerate(args.input_tables):
+        metadatas = [col.metadata for col in table.columns]
+        table_schema_str = ", ".join((f"'{meta.label}' ({meta.col_type})" for meta in metadatas))
+        table_schemas.append(f"Table {i}: {table_schema_str}")
+
+    schema_str = "\n\n".join(table_schemas)
+
+    prompt = Prompt(
+        name="SET_JOIN_TABLE_ARGS_PROMPT",
+        template="""
+        You are a financial analyst. You wrote an automation script in python
+        for your client, and now you're tweaking one of the function calls to
+        make it work correctly. You're calling a function called `join_tables`
+        that takes some tables of data and joins them together. You must set the
+        value of the one of the arguments to this task: `row_join`.
+
+        If we are joining tables with the same or similar columns and just want
+        to create a table which has the rows from all tables, use row_join =
+        True.  This will commonly be used when we are constructing a final
+        output table for comparison of the performance of different stock
+        groups/baskets.  When the task is joining tables to have more columns in
+        a single table, the row_join must be False. row_join=True will
+        essentially stack the tables on top of each other, and row_join=False
+        will horizontally join, creating columns for each input table. If data
+        column names are different, ONLY set row_join to true if you're very
+        confident that the two columns represent the same thing (e.g. "Stock
+        Price" and "Price of Stock", etc).
+
+        To help you decide, here are the rest of the steps in your script:
+
+        {rest_of_plan}
+
+        And here are the column schemas of the tables:
+        {schema_str}
+
+        Some additional things to be aware of:
+        1. If you are asked to graph multiple datasets, make sure that either
+           the datasets are distinguished with some sort of 'dataset' column or
+           that they are kept as separate columns (row_join=False). Otherwise,
+           the graph won't be able to distinguish between the datasets.
+
+        Please output your value for row_join as a single boolean 'true' or
+        'false' and NOTHING else.
+        """,
+    ).format(rest_of_plan=rest_of_plan.get_formatted_plan(numbered=True), schema_str=schema_str)
+
+    response = await gpt.do_chat_w_sys_prompt(
+        main_prompt=prompt, sys_prompt=FilledPrompt(filled_prompt="")
+    )
+    response = response.lower().strip()
+    if response == "true":
+        args.row_join = True
+    else:
+        args.row_join = False
+
+    debug_info: Dict[str, Any] = {"should_use_row_join": args.row_join}
+    TOOL_DEBUG_INFO.set(debug_info)
+
+    return args
+
+
 @tool(
     description="""
     Given a list of input tables, attempt to join the tables into
@@ -1066,12 +1155,21 @@ def _join_two_tables(
     category=ToolCategory.TABLE,
 )
 async def join_tables(args: JoinTableArgs, context: PlanRunContext) -> Union[Table, StockTable]:
+    logger = get_prefect_logger(__name__)
+
     if len(args.input_tables) == 0:
         raise RuntimeError("Cannot join an empty list of tables!")
     if len(args.input_tables) == 1:
         raise RuntimeError("Cannot join a list of tables with one element!")
 
     _join_table_func = _join_two_tables
+
+    if args.row_join:
+        # Make sure the row join is valid
+        try:
+            args = await _modify_join_args_smartly_with_gpt(context=context, args=args)
+        except Exception:
+            logger.exception("GPT failed to update join table args")
 
     # There are two cases we want to consider here. First, if all the tables
     # have the EXACT same columns, then we always want to row join no matter

@@ -10,6 +10,36 @@ DEFAULT_GROUP_COL_NAME = "Group"
 DEFAULT_VALUE_COL_NAME = "Value"
 
 
+def remove_group_col_with_one_member(table: Table, group_col: TableColumn) -> Table:
+    """
+    For a stock timeseries table with just one stock, we can remove the stock
+    column and change the label of the data column. This is useful for joining a
+    stock table with one stock to a non-stock table (e.g. FED data).
+    """
+    date_col = table.get_date_column()
+    if not date_col:
+        return table
+
+    new_cols = [date_col]
+    for col in table.columns:
+        if col in (group_col, date_col):
+            continue
+        tag = (
+            group_col.data[0].symbol
+            if isinstance(group_col.data[0], StockID)
+            else group_col.data[0]
+        )
+        col.metadata.label = f"{tag} {col.metadata.label}"
+        new_cols.append(col)
+
+    return Table(
+        history=table.history,
+        title=table.title,
+        columns=new_cols,
+        prefer_graph_type=table.prefer_graph_type,
+    )
+
+
 def expand_dates_across_tables(first: Table, second: Table) -> Tuple[Table, Table]:
     first_date_col = first.get_date_column()
     second_date_col = second.get_date_column()
@@ -154,9 +184,15 @@ def preprocess_heterogeneous_tables_before_joining(
         )
         and second_table_type == TableType.TIMESERIES_ONLY
     ):
-        new_cols = _expand_timeseries_only_to_grouped(second.columns)
-        second.columns = new_cols
-        second_table_type = TableType.STRING_TIMESERIES
+        if first_group_col and len(set(first_group_col.data)) == 1:  # type: ignore
+            # If there is only one stock in the stock timeseries, we can just
+            # remove it and join directly to the non-stock timeseries.
+            first = remove_group_col_with_one_member(first, first_group_col)
+            first_table_type = TableType.TIMESERIES_ONLY
+        else:
+            new_cols = _expand_timeseries_only_to_grouped(second.columns)
+            second.columns = new_cols
+            second_table_type = TableType.STRING_TIMESERIES
 
     elif (
         second_table_type
@@ -166,9 +202,13 @@ def preprocess_heterogeneous_tables_before_joining(
         )
         and first_table_type == TableType.TIMESERIES_ONLY
     ):
-        new_cols = _expand_timeseries_only_to_grouped(first.columns)
-        first.columns = new_cols
-        first_table_type = TableType.STRING_TIMESERIES
+        if second_group_col and len(set(second_group_col.data)) == 1:  # type: ignore
+            second = remove_group_col_with_one_member(second, second_group_col)
+            second_table_type = TableType.TIMESERIES_ONLY
+        else:
+            new_cols = _expand_timeseries_only_to_grouped(first.columns)
+            first.columns = new_cols
+            first_table_type = TableType.STRING_TIMESERIES
 
     first_is_string_table = first_table_type in (TableType.STRING_ONLY, TableType.STRING_TIMESERIES)
     second_is_string_table = second_table_type in (

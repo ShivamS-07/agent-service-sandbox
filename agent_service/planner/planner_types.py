@@ -381,6 +381,17 @@ class ExecutionPlan(BaseModel):
 
         return ExecutionPlan(nodes=final_nodes, locked_task_ids=self.locked_task_ids)
 
+    def get_plan_after_task(self, task_id: str) -> "ExecutionPlan":
+        nodes_to_keep = []
+        seen_task_id = False
+        for node in self.nodes:
+            if seen_task_id:
+                nodes_to_keep.append(node)
+            elif node.tool_task_id == task_id:
+                seen_task_id = True
+
+        return ExecutionPlan(nodes=nodes_to_keep, locked_task_ids=self.locked_task_ids)
+
 
 class ExecutionPlanParsingError(RuntimeError):
     pass
