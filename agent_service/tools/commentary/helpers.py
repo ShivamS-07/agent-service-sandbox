@@ -585,7 +585,7 @@ async def prepare_main_prompt(
 
 
 async def get_top_bottom_stocks(
-    tables: List[Table], top_n_stocks: int, table_title: str
+    context: PlanRunContext, tables: List[Table], top_n_stocks: int, table_title: str
 ) -> List[StockID]:
     perf_df = None
     for table in tables:
@@ -593,7 +593,13 @@ async def get_top_bottom_stocks(
             perf_df = table.to_df()
 
     if perf_df is None:
-        raise ValueError(f"Performance table ({table_title}) for stock level not found in tables.")
+        logger.warning(f"Performance table ({table_title}) for stock level not found in tables.")
+        # If specific table not found in tool
+        await tool_log(
+            log=f"Performance table ({table_title}) for stock level not found in tables.",
+            context=context,
+        )
+        return []
 
     # get top and bottom 3 contributers and performers
     top_contributers = (

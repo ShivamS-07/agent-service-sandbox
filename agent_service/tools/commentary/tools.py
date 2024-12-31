@@ -549,6 +549,7 @@ async def get_commentary_inputs(
     if args.portfolio_id:
         args.stock_ids.extend(
             await get_top_bottom_stocks(  # type: ignore
+                context=context,
                 tables=tables,
                 top_n_stocks=args.top_n_stocks,
                 table_title=PORTFOLIO_PERFORMANCE_TABLE_BASE_NAME + "stock",
@@ -557,6 +558,7 @@ async def get_commentary_inputs(
     if args.universe_name:
         args.stock_ids.extend(
             await get_top_bottom_stocks(  # type: ignore
+                context=context,
                 tables=tables,
                 top_n_stocks=args.top_n_stocks,
                 table_title=UNIVERSE_PERFORMANCE_TABLE_BASE_NAME + "security",
