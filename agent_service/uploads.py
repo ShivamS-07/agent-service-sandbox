@@ -1,11 +1,11 @@
 import base64
-import csv
 import enum
 import logging
-from io import StringIO
-from typing import Any, Generator, List, Optional, Set, Tuple
+from io import BytesIO
+from typing import Any, Generator, List, Optional, Tuple
 
-from fastapi import UploadFile
+import pandas as pd
+from fastapi import HTTPException, UploadFile
 from pa_portfolio_service_proto_v1.well_known_types_pb2 import StockHolding
 from pydantic import BaseModel
 
@@ -23,10 +23,14 @@ from agent_service.types import Message
 from agent_service.utils.agent_event_utils import send_chat_message
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.async_utils import gather_with_concurrency
-from agent_service.utils.constants import SUPPORTED_FILE_TYPES
 from agent_service.utils.logs import async_perf_logger
 
 logger = logging.getLogger(__name__)
+
+
+class FileType(enum.Enum):
+    CSV = "csv"
+    EXCEL = "excel"
 
 
 class UploadType(enum.StrEnum):
@@ -139,55 +143,59 @@ class UploadHandler:
         self.db = db
         self.jwt = jwt
 
-    async def _read_upload_bytes(self) -> bytes:
+    async def read_upload_bytes(self) -> bytes:
         raw_bytes = await self.upload.read(self.upload.size if self.upload.size is not None else 0)
-        await self.upload.seek(0)
         return raw_bytes
 
-    @async_perf_logger
-    async def identify_upload_type(self) -> Tuple[Optional[UploadType], Optional[str]]:
-        # TODO: use a better way to identify file types
+    def identify_file_type(self) -> FileType:
+        content_type = self.upload.headers.get("content-type")
+        if content_type == "text/csv":
+            return FileType.CSV
+        elif content_type in (
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ):
+            return FileType.EXCEL
+
+        raise HTTPException(
+            status_code=400, detail="Unsupported file type. Please upload a CSV or Excel file"
+        )
+
+    def identify_upload_type(self, file_type: FileType, raw_data: bytes) -> Tuple[UploadType, str]:
         # just support basic portfolio / watchlist by parsing header column
-        try:
-            data_string = (await self._read_upload_bytes()).decode()
-            reader = csv.reader(StringIO(data_string), delimiter=",")
-            header_row = next(reader)
-            columns: Set[str] = {column_name.lower() for column_name in header_row}
+        bytes_io = BytesIO(raw_data)
+        if file_type == FileType.CSV:
+            first_row = pd.read_csv(bytes_io, nrows=1)
+        elif file_type == FileType.EXCEL:
+            first_row = pd.read_excel(bytes_io, nrows=1)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_type}")
 
-            # simple validation to check for one of these fields, it would be either portfolio or watchlist
-            if columns.intersection({"isin", "symbol"}):
-                if "weight" in columns:
-                    return (
-                        UploadType.PORTFOLIO,
-                        "This looks to be a portfolio holdings file, let me import that...",
-                    )
+        columns = {col.lower() for col in first_row.columns}
+        # simple validation to check for one of these fields, it would be either portfolio or watchlist
+        if columns.intersection({"isin", "symbol"}):
+            if "weight" in columns:
                 return (
-                    UploadType.WATCHLIST,
-                    "This looks to be a watchlist file, let me import that...",
+                    UploadType.PORTFOLIO,
+                    "This looks to be a portfolio holdings file, let me import that...",
                 )
-        except Exception:
-            logger.exception(
-                f"Error while parsing upload '{self.upload.filename}' for {self.user_id=}"
+            return (
+                UploadType.WATCHLIST,
+                "This looks to be a watchlist file, let me import that...",
             )
 
-        return None, None
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported upload type. Please upload a portfolio or watchlist",
+        )
 
     @async_perf_logger
-    async def process_upload(self, upload_type: UploadType) -> UploadResult:
-        if not self.upload.filename:
-            return UploadResult(
-                message=(
-                    "Sorry, I ran into some issues while importing this file."
-                    " Please me sure the file has a valid filename."
-                )
-            )
+    async def process_upload(self, upload_type: UploadType, raw_data: bytes) -> UploadResult:
         if upload_type == UploadType.PORTFOLIO:
-            data = await self._read_upload_bytes()
-
             try:
                 workspace_id, strategy_id, latest_holding_count = await create_workspace_from_bytes(
-                    data=data,
-                    name=self.upload.filename,
+                    data=raw_data,
+                    name=self.upload.filename,  # type: ignore
                     user_id=self.user_id,
                     content_type=(
                         self.upload.content_type if self.upload.content_type else "text/csv"
@@ -211,11 +219,10 @@ class UploadHandler:
             )
 
         if upload_type == UploadType.WATCHLIST:
-            data = await self._read_upload_bytes()
             try:
                 watchlist_id = await create_watchlist_from_bytes(
-                    data,
-                    self.upload.filename,
+                    raw_data,
+                    self.upload.filename,  # type: ignore
                     content_type=(
                         self.upload.content_type if self.upload.content_type else "text/csv"
                     ),
@@ -243,6 +250,9 @@ class UploadHandler:
         """
         Process an uploaded file, return True if processing was successful.
         """
+        if not self.upload.filename:
+            raise HTTPException(status_code=400, detail="Empty filename")
+
         if self.agent_id and self.send_chat_updates:
             await send_chat_message(
                 Message(
@@ -272,24 +282,9 @@ class UploadHandler:
                 send_notification=False,
             )
 
-        upload_type, identify_message = await self.identify_upload_type()
-
-        # if we could not identify the type, skip processing
-        if not upload_type:
-            if self.agent_id and self.send_chat_updates:
-                await send_chat_message(
-                    Message(
-                        agent_id=self.agent_id,
-                        is_user_message=False,
-                        message=f"Sorry, I couldn't understand this file."
-                        f" Currently I support file uploads like: {' '.join(SUPPORTED_FILE_TYPES)}",
-                        visible_to_llm=False,
-                    ),
-                    self.db,
-                    insert_message_into_db=True,
-                    send_notification=False,
-                )
-            return UploadResult()
+        raw_data = await self.read_upload_bytes()
+        file_type = self.identify_file_type()
+        upload_type, identify_message = self.identify_upload_type(file_type, raw_data)
 
         if self.agent_id and self.send_chat_updates and identify_message:
             await send_chat_message(
@@ -310,7 +305,7 @@ class UploadHandler:
                 f"is of type {upload_type}, starting processing..."
             )
         )
-        result = await self.process_upload(upload_type)
+        result = await self.process_upload(upload_type, raw_data)
         logger.info(f"Finished processing '{self.upload.filename}' for {self.user_id=}")
         if self.agent_id and self.send_chat_updates:
             await send_chat_message(
