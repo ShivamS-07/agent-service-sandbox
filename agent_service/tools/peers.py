@@ -431,6 +431,7 @@ async def get_peer_group_for_stock(
     context: PlanRunContext,
     category: Optional[str] = None,
     crash_on_failure: bool = True,
+    consistency_rounds: int = 3,
 ) -> List[StockID]:
     logger = get_prefect_logger(__name__)
     stock_str = str(stock.gbi_id) + SEPARATOR + stock.company_name
@@ -440,16 +441,24 @@ async def get_peer_group_for_stock(
     db = get_psql()
     input_stock_info, _ = db.get_short_company_description(stock.gbi_id)
 
-    # initial prompt for peers
-    initial_peers_gpt_resp = await llm.do_chat_w_sys_prompt(
-        main_prompt=GET_PEER_GROUP_FOR_STOCK_MAIN_PROMPT.format(
-            stock_str=stock_str,
-            input_stock_info=input_stock_info,
-        ),
-        sys_prompt=GET_PEER_GROUP_FOR_STOCK_SYS_PROMPT.format(
-            separator=SEPARATOR,
-            chat_context=context.chat,
-        ),
+    # initial prompt for peers, these will all be deduplicated by the end of the function
+    peers_gpt_responses = []
+    for _ in range(consistency_rounds):
+        peers_gpt_responses.append(
+            llm.do_chat_w_sys_prompt(
+                main_prompt=GET_PEER_GROUP_FOR_STOCK_MAIN_PROMPT.format(
+                    stock_str=stock_str,
+                    input_stock_info=input_stock_info,
+                ),
+                sys_prompt=GET_PEER_GROUP_FOR_STOCK_SYS_PROMPT.format(
+                    separator=SEPARATOR,
+                    chat_context=context.chat,
+                ),
+                no_cache=True,
+            )
+        )
+    initial_peers_gpt_resp = "\n".join(
+        await gather_with_concurrency(peers_gpt_responses, n=consistency_rounds)
     )
 
     initial_peer_group = []

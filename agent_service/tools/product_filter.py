@@ -1,7 +1,7 @@
 import inspect
 import json
 from collections import Counter
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Coroutine, Dict, List, Optional, cast
 
 from agent_service.GPT.constants import GPT4_O, GPT4_O_MINI, NO_PROMPT
 from agent_service.GPT.requests import GPT
@@ -676,16 +676,30 @@ async def filter_stocks_round2(
     return res
 
 
-async def brainstorm_stocks(product_str: str, llm: GPT, context: PlanRunContext) -> List[StockID]:
+async def brainstorm_stocks(
+    product_str: str,
+    llm: GPT,
+    context: PlanRunContext,
+    consistency_rounds: int = CONSISTENCY_ROUNDS_FILTER1,
+) -> List[StockID]:
     if context.chat:
         chat_str = context.chat.get_gpt_input()
     else:
         chat_str = ""
 
-    result = await llm.do_chat_w_sys_prompt(
-        STOCK_BRAINSTORM_PROMPT.format(product_str=product_str, chat_str=chat_str), NO_PROMPT
-    )
-
+    # These will all be deduplicated by the end of the function
+    prompts: List[Coroutine[Any, Any, str]] = []
+    for _ in range(consistency_rounds):
+        # run multiple calls to get a more stable result
+        prompts.append(
+            llm.do_chat_w_sys_prompt(
+                STOCK_BRAINSTORM_PROMPT.format(product_str=product_str, chat_str=chat_str),
+                NO_PROMPT,
+                no_cache=True,
+            )
+        )
+    results = await gather_with_concurrency(prompts, n=consistency_rounds)
+    result: str = "\n".join(results)
     initial_stocks = []
     initial_stock_jsons = result.split("\n")
     for initial_stock_json in initial_stock_jsons:
