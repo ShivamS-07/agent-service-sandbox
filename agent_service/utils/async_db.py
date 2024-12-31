@@ -2594,9 +2594,10 @@ class AsyncDB:
             )
             run_info["plan_run_id"] = plan_run_id_map[run_info["plan_run_id"]]
             run_info["context"] = json.dumps(run_info["context"])
-        to_insert.append(
-            InsertToTableArgs(table_name="agent.task_run_info", rows=task_run_info_entries)
-        )
+        if task_run_info_entries:
+            to_insert.append(
+                InsertToTableArgs(table_name="agent.task_run_info", rows=task_run_info_entries)
+            )
 
         outputs_sql = """select * from agent.agent_outputs where agent_id = %(agent_id)s"""
         agent_outputs = await self.pg.generic_read(outputs_sql, {"agent_id": src_agent_id})
