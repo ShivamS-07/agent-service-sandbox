@@ -58,10 +58,9 @@ def is_plan_enabled(
         return True
     elif enabled_lowercase in ("0", "false", "no", "n", "f"):
         return False
-    elif enabled_lowercase in ENABLEMENT_FUNCTION_REGISTRY and ENABLEMENT_FUNCTION_REGISTRY[
-        enabled_lowercase
-    ]({"user_id": user_id}):
-        return True
+    elif enabled_lowercase in ENABLEMENT_FUNCTION_REGISTRY:
+        enablement_func = ENABLEMENT_FUNCTION_REGISTRY[enabled_lowercase]
+        return enablement_func({"user_id": user_id})
     else:
         ld_flag_result = get_ld_flag(enabled_lowercase, default=None, user_context=user_id)
         try:
