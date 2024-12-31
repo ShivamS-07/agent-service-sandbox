@@ -90,7 +90,8 @@ async def classify_stock_text_relevancies_for_table(
     gpt_context: Dict[str, str],
     text_cache: Optional[Dict[TextIDType, str]] = None,
 ) -> List[Text]:
-    filtered_texts: List[Text] = []
+    # Start with non stock texts
+    filtered_texts: List[Text] = [text for text in texts if not isinstance(text, StockText)]
     text_strs = await Text.get_all_strs(
         texts, include_header=True, include_timestamps=False, text_cache=text_cache
     )
