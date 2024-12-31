@@ -1862,6 +1862,15 @@ class AsyncDB:
             table_name="agent.notifications", rows=[notif.model_dump() for notif in notifications]
         )
 
+    async def get_unread_messages(self, agent_id: str) -> List[Notification]:
+        sql = """
+        SELECT notification_id::VARCHAR, agent_id::VARCHAR, message_id::VARCHAR, summary::TEXT, unread, created_at
+        FROM agent.notifications
+        WHERE agent_id = %(agent_id)s AND unread
+        """
+        rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
+        return [Notification(**row) for row in rows]
+
     async def get_notification_event_info(self, agent_id: str) -> Optional[Dict[str, Any]]:
         sql = """
         SELECT summary AS latest_notification_string,

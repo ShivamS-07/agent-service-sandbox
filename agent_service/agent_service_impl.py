@@ -131,6 +131,7 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
     GetToolLibraryResponse,
+    GetUnreadUpdatesSummaryResponse,
     GetUpcomingEarningsResponse,
     GetVariableCoverageResponse,
     GetVariableHierarchyResponse,
@@ -909,6 +910,15 @@ class AgentServiceImpl:
         except Exception:
             LOGGER.warning(f"Unable to send slack message for {user.user_id=}")
             LOGGER.warning(traceback.format_exc())
+
+    @async_perf_logger
+    async def get_unread_updates_summary(self) -> GetUnreadUpdatesSummaryResponse:
+        # get list of unread messages
+        # unread_messages = await self.pg.get_unread_messages(agent_id=agent_id)
+
+        return GetUnreadUpdatesSummaryResponse(
+            summary_mmessage="Welcome to the new updates summary",
+        )
 
     async def get_chat_history(
         self,

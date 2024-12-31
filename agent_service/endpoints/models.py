@@ -351,6 +351,10 @@ class GetAgentFeedBackResponse(BaseModel):
     success: bool
 
 
+class GetUnreadUpdatesSummaryResponse(BaseModel):
+    summary_mmessage: str
+
+
 ####################################################################################################
 # ChatWithAgent
 ####################################################################################################
