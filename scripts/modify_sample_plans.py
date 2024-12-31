@@ -142,10 +142,12 @@ def do_add(author_str: str) -> None:
         input=input_str,
         plan=plan_str,
         author=author_str,
+        last_updated_author=author_str,
         note=note_str,
         relevance=relevance_val,
         category=category_str,
         enabled=enablement_str,
+        changelog="Plan initially created",
     )
     confirm = input(ADD_CONFIRM.format(plan=sample_plan.get_formatted_plan_internal())).strip()
     print(f"Plan enablement status: {is_plan_enabled(sample_plan)}")
