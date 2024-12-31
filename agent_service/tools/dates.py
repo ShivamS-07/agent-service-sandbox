@@ -130,8 +130,9 @@ DATE_RANGE_SYS_PROMPT = Prompt(
         'return:\n {{"start_date":"2024-05-15", "end_date":"2024-07-15"}}'
         "Note that today is ALWAYS included in the range in these cases, this is very important!!!"
         "Generally you should assume that weeks/months/quarters/years refer to 7/30/90/365 days "
-        "respectively, and so `last week/month/quarter/year` refers to a date range beginning 7/30/90/365 "
-        "days ago and ending today (inclusive) and NOT the week/month/quarter/year immediately preceeding "
+        "respectively, and so both `last week/month/quarter/year` or `this week/month/quarter/year' refers "
+        "to a date range beginning 7/30/90/365 days ago and ending today (inclusive) and NOT the "
+        "specific week/month/quarter/year we are in, nor the one before "
         "the one we are in, though if a user asks for a range 'since the beginning of last quarter' for "
         "the same today as above, your output would be: "
         '{{"start_date":"2024-04-01", "end_date":"2024-07-15"}} '
