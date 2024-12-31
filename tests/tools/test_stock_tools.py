@@ -5,18 +5,33 @@ from unittest import IsolatedAsyncioTestCase
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import Table
 from agent_service.tools.stocks import (
+    GetCountryInput,
+    GetCurrencyInput,
+    GetIndustryInput,
+    GetISINInput,
     GetRiskExposureForStocksInput,
+    GetSectorInput,
     GetStockUniverseInput,
+    GetSubIndustryInput,
     GrowthFilterInput,
     StockIdentifierLookupInput,
     ValueFilterInput,
+    get_country_for_stocks,
+    get_country_of_domicile_for_stocks,
+    get_currency_for_stocks,
+    get_industry_for_stocks,
+    get_industry_group_for_stocks,
+    get_ISIN_for_stocks,
     get_metadata_for_stocks,
     get_risk_exposure_for_stocks,
+    get_sector_for_stocks,
     get_stock_info_for_universe,
     get_stock_universe,
+    get_sub_industry_for_stocks,
     growth_filter,
     is_etf,
     stock_identifier_lookup,
+    stock_lookup_by_gbi_id,
     value_filter,
 )
 from agent_service.types import PlanRunContext
@@ -405,3 +420,150 @@ class TestMetas(IsolatedAsyncioTestCase):
         df = await get_metadata_for_stocks(stock_ids=[TSLA, AAPL], context=self.context)
 
         print(df)
+
+
+class TestISINForStocks(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
+
+    async def test_ISIN_for_stocks(self):
+        df = await get_ISIN_for_stocks(
+            args=GetISINInput(stock_ids=[TSLA, AAPL, BWA]), context=self.context
+        )
+
+        self.assertTrue(len(df.columns[0].data) == 3)
+
+
+class TestCountryForStocks(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
+
+    async def test_country_for_stocks(self):
+        df = await get_country_for_stocks(
+            args=GetCountryInput(stock_ids=[TSLA, AAPL, BWA]), context=self.context
+        )
+
+        self.assertTrue(len(df.columns[0].data) == 3)
+
+
+class TestCountryDomicileForStocks(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
+
+    async def test_country_domicile_for_stocks(self):
+        df = await get_country_of_domicile_for_stocks(
+            args=GetCountryInput(stock_ids=[TSLA, AAPL, BWA]), context=self.context
+        )
+
+        self.assertTrue(len(df.columns[0].data) == 3)
+
+
+class TestCurrencyForStocks(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
+
+    async def test_currency_for_stocks(self):
+        df = await get_currency_for_stocks(
+            args=GetCurrencyInput(stock_ids=[TSLA, AAPL, BWA]), context=self.context
+        )
+
+        self.assertTrue(len(df.columns[0].data) == 3)
+
+
+class TestIndustryForStocks(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
+
+    async def test_industry_for_stocks(self):
+        df = await get_industry_for_stocks(
+            args=GetIndustryInput(stock_ids=[TSLA, AAPL, BWA]), context=self.context
+        )
+
+        self.assertTrue(len(df.columns[0].data) == 3)
+
+
+class TestIndustryGroupForStocks(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
+
+    async def test_industry_group_for_stocks(self):
+        df = await get_industry_group_for_stocks(
+            args=GetIndustryInput(stock_ids=[TSLA, AAPL, BWA]), context=self.context
+        )
+
+        self.assertTrue(len(df.columns[0].data) == 3)
+
+
+class TestRiskExposureForStocks(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
+
+    async def test_risk_exposure_for_stocks(self):
+        df = await get_risk_exposure_for_stocks(
+            args=GetRiskExposureForStocksInput(stock_list=[TSLA, AAPL, BWA]), context=self.context
+        )
+
+        self.assertTrue(len(df.columns[0].data) == 3)
+
+
+class TestSectorForStocks(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
+
+    async def test_sector_for_stocks(self):
+        df = await get_sector_for_stocks(
+            args=GetSectorInput(stock_ids=[TSLA, AAPL, BWA]), context=self.context
+        )
+
+        self.assertTrue(len(df.columns[0].data) == 3)
+
+
+class TestSubIndustryForStocks(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.context = PlanRunContext.get_dummy()
+        from agent_service.utils.logs import init_test_logging
+
+        init_test_logging()
+
+    async def test_sub_industry_for_stocks(self):
+        df = await get_sub_industry_for_stocks(
+            args=GetSubIndustryInput(stock_ids=[TSLA, AAPL, BWA]), context=self.context
+        )
+
+        self.assertTrue(len(df.columns[0].data) == 3)
+
+
+class TestStockLookupByGBIId(IsolatedAsyncioTestCase):
+    async def test_stock_lookup_by_gbi_id_tsla(self):
+        df = await stock_lookup_by_gbi_id(gbi_id=TSLA.gbi_id)
+        self.assertIsNotNone(df)
+        self.assertEqual(df["symbol"], "TSLA")
+
+    async def test_stock_lookup_by_gbi_id_aapl(self):
+        df = await stock_lookup_by_gbi_id(gbi_id=AAPL.gbi_id)
+        self.assertIsNotNone(df)
+        self.assertEqual(df["symbol"], "AAPL")

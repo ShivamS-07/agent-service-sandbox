@@ -31,6 +31,8 @@ The show command will print the full plan for a particular plan id
 The delete command will delete a particular sample plan
 The help command shows this help screen
 The exit command will exit this script
+For information on creating a sample plan visit:
+https://gradientboostedinvestments.atlassian.net/wiki/spaces/GBI/pages/2935324673/How+to+add+sample+plans
 """
 
 ADD_PROMPT = "Enter the sample input> "
@@ -132,10 +134,7 @@ def do_add(author_str: str) -> None:
     note_str += NOTE_CHANGE_STRING.format(
         author_str=author_str, today=datetime.datetime.now().isoformat()
     )
-    relevance = input(ALLOW_EMPTY_INPUT + RELEVANCE_INPUT).strip()
-    relevance_val = float(relevance) if relevance else None
     enablement_str = input(ALLOW_EMPTY_INPUT + ENABLED_INPUT).strip()
-    category_str = input(ALLOW_EMPTY_INPUT + CATEGORY_INPUT).strip()
     id = str(uuid4())
     sample_plan = SamplePlan(
         id=id,
@@ -144,8 +143,8 @@ def do_add(author_str: str) -> None:
         author=author_str,
         last_updated_author=author_str,
         note=note_str,
-        relevance=relevance_val,
-        category=category_str,
+        relevance=None,
+        category=None,
         enabled=enablement_str,
         changelog="Plan initially created",
     )
