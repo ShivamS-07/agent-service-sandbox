@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import datetime
 import hashlib
 import json
@@ -20,6 +21,7 @@ from gbi_common_py_utils.utils.event_logging import json_serial
 
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.types import PlanRunContext
+from agent_service.utils.async_db import get_async_db
 from agent_service.utils.constants import AGENT_AUTOMATION_WORKER_QUEUE
 from agent_service.utils.date_utils import get_now_utc
 from agent_service.utils.environment import EnvironmentUtils
@@ -45,6 +47,8 @@ _REDIS_CONNECT_TIMEOUT = 5.0  # 5s
 _REDIS = None
 
 TEST_MODE: bool = False
+
+last_snapshot_db_update: Optional[datetime.datetime] = None
 
 
 def is_redis_available() -> bool:
@@ -170,6 +174,7 @@ def start_agent_run(agent: AgentInfo) -> None:
 
 
 def run_schedule_with_recurring_agent_updates(scheduler: BackgroundScheduler) -> None:
+    global last_snapshot_db_update
     scheduler.start()
     while True:
         # On first startup, make sure there are no lingering jobs
@@ -177,6 +182,27 @@ def run_schedule_with_recurring_agent_updates(scheduler: BackgroundScheduler) ->
         scheduler.pause()
         logger.info("Scheduling agent cronjobs...")
         agent_infos = get_live_agent_infos()
+
+        # Update snapshot db to only show agents that are live and external and not spoofed
+        # Only update at most once a day
+        if (
+            not last_snapshot_db_update
+            or datetime.datetime.now() > last_snapshot_db_update + datetime.timedelta(days=1)
+        ):
+            last_snapshot_db_update = datetime.datetime.now()
+            agent_ids: List[str] = []
+            user_ids: List[str] = []
+            for agent in agent_infos:
+                agent_ids.append(agent.context.agent_id)
+                user_ids.append(agent.context.user_id)
+            asyncio.run(
+                get_async_db().update_agent_snapshot_livecount(
+                    datetime.datetime.now(),
+                    agent_ids,
+                    user_ids,
+                )
+            )
+
         logger.info(f"Got {len(agent_infos)} agents to process...")
         for agent_info in agent_infos:
             jitter_minutes = 0

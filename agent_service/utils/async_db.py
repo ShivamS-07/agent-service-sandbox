@@ -74,7 +74,7 @@ from agent_service.utils.async_postgres_base import (
     DEFAULT_ASYNCDB_MAX_POOL_SIZE,
     AsyncPostgresBase,
 )
-from agent_service.utils.async_utils import run_async_background
+from agent_service.utils.async_utils import gather_with_concurrency, run_async_background
 from agent_service.utils.boosted_pg import BoostedPG, InsertToTableArgs
 from agent_service.utils.cache_utils import RedisCacheBackend
 from agent_service.utils.date_utils import get_now_utc
@@ -3200,6 +3200,116 @@ class AsyncDB:
                 )
             )
         return cases
+
+    async def update_agent_snapshot_empty_row_if_not_exist(self, date: datetime.datetime) -> None:
+        """
+        Due to incrementing and updating functions, this function adds a new row for the week
+        Monday -> Sunday if it does not exist with counts defaulting to 0.
+        Args:
+            date:
+            Date within the week Monday -> Sunday to insert
+        """
+        sql = """
+        insert into agent.created_agents_snapshots
+        (week_start, week_end, live_agents, created_agents)
+        select
+            date_trunc('week', %(date)s::date) as week_start,
+            date_trunc('week', %(date)s::date) + interval '6 days' as week_end,
+            0 as live_agents,
+            0 as created_agents
+        where not exists (
+            select 1
+            from agent.created_agents_snapshots
+            where week_start = date_trunc('week', %(date)s::date)
+        ); 
+        """
+        await self.pg.generic_write(sql, {"date": date.isoformat()})
+
+    async def update_agent_snapshot_livecount(
+        self, date: datetime.datetime, agent_ids: list[str], user_ids: list[str]
+    ) -> None:
+        await self.update_agent_snapshot_empty_row_if_not_exist(date)
+        is_internal_queries = await gather_with_concurrency(
+            [self.is_user_internal(uid) for uid in user_ids], n=3
+        )
+        external_user_ids = [
+            aid for aid, internal in zip(user_ids, is_internal_queries) if not internal
+        ]
+        sql = """
+        with valid_agents as (
+            select distinct
+                a.agent_id as agent_id
+            from 
+                agent.agents a
+            join
+                agent.agent_qc qc
+            on
+                a.agent_id = qc.agent_id
+            where
+                a.created_at between date_trunc('week', %(date)s::date) and date_trunc('week', %(date)s::date) + interval '6 days'
+                and a.automation_enabled 
+                and a.agent_id = any(%(agent_ids)s::UUID[])
+                and qc.is_spoofed = False
+        ), live_agents_count as (
+            select 
+                count(*) as live_count
+            from agent.agents a
+            where a.agent_id in (select agent_id from valid_agents) and a.user_id = any(%(user_ids)s::UUID[])
+        )
+        update 
+            agent.created_agents_snapshots
+        set 
+            live_agents = (select live_count from live_agents_count)
+        where
+            week_start = date_trunc('week', %(date)s::date)
+        """
+        await self.pg.generic_write(
+            sql, {"date": date.isoformat(), "agent_ids": agent_ids, "user_ids": external_user_ids}
+        )
+
+    async def update_agent_snapshot_increment_agents_created(self, date: datetime.datetime) -> None:
+        await self.update_agent_snapshot_empty_row_if_not_exist(date)
+        sql = """
+                update 
+                    agent.created_agents_snapshots
+                set 
+                    created_agents = created_agents + 1
+                where
+                    week_start = date_trunc('week', %(date)s::date)
+                """
+        await self.pg.generic_write(sql, {"date": date.isoformat()})
+
+    async def get_agent_snapshot(
+        self, start_date: Optional[datetime.datetime], end_date: Optional[datetime.datetime]
+    ) -> List[Dict[str, Tuple[datetime.datetime, int]]]:
+        sql = """
+        select
+            week_start,
+            week_end,
+            live_agents,
+            created_agents
+        from agent.created_agents_snapshots
+        where
+            %(start_date)s <= week_end 
+            and week_start <= %(end_date)s
+        order by week_start;
+        """
+        if not start_date:
+            start_date = datetime.datetime(year=2000, month=1, day=1)
+        if not end_date:
+            end_date = datetime.datetime(year=9999, month=1, day=1)
+        res = await self.pg.generic_read(
+            sql, {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()}
+        )
+        ret = []
+        for row in res:
+            ret.append(
+                {
+                    "live": (row["week_start"], row["live_agents"]),
+                    "non-live": (row["week_start"], row["created_agents"] - row["live_agents"]),
+                }
+            )
+        return ret
 
     async def get_cached_urls(
         self, queries: List[str], time_period: str, query_type: str, cache_time: int

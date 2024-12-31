@@ -1885,6 +1885,13 @@ class QueryWithBreakdown(BaseModel):
     score_rating: Optional[int]
 
 
+class AgentSnapshot(BaseModel):
+    week_start: datetime.datetime
+    week_end: datetime.datetime
+    live_agents: int
+    created_agents: int
+
+
 class GetAgentsQCRequest(BaseModel):
     start_dt: Optional[datetime.datetime] = None
     end_dt: Optional[datetime.datetime] = None

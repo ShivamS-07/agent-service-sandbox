@@ -1,5 +1,5 @@
 import datetime
-from typing import List
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
 from starlette import status
@@ -179,4 +179,24 @@ async def get_query_breakdown_deep_dive(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
         )
     res = await agent_svc_impl.pg.get_all_usecase_rating_within_week(date)
+    return res
+
+
+@router.post(
+    "/stats/query-historical-agents/",
+    response_model=List[Dict[str, Tuple[datetime.datetime, int]]],
+    status_code=status.HTTP_200_OK,
+)
+async def get_query_historical_agents(
+    start_date: Optional[datetime.datetime] = None,
+    end_date: Optional[datetime.datetime] = None,
+    user: User = Depends(parse_header),
+) -> List[Dict[str, Tuple[datetime.datetime, int]]]:
+    # Validate user access to QC tool
+    agent_svc_impl = get_agent_svc_impl()
+    if not await user_has_qc_tool_access(user_id=user.user_id, async_db=agent_svc_impl.pg):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
+        )
+    res = await agent_svc_impl.pg.get_agent_snapshot(start_date, end_date)
     return res

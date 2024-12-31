@@ -407,7 +407,6 @@ class AgentServiceImpl:
         self, user: User, is_draft: bool = False, created_from_template: bool = False
     ) -> CreateAgentResponse:
         """Create an agent entry in the DB and return ID immediately"""
-
         now = get_now_utc()
         agent_meta = AgentMetadata(created_from_template=created_from_template)
         if user.real_user_id and user.real_user_id != user.user_id:
@@ -424,6 +423,14 @@ class AgentServiceImpl:
             agent_metadata=agent_meta,
         )
         await self.pg.create_agent(agent)
+
+        # Only add agent if its 'not internal' and 'not spoofed'
+        is_internal = await get_async_db().is_user_internal(user.user_id)
+        if not is_internal:
+            await get_async_db().update_agent_snapshot_increment_agents_created(
+                datetime.datetime.now()
+            )
+
         return CreateAgentResponse(success=True, allow_retry=False, agent_id=agent.agent_id)
 
     async def update_agent_draft_status(
