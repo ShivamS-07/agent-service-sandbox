@@ -52,9 +52,9 @@ def exec_code(df: pd.DataFrame, code: str) -> pd.DataFrame:
                 line_number = frame.lineno
                 break
 
+        code_lines = code.splitlines()
         if line_number:
             # Get the code that caused the exception
-            code_lines = code.splitlines()
             if 0 <= line_number - 1 < len(code_lines):
                 error_line = code_lines[line_number - 1]
             else:
@@ -63,6 +63,13 @@ def exec_code(df: pd.DataFrame, code: str) -> pd.DataFrame:
             # Print the exception details and the line content from the exec'd code
             print(f"Exception: {exc_type}: {exc_value}", file=sys.stderr)
             print(f"Line {line_number}: {error_line}", file=sys.stderr)
+
+        # printout the pandas code to make the exception easier to interpret
+        print("===== BEGIN CODE ======:", file=sys.stderr)
+        for i, line in enumerate(code_lines):
+            print(f"# Line {i+1}", file=sys.stderr)
+            print(line, file=sys.stderr)
+        print("===== END CODE ======:", file=sys.stderr)
 
         raise
 
