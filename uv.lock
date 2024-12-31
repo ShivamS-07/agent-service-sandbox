@@ -102,7 +102,7 @@ requires-dist = [
     { name = "google-generativeai", specifier = "==0.8.3" },
     { name = "gpt-service-proto-v1", specifier = "==1.4.0" },
     { name = "griffe", specifier = "==0.48.0" },
-    { name = "json-repair", specifier = "==0.16.3" },
+    { name = "json-repair", specifier = "==0.35.0" },
     { name = "levenshtein", specifier = "==0.25.1" },
     { name = "llm-client", specifier = ">=1.0.6" },
     { name = "mdutils", specifier = "==1.6.0" },
@@ -1338,11 +1338,11 @@ wheels = [
 
 [[package]]
 name = "json-repair"
-version = "0.16.3"
+version = "0.35.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/7d/a0/72f18f551c3eaf9bb21237a6f64d7475d62252221736f8457c8613ecd356/json_repair-0.16.3.tar.gz", hash = "sha256:a492decf10f8e34f5255bfd13729daa9997a023dc3b71e178d342654ddb1c00e", size = 17783 }
+sdist = { url = "https://files.pythonhosted.org/packages/95/9c/5ef83a13541c3444e0b949e88b3aa0f4e364e37acf4ffa9de476d36a3de0/json_repair-0.35.0.tar.gz", hash = "sha256:e70f834865a4ae5fe64352c23c1c16d3b70c5dd62dc544a169d8b0932bdbdcaa", size = 29053 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/aa/59/3ca9f3355e54cb63bab13a7feedcb93da3df88686d7913528423b6c9f36d/json_repair-0.16.3-py3-none-any.whl", hash = "sha256:81f1ef304702e9021756f75046f08f88c6d18921efafd54f542e34c4b49bc9c3", size = 10886 },
+    { url = "https://files.pythonhosted.org/packages/4e/c7/9a63ff79f2f6350c0f5e504bad940386015381b4d171bd73077465a7dbbc/json_repair-0.35.0-py3-none-any.whl", hash = "sha256:1d429407158474d28a996e745b8f8f7dc78957cb2cfbc92120b9f580b5230a9e", size = 19908 },
 ]
 
 [[package]]

@@ -2,9 +2,7 @@ import functools
 import logging
 import sys
 import time
-from typing import Callable, Optional, TypeVar
-
-from typing_extensions import ParamSpec
+from typing import Callable, Optional, ParamSpec, TypeVar
 
 logger = logging.getLogger(__name__)
 

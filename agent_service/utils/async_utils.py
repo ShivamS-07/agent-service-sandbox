@@ -12,12 +12,12 @@ from typing import (
     Dict,
     List,
     Optional,
+    ParamSpec,
     Tuple,
     TypeVar,
 )
 
 from tqdm.asyncio import tqdm_asyncio
-from typing_extensions import ParamSpec
 
 T = TypeVar("T")
 P = ParamSpec("P")

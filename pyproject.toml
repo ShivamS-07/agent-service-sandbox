@@ -75,7 +75,7 @@ dependencies = [
     "async-cache==1.1.1",
     "mdutils==1.6.0",
     "sec-api==1.0.22",
-    "json-repair==0.16.3",
+    "json-repair==0.35.0",
     "scipy==1.11.3",
     "devtools==0.12.2",
     "psycopg-pool~=3.2.0",

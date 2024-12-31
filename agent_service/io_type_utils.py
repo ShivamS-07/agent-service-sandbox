@@ -7,13 +7,16 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from copy import deepcopy
 from typing import (
+    Annotated,
     Any,
     Callable,
     Dict,
     List,
     Optional,
+    Self,
     Set,
     Type,
+    TypeAliasType,
     TypeVar,
     Union,
     cast,
@@ -26,7 +29,6 @@ from pydantic.config import ConfigDict
 from pydantic.functional_serializers import WrapSerializer, model_serializer
 from pydantic.functional_validators import PlainValidator, model_validator
 from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandler
-from typing_extensions import Annotated, Self, TypeAliasType
 
 from agent_service.io_types.output import CitationOutput, Output
 from agent_service.utils.async_utils import gather_with_concurrency

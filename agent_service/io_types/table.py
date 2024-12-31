@@ -3,12 +3,11 @@ import logging
 import time
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Annotated, Any, Dict, List, Literal, Optional, Type, Union, cast
+from typing import Annotated, Any, Dict, List, Literal, Optional, Self, Type, Union, cast
 
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, field_serializer
-from typing_extensions import Self
 
 from agent_service.io_type_utils import (
     Citation,

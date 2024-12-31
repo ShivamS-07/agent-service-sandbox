@@ -67,7 +67,7 @@ def repair_json_if_needed(json_str: str, json_load: bool = False) -> Any:
         return loaded_obj if json_load else json_str
     except json.JSONDecodeError as e:
         # when logging is true, it always returns object, not str
-        new_cleaned_json, log = repair_json(json_str, logging=True)
+        new_cleaned_json, log = repair_json(json_str, logging=True)  # type: ignore
         if new_cleaned_json:  # will be an empty str if failed to repair
             if log:
                 logger.warning(f"Actions taken to repair JSON: {log}")

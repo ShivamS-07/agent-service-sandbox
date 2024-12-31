@@ -13,6 +13,7 @@ from typing import (
     List,
     Literal,
     Optional,
+    Self,
     Sequence,
     Tuple,
     Type,
@@ -24,7 +25,6 @@ from uuid import uuid4
 import boto3
 import mdutils
 from pydantic import Field, field_serializer
-from typing_extensions import Self
 
 from agent_service.external.custom_data_svc_client import get_custom_doc_articles_info
 from agent_service.io_type_utils import (

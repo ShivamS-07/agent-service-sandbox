@@ -1,9 +1,8 @@
 import asyncio
 import json
-from typing import List, Optional
+from typing import List, Optional, Self
 
 import pydantic_core
-from typing_extensions import Self
 
 from agent_service.GPT.constants import GPT4_O
 from agent_service.GPT.requests import GPT

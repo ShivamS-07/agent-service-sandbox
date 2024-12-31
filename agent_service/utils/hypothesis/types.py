@@ -1,9 +1,7 @@
 import datetime
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
-from typing import Any, Dict, List, Optional, Tuple
-
-from typing_extensions import Self
+from typing import Any, Dict, List, Optional, Self, Tuple
 
 
 @dataclass

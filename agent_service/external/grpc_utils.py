@@ -3,7 +3,7 @@ import functools
 import json
 import socket
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
+from typing import Any, Callable, Dict, List, Optional, ParamSpec, Tuple, TypeVar
 
 import backoff
 import grpclib
@@ -18,7 +18,6 @@ from grpclib import GRPCError
 from grpclib.const import Status
 from jwt import PyJWT
 from jwt.algorithms import RSAAlgorithm
-from typing_extensions import ParamSpec
 
 BOOSTED_ISS = "https://boosted.ai"
 
