@@ -1,5 +1,5 @@
 import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from starlette import status
@@ -11,6 +11,7 @@ from agent_service.endpoints.models import (
     AgentQC,
     GetAgentsQCRequest,
     GetLiveAgentsQCResponse,
+    HistoricalAgentsSnapshot,
     QueryWithBreakdown,
     SearchAgentQCRequest,
     SearchAgentQCResponse,
@@ -184,14 +185,27 @@ async def get_query_breakdown_deep_dive(
 
 @router.post(
     "/stats/query-historical-agents/",
-    response_model=List[Dict[str, Tuple[datetime.datetime, int]]],
+    response_model=List[HistoricalAgentsSnapshot],
     status_code=status.HTTP_200_OK,
 )
 async def get_query_historical_agents(
     start_date: Optional[datetime.datetime] = None,
     end_date: Optional[datetime.datetime] = None,
     user: User = Depends(parse_header),
-) -> List[Dict[str, Tuple[datetime.datetime, int]]]:
+) -> List[HistoricalAgentsSnapshot]:
+    """
+    Inputs:
+        start_date: start_date range of weeks you want to fetch for
+        end_date: end_date range of weeks you want to fetch for
+    If any are null, will fetch all within bounds
+
+    Returns:
+        list of
+        {
+            "live": (date, number of agents)
+            "non-live": (date, number of agents)
+        }
+    """
     # Validate user access to QC tool
     agent_svc_impl = get_agent_svc_impl()
     if not await user_has_qc_tool_access(user_id=user.user_id, async_db=agent_svc_impl.pg):

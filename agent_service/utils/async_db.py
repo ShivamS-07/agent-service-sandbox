@@ -27,6 +27,7 @@ from agent_service.endpoints.models import (
     AgentSchedule,
     AgentUserSettingsSetRequest,
     CustomNotification,
+    HistoricalAgentsSnapshot,
     HorizonCriteria,
     HorizonCriteriaOperator,
     Pagination,
@@ -3317,7 +3318,7 @@ class AsyncDB:
 
     async def get_agent_snapshot(
         self, start_date: Optional[datetime.datetime], end_date: Optional[datetime.datetime]
-    ) -> List[Dict[str, Tuple[datetime.datetime, int]]]:
+    ) -> List[HistoricalAgentsSnapshot]:
         sql = """
         select
             week_start,
@@ -3340,10 +3341,10 @@ class AsyncDB:
         ret = []
         for row in res:
             ret.append(
-                {
-                    "live": (row["week_start"], row["live_agents"]),
-                    "non-live": (row["week_start"], row["created_agents"] - row["live_agents"]),
-                }
+                HistoricalAgentsSnapshot(
+                    live=(row["week_end"], row["live_agents"]),
+                    non_live=(row["week_end"], row["created_agents"] - row["live_agents"]),
+                )
             )
         return ret
 

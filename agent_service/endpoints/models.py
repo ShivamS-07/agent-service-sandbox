@@ -1,6 +1,6 @@
 import datetime
 import enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -1907,6 +1907,11 @@ class AgentSnapshot(BaseModel):
     week_end: datetime.datetime
     live_agents: int
     created_agents: int
+
+
+class HistoricalAgentsSnapshot(BaseModel):
+    live: Tuple[datetime.datetime, int]
+    non_live: Tuple[datetime.datetime, int]
 
 
 class GetAgentsQCRequest(BaseModel):
