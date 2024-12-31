@@ -153,6 +153,7 @@ class AgentInfo(BaseModel):
     last_run: Optional[datetime.datetime] = None
     next_run: Optional[datetime.datetime] = None
     output_last_updated: Optional[datetime.datetime] = None
+    last_automation_run: Optional[datetime.datetime] = None
 
     latest_notification_string: Optional[str] = None
     unread_notification_count: int = 0

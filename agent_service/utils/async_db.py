@@ -353,6 +353,22 @@ class AsyncDB:
 
         return output
 
+    @async_perf_logger
+    async def get_plan_runs_endtimes_agent(
+        self, agent_id: str
+    ) -> Optional[List[datetime.datetime]]:
+        sql = """
+        SELECT last_updated AS end_time
+        FROM agent.plan_runs
+        WHERE agent_id = %(agent_id)s
+        AND scheduled_by_automation = TRUE
+        ORDER BY end_time ASC
+        """
+        rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
+        if not rows:
+            return None
+        return [row["end_time"] for row in rows]
+
     async def get_agent_outputs_no_cache(
         self, agent_id: str, plan_run_id: Optional[str] = None
     ) -> List[AgentOutput]:
@@ -1741,7 +1757,7 @@ class AsyncDB:
     ) -> List[AgentInfo]:
         """
         This function retrieves all agents for a given user, optionally filtered
-        by a list of agent ids.
+        by a list of agent ids
 
         Args:
             user_id: The user id to retrieve agents for.
@@ -1777,7 +1793,7 @@ class AsyncDB:
         SELECT
             a.agent_id::VARCHAR, a.user_id::VARCHAR, a.agent_name, a.created_at, a.last_updated,
             a.automation_enabled, a.section_id::VARCHAR, lr.last_run, msg.latest_agent_message,
-            nu.num_unread AS unread_notification_count, a.schedule, lr.run_metadata,
+            nu.num_unread AS unread_notification_count, a.schedule, lr.run_metadata, lar.last_automation_run,
             a.deleted, a.is_draft, lo.output_last_updated, a.help_requested
         FROM a_id AS a
         LEFT JOIN LATERAL (
@@ -1787,6 +1803,14 @@ class AsyncDB:
             ORDER BY pr.created_at DESC
             LIMIT 1
         ) AS lr ON true
+        LEFT JOIN LATERAL (
+            SELECT created_at AS last_automation_run
+            FROM agent.plan_runs AS pr
+            WHERE pr.agent_id = a.agent_id
+            AND pr.scheduled_by_automation = TRUE
+            ORDER BY pr.created_at DESC
+            LIMIT 1
+        ) AS lar ON true
         LEFT JOIN LATERAL (
             SELECT message AS latest_agent_message
             FROM agent.chat_messages AS m
@@ -1833,6 +1857,7 @@ class AsyncDB:
                     last_updated=row["last_updated"],
                     last_run=row["last_run"],
                     next_run=(schedule.get_next_run() if schedule else None),
+                    last_automation_run=row["last_automation_run"],
                     latest_notification_string=notification_string,
                     automation_enabled=row["automation_enabled"],
                     unread_notification_count=row["unread_notification_count"] or 0,

@@ -951,6 +951,77 @@ class AgentServiceImpl:
         )
 
     @async_perf_logger
+    async def get_chat_history_in_session(
+        self,
+        agent_id: str,
+        timestamp: Optional[datetime.datetime],
+        limit_num: Optional[int] = None,
+        start_index: Optional[int] = 0,
+    ) -> GetChatHistoryResponse:
+        """
+        Retrieves chat history within a session for the given agent and timestamp
+
+        Args:
+            agent_id: ID of the agent.
+            timestamp: Timestamp to find the chat history around, if None, return the last session.
+            limit_num: Maximum number of messages to return (optional).
+            start_index: Starting index for pagination (optional).
+
+        Returns:
+            GetChatHistoryResponse object containing messages, total count, and start index.
+        """
+
+        def find_surrounding_end_times(
+            end_times: Optional[List[datetime.datetime]], timestamp: Optional[datetime.datetime]
+        ) -> Tuple[Optional[datetime.datetime], Optional[datetime.datetime]]:
+            """
+            Finds the session start and end times surrounding the given timestamp.
+
+            Args:
+                end_times: List of end times for agent's plan runs.
+                timestamp: Timestamp to search for the session.
+
+            Returns:
+                Tuple containing (start_time, end_time) for the session.
+            """
+            if not end_times:
+                return None, None
+            else:
+                sorted_end_times = sorted(end_times)
+            # if no timestamp is provided, return the last end time and None
+            if timestamp is None:
+                return sorted_end_times[-1].replace(microsecond=0), None
+            if timestamp <= sorted_end_times[0]:
+                return None, sorted_end_times[0]
+            if timestamp >= sorted_end_times[-1]:
+                return sorted_end_times[-1].replace(microsecond=0), None
+            for i in range(len(sorted_end_times) - 1):
+                if sorted_end_times[i] <= timestamp <= sorted_end_times[i + 1]:
+                    return sorted_end_times[i].replace(microsecond=0), sorted_end_times[i + 1]
+            return None, None  # This shouldn't be reached
+
+        try:
+            end_times = await self.pg.get_plan_runs_endtimes_agent(agent_id)
+        except Exception as e:
+            LOGGER.exception(f"Failed to get plan runs end times for {agent_id=}: {e}")
+            end_times = None
+        start, end = find_surrounding_end_times(end_times, timestamp)
+        print("start: ", start, "end: ", end)
+        # get the chat history for the session
+        chat_context = await self.get_chat_history(
+            agent_id=agent_id,
+            start=start,
+            end=end,
+            limit_num=limit_num,
+            start_index=start_index,
+        )
+        return GetChatHistoryResponse(
+            messages=chat_context.messages,
+            total_message_count=chat_context.total_message_count,
+            start_index=start_index,
+        )
+
+    @async_perf_logger
     async def get_agent_worklog_board(
         self,
         agent_id: str,
@@ -1538,7 +1609,7 @@ class AgentServiceImpl:
                 if info.annotation not in EDITABLE_TYPE:
                     # `info.annotation` can be complex/union types and some of them should be editable,
                     # so we check the type of `arg_value`, e.g. Union[str, SelfDefinedType]
-                    # if `arg_value` is string, we should still allow it to be a string
+                    # if `arg_value` is string, we should still allow it to be a string.
                     arg_value_type = type(arg_value)
                     if arg_value is None:
                         is_editable = False

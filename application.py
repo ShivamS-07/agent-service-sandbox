@@ -755,6 +755,37 @@ async def get_chat_history(
 
 
 @router.get(
+    "/agent/get-chat-history-in-session/{agent_id}",
+    response_model=GetChatHistoryResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_chat_history_in_session(
+    agent_id: str,
+    timestamp: Optional[datetime.datetime] = None,
+    start_index: Optional[int] = 0,
+    limit_num: Optional[int] = None,
+    user: User = Depends(parse_header),
+) -> GetChatHistoryResponse:
+    """Get chat history for an agent in report session
+
+    Args:
+        agent_id (str): agent ID
+        timestamp (datetime.datetime): timestamp to filter messages
+    """
+    if not (
+        user.is_super_admin
+        or await is_user_agent_admin(user.user_id, async_db=application.state.agent_service_impl.pg)
+    ):
+        await validate_user_agent_access(
+            user.user_id, agent_id, async_db=application.state.agent_service_impl.pg
+        )
+
+    return await application.state.agent_service_impl.get_chat_history_in_session(
+        agent_id=agent_id, timestamp=timestamp, start_index=start_index, limit_num=limit_num
+    )
+
+
+@router.get(
     "/agent/get-agent-worklog-board/{agent_id}",
     response_model=GetAgentWorklogBoardResponse,
     status_code=status.HTTP_200_OK,
