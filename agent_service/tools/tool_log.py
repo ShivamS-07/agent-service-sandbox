@@ -1,4 +1,5 @@
 import inspect
+import uuid
 from typing import Optional
 
 from agent_service.io_type_utils import IOType, dump_io_type
@@ -29,10 +30,20 @@ async def tool_log(
     log: IOType,
     context: PlanRunContext,
     associated_data: Optional[IOType] = None,
+    log_id: Optional[str] = None,
+    percentage: Optional[float] = None,
 ) -> None:
+    if not log_id:
+        log_id = str(uuid.uuid4())
     if not context.skip_db_commit and not context.skip_task_logging:
         db = get_psql(skip_commit=context.skip_db_commit)
-        db.write_tool_log(log=log, context=context, associated_data=associated_data)
+        db.write_tool_log(
+            log=log,
+            context=context,
+            associated_data=associated_data,
+            log_id=log_id,
+            percentage=percentage,
+        )
     io_str = dump_io_type(log)
 
     # log as if from the caller of this function

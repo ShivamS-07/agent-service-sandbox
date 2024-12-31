@@ -112,6 +112,7 @@ async def get_agent_hierarchical_worklogs(
                     log_message=message_str,
                     created_at=row["created_at"],
                     has_output=row["has_output"],
+                    percentage_complete=row["percentage"],
                 )
             )
 

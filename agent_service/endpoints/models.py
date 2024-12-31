@@ -443,6 +443,7 @@ class PlanRunTaskLog(BaseModel):
     log_message: str  # user-faced log item under each task
     created_at: datetime.datetime
     has_output: bool = False
+    percentage_complete: Optional[float] = None
 
 
 class PlanRunTask(BaseModel):
@@ -587,6 +588,7 @@ class EventType(enum.StrEnum):
     TASK_LOG = "task_log"
     AGENT_NAME = "agent_name"
     QUICK_THOUGHTS = "quick_thoughts"
+    TASK_LOG_PROGRESS_BAR = "task_log_progress_bar"
 
 
 class Event(BaseModel):
@@ -615,6 +617,15 @@ class OutputEvent(Event):
 class AgentQuickThoughtsEvent(Event):
     event_type: Literal[EventType.QUICK_THOUGHTS] = EventType.QUICK_THOUGHTS
     quick_thoughts: QuickThoughts
+
+
+class TaskLogProgressBarEvent(Event):
+    event_type: Literal[EventType.TASK_LOG_PROGRESS_BAR] = EventType.TASK_LOG_PROGRESS_BAR
+    percentage: float
+    log_id: Optional[str]
+    created_at: datetime.datetime
+    log_message: Optional[str]
+    task_id: Optional[str]
 
 
 class NewPlanEvent(Event):
@@ -663,6 +674,7 @@ class AgentEvent(BaseModel):
         ExecutionStatusEvent,
         AgentNameEvent,
         AgentQuickThoughtsEvent,
+        TaskLogProgressBarEvent,
     ] = Field(discriminator="event_type")
     timestamp: datetime.datetime = Field(default_factory=get_now_utc)
 

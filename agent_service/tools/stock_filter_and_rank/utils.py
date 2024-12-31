@@ -75,7 +75,7 @@ from agent_service.tools.stock_filter_and_rank.prompts import (
 )
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import PlanRunContext
-from agent_service.utils.async_utils import gather_with_concurrency, identity
+from agent_service.utils.async_utils import ProgressBarArgs, gather_with_concurrency, identity
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -175,7 +175,11 @@ async def classify_stock_text_relevancies_for_profile(
             )
 
     results = await gather_with_concurrency(
-        tasks, n=200, desc=f"text relevance for profile: {profiles_str}", use_progress_bar=True
+        tasks,
+        n=200,
+        progress_bar_args=ProgressBarArgs(
+            context=context, desc="Computing text relevance for profile..."
+        ),
     )
     for i, relevancy_decision in enumerate(results):
         if relevancy_decision:
@@ -271,7 +275,12 @@ async def profile_filter_stock_match(
             )
 
     results = await gather_with_concurrency(
-        tasks, n=FILTER_CONCURRENCY, use_progress_bar=True, desc=f"Filtering on profile: {profile}"
+        tasks,
+        n=FILTER_CONCURRENCY,
+        progress_bar_args=ProgressBarArgs(
+            desc="Filtering on profile...",
+            context=context,
+        ),
     )
 
     output_tuples: List[Tuple[bool, str, List[Citation]]] = []

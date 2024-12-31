@@ -616,7 +616,10 @@ async def get_news_articles_for_topics(
                             sys_prompt=THEME_RELEVANT_SYS_PROMPT.format(),
                         )
                     )
-                results = await gather_with_concurrency(tasks, n=EMBEDDING_POOL_BATCH_SIZE)
+                results = await gather_with_concurrency(
+                    tasks,
+                    n=EMBEDDING_POOL_BATCH_SIZE,
+                )
 
                 successful = []
                 for news, result in zip(news_batch, results):

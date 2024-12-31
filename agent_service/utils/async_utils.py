@@ -1,5 +1,7 @@
 import asyncio
+import datetime
 import functools
+import uuid
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from typing import (
@@ -17,7 +19,7 @@ from typing import (
     TypeVar,
 )
 
-from tqdm.asyncio import tqdm_asyncio
+from agent_service.utils.progress_bar_args import FrontendProgressBar, ProgressBarArgs
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -92,8 +94,7 @@ async def gather_with_concurrency(
     tasks: Collection[Awaitable],
     n: int = MAX_CONCURRENCY,
     return_exceptions: bool = False,
-    use_progress_bar: bool = False,
-    desc: str = "Processing tasks",
+    progress_bar_args: Optional[ProgressBarArgs] = None,
 ) -> Any:
     n = min(n, len(tasks))  # no greater than number of tasks
     semaphore = asyncio.Semaphore(n)
@@ -104,8 +105,23 @@ async def gather_with_concurrency(
 
     semaphored_tasks = (sem_task(task) for task in tasks)
 
-    if use_progress_bar:
-        return await tqdm_asyncio.gather(*semaphored_tasks, desc=desc)
+    if progress_bar_args:
+        log_id = str(uuid.uuid4())
+        created_at = datetime.datetime.utcnow()
+        result = await FrontendProgressBar.gather(
+            *semaphored_tasks,
+            desc=progress_bar_args.desc,
+            context=progress_bar_args.context,
+            log_id=log_id,
+            created_at=created_at,
+        )
+        await FrontendProgressBar.all_done(
+            context=progress_bar_args.context,
+            desc=progress_bar_args.desc,
+            log_id=log_id,
+            created_at=created_at,
+        )
+        return result
     else:
         return await asyncio.gather(*semaphored_tasks, return_exceptions=return_exceptions)
 
