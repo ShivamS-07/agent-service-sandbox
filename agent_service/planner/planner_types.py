@@ -103,6 +103,12 @@ class ToolExecutionNode(BaseModel):
                 for i, elem in enumerate(val):
                     if isinstance(elem, dict) and "var_name" in elem:
                         args[key][i] = Variable(var_name=elem["var_name"], index=elem.get("index"))
+            elif isinstance(val, dict):
+                for elem_key, elem in val.items():
+                    if isinstance(elem, dict) and "var_name" in elem:
+                        args[key][elem_key] = Variable(
+                            var_name=elem["var_name"], index=elem.get("index")
+                        )
 
         return args
 

@@ -1,4 +1,6 @@
 import hashlib
+import inspect
+import json
 import uuid
 from copy import deepcopy
 from typing import Any, Dict, Optional, Tuple, cast
@@ -10,7 +12,7 @@ from agent_service.io_types.text import StockText, Text
 from agent_service.io_types.text_objects import StockTextObject
 from agent_service.planner.planner_types import ExecutionPlan
 from agent_service.planner.sub_plan_executor import run_plan_simple
-from agent_service.tool import ToolArgs, ToolCategory, tool
+from agent_service.tool import TOOL_DEBUG_INFO, ToolArgs, ToolCategory, tool
 from agent_service.tools.tables import JoinTableArgs, join_tables
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import AgentUserSettings, PlanRunContext
@@ -21,7 +23,9 @@ from agent_service.utils.output_utils.output_construction import (
     prepare_list_of_stock_texts,
     prepare_list_of_texts,
 )
+from agent_service.utils.pagerduty import pager_wrapper
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.tool_diff import get_prev_run_info
 
 FIRST_PASS_TOOLS = set(["transform_table", "get_statistic_data_for_companies"])
 
@@ -38,13 +42,17 @@ def reproducible_uuid4(data: str) -> str:
     return str(uuid.UUID(bytes=bytes(truncated_bytes)))
 
 
-def _hash_value(val: Any) -> Any:
+def _string_for_hashing(val: Any) -> str:
     if isinstance(val, list):
-        return tuple(_hash_value(item) for item in val)
+        return str(tuple(_string_for_hashing(item) for item in val))
     elif isinstance(val, dict):
-        return tuple(sorted(val.items()))
+        return str(tuple(sorted(val.items())))
+    elif isinstance(val, StockID):
+        return str(val.gbi_id)
+    elif isinstance(val, Text):
+        return str(val.id)
     else:
-        return hash(val)
+        return str(val)
 
 
 def instantiate_subplan_with_task_ids(
@@ -57,7 +65,7 @@ def instantiate_subplan_with_task_ids(
         text_buffer = [step.tool_task_id]
         for key in sorted(row.keys()):
             val = row[key]
-            text_buffer.append(str(_hash_value(val)))
+            text_buffer.append(_string_for_hashing(val))
         text_buffer_str = "-".join(text_buffer)
         new_task_id = reproducible_uuid4(text_buffer_str)
         step.tool_task_id = new_task_id
@@ -112,11 +120,11 @@ async def convert_per_row_results_to_table(
     sub_tables = []
     for results_row in results:
         for i, output in enumerate(results_row):
-            fixed_output = output
             if isinstance(output, PreparedOutput):
                 # Unwrap prepared outputs
                 output = output.val
 
+            fixed_output = output
             if isinstance(output, list) and output:
                 fixed_output = await _handle_list_output(output=output)
             elif isinstance(output, Table) and len(results_row) == 1:
@@ -198,45 +206,75 @@ async def per_row_processing(args: PerRowProcessingArgs, context: PlanRunContext
     logger = get_prefect_logger(name="__main__")
     table = args.table
 
-    # TODO: Skip planning if an update
+    prev_run_info = None
+    subplan_template = None
+    rows = []
+    try:  # since everything associated with diffing is optional, put in try/except
+        # Update mode
+        prev_run_info = await get_prev_run_info(context, "per_row_processing")
+        if prev_run_info is not None:
+            prev_args = PerRowProcessingArgs.model_validate_json(prev_run_info.inputs_str)
+            prev_table_metadata = [col.metadata for col in prev_args.table.columns]
+            curr_table_metadata = [col.metadata for col in args.table.columns]
+            if prev_table_metadata == curr_table_metadata:
+                subplan_template = ExecutionPlan.from_dict(
+                    json.loads(prev_run_info.debug["subplan_template"])
+                )
+                await tool_log("Loaded sub-plan from previous run", context=context)
+                rows = table.iterate_over_rows()
 
-    from agent_service.planner.planner import Planner
+    except Exception as e:
+        logger.exception(f"Error loading subplan from previous run: {e}")
+        pager_wrapper(
+            current_frame=inspect.currentframe(),
+            module_name=__name__,
+            context=context,
+            e=e,
+            classt="AgentUpdateError",
+            summary="Failed to update per_row_processing",
+        )
 
-    await tool_log("Creating sub-plan...", context=context)
-    variables = table.get_variables_from_table()  # probably need IOtypes for type checking?
-    subplanner = Planner(
-        agent_id=context.agent_id, user_id=context.user_id, send_chat=False, is_subplanner=True
-    )
-    subplan_template = await subplanner.create_subplan(args.per_row_operations, variables)
+    if subplan_template is None:
+        from agent_service.planner.planner import Planner
 
-    if subplan_template:
-        logger.info(f"Subplan template:\n{subplan_template.get_formatted_plan()}")
-    else:
-        raise (Exception("failed to create plan"))
+        await tool_log("Creating sub-plan...", context=context)
+        variables = table.get_variables_from_table()
+        subplanner = Planner(
+            agent_id=context.agent_id, user_id=context.user_id, send_chat=False, is_subplanner=True
+        )
+        subplan_template = await subplanner.create_subplan(args.per_row_operations, variables)
 
-    # do an initial run when needed
-    rows = table.iterate_over_rows()
+        if subplan_template:
+            logger.info(f"Subplan template:\n{subplan_template.get_formatted_plan()}")
+        else:
+            raise (Exception("failed to create plan"))
 
-    if any([step.tool_name in FIRST_PASS_TOOLS for step in subplan_template.nodes]):
-        logger.info("Doing initial run to get individual tool templates")
-        # just grab first row and run it
-        await run_plan_simple(subplan_template, context, variable_lookup=rows[0])
+        # do an initial run when needed
+        rows = table.iterate_over_rows()
 
-        logger.info("Finished initial run")
+        if any([step.tool_name in FIRST_PASS_TOOLS for step in subplan_template.nodes]):
+            logger.info("Doing initial run to get individual tool templates")
+            # just grab first row and run it
+            await run_plan_simple(subplan_template, deepcopy(context), variable_lookup=rows[0])
 
-    # TODO: Save the subplan template in debug dict
+            logger.info("Finished initial run")
+
+    debug_info: Dict[str, Any] = {"subplan_template": subplan_template.model_dump_json()}
+    TOOL_DEBUG_INFO.set(debug_info)
 
     tasks = []
 
-    logger.info(f"Applying plan to table of {len(rows)} rows")
+    logger.info(f"Applying subplan to table of {len(rows)} rows")
 
     for row in rows:
         per_row_subplan, task_id_args = instantiate_subplan_with_task_ids(subplan_template, row)
 
-        # TODO check cache, skip if no need to update
         tasks.append(
             run_plan_simple(
-                per_row_subplan, context, variable_lookup=row, supplemental_args=task_id_args
+                per_row_subplan,
+                deepcopy(context),
+                variable_lookup=row,
+                supplemental_args=task_id_args,
             )
         )
 
@@ -262,7 +300,7 @@ corresponding to placeholders in the template string (indicated in the template 
 brackets, e.g {date}) to variables of any type that will fill those slots. The output is a string
 where the placeholders have been replaced with a string representation of the object within the variable.
 Generally, this tool should only be used for variables which are initialized before the beginning of
-the script, not those generated withinthe script/plan.
+the script, not those generated within the script/plan.
 For example, if `date` is a provided variable and the user asks to do some summary over texts from
 the month prior to the date, then you will build a string input to the get_date_range by first calling
 this tool with the template "30 day period ending on {date}" and you would pass {"date":date} as the
