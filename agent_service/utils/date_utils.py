@@ -12,8 +12,10 @@ logger = logging.getLogger(__name__)
 DAYS_LOOKUP = {"D": 1, "W": 7, "M": 30, "Q": 90, "Y": 365}
 
 
-real_datetime = datetime.datetime
-real_date = datetime.date
+real_datetime_class = datetime.datetime
+real_date_class = datetime.date
+real_date_new = datetime.date.__new__
+
 # set us up to override the current date/time
 real_now = datetime.datetime.now
 real_utcnow = datetime.datetime.utcnow
@@ -39,7 +41,7 @@ def warn_every_nth(n: int, s: str) -> None:
 # before any modules you want to override their date usage
 # like so: datetime.date = MockDate  # type:ignore
 # or call enable_mock_time()
-class _MockDate(datetime.date):
+class _MockDate(real_date_class):
     @classmethod
     def today(cls) -> datetime.date:  # type:ignore
         if _use_mock_time:
@@ -49,6 +51,12 @@ class _MockDate(datetime.date):
             return val
 
         return real_today()
+
+    def __new__(cls, year, month, day) -> datetime.date:  # type:ignore
+        # we only needed to override the today() static/class function
+        # we actually still want to create plain date objects though
+        tmp_date = real_date_new(real_date_class, year, month, day)
+        return tmp_date
 
 
 MockDate = _MockDate
@@ -70,11 +78,11 @@ def disable_mock_time() -> None:
 
     global _use_mock_time
     _use_mock_time = False
-    datetime.datetime = real_datetime  # type: ignore
-    datetime.date = real_date  # type: ignore
+    datetime.datetime = real_datetime_class  # type: ignore
+    datetime.date = real_date_class  # type: ignore
 
     global MockDate
-    MockDate = real_date  # type: ignore
+    MockDate = real_date_class  # type: ignore
 
 
 # this is needed to make time still 'flow' when using mocked time
