@@ -1,7 +1,7 @@
 from typing import List, Optional, Self
 
 from grpclib import GRPCError
-from stock_universe_service_proto_v1.custom_data_service_pb2 import (
+from nlp_service_proto_v1.document_service_pb2 import (
     CustomDocumentListing as ProtoCustomDocumentListing,
 )
 

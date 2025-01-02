@@ -1,4 +1,5 @@
 *#*
+uv.lock
 *.orig
 *,cover
 .DS_Store

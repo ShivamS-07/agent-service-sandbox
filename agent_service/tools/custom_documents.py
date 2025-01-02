@@ -1,7 +1,7 @@
 from collections import defaultdict
 from typing import List, Optional
 
-from stock_universe_service_proto_v1.custom_data_service_pb2 import (
+from nlp_service_proto_v1.document_service_pb2 import (
     CustomDocumentSummary,
 )
 

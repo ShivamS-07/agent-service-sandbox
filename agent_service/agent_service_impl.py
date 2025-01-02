@@ -35,7 +35,7 @@ from gbi_common_py_utils.utils.environment import (
 from gpt_service_proto_v1.service_grpc import GPTServiceStub
 from grpclib import GRPCError
 from grpclib import Status as GrpcStatus
-from stock_universe_service_proto_v1.custom_data_service_pb2 import (
+from nlp_service_proto_v1.document_service_pb2 import (
     GetFileContentsResponse,
     GetFileInfoResponse,
     ListDocumentsResponse,
