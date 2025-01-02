@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from starlette import status
@@ -11,6 +11,7 @@ from agent_service.endpoints.models import (
     AgentQC,
     GetAgentsQCRequest,
     GetLiveAgentsQCResponse,
+    GetQueryHistoricalAgentsRequest,
     HistoricalAgentsSnapshot,
     QueryWithBreakdown,
     SearchAgentQCRequest,
@@ -184,13 +185,12 @@ async def get_query_breakdown_deep_dive(
 
 
 @router.post(
-    "/stats/query-historical-agents/",
+    "/stats/query-historical-agents",
     response_model=List[HistoricalAgentsSnapshot],
     status_code=status.HTTP_200_OK,
 )
 async def get_query_historical_agents(
-    start_date: Optional[datetime.datetime] = None,
-    end_date: Optional[datetime.datetime] = None,
+    req: GetQueryHistoricalAgentsRequest,
     user: User = Depends(parse_header),
 ) -> List[HistoricalAgentsSnapshot]:
     """
@@ -212,5 +212,5 @@ async def get_query_historical_agents(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
         )
-    res = await agent_svc_impl.pg.get_agent_snapshot(start_date, end_date)
+    res = await agent_svc_impl.pg.get_agent_snapshot(req.start_date, req.end_date)
     return res

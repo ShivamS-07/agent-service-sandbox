@@ -1909,6 +1909,11 @@ class AgentSnapshot(BaseModel):
     created_agents: int
 
 
+class GetQueryHistoricalAgentsRequest(BaseModel):
+    start_date: Optional[datetime.datetime] = None
+    end_date: Optional[datetime.datetime] = None
+
+
 class HistoricalAgentsSnapshot(BaseModel):
     live: Tuple[datetime.datetime, int]
     non_live: Tuple[datetime.datetime, int]
