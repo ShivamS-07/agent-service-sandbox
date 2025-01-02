@@ -46,17 +46,18 @@ from agent_service.utils.event_logging import log_event
 from agent_service.utils.logs import async_perf_logger
 from agent_service.utils.postgres import get_psql
 from agent_service.utils.prefect import get_prefect_logger
+from agent_service.utils.string_utils import clean_to_json_if_needed
 
 logger = logging.getLogger(__name__)
 
 # should probably move these values elsewhere
-host = "brd.superproxy.io"
-port = 22225
+HOST = "brd.superproxy.io"
+PORT = 22225
 
-username = get_param(BRIGHTDATA_SERP_USERNAME)
-password = get_param(BRIGHTDATA_SERP_PASSWORD)
-proxy_url = f"http://{username}:{password}@{host}:{port}"
-proxies = {"http": proxy_url, "https": proxy_url}
+USERNAME = get_param(BRIGHTDATA_SERP_USERNAME)
+PASSWORD = get_param(BRIGHTDATA_SERP_PASSWORD)
+PROXY_URL = f"http://{USERNAME}:{PASSWORD}@{HOST}:{PORT}"
+PROXIES = {"http": PROXY_URL, "https": PROXY_URL}
 
 CERTIFICATE_LOCATION = "agent_service/tools/web_search/brd_certificate.crt"
 
@@ -201,7 +202,7 @@ async def get_urls_async(
                 event_data = {}
             tasks.append(
                 async_fetch_json(
-                    session, url, headers, proxies["http"], timeout, ssl_context, event_data
+                    session, url, headers, PROXIES["http"], timeout, ssl_context, event_data
                 )
             )
 
@@ -236,10 +237,10 @@ async def get_urls_async(
     return list(result_urls)
 
 
-req_user = get_param(BRIGHTDATA_REQ_USERNAME)
-req_pass = get_param(BRIGHTDATA_REQ_PASSWORD)
-req_proxy_url = f"http://{req_user}:{req_pass}@{host}:{port}"
-req_proxies = {"http": req_proxy_url, "https": req_proxy_url}
+REQ_USER = get_param(BRIGHTDATA_REQ_USERNAME)
+REQ_PASS = get_param(BRIGHTDATA_REQ_PASSWORD)
+REQ_PROXY_URL = f"http://{REQ_USER}:{REQ_PASS}@{HOST}:{PORT}"
+REQ_PROXIES = {"http": REQ_PROXY_URL, "https": REQ_PROXY_URL}
 
 
 def remove_excess_formatting(text: str) -> str:
@@ -373,6 +374,29 @@ async def scrape_from_http(html_content: str) -> ScrapeResult:
     )
 
 
+async def scrape_json(response: aiohttp.ClientResponse) -> ScrapeResult:
+    text = await response.text()
+
+    try:
+        text = clean_to_json_if_needed(text)
+    except Exception as e:
+        logger.error(f"Failed to clean JSON. Using raw text: {e}")
+
+    last_modified_string = response.headers.get("Last-Modified")
+    if last_modified_string:
+        last_modified = dateparser.parse(
+            last_modified_string,
+            settings={
+                "RETURN_AS_TIMEZONE_AWARE": True,  # Ensure timezone awareness
+            },
+        )
+        last_modified = last_modified.astimezone(timezone.utc)
+    else:
+        last_modified = None
+
+    return ScrapeResult(text=text, modified_timestamp=last_modified)
+
+
 # retry system!
 @async_perf_logger
 async def req_and_scrape(
@@ -408,8 +432,10 @@ async def req_and_scrape(
             elif "text/html" in content_type:
                 html_content = await response.text()
                 scrape_result = await scrape_from_http(html_content)
+            elif "application/json" in content_type:
+                scrape_result = await scrape_json(response)
             else:
-                logger.info(f"Unsupported content type: {content_type}")
+                logger.error(f"####### Unsupported content type: {content_type}! #######")
                 return None
 
     except asyncio.TimeoutError as e:
@@ -465,25 +491,11 @@ async def req_and_scrape(
                 if "application/pdf" in content_type:
                     pdf_binary_data = await response.read()
                     scrape_result = await scrape_from_pdf(pdf_binary_data)
-
-                    log_event(
-                        event_name="brd_request",
-                        event_data={
-                            **event_data,
-                            **{"content_type": content_type},
-                        },
-                    )
                 elif "text/html" in content_type:
                     html_content = await response.text()
                     scrape_result = await scrape_from_http(html_content)
-
-                    log_event(
-                        event_name="brd_request",
-                        event_data={
-                            **event_data,
-                            **{"content_type": content_type},
-                        },
-                    )
+                elif "application/json" in content_type:
+                    scrape_result = await scrape_json(response)
                 else:
                     logger.info(f"Unsupported content type: {content_type}")
                     log_event(
@@ -494,6 +506,14 @@ async def req_and_scrape(
                         },
                     )
                     return None
+
+                log_event(
+                    event_name="brd_request",
+                    event_data={
+                        **event_data,
+                        **{"content_type": content_type},
+                    },
+                )
 
         except asyncio.TimeoutError as e:
             logger.error(f"TIMEOUT for {url}: {e} on retry")
@@ -644,7 +664,6 @@ async def get_web_texts_async(
     pg = get_psql()
 
     rows = pg.generic_read(sql1, params=params)
-
     if len(rows) > 0:
         logger.info(f"Cache hit! Found {len(rows)} cached URLs out of {len(urls)} URLs!")
     else:
@@ -677,7 +696,7 @@ async def get_web_texts_async(
                     s3_client,
                     url,
                     headers,
-                    req_proxies["http"],
+                    REQ_PROXIES["http"],
                     timeout,
                     ssl_context,
                     plan_context,
