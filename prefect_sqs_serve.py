@@ -6,7 +6,10 @@ import traceback
 from typing import Any
 
 import boto3
+from gbi_common_py_utils.utils.environment import get_environment_tag
+from gbi_common_py_utils.utils.pagerduty import PD_WARNING, notify_agent_pg
 
+from agent_service.planner.constants import CREATE_EXECUTION_PLAN_FLOW_NAME
 from agent_service.planner.errors import AgentExecutionError
 from agent_service.sqs_serve.message_handler import MessageHandler
 from agent_service.utils.constants import AGENT_WORKER_QUEUE
@@ -15,6 +18,7 @@ from agent_service.utils.event_logging import log_event
 from agent_service.utils.s3_upload import download_json_from_s3
 
 LOGGER = logging.getLogger(__name__)
+METHOD = "method"
 
 
 class GracefulSigterm:
@@ -90,7 +94,7 @@ async def poll_sqs_forever() -> None:
                 )
                 if e.alert_on_error:
                     LOGGER.exception("Encountered exception processing message")
-            except Exception:
+            except Exception as e:
                 log_event(
                     event_name="agent_worker_message_processed",
                     event_data={
@@ -101,7 +105,39 @@ async def poll_sqs_forever() -> None:
                         "error_msg": traceback.format_exc(),
                     },
                 )
-                LOGGER.exception("Encountered exception processing message")
+                method = message_dict.get(METHOD)
+                if method == CREATE_EXECUTION_PLAN_FLOW_NAME:
+                    # Planner failure, push a low prio pager so we have visibility
+                    environment = get_environment_tag()
+                    arguments = message_dict.get("arguments", {})
+                    agent_id = arguments.get("agent_id")
+                    plan_id = arguments.get("plan_id")
+                    user_id = arguments.get("user_id")
+
+                    source = environment
+                    severity = PD_WARNING
+                    component = "AgentError"
+                    classt = "AgentError"
+                    group = "Workflow"
+                    custom_details = {
+                        "message": message_dict,
+                        "raw_message": sqs_message,
+                        "arguments": arguments,
+                        "agent_id": agent_id,
+                        "plan_id": plan_id,
+                        "user_id": user_id,
+                    }
+                    summary = f"Agent planner failure - create_execution_plan failed with {e}"
+                    notify_agent_pg(
+                        summary,
+                        severity,
+                        source,
+                        component,
+                        classt,
+                        group,
+                        custom_details,
+                    )
+                LOGGER.exception(f"Encountered exception processing message, {e}")
 
             LOGGER.info(f"Message Processed: {sqs_message}")
 
