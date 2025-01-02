@@ -1100,10 +1100,14 @@ async def share_plan_run(
     Args:
         plan_run_id (str): plan run ID
     """
+    async_db = application.state.agent_service_impl.pg
+    if (
+        not user.is_super_admin
+        and not await is_user_agent_admin(user.user_id, async_db=async_db)
+        and not await user_has_qc_tool_access(user.user_id, async_db=async_db)
+    ):
+        await validate_user_plan_run_access(user.user_id, req.plan_run_id, async_db=async_db)
 
-    await validate_user_plan_run_access(
-        user.user_id, req.plan_run_id, async_db=application.state.agent_service_impl.pg
-    )
     return await application.state.agent_service_impl.share_plan_run(plan_run_id=req.plan_run_id)
 
 
@@ -1120,10 +1124,13 @@ async def unshare_plan_run(
     Args:
         plan_run_id (str): plan run ID
     """
-
-    await validate_user_plan_run_access(
-        user.user_id, req.plan_run_id, async_db=application.state.agent_service_impl.pg
-    )
+    async_db = application.state.agent_service_impl.pg
+    if (
+        not user.is_super_admin
+        and not await is_user_agent_admin(user.user_id, async_db=async_db)
+        and not await user_has_qc_tool_access(user.user_id, async_db=async_db)
+    ):
+        await validate_user_plan_run_access(user.user_id, req.plan_run_id, async_db=async_db)
     return await application.state.agent_service_impl.unshare_plan_run(plan_run_id=req.plan_run_id)
 
 
