@@ -436,26 +436,35 @@ async def _update_summarize_helper(
 
     text, citations = await extract_citations_from_gpt_output(result, combined_text_group, context)
 
+    has_gpt_generated_sources = (
+        len([text for text in new_texts if text.text_type == DEFAULT_TEXT_TYPE]) > 0
+    )
+
     tries = 0
     while (  # we have too few citations, but we should have some from before
         remaining_original_citation_count > 0
         and (
             citations is None
-            or not (
-                max(
-                    remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
-                    remaining_original_citation_count - tries,
+            or (
+                not has_gpt_generated_sources
+                and not (
+                    max(
+                        remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
+                        remaining_original_citation_count - tries,
+                    )
+                    <= len(citations)
+                    <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
                 )
-                <= len(citations)
-                <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
             )
         )  # we are missing citations entirely but the text isn't correct
         or (citations is None and text.strip() != NO_SUMMARY)
     ) and tries < MAX_CITATION_TRIES:
-        logger.warning(f"Retrying after bad citation count for {result}")
+        logger.warning(f"Retrying after bad citation count for {full_result}")
         if citations:
             min_value = max(
-                remaining_original_citation_count * 0.5, remaining_original_citation_count - tries
+                remaining_original_citation_count * 0.5,
+                remaining_original_citation_count
+                - tries * (remaining_original_citation_count // 10 + 1),
             )
             max_value = last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
             if len(citations) < min_value:
@@ -490,13 +499,16 @@ async def _update_summarize_helper(
         remaining_original_citation_count > 0
         and (
             citations is None
-            or not (
-                max(
-                    remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
-                    remaining_original_citation_count - tries,
+            or (
+                not has_gpt_generated_sources
+                and not (
+                    max(
+                        remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
+                        remaining_original_citation_count - tries,
+                    )
+                    <= len(citations)
+                    <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
                 )
-                <= len(citations)
-                <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
             )
         )
         or (citations is None and text.strip() != NO_SUMMARY)

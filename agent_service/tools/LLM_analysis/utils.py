@@ -94,6 +94,9 @@ async def get_best_snippet_match(citation_snippet: str, sentences: List[str], ll
 def get_initial_breakdown(GPT_ouput: str) -> Tuple[str, Optional[Dict[str, List[Dict[str, Any]]]]]:
     lines = GPT_ouput.replace("\n\n", "\n").split("\n")
 
+    # remove lines with !
+    lines = [line for line in lines if not line.startswith("!")]
+
     header_index = None
     json_search = None
     csv_search = None
