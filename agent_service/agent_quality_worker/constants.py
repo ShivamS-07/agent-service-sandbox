@@ -10,6 +10,12 @@ CS_TIERED_ASSIGNMENT_ALLOCATIONS = {
 HORIZON_USERS_PROD: Dict[str, HorizonUser] = {
     # PROD - CS
     # T1
+    "5920388a-717a-42b0-9cec-2e999faa6b9e": HorizonUser(
+        userId="5920388a-717a-42b0-9cec-2e999faa6b9e",
+        name="Crystal",
+        userType=HorizonTabs.CS,
+        tier=1,
+    ),
     "00a4c63d-99b2-478f-aa27-a0d263e3e0ba": HorizonUser(
         userId="00a4c63d-99b2-478f-aa27-a0d263e3e0ba",
         name="Emmalyn",
@@ -34,12 +40,12 @@ HORIZON_USERS_PROD: Dict[str, HorizonUser] = {
         userType=HorizonTabs.CS,
         tier=1,
     ),
-    # "75916863-aba9-4d68-877d-34d224dbb4bf": HorizonUser(
-    #     userId="75916863-aba9-4d68-877d-34d224dbb4bf",
-    #     name="Jamie",
-    #     userType=HorizonTabs.CS,
-    #     tier=1,
-    # ),
+    "75916863-aba9-4d68-877d-34d224dbb4bf": HorizonUser(
+        userId="75916863-aba9-4d68-877d-34d224dbb4bf",
+        name="Jamie",
+        userType=HorizonTabs.CS,
+        tier=1,
+    ),
     "e5f85515-c073-433b-bad2-f05fa3cb38c3": HorizonUser(
         userId="e5f85515-c073-433b-bad2-f05fa3cb38c3",
         name="Jordan",
@@ -89,11 +95,6 @@ HORIZON_USERS_PROD: Dict[str, HorizonUser] = {
         name="Simon",
         userType=HorizonTabs.ENG,
     ),
-    "f6fe6a54-c15c-4893-9909-90657be7f19f": HorizonUser(
-        userId="f6fe6a54-c15c-4893-9909-90657be7f19f",
-        name="David",
-        userType=HorizonTabs.ENG,
-    ),
     "87f5b738-4ef8-4f3b-b038-1ba169ded59d": HorizonUser(
         userId="87f5b738-4ef8-4f3b-b038-1ba169ded59d",
         name="Julian",
@@ -135,11 +136,6 @@ HORIZON_USERS_DEV: Dict[str, HorizonUser] = {
         userType=HorizonTabs.CS,
     ),
     # DEV - ENG
-    "f6fe6a54-c15c-4893-9909-90657be7f19f": HorizonUser(
-        userId="f6fe6a54-c15c-4893-9909-90657be7f19f",
-        name="David",
-        userType=HorizonTabs.ENG,
-    ),
     "a5d534c9-5426-4387-a298-723c5e09ecab": HorizonUser(
         userId="a5d534c9-5426-4387-a298-723c5e09ecab",
         name="William",
