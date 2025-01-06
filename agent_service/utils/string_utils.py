@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import uuid
+from collections import defaultdict
 from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional
 
@@ -124,6 +125,7 @@ def get_sections(sec_text: str) -> Dict[str, str]:
     paragraphs = sec_text.split("\n")
     curr_section_header = START_HEADER
     section_lookup: Dict[str, List[str]] = {START_HEADER: []}
+    duplicate_sections = defaultdict(list)
     section_headers = []
     for i, paragraph in enumerate(paragraphs):
         if (
@@ -133,10 +135,16 @@ def get_sections(sec_text: str) -> Dict[str, str]:
             and not_in_table(i, paragraphs)
         ):
             curr_section_header = paragraph.strip()
+            if curr_section_header in section_lookup:
+                duplicate_sections[curr_section_header].append(section_lookup[curr_section_header])
             section_lookup[curr_section_header] = [curr_section_header]
             section_headers.append(curr_section_header)
         else:
             section_lookup[curr_section_header].append(paragraph)
+
+    for header, duplicate_sections in duplicate_sections.items():
+        for i, duplicate_section in enumerate(duplicate_sections, start=2):
+            section_lookup[f"{header}__{i}"] = duplicate_section
 
     final_lookup: Dict[str, str] = {}
     for header, body in section_lookup.items():

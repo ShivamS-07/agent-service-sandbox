@@ -15,6 +15,7 @@ from agent_service.tools.sec import (
     sec_filings_type_lookup,
 )
 from agent_service.types import PlanRunContext
+from agent_service.utils.string_utils import get_sections
 
 
 class TestSecFilings(IsolatedAsyncioTestCase):
@@ -92,3 +93,27 @@ class TestSecFilings(IsolatedAsyncioTestCase):
         actual_sec_filings = await Text.get_all_strs(sec_filing_texts)
         # in theory it should be 2, but just in case only comparing with 0
         self.assertTrue(len(actual_sec_filings) > 0)
+
+    async def test_duplicate_sections(self):
+        test_string = """First Section
+
+This is the first section of this document, needs to be of a certain length before it counts.
+
+Second Section
+
+This is the second section of this document, needs to be of a certain length before it counts.
+
+Third Section
+
+This is the third section of this document, needs to be of a certain length before it counts.
+
+Second Section
+
+This is a duplicate Second Section, but for consistency it will be the 'first' second section"""
+
+        sections = get_sections(test_string)
+
+        self.assertEqual(len(sections), 4)
+        self.assertIn("Second Section", sections)
+        self.assertIn("Second Section__2", sections)
+        self.assertIn("duplicate", sections["Second Section"])
