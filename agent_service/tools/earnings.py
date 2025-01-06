@@ -283,7 +283,7 @@ async def _get_earnings_summary_helper(
 
     # Find the list of events for the set of year-quarters for each stock_id that did not have earning summaries
     events_without_summaries: List[EventInfo] = []
-    event_id_to_stock_id_lookup: Dict[int, StockID] = {}
+    event_to_stock_id_lookup: Dict[Tuple[int, int, int], StockID] = {}
     gbi_id_stock_id_lookup = {stock_id.gbi_id: stock_id for stock_id in stock_ids}
 
     for gbi_id, earning_year_quarters in all_earning_fiscal_quarters.items():
@@ -293,7 +293,7 @@ async def _get_earnings_summary_helper(
             quarter = year_quarter[1]
             event = earning_events_lookup[gbi_id][(year, quarter)]
 
-            event_id_to_stock_id_lookup[event.event_id] = stock_id
+            event_to_stock_id_lookup[(event.gbi_id, event.year, event.quarter)] = stock_id
             events_without_summaries.append(event)
 
     # Get the transcripts for the events without summaries
@@ -319,7 +319,7 @@ async def _get_earnings_summary_helper(
             context=context,
         )
         finalized_output = await get_earnings_full_transcripts(
-            user_id, stock_ids, events_without_summaries, event_id_to_stock_id_lookup, output
+            user_id, stock_ids, events_without_summaries, event_to_stock_id_lookup, output
         )
     num_companies_without_events = 0
     for stock_id, events in finalized_output.items():
@@ -396,7 +396,7 @@ async def get_earnings_full_transcripts(
     user_id: str,
     stock_ids: List[StockID],
     events: List[EventInfo],
-    event_id_to_stock_id_lookup: Dict[int, StockID],
+    event_to_stock_id_lookup: Dict[Tuple[int, int, int], StockID],
     initial_stock_earnings_text_dict: Optional[Dict[StockID, List[StockEarningsText]]] = None,
 ) -> Dict[StockID, List[StockEarningsText]]:
     """
@@ -419,7 +419,7 @@ async def get_earnings_full_transcripts(
     # Track missing events not found within the db
     missing_events_in_db: List[EventInfo] = []
     for event in events:
-        stock_id = event_id_to_stock_id_lookup[event.event_id]
+        stock_id = event_to_stock_id_lookup[(event.gbi_id, event.year, event.quarter)]
         transcript_data_for_gbi_id = transcript_db_data_lookup.get(stock_id.gbi_id, {})
         db_data = transcript_data_for_gbi_id.get((event.year, event.quarter))
         if db_data:
@@ -456,7 +456,7 @@ async def get_earnings_full_transcripts(
         )
         # Look for the previously missing events in the updated db data
         for event in missing_events_in_db:
-            stock_id = event_id_to_stock_id_lookup[event.event_id]
+            stock_id = event_to_stock_id_lookup[(event.gbi_id, event.year, event.quarter)]
             transcript_data_for_gbi_id = transcript_db_data_lookup.get(stock_id.gbi_id, {})
             db_data = transcript_data_for_gbi_id.get((event.year, event.quarter))
             if db_data:
@@ -535,8 +535,8 @@ async def get_earnings_call_full_transcripts(
     gbi_id_stock_id_lookup = {stock_id.gbi_id: stock_id for stock_id in args.stock_ids}
 
     # Currently we drop earning events from FMP as they don't have a simple id lookup (event_id = -1)
-    event_id_to_stock_id_lookup = {
-        event.event_id: gbi_id_stock_id_lookup[event.gbi_id]
+    event_to_stock_id_lookup = {
+        (event.gbi_id, event.year, event.quarter): gbi_id_stock_id_lookup[event.gbi_id]
         for event in earning_call_events
         if event.event_id != -1
     }
@@ -551,7 +551,7 @@ async def get_earnings_call_full_transcripts(
         context.user_id,
         args.stock_ids,
         list(earning_call_events_with_ids),
-        event_id_to_stock_id_lookup,
+        event_to_stock_id_lookup,
     )
 
     output: List[StockEarningsText] = []
@@ -645,7 +645,6 @@ async def get_earnings_call_summaries(
             ),
             context=context,
         )
-
     return output
 
 
