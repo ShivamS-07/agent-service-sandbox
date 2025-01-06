@@ -90,6 +90,11 @@ HORIZON_USERS_PROD: Dict[str, HorizonUser] = {
         tier=2,
     ),
     # PROD - ENG
+    "c4d655f9-3fa1-48ca-99d9-58182d44b407": HorizonUser(
+        userId="c4d655f9-3fa1-48ca-99d9-58182d44b407",
+        name="Phil",
+        userType=HorizonTabs.ENG,
+    ),
     "a2a77e4d-15b6-4723-b36a-af5c90e1c09c": HorizonUser(
         userId="a2a77e4d-15b6-4723-b36a-af5c90e1c09c",
         name="Simon",
@@ -136,6 +141,11 @@ HORIZON_USERS_DEV: Dict[str, HorizonUser] = {
         userType=HorizonTabs.CS,
     ),
     # DEV - ENG
+    "c4d655f9-3fa1-48ca-99d9-58182d44b407": HorizonUser(
+        userId="c4d655f9-3fa1-48ca-99d9-58182d44b407",
+        name="Phil",
+        userType=HorizonTabs.ENG,
+    ),
     "a5d534c9-5426-4387-a298-723c5e09ecab": HorizonUser(
         userId="a5d534c9-5426-4387-a298-723c5e09ecab",
         name="William",
