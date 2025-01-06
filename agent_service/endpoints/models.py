@@ -1838,6 +1838,11 @@ class AgentQC(BaseModel):
     qc_status: Optional[str] = None
 
 
+class HorizonOption(BaseModel):
+    id: str
+    label: str
+
+
 class HorizonCriteriaOperator(enum.StrEnum):
     equal = "="
     greater_than = ">"
@@ -1866,6 +1871,11 @@ class HorizonCriteria(BaseModel):
 class Pagination(BaseModel):
     page_index: int
     page_size: int
+
+
+class GetAgentQCMetadataResponse(BaseModel):
+    owners: List[HorizonOption]
+    organizations: List[HorizonOption]
 
 
 class SearchAgentQCRequest(BaseModel):

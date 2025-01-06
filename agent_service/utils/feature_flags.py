@@ -207,12 +207,7 @@ async def user_has_qc_tool_access(
     user_id: str, default: bool = False, async_db: Optional[AsyncDB] = None
 ) -> bool:
     """
-    Users with flag on can access some agent windows owned by other users. Currently the endpoints
-    are:
-    - `get_qc_agent_by_id`
-    - `get_qc_agent_by_user`
-    - `search_agent_qc`
-    - `update_agent_qc`
+    Users with flag on can access Horizon endpoints
     """
 
     return await get_ld_flag_async(

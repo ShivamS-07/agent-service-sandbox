@@ -84,6 +84,7 @@ from agent_service.endpoints.models import (
     GetAgentDebugInfoResponse,
     GetAgentFeedBackResponse,
     GetAgentOutputResponse,
+    GetAgentQCMetadataResponse,
     GetAgentsQCRequest,
     GetAgentTaskOutputResponse,
     GetAgentWorklogBoardResponse,
@@ -1540,8 +1541,8 @@ class AgentServiceImpl:
         )
         return GetPlanRunOutputResponse(outputs=output.outputs, agent_name=agent_name)
 
-    async def get_agent_qc_by_ids(self, agent_qc_ids: List[str]) -> List[AgentQC]:
-        agent_qcs = await self.pg.get_agent_qc_by_ids(agent_qc_ids)
+    async def get_agent_qc_by_ids(self, ids: List[str]) -> List[AgentQC]:
+        agent_qcs = await self.pg.get_agent_qc_by_ids(ids)
 
         # Return the list of AgentQC objects
         return agent_qcs
@@ -1551,6 +1552,11 @@ class AgentServiceImpl:
 
         # Return the list of AgentQC objects
         return agent_qcs
+
+    async def get_qc_agent_metadata(self) -> GetAgentQCMetadataResponse:
+        agent_qc_metadata = await self.pg.get_agent_qc_metadata()
+
+        return agent_qc_metadata
 
     async def get_plan_run_debug_info(
         self, agent_id: str, plan_run_id: str

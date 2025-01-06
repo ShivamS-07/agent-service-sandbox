@@ -9,6 +9,7 @@ from agent_service.endpoints.models import (
     AddAgentQCRequest,
     AddAgentQCResponse,
     AgentQC,
+    GetAgentQCMetadataResponse,
     GetAgentsQCRequest,
     GetLiveAgentsQCResponse,
     GetQueryHistoricalAgentsRequest,
@@ -25,16 +26,16 @@ from agent_service.utils.feature_flags import user_has_qc_tool_access
 router = APIRouter(prefix="/api/agent/qc")
 
 
-@router.get("/{id}", response_model=List[AgentQC], status_code=status.HTTP_200_OK)
-async def get_qc_agent_by_id(id: str, user: User = Depends(parse_header)) -> List[AgentQC]:
+@router.get("/agent/{id}", response_model=AgentQC, status_code=status.HTTP_200_OK)
+async def get_qc_agent_by_id(id: str, user: User = Depends(parse_header)) -> AgentQC:
     """
     Get QC Agent by ID
 
     Args:
-        id (UUID4): The ID of the agent QC.
+        id (UUID4): Either agent_qc_id or agent_id
 
     Returns:
-        A list of AgentQC objects.
+        AgentQC or 404 NOT FOUND
     """
     # Validate user access to QC tool
     agent_svc_impl = get_agent_svc_impl()
@@ -46,8 +47,13 @@ async def get_qc_agent_by_id(id: str, user: User = Depends(parse_header)) -> Lis
     # Call the function to retrieve agent QC by ID
     agent_qcs = await agent_svc_impl.get_agent_qc_by_ids([id])
 
-    # Return the list of AgentQC objects
-    return agent_qcs
+    if len(agent_qcs) != 1:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Could not find exactly one agent_qc for {id}",
+        )
+
+    return agent_qcs.pop()
 
 
 @router.get("/user/{user_id}", response_model=List[AgentQC], status_code=status.HTTP_200_OK)
@@ -73,6 +79,33 @@ async def get_qc_agent_by_user(user_id: str, user: User = Depends(parse_header))
 
     # Return the list of AgentQC objects
     return agent_qcs
+
+
+@router.get(
+    "/agent-qc-metadata", response_model=GetAgentQCMetadataResponse, status_code=status.HTTP_200_OK
+)
+async def get_qc_agent_metadata(user: User = Depends(parse_header)) -> GetAgentQCMetadataResponse:
+    """
+    Get metadata for all agent_qc in DB, used for filters
+
+    Returns:
+    {
+        owners: List[HorizonOption]
+        organizations: List[HorizonOption]
+    }
+    """
+    # Validate user access to QC tool
+    agent_svc_impl = get_agent_svc_impl()
+    if not await user_has_qc_tool_access(user_id=user.user_id, async_db=agent_svc_impl.pg):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
+        )
+
+    # Call the function to retrieve agent QC metadata
+    agent_qc_metadata = await agent_svc_impl.get_qc_agent_metadata()
+
+    # Return the list of AgentQC objects
+    return agent_qc_metadata
 
 
 @router.post("/search", response_model=SearchAgentQCResponse, status_code=status.HTTP_200_OK)

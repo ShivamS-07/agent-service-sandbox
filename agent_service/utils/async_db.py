@@ -27,9 +27,11 @@ from agent_service.endpoints.models import (
     AgentSchedule,
     AgentUserSettingsSetRequest,
     CustomNotification,
+    GetAgentQCMetadataResponse,
     HistoricalAgentsSnapshot,
     HorizonCriteria,
     HorizonCriteriaOperator,
+    HorizonOption,
     Pagination,
     PlanRunInfo,
     PlanRunStatusInfo,
@@ -2988,18 +2990,24 @@ class AsyncDB:
             agent_qcs.append(AgentQC(agent_feedbacks=agent_feedbacks, **record))
         return agent_qcs, total_agent_qcs
 
-    async def get_agent_qc_by_ids(self, agent_qc_ids: List[str]) -> list[AgentQC]:
+    async def get_agent_qc_by_ids(self, ids: List[str]) -> list[AgentQC]:
         ids_filter = [
             HorizonCriteria(
                 column="aqc.agent_qc_id",
                 operator=HorizonCriteriaOperator.equal_any,
-                arg1=agent_qc_ids,
+                arg1=ids,
                 arg2=None,
-            )
+            ),
+            HorizonCriteria(
+                column="ag.agent_id",
+                operator=HorizonCriteriaOperator.equal_any,
+                arg1=ids,
+                arg2=None,
+            ),
         ]
 
         # Call the search DB function to retrieve agent QC by IDs
-        agent_qcs, _ = await self.search_agent_qc(ids_filter, [], None)
+        agent_qcs, _ = await self.search_agent_qc([], ids_filter, None)
 
         # Return the list of AgentQC objects
         return agent_qcs
@@ -3036,6 +3044,42 @@ class AsyncDB:
         # Return the list of AgentQC objects
         return agent_qcs
 
+    # For Horizon Filters
+    @async_perf_logger
+    async def get_agent_qc_metadata(self) -> GetAgentQCMetadataResponse:
+        sql = """
+        SELECT
+            aqc.user_id AS owner_id, u.name AS owner_name,
+            cm.company_id AS organization_id, o.name AS organization_name
+        FROM agent.agent_qc aqc
+        LEFT JOIN user_service.company_membership cm ON cm.user_id::TEXT = aqc.user_id::TEXT 
+        LEFT JOIN user_service.users u ON u.id::TEXT = aqc.user_id::TEXT
+        LEFT JOIN user_service.organizations o ON o.id::TEXT = cm.company_id::TEXT
+        GROUP BY owner_id, owner_name, organization_id, organization_name
+        ORDER BY owner_name ASC
+        """
+
+        results = await self.pg.generic_read(sql)
+
+        owners_set = set()
+        owners = []
+        org_set = set()
+        orgs = []
+        for result in results:
+            owner_id = str(result["owner_id"])
+            owner_name = result["owner_name"]
+            org_id = str(result["organization_id"])
+            org_name = result["organization_name"]
+            if owner_id and owner_name and owner_id not in owners_set:
+                owners_set.add(owner_id)
+                owners.append(HorizonOption(id=owner_id, label=owner_name))
+            if org_id and org_name and org_id not in org_set:
+                org_set.add(org_id)
+                orgs.append(HorizonOption(id=org_id, label=org_name))
+
+        return GetAgentQCMetadataResponse(owners=owners, organizations=orgs)
+
+    # For Analyst Dashboard
     @async_perf_logger
     async def get_agent_metadata_for_qc(
         self,
