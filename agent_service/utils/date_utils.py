@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 DAYS_LOOKUP = {"D": 1, "W": 7, "M": 30, "Q": 90, "Y": 365}
 
-
 real_datetime_class = datetime.datetime
 real_date_class = datetime.date
 real_date_new = datetime.date.__new__
@@ -190,9 +189,13 @@ def convert_horizon_to_days(horizon: str) -> int:
     return int(horizon[:-1]) * DAYS_LOOKUP[horizon[-1]]
 
 
-def convert_horizon_to_date(horizon: str) -> datetime.date:
+def convert_horizon_to_date(
+    horizon: str, end_date: Optional[datetime.date] = None
+) -> datetime.date:
     days = convert_horizon_to_days(horizon)
-    return datetime.date.today() - datetime.timedelta(days=days)
+    if end_date is None:
+        end_date = datetime.date.today()
+    return end_date - datetime.timedelta(days=days)
 
 
 def timezoneify(dt: datetime.datetime) -> datetime.datetime:

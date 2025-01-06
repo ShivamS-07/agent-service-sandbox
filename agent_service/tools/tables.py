@@ -11,7 +11,6 @@ from collections import defaultdict
 from itertools import chain
 from json.decoder import JSONDecodeError
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
-from uuid import uuid4
 
 import pandas as pd
 from pydantic import ValidationError
@@ -415,10 +414,10 @@ async def transform_table(
         if prev_run_info is None and args.template_task_id:
             template_context = copy.deepcopy(context)
             template_context.task_id = args.template_task_id
-            template_context.plan_run_id = str(
-                uuid4()
-            )  # just create a random one to stop current run blocking
-            prev_run_info = await get_prev_run_info(template_context, "transform_table")
+            # Turn off plan run filter for subplanner case (is same plan run)
+            prev_run_info = await get_prev_run_info(
+                template_context, "transform_table", plan_run_filter=False
+            )
         if prev_run_info is not None and not args.no_cache:
             prev_args = TransformTableArgs.model_validate_json(prev_run_info.inputs_str)
             old_description = prev_args.transformation_description

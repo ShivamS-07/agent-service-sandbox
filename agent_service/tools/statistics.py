@@ -5,7 +5,6 @@ import json
 from collections import defaultdict
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple, Union
-from uuid import uuid4
 
 import pytz
 
@@ -204,9 +203,17 @@ class GetStatisticDataForCompaniesInput(ToolArgs):
         " both statistics are used to derive a single statistic, i.e. the spread between open and close prices, then "
         " you CAN use this tool, since the output is the spread (a single number), and not the individual "
         " open/close prices."
+        " The date_range argument should be used if and only if either the output is a time_series "
+        " (is_time_series=True) or a statistic for an single date that is not today is required. "
+        " When the output is a time series, the date range should correspond exactly to the dates wanted for the "
+        " time series. When the output is for a single day that isn't today, a time range consisting of exactly of"
+        " that day must. For example, if the client asks for the daily performance on 2024-12-31, you must create"
+        " a date range object with the date_str '2024-12-31' before calling this tool, or else you will not"
+        " be able to calculate the statistic. However, if the client clearly wants the current value, "
+        " the date range can be omitted."
         " A very tricky case involves change/deltas. If a user asks for price change over the past week, the "
         " the statistic_reference should be `price change over the past week` and the date range input"
-        " input to this function should be a single day (today), since you are only asking for one datapoint"
+        " input to this function should be None (the default), since you are only asking for one datapoint"
         " namely today's change relative to a week ago. This function will retrieve the other data needed to"
         " calculate the change for the day, the input date range should correspond to the dates you want data"
         " for, not the dates needed to calculate the data!"
@@ -360,11 +367,9 @@ async def get_statistic_data_for_companies(
         if prev_run_info is None and args.template_task_id:
             template_context = deepcopy(context)
             template_context.task_id = args.template_task_id
-            template_context.plan_run_id = str(
-                uuid4()
-            )  # just create a random one to stop current run blocking
+            # set plan_run_filter false so can grab initial run in subplanner
             prev_run_info = await get_prev_run_info(
-                template_context, "get_statistic_data_for_companies"
+                template_context, "get_statistic_data_for_companies", plan_run_filter=False
             )
 
         if prev_run_info is not None:

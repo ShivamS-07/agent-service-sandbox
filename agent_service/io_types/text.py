@@ -2670,6 +2670,6 @@ class TextCitationGroup(ComplexIOBase):
     def convert_citation_num_to_citation(self, citation_id: int) -> Optional[TextCitation]:
         try:
             return self.val[int(citation_id)]
-        except (ValueError, IndexError):
+        except (ValueError, IndexError, TypeError):
             logger.exception("Could not convert citation num to citation")
             return None

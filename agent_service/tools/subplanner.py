@@ -137,9 +137,15 @@ async def convert_per_row_results_to_table(
             new_cols[i].data.append(fixed_output)
 
     if sub_tables:
-        new_table = await join_tables(
+        # First, stack the output sub-tables into a single table
+        joined_sub_table = await join_tables(
             args=JoinTableArgs(input_tables=sub_tables, row_join=True),
             context=context,
+        )
+        joined_sub_table = cast(Table, joined_sub_table)
+        # Then, join the single new table to the input table
+        new_table = await join_tables(
+            args=JoinTableArgs(input_tables=[input_table, joined_sub_table]), context=context
         )
         new_table = cast(Table, new_table)
     else:
@@ -169,34 +175,72 @@ class PerRowProcessingArgs(ToolArgs):
 @tool(
     description="""
 This function takes a table and a description of operations using any of the tools at your
-disposal. The per_row_operations string should explain how to use the information in a single
-row of this table to create some new output that your client wants. For example, if you have a
-table that which has a column corresponding to stocks, and another column corresponding to the
-dates when that stock hit their 52-week high, and the client wants a news summary that 
+disposal and adds one or possibly multiple columns to the table by processing of one or
+more of the cells of each row to create new cells in that same row.
+The per_row_operations string should explain how to use the information in a single
+row of the input table to create the new contents of that same row. For example, if you
+have a table that which has a column corresponding to stocks, and another column corresponding
+to the dates when that stock hit their 52-week high, and the client wants a news summary that 
 attempts to explain the 52-week high using news over the month before their 52-week high, an
 appropriate per_row_operations description would be:
 `Create a date range consisting of a month before the provided date. Retrieve news texts for the
 provided stock over that date range. Summarize that news with the goal of explaining why the stock
-is up`
-Your description should be plain English, it will be the job of another analyst to convert
-it into a subroutine which will be applied to every row of the table. Generally you should not
-refer to tools by their exact name (in the above example, we did not directly mention the
-`get_date_range` tool in the first sentence even though that is what we would use). Your description
-must always discuss the operations needed for a single row, you must NEVER discuss the
-iteration over the table in your description (avoid words such as 'each' or 'every' unless
-there is some kind of iteration within the process for a single row). It is also extremely important
-that you do not include in your description any mention of operations you have already done, for
-instance if you have derived tables which provide instances (stock/date pairs) of major drawdowns
-and now need to do some further analysis with those dates, simply refer to `the provided date`,
-do not mention that it is a date with a major drawdown unless you intend for this tool to calculate
-drawdowns! Be concise, but be sure to mention every column and every operation that this tool needs
-to get to the output the client wants. Although you do not need to name the tools, you must make sure
-there is some plausible tool in your full list of tools that could be applied to accomplish every
-operation you mention.
-The output of this tool is a table consisting of the original table including one or more new columns
-created by applying the per row operations described to every row of the table. In general, calling
-prepare_output on both the input to this tool and the output to this tool is redundant, you should
-only display the output to the client.
+is up. Output the summary.`
+Your per_row_operations description should be plain English, it will be the job of another analyst
+to convert it into a subroutine which will be applied to every row of the table. It is not easy to write
+a correct per_row_operations string! Do not ever copy the client's wording, which as aimed at the final
+result, and not the specific operations needed at the per row level.
+Please strictly follow the following rules associated with the contents of the per_row_operations string,
+if you fail to follow any of these rules you will be summarily fired:
+
+1. The per row operation description must not refer in any way to an input table or an output
+table, it must never mention tables or columns or cells or rows unless some of its internal processing
+requires the use of table that it is generating internally (this is very rare). Do NOT, under any
+circumstances discuss getting variables from a table or adding the output into the output table, doing
+that is not the job of the analyst who will read your description, including any such reference will
+confuse them and cause them to make a mistake. For example, the client may ask you to 'add a column with
+stock price change for the earnings date', but your per_row_operations description must simply talk
+about deriving an individual stock price change, it must never mention a `column`, a `row`, or a `table`,
+and you must avoid the words 'add' or 'include' your description entirely, at a per row processing 
+level you are ALWAYS generating some output, use verbs such as 'calculate' (e.g. calculate the price
+change), 'summarize' (i.e. summarize the news),  'find', (i.e. find the URL for their customer service), etc.
+2. You must never, ever begin your per row summary by saying you will 'find' or 'retrieve' the information
+that is already directly available in the input table. That step will happen automatically, including
+any mention of it will deeply confuse your collegue responsible for writing the per row script. Assume
+you have all the information from the table fully on-hand and refer to such information as the 'provided X'
+(e.g. the provided date, the provided stock, etc.). Only discuss further operations the uses those inputs
+to create your output(s).
+be done on that information
+3. Your description must only discuss the operations needed for a single row, you must NEVER discuss
+the main iteration of this tool in your description. You must avoid words such as 'each' or 'every' unless
+there is some kind of iteration that is happening as part of the processing for a single row.
+4. You should not output what is already in the input table. 
+5. Do not include in your description any mention of what the items in the table you are processing
+mean, where they came from, unless absolutely required for the processing you are doing.
+For instance if you have derived tables which provide instances (stock/date pairs) of major drawdowns
+and now need to do some further analysis with those dates, simply refer to `the provided date` in your
+per_row_operations description, you must not under any circumstances mention that it is a date with a
+major drawdown! For relevant columns of the table you need to reference, just refer to 'the provided X',
+never provide more information about any variable than what you need to in order to solve the problem at hand!
+6. Be concise, but you should mention all the operations that this tool needs to do to get from the
+input cells in one row to the output cell(s) in the same row. (but again, do not mention cells to discuss
+any operations at the level of the table!). Although you should not name the tools directly and keep
+your description readable (your description must be comprehensible to non-coders, no function names)
+you must always make sure there is some plausible tool in your full list of tools that could be applied
+to accomplish every operation you mention.
+7. Your last step must always involve explicitly outputting at least one item that will become the new
+cell (or cells) of the table.
+It should always be of the form 'Output the X'.
+
+The per row outputs can be of any type (including tables themselves), this tool will convert automatically
+convert them, in aggregate, to a valid table column.
+
+The final output of this tool is a table consisting of the original table including one or more new columns
+created by applying the per row operations described to every row of the table. Since the output tabel
+has the entire contents of the input table, you should never, ever join the input and ouput tables
+together explicitly in your code. Generally, you should never be calling prepare_output on both the
+input table to this tool as well as the output, that would be very redundant. Instead you should only
+display the output to the client.
 """,
     category=ToolCategory.TABLE,
     enabled_for_subplanner=False,
@@ -221,7 +265,7 @@ async def per_row_processing(args: PerRowProcessingArgs, context: PlanRunContext
                     json.loads(prev_run_info.debug["subplan_template"])
                 )
                 await tool_log("Loaded sub-plan from previous run", context=context)
-                rows = table.iterate_over_rows()
+                rows = table.iterate_over_rows(use_variables=True)
 
     except Exception as e:
         logger.exception(f"Error loading subplan from previous run: {e}")
@@ -237,7 +281,10 @@ async def per_row_processing(args: PerRowProcessingArgs, context: PlanRunContext
     if subplan_template is None:
         from agent_service.planner.planner import Planner
 
-        await tool_log("Creating sub-plan...", context=context)
+        await tool_log(
+            f"Creating sub-plan using the following directions: {args.per_row_operations}",
+            context=context,
+        )
         variables = table.get_variables_from_table()
         subplanner = Planner(
             agent_id=context.agent_id, user_id=context.user_id, send_chat=False, is_subplanner=True
@@ -250,7 +297,7 @@ async def per_row_processing(args: PerRowProcessingArgs, context: PlanRunContext
             raise (Exception("failed to create plan"))
 
         # do an initial run when needed
-        rows = table.iterate_over_rows()
+        rows = table.iterate_over_rows(use_variables=True)
 
         if any([step.tool_name in FIRST_PASS_TOOLS for step in subplan_template.nodes]):
             logger.info("Doing initial run to get individual tool templates")
@@ -305,10 +352,14 @@ For example, if `date` is a provided variable and the user asks to do some summa
 the month prior to the date, then you will build a string input to the get_date_range by first calling
 this tool with the template "30 day period ending on {date}" and you would pass {"date":date} as the
 mapping, which, if the date was "2024-12-18", would result in a the string: "30 day period ending on
-2024-12-18", which could then be passed to the get_date_range tool. You must always use this tool to
+2024-12-18", which could then be passed to the get_date_range tool. If you just want to convert the
+date itself to a string, you can use the template "{date}".  You must always use this tool to
 build a string in this manner, you cannot use the regular python formatting! Other than date range,
 you will often use this tool to construct strings such as topics, descriptions, or profiles corresponding
-to the string arguments of other tools. Note that only this tool will accept f-strings, you must
+to the string arguments of other tools. Another example: if you had a variable
+Name that corresponded to a name of a person and wanted do a web search for their address, you would
+construction an appropriate query/topic for a search by passing in "{name}'s address" as the template
+and {"name":Name} as the mapping. Note that only this tool will accept f-strings, you must
 never, ever use brackets like this in strings passed to any other tool (even other tools which have
 wildcards will never use brackets.    
 """,

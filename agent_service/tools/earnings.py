@@ -659,8 +659,10 @@ occurred within the specified date range. For each earnings call it will also re
 the datetime, which will also include the specific time of the earnings call, however this is not guaranteed, \
 if a earnings call does not have this data, it will instead have None. You MUST always use the tool \
 `get_date_range` first to create a DateRange object for the date range from the context of the client's messages \
-before using this tool. For the upcoming earnings calls, the date range should be from today to today + 90 days. \
-For the most recent quarter's earnings calls, the date range should be from today - 90 days to today. \
+before using this tool.
+Note that the date_range is a required argument to this tool, you cannot set it to None!
+For the upcoming earnings calls, the date range should be from today to today + 90 days. \
+For the latest/most recent quarter's earnings calls, the date range should be from today - 90 days to today. \
 If the user asks to be notified when an earnings call happens, the date range should be today. You
 must always include a date range. If there is no clear indication of the date range from the client's
 messages, you should default to the upcoming earnings calls so the date range should be from today to

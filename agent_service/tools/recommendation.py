@@ -56,6 +56,7 @@ from agent_service.utils.async_utils import gather_with_concurrency, identity
 from agent_service.utils.date_utils import (
     convert_horizon_to_date,
     convert_horizon_to_days,
+    get_now_utc,
 )
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.pagerduty import pager_wrapper
@@ -304,26 +305,35 @@ async def add_scores_and_rationales_to_stocks(
     context: PlanRunContext,
     news_horizon: Optional[str] = None,
     task_id: Optional[str] = None,
+    date: Optional[DateRange] = None,
 ) -> List[StockID]:
     logger = get_prefect_logger(__name__)
 
+    if date is None:
+        end_date = get_now_utc().date()
+    else:
+        end_date = date.end_date
+
     if news_horizon:
-        horizon_date = convert_horizon_to_date(news_horizon) if news_horizon else None
+        start_date = convert_horizon_to_date(
+            news_horizon if news_horizon else "1M", end_date=end_date
+        )
         texts: List[StockText] = await get_all_news_developments_about_companies(  # type: ignore
             GetNewsDevelopmentsAboutCompaniesInput(
                 stock_ids=ranked_stocks,
-                date_range=(
-                    DateRange(start_date=horizon_date, end_date=datetime.date.today())
-                    if horizon_date is not None
-                    else None
-                ),
+                date_range=(DateRange(start_date=start_date, end_date=end_date)),
             ),
             context,
         )
 
     else:
+        start_date = convert_horizon_to_date("1Q", end_date=end_date)
         texts: List[StockText] = await get_default_text_data_for_stocks(  # type: ignore
-            GetAllTextDataForStocksInput(stock_ids=ranked_stocks), context
+            GetAllTextDataForStocksInput(
+                stock_ids=ranked_stocks,
+                date_range=DateRange(start_date=start_date, end_date=end_date),
+            ),
+            context,
         )
     aligned_text_groups = StockAlignedTextGroups.from_stocks_and_text(ranked_stocks, texts)
     str_lookup: Dict[StockID, str] = await Text.get_all_strs(  # type: ignore
@@ -530,6 +540,10 @@ class GetStockRecommendationsInput(ToolArgs):
     num_stocks_to_return: Optional[int] = None
     star_rating_threshold: Optional[float] = None
     investment_style: Optional[str] = None
+    date: Optional[DateRange] = None
+    # date is currently only partially functional, the scores are from today since disco blocks
+    # does not have PIT scores, however at least the text explanation is from the correct period
+    # TODO: add PIT scores
 
     @field_validator("horizon", mode="before")
     @classmethod
@@ -597,7 +611,7 @@ class GetStockRecommendationsInput(ToolArgs):
         "output for all stocks, not just subset; if they mention `all` stocks or `each` stock, then "
         "you probably want filter=False"
         "If buy = True, a rationale for buying each stock will "
-        "be added, if buy = False, a rationale for selling/shorting the stock will be added. If buy == None, "
+        "be added, if buy = False, a rationale for selling/shorting the stock will be added. If buy = None, "
         "then the rationale will be based on justifying the score from a machine learning algorithm. "
         "So, if a client says to `give me a reason to buy/sell NVDA`, you would use filter = False, and "
         "buy = true/false, respectively "
@@ -606,7 +620,9 @@ class GetStockRecommendationsInput(ToolArgs):
         "rationale will reflect a post hoc rationalization of the machine-provided rating for the stock. "
         "Again, make sure to use buy=None if the user wants you to choose whether or not to recommend "
         "a particular stock or stocks. If the user is asking a direct question about whether to buy or "
-        "sell a stock (or both!), then they are asking for ML recommendations, and buy should be None"
+        "sell a stock (or both!), then they are asking for ML recommendations, and buy should be None. "
+        "If the user asks for a news sentiment of a stock or stocks, use this tool with the filter off"
+        "and buy= None. If they ask for a specific date, pass a DateRange to the date."
         "Investment horizon and delta horizon are used for in the ML algorithm to decide how far into "
         "The future (investment horizon) or into the past (delta) to consider, you should increase them from the "
         "defaults only when the client expresses some specific interest in a longer term view. "
@@ -616,7 +632,7 @@ class GetStockRecommendationsInput(ToolArgs):
         "If the client asks for news sentiment scores in a table, use this tool with news_only=True. Do not use the "
         "get_news_sentiment_time_series tool unless the client asks specifically for sentiment graph."
         "You should use also use this function (and not filter_stocks_by_profile!) with the news_only flag "
-        "when the client wants to filter stocks based on news semtiment, ."
+        "when the client wants to filter stocks based on news sentiment."
         "When you get such a request, e.g. `filter to stocks with only positive "
         "news sentiment`, the optional news_only should be set to True, and only news information will be used in "
         "rating and corresponding rationale. "
@@ -855,6 +871,7 @@ async def get_stock_recommendations(
         context,
         news_horizon=news_horizon,
         task_id=context.task_id,
+        date=args.date,
     )
 
     try:  # since everything here is optional, put in try/except

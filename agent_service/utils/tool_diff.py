@@ -24,7 +24,9 @@ class PrevRunInfo:
     timestamp: datetime.datetime
 
 
-async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional[PrevRunInfo]:
+async def get_prev_run_info(
+    context: PlanRunContext, tool_name: str, plan_run_filter: bool = True
+) -> Optional[PrevRunInfo]:
     logger = get_prefect_logger(__name__)
     if context.skip_db_commit:
         pg_db = get_async_db(sync_db=True, skip_commit=True)
@@ -46,6 +48,7 @@ async def get_prev_run_info(context: PlanRunContext, tool_name: str) -> Optional
             plan_id=context.plan_id,
             latest_plan_run_id=context.plan_run_id,
             cutoff_dt=search_dt,
+            filter_current_plan_run=plan_run_filter,
         )
 
         read_from_postgres = True

@@ -69,8 +69,6 @@ TOOL_DEBUG_INFO: contextvars.ContextVar = contextvars.ContextVar("debug_info", d
 
 
 async def log_tool_call_event(context: PlanRunContext, event_data: Dict[str, Any]) -> None:
-    if context.skip_db_commit:
-        return
     # Prevent circular imports
     from agent_service.utils.async_db import AsyncDB, SyncBoostedPG
 

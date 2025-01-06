@@ -54,6 +54,7 @@ async def gen_and_run_plan(
     if user_id is None:
         user_id = str(uuid4())
     plan_id = str(uuid4())
+    plan_run_id = str(uuid4())
     agent = AgentInfo(
         agent_id=agent_id,
         user_id=user_id,
@@ -84,6 +85,7 @@ async def gen_and_run_plan(
         chat_context=chat,
         do_chat=do_chat,
         use_sample_plans=use_sample_plans,
+        plan_run_id=plan_run_id,
     )
     if plan is None:
         print("failed to create plan")
@@ -99,7 +101,7 @@ async def gen_and_run_plan(
         agent_id=agent_id,
         plan_id=plan_id,
         user_id=user_id,
-        plan_run_id=str(uuid4()),
+        plan_run_id=plan_run_id,
         skip_db_commit=True,
         skip_task_cache=True,
         run_tasks_without_prefect=True,

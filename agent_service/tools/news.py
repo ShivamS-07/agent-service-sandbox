@@ -425,12 +425,9 @@ class GetNewsArticlesForTopicsInput(ToolArgs):
 
 
 def web_search_enabled(user_id: Optional[str], user_settings: Optional[AgentUserSettings]) -> bool:
-    result = (
-        get_ld_flag("web-search-tool", default=False, user_context=user_id)
-        and user_settings
-        and user_settings.include_web_results
-    )
-    return bool(result)
+    if user_settings and not user_settings.include_web_results:
+        return False
+    return get_ld_flag("web-search-tool", default=False, user_context=user_id)
 
 
 class GetLatestNewsForCompaniesInput(ToolArgs):

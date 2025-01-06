@@ -230,18 +230,27 @@ def fuzzy_match_sectors(input_sector: str, all_sectors: Dict[str, Dict]) -> Opti
     description=f"""
 This function takes a string like 'Healthcare' which
 refers to a GICS industry classification and converts it to an identifier.
-You should make the input string specific to what the customer is looking for.
+You should change what the user say to one of the supported GICS classifications provided below.
 For example, if the client asks for `car companies`, the input string should be `Automobiles`
-You must ONLY use this look up and the corresponding sector filter tool if the client specifically
-asks for one of these classifications directly. Sometimes the client may use the word `sector` to
-refer to things which do not actually correspond to GICS sectors, in such a case you will NOT use this tool.
-You should only use this tool if what the client says closely corresponds to a sector on your list, if
-it does not, you must NOT pick a related sector, instead you should use the
+You must ONLY use this look up tool and the corresponding sector filter tool if the client is clearly
+asking for stocks that correspond directly to one of the GICS sector classifications listed below.
+Sometimes the client may use the word `sector` to refer to things which do not actually correspond
+to a single GICS sectors, in such a case you will NOT use this tool.
+Again, you should only use this tool if what the client says closely corresponds to a sector on your
+list, if it does not, you must NOT pick a sector which appears related, instead you should use the
 `filter_stocks_by_product_or_service` tool.
-Sometimes the client may use words such as `institutions`, `firms`, `companies`, or `stocks` to refer
-to a particular category or selection of stocks which may actually refer to a sector.
 For example, if someone mentions 'high bond yield sector', 'high bond yield' does not correspond to
 anything in the above list of sectors and you must NOT use this sector tool under any circumstances!
+Even though some sectors contain the word 'retail', the 'retail sector' is another example of a 'sector'
+that in fact does not correspond directly to a single GICS sector, and you should use the
+`filter_stocks_by_product_or_service` tool, not this tool. Again, you must always prefer the
+`filter_stocks_by_product_or_service` tool over this tool if there is not a 1 to 1 correspondence between
+the stocks in the "sector" mentioned and one and only one of the GICs sectors listed below. Listen
+to me about this, if you select a sector that doesn't correspond exactly to what the user wants, you
+will be fired!
+Sometimes the client may use words such as `institutions`, `firms`, `companies`, or `stocks` to refer
+to a particular category or selection of stocks which may actually refer to a sector, you should use
+this tool if what they are asking for is obviously corresponds to a GICS sector.
 If the client asks to filter stocks by something more specific than an industry/sector, you must use the
 filter_product_or_service tool (for simple requests involving a clear class of product or services)
 or filter_by_profile_tool (for more complex stock filtering).

@@ -36,12 +36,11 @@ from agent_service.tools.LLM_analysis.constants import (
     LLM_FILTER_MAX_INPUT_PERCENTAGE,
     LLM_FILTER_MAX_PERCENT,
     LLM_FILTER_MIN_TOKENS,
-    MAX_CITATION_DROP_RATIO,
+    MAX_CITATION_CHANGE_RATIO,
     MAX_CITATION_TRIES,
     NO_SUMMARY,
     NO_SUMMARY_FOR_STOCK,
     STOCK_TYPE,
-    SUMMARIZE_CITATION_INCREASE_LIMIT,
     TARGET_STOCK,
 )
 from agent_service.tools.LLM_analysis.prompts import (
@@ -441,41 +440,32 @@ async def _update_summarize_helper(
     )
 
     tries = 0
+
+    min_citations = remaining_original_citation_count * MAX_CITATION_CHANGE_RATIO
+    max_citations = last_original_citation_count * (1 + MAX_CITATION_CHANGE_RATIO)
+
     while (  # we have too few citations, but we should have some from before
         remaining_original_citation_count > 0
         and (
             citations is None
             or (
                 not has_gpt_generated_sources
-                and not (
-                    max(
-                        remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
-                        remaining_original_citation_count - tries,
-                    )
-                    <= len(citations)
-                    <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
-                )
+                and not (min_citations <= len(citations) <= max_citations)
             )
         )  # we are missing citations entirely but the text isn't correct
         or (citations is None and text.strip() != NO_SUMMARY)
     ) and tries < MAX_CITATION_TRIES:
         logger.warning(f"Retrying after bad citation count for {full_result}")
         if citations:
-            min_value = max(
-                remaining_original_citation_count * 0.5,
-                remaining_original_citation_count
-                - tries * (remaining_original_citation_count // 10 + 1),
-            )
-            max_value = last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
-            if len(citations) < min_value:
+            if len(citations) < min_citations:
                 logger.warning(
                     f"Output had {len(citations)} original source citations, "
-                    f"but wanted at least {min_value}"
+                    f"but wanted at least {min_citations}"
                 )
-            elif len(citations) > max_value:
+            elif len(citations) > max_citations:
                 logger.warning(
                     f"Output had {len(citations)} original source citations, "
-                    f"but wanted no more than {max_value}"
+                    f"but wanted no more than {max_citations}"
                 )
         else:
             logger.warning("Failed to extract citations")
@@ -499,27 +489,18 @@ async def _update_summarize_helper(
         remaining_original_citation_count > 0
         and (
             citations is None
-            or (
-                not has_gpt_generated_sources
-                and not (
-                    max(
-                        remaining_original_citation_count * MAX_CITATION_DROP_RATIO,
-                        remaining_original_citation_count - tries,
-                    )
-                    <= len(citations)
-                    <= last_original_citation_count + SUMMARIZE_CITATION_INCREASE_LIMIT
-                )
-            )
+            or (not has_gpt_generated_sources and not (min_citations <= len(citations)))
         )
         or (citations is None and text.strip() != NO_SUMMARY)
     ):
-        # if the retries failed and we still ended up with a bad result with a main summary, we throw
-        # an exception which will result in a regular (non-update) run
+        # if the retries failed and we still ended up too few citations, we throw an exception which
+        # will result in a regular (non-update) run
+        # we only do this for too few citations, for too many, we just keep going with last try
         if single_summary:
             raise (
                 Exception(
                     "Update failed due to lack of citations, "
-                    f"original citation count: {remaining_original_citation_count}, "
+                    f"last remaining citation count: {remaining_original_citation_count}, "
                     f"final update citation count: {len(citations) if citations is not None else 0}, "
                     f"final GPT output: {full_result}"
                 )

@@ -954,7 +954,10 @@ class Planner:
 
         if sample_plans:
             sample_plans_str = "\n\n".join(
-                [sample_plan.get_formatted_plan() for sample_plan in sample_plans]
+                [
+                    f"{chr(65 + i)}. {sample_plan.get_formatted_plan()}"
+                    for i, sample_plan in enumerate(sample_plans)
+                ]
             )
             logger.info(f"Found relevant sample plan(s):\n{sample_plans_str}")
             sample_plans_str = PLAN_SAMPLE_TEMPLATE.format(sample_plans=sample_plans_str)

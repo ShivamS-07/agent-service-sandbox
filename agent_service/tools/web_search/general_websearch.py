@@ -46,12 +46,9 @@ def prepend_url_with_https(url: str) -> str:
 def websearch_enabler_function(
     user_id: Optional[str], user_settings: Optional[AgentUserSettings]
 ) -> bool:
-    result = (
-        get_ld_flag("web-search-tool", default=False, user_context=user_id)
-        and user_settings
-        and user_settings.include_web_results
-    )
-    return bool(result)
+    if user_settings and not user_settings.include_web_results:
+        return False
+    return get_ld_flag("web-search-tool", default=False, user_context=user_id)
 
 
 class SingleStockWebSearchInput(ToolArgs):
@@ -203,7 +200,8 @@ class GeneralStockWebSearchInput(ToolArgs):
         "If specified, the date range will be used to filter out web pages published outside of the date range. "
         "Make sure to use this date range if the user asks for anything date specific. Default to including if not sure. "
         "Unless not specified within a sample plan, always call the summarize_texts tool sometime after this tool. "
-        "Again, it is VERY important that the "
+        "This tool produces StockTexts, which are suitable for use in filtering stocks, or use with per stock "
+        "tools. Use this tool in those cases, not the general_web_search tool."
         "summarize_texts tool is called before the end of a plan containing this tool! DO not EVER directly output "
         "the returned text from this tool! AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
     ),
@@ -272,7 +270,9 @@ class GeneralWebSearchInput(ToolArgs):
         "If specified, the date range will be used to filter out web pages published outside of the date range. "
         "Make sure to use this date range if the user asks for anything date specific. Default to including if not sure. "
         "Unless not specified within a sample plan, always call a text processing tool sometime after this tool. "
-        "Again, it is VERY important that a "
+        "This tool produces Texts, not StockTexts, the results of this tool cannot be passed to tools"
+        "that do stock filtering or per stock operations, if you need text for filtering stocks, you must call "
+        "the general_stock_web_search tool, not this tool"
         "text processing tool is called before the end of a plan containing this tool! DO not EVER directly output "
         "the returned text from this tool! AGAIN, DO NOT DIRECTLY OUTPUT THE RESULTS OF THIS TOOL!!!"
     ),

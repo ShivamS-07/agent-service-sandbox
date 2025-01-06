@@ -163,25 +163,30 @@ class AsyncDB:
         plan_id: str,
         latest_plan_run_id: str,
         cutoff_dt: Optional[datetime.datetime],
+        filter_current_plan_run: bool = True,
     ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """
         Returns the last plan run for the agent before the latest_run, along with the timestamp for that run
         """
         date_filter = ""
         if cutoff_dt:
-            date_filter = " AND created_at < %(cutoff_dt)s"
+            date_filter = " AND created_at <= %(cutoff_dt)s"
+
+        plan_run_filter = ""
+        if filter_current_plan_run:
+            plan_run_filter = " AND plan_run_id != %(latest_plan_run_id)s"
 
         # TODO should we be filtering to plan_runs_that are
         # actually in the completed state (not error)
         sql = f"""
         SELECT plan_run_id, created_at FROM agent.plan_runs
-        WHERE plan_run_id != %(latest_plan_run_id)s
-            AND agent_id = %(agent_id)s
+        WHERE agent_id = %(agent_id)s
             AND plan_id = %(plan_id)s
-            AND created_at < (
+            AND created_at <= (
               SELECT created_at FROM agent.plan_runs
               WHERE plan_run_id = %(latest_plan_run_id)s
             )
+            {plan_run_filter}
             {date_filter}
         ORDER BY created_at DESC
         LIMIT 1

@@ -29,7 +29,7 @@ class GetStockDescriptionInput(ToolArgs):
         "You must never, ever call prepare_output on company descriptions directly, you must always pass"
         "them to other tools for processing, by default if the client asks for a description of a company "
         "pass the output of this tool on the summarize_texts tool, which will provide proper "
-        "summarization and formating."
+        "summarization and formatting."
     ),
     category=ToolCategory.TEXT_RETRIEVAL,
     tool_registry=default_tool_registry(),

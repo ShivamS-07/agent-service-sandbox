@@ -1,5 +1,6 @@
 import datetime
 import logging
+import re
 import time
 from copy import deepcopy
 from dataclasses import dataclass
@@ -209,6 +210,13 @@ def object_histories_to_columns(
     else:
         columns = list(entry_title_to_col_map.values())
     return columns
+
+
+NOT_WORD_RE = re.compile(r"[^\w]")
+
+
+def convert_to_variable(header: str) -> str:
+    return NOT_WORD_RE.sub("", header.replace(" ", "_"))
 
 
 @io_type
@@ -553,12 +561,17 @@ class Table(ComplexIOBase):
         Return a mapping from row name to the expected type in the row.
         """
         return {
-            str(col.metadata.label): col.metadata.col_type.to_data_type() for col in self.columns
+            convert_to_variable(str(col.metadata.label)): col.metadata.col_type.to_data_type()
+            for col in self.columns
         }
 
-    def iterate_over_rows(self) -> list[dict[str, IOType]]:
+    def iterate_over_rows(self, use_variables: bool = False) -> list[dict[str, IOType]]:
         df = self.to_df()
-        return df.to_dict(orient="records")  # type: ignore
+        row_dicts = df.to_dict(orient="records")  # type: ignore
+        if use_variables:
+            for i, row_dict in enumerate(row_dicts):
+                row_dicts[i] = {convert_to_variable(key): value for key, value in row_dict.items()}  # type: ignore
+        return row_dicts  # type: ignore
 
     @classmethod
     def from_df_and_cols(
