@@ -2837,7 +2837,10 @@ class AsyncDB:
         # Remove fields that are None or immutable
         values_to_update = {
             # We need to be able to set certain fields to null (unassign reviewers), map empty string to NONE
-            key: None if isinstance(value, str) and len(value) == 0 else value
+            key: None
+            if (isinstance(value, str) and len(value) == 0)
+            or (isinstance(value, int) and value == -1)  # to nullify score_rating
+            else value
             for key, value in values_to_update.items()
             if value is not None
         }

@@ -1,3 +1,4 @@
+import asyncio
 import bisect
 import datetime
 import json
@@ -40,10 +41,11 @@ async def send_agent_quality_message(
     agent_id: str, plan_id: str, status: Status, db: AsyncDB
 ) -> None:
     sqs = boto3.resource("sqs", region_name="us-west-2")
+    user_id = await db.get_agent_owner(agent_id)
     assign_args = {
         "agent_id": agent_id,
         "plan_id": plan_id,
-        "user_id": await db.get_agent_owner(agent_id),
+        "user_id": user_id,
     }
     assign_message = {
         "method": "assign_reviewers_agent_qc",
@@ -53,6 +55,7 @@ async def send_agent_quality_message(
     status_args = {
         "agent_id": agent_id,
         "plan_id": plan_id,
+        "user_id": user_id,
         "status": status.value,
     }
     status_message = {
@@ -61,8 +64,11 @@ async def send_agent_quality_message(
         "send_time_utc": get_now_utc().isoformat(),
     }
     queue = sqs.get_queue_by_name(QueueName=AGENT_QUALITY_WORKER_QUEUE)
-    queue.send_message(MessageBody=json.dumps(assign_message, default=json_serial))
+
+    # Assign status first before review, if broken, no need to assign reviewer
     queue.send_message(MessageBody=json.dumps(status_message, default=json_serial))
+    await asyncio.sleep(1)
+    queue.send_message(MessageBody=json.dumps(assign_message, default=json_serial))
 
 
 async def get_number_of_assigned(
@@ -153,9 +159,20 @@ async def assign_agent_quality_reviewers(
         logging.info(f"Agent is spoofed, skipping assignment for agent_id: {agent_id}")
         return None
 
-    if agent_qc.cs_reviewer or agent_qc.eng_reviewer or agent_qc.prod_reviewer:
+    two_weeks = datetime.timedelta(days=14)
+    if get_now_utc() - two_weeks > agent_qc.created_at:
+        logging.info(f"Agent is older than two weeks, skipping assignment for agent_id: {agent_id}")
+        return None
+
+    if agent_qc.cs_reviewer and agent_qc.eng_reviewer and agent_qc.prod_reviewer:
         logging.info(
             f"Agent has already been assigned, skipping assignment for agent_id: {agent_id}"
+        )
+        return None
+
+    if agent_qc.cs_reviewed or agent_qc.eng_reviewed or agent_qc.prod_reviewed:
+        logging.info(
+            f"Agent has already been reviewed, skipping assignment for agent_id: {agent_id}"
         )
         return None
 
@@ -212,15 +229,16 @@ async def assign_agent_quality_reviewers(
     eng_reviewer = random.choice(eng_team_members)
     prod_reviewer = random.choice(reviewer_team_members)
 
+    # never reassign reviewers
     agent_qc = AgentQC(
         agent_qc_id=agent_qc.agent_qc_id,
         agent_id=agent_id,
         user_id=user_id,
         agent_status=agent_qc.agent_status,
         plan_id=plan_id,
-        cs_reviewer=cs_reviewer.userId,
-        eng_reviewer=eng_reviewer.userId,
-        prod_reviewer=prod_reviewer.userId,
+        cs_reviewer=cs_reviewer.userId if not agent_qc.cs_reviewer else None,
+        eng_reviewer=eng_reviewer.userId if not agent_qc.eng_reviewer else None,
+        prod_reviewer=prod_reviewer.userId if not agent_qc.prod_reviewer else None,
         created_at=agent_qc.created_at,
         last_updated=datetime.datetime.now(),
         # this field can't be updated but should be False here regardless
@@ -232,7 +250,7 @@ async def assign_agent_quality_reviewers(
 
 
 async def update_agent_qc_status(
-    agent_id: str, plan_id: str, status: str, skip_db_commit: bool = False
+    agent_id: str, plan_id: str, user_id: str, status: str, skip_db_commit: bool = False
 ) -> None:
     db = AsyncDB(pg=SyncBoostedPG(skip_commit=skip_db_commit))
 
@@ -246,11 +264,7 @@ async def update_agent_qc_status(
 
     agent_qc = agent_qcs.pop()
 
-    if agent_qc.score_rating == ScoreRating.BROKEN:
-        logging.info("Agent QC already scored as BROKEN, skipping status update")
-        return None
-
-    agent_qc = AgentQC(
+    new_agent_qc = AgentQC(
         agent_qc_id=agent_qc.agent_qc_id,
         agent_id=agent_id,
         user_id=agent_qc.user_id,
@@ -261,10 +275,21 @@ async def update_agent_qc_status(
         is_spoofed=agent_qc.is_spoofed,
     )
 
-    if status == Status.ERROR:
+    env = get_environment_tag()
+    is_dev = env in (DEV_TAG, LOCAL_TAG)
+    is_user_internal = not is_dev and await db.is_user_internal(user_id)
+
+    # Do not auto-score internal queries as broken, just update status
+    if (
+        not is_user_internal
+        and not agent_qc.cs_reviewed
+        and status == Status.ERROR
+        and agent_qc.score_rating != ScoreRating.BROKEN
+    ):
+        # If agent has not been reviewed yet and it ERRORed, auto-score BROKEN and skip CS review
         logging.info("Agent status is ERROR, setting agent QC to BROKEN, skipping CS review")
 
-        agent_qc = AgentQC(
+        new_agent_qc = AgentQC(
             agent_qc_id=agent_qc.agent_qc_id,
             agent_id=agent_id,
             user_id=agent_qc.user_id,
@@ -277,6 +302,35 @@ async def update_agent_qc_status(
             score_rating=ScoreRating.BROKEN,
             cs_reviewed=True,
         )
+    elif (
+        not agent_qc.cs_reviewer
+        and status != Status.ERROR
+        and agent_qc.score_rating == ScoreRating.BROKEN
+    ):
+        # If agent errored but then runs again, we remove the BROKEN score and send to assignment
+        logging.info(
+            "Agent previously errored and auto-scored broken, running again, assigning CS reviewer"
+        )
 
-    await db.update_agent_qc(agent_qc)
+        new_agent_qc = AgentQC(
+            agent_qc_id=agent_qc.agent_qc_id,
+            agent_id=agent_id,
+            user_id=agent_qc.user_id,
+            agent_status=status,
+            plan_id=plan_id,
+            created_at=agent_qc.created_at,
+            last_updated=datetime.datetime.now(),
+            is_spoofed=agent_qc.is_spoofed,
+            score_rating=-1,  # makes null
+            cs_reviewed=False,
+        )
+
+        await db.update_agent_qc(new_agent_qc)
+        logging.info(
+            f"Successfully updated agent status for agent id: {agent_id}, assigning CS reviewer"
+        )
+
+        return await assign_agent_quality_reviewers(agent_id, plan_id, user_id)
+
+    await db.update_agent_qc(new_agent_qc)
     logging.info(f"Successfully updated agent status for agent id: {agent_id}")

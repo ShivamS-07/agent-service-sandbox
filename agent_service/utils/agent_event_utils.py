@@ -44,7 +44,6 @@ from agent_service.utils.async_utils import run_async_background
 from agent_service.utils.cache_utils import CacheBackend
 from agent_service.utils.chat_utils import append_widget_chip_to_execution_complete_message
 from agent_service.utils.date_utils import get_now_utc
-from agent_service.utils.feature_flags import get_ld_flag, get_user_context
 from agent_service.utils.output_utils.output_construction import get_output_from_io_type
 from agent_service.utils.postgres import Postgres, SyncBoostedPG, get_psql
 from agent_service.utils.redis_queue import (
@@ -417,12 +416,8 @@ async def publish_agent_execution_status(
             status=status,
             scheduled_by_automation=scheduled_by_automation,
         )
-        user_id = await db.get_agent_owner(agent_id=agent_id)
-        if get_ld_flag(
-            flag_name="qc_tool_flag",
-            default=False,
-            user_context=get_user_context(user_id=user_id),
-        ):
+        # Do not update agent status or assign reviewers if automated agent
+        if not scheduled_by_automation:
             # Send a message to update the agent quality
             await send_agent_quality_message(
                 agent_id=agent_id, plan_id=plan_id, status=status, db=db

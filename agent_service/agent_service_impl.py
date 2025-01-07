@@ -311,7 +311,6 @@ from agent_service.utils.email_utils import AgentEmail
 from agent_service.utils.event_logging import log_event
 from agent_service.utils.feature_flags import (
     get_custom_user_dict,
-    get_ld_flag_async,
     get_secure_mode_hash,
     get_user_context_async,
     is_database_access_check_enabled_for_user,
@@ -729,7 +728,7 @@ class AgentServiceImpl:
                 agent_status=Status.NOT_STARTED,
                 query_order=0,
                 plan_id=plan_id,
-                fullstory_link=user.fullstory_link.replace("https://", ""),
+                fullstory_link=user.fullstory_link if len(user.fullstory_link) > 0 else None,
                 is_spoofed=is_spoofed if is_spoofed else False,
             )
             await self.pg.insert_agent_qc(agent_qc=agent_qc)
@@ -864,24 +863,20 @@ class AgentServiceImpl:
                     ),
                 )
             )
-            if await get_ld_flag_async(
-                flag_name="qc_tool_flag",
-                default=False,
-                user_id=user.user_id,
-                async_db=self.pg,
-            ):
-                prompt: str = str(user_msg.message)
-                is_spoofed = user_msg.is_user_message and user_msg.message_author != user.user_id
 
-                run_async_background(
-                    self.agent_quality_ingestion(
-                        agent_id=agent_id,
-                        prompt=prompt,
-                        user=user,
-                        plan_id=plan_id,
-                        is_spoofed=is_spoofed,
-                    )
+            # Ingest agent into Horizon
+            prompt: str = str(user_msg.message)
+            is_spoofed = user_msg.is_user_message and user_msg.message_author != user.user_id
+
+            run_async_background(
+                self.agent_quality_ingestion(
+                    agent_id=agent_id,
+                    prompt=prompt,
+                    user=user,
+                    plan_id=plan_id,
+                    is_spoofed=is_spoofed,
                 )
+            )
 
         await asyncio.gather(*tasks)
         return action
@@ -892,8 +887,10 @@ class AgentServiceImpl:
             user_email, user_info_slack_string = await get_user_info_slack_string(
                 self.pg, user.user_id
             )
+            is_user_internal = await self.pg.is_user_internal(user.user_id)
             if (
-                not user_email.endswith("@boosted.ai")
+                not is_user_internal
+                and not user_email.endswith("@boosted.ai")
                 and not user_email.endswith("@gradientboostedinvestments.com")
                 and user.user_id == user.real_user_id
             ):

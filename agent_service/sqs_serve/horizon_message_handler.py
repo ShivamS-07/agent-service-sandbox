@@ -25,6 +25,7 @@ class HorizonMessageHandler:
         status_args = {
             "agent_id": agent_id,
             "plan_id": plan_id,
+            "user_id": agent_owner
             "status": Status.value (ERROR, CANCELLED, NOT_STARTED, etc.)
         }
         status_message = {
