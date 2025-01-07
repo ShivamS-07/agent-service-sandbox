@@ -353,7 +353,7 @@ class GetAgentFeedBackResponse(BaseModel):
 
 
 class GetUnreadUpdatesSummaryResponse(BaseModel):
-    summary_mmessage: str
+    updates_summary: str
 
 
 ####################################################################################################

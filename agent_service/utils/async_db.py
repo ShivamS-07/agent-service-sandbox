@@ -221,6 +221,19 @@ class AsyncDB:
         else:
             return await self.get_agent_outputs_no_cache(agent_id, plan_run_id)
 
+    async def get_last_report_plan_run_id(self, agent_id: str) -> Optional[str]:
+        sql = """
+        SELECT plan_run_id::VARCHAR
+        FROM agent.agent_outputs
+        WHERE agent_id = %(agent_id)s
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+        rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
+        if not rows:
+            return None
+        return rows[0]["plan_run_id"]
+
     async def get_agent_outputs_data_from_db(
         self,
         agent_id: str,
@@ -1114,6 +1127,7 @@ class AsyncDB:
         start_index: Optional[int] = 0,
         limit_num: Optional[int] = None,
         order_asc: bool = False,
+        only_unread: bool = False,
     ) -> ChatContext:
         """
         Get chat history for an agent
@@ -1162,9 +1176,11 @@ class AsyncDB:
             self.pg.generic_read(total_count_sql, params=params),
         )
         total_message_count = total_count_rows[0]["total_message_count"] if total_count_rows else 0
-
+        messages = [Message(agent_id=agent_id, **row) for row in rows]
+        if only_unread:
+            messages = [msg for msg in messages if msg.unread]
         return ChatContext(
-            messages=[Message(agent_id=agent_id, **row) for row in rows],
+            messages=messages,
             total_message_count=total_message_count,
         )
 
@@ -1895,15 +1911,6 @@ class AsyncDB:
         await self.pg.multi_row_insert(
             table_name="agent.notifications", rows=[notif.model_dump() for notif in notifications]
         )
-
-    async def get_unread_messages(self, agent_id: str) -> List[Notification]:
-        sql = """
-        SELECT notification_id::VARCHAR, agent_id::VARCHAR, message_id::VARCHAR, summary::TEXT, unread, created_at
-        FROM agent.notifications
-        WHERE agent_id = %(agent_id)s AND unread
-        """
-        rows = await self.pg.generic_read(sql, {"agent_id": agent_id})
-        return [Notification(**row) for row in rows]
 
     async def get_notification_event_info(self, agent_id: str) -> Optional[Dict[str, Any]]:
         sql = """

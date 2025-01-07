@@ -77,7 +77,6 @@ from agent_service.endpoints.models import (
     GetTestCasesResponse,
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
-    GetUnreadUpdatesSummaryResponse,
     LockAgentOutputRequest,
     LockAgentOutputResponse,
     MarkNotificationsAsReadRequest,
@@ -707,17 +706,6 @@ async def upload_file(
     return await application.state.agent_service_impl.upload_file(
         upload=upload, user=user, agent_id=agent_id
     )
-
-
-@router.get(
-    "/agent/get-unread-updates-summary/{agent_id}",
-    response_model=GetUnreadUpdatesSummaryResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_unread_updates_summary(
-    user: User = Depends(parse_header),
-) -> GetUnreadUpdatesSummaryResponse:
-    return await application.state.agent_service_impl.get_unread_updates_summary()
 
 
 @router.get(

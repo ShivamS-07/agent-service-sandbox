@@ -1,8 +1,8 @@
 import json
 import re
-from typing import cast
+from typing import List, cast
 
-from agent_service.planner.constants import CHAT_DIFF_TEMPLATE
+from agent_service.planner.constants import FOLLOW_UP_QUESTION, REPORT_UPDATED_LINE
 from agent_service.types import Message
 from agent_service.utils.async_db import AsyncDB
 from agent_service.utils.get_agent_outputs import LOGGER
@@ -10,7 +10,7 @@ from agent_service.utils.get_agent_outputs import LOGGER
 
 def append_widget_chip_to_report_updated_message(chat_message: str, plan_run_id: str | None) -> str:
     # get the first two words
-    report_updated_text = " ".join(CHAT_DIFF_TEMPLATE.split()[:2])
+    report_updated_text = REPORT_UPDATED_LINE
     report_updated_dict = {
         "type": "output_report",
         "text": report_updated_text,
@@ -59,3 +59,19 @@ async def append_widget_chip_to_execution_complete_message(
             + chat_message[match.end() :]
         )
     return chat_message
+
+
+async def append_widget_chip_to_list_of_chat_messages(
+    messages: List[Message], agent_id: str, pg: AsyncDB
+) -> List[Message]:
+    for message in messages:
+        chat_message = cast(str, message.message)
+        if not message.is_user_message and chat_message.startswith(REPORT_UPDATED_LINE):
+            message.message = append_widget_chip_to_report_updated_message(
+                chat_message=chat_message, plan_run_id=message.plan_run_id
+            )
+        if not message.is_user_message and chat_message.endswith(FOLLOW_UP_QUESTION):
+            message.message = await append_widget_chip_to_execution_complete_message(
+                message=message, agent_id=agent_id, db=pg
+            )
+    return messages

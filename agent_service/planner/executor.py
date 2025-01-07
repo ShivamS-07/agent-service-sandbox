@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 import os
 import pprint
@@ -884,7 +885,10 @@ async def _run_execution_plan_impl(
             await send_chat_message(
                 message=Message(
                     agent_id=context.agent_id,
-                    message=CHAT_DIFF_TEMPLATE.format(diff=short_diff_summary),
+                    message=CHAT_DIFF_TEMPLATE.format(
+                        diff=short_diff_summary,
+                        date=datetime.datetime.now().strftime("%Y-%m-%d"),
+                    ),
                     is_user_message=False,
                     visible_to_llm=False,
                     plan_run_id=context.plan_run_id,
@@ -1639,7 +1643,10 @@ async def _postprocess_live(
         await send_chat_message(
             message=Message(
                 agent_id=context.agent_id,
-                message=CHAT_DIFF_TEMPLATE.format(diff=short_diff_summary),
+                message=CHAT_DIFF_TEMPLATE.format(
+                    diff=short_diff_summary,
+                    date=datetime.datetime.now().strftime("%Y-%m-%d"),
+                ),
                 is_user_message=False,
                 visible_to_llm=False,
                 plan_run_id=context.plan_run_id,

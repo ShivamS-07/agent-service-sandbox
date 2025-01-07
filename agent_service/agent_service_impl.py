@@ -132,7 +132,6 @@ from agent_service.endpoints.models import (
     GetTestSuiteRunInfoResponse,
     GetTestSuiteRunsResponse,
     GetToolLibraryResponse,
-    GetUnreadUpdatesSummaryResponse,
     GetUpcomingEarningsResponse,
     GetVariableCoverageResponse,
     GetVariableHierarchyResponse,
@@ -264,8 +263,6 @@ from agent_service.io_types.text_objects import (
 )
 from agent_service.planner.action_decide import FirstActionDecider
 from agent_service.planner.constants import (
-    CHAT_DIFF_TEMPLATE,
-    FOLLOW_UP_QUESTION,
     FirstAction,
 )
 from agent_service.planner.planner import Planner
@@ -300,8 +297,7 @@ from agent_service.utils.async_utils import (
 )
 from agent_service.utils.cache_utils import CacheBackend, RedisCacheBackend
 from agent_service.utils.chat_utils import (
-    append_widget_chip_to_execution_complete_message,
-    append_widget_chip_to_report_updated_message,
+    append_widget_chip_to_list_of_chat_messages,
 )
 from agent_service.utils.clickhouse import Clickhouse
 from agent_service.utils.constants import MEDIA_TO_MIMETYPE
@@ -339,6 +335,10 @@ from agent_service.utils.scheduling import (
 )
 from agent_service.utils.sidebar_sections import SidebarSection, find_sidebar_section
 from agent_service.utils.task_executor import TaskExecutor
+from agent_service.utils.unread_updates_summary import (
+    UNREAD_UPDATES_MESSAGE_FIRST_LINE,
+    add_unread_updates_message_to_chat_history,
+)
 from agent_service.utils.variable_explorer_utils import (
     VariableExplorerBadInputError,
     VariableExplorerException,
@@ -913,15 +913,6 @@ class AgentServiceImpl:
             LOGGER.warning(f"Unable to send slack message for {user.user_id=}")
             LOGGER.warning(traceback.format_exc())
 
-    @async_perf_logger
-    async def get_unread_updates_summary(self) -> GetUnreadUpdatesSummaryResponse:
-        # get list of unread messages
-        # unread_messages = await self.pg.get_unread_messages(agent_id=agent_id)
-
-        return GetUnreadUpdatesSummaryResponse(
-            summary_mmessage="Welcome to the new updates summary",
-        )
-
     async def get_chat_history(
         self,
         agent_id: str,
@@ -934,17 +925,9 @@ class AgentServiceImpl:
             agent_id, start, end, start_index, limit_num
         )
 
-        report_updated_message = CHAT_DIFF_TEMPLATE.split("\n")[0]
-        for message in chat_context.messages:
-            chat_message = cast(str, message.message)
-            if not message.is_user_message and chat_message.startswith(report_updated_message):
-                message.message = append_widget_chip_to_report_updated_message(
-                    chat_message=chat_message, plan_run_id=message.plan_run_id
-                )
-            if not message.is_user_message and chat_message.endswith(FOLLOW_UP_QUESTION):
-                message.message = await append_widget_chip_to_execution_complete_message(
-                    message=message, agent_id=agent_id, db=self.pg
-                )
+        chat_context.messages = await append_widget_chip_to_list_of_chat_messages(
+            chat_context.messages, agent_id, self.pg
+        )
 
         return GetChatHistoryResponse(
             messages=chat_context.messages,
@@ -962,10 +945,14 @@ class AgentServiceImpl:
     ) -> GetChatHistoryResponse:
         """
         Retrieves chat history within a session for the given agent and timestamp
+        A session is defined as the time between two plan runs for the agent.
+
+        - If timestamp is None, it will add all unread updates from previous sessions
+        into a single message and add it to the begnning of the chat history for the last session.
 
         Args:
             agent_id: ID of the agent.
-            timestamp: Timestamp to find the chat history around, if None, return the last session.
+            timestamp: Report timestamp to get chat history for.
             limit_num: Maximum number of messages to return (optional).
             start_index: Starting index for pagination (optional).
 
@@ -973,33 +960,44 @@ class AgentServiceImpl:
             GetChatHistoryResponse object containing messages, total count, and start index.
         """
 
-        def find_surrounding_end_times(
-            end_times: Optional[List[datetime.datetime]], timestamp: Optional[datetime.datetime]
+        def get_session(
+            report_times: Optional[List[datetime.datetime]],
+            target_report_time: Optional[datetime.datetime],
         ) -> Tuple[Optional[datetime.datetime], Optional[datetime.datetime]]:
             """
-            Finds the session start and end times surrounding the given timestamp.
+            Returns the session start and end times for the given report times and target report time.
 
             Args:
-                end_times: List of end times for agent's plan runs.
-                timestamp: Timestamp to search for the session.
+                report_times: List of report times for agent's plan runs.
+                target_report_time: target report time to get the session for.
 
             Returns:
                 Tuple containing (start_time, end_time) for the session.
             """
-            if not end_times:
+            if not report_times:
                 return None, None
-            else:
-                sorted_end_times = sorted(end_times)
-            # if no timestamp is provided, return the last end time and None
-            if timestamp is None:
-                return sorted_end_times[-1].replace(microsecond=0), None
-            if timestamp <= sorted_end_times[0]:
-                return None, sorted_end_times[0]
-            if timestamp >= sorted_end_times[-1]:
-                return sorted_end_times[-1].replace(microsecond=0), None
-            for i in range(len(sorted_end_times) - 1):
-                if sorted_end_times[i] <= timestamp <= sorted_end_times[i + 1]:
-                    return sorted_end_times[i].replace(microsecond=0), sorted_end_times[i + 1]
+
+            report_times = sorted(report_times)
+
+            # if no target_report_time is provided, return the last end time and None
+            if target_report_time is None:
+                last_time = report_times[-1] - datetime.timedelta(seconds=5)
+                return last_time, None
+
+            if target_report_time >= report_times[-1]:
+                start_time = report_times[-1] - datetime.timedelta(seconds=5)
+                return start_time, None
+
+            if target_report_time <= report_times[0]:
+                end_time = report_times[0] - datetime.timedelta(seconds=5)
+                return None, end_time
+
+            for i in range(len(report_times) - 1):
+                if report_times[i] <= target_report_time < report_times[i + 1]:
+                    start_time = report_times[i] - datetime.timedelta(seconds=5)
+                    end_time = report_times[i + 1] - datetime.timedelta(seconds=5)
+                    return start_time, end_time
+
             return None, None  # This shouldn't be reached
 
         try:
@@ -1007,16 +1005,46 @@ class AgentServiceImpl:
         except Exception as e:
             LOGGER.exception(f"Failed to get plan runs end times for {agent_id=}: {e}")
             end_times = None
-        start, end = find_surrounding_end_times(end_times, timestamp)
-        print("start: ", start, "end: ", end)
-        # get the chat history for the session
-        chat_context = await self.get_chat_history(
-            agent_id=agent_id,
-            start=start,
-            end=end,
-            limit_num=limit_num,
-            start_index=start_index,
+
+        session_start, session_end = get_session(end_times, timestamp)
+        logging.info(
+            f"Getting chat history for {agent_id=} with {session_start=} and {session_end=}"
         )
+
+        # get the chat history for the session
+        chat_context = await self.pg.get_chats_history_for_agent(
+            agent_id, session_start, session_end, start_index, limit_num
+        )
+        chat_context.messages = await append_widget_chip_to_list_of_chat_messages(
+            chat_context.messages, agent_id, self.pg
+        )
+        # if timestamp is None, and there is no summary message in the chat history
+        if timestamp is None and all(
+            UNREAD_UPDATES_MESSAGE_FIRST_LINE not in str(message.message)
+            for message in chat_context.messages
+        ):
+            logging.info(f"Getting unread updates for {agent_id=}")
+            # get the unread chat history in previous sessions
+            chat_context_unread = await self.pg.get_chats_history_for_agent(
+                agent_id=agent_id,
+                only_unread=True,
+                end=session_start,
+            )
+            chat_context_unread.messages = await append_widget_chip_to_list_of_chat_messages(
+                chat_context_unread.messages, agent_id, self.pg
+            )
+
+            # add the unread chat history to the chat history
+            if len(chat_context_unread.messages) > 0:
+                logging.info(f"Adding unread updates to chat history for {agent_id=}")
+                chat_context.messages = await add_unread_updates_message_to_chat_history(
+                    chat_context_messages=chat_context.messages,
+                    unread_updates=chat_context_unread.messages,
+                    agent_id=agent_id,
+                    pg=self.pg,
+                )
+                chat_context.total_message_count = len(chat_context.messages)
+
         return GetChatHistoryResponse(
             messages=chat_context.messages,
             total_message_count=chat_context.total_message_count,
@@ -1145,16 +1173,6 @@ class AgentServiceImpl:
 
         await asyncio.gather(write_plan_task, delete_outputs_task)
 
-        await send_chat_message(
-            db=self.pg,
-            message=Message(
-                agent_id=agent_id,
-                message="Outputs have been deleted successfully.",
-                is_user_message=False,
-                visible_to_llm=False,
-            ),
-        )
-
         return DeleteAgentOutputResponse()
 
     async def lock_agent_output(
@@ -1168,16 +1186,6 @@ class AgentServiceImpl:
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot lock output without plan"
             )
         await self.pg.lock_plan_tasks(agent_id=agent_id, plan_id=old_plan_id, task_ids=req.task_ids)
-
-        await send_chat_message(
-            db=self.pg,
-            message=Message(
-                agent_id=agent_id,
-                message="Outputs have been locked successfully.",
-                is_user_message=False,
-                visible_to_llm=False,
-            ),
-        )
 
         return LockAgentOutputResponse(success=True)
 
@@ -1193,16 +1201,6 @@ class AgentServiceImpl:
             )
         await self.pg.unlock_plan_tasks(
             agent_id=agent_id, plan_id=old_plan_id, task_ids=req.task_ids
-        )
-
-        await send_chat_message(
-            db=self.pg,
-            message=Message(
-                agent_id=agent_id,
-                message="Outputs have been unlocked successfully.",
-                is_user_message=False,
-                visible_to_llm=False,
-            ),
         )
 
         return UnlockAgentOutputResponse(success=True)
@@ -1287,32 +1285,12 @@ class AgentServiceImpl:
             delete_previous_emails=False,
         )
 
-        await send_chat_message(
-            db=self.pg,
-            message=Message(
-                agent_id=agent_id,
-                message="Automation has been enabled successfully.",
-                is_user_message=False,
-                visible_to_llm=False,
-            ),
-        )
-
         return EnableAgentAutomationResponse(success=True, next_run=next_run)
 
     async def disable_agent_automation(
         self, agent_id: str, user_id: str
     ) -> DisableAgentAutomationResponse:
         await self.pg.set_agent_automation_enabled(agent_id=agent_id, enabled=False)
-
-        await send_chat_message(
-            db=self.pg,
-            message=Message(
-                agent_id=agent_id,
-                message="Automation has been disabled successfully.",
-                is_user_message=False,
-                visible_to_llm=False,
-            ),
-        )
 
         return DisableAgentAutomationResponse(success=True)
 
@@ -1322,16 +1300,6 @@ class AgentServiceImpl:
         )
         if success:
             await self.pg.update_agent_schedule(agent_id=req.agent_id, schedule=schedule)
-
-            await send_chat_message(
-                db=self.pg,
-                message=Message(
-                    agent_id=req.agent_id,
-                    message=f"Schedule has been set to <{req.user_schedule_description}> successfully.",
-                    is_user_message=False,
-                    visible_to_llm=False,
-                ),
-            )
 
         return SetAgentScheduleResponse(
             agent_id=req.agent_id,
