@@ -156,6 +156,7 @@ from agent_service.endpoints.models import (
     PlanRunToolDebugInfo,
     PlanTemplateTask,
     PromptTemplate,
+    QueriesByUseCase,
     RenameMemoryResponse,
     RestoreAgentResponse,
     RetryPlanRunRequest,
@@ -3061,6 +3062,9 @@ class AgentServiceImpl:
             live_only=req.live_only, start_dt=req.start_dt, end_dt=req.end_dt
         )
         return GetLiveAgentsQCResponse(agent_infos=infos)
+
+    async def get_all_queries_by_use_case(self) -> List[QueriesByUseCase]:
+        return await self.pg.get_all_queries_by_use_case()
 
     async def create_jira_ticket(
         self, request: CreateJiraTicketRequest

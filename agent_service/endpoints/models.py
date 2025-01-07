@@ -1929,6 +1929,12 @@ class HistoricalAgentsSnapshot(BaseModel):
     non_live: Tuple[datetime.datetime, int]
 
 
+class QueriesByUseCase(BaseModel):
+    use_case: str
+    count: int
+    total: int
+
+
 class GetAgentsQCRequest(BaseModel):
     start_dt: Optional[datetime.datetime] = None
     end_dt: Optional[datetime.datetime] = None

@@ -14,6 +14,7 @@ from agent_service.endpoints.models import (
     GetLiveAgentsQCResponse,
     GetQueryHistoricalAgentsRequest,
     HistoricalAgentsSnapshot,
+    QueriesByUseCase,
     QueryWithBreakdown,
     SearchAgentQCRequest,
     SearchAgentQCResponse,
@@ -246,4 +247,27 @@ async def get_query_historical_agents(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
         )
     res = await agent_svc_impl.pg.get_agent_snapshot(req.start_date, req.end_date)
+    return res
+
+
+@router.get(
+    "/stats/all-queries-breakdown",
+    response_model=List[QueriesByUseCase],
+    status_code=status.HTTP_200_OK,
+)
+async def get_all_queries_by_use_case(
+    user: User = Depends(parse_header),
+) -> List[QueriesByUseCase]:
+    """
+    Count of all queries by use case
+
+    Returns: List[QueriesByUseCase]
+    """
+    # Validate user access to QC tool
+    agent_svc_impl = get_agent_svc_impl()
+    if not await user_has_qc_tool_access(user_id=user.user_id, async_db=agent_svc_impl.pg):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not authorized to use QC tool"
+        )
+    res = await agent_svc_impl.get_all_queries_by_use_case()
     return res

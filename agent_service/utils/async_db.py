@@ -37,6 +37,7 @@ from agent_service.endpoints.models import (
     PlanRunStatusInfo,
     PlanRunTaskLog,
     PromptTemplate,
+    QueriesByUseCase,
     QueryWithBreakdown,
     QuickThoughts,
     SetAgentFeedBackRequest,
@@ -3396,6 +3397,22 @@ class AsyncDB:
                 )
             )
         return ret
+
+    async def get_all_queries_by_use_case(self) -> List[QueriesByUseCase]:
+        sql = """
+        SELECT use_case, count(*) AS query_count FROM agent.agent_qc
+        WHERE cs_reviewed = TRUE AND is_spoofed = FALSE AND use_case IS NOT NULL
+        GROUP BY use_case
+        """
+
+        results = await self.pg.generic_read(sql)
+        total_count = 0
+        for row in results:
+            total_count += row["query_count"]
+        return [
+            QueriesByUseCase(use_case=row["use_case"], count=row["query_count"], total=total_count)
+            for row in results
+        ]
 
     async def get_cached_urls(
         self, queries: List[str], time_period: str, query_type: str, cache_time: int
