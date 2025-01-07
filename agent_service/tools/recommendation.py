@@ -160,8 +160,12 @@ that discusses recommendations and integrate any particular instructions the use
 """
 RECOMMENDATION_MAIN_PROMPT_STR += CITATION_REMINDER
 RECOMMENDATION_MAIN_PROMPT_STR += (
-    "\n\nNow provide your reasoning for the investment decision in a short paragraph:\n"
+    "\n\n{format}Now provide your reasoning for the investment decision:\n"
 )
+
+PARA_STR = "Your output must be in the form of a short paragraph. "
+
+BULLET_STR = "Your output must be in bullet point format. "
 
 BUY_DIRECTION = (
     "In particular, you must write an argument that focuses on evidence for buying the stock."
@@ -306,6 +310,7 @@ async def add_scores_and_rationales_to_stocks(
     news_horizon: Optional[str] = None,
     task_id: Optional[str] = None,
     date: Optional[DateRange] = None,
+    bullets: bool = False,
 ) -> List[StockID]:
     logger = get_prefect_logger(__name__)
 
@@ -340,6 +345,11 @@ async def add_scores_and_rationales_to_stocks(
         aligned_text_groups.val, include_header=True, text_group_numbering=True
     )
 
+    if bullets:
+        format_str = BULLET_STR
+    else:
+        format_str = PARA_STR
+
     ranked_stocks = [
         stock for stock in ranked_stocks if stock in str_lookup
     ]  # filter out those with no data
@@ -355,6 +365,7 @@ async def add_scores_and_rationales_to_stocks(
                 RECOMMENDATION_SYS_PROMPT.template,
                 RECOMMENDATION_MAIN_PROMPT.template,
                 SCORE_DIRECTION,
+                format_str,
             ]
         )
     )
@@ -381,7 +392,10 @@ async def add_scores_and_rationales_to_stocks(
         tasks.append(
             llm.do_chat_w_sys_prompt(
                 RECOMMENDATION_MAIN_PROMPT.format(
-                    company_name=stock.company_name, documents=text_str, chat_context=chat_context
+                    company_name=stock.company_name,
+                    documents=text_str,
+                    chat_context=chat_context,
+                    format=format_str,
                 ),
                 RECOMMENDATION_SYS_PROMPT.format(direction=direction_str),
             )
@@ -544,6 +558,7 @@ class GetStockRecommendationsInput(ToolArgs):
     # date is currently only partially functional, the scores are from today since disco blocks
     # does not have PIT scores, however at least the text explanation is from the correct period
     # TODO: add PIT scores
+    bullets: bool = False
 
     @field_validator("horizon", mode="before")
     @classmethod
@@ -655,6 +670,8 @@ class GetStockRecommendationsInput(ToolArgs):
         "NOT transform table and/or the statistic tool."
         "If the client mentions Boosted rec, boosted recommendation,"
         "boosted.Ai rec or any other variation they mean this tool"
+        "If the client mentions wanting their output in bullet point form, set bullets = True, but you "
+        "should default to bullets = False"
         "You must NEVER pass the output of this tool to the transform_table function. If the user wants to filter "
         "On the top/bottom n stocks, you must use the num_stocks_to_return argument. When the list of stocks "
         "outputed by this tool are displayed it looks like a table to the client, so you do not need to take any "
@@ -872,6 +889,7 @@ async def get_stock_recommendations(
         news_horizon=news_horizon,
         task_id=context.task_id,
         date=args.date,
+        bullets=args.bullets,
     )
 
     try:  # since everything here is optional, put in try/except

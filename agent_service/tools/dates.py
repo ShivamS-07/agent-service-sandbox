@@ -188,6 +188,10 @@ class GetDateRangeInput(ToolArgs):
     utmost importance that you provide a default date range going 2 years into the past.
     If the user asks for yearly data and there is no date range provided, then it is of
     utmost importance that you provide a default date range going 5 years into the past.
+    This tool accept date ranges, it does not accept intervals like yearly or monthly directly.
+    Generally, if a client is asking for yearly or montly statistics, the word 'yearly' or
+    'monthly' should be passed in as part of the statistic_reference argument (e.g. 'Yearly Revenue')
+    to the statistic tool, and not to this tool. 
     This tool has no access to upcoming earnings information, and so you must absolutely never
     call it with a date_range_str such as "upcoming earnings call".
     If the user talks about an "upcoming earnings call" you must ignore that mention, do

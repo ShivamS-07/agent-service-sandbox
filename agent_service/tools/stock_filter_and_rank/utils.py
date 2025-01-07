@@ -286,13 +286,11 @@ async def profile_filter_stock_match(
     output_tuples: List[Tuple[bool, str, List[Citation]]] = []
     for result, text_group in zip(results, aligned_text_groups.val.values()):
         try:
-            rationale, answer, citation_anchor_map = (
-                result.strip().replace("\n\n", "\n").split("\n")
-            )
+            rationale, answer, *citation_stuff = result.strip().replace("\n\n", "\n").split("\n")
             is_match = answer.lower().startswith("yes")
             if is_match and do_citations:
                 rationale, citations = await extract_citations_from_gpt_output(
-                    "\n".join([rationale, citation_anchor_map]), text_group, context
+                    "\n".join([rationale] + citation_stuff), text_group, context
                 )
             else:
                 citations = []
