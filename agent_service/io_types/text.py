@@ -1275,7 +1275,10 @@ class StockEarningsTranscriptSectionText(StockEarningsText):
                 continue
 
             partition_data_from_db = partition_lookup.get(str(transcript.id))
-            if partition_data_from_db:
+            # If the transcrpt has changed and the number of lines have shifted, we'll need to regenerate the split
+            if partition_data_from_db and (
+                partition_data_from_db[-1][-1] == len(transcripts_lookup[transcript.id].split("\n"))
+            ):
                 transcript_partitions = get_transcript_sections_from_partitions(
                     transcripts_lookup[transcript.id], partition_data_from_db
                 )
