@@ -199,6 +199,9 @@ class GetDateRangeInput(ToolArgs):
     You must never pass 'upcoming earnings call' or something similar to this tool as the date_range_str,
     especially if you are using the date range to retrieve text (there are no upcoming texts!!!!!)
     Seriously, listen to me about this earnings call thing or you will be fired!
+    You must also not pass 'last earnings call' or similar as the date_range_str, if someone is asking for
+    the last instance of a quarterly document like an earnings call or 10q and you need a date range, you
+    should interpret that as the `last 90 days` and pass that as the the date_range_str instead.
     """,
     category=ToolCategory.DATES,
     tool_registry=default_tool_registry(),

@@ -99,3 +99,25 @@ class TestIterativePipelines(TestExecutionPlanner):
             ],
             validate_tool_args=validate_tool_args,
         )
+
+    @skip_in_ci
+    def test_subplanner_tool(self):
+        prompt = (
+            "For the following stocks: MSFT, APPL, GM, F, and V, find the price change"
+            " on the day of their last earnings call"
+        )
+
+        def validate_output(prompt: str, output: IOType) -> bool:
+            return
+
+        def validate_tool_args(execution_log: DefaultDict[str, List[dict]]) -> bool:
+            return
+
+        self.prompt_test(
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=[
+                "per_row_processing",
+            ],
+            validate_tool_args=validate_tool_args,
+        )

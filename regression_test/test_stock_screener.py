@@ -93,6 +93,21 @@ class TestStockScreener(TestExecutionPlanner):
         )
 
     @skip_in_ci
+    def test_stock_screener_qqq_canaary(self):
+        prompt = "Find companies in QQQ that mention revenue in their most recent earnings."
+
+        def validate_output(prompt: str, output: IOType):
+            output_stock_ids = get_output(output=output)
+            self.assertGreater(len(output_stock_ids), 0, msg="No stocks returned")
+
+        self.prompt_test(
+            prompt=prompt,
+            validate_output=validate_output,
+            required_tools=["filter_and_rank_stocks_by_profile"],
+            raise_plan_validation_error=True,
+        )
+
+    @skip_in_ci
     def test_growth_garp1(self):
         prompt = """Small and medium cap biotechnology companies that
         have made a major technology breakthrough in the past year
