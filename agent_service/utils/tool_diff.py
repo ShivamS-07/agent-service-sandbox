@@ -10,6 +10,7 @@ from agent_service.io_types.text import StockText
 from agent_service.types import PlanRunContext
 from agent_service.utils.async_db import get_async_db
 from agent_service.utils.clickhouse import Clickhouse
+from agent_service.utils.feature_flags import get_ld_flag
 from agent_service.utils.prefect import get_prefect_logger
 
 MAX_TRIES = 3
@@ -34,6 +35,14 @@ async def get_prev_run_info(
         pg_db = get_async_db()
 
     if context.task_id is None:  # shouldn't happen
+        return None
+
+    null_overrides = get_ld_flag("empty-prev-run-info-task-ids", default={}, user_context=None)
+
+    if context.task_id in null_overrides.get("task_ids", []):
+        logger.warning(
+            "prev_run_info() returning None due to ld_flag: 'empty-prev-run-info-task-ids'"
+        )
         return None
 
     io = None
