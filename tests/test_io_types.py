@@ -14,8 +14,8 @@ from agent_service.io_type_utils import (
     io_type,
     load_io_type,
 )
-from agent_service.io_types.table import Table, TableColumnMetadata
-from agent_service.io_types.text import Text, TextCitation
+from agent_service.io_types.table import StockTable, Table, TableColumnMetadata
+from agent_service.io_types.text import StockText, Text, TextCitation, WebText
 from agent_service.types import ChatContext, Message
 
 
@@ -180,6 +180,8 @@ class TestIOType(unittest.TestCase):
             # Nested generics
             (list[int], list[int | str], True),
             (list[int | str], list[int], False),
+            (Union[StockTable, Table], Table, True),
+            (Union[WebText, StockText], Text, True),
         ]
 
         for typ1, typ2, expected in cases:

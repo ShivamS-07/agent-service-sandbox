@@ -747,6 +747,17 @@ def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> boo
             or params_expected is IOType
         )
 
+    elif type_is_union(orig_actual) and expected and orig_expected is None:
+        # There's a very specific case that is correct here, namely
+        # Union[Table, StockTable] is allowed to be passed in for Table
+        try:
+            if issubclass(expected, ComplexIOBase) and all(
+                (issubclass(typ, expected) for typ in params_actual)
+            ):
+                return True
+        except Exception:
+            pass
+
     # In any case other than above, origin types must match
     if orig_actual is not orig_expected:
         return False
