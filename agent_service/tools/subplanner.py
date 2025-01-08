@@ -278,6 +278,8 @@ async def per_row_processing(args: PerRowProcessingArgs, context: PlanRunContext
             summary="Failed to update per_row_processing",
         )
 
+    sub_plan_context = deepcopy(context)
+    sub_plan_context.skip_task_logging = True
     if subplan_template is None:
         from agent_service.planner.planner import Planner
 
@@ -302,7 +304,9 @@ async def per_row_processing(args: PerRowProcessingArgs, context: PlanRunContext
         if any([step.tool_name in FIRST_PASS_TOOLS for step in subplan_template.nodes]):
             logger.info("Doing initial run to get individual tool templates")
             # just grab first row and run it
-            await run_plan_simple(subplan_template, deepcopy(context), variable_lookup=rows[0])
+            await run_plan_simple(
+                subplan_template, deepcopy(sub_plan_context), variable_lookup=rows[0]
+            )
 
             logger.info("Finished initial run")
 
@@ -319,7 +323,7 @@ async def per_row_processing(args: PerRowProcessingArgs, context: PlanRunContext
         tasks.append(
             run_plan_simple(
                 per_row_subplan,
-                deepcopy(context),
+                deepcopy(sub_plan_context),
                 variable_lookup=row,
                 supplemental_args=task_id_args,
             )
