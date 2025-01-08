@@ -15,7 +15,6 @@ from agent_service.external.grpc_utils import timestamp_to_datetime
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.text import CustomDocumentSummaryText
-from agent_service.planner.errors import EmptyOutputError
 from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.stocks import get_stock_ids_from_company_ids
 from agent_service.tools.tool_log import tool_log
@@ -170,8 +169,9 @@ async def get_user_custom_documents_by_topic(
         for document in custom_doc_summaries.documents
     ]
     if len(output) == 0:
-        raise EmptyOutputError(
-            f"No user uploaded documents found for {args.topic=} over the specified time period"
+        await tool_log(
+            f"No user uploaded documents found for {args.topic=} over the specified time period",
+            context=context,
         )
     return output
 
@@ -274,5 +274,8 @@ async def get_user_custom_documents_by_filename(
     ]
 
     if len(output) == 0:
-        raise EmptyOutputError(f"No user uploaded documents found for {file_names} or {file_ids}.")
+        await tool_log(
+            f"No user uploaded documents found for {file_names} or {file_ids}.",
+            context=context,
+        )
     return output
