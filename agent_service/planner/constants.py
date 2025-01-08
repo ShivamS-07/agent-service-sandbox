@@ -43,7 +43,7 @@ NO_CHANGE_MESSAGE = "Agent analysis completed, but no important differences foun
 
 REPORT_UPDATED_LINE = "Report updated"
 CHAT_DIFF_TEMPLATE = (
-    REPORT_UPDATED_LINE + " on ({date})" + "with important changes found:" + "\n{diff}"
+    REPORT_UPDATED_LINE + " on ({date}) " + "with important changes found:" + "\n{diff}"
 )  # if you changes this you need to update the add_unread_updates_message_to_chat_history
 FOLLOW_UP_QUESTION = "Is there anything else I can assist you with?"
 
