@@ -450,6 +450,10 @@ fits the best. This format MUST be followed, with the column title followed by
 the type in parentheses. You will be fired if you do not conform to these exact
 specifications.
 
+You should never use this tool on a summarized text. ONLY use it on texts taken
+directly from their sources, with no intervening processing. If you use this
+tool after the summarize_texts tool you will be fired!!
+
 You must almost always provide a schema, especially if the client asks for specific
 columns, though even if they do not, you should be able to decide on sensible
 columns based on their request. The only situation you will NOT provide a schema is if
