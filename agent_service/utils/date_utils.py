@@ -1,7 +1,7 @@
 import datetime
 import logging
 import time
-from typing import Optional, Tuple, cast
+from typing import List, Optional, Tuple, cast
 
 import pytz
 from dateutil.parser import parse as date_parse
@@ -10,6 +10,9 @@ from google.protobuf.timestamp_pb2 import Timestamp
 logger = logging.getLogger(__name__)
 
 DAYS_LOOKUP = {"D": 1, "W": 7, "M": 30, "Q": 90, "Y": 365}
+
+QUARTER_START_DATES = {(1, 1): "Q1", (4, 1): "Q2", (7, 1): "Q3", (10, 1): "Q4"}
+QUARTER_END_DATES = {(3, 31): "Q1", (6, 30): "Q2", (9, 30): "Q3", (12, 31): "Q4"}
 
 real_datetime_class = datetime.datetime
 real_date_class = datetime.date
@@ -174,6 +177,32 @@ def get_prev_quarter(quarter: str) -> str:
 def get_year_quarter_for_date(date: datetime.date) -> Tuple[int, int]:
     quarter = (date.month - 1) // 3 + 1
     return (date.year, quarter)
+
+
+def get_month_day(date: datetime.date) -> Tuple[int, int]:
+    return (date.month, date.day)
+
+
+def is_valid_quarter_range(start_date: datetime.date, end_date: datetime.date) -> bool:
+    return (
+        start_date < end_date
+        and get_month_day(start_date) in QUARTER_START_DATES
+        and get_month_day(end_date) in QUARTER_END_DATES
+    )
+
+
+def get_quarters_for_time_range(start_date: datetime.date, end_date: datetime.date) -> List[str]:
+    # Note there are hardcoded dependencies on this in earnings tools
+    if not is_valid_quarter_range(start_date, end_date):
+        return []
+    start_quarter = str(start_date.year) + QUARTER_START_DATES[get_month_day(start_date)]
+    end_quarter = str(end_date.year) + QUARTER_END_DATES[get_month_day(end_date)]
+    quarters = [start_quarter]
+    curr_quarter = start_quarter
+    while curr_quarter != end_quarter:
+        curr_quarter = get_next_quarter(curr_quarter)
+        quarters.append(curr_quarter)
+    return quarters
 
 
 def date_to_pb_timestamp(dt: Optional[datetime.date]) -> Timestamp:

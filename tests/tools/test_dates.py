@@ -39,6 +39,18 @@ class TestDateUtils(IsolatedAsyncioTestCase):
         self.assertLessEqual(abs(end_date - datetime.date(2010, 1, 1)).days, 10)
         self.assertLessEqual(abs(start_date - datetime.date(2000, 1, 1)).days, 10)
 
+    async def test_get_date_range_fiscal_quarters(self):
+        date_range_arg = "FY2023Q4 to FY2024Q2"
+        dummy_context = PlanRunContext.get_dummy()
+        date_range = await get_date_range(
+            GetDateRangeInput(date_range_str=date_range_arg), dummy_context
+        )
+        self.assertEqual(date_range.start_date, datetime.date(2023, 10, 1))
+        self.assertEqual(date_range.end_date, datetime.date(2024, 6, 30))
+        self.assertTrue(date_range.is_quarterly)
+        self.assertTrue(date_range.is_fiscal)
+        self.assertEqual(date_range.get_quarters(), ["2023Q4", "2024Q1", "2024Q2"])
+
     async def test_get_end_of_date_range(self):
         date_range_arg = "Obtain the date range for the past 3 months"
         dummy_context = PlanRunContext.get_dummy()

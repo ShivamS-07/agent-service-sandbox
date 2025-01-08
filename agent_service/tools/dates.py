@@ -4,13 +4,13 @@ import json
 import math
 from typing import Optional, Union
 
-from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, GPT4_O
+from agent_service.GPT.constants import DEFAULT_CHEAP_MODEL, GPT4_O, NO_PROMPT
 from agent_service.GPT.requests import GPT
 from agent_service.io_types.dates import DateRange
 from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.tool_log import tool_log
 from agent_service.types import ChatContext, Message, PlanRunContext
-from agent_service.utils.date_utils import get_now_utc
+from agent_service.utils.date_utils import get_now_utc, is_valid_quarter_range
 from agent_service.utils.gpt_logging import GptJobIdType, GptJobType, create_gpt_context
 from agent_service.utils.prefect import get_prefect_logger
 from agent_service.utils.prompt_utils import Prompt
@@ -144,6 +144,8 @@ DATE_RANGE_SYS_PROMPT = Prompt(
         "Usually date ranges are in the past, but please check the context carefully to see if "
         "something ambiguious like '1 month' might be asking for dates in the future, for example "
         "upcoming earnings. "
+        "Interpret fiscal year quarters the same as calendar year quarters, e.g. for FY2024Q1 you "
+        "must output the same date range (2024-01-01 to 2024-03-31) as 2024Q1. "
         "Do not include any wrapper around the JSON. (no ```)"
     ),
 )
@@ -157,6 +159,20 @@ DATE_RANGE_MAIN_PROMPT = Prompt(
         "Here is the larger context in which it appears:\n{chat_context}"
         "Today's date is {today_date}."
         "Now output a json with start_date and end_date keys, with the dates in YYYY-MM-DD format"
+    ),
+)
+
+CHECK_QUARTER_PROMPT = Prompt(
+    name="CHECK_QUARTER_PROMPT",
+    template=(
+        "Output Yes if the following reference to a date range clearly involves a quarter or quarters, and, "
+        "if so, on the next line, output Yes again if there some indication the date range refers to a "
+        "fiscal quarter rather than a calendar quarter (e.g. an FY in front of the quarter). Output at most "
+        "two lines with Yes or No on each line and nothing else. Note that a reference to a specific fiscal "
+        "year should also be considered a reference to a range of fiscal quarters. "
+        "The date reference is as follows:\n"
+        "{date_range_str}\n"
+        "Now provide your decision about whether the date range is quartery and if it is fiscal:\n"
     ),
 )
 
@@ -177,6 +193,8 @@ class GetDateRangeInput(ToolArgs):
     If only the start or end of the range is clearly
     specified, just include that information, and the tool will make a sensible decision for
     underspecified part of the range. Never pass in an empty string.
+    This tool accepts references to fiscal quarters, if the client indicates they want fiscal
+    quarters you must include the reference to fiscal quarters in the date_range_str
     Note that not every date range the user mentions should be converted into a date range
     using this function, statistics that are defined using some kind of date range,
     e.g. "percentage gain over the last quarter", will be handled inside the get statistic tool.
@@ -226,14 +244,34 @@ async def get_date_range(args: GetDateRangeInput, context: PlanRunContext) -> Da
         sys_prompt=DATE_RANGE_SYS_PROMPT.format(),
     )
     date_range_json = json.loads(clean_to_json_if_needed(result))
-    await tool_log(
-        log=f"Interpreting '{args.date_range_str}' as a start date of {date_range_json[START_DATE]}"
-        f" and an end date of {date_range_json[END_DATE]}",
-        context=context,
-    )
+    start_date = DateRange.clean_and_convert_str_to_date(date_range_json[START_DATE])
+    end_date = DateRange.clean_and_convert_str_to_date(date_range_json[END_DATE])
+    is_quarterly = False
+    is_fiscal = False
+    if is_valid_quarter_range(start_date, end_date):
+        result = await llm.do_chat_w_sys_prompt(
+            CHECK_QUARTER_PROMPT.format(date_range_str=args.date_range_str), NO_PROMPT
+        )
+        answers = result.lower().strip().split()
+        if answers[0] == "yes":
+            is_quarterly = True
+            if len(answers) > 1 and answers[1] == "yes":
+                is_fiscal = True
+
+    if not is_fiscal:
+        await tool_log(
+            log=f"Interpreting '{args.date_range_str}' as a start date of {date_range_json[START_DATE]}"
+            f" and an end date of {date_range_json[END_DATE]}",
+            context=context,
+        )
+    else:
+        await tool_log(
+            log=f"Interpreting '{args.date_range_str}' as a fiscal quarter date range",
+            context=context,
+        )
+
     return DateRange(
-        start_date=DateRange.clean_and_convert_str_to_date(date_range_json[START_DATE]),
-        end_date=DateRange.clean_and_convert_str_to_date(date_range_json[END_DATE]),
+        start_date=start_date, end_date=end_date, is_quarterly=is_quarterly, is_fiscal=is_fiscal
     )
 
 

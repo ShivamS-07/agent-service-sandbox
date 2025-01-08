@@ -20,6 +20,8 @@ from nlp_service_proto_v1.earnings_impacts_pb2 import (
     EventInfo,
     GenerateEarningsCallFromEventsRequest,
     GenerateEarningsCallFromEventsResponse,
+    GetEarningsCallEventsByFiscalCalendarRequest,
+    GetEarningsCallEventsByFiscalCalendarResponse,
     GetEarningsCallEventsRequest,
     GetEarningsCallEventsResponse,
     GetEarningsCallTranscriptsRequest,
@@ -30,6 +32,7 @@ from nlp_service_proto_v1.earnings_impacts_pb2 import (
     GetEarningsPeersAffectingStocksResponse,
     GetLatestEarningsCallEventsRequest,
     GetLatestEarningsCallEventsResponse,
+    YearQuarter,
 )
 from nlp_service_proto_v1.news_pb2 import (
     NEWS_DELTA_HORIZON_3M,
@@ -220,7 +223,7 @@ async def get_earnings_peers_impacting_stocks(
 
 @grpc_retry
 @async_perf_logger
-async def get_earnings_call_events(
+async def get_earnings_call_events_by_calendar_date_range(
     user_id: str, gbi_ids: List[int], start_date: datetime.date, end_date: datetime.date
 ) -> GetEarningsCallEventsResponse:
     start_timestamp = date_to_timestamp(start_date)
@@ -234,6 +237,36 @@ async def get_earnings_call_events(
         )
         if response.status.code != 0:
             raise ValueError(f"Failed to get Earnings Call Events: {response.status.message}")
+        return response
+
+
+@grpc_retry
+@async_perf_logger
+async def get_earnings_call_events_by_fiscal_calendar(
+    user_id: str, gbi_ids: List[int], requested_fiscal_year_quarters: List[str]
+) -> GetEarningsCallEventsByFiscalCalendarResponse:
+    fiscal_year_quarters: List[YearQuarter] = []
+    for year_quarter_str in requested_fiscal_year_quarters:
+        year, quarter = year_quarter_str.lower().split("q")
+        fiscal_year_quarters.append(
+            YearQuarter(
+                year=int(year),
+                quarter=int(quarter),
+            )
+        )
+    with _get_service_b4_stub() as stub:
+        request = GetEarningsCallEventsByFiscalCalendarRequest(
+            gbi_ids=gbi_ids, fiscal_year_quarter=fiscal_year_quarters
+        )
+        response: GetEarningsCallEventsByFiscalCalendarResponse = (
+            await stub.GetEarningCallEventsByFiscalCalendar(
+                request, metadata=get_default_grpc_metadata(user_id=user_id)
+            )
+        )
+        if response.status.code != 0:
+            raise ValueError(
+                f"Failed to get Earnings Call Events By Fiscal Calendar: {response.status.message}"
+            )
         return response
 
 

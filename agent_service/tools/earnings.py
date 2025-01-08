@@ -4,12 +4,14 @@ from collections import defaultdict
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple
 
+from dateutil.relativedelta import relativedelta
 from nlp_service_proto_v1.earnings_impacts_pb2 import EventInfo
 
 from agent_service.external.feature_svc_client import get_earnings_releases_in_range
 from agent_service.external.grpc_utils import timestamp_to_datetime
 from agent_service.external.nlp_svc_client import (
-    get_earnings_call_events,
+    get_earnings_call_events_by_calendar_date_range,
+    get_earnings_call_events_by_fiscal_calendar,
     get_earnings_call_summaries_with_real_time_gen,
     get_earnings_call_transcripts,
     get_latest_earnings_call_events,
@@ -92,8 +94,11 @@ async def _get_earnings_summary_helper(
     stock_ids: List[StockID],
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
+    fiscal_quarters: Optional[List[str]] = None,
     allow_simple_generated_earnings: bool = False,
 ) -> Dict[StockID, List[StockEarningsText]]:
+    # fiscal_quarters strings will always expect the format of YYYYQN (ie. 2024Q2)
+
     user_id = context.user_id
 
     async_db = get_async_db()
@@ -144,11 +149,19 @@ async def _get_earnings_summary_helper(
     for gbi_id, comp_id in gbi_to_comp_id_lookup.items():
         comp_id_to_gbi_mapping[comp_id].append(gbi_id)
 
-    # Get all earning events we expect to have for the even date range
-    if start_date and end_date:
+    # Get all earning events we expect to have for the even date range or fiscal quarters
+    if fiscal_quarters:
         earning_call_events = list(
             (
-                await get_earnings_call_events(
+                await get_earnings_call_events_by_fiscal_calendar(
+                    user_id, [stock.gbi_id for stock in stock_ids], fiscal_quarters
+                )
+            ).earnings_event_info
+        )
+    elif start_date and end_date:
+        earning_call_events = list(
+            (
+                await get_earnings_call_events_by_calendar_date_range(
                     user_id, [stock.gbi_id for stock in stock_ids], start_date, end_date
                 )
             ).earnings_event_info
@@ -163,7 +176,7 @@ async def _get_earnings_summary_helper(
         # look back slightly more than a year
         start_date_past = end_date_past - datetime.timedelta(days=400)
         earning_call_events_ltm = (
-            await get_earnings_call_events(
+            await get_earnings_call_events_by_calendar_date_range(
                 user_id, [stock.gbi_id for stock in stock_ids], start_date_past, end_date_past
             )
         ).earnings_event_info
@@ -246,7 +259,6 @@ async def _get_earnings_summary_helper(
             quarter = row["sources"][0]["quarter"]
             publish_time = parse_date_str_in_utc(row["sources"][0]["publishing_time"])
             publish_date = publish_time.date()
-
             if context.as_of_date and not start_date:
                 # pretend we are in the past
                 if publish_date > context.as_of_date.date():
@@ -258,8 +270,14 @@ async def _get_earnings_summary_helper(
                     end_date and publish_date > end_date
                 ):
                     continue
-                if not start_date and not end_date and len(stock_output) > 0:
-                    # If no start or end date were set, just return the most recent for each stock
+                if (
+                    not start_date
+                    and not end_date
+                    and not fiscal_quarters
+                    and len(stock_output) > 0
+                ):
+                    # If no start or end date were set and we aren't fetching by quarters, just return
+                    # the most recent for each stock
                     continue
             sest = StockEarningsSummaryText(
                 id=row["summary_id"],
@@ -332,6 +350,69 @@ async def _get_earnings_summary_helper(
             context=context,
         )
     return finalized_output
+
+
+async def _handle_date_range(
+    date_range: DateRange, single_stock: bool, context: PlanRunContext
+) -> Tuple[Optional[datetime.date], Optional[datetime.date], Optional[List[str]]]:
+    """Used the break down the date range into the various different potential cases.
+    A start_date, end_date datetime.date objects are returned along with a fiscal_quarters
+    variable which may contain a list of strings.
+
+    The breakdown is as follows:
+       - if .is_quarterly is True and .is_fiscal is also True, we will return a
+       None start and end date, and populate fiscal_quarters to indicate the quarters of interest
+       - if .is_quarterly is True and .is_fiscal is false, we will set the date range such that we
+       aim to fetch for earnings reporting on the date range specified, this involves shifting the
+       daterange up by 3 months as earnings released report on the previous quarter
+       - if neither is true then we return the start and end date and return None for fiscal_quarters
+
+    Args:
+        date_range (DateRange): The date range to be processed
+        single_stock (bool): Whether or not the date range is for a single stock
+        context (PlanRunContext): Agent context object
+
+    Returns:
+        Tuple[Optional[datetime.date], Optional[datetime.date], Optional[List[str]]]: _description_
+    """
+    if date_range.is_fiscal and date_range.is_quarterly and single_stock:
+        fiscal_quarters = date_range.get_quarters()
+        start_date = None
+        end_date = None
+
+        await tool_log(
+            f"Fetching earnings across the following fiscal quarters: {', '.join(fiscal_quarters)}",
+            context=context,
+        )
+    else:
+        curr_date = (get_now_utc()).date()
+        # If the date range is quarterly and does not contain the current quarter, then we will retrieve earnings
+        # reporting on that date range instead of earnings that were released in that date range. To do
+        # this, we'll need to push our date range forward by 3 months
+        if date_range.is_quarterly and not (
+            date_range.start_date <= curr_date <= date_range.end_date
+        ):
+            start_date = date_range.start_date + relativedelta(months=3)
+            end_date = date_range.end_date + relativedelta(months=3)
+            fiscal_quarters = None
+
+            calendar_quarters = date_range.get_quarters()
+            await tool_log(
+                f"Fetching earnings across the following calendar quarters: {', '.join(calendar_quarters)}",
+                context=context,
+            )
+        else:
+            start_date = date_range.start_date
+            end_date = date_range.end_date
+            fiscal_quarters = None
+
+            start_date_str = start_date.strftime("%Y-%m-%d")
+            end_date_str = end_date.strftime("%Y-%m-%d")
+            await tool_log(
+                f"Fetching earnings released between {start_date_str} and {end_date_str}",
+                context=context,
+            )
+    return start_date, end_date, fiscal_quarters
 
 
 async def _get_earning_transcript_lookup_from_ch(
@@ -510,27 +591,46 @@ I repeat you will be FIRED if you try to find documents from the future!!! YOU M
 async def get_earnings_call_full_transcripts(
     args: GetEarningsCallDataInput, context: PlanRunContext
 ) -> List[StockEarningsText]:
+    # if a date range obj was provided, fill in any missing dates
     if args.date_range:
-        start_date = args.date_range.start_date
-        end_date = args.date_range.end_date
+        single_stock = True if len(args.stock_ids) == 1 else False
+        start_date, end_date, fiscal_quarters = await _handle_date_range(
+            args.date_range, single_stock, context
+        )
     else:
         start_date = None
         end_date = None
+        fiscal_quarters = None
 
     # Get all earning events we expect to have for the even date range
-    if start_date and end_date:
-        earning_call_events = (
-            await get_earnings_call_events(
-                context.user_id, [stock.gbi_id for stock in args.stock_ids], start_date, end_date
-            )
-        ).earnings_event_info
+    if fiscal_quarters:
+        earning_call_events = list(
+            (
+                await get_earnings_call_events_by_fiscal_calendar(
+                    context.user_id, [stock.gbi_id for stock in args.stock_ids], fiscal_quarters
+                )
+            ).earnings_event_info
+        )
+    elif start_date and end_date:
+        earning_call_events = list(
+            (
+                await get_earnings_call_events_by_calendar_date_range(
+                    context.user_id,
+                    [stock.gbi_id for stock in args.stock_ids],
+                    start_date,
+                    end_date,
+                )
+            ).earnings_event_info
+        )
     else:
         # If no date range then get the latest available earnings
-        earning_call_events = (
-            await get_latest_earnings_call_events(
-                context.user_id, [stock.gbi_id for stock in args.stock_ids]
-            )
-        ).earnings_event_info
+        earning_call_events = list(
+            (
+                await get_latest_earnings_call_events(
+                    context.user_id, [stock.gbi_id for stock in args.stock_ids]
+                )
+            ).earnings_event_info
+        )
 
     gbi_id_stock_id_lookup = {stock_id.gbi_id: stock_id for stock_id in args.stock_ids}
 
@@ -544,7 +644,10 @@ async def get_earnings_call_full_transcripts(
 
     if len(earning_call_events_with_ids) < len(earning_call_events):
         await tool_log(
-            f"Could not retrieve {len(earning_call_events) - len(earning_call_events_with_ids)} earning transcript(s)",
+            log=(
+                f"Could not retrieve {len(earning_call_events) - len(earning_call_events_with_ids)} "
+                f"earning transcript(s)"
+            ),
             context=context,
         )
     transcript_lookup = await get_earnings_full_transcripts(
@@ -604,17 +707,21 @@ async def get_earnings_call_summaries(
 ) -> List[StockEarningsText]:
     # if a date range obj was provided, fill in any missing dates
     if args.date_range:
-        start_date = args.date_range.start_date
-        end_date = args.date_range.end_date
+        single_stock = True if len(args.stock_ids) == 1 else False
+        start_date, end_date, fiscal_quarters = await _handle_date_range(
+            args.date_range, single_stock, context
+        )
     else:
         start_date = None
         end_date = None
+        fiscal_quarters = None
 
     topic_lookup = await _get_earnings_summary_helper(
         context,
         args.stock_ids,
         start_date,
         end_date,
+        fiscal_quarters,
         True,
     )
     output: List[StockEarningsText] = []
