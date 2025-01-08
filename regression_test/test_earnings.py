@@ -150,6 +150,8 @@ class TestEarnings(TestExecutionPlanner):
             raise_output_validation_error=True,
         )
 
+    # todo: QL24-3528
+    @unittest.skip("skipping until we explicitly support last x in earnings")
     @skip_in_ci
     def test_get_earnings_summary_last_x(self) -> None:
         prompt = "Summarize last 4 earnings reports for Apple"

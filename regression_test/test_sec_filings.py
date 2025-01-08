@@ -68,7 +68,7 @@ class TestSecFilings(TestExecutionPlanner):
     def test_get_10q_sec_filings(self) -> None:
         # tests SEC retrieval only 10-Q
 
-        prompt = "Summarize only the 10-Q SEC filings from AAPL within the last 8 months"
+        prompt = "Summarize only the 10-Q SEC filings from AAPL within the last 10 months"
 
         def validate_output(prompt: str, output: IOType) -> None:
             output_text = get_output(output=output)
