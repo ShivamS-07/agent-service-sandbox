@@ -171,12 +171,22 @@ class TestIOType(unittest.TestCase):
             (TestComplexType, BadClass, False),
             (BadClass, TestComplexType, False),
             (Union[int, str], Union[int, str, float], True),
+            (int | str, int | str | float, True),
+            (int | str, float | bool, False),
             (int, Union[int, str], True),
+            (int, int | str, True),
             (Union[int, str], Union[int, str], True),
+            (int | str, int | str, True),
+            # Nested generics
+            (list[int], list[int | str], True),
+            (list[int | str], list[int], False),
         ]
 
         for typ1, typ2, expected in cases:
-            self.assertEqual(check_type_is_valid(typ1, typ2), expected, f"{typ1} and {typ2} error")
+            with self.subTest(msg=f"Actual: {typ1}, Expected: {typ2}"):
+                self.assertEqual(
+                    check_type_is_valid(typ1, typ2), expected, f"{typ1} and {typ2} error"
+                )
 
     def test_union_with_history(self):
         set1 = {

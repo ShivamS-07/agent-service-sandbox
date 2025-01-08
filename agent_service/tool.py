@@ -197,6 +197,7 @@ class Tool:
         None
     )
     enabled_for_subplanner: bool = True
+    output_type_transformation: Optional[Callable[[Dict[str, Type]], Type]] = None
 
     def to_function_header(self) -> str:
         """
@@ -478,6 +479,7 @@ def tool(
     is_output_tool: bool = False,
     store_output: bool = True,
     enabled_for_subplanner: Optional[bool] = None,
+    output_type_transformation: Optional[Callable[[Dict[str, Type]], Type]] = None,
 ) -> Callable[[ToolFunc], ToolFunc]:
     """
     Decorator to register a function as a Tool usable by GPT. This can only decorate a function of the format:
@@ -523,6 +525,13 @@ def tool(
 
     update_instructions: Should be included for any tool which reads the chat or otherwise
       requires special consideration inside the action decider
+
+    output_type_transformation: Used by the plan type checker ONLY. A function
+      that produces an output type given the mapping from input arg names to types.
+      When this is populated, the plan type checker will use the result of this
+      function to determine the output variable's type. Essentially replaces
+      generics, since using true python generics would be extremely difficult
+      with the current setup.
     """
 
     tool_registry = tool_registry or default_tool_registry()
@@ -684,6 +693,7 @@ def tool(
                 enabled_for_subplanner=enabled
                 if enabled_for_subplanner is None
                 else enabled_for_subplanner,
+                output_type_transformation=output_type_transformation,
             ),
             category=category,
         )

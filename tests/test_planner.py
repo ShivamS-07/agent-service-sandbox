@@ -8,9 +8,11 @@ from agent_service.GPT.requests import set_use_global_stub
 from agent_service.planner.planner import Planner
 from agent_service.planner.planner_types import (
     ExecutionPlan,
+    ExecutionPlanParsingError,
     ParsedStep,
     ToolExecutionNode,
     Variable,
+    accumulate_type_from_list,
 )
 from agent_service.types import ChatContext, Message
 from agent_service.utils.logs import init_stdout_logging
@@ -190,6 +192,83 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
         ]
         self.assertEqual(steps, expected_output)
 
+    def test_validate_generic_types(self):
+        planner = Planner(agent_id="TEST", tool_registry=get_test_registry())
+
+        with self.subTest("should succeed"):
+            example_input = [
+                ParsedStep(
+                    output_var="stock_ids_1",
+                    function="stock_identifier_lookup_multi",
+                    arguments={"stock_names": '["Meta", "Apple,1", "Microsoft"]'},
+                    description="Convert company names to stock identifiers",
+                    original_str="",
+                ),
+                ParsedStep(
+                    output_var="stock_ids_2",
+                    function="stock_identifier_lookup_multi",
+                    arguments={"stock_names": '["Meta", "Apple,1", "Microsoft"]'},
+                    description="Convert company names to stock identifiers",
+                    original_str="",
+                ),
+                ParsedStep(
+                    output_var="combined",
+                    function="add_lists",
+                    arguments={"list1": "stock_ids_1", "list2": "stock_ids_2"},
+                    description="Merge lists",
+                    original_str="",
+                ),
+                ParsedStep(
+                    output_var="result",
+                    function="prepare_output",
+                    arguments={"object_to_output": "combined", "title": '"test"'},
+                    description="Output the result",
+                    original_str="",
+                ),
+            ]
+            _ = planner._validate_and_construct_plan(steps=example_input)
+
+        with self.subTest("should fail"):
+            example_input = [
+                ParsedStep(
+                    output_var="start_date",
+                    function="get_date_from_date_str",
+                    arguments={"time_str": '"1 month ago"'},
+                    description='Convert "1 month ago" to a date to use as the start date for news search',
+                    original_str="",
+                ),
+                ParsedStep(
+                    output_var="stock_ids_1",
+                    function="stock_identifier_lookup_multi",
+                    arguments={"stock_names": '["Meta", "Apple,1", "Microsoft"]'},
+                    description="Convert company names to stock identifiers",
+                    original_str="",
+                ),
+                ParsedStep(
+                    output_var="combined",
+                    function="add_lists",
+                    arguments={"list1": "stock_ids_1", "list2": '["Meta", "Apple,1", "Microsoft"]'},
+                    description="Merge lists",
+                    original_str="",
+                ),
+                ParsedStep(
+                    output_var="news_developments",
+                    function="get_news_developments_about_companies",
+                    arguments={"stock_ids": "combined", "start_date": "start_date"},
+                    description="Get news developments for Meta, Apple, and Microsoft since last month",
+                    original_str="",
+                ),
+                ParsedStep(
+                    output_var="result",
+                    function="prepare_output",
+                    arguments={"object_to_output": "combined", "title": '"test"'},
+                    description="Output the result",
+                    original_str="",
+                ),
+            ]
+            with self.assertRaises(ExecutionPlanParsingError):
+                _ = planner._validate_and_construct_plan(steps=example_input)
+
     def test_validate_construct_plan(self):
         planner = Planner(agent_id="TEST", tool_registry=get_test_registry())
         example_input = [
@@ -344,6 +423,25 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
 
 
 class TestPlannerTypes(TestCase):
+    def test_accumulate_type_from_list(self):
+        var_type_lookup = {"test_int": int, "test_int_str": Union[str, int]}
+        cases = [
+            ([1, 2], List[int]),
+            ([1, 2, Variable(var_name="test_int")], List[int]),
+            ([Variable(var_name="test_int")], List[int]),
+            ([True, Variable(var_name="test_int_str")], List[Union[bool, str, int]]),
+            (
+                [[1, "test"], Variable(var_name="test_int_str")],
+                List[Union[List[Union[int, str]], str, int]],
+            ),
+        ]
+        for list_val, expected in cases:
+            with self.subTest(str(list_val)):
+                self.assertIs(
+                    accumulate_type_from_list(list_val=list_val, var_type_lookup=var_type_lookup),
+                    expected,
+                )
+
     def test_get_node_dependency_map(self):
         # define nodes
         test1 = ToolExecutionNode(

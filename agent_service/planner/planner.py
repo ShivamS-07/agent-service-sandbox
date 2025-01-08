@@ -29,6 +29,7 @@ from agent_service.planner.planner_types import (
     PartialToolArgs,
     ToolExecutionNode,
     Variable,
+    get_types_from_tool_args,
 )
 from agent_service.planner.prompts import (
     BREAKDOWN_NEED_MAIN_PROMPT,
@@ -1465,7 +1466,15 @@ class Planner:
                 partial_args = self._validate_tool_arguments(
                     tool, args=step.arguments, variable_lookup=variable_lookup
                 )
-                variable_lookup[step.output_var] = tool.return_type
+                if tool.output_type_transformation:
+                    arg_type_dict = get_types_from_tool_args(
+                        args=partial_args, var_type_lookup=variable_lookup
+                    )
+                    variable_lookup[step.output_var] = tool.output_type_transformation(
+                        arg_type_dict
+                    )
+                else:
+                    variable_lookup[step.output_var] = tool.return_type
 
                 node = ToolExecutionNode(
                     tool_name=step.function,

@@ -8,6 +8,7 @@ from agent_service.io_types.graph import LineGraph
 from agent_service.io_types.table import Table
 from agent_service.io_types.text import StockNewsDevelopmentText, Text
 from agent_service.tool import ToolArgs, ToolCategory, ToolRegistry, tool
+from agent_service.tools.lists import _unionize_lists
 from agent_service.types import PlanRunContext
 from agent_service.utils.output_utils.output_construction import PreparedOutput
 
@@ -82,6 +83,31 @@ def get_test_registry() -> ToolRegistry:
     )
     async def collapse_lists(args: CollapseListsInput, context: PlanRunContext) -> List[IOType]:
         return []
+
+    class CombineListsInput(ToolArgs):
+        list1: List[IOType]
+        list2: List[IOType]
+
+    @tool(
+        description=(
+            "This function forms a single deduplicated list from the elements of two lists. "
+            " For example, [1, 2, 3] and [3, 4, 5] would add to [1, 2, 3, 4, 5]."
+            " This is particularly useful if you created two lists of stocks or texts and want to"
+            " put them together into a single list"
+            " This is equivalent to `boolean OR` or `Union` logic, if you only want elements in "
+            " both lists, use intersect_lists"
+            " This is the ONLY way to combine lists, you must NEVER, EVER use the + operator in the plan"
+            " Note that like all other tools, this tool must be called as as a separate step of the plan!"
+            " Note that the output type is really a union of the input list types."
+        ),
+        category=ToolCategory.LIST,
+        tool_registry=_TEST_REGISTRY,
+        is_visible=False,
+        output_type_transformation=_unionize_lists,
+    )
+    async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
+        result = args.list1 + args.list2
+        return result
 
     class GetDateFromDateStrInput(ToolArgs):
         time_str: str

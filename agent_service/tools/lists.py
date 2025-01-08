@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Type, Union, get_args
 
 from agent_service.io_type_utils import ComplexIOBase, IOType
 from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
@@ -9,6 +9,21 @@ from agent_service.types import PlanRunContext
 class CombineListsInput(ToolArgs):
     list1: List[IOType]
     list2: List[IOType]
+
+
+def _unionize_lists(args: dict[str, Type]) -> Type:
+    # Takes the types of all the arguments, and returns a list with unions of
+    # all the unique types.
+    types = set()
+    for list_typ in args.values():
+        typ_args = get_args(list_typ)
+        if typ_args:
+            types.add(typ_args[0])
+    type_tup = tuple(types)
+    if len(type_tup) == 1:
+        typ = type_tup[0]
+        return List[typ]  # type: ignore
+    return List[Union[type_tup]]  # type: ignore
 
 
 def _list_to_set(list1: list) -> set:
@@ -35,10 +50,12 @@ def _list_to_set(list1: list) -> set:
         " both lists, use intersect_lists"
         " This is the ONLY way to combine lists, you must NEVER, EVER use the + operator in the plan"
         " Note that like all other tools, this tool must be called as as a separate step of the plan!"
+        " Also note that the output type is really a union of the input list types."
     ),
     category=ToolCategory.LIST,
     tool_registry=default_tool_registry(),
     is_visible=False,
+    output_type_transformation=_unionize_lists,
 )
 async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
     result: List[IOType] = []
@@ -69,10 +86,12 @@ async def add_lists(args: CombineListsInput, context: PlanRunContext) -> List[IO
         " property and you want a list of stocks with both properties, though note it usually better to apply filters "
         " iteratively on a single list rather than intersecting the output of two filters. "
         " This is equivalent to boolean AND logic, use add_lists if you want OR logic."
+        " Also note that the output type is really a union of the input list types."
     ),
     category=ToolCategory.LIST,
     tool_registry=default_tool_registry(),
     is_visible=False,
+    output_type_transformation=_unionize_lists,
 )
 async def intersect_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
     try:
@@ -98,10 +117,12 @@ async def intersect_lists(args: CombineListsInput, context: PlanRunContext) -> L
         " For example, if list1 is [1, 2, 3, 4] and list2 is [3, 4, 5], the output diff is [1, 2]."
         " You will want to use this function if, for example, you want all the stocks in a particular universe"
         " except for a subset of them (e.g. R1k stocks excluding S&P 500 stocks)"
+        " Also note that the output type is really a union of the input list types."
     ),
     category=ToolCategory.LIST,
     tool_registry=default_tool_registry(),
     is_visible=False,
+    output_type_transformation=_unionize_lists,
 )
 async def diff_lists(args: CombineListsInput, context: PlanRunContext) -> List[IOType]:
     result = list(_list_to_set(args.list1) - _list_to_set(args.list2))

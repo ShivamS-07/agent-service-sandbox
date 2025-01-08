@@ -6,6 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from copy import deepcopy
+from types import UnionType
 from typing import (
     Annotated,
     Any,
@@ -677,6 +678,10 @@ def get_clean_type_name(typ: Optional[Type]) -> str:
     return name
 
 
+def type_is_union(tp: Optional[Type]) -> bool:
+    return tp in (Union, UnionType)
+
+
 def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> bool:
     if actual is None and expected is None:
         return True
@@ -684,14 +689,8 @@ def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> boo
     if expected in (IOType, Any):
         return True
 
-    # # TODO revisit this later, this will really help with preventing false
-    # # positives
-    # if actual and expected:
-    #     try:
-    #         if issubclass(actual, ComplexIOBase) and issubclass(expected, ComplexIOBase):
-    #             return True
-    #     except TypeError:
-    #         pass
+    if actual == expected:
+        return True
 
     if not get_origin(expected) and not get_origin(actual):
         # This fails if "expected" is not a class, so just wrap it
@@ -716,16 +715,16 @@ def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> boo
         return (
             expected is list
             or orig_expected is list
-            or (orig_expected is Union and get_origin(params_expected[0]) is list)
+            or (type_is_union(orig_expected) and get_origin(params_expected[0]) is list)
         )
     if actual is dict:
         return (
             expected is dict
             or orig_expected is dict
-            or (orig_expected is Union and get_origin(params_expected[0]) is dict)
+            or (type_is_union(orig_expected) and get_origin(params_expected[0]) is dict)
         )
 
-    if orig_actual is Union and orig_expected is Union:
+    if type_is_union(orig_actual) and type_is_union(orig_expected):
         # This really should be "all" instead of "any", but that would
         # require doing some nonsense with generics. This is good enough for
         # now, other issues can be discovered at runtime.
@@ -736,26 +735,13 @@ def check_type_is_valid(actual: Optional[Type], expected: Optional[Type]) -> boo
                 for expected_val in params_expected
             )
         )
-    elif orig_expected is Union and orig_actual in (None, list, dict):
+    elif type_is_union(orig_expected) and orig_actual in (None, list, dict):
         # int is valid if we expect Union[int, str]
         return (
             any(
                 (
                     check_type_is_valid(actual=actual, expected=expected_val)
                     for expected_val in params_expected
-                )
-            )
-            or params_expected is IOType
-        )
-    elif orig_actual is Union and orig_expected in (None, list, dict):
-        # This technically also is always incorrect, but again without nasty
-        # generic stuff we need to just handle it anyway. E.g. Union[str, int]
-        # should not type check for just str, but it does now for simplicity.
-        return (
-            any(
-                (
-                    check_type_is_valid(actual=actual_val, expected=expected)
-                    for actual_val in params_actual
                 )
             )
             or params_expected is IOType

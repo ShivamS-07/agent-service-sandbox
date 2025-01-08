@@ -2,7 +2,7 @@ import enum
 import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Type, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -34,6 +34,61 @@ PartialToolArgs = Dict[  # type: ignore
     str,
     Union[Variable, IOType, List[Union[Variable, IOType]], Dict[IOType, Union[Variable, IOType]]],  # type: ignore
 ]
+
+
+def accumulate_type_from_list(
+    list_val: List[Union[Variable, IOType]], var_type_lookup: Dict[str, Type]
+) -> Type:
+    """
+    Given a list of literals or variables, return the type of the list.
+    """
+    types = {get_type_from_value(val, var_type_lookup) for val in list_val}
+    type_tup = tuple(types)
+    if len(type_tup) == 1:
+        typ = type_tup[0]
+        return List[typ]  # type: ignore
+    return List[Union[type_tup]]  # type: ignore
+
+
+def accumulate_type_from_dict(
+    dict_val: Dict[IOType, Union[Variable, IOType]], var_type_lookup: Dict[str, Type]
+) -> Type:
+    key_t = accumulate_type_from_list(
+        list_val=list(dict_val.keys()), var_type_lookup=var_type_lookup
+    )
+    val_t = accumulate_type_from_list(
+        list_val=list(dict_val.values()), var_type_lookup=var_type_lookup
+    )
+    return Dict[key_t, val_t]  # type: ignore
+
+
+def get_type_from_value(
+    val: Union[
+        Variable, IOType, List[Union[Variable, IOType]], Dict[IOType, Union[Variable, IOType]]
+    ],
+    var_type_lookup: Dict[str, Type],
+) -> Type:
+    if isinstance(val, list):
+        return accumulate_type_from_list(val, var_type_lookup)
+    elif isinstance(val, dict):
+        return accumulate_type_from_dict(val, var_type_lookup)  # type: ignore
+    elif isinstance(val, Variable):
+        return var_type_lookup[val.var_name]
+    return type(val)
+
+
+def get_types_from_tool_args(
+    args: PartialToolArgs, var_type_lookup: Dict[str, Type]
+) -> Dict[str, Type]:
+    """
+    Given partial tool args and a variable type lookup, return a mapping from
+    the arg name to its *actual* type using resolved variables.
+    """
+    arg_type_dict = {}
+    for arg, val in args.items():
+        arg_type_dict[arg] = get_type_from_value(val, var_type_lookup)
+
+    return arg_type_dict
 
 
 @dataclass(frozen=True)
