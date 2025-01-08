@@ -57,3 +57,5 @@ ALWAYS_AVAILABLE_TOOL_CATEGORIES = [
 ]
 
 PASS_CHECK_OUTPUT = "The plan fully covers the client request"
+
+PARSING_FAIL_LINE = "The parsing failed on the following line: {line}. "

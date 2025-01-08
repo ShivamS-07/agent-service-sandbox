@@ -42,6 +42,7 @@ class ParsedStep:
     function: str
     arguments: Dict[str, str]
     description: str
+    original_str: str
 
 
 def convert_arg(
@@ -399,8 +400,12 @@ class ExecutionPlan(BaseModel):
         return ExecutionPlan(nodes=nodes_to_keep, locked_task_ids=self.locked_task_ids)
 
 
-class ExecutionPlanParsingError(RuntimeError):
-    pass
+class ExecutionPlanParsingError(Exception):
+    def __init__(self, message: str, raw_plan: Optional[str] = None, line: Optional[str] = None):
+        self.message = message
+        self.raw_plan = raw_plan
+        self.line = line
+        super().__init__(self.message)
 
 
 class ErrorInfo(BaseModel):

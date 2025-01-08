@@ -145,12 +145,14 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
 
         expected_output = [
             ParsedStep(
+                original_str='start_date = get_date_from_date_str(time_str="1 month ago")  # Convert "1 month ago" to a date to use as the start date for news search',  # noqa: E501
                 output_var="start_date",
                 function="get_date_from_date_str",
                 arguments={"time_str": '"1 month ago"'},
                 description='Convert "1 month ago" to a date to use as the start date for news search',
             ),
             ParsedStep(
+                original_str='stock_ids = stock_identifier_lookup_multi(stock_names=["Meta", "Apple", "Microsoft)"])  # Look up stock identifiers for Meta, Apple, and Microsoft',  # noqa: E501
                 output_var="stock_ids",
                 function="stock_identifier_lookup_multi",
                 # Add a parenthesis to test the regex
@@ -158,24 +160,28 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
                 description="Look up stock identifiers for Meta, Apple, and Microsoft",
             ),
             ParsedStep(
+                original_str="news_developments = get_news_developments_about_companies(stock_ids=stock_ids, start_date=start_date)  # Get news developments in the last month for Meta, Apple, and Microsoft",  # noqa: E501
                 output_var="news_developments",
                 function="get_news_developments_about_companies",
                 arguments={"stock_ids": "stock_ids", "start_date": "start_date"},
                 description="Get news developments in the last month for Meta, Apple, and Microsoft",
             ),
             ParsedStep(
+                original_str="collapsed_news_developments = collapse_lists(lists_of_lists=news_developments)  # Collapse the list of lists of news development IDs into a single list",  # noqa: E501
                 output_var="collapsed_news_developments",
                 function="collapse_lists",
                 arguments={"lists_of_lists": "news_developments"},
                 description="Collapse the list of lists of news development IDs into a single list",
             ),
             ParsedStep(
+                original_str='filtered_news = filter_texts_by_topic(topic="machine learning", texts=collapsed_news_developments)  # Filter news descriptions to only those related to machine learning',  # noqa: E501
                 output_var="filtered_news",
                 function="filter_texts_by_topic",
                 arguments={"topic": '"machine learning"', "texts": "collapsed_news_developments"},
                 description="Filter news descriptions to only those related to machine learning",
             ),
             ParsedStep(
+                original_str="summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning related news into a single text",  # noqa: E501
                 output_var="summary",
                 function="summarize_texts",
                 arguments={"texts": "filtered_news"},
@@ -188,54 +194,63 @@ summary = summarize_texts(texts=filtered_news)  # Summarize the machine learning
         planner = Planner(agent_id="TEST", tool_registry=get_test_registry())
         example_input = [
             ParsedStep(
+                original_str="",
                 output_var="start_date",
                 function="get_date_from_date_str",
                 arguments={"time_str": '"1 month ago"'},
                 description='Convert "1 month ago" to a date to use as the start date for news search',
             ),
             ParsedStep(
+                original_str="",
                 output_var="stock_ids",
                 function="stock_identifier_lookup_multi",
                 arguments={"stock_names": '["Meta", "Apple,1", "Microsoft"]'},
                 description="Convert company names to stock identifiers",
             ),
             ParsedStep(
+                original_str="",
                 output_var="news_developments",
                 function="get_news_developments_about_companies",
                 arguments={"stock_ids": "stock_ids", "start_date": "start_date"},
                 description="Get news developments for Meta, Apple, and Microsoft since last month",
             ),
             ParsedStep(
+                original_str="",
                 output_var="collapsed_news_developments",
                 function="collapse_lists",
                 arguments={"lists_of_lists": "news_developments"},
                 description="Collapse the list of lists of news developments into a single list",
             ),
             ParsedStep(
+                original_str="",
                 output_var="filtered_news",
                 function="filter_texts_by_topic",
                 arguments={"topic": '"machine learning"', "texts": "collapsed_news_developments"},
                 description="Filter news descriptions to only those related to machine learning",
             ),
             ParsedStep(
+                original_str="",
                 output_var="summary",
                 function="summarize_texts",
                 arguments={"texts": "filtered_news"},
                 description="Summarize the news descriptions into a single summary text",
             ),
             ParsedStep(
+                original_str="",
                 output_var="unused",
                 function="get_news_developments_about_companies",
                 arguments={"stock_ids": "[stock_ids[0]]", "start_date": "start_date"},
                 description="Get news developments for only the first stock",
             ),
             ParsedStep(
+                original_str="",
                 output_var="unused2",
                 function="get_name_of_single_stock",
                 arguments={"stock_id": "stock_ids[0]"},
                 description="Gets the name of the stock indicated by the stock_id",
             ),
             ParsedStep(
+                original_str="",
                 output_var="result",
                 function="prepare_output",
                 arguments={"object_to_output": "summary", "title": '"test"'},

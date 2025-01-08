@@ -17,6 +17,7 @@ from agent_service.planner.constants import (
     ASSIGNMENT_RE,
     INITIAL_PLAN_TRIES,
     MIN_SUCCESSFUL_FOR_STOP,
+    PARSING_FAIL_LINE,
     PASS_CHECK_OUTPUT,
     FollowupAction,
 )
@@ -39,6 +40,8 @@ from agent_service.planner.prompts import (
     COMPLETENESS_REPLAN_SYS_PROMPT,
     ERROR_REPLAN_MAIN_PROMPT,
     ERROR_REPLAN_SYS_PROMPT,
+    PARSING_ERROR_REPLAN_MAIN_PROMPT,
+    PARSING_ERROR_REPLAN_SYS_PROMPT,
     PICK_BEST_PLAN_MAIN_PROMPT,
     PICK_BEST_PLAN_SYS_PROMPT,
     PLAN_EXAMPLE,
@@ -163,20 +166,26 @@ class Planner:
             )
             for _ in range(INITIAL_PLAN_TRIES)
         ]
-        first_round_results = await gather_with_stop(first_round_tasks, MIN_SUCCESSFUL_FOR_STOP)
+        first_round_results = await gather_with_stop(
+            first_round_tasks, MIN_SUCCESSFUL_FOR_STOP, include_exceptions=True
+        )
 
-        if first_round_results:
+        successful_results = [
+            result for result in first_round_results if not isinstance(result, Exception)
+        ]
+
+        if successful_results:
             logger.info(
-                f"{len(first_round_results)} of {INITIAL_PLAN_TRIES} initial plan runs succeeded"
+                f"{len(successful_results)} of {INITIAL_PLAN_TRIES} initial plan runs succeeded"
             )
-            first_round_results = list(set(first_round_results))  # get rid of complete duplicates
+            successful_results = list(set(successful_results))  # get rid of complete duplicates
             # GPT 4O seems to have done it now need to just pick
-            if len(first_round_results) > 1:
+            if len(successful_results) > 1:
                 best_plan = await self._pick_best_plan(
-                    chat_context, first_round_results, plan_id=plan_id
+                    chat_context, successful_results, plan_id=plan_id
                 )
             else:
-                best_plan = first_round_results[0]
+                best_plan = successful_results[0]
 
             return best_plan
 
@@ -190,13 +199,29 @@ class Planner:
             self._get_plan_from_breakdown(chat_context, plan_id=plan_id),
         ]
 
-        turbo_plan, breakdown_plan = await gather_with_concurrency(second_round_tasks)
+        if first_round_results:
+            error = first_round_results[0]  # Just use first one, TODO: consider picking?
+            second_round_tasks.append(
+                self._rewrite_plan_after_parsing_error(
+                    chat_context, error, plan_id=plan_id, filter_tools=True
+                )
+            )
 
-        if turbo_plan is not None:
+        turbo_plan, breakdown_plan, parsing_fix_plan = await gather_with_concurrency(
+            second_round_tasks
+        )
+
+        if isinstance(turbo_plan, ExecutionPlan):
             logger.info("Round 2 turbo run succeeded, using that plan")
             # if we were able to get a working version with turbo, use that
             logger.info(f"New Plan:\n{turbo_plan.get_formatted_plan()}")
             return turbo_plan
+
+        if isinstance(parsing_fix_plan, ExecutionPlan):
+            logger.info("Round 2 parsing fix succeeded, using that plan")
+            # if we were able to get a working version with turbo, use that
+            logger.info(f"New Plan:\n{parsing_fix_plan.get_formatted_plan()}")
+            return parsing_fix_plan
 
         if breakdown_plan:
             logger.info("Round 2 breakdown run succeeded, using best breakdown plan")
@@ -221,7 +246,9 @@ class Planner:
             for subneed in request_breakdown
         ]
         breakdown_results = [
-            plan for plan in await gather_with_concurrency(breakdown_tasks) if plan
+            plan
+            for plan in await gather_with_concurrency(breakdown_tasks)
+            if isinstance(plan, ExecutionPlan)
         ]
         if breakdown_results:
             if len(breakdown_results) > 1:
@@ -244,7 +271,7 @@ class Planner:
         llm: Optional[GPT] = None,
         sample_plans: str = "",
         filter_tools: bool = False,
-    ) -> Optional[ExecutionPlan]:
+    ) -> Union[ExecutionPlan, ExecutionPlanParsingError]:
         logger = get_prefect_logger(__name__)
         execution_plan_start = get_now_utc().isoformat()
         if llm is None:
@@ -262,11 +289,13 @@ class Planner:
         try:
             steps = self._parse_plan_str(plan_str)
             plan = self._validate_and_construct_plan(steps)
-        except Exception as e:
+        except ExecutionPlanParsingError as e:
             logger.warning(
                 f"Failed to parse and validate plan with original LLM output string:\n{plan_str}"
             )
-            logger.warning(f"Failed to parse and validate plan due to exception: {repr(e)}")
+            logger.warning(
+                f"Failed to parse and validate plan due to exception:\n{repr(e)}\non line:\n{e.line}"
+            )
             log_event(
                 event_name="agent_plan_generated",
                 event_data={
@@ -282,7 +311,7 @@ class Planner:
                     "plan_id": plan_id,
                 },
             )
-            return None
+            return e  # we return this now so we can use it for updates
         log_event(
             event_name="agent_plan_generated",
             event_data={
@@ -601,6 +630,70 @@ class Planner:
         return new_plan
 
     @async_perf_logger
+    async def _rewrite_plan_after_parsing_error(
+        self,
+        chat_context: ChatContext,
+        exception: ExecutionPlanParsingError,
+        plan_id: Optional[str] = None,
+        filter_tools: bool = False,
+    ) -> Optional[ExecutionPlan]:
+        execution_plan_start = get_now_utc().isoformat()
+        agent_id = get_agent_id_from_chat_context(context=chat_context)
+        logger = get_prefect_logger(__name__)
+        if not exception.raw_plan:
+            return None  # shouldn't happen, but if we don't have a plan to fix this doesn't work
+        old_plan_str = exception.raw_plan
+        chat_str = chat_context.get_gpt_input()
+        error_str = exception.message
+        if exception.line:
+            step_str = PARSING_FAIL_LINE.format(line=exception.line)
+        else:
+            step_str = ""
+        new_plan_str = await self._query_GPT_for_new_plan_after_parsing_error(
+            error_str, step_str, chat_str, old_plan_str, filter_tools=filter_tools
+        )
+
+        try:
+            steps = self._parse_plan_str(new_plan_str)
+            new_plan = self._validate_and_construct_plan(steps)
+            log_event(
+                event_name="agent_plan_generated",
+                event_data={
+                    "started_at_utc": execution_plan_start,
+                    "finished_at_utc": get_now_utc().isoformat(),
+                    "execution_plan": plan_to_json(plan=new_plan),
+                    "plan_str": new_plan_str,
+                    "agent_id": agent_id,
+                    "model_id": self.smart_llm.model,
+                    "prompt": error_str,
+                    "plan_id": plan_id,
+                    "old_plan_str": old_plan_str,
+                },
+            )
+        except Exception as e:
+            log_event(
+                event_name="agent_plan_generated",
+                event_data={
+                    "started_at_utc": execution_plan_start,
+                    "finished_at_utc": get_now_utc().isoformat(),
+                    "error_message": traceback.format_exc(),
+                    "plan_str": new_plan_str,
+                    "agent_id": agent_id,
+                    "model_id": self.smart_llm.model,
+                    "prompt": error_str,
+                    "plan_id": plan_id,
+                    "old_plan_str": old_plan_str,
+                },
+            )
+            logger.warning(
+                f"Failed to validate replan with original LLM output string: {new_plan_str}"
+                f"\nException: {e}"
+            )
+            return None
+
+        return new_plan
+
+    @async_perf_logger
     async def plan_completeness_check(
         self, chat_context: ChatContext, last_plan: ExecutionPlan
     ) -> str:
@@ -867,6 +960,39 @@ class Planner:
             chat_context=chat_context,
             old_plan=old_plan,
             sample_plans=sample_plans_str,
+        )
+
+        return await self.smart_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
+
+    async def _query_GPT_for_new_plan_after_parsing_error(
+        self,
+        error: str,
+        error_step_str: str,
+        chat_context: str,
+        old_plan: str,
+        filter_tools: bool = False,
+    ) -> str:
+        if filter_tools and get_ld_flag(
+            "planner-tool-filtering-enabled", default=False, user_context=self.user_id
+        ):
+            tool_str = await self.get_filtered_tool_str(chat_context, "")
+        else:
+            tool_str = self.full_tool_string
+
+        sys_prompt = PARSING_ERROR_REPLAN_SYS_PROMPT.format(
+            guidelines=PLAN_GUIDELINES,
+            example=PLAN_EXAMPLE,
+        )
+
+        main_prompt = PARSING_ERROR_REPLAN_MAIN_PROMPT.format(
+            error=error,
+            error_step_str=error_step_str,
+            chat_context=chat_context,
+            old_plan=old_plan,
+            rules=PLAN_RULES.format(
+                rule_complement=RULE_COMPLEMENT,
+            ),
+            tools=tool_str,
         )
 
         return await self.smart_llm.do_chat_w_sys_prompt(main_prompt, sys_prompt, no_cache=True)
@@ -1329,58 +1455,74 @@ class Planner:
         plan_nodes: List[ToolExecutionNode] = []
         has_output_tool = False
         for step in steps:
-            if not self.tool_registry.is_tool_registered(step.function):
-                raise ExecutionPlanParsingError(f"Invalid function '{step.function}'")
+            try:
+                if not self.tool_registry.is_tool_registered(step.function):
+                    raise ExecutionPlanParsingError(f"Invalid function '{step.function}'")
 
-            tool = self.tool_registry.get_tool(step.function)
-            if tool.is_output_tool:
-                has_output_tool = True
-            partial_args = self._validate_tool_arguments(
-                tool, args=step.arguments, variable_lookup=variable_lookup
-            )
-            variable_lookup[step.output_var] = tool.return_type
+                tool = self.tool_registry.get_tool(step.function)
+                if tool.is_output_tool:
+                    has_output_tool = True
+                partial_args = self._validate_tool_arguments(
+                    tool, args=step.arguments, variable_lookup=variable_lookup
+                )
+                variable_lookup[step.output_var] = tool.return_type
 
-            node = ToolExecutionNode(
-                tool_name=step.function,
-                args=partial_args,
-                description=step.description,
-                output_variable_name=step.output_var,
-                tool_task_id=str(uuid4()),
-                is_output_node=tool.is_output_tool,
-                store_output=tool.store_output,
-            )
-            plan_nodes.append(node)
+                node = ToolExecutionNode(
+                    tool_name=step.function,
+                    args=partial_args,
+                    description=step.description,
+                    output_variable_name=step.output_var,
+                    tool_task_id=str(uuid4()),
+                    is_output_node=tool.is_output_tool,
+                    store_output=tool.store_output,
+                )
+                plan_nodes.append(node)
+            except Exception as e:
+                raise ExecutionPlanParsingError(
+                    str(e),
+                    raw_plan="\n".join([temp_step.original_str for temp_step in steps]),
+                    line=step.original_str,
+                )
 
         if not has_output_tool:
-            raise ExecutionPlanParsingError("No call to `prepare_output` found!")
+            raise ExecutionPlanParsingError(
+                "No call to `prepare_output` found!",
+                raw_plan="\n".join([temp_step.original_str for temp_step in steps]),
+            )
 
         return ExecutionPlan(nodes=plan_nodes)
 
     def _parse_plan_str(self, plan_str: str) -> List[ParsedStep]:
         plan_steps: List[ParsedStep] = []
-        for line in plan_str.split("\n"):
-            if line.startswith("#"):  # allow initial comment line
-                continue
-            if line.startswith("```"):  # GPT likes to add this to Python code
-                continue
-            if not line.strip():
-                continue
+        stripped_plan = [
+            line
+            for line in plan_str.split("\n")
+            if not (line.startswith("#") or line.startswith("```") or not line.strip())
+        ]
+        for line in stripped_plan:
+            try:
+                match = ASSIGNMENT_RE.match(line)
 
-            match = ASSIGNMENT_RE.match(line)
+                if match is None:
+                    raise ExecutionPlanParsingError(
+                        "Basic formatting error in plan, could not match regex"
+                    )
 
-            if match is None:
-                raise ExecutionPlanParsingError(f"Failed to parse plan line: {line}")
-
-            output_var, function, arguments, description = match.groups()
-            arg_dict = get_arg_dict(arguments)
-            plan_steps.append(
-                ParsedStep(
-                    output_var=output_var,
-                    function=function,
-                    arguments=arg_dict,
-                    description=description,
+                output_var, function, arguments, description = match.groups()
+                arg_dict = get_arg_dict(arguments)
+                plan_steps.append(
+                    ParsedStep(
+                        output_var=output_var,
+                        function=function,
+                        arguments=arg_dict,
+                        description=description,
+                        original_str=line,
+                    )
                 )
-            )
+            except Exception as e:
+                raise ExecutionPlanParsingError(
+                    str(e), raw_plan="\n".join(stripped_plan), line=line
+                )
 
         if len(plan_steps) == 0:
             raise RuntimeError("No steps in the plan")

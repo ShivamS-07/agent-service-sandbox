@@ -48,14 +48,21 @@ def sync(async_fn: Callable[P, Coroutine[Any, Any, T]]) -> Callable[P, T]:
     return wrapper
 
 
-async def gather_with_stop(tasks: Collection[Awaitable], stop_count: int) -> List[Any]:
+async def gather_with_stop(
+    tasks: Collection[Awaitable], stop_count: int, include_exceptions: bool = False
+) -> List[Any]:
     successful = []
+    exceptions = []
     for coro in asyncio.as_completed(tasks):
         result = await coro
-        if result is not None:
+        if isinstance(result, Exception):
+            exceptions.append(result)
+        elif result is not None:
             successful.append(result)
         if len(successful) >= stop_count:
             break
+    if include_exceptions:
+        return successful + exceptions
     return successful
 
 
