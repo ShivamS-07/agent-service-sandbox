@@ -8,6 +8,8 @@ from agent_service.utils.date_utils import (
     get_next_quarter,
     get_prev_quarter,
     get_year_quarter_for_date,
+    is_valid_quarter_range,
+    get_quarters_for_time_range
 )
 
 
@@ -80,3 +82,31 @@ class TestDateUtils(IsolatedAsyncioTestCase):
         res = get_year_quarter_for_date(datetime.date(2024, 12, 31))
         self.assertIsInstance(res, tuple)
         self.assertEqual(res, (2024, 4))
+    
+    async def test_is_valid_quarter_range(self):
+        test_cases = [
+            (datetime.date(2024, 1, 1), datetime.date(2024, 3, 31), True),  
+            (datetime.date(2024, 4, 1), datetime.date(2024, 6, 30), True),  
+            (datetime.date(2024, 10, 1), datetime.date(2025, 3, 31), True),
+            (datetime.date(2024, 10, 1), datetime.date(2024, 3, 31), False),  # Valid dates, not a rollover year
+            (datetime.date(2024, 1, 2), datetime.date(2024, 3, 31), False),   # Invalid start date
+            (datetime.date(2024, 4, 1), datetime.date(2024, 9, 29), False),   # Invalid end date
+            (datetime.date(2024, 3, 31), datetime.date(2024, 1, 1), False),   # End before start
+        ]
+
+        for start_date, end_date, expected in test_cases:
+            with self.subTest(start_date=start_date, end_date=end_date):
+                res = is_valid_quarter_range(start_date, end_date)
+                self.assertEqual(res, expected)
+    
+    async def test_get_quarters_for_time_range_invalid_range(self):
+        start_date = datetime.date(2023, 1, 1)
+        invalid_end_date = datetime.date(2023, 3, 30)
+        res = get_quarters_for_time_range(start_date, invalid_end_date)
+        self.assertEqual(res, [])
+    
+    async def test_get_quarters_for_time_range_valid_range(self):
+        start_date = datetime.date(2023, 1, 1)
+        end_date = datetime.date(2024, 3, 31)
+        res = get_quarters_for_time_range(start_date, end_date)
+        self.assertEqual(res, ["2023Q1", "2023Q2", "2023Q3", "2023Q4", "2024Q1"])
