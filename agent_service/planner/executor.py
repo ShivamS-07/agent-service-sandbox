@@ -5,6 +5,7 @@ import os
 import pprint
 import time
 import traceback
+from copy import deepcopy
 from typing import Any, Counter, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 from uuid import uuid4
 
@@ -61,7 +62,7 @@ from agent_service.utils.agent_event_utils import (
     send_chat_message,
     update_agent_help_requested,
 )
-from agent_service.utils.async_db import AsyncDB
+from agent_service.utils.async_db import AsyncDB, get_async_db
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.cache_utils import (
     RedisCacheBackend,
@@ -95,6 +96,8 @@ from agent_service.utils.prefect import (
 logger = logging.getLogger(__name__)
 
 plan_run_deco = validate_call
+
+TASKS_LOCK = asyncio.Lock()
 
 
 async def check_draft(db: Union[Postgres, AsyncDB], agent_id: Optional[str] = None) -> bool:
@@ -178,23 +181,47 @@ async def run_execution_plan(
     # above, but they can be used together, with this map taking precedence over
     # the above map.
     override_task_work_log_id_lookup: Optional[Dict[str, str]] = None,
-    use_new_executor_impl=False,
+    use_new_executor_impl: bool = False,
 ) -> Tuple[List[IOType], Optional[DefaultDict[str, List[dict]]]]:
     logger = get_prefect_logger(__name__)
-    async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
+    async_db = get_async_db(skip_commit=context.skip_db_commit)
+
+    if await get_ld_flag_async(
+        flag_name="use-async-plan-executor",
+        default=False,
+        user_id=context.user_id,
+        async_db=async_db,
+    ):
+        use_new_executor_impl = True
+
     try:
-        result_to_return = await _run_execution_plan_impl(
-            plan=plan,
-            context=context,
-            do_chat=do_chat,
-            log_all_outputs=log_all_outputs,
-            replan_execution_error=replan_execution_error,
-            override_task_output_lookup=override_task_output_lookup,
-            override_task_output_id_lookup=override_task_output_id_lookup,
-            scheduled_by_automation=scheduled_by_automation,
-            execution_log=execution_log,
-        )
-        return result_to_return, execution_log
+        if not use_new_executor_impl:
+            result_to_return = await _run_execution_plan_impl(
+                plan=plan,
+                context=context,
+                do_chat=do_chat,
+                log_all_outputs=log_all_outputs,
+                replan_execution_error=replan_execution_error,
+                override_task_output_lookup=override_task_output_lookup,
+                override_task_output_id_lookup=override_task_output_id_lookup,
+                scheduled_by_automation=scheduled_by_automation,
+                execution_log=execution_log,
+            )
+            return result_to_return, execution_log
+        else:
+            logger.info(f"Using the CONCURRENT executor for {context.plan_run_id=}")
+            result_to_return = await _run_execution_plan_impl_concurrent(
+                plan=plan,
+                context=context,
+                do_chat=do_chat,
+                log_all_outputs=log_all_outputs,
+                replan_execution_error=replan_execution_error,
+                override_task_output_lookup=override_task_output_lookup,
+                override_task_output_id_lookup=override_task_output_id_lookup,
+                scheduled_by_automation=scheduled_by_automation,
+                execution_log=execution_log,
+            )
+            return result_to_return, execution_log
     except Exception as e:
         status = Status.ERROR
         publish_result = True
@@ -514,11 +541,11 @@ async def _get_override_task_output_lookup(
 
 async def _run_plan_step(
     step: ToolExecutionNode,
+    # should be a deepcopy of the context in concurrent version to avoid modifying the original
     context: PlanRunContext,
     async_db: AsyncDB,
     tasks: List[TaskStatus],
     task_step_index: int,
-    tasks_lock: asyncio.Lock,
     replaying_plan_run: bool,
     complete_tasks_from_prior_run: Set[str],
     variable_lookup: Dict[str, IOType],
@@ -534,8 +561,6 @@ async def _run_plan_step(
     logger.warning(
         f"Running step '{step.tool_name}' (Task ID: {step.tool_task_id})," f" {context.plan_id=}"
     )
-
-    set_plan_run_context(context, scheduled_by_automation)
 
     if replaying_plan_run and step.tool_task_id in complete_tasks_from_prior_run:
         # If this is a replay, try to just look up any task that's already
@@ -568,12 +593,13 @@ async def _run_plan_step(
     if execution_log is not None:
         execution_log[step.tool_name].append(resolved_args)
 
-    # Create the context
-    context.task_id = step.tool_task_id
-    context.tool_name = step.tool_name
-    context.skip_task_logging = False
+    async with TASKS_LOCK:
+        # Create the context
+        context.task_id = step.tool_task_id
+        context.tool_name = step.tool_name
+        context.skip_task_logging = False
+        set_plan_run_context(context, scheduled_by_automation)
 
-    async with tasks_lock:
         # update current task to running
         tasks[task_step_index].status = Status.RUNNING
 
@@ -642,28 +668,28 @@ async def _handle_task_non_retriable_error(
     step: ToolExecutionNode,
     chatbot: Chatbot,
     tasks: List[TaskStatus],
-    task_index: int,
+    task_step_index: int,
     scheduled_by_automation: bool,
 ) -> None:
     # Publish task error status to FE
-    tasks[task_index].status = nre.result_status
-    await publish_agent_task_status(
-        agent_id=context.agent_id,
-        plan_run_id=context.plan_run_id,
-        tasks=tasks,
-        logger=logger,
-        db=async_db,
-    )
-
-    await publish_agent_execution_status(
-        agent_id=context.agent_id,
-        plan_run_id=context.plan_run_id,
-        plan_id=context.plan_id,
-        status=nre.result_status,
-        logger=logger,
-        db=async_db,
-        scheduled_by_automation=scheduled_by_automation,
-    )
+    async with TASKS_LOCK:
+        tasks[task_step_index].status = nre.result_status
+        await publish_agent_task_status(
+            agent_id=context.agent_id,
+            plan_run_id=context.plan_run_id,
+            tasks=tasks,
+            logger=logger,
+            db=async_db,
+        )
+        await publish_agent_execution_status(
+            agent_id=context.agent_id,
+            plan_run_id=context.plan_run_id,
+            plan_id=context.plan_id,
+            status=nre.result_status,
+            logger=logger,
+            db=async_db,
+            scheduled_by_automation=scheduled_by_automation,
+        )
 
     response = await chatbot.generate_non_retriable_error_response(
         chat_context=await async_db.get_chats_history_for_agent(agent_id=context.agent_id),
@@ -689,17 +715,18 @@ async def _handle_task_other_error(
     do_chat: bool,
     scheduled_by_automation: bool,
     tasks: List[TaskStatus],
-    task_index: int,
+    task_step_index: int,
 ) -> None:
-    # Publish task error status to FE
-    tasks[task_index].status = Status.ERROR
-    await publish_agent_task_status(
-        agent_id=context.agent_id,
-        plan_run_id=context.plan_run_id,
-        tasks=tasks,
-        logger=logger,
-        db=async_db,
-    )
+    async with TASKS_LOCK:
+        # Publish task error status to FE
+        tasks[task_step_index].status = Status.ERROR
+        await publish_agent_task_status(
+            agent_id=context.agent_id,
+            plan_run_id=context.plan_run_id,
+            tasks=tasks,
+            logger=logger,
+            db=async_db,
+        )
 
     await _exit_if_cancelled(
         db=async_db, context=context, scheduled_by_automation=scheduled_by_automation
@@ -969,7 +996,7 @@ async def _run_execution_plan_impl(
     logger.info(f"PLAN RUN SETUP {context.plan_run_id=}")
     # Maps variables to their resolved values
     variable_lookup: Dict[str, IOType] = {}
-    async_db = AsyncDB(pg=SyncBoostedPG(skip_commit=context.skip_db_commit))
+    async_db = get_async_db(skip_commit=context.skip_db_commit)
     replaying_plan_run = False
     complete_tasks_from_prior_run: Set[str] = set()
     plan_run_start_time = time.time()
@@ -1033,7 +1060,6 @@ async def _run_execution_plan_impl(
         )
         for step in plan.nodes
     ]
-    tasks_lock = asyncio.Lock()
 
     # Maps each node to its direct child nodes
     node_dependency_map: Dict[ToolExecutionNode, Set[ToolExecutionNode]] = (
@@ -1060,7 +1086,6 @@ async def _run_execution_plan_impl(
                 async_db=async_db,
                 tasks=tasks,
                 task_step_index=i,
-                tasks_lock=tasks_lock,
                 replaying_plan_run=replaying_plan_run,
                 complete_tasks_from_prior_run=complete_tasks_from_prior_run,
                 variable_lookup=variable_lookup,
@@ -1078,7 +1103,7 @@ async def _run_execution_plan_impl(
                 step=step,
                 chatbot=chatbot,
                 tasks=tasks,
-                task_index=i,
+                task_step_index=i,
                 scheduled_by_automation=scheduled_by_automation,
             )
             raise nre
@@ -1105,7 +1130,7 @@ async def _run_execution_plan_impl(
                 do_chat=do_chat,
                 scheduled_by_automation=scheduled_by_automation,
                 tasks=tasks,
-                task_index=i,
+                task_step_index=i,
             )
             raise e
 
@@ -1288,3 +1313,526 @@ async def count_agent_stocks(
         await db.multi_row_insert("agent.stock_related_agents", db_rows)
     except Exception as e:
         logger.exception(f"Error counting agent stocks: {e}")
+
+
+####################################################################################################
+# Async Executor
+####################################################################################################
+async def _run_execution_plan_impl_concurrent(
+    plan: ExecutionPlan,
+    context: PlanRunContext,
+    do_chat: bool = True,
+    log_all_outputs: bool = False,
+    replan_execution_error: bool = False,
+    override_task_output_lookup: Optional[Dict[str, IOType]] = None,
+    override_task_output_id_lookup: Optional[Dict[str, str]] = None,
+    scheduled_by_automation: bool = False,
+    send_email: bool = True,
+    execution_log: Optional[DefaultDict[str, List[dict]]] = None,
+) -> List[IOType]:
+    ###########################################
+    # PLAN RUN SETUP
+    ###########################################
+    logger = get_prefect_logger(__name__)
+    logger.info(f"PLAN RUN SETUP {context.plan_run_id=}")
+    # Maps variables to their resolved values
+    variable_lookup: Dict[str, IOType] = {}
+    async_db = get_async_db(skip_commit=context.skip_db_commit)
+    replaying_plan_run = False
+    complete_tasks_from_prior_run: Set[str] = set()
+    plan_run_start_time = time.time()
+
+    send_email = send_email and await get_ld_flag_async(
+        flag_name="send-plan-run-finish-email",
+        user_id=context.user_id,
+        default=False,
+        async_db=async_db,
+    )
+
+    message_task = None
+    if send_email:
+        message_task = await _schedule_email_task(context=context, async_db=async_db)
+
+    replaying_plan_run, complete_tasks_from_prior_run = await _handle_prior_run_replay(
+        context=context, async_db=async_db
+    )
+
+    # publish start plan run execution to FE
+    await publish_agent_execution_status(
+        agent_id=context.agent_id,
+        plan_run_id=context.plan_run_id,
+        plan_id=context.plan_id,
+        status=Status.RUNNING,
+        logger=logger,
+        db=async_db,
+        scheduled_by_automation=scheduled_by_automation,
+    )
+
+    # Load the user agent settings
+    context.user_settings = await async_db.get_user_agent_settings(user_id=context.user_id)
+
+    # Used for updating cached outputs
+    redis_cache_backend = _get_redis_cache_backend(context=context)
+
+    if scheduled_by_automation:
+        context.diff_info = {}  # this will be populated during the run
+
+    # Resolve the outputs that are cached, so that we can skip them later.
+    override_task_output_lookup = await _get_override_task_output_lookup(
+        async_db=async_db,
+        override_task_output_id_lookup=override_task_output_id_lookup,
+        override_task_output_lookup=override_task_output_lookup,
+    )
+
+    locked_task_ids = set(plan.locked_task_ids)
+
+    final_outputs: List[IOType] = []
+    final_outputs_with_ids: List[OutputWithID] = []
+
+    # initialize our task list for SSE purposes
+    task_statuses: List[TaskStatus] = [
+        TaskStatus(
+            status=Status.NOT_STARTED,
+            task_id=step.tool_task_id,
+            task_name=step.description,
+            has_output=False,
+            logs=[],
+        )
+        for step in plan.nodes
+    ]
+
+    chatbot = Chatbot(agent_id=context.agent_id)
+
+    existing_output_titles = await async_db.get_agent_output_titles(agent_id=context.agent_id)
+    new_output_titles: Dict[str, str] = {}
+
+    # Prepare dependency graph for concurrent tasks run
+    parent_to_children, _, node_id_to_indegree, node_id_to_node = plan.build_dependency_graph()
+    ready_queue: asyncio.Queue[str] = asyncio.Queue()
+    running_task_set: Set[asyncio.Task] = set()
+    task_id_to_step_idx = {task.task_id: i for i, task in enumerate(task_statuses)}
+
+    # NOTE: these are only for widget lock/delete which is different from the above graphs because
+    # output nodes may not have to depend on the prior output nodes
+    # the reason to do that above is because we need to preserve the order of the outputs
+    node_dependency_map: Dict[ToolExecutionNode, Set[ToolExecutionNode]] = (
+        plan.get_node_dependency_map()
+    )
+    node_parent_map: Dict[ToolExecutionNode, Set[ToolExecutionNode]] = plan.get_node_parent_map()
+
+    ###########################################
+    # PLAN RUN BEGINS
+    ###########################################
+    # start from nodes with indegree = 0
+    for node_id, indegree in node_id_to_indegree.items():
+        if indegree == 0:
+            await ready_queue.put(node_id)
+
+    while not ready_queue.empty() or running_task_set:
+        # check if any running tasks complete - if there's any exception, kill the process
+        await check_running_tasks(
+            running_task_set=running_task_set,
+            node_id_to_node=node_id_to_node,
+            context=context,
+            async_db=async_db,
+            plan=plan,
+            chatbot=chatbot,
+            task_statuses=task_statuses,
+            task_id_to_step_idx=task_id_to_step_idx,
+            do_chat=do_chat,
+            scheduled_by_automation=scheduled_by_automation,
+            replan_execution_error=replan_execution_error,
+        )
+
+        # kick off the tasks in the ready queue
+        while not ready_queue.empty():
+            ready_node_id = await ready_queue.get()
+            ready_node = node_id_to_node[ready_node_id]
+
+            logger.info(
+                f"Got node <{ready_node.tool_name}> (Task ID {ready_node_id}) from the ready queue"
+            )
+
+            # start to create a future task for the ready node
+            future_task = asyncio.create_task(
+                coro=handle_step(
+                    step=ready_node,
+                    task_step_index=task_id_to_step_idx[ready_node_id],
+                    context=context,
+                    scheduled_by_automation=scheduled_by_automation,
+                    async_db=async_db,
+                    task_statuses=task_statuses,
+                    replaying_plan_run=replaying_plan_run,
+                    complete_tasks_from_prior_run=complete_tasks_from_prior_run,
+                    variable_lookup=variable_lookup,
+                    override_task_output_lookup=override_task_output_lookup,
+                    execution_log=execution_log,
+                    parent_nodes=node_parent_map.get(ready_node, set()),
+                    children_nodes=node_dependency_map.get(ready_node, set()),
+                    is_task_locked=ready_node_id in locked_task_ids,
+                    redis_cache_backend=redis_cache_backend,
+                    final_outputs=final_outputs,
+                    final_outputs_with_ids=final_outputs_with_ids,
+                    new_output_titles=new_output_titles,
+                    log_all_outputs=log_all_outputs,
+                ),
+                name=ready_node_id,
+            )
+            # add callback after the future task is done
+            future_task.add_done_callback(
+                lambda fut_task: asyncio.create_task(
+                    step_callback(
+                        done_future_task=fut_task,
+                        node=node_id_to_node[fut_task.get_name()],
+                        running_task_set=running_task_set,
+                        children_nodes=parent_to_children.get(fut_task.get_name(), set()),
+                        node_id_to_indegree=node_id_to_indegree,
+                        ready_queue=ready_queue,
+                    )
+                )
+            )
+            # add to Set for fast delete once it's done
+            running_task_set.add(future_task)
+
+    ###########################################
+    # PLAN RUN ENDS, RUN POSTPROCESSING BEGINS
+    ###########################################
+    await _exit_if_cancelled(
+        db=async_db, context=context, scheduled_by_automation=scheduled_by_automation
+    )
+
+    logger.info(
+        (
+            f"Finished running {context.agent_id=}, {context.plan_id=}, {context.plan_run_id=},"
+            " moving on to postprocessing"
+        )
+    )
+
+    agent_email_handler = AgentEmail(db=async_db)
+    gpt_context = create_gpt_context(
+        GptJobType.AGENT_CHATBOT, context.agent_id, GptJobIdType.AGENT_ID
+    )
+    llm = GPT(gpt_context, GPT4_O)
+    if scheduled_by_automation:
+        run_diffs = await _postprocess_live(
+            async_db=async_db,
+            context=context,
+            final_outputs_with_ids=final_outputs_with_ids,
+            agent_email_handler=agent_email_handler,
+            plan=plan,
+            llm=llm,
+        )
+    else:
+        run_diffs = await _postprocess_non_live(
+            async_db=async_db,
+            context=context,
+            llm=llm,
+            chatbot=chatbot,
+            final_outputs=final_outputs,
+            new_output_titles=new_output_titles,
+            agent_email_handler=agent_email_handler,
+            plan_run_start_time=plan_run_start_time,
+            send_email=send_email,
+            message_task=message_task,
+            existing_output_titles=existing_output_titles,
+        )
+
+    await async_db.set_plan_run_metadata(
+        context=context,
+        metadata=RunMetadata(
+            run_summary_long=run_diffs.long_summary,
+            run_summary_short=run_diffs.short_summary,
+            updated_output_ids=run_diffs.updated_output_ids,
+        ),
+    )
+
+    full_diff_summary_output = run_diffs.long_summary
+    if isinstance(run_diffs.long_summary, Text):
+        full_diff_summary_output = await run_diffs.long_summary.to_rich_output(pg=async_db.pg)  # type: ignore
+
+    # publish finish plan run task execution
+    await publish_agent_execution_status(
+        agent_id=context.agent_id,
+        plan_run_id=context.plan_run_id,
+        plan_id=context.plan_id,
+        status=Status.COMPLETE,
+        logger=logger,
+        run_summary_long=full_diff_summary_output,  # type: ignore
+        run_summary_short=run_diffs.short_summary,
+        updated_output_ids=run_diffs.updated_output_ids,
+        db=async_db,
+        scheduled_by_automation=scheduled_by_automation,
+    )
+
+    await count_agent_stocks(context, async_db, final_outputs)
+
+    logger.info(f"Finished run {context.plan_run_id=}")
+    return final_outputs
+
+
+async def check_running_tasks(
+    running_task_set: Set[asyncio.Task],
+    node_id_to_node: Dict[str, ToolExecutionNode],
+    context: PlanRunContext,
+    async_db: AsyncDB,
+    plan: ExecutionPlan,
+    chatbot: Chatbot,
+    task_statuses: List[TaskStatus],
+    task_id_to_step_idx: Dict[str, int],
+    do_chat: bool,
+    scheduled_by_automation: bool,
+    replan_execution_error: bool,
+) -> None:
+    """
+    Check if any running tasks are completed successfully.
+    - If so, remove the task from the running task set
+    - Else if any task failed, cancel all the rest of the tasks, handle the error accordingly and
+        publish SSE to FE (and kill the process)
+
+    Lock:
+        We need to lock `running_task_set` because we are modifying it in the loop.
+    """
+
+    if not running_task_set:
+        return
+
+    # wait until the first task is completed
+    done_tasks, _ = await asyncio.wait(running_task_set, return_when=asyncio.FIRST_COMPLETED)
+    for done_task in done_tasks:
+        exc = done_task.exception()
+        if exc is None:
+            async with TASKS_LOCK:
+                running_task_set.discard(done_task)
+            continue
+
+        # cancel all the rest of the tasks
+        for future_task in running_task_set:
+            future_task.cancel()
+
+        node_id = done_task.get_name()
+        done_node = node_id_to_node[node_id]
+        logger.exception(f"Step <{done_node.tool_name}> (Task ID: {node_id}) failed due to:\n{exc}")
+
+        if isinstance(exc, AgentCancelledError):
+            logger.info("agent cancelled")
+            await publish_agent_execution_status(
+                agent_id=context.agent_id,
+                plan_run_id=context.plan_run_id,
+                plan_id=context.plan_id,
+                status=Status.CANCELLED,
+                logger=logger,
+                db=async_db,
+                scheduled_by_automation=scheduled_by_automation,
+            )
+        elif isinstance(exc, NonRetriableError):
+            await _handle_task_non_retriable_error(
+                exc,
+                context=context,
+                async_db=async_db,
+                plan=plan,
+                step=done_node,
+                chatbot=chatbot,
+                tasks=task_statuses,
+                task_step_index=task_id_to_step_idx[node_id],
+                scheduled_by_automation=scheduled_by_automation,
+            )
+        else:
+            await _handle_task_other_error(
+                Exception(str(exc)),  # convert BaseException to Exception
+                context=context,
+                async_db=async_db,
+                replan_execution_error=replan_execution_error,
+                failed_step=done_node,
+                do_chat=do_chat,
+                scheduled_by_automation=scheduled_by_automation,
+                tasks=task_statuses,
+                task_step_index=task_id_to_step_idx[node_id],
+            )
+
+        # kill the process
+        raise exc
+
+
+async def handle_step(
+    step: ToolExecutionNode,
+    task_step_index: int,
+    context: PlanRunContext,
+    async_db: AsyncDB,
+    task_statuses: List[TaskStatus],
+    complete_tasks_from_prior_run: Set[str],
+    variable_lookup: Dict[str, IOType],
+    override_task_output_lookup: Optional[Dict[str, IOType]],
+    execution_log: Optional[DefaultDict[str, List[dict]]],
+    parent_nodes: Set[ToolExecutionNode],
+    children_nodes: Set[ToolExecutionNode],
+    is_task_locked: bool,
+    redis_cache_backend: Optional[RedisCacheBackend],
+    final_outputs: List[IOType],
+    final_outputs_with_ids: List[OutputWithID],
+    new_output_titles: Dict[str, str],
+    scheduled_by_automation: bool,
+    replaying_plan_run: bool,
+    log_all_outputs: bool,
+) -> None:
+    """
+    The whole process to execute a step, including:
+    - Prepare the context for the step
+        - Deepcopy the current `context` dictionary to avoid conflicts with other concurrent tasks
+        - Assign task-specific values to the copied context
+    - Run the step
+    - Postprocess
+        - Update the original `context` with the results from the step for the next tasks
+        - Store the tool output in DB or publish to FE depending the step mode
+        - Update the task status and notify FE through SSE
+
+    Lock:
+        - `context` when copying and updating
+        - `task_statuses` when updating
+    """
+
+    # Copy the current context and assign with task-specific values
+    async with TASKS_LOCK:
+        copied_context = deepcopy(context)
+
+    copied_context.task_id = step.tool_task_id
+    copied_context.tool_name = step.tool_name
+    copied_context.skip_task_logging = False
+
+    if not copied_context.skip_db_commit and not scheduled_by_automation:
+        copied_context.chat = await async_db.get_chats_history_for_agent(agent_id=context.agent_id)
+
+    try:
+        task_result = await _run_plan_step(
+            step=step,
+            context=copied_context,
+            async_db=async_db,
+            tasks=task_statuses,
+            task_step_index=task_step_index,
+            replaying_plan_run=replaying_plan_run,
+            complete_tasks_from_prior_run=complete_tasks_from_prior_run,
+            variable_lookup=variable_lookup,
+            override_task_output_lookup=override_task_output_lookup,
+            scheduled_by_automation=scheduled_by_automation,
+            execution_log=execution_log,
+        )
+    except Exception as e:
+        # immediately raise the error here and handle it outside because we want to cancel all
+        # the concurrent tasks if any of them fails the sooner the better
+        raise e
+
+    # Update original context after run
+    async with TASKS_LOCK:
+        if copied_context.stock_info:
+            context.add_stocks_to_context(copied_context.stock_info)
+        if isinstance(context.diff_info, dict) and copied_context.diff_info:
+            context.diff_info.update(copied_context.diff_info)
+        context.chat = copied_context.chat
+
+    # Store the task output in the associated variable
+    tool_output = task_result.result
+    split_outputs = await split_io_type_into_components(tool_output)
+    outputs_with_ids = [
+        OutputWithID(
+            output=output,
+            task_id=step.tool_task_id,
+            output_id=str(uuid4()),
+            dependent_task_ids=[child.tool_task_id for child in children_nodes],
+            parent_task_ids=[node.tool_task_id for node in parent_nodes if node.is_output_node],
+        )
+        for output in split_outputs
+    ]
+
+    if not step.is_output_node:
+        if step.store_output:
+            await async_db.write_tool_split_outputs(
+                outputs_with_ids=outputs_with_ids, context=copied_context
+            )
+    else:
+        # We have an output node
+        live_plan_output = False
+        if scheduled_by_automation or (
+            override_task_output_lookup and step.tool_task_id in override_task_output_lookup
+        ):
+            live_plan_output = True
+
+        # Publish the output
+        await publish_agent_output(
+            outputs_with_ids=outputs_with_ids,
+            live_plan_output=live_plan_output,
+            context=copied_context,  # safe, it only uses `agent_id`, `plan_id`, `plan_run_id`
+            db=async_db,
+            is_locked=is_task_locked,
+            cache_backend=redis_cache_backend,
+        )
+
+        async with TASKS_LOCK:
+            final_outputs.extend(split_outputs)
+            final_outputs_with_ids.extend(outputs_with_ids)
+            new_output_titles.update(
+                {output.output.title: output.task_id for output in outputs_with_ids}  # type: ignore
+            )
+
+    if log_all_outputs:
+        logger.info(f"Output of step '{step.tool_name}': {output_for_log(tool_output)}")
+
+    async with TASKS_LOCK:
+        if step.output_variable_name:
+            logger.info(
+                f"Storing output of {step.tool_name=} into {step.output_variable_name=}"
+                f" value: {repr(tool_output)[:1000]}"
+            )
+            variable_lookup[step.output_variable_name] = tool_output
+
+        task_statuses[task_step_index].logs = task_result.task_logs
+        task_statuses[task_step_index].status = Status.COMPLETE
+        task_statuses[task_step_index].has_output = step.store_output
+
+        # publish finish task execution
+        await publish_agent_task_status(
+            agent_id=context.agent_id,
+            plan_run_id=copied_context.plan_run_id,
+            tasks=task_statuses,
+            logger=logger,
+            db=async_db,
+        )
+
+    logger.info(f"Finished step '{step.tool_name}'")
+
+
+async def step_callback(
+    done_future_task: asyncio.Task,
+    node: ToolExecutionNode,
+    running_task_set: Set[asyncio.Task],
+    children_nodes: Set[ToolExecutionNode],
+    node_id_to_indegree: Dict[str, int],
+    ready_queue: asyncio.Queue[str],
+) -> None:
+    """A callback function that will be called after a task is done:
+    1. Remove the done task from the set
+    2. Subtract all the dependent tasks' indegree by 1
+    3. If any dependent task's indegree becomes 0, add it to the queue
+
+    Lock:
+        - `running_task_set` when removing the done task
+        - `node_id_to_indegree` when subtracting the indegree
+    """
+    node_id = node.tool_task_id
+    logger.info(f"Step <{node.tool_name}> (Task ID: {node_id}) is done, callback starts...")
+
+    # remove the done task from the set
+    async with TASKS_LOCK:
+        running_task_set.discard(done_future_task)
+
+    # subtract neighbors' indegree by 1
+    for child_node in children_nodes:
+        child_node_id = child_node.tool_task_id
+
+        async with TASKS_LOCK:
+            node_id_to_indegree[child_node_id] -= 1
+
+        # add to the queue and create future for the ready neighbor
+        if node_id_to_indegree[child_node_id] == 0:
+            logger.info(
+                f"Sending <{child_node.tool_name}> (Task ID: ({child_node_id})) to the ready queue"
+            )
+            await ready_queue.put(child_node_id)

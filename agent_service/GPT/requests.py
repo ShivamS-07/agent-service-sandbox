@@ -75,6 +75,7 @@ def set_use_global_stub(val: bool) -> None:
 
 
 def set_plan_run_context(context: PlanRunContext, scheduled_by_automation: bool) -> None:
+    # ContextVar is context safe/local and not shared between different threads or concurrencies
     plan_run_context = {
         "plan_id": context.plan_id,
         "plan_run_id": context.plan_run_id,

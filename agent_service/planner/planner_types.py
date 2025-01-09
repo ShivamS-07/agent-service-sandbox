@@ -2,7 +2,7 @@ import enum
 import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Type, Union
+from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple, Type, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -328,6 +328,74 @@ class ExecutionPlan(BaseModel):
                 node_to_parents[child].add(parent)
 
         return node_to_parents
+
+    def build_dependency_graph(
+        self,
+    ) -> Tuple[
+        DefaultDict[str, Set[ToolExecutionNode]],
+        DefaultDict[str, Set[ToolExecutionNode]],
+        DefaultDict[str, int],
+        Dict[str, ToolExecutionNode],
+    ]:
+        """Build a dependency graph for nodes to be executed as much asyncly as possible
+
+        Main logic:
+        - Initialize a dictionary to store output variable name to node object for later use
+        - For each node, check if its input arguments are variables
+            - If so, add the node as a child to the node that produces the variable and add indegree
+            by 1
+            - Otherwise, initialize the indegree of the node to 0 (can be executed immediately)
+        - For each output node, it MUST depend on the previous output node as it decides the order
+        of the widgets displayed on the UI
+
+        Returns:
+            DefaultDict[str, Set[ToolExecutionNode]: task_id to a Set[ToolExecutionNode] representing
+        parent to children relationship
+            DefaultDict[str, Set[ToolExecutionNode]: task_id to a Set[ToolExecutionNode] representing
+        child to parents relationship
+            DefaultDict[str, int]: task_id to indegree count. 0 means the node can be executed immediately
+            Dict[str, ToolExecutionNode]: task_id to the node object
+        """
+        # Initialize graph and indegree count
+        parent_to_children: DefaultDict[str, Set[ToolExecutionNode]] = defaultdict(set)
+        node_id_to_indegree: DefaultDict[str, int] = defaultdict(int)
+        node_id_to_node = {node.tool_task_id: node for node in self.nodes}
+        output_var_name_to_node = {node.output_variable_name: node for node in self.nodes}
+
+        prev_output_node: Optional[ToolExecutionNode] = None
+        for node in self.nodes:
+            # Check for dependencies on other nodes' outputs
+            for value in node.args.values():
+                if isinstance(value, Variable):
+                    # The node depends on the output of another node
+                    parent_node = output_var_name_to_node[value.var_name]
+                    parent_to_children[parent_node.tool_task_id].add(node)
+                    node_id_to_indegree[node.tool_task_id] += 1
+                elif isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, Variable):
+                            parent_node = output_var_name_to_node[item.var_name]
+                            parent_to_children[parent_node.tool_task_id].add(node)
+                            node_id_to_indegree[node.tool_task_id] += 1
+
+            # Output nodes must be shown in the order they are defined on UI, so the next output
+            # node depends on the previous output node
+            if node.is_output_node:
+                if prev_output_node:
+                    parent_to_children[prev_output_node.tool_task_id].add(node)
+                    node_id_to_indegree[node.tool_task_id] += 1
+                prev_output_node = node
+
+            # Initialize indegree of the current node if it has no dependencies
+            if node.tool_task_id not in node_id_to_indegree:
+                node_id_to_indegree[node.tool_task_id] = 0
+
+        child_to_parents: DefaultDict[str, Set[ToolExecutionNode]] = defaultdict(set)
+        for parent, children in parent_to_children.items():
+            for child in children:
+                child_to_parents[child.tool_task_id].add(node_id_to_node[parent])
+
+        return parent_to_children, child_to_parents, node_id_to_indegree, node_id_to_node
 
     def inherit_locked_task_ids_from(self, old_plan: "ExecutionPlan") -> None:
         task_id_set = {node.tool_task_id for node in self.nodes}

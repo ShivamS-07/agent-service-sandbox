@@ -675,3 +675,276 @@ class TestPlannerTypes(TestCase):
         with self.subTest(msg="Expect error reordering with non-output"):
             with self.assertRaises(RuntimeError):
                 _ = test_plan.reorder_plan_with_output_task_ordering([test_out_1, test2])
+
+    def test_build_dependency_graph(self):
+        # Copy from plan_id = `def785e4-c62a-41cb-9d8e-a29dbbca9942`
+        plan = ExecutionPlan.model_validate(
+            {
+                "nodes": [
+                    {
+                        "args": {"stock_name": "NVDA"},
+                        "tool_name": "stock_identifier_lookup",
+                        "description": "Look up NVDA identifier",
+                        "store_output": True,
+                        "tool_task_id": "87674424-d5db-4cb1-9adc-448b6dcb0acd",
+                        "is_output_node": False,
+                        "output_variable_name": "nvda_id",
+                    },
+                    {
+                        "args": {"universe_name": "S&P 500"},
+                        "tool_name": "get_stock_universe",
+                        "description": "Get stocks from S&P 500",
+                        "store_output": True,
+                        "tool_task_id": "1cbb27a1-5baf-45ca-a9d6-0cebe70b809c",
+                        "is_output_node": False,
+                        "output_variable_name": "sp500_stocks",
+                    },
+                    {
+                        "args": {"stock_ids": {"index": None, "var_name": "sp500_stocks"}},
+                        "tool_name": "get_company_descriptions",
+                        "description": "Get company descriptions for stocks in the S&P 500",
+                        "store_output": True,
+                        "tool_task_id": "ae7910e6-91be-460a-8a1a-29c97dbd4d8e",
+                        "is_output_node": False,
+                        "output_variable_name": "company_descriptions",
+                    },
+                    {
+                        "args": {
+                            "texts": {"index": None, "var_name": "company_descriptions"},
+                            "stock_ids": {"index": None, "var_name": "sp500_stocks"},
+                            "filter_only": True,
+                            "max_results": 10,
+                            "product_str": "AI chips",
+                            "must_include_stocks": [{"index": None, "var_name": "nvda_id"}],
+                        },
+                        "tool_name": "filter_stocks_by_product_or_service",
+                        "description": "Filter stocks to those in the AI chips market, including NVDA, with a maximum of 10 results",
+                        "store_output": True,
+                        "tool_task_id": "b7985bdd-aa42-49b4-8fd6-e0d59d386931",
+                        "is_output_node": False,
+                        "output_variable_name": "ai_chip_stocks",
+                    },
+                    {
+                        "args": {"stock_ids": {"index": None, "var_name": "ai_chip_stocks"}},
+                        "tool_name": "get_default_text_data_for_stocks",
+                        "description": "Get default text data for all stocks in the AI chips market",
+                        "store_output": False,
+                        "tool_task_id": "f06deb86-8b11-4ea6-98b1-9558058bcd73",
+                        "is_output_node": False,
+                        "output_variable_name": "ai_chip_texts",
+                    },
+                    {
+                        "args": {
+                            "market": "AI chips",
+                            "target_stock": {"index": None, "var_name": "nvda_id"},
+                        },
+                        "tool_name": "get_criteria_for_competitive_analysis",
+                        "description": "Generate criteria for a competitive analysis of the AI chips market with NVDA as the target stock",
+                        "store_output": True,
+                        "tool_task_id": "29805fdb-b3b7-44a3-a99c-149f871377c0",
+                        "is_output_node": False,
+                        "output_variable_name": "criteria",
+                    },
+                    {
+                        "args": {
+                            "prompt": "Is NVDA the leader in AI chips space",
+                            "stocks": {"index": None, "var_name": "ai_chip_stocks"},
+                            "criteria": {"index": None, "var_name": "criteria"},
+                            "target_stock": {"index": None, "var_name": "nvda_id"},
+                            "all_text_data": {"index": None, "var_name": "ai_chip_texts"},
+                        },
+                        "tool_name": "do_competitive_analysis",
+                        "description": "Perform a competitive analysis to evaluate if NVDA is the leader in the AI chips space based on the criteria",
+                        "store_output": True,
+                        "tool_task_id": "11287882-3e8e-4763-a37e-f3ab5c41268d",
+                        "is_output_node": False,
+                        "output_variable_name": "competitive_analysis",
+                    },
+                    {
+                        "args": {
+                            "prompt": "Is NVDA the leader in AI chips space",
+                            "competitive_analysis": {
+                                "index": None,
+                                "var_name": "competitive_analysis",
+                            },
+                        },
+                        "tool_name": "generate_summary_for_competitive_analysis",
+                        "description": "Generate a text summary of NVDA's position in the AI chips market based on the competitive analysis",
+                        "store_output": True,
+                        "tool_task_id": "cb2f690b-67ec-4ab1-a31a-6b052a319fae",
+                        "is_output_node": False,
+                        "output_variable_name": "summary_text",
+                    },
+                    {
+                        "args": {
+                            "title": "Summary of NVDA's Position in AI Chips Market",
+                            "object_to_output": {"index": None, "var_name": "summary_text"},
+                        },
+                        "tool_name": "prepare_output",
+                        "description": "Output the summary of NVDA's position in the AI chips market",
+                        "store_output": False,
+                        "tool_task_id": "134a7e56-788f-4cb4-ba84-680b313f18c0",
+                        "is_output_node": True,
+                        "output_variable_name": "output1",
+                    },
+                    {
+                        "args": {
+                            "title": "Detailed Competitive Analysis of AI Chips Market",
+                            "object_to_output": {"index": None, "var_name": "competitive_analysis"},
+                        },
+                        "tool_name": "prepare_output",
+                        "description": "Output the detailed competitive analysis of the AI chips market",
+                        "store_output": False,
+                        "tool_task_id": "9bb1b14b-0d58-4412-bcab-f486a3820dc6",
+                        "is_output_node": True,
+                        "output_variable_name": "output2",
+                    },
+                    {
+                        "args": {
+                            "title": "Criteria Used for Competitive Analysis",
+                            "object_to_output": {"index": None, "var_name": "criteria"},
+                        },
+                        "tool_name": "prepare_output",
+                        "description": "Output the criteria used for the competitive analysis",
+                        "store_output": False,
+                        "tool_task_id": "111fdfca-9b83-49e0-a00a-6f8e65c5a9f6",
+                        "is_output_node": True,
+                        "output_variable_name": "output3",
+                    },
+                ],
+                "locked_task_ids": [],
+                "deleted_task_ids": [],
+            }
+        )
+
+        parent_to_children, child_to_parents, node_id_to_indegree, _ = plan.build_dependency_graph()
+
+        # Assert Parent - Children Relationship
+        node0 = plan.nodes[0]  # `stock_identifier_lookup`
+        self.assertNotIn(node0.tool_task_id, child_to_parents)
+        self.assertEqual(node_id_to_indegree[node0.tool_task_id], 0)
+        self.assertSetEqual(
+            {node.tool_name for node in parent_to_children[node0.tool_task_id]},
+            {
+                "filter_stocks_by_product_or_service",
+                "get_criteria_for_competitive_analysis",
+                "do_competitive_analysis",
+            },
+        )
+
+        node1 = plan.nodes[1]  # `get_stock_universe`
+        self.assertNotIn(node1.tool_task_id, child_to_parents)
+        self.assertEqual(node_id_to_indegree[node1.tool_task_id], 0)
+        self.assertSetEqual(
+            {node.tool_name for node in parent_to_children[node1.tool_task_id]},
+            {"get_company_descriptions", "filter_stocks_by_product_or_service"},
+        )
+
+        node2 = plan.nodes[2]  # `get_company_descriptions`
+        self.assertEqual(node_id_to_indegree[node2.tool_task_id], 1)
+        self.assertSetEqual(
+            {node.tool_name for node in child_to_parents[node2.tool_task_id]},
+            {"get_stock_universe"},
+        )
+        self.assertSetEqual(
+            {node.tool_name for node in parent_to_children[node2.tool_task_id]},
+            {"filter_stocks_by_product_or_service"},
+        )
+
+        node3 = plan.nodes[3]  # `filter_stocks_by_product_or_service`
+        self.assertEqual(node_id_to_indegree[node3.tool_task_id], 3)
+        self.assertSetEqual(
+            {node.tool_name for node in child_to_parents[node3.tool_task_id]},
+            {
+                "get_company_descriptions",
+                "get_stock_universe",
+                "stock_identifier_lookup",
+            },
+        )
+        self.assertSetEqual(
+            {node.tool_name for node in parent_to_children[node3.tool_task_id]},
+            {"get_default_text_data_for_stocks", "do_competitive_analysis"},
+        )
+
+        node4 = plan.nodes[4]  # `get_default_text_data_for_stocks`
+        self.assertEqual(node_id_to_indegree[node4.tool_task_id], 1)
+        self.assertSetEqual(
+            {node.tool_name for node in child_to_parents[node4.tool_task_id]},
+            {"filter_stocks_by_product_or_service"},
+        )
+        self.assertSetEqual(
+            {node.tool_name for node in parent_to_children[node4.tool_task_id]},
+            {"do_competitive_analysis"},
+        )
+
+        node5 = plan.nodes[5]  # `get_criteria_for_competitive_analysis`
+        self.assertEqual(node_id_to_indegree[node5.tool_task_id], 1)
+        self.assertSetEqual(
+            {node.tool_name for node in child_to_parents[node5.tool_task_id]},
+            {"stock_identifier_lookup"},
+        )
+        self.assertSetEqual(
+            {node.tool_name for node in parent_to_children[node5.tool_task_id]},
+            {"do_competitive_analysis", "prepare_output"},
+        )
+
+        node6 = plan.nodes[6]  # `do_competitive_analysis`
+        self.assertEqual(node_id_to_indegree[node6.tool_task_id], 4)
+        self.assertSetEqual(
+            {node.tool_name for node in child_to_parents[node6.tool_task_id]},
+            {
+                "filter_stocks_by_product_or_service",
+                "get_criteria_for_competitive_analysis",
+                "stock_identifier_lookup",
+                "get_default_text_data_for_stocks",
+            },
+        )
+        self.assertSetEqual(
+            {node.tool_name for node in parent_to_children[node6.tool_task_id]},
+            {"generate_summary_for_competitive_analysis", "prepare_output"},
+        )
+
+        node7 = plan.nodes[7]  # `generate_summary_for_competitive_analysis`
+        self.assertEqual(node_id_to_indegree[node7.tool_task_id], 1)
+        self.assertSetEqual(
+            {node.tool_name for node in child_to_parents[node7.tool_task_id]},
+            {"do_competitive_analysis"},
+        )
+        self.assertSetEqual(
+            {node.tool_name for node in parent_to_children[node7.tool_task_id]},
+            {"prepare_output"},
+        )
+
+        node8 = plan.nodes[8]  # `prepare_output`
+        self.assertEqual(node_id_to_indegree[node8.tool_task_id], 1)
+        self.assertSetEqual(
+            {node.tool_name for node in child_to_parents[node8.tool_task_id]},
+            {"generate_summary_for_competitive_analysis"},
+        )
+        self.assertSetEqual(
+            {node.tool_name for node in parent_to_children[node8.tool_task_id]},
+            {"prepare_output"},
+        )
+        self.assertSetEqual(
+            {node.tool_task_id for node in parent_to_children[node8.tool_task_id]},
+            {"9bb1b14b-0d58-4412-bcab-f486a3820dc6"},
+        )
+
+        node9 = plan.nodes[9]  # `prepare_output`
+        self.assertEqual(node_id_to_indegree[node9.tool_task_id], 2)
+        self.assertSetEqual(
+            {node.tool_name for node in child_to_parents[node9.tool_task_id]},
+            {"do_competitive_analysis", "prepare_output"},
+        )
+        self.assertSetEqual(
+            {node.tool_task_id for node in parent_to_children[node9.tool_task_id]},
+            {"111fdfca-9b83-49e0-a00a-6f8e65c5a9f6"},
+        )
+
+        node10 = plan.nodes[10]  # `prepare_output`
+        self.assertEqual(node_id_to_indegree[node10.tool_task_id], 2)
+        self.assertSetEqual(
+            {node.tool_name for node in child_to_parents[node10.tool_task_id]},
+            {"get_criteria_for_competitive_analysis", "prepare_output"},
+        )
+        self.assertNotIn(node10.tool_task_id, parent_to_children)

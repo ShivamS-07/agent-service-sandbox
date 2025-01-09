@@ -3457,6 +3457,46 @@ class AsyncDB:
             conflict_suffix=conflict,
         )
 
+    async def write_tool_log(
+        self,
+        log: IOType,
+        context: PlanRunContext,
+        log_id: str,
+        associated_data: Optional[IOType] = None,
+        percentage: Optional[float] = None,
+    ) -> None:
+        sql = """
+            INSERT INTO agent.work_logs
+                (agent_id, plan_id, plan_run_id, task_id, log_message, log_data, log_id, percentage)
+            VALUES
+                (
+                    %(agent_id)s, %(plan_id)s, %(plan_run_id)s, %(task_id)s,
+                    %(log_message)s, %(log_data)s, %(log_id)s, %(percentage)s
+                )
+            ON CONFLICT (log_id) 
+            DO UPDATE SET
+                agent_id = EXCLUDED.agent_id,
+                plan_id = EXCLUDED.plan_id,
+                plan_run_id = EXCLUDED.plan_run_id,
+                task_id = EXCLUDED.task_id,
+                log_message = EXCLUDED.log_message,
+                log_data = EXCLUDED.log_data,
+                percentage = EXCLUDED.percentage;
+        """
+        await self.generic_write(
+            sql,
+            params={
+                "agent_id": context.agent_id,
+                "plan_id": context.plan_id,
+                "plan_run_id": context.plan_run_id,
+                "task_id": context.task_id,
+                "log_message": dump_io_type(log),
+                "log_id": log_id,
+                "log_data": dump_io_type(associated_data) if associated_data else None,
+                "percentage": percentage,
+            },
+        )
+
 
 async def get_chat_history_from_db(agent_id: str, db: Union[AsyncDB, Postgres]) -> ChatContext:
     if isinstance(db, Postgres):

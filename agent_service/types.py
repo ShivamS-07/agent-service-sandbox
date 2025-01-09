@@ -1,6 +1,6 @@
 import datetime
 import enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -152,7 +152,7 @@ class PlanRunContext(BaseModel):
             run_tasks_without_prefect=True,
         )
 
-    def add_stocks_to_context(self, stocks: List[StockID]) -> None:
+    def add_stocks_to_context(self, stocks: Iterable[StockID]) -> None:
         if self.stock_info is None:
             self.stock_info = set()
 

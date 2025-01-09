@@ -4,7 +4,7 @@ from typing import Optional
 
 from agent_service.io_type_utils import IOType, dump_io_type
 from agent_service.types import PlanRunContext
-from agent_service.utils.postgres import get_psql
+from agent_service.utils.async_db import get_async_db
 from agent_service.utils.prefect import get_prefect_logger
 
 
@@ -36,14 +36,15 @@ async def tool_log(
     if not log_id:
         log_id = str(uuid.uuid4())
     if not context.skip_db_commit and not context.skip_task_logging:
-        db = get_psql(skip_commit=context.skip_db_commit)
-        db.write_tool_log(
+        db = get_async_db(skip_commit=context.skip_db_commit)
+        await db.write_tool_log(
             log=log,
             context=context,
             associated_data=associated_data,
             log_id=log_id,
             percentage=percentage,
         )
+
     io_str = dump_io_type(log)
 
     # log as if from the caller of this function
